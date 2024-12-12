@@ -9,4 +9,5 @@ export async function GET() {
   } else {
     return NextResponse.json({ protected: false });
   }
+  // return NextResponse.json({ protected: true })
 }

@@ -10,6 +10,7 @@ export default function Layout({ children }) {
     <AuthGuard>
       <DashboardLayout>{children}</DashboardLayout>
     </AuthGuard>
+    // <DashboardLayout>{children}</DashboardLayout>
   );
 }
 

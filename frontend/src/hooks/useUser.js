@@ -27,5 +27,16 @@ export default function useUser() {
 
     return newUser;
   }
+
   return false;
+
+  //Fake data to always have a user during dev
+  // const newUser = {
+  //   name: "Hakuna Matata",
+  //   email: "h.matata@simba.com",
+  //   avatar: '/assets/images/users/avatar-1.png',
+  //   role: 'CEO'
+  // };
+  
+  // return newUser;
 }
