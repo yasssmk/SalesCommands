@@ -6,9 +6,6 @@ from .models import Account
 from rest_framework.decorators import api_view
 import json
 
-#For testing purpose, remove later and add crsf protection
-from django.views.decorators.csrf import csrf_exempt
-
 # Create your views here.
 
 @api_view(['POST'])
@@ -29,3 +26,4 @@ def create_account(request):
             return Response({'id': account.id, 'name': account.name}, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
