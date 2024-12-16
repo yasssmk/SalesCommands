@@ -7,7 +7,7 @@ import Modal from '@mui/material/Modal';
 import Stack from '@mui/material/Stack';
 
 // project-imports
-import FormCustomerAdd from './FormCustomerAdd';
+import FormAccountAdd from './FormAccountAdd';
 import MainCard from 'components/MainCard';
 import SimpleBar from 'components/third-party/SimpleBar';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
@@ -16,15 +16,15 @@ import { useGetCustomer } from 'api/customer';
 
 // ==============================|| CUSTOMER ADD / EDIT ||============================== //
 
-export default function CustomerModal({ open, modalToggler, customer }) {
+export default function AccountModal({ open, modalToggler, account }) {
   const { customersLoading: loading } = useGetCustomer();
 
-  const closeModal = () => modalToggler(true);
+  const closeModal = () => modalToggler(false);
 
-  const customerForm = useMemo(
-    () => !loading && <FormCustomerAdd customer={customer || null} closeModal={closeModal} />,
+  const accountForm = useMemo(
+    () => !loading && <FormAccountAdd account={account || null} closeModal={closeModal} />,
     // eslint-disable-next-line
-    [customer, loading]
+    [account, loading]
   );
 
   return (
@@ -62,7 +62,7 @@ export default function CustomerModal({ open, modalToggler, customer }) {
                   </Stack>
                 </Box>
               ) : (
-                customerForm
+                accountForm
               )}
             </SimpleBar>
           </MainCard>
@@ -72,4 +72,4 @@ export default function CustomerModal({ open, modalToggler, customer }) {
   );
 }
 
-CustomerModal.propTypes = { open: PropTypes.bool, modalToggler: PropTypes.func, customer: PropTypes.any };
+AccountModal.propTypes = { open: PropTypes.bool, modalToggler: PropTypes.func, account: PropTypes.any };
