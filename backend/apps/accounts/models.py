@@ -7,12 +7,12 @@ from phonenumber_field.modelfields import PhoneNumberField
 class Account(models.Model):
 
     # Basic Information
-    company_name = models.CharField(max_length=255, null=True)
+    company_name = models.CharField(max_length=255)
     industry = models.CharField(max_length=100, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
-    city = models.TextField(max_length=50, blank=True, null=True)
+    city = models.TextField(max_length=50)
     post_code = models.CharField(max_length=20, blank=True, null=True)
-    country = models.TextField(max_length=50, blank=True, null=True)
+    country = models.TextField(max_length=50)
     website = models.CharField(max_length=255, unique=False, blank=True, null=True)
     type = models.TextField(max_length=50, blank=True, null=True)
     phone_number = PhoneNumberField(blank=True, null=True)
