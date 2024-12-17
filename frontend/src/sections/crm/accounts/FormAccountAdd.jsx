@@ -170,7 +170,7 @@ export default function FormAccountAdd({ account, closeModal }) {
   };
 
   const formik = useFormik({
-    initialValues: getInitialValues(customer),
+    initialValues: getInitialValues(account),
     validationSchema: AccountSchema,
     enableReinitialize: true,
     onSubmit: async (values, { setSubmitting }) => {
@@ -178,7 +178,7 @@ export default function FormAccountAdd({ account, closeModal }) {
         let newAccount = values;
         newAccount.name = newAccount.firstName + ' ' + newAccount.lastName;
 
-        if (customer) {
+        if (account) {
           updateCustomer(newAccount.id, newAccount).then(() => {
             openSnackbar({
               open: true,
@@ -193,7 +193,7 @@ export default function FormAccountAdd({ account, closeModal }) {
             closeModal();
           });
         } else {
-          await insertCustomer(newCustomer).then(() => {
+          await insertCustomer(newAccount).then(() => {
             openSnackbar({
               open: true,
               message: 'Customer added successfully.',
@@ -517,7 +517,7 @@ export default function FormAccountAdd({ account, closeModal }) {
             <DialogActions sx={{ p: 2.5 }}>
               <Grid container justifyContent="space-between" alignItems="center">
                 <Grid item>
-                  {customer && (
+                  {account && (
                     <Tooltip title="Delete Customer" placement="top">
                       <IconButton onClick={() => setOpenAlert(true)} size="large" color="error">
                         <DeleteFilled />
@@ -531,7 +531,7 @@ export default function FormAccountAdd({ account, closeModal }) {
                       Cancel
                     </Button>
                     <Button type="submit" variant="contained" disabled={isSubmitting}>
-                      {customer ? 'Edit' : 'Add'}
+                      {account ? 'Edit' : 'Add'}
                     </Button>
                   </Stack>
                 </Grid>
