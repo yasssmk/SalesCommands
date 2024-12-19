@@ -211,35 +211,25 @@ class AccountViewSet(viewsets.ModelViewSet):
             account.save()
 
     def perform_update(self, serializer):
-            """
-            Explicitly handle parent-child relationship updates
-            """
-            with transaction.atomic():
-                # Get the current account instance
-                account = self.get_object()
+        """
+        Handle parent-child relationship updates
+        """
+        with transaction.atomic():
+            instance = self.get_object()
+            old_parent = instance.parent_company
+            
+            # Save the instance with any updated fields
+            instance = serializer.save()
+            
+            # Get the new parent from validated data
+            new_parent = serializer.validated_data.get('parent_company')
+            
+            # Handle parent company changes
+            if old_parent != new_parent:
+                if old_parent and not old_parent.direct_child_companies.exclude(id=instance.id).exists():
+                    # If old parent has no other children, update its status
+                    old_parent.save()
                 
-                # Check if parent_company is explicitly set to None in the request
-                if 'parent_company' in serializer.validated_data:
-                    new_parent = serializer.validated_data.get('parent_company')
-                    
-                    # If new_parent is None, remove the existing parent relationship
-                    if new_parent is None:
-                        # If the account has a current parent
-                        if account.parent_company:
-                            # Remove the parent relationship
-                            old_parent = account.parent_company
-                            account.parent_company = None
-                            account.save()
-                            
-                            # Check if the old parent has any remaining children
-                            if not old_parent.direct_child_companies.exists():
-                                # If no more children, update the old parent
-                                old_parent.save()
-                    
-                    # If a new parent is specified, update the relationship
-                    elif new_parent:
-                        account.parent_company = new_parent
-                        account.save()
-                
-                # Save the updated account
-                serializer.save()
+                if new_parent:
+                    # Update the new parent if needed
+                    new_parent.save()
