@@ -103,25 +103,29 @@ export default function AccountListPage() {
           />
         )
       },
+      // {
+      //   header: '#',
+      //   accessorKey: 'id',
+      //   meta: {
+      //     className: 'cell-center'
+      //   }
+      // },
       {
-        header: '#',
-        accessorKey: 'id',
-        meta: {
-          className: 'cell-center'
-        }
-      },
-      {
-        header: 'Company Info',
+        header: 'Company Name',
         accessorKey: 'company_name',
         cell: ({ row }) => (
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Avatar alt={row.original.company_name} size="sm" />
-            <Stack spacing={0}>
               <Typography variant="subtitle1">{row.original.company_name}</Typography>
-              <Typography color="text.secondary">{row.original.industry || 'N/A'}</Typography>
-            </Stack>
-          </Stack>
         )
+      },
+      {
+        header: 'Industry',
+        accessorKey: 'industry',
+        cell: ({ getValue }) => (
+          getValue() ? `${getValue().toLocaleString()}` : 'N/A'
+        ),
+        meta: {
+          className: 'cell-right'
+        }
       },
       {
         header: 'Type',
@@ -153,10 +157,24 @@ export default function AccountListPage() {
         )
       },
       {
-        header: 'Location',
+        header: 'Phone',
+        accessorKey: 'phone_number',
+        cell: ({ getValue }) => (
+          getValue() ? `${getValue().toLocaleString()}` : 'N/A'
+        )
+      },
+      {
+        header: 'City',
         accessorKey: 'city',
         cell: ({ row }) => (
-          `${row.original.city}, ${row.original.country}`
+          `${row.original.city}`
+        )
+      },
+      {
+        header: 'Country',
+        accessorKey: 'country',
+        cell: ({ row }) => (
+          `${row.original.country}`
         )
       },
       {
@@ -164,6 +182,26 @@ export default function AccountListPage() {
         accessorKey: 'potential',
         cell: ({ getValue }) => (
           getValue() ? `$${getValue().toLocaleString()}` : 'N/A'
+        ),
+        meta: {
+          className: 'cell-right'
+        }
+      },
+      {
+        header: 'Employees',
+        accessorKey: 'number_of_employees',
+        cell: ({ getValue }) => (
+          getValue() ? `$${getValue().toLocaleString()}` : 'N/A'
+        ),
+        meta: {
+          className: 'cell-right'
+        }
+      },
+      {
+        header: 'Account Owner',
+        accessorKey: 'account_owner',
+        cell: ({ row }) => (
+          `N/A`
         ),
         meta: {
           className: 'cell-right'
