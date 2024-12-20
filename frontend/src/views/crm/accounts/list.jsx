@@ -1,5 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
+import axios from 'axios';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // material-ui
 import Chip from '@mui/material/Chip';
@@ -28,16 +30,50 @@ import EditOutlined from '@ant-design/icons/EditOutlined';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
 
+
+// ==============================|| API CALL||============================== //
+
+const API_URL = 'http://localhost:8000/app/accounts';
+
+const accountService = {
+  getAccounts: async (filters = {}) => {
+    const params = new URLSearchParams(filters);
+    const response = await axios.get(`${API_URL}/accounts/?${params}`);
+    return response.data;
+  },
+  
+  deleteAccount: async (id) => {
+    const response = await axios.delete(`${API_URL}/accounts/${id}/`);
+    return response.data;
+  }
+};
+
+
+
 // ==============================|| CUSTOMER LIST ||============================== //
 
 export default function AccountListPage() {
-  const { customersLoading, customers: lists } = useGetCustomer();
-
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-
   const [accountModal, setAccountModal] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [accountDeleteId, setAccountDeleteId] = useState('');
+  const [filters, setFilters] = useState({});
+
+  // Fetch accounts with react-query
+  const { data: accounts, isLoading } = useQuery({
+    queryKey: ['accounts', filters],
+    queryFn: () => accountService.getAccounts(filters)
+  });
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: accountService.deleteAccount,
+    onSuccess: () => {
+      queryClient.invalidateQueries(['accounts']);
+      setOpen(false);
+    }
+  });
 
   const handleClose = () => {
     setOpen(!open);
@@ -75,47 +111,62 @@ export default function AccountListPage() {
         }
       },
       {
-        header: 'User Info',
-        accessorKey: 'name',
-        cell: ({ row, getValue }) => (
+        header: 'Company Info',
+        accessorKey: 'company_name',
+        cell: ({ row }) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Avatar alt="Avatar 1" size="sm" src={`/assets/images/users/avatar-${!row.original.avatar ? 1 : row.original.avatar}.png`} />
+            <Avatar alt={row.original.company_name} size="sm" />
             <Stack spacing={0}>
-              <Typography variant="subtitle1">{getValue()}</Typography>
-              <Typography color="text.secondary">{row.original.email}</Typography>
+              <Typography variant="subtitle1">{row.original.company_name}</Typography>
+              <Typography color="text.secondary">{row.original.industry || 'N/A'}</Typography>
             </Stack>
           </Stack>
         )
       },
       {
-        header: 'Contact',
-        accessorKey: 'contact',
-        cell: ({ getValue }) => <PatternFormat displayType="text" format="+1 (###) ###-####" mask="_" defaultValue={getValue()} />
+        header: 'Type',
+        accessorKey: 'type',
+        cell: ({ getValue }) => (
+          <Chip 
+            label={getValue() || 'N/A'} 
+            size="small" 
+            variant="light"
+            color={
+              getValue() === 'CLIENT' ? 'success' :
+              getValue() === 'PROSPECT' ? 'warning' :
+              getValue() === 'PARTNER' ? 'info' :
+              getValue() === 'VENDOR' ? 'secondary' : 'default'
+            }
+          />
+        )
       },
       {
-        header: 'Age',
-        accessorKey: 'age',
+        header: 'Classification',
+        accessorKey: 'classification',
+        cell: ({ getValue }) => (
+          <Chip 
+            label={getValue() || 'N/A'} 
+            size="small" 
+            variant="light"
+            color="primary"
+          />
+        )
+      },
+      {
+        header: 'Location',
+        accessorKey: 'city',
+        cell: ({ row }) => (
+          `${row.original.city}, ${row.original.country}`
+        )
+      },
+      {
+        header: 'Potential',
+        accessorKey: 'potential',
+        cell: ({ getValue }) => (
+          getValue() ? `$${getValue().toLocaleString()}` : 'N/A'
+        ),
         meta: {
           className: 'cell-right'
-        }
-      },
-      {
-        header: 'Country',
-        accessorKey: 'country'
-      },
-      {
-        header: 'Status',
-        accessorKey: 'status',
-        cell: (cell) => {
-          switch (cell.getValue()) {
-            case 3:
-              return <Chip color="error" label="Rejected" size="small" variant="light" />;
-            case 1:
-              return <Chip color="success" label="Verified" size="small" variant="light" />;
-            case 2:
-            default:
-              return <Chip color="info" label="Pending" size="small" variant="light" />;
-          }
         }
       },
       {
@@ -123,14 +174,18 @@ export default function AccountListPage() {
         meta: {
           className: 'cell-center'
         },
-        disableSortBy: true,
         cell: ({ row }) => {
-          const collapseIcon =
-            row.getCanExpand() && row.getIsExpanded() ? <PlusOutlined style={{ transform: 'rotate(45deg)' }} /> : <EyeOutlined />;
+          const collapseIcon = row.getCanExpand() ? 
+            <PlusOutlined style={{ transform: row.getIsExpanded() ? 'rotate(45deg)' : 'none' }} /> : 
+            <EyeOutlined />;
+            
           return (
             <Stack direction="row" alignItems="center" justifyContent="center" spacing={0}>
               <Tooltip title="View">
-                <IconButton color={row.getIsExpanded() ? 'error' : 'secondary'} onClick={row.getToggleExpandedHandler()}>
+                <IconButton 
+                  color={row.getIsExpanded() ? 'error' : 'secondary'} 
+                  onClick={row.getToggleExpandedHandler()}
+                >
                   {collapseIcon}
                 </IconButton>
               </Tooltip>
@@ -152,7 +207,7 @@ export default function AccountListPage() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setOpen(true);
-                    setAccountDeleteId(Number(row.original.id));
+                    setAccountDeleteId(row.original.id);
                   }}
                 >
                   <DeleteOutlined />
@@ -166,22 +221,32 @@ export default function AccountListPage() {
     []
   );
 
-  if (customersLoading) return <EmptyReactTable />;
+  if (isLoading) return <EmptyReactTable />;
 
   return (
     <>
       <AccountTable
-        {...{
-          data: lists,
-          columns,
-          modalToggler: () => {
-            setAccountModal(true);
-            setSelectedAccount(null);
-          }
+        data={accounts}
+        columns={columns}
+        modalToggler={() => {
+          setAccountModal(true);
+          setSelectedAccount(null);
         }}
+        onFilterChange={setFilters}
       />
-      <AlertCustomerDelete id={Number(accountDeleteId)} title={accountDeleteId} open={open} handleClose={handleClose} />
-      <AccountModal open={accountModal} modalToggler={setAccountModal} customer={selectedAccount} />
+      <AlertCustomerDelete 
+        id={accountDeleteId}
+        title={accountDeleteId}
+        open={open}
+        handleClose={handleClose}
+        onConfirm={() => deleteMutation.mutate(accountDeleteId)}
+      />
+      <AccountModal 
+        open={accountModal}
+        modalToggler={setAccountModal}
+        account={selectedAccount}
+        onSuccess={() => queryClient.invalidateQueries(['accounts'])}
+      />
     </>
   );
 }

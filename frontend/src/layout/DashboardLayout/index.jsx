@@ -25,6 +25,17 @@ import { MenuOrientation } from 'config';
 import useConfig from 'hooks/useConfig';
 import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
 export default function DashboardLayout({ children }) {
   const { menuMasterLoading } = useGetMenuMaster();
   const pathname = usePathname();
@@ -46,6 +57,7 @@ export default function DashboardLayout({ children }) {
   if (menuMasterLoading) return <Loader />;
 
   return (
+    <QueryClientProvider client={queryClient}>
     <Stack direction="row" width={1}>
       <Header />
       {!isHorizontal ? <Drawer /> : <HorizontalBar />}
@@ -68,6 +80,7 @@ export default function DashboardLayout({ children }) {
       </Box>
       <AddCustomer />
     </Stack>
+    </QueryClientProvider>
   );
 }
 

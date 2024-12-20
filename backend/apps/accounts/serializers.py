@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 class AccountSerializer(serializers.ModelSerializer):
+    
     # Field for write operations
     parent_company_id = serializers.PrimaryKeyRelatedField(
         source='parent_company',
