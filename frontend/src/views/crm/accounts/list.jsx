@@ -30,6 +30,8 @@ import EditOutlined from '@ant-design/icons/EditOutlined';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
 
+import ReactTable from 'views/tables/react-table/column-visibility'
+
 
 // ==============================|| API CALL||============================== //
 
