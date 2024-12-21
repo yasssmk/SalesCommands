@@ -88,6 +88,7 @@
     "react-number-format": "^5.4.0",
     "react-organizational-chart": "^2.2.1",
     "react-otp-input": "^3.1.1",
+    "react-phone-input-2": "^2.15.1",
     "react-quill": "^2.0.0",
     "react-slick": "^0.30.2",
     "react-spring": "^9.7.4",
