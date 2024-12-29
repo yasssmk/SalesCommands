@@ -82,17 +82,17 @@ export default function FormAccountAdd({ account, closeModal }) {
 
   const AccountSchema = Yup.object().shape({
     company_name: Yup.string().max(255).required('Company name is required'),
-    industry: Yup.string().max(100),
-    address: Yup.string(),
-    city: Yup.string().max(50).required('City is required'),
-    post_code: Yup.string().max(20),
-    country: Yup.string().max(50).required('Country is required'),
-    website: Yup.string().url('Must be a valid URL'),
-    type: Yup.string().max(50),
-    phone_number: Yup.string(),
-    number_of_employees: Yup.number().positive('Must be a positive number').integer('Must be an integer'),
-    potential: Yup.number().positive('Must be a positive number'),
-    classification: Yup.string().max(50)
+    // industry: Yup.string().max(100),
+    // address: Yup.string(),
+    // city: Yup.string().max(50).required('City is required'),
+    // post_code: Yup.string().max(20),
+    // country: Yup.string().max(50).required('Country is required'),
+    // website: Yup.string().url('Must be a valid URL'),
+    // type: Yup.string().max(50),
+    // phone_number: Yup.string(),
+    // number_of_employees: Yup.number().positive('Must be a positive number').integer('Must be an integer'),
+    // potential: Yup.number().positive('Must be a positive number'),
+    // classification: Yup.string().max(50)
   });
 
   const formik = useFormik({

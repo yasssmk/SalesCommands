@@ -46,22 +46,35 @@ class AccountSerializer(serializers.ModelSerializer):
             'type': child.type
         } for child in obj.direct_child_companies.all()]
 
-    def validate_phone_number(self, value):
-        if value:
-            try:
-                phone = parse(value, None)
-                if not is_valid_number(phone):
-                    raise ValidationError(_('Invalid phone number.'))
-            except Exception:
-                raise ValidationError(_('Invalid phone number format.'))
-        return value
+    # def validate_phone_number(self, value):
+    #     if value:
+    #         try:
+    #             phone = parse(value, None)
+    #             if not is_valid_number(phone):
+    #                 raise ValidationError(_('Invalid phone number.'))
+    #         except Exception:
+    #             raise ValidationError(_('Invalid phone number format.'))
+    #     return value
 
-    def validate_website(self, value):
-        if value and not value.startswith(('http://', 'https://')):
-            raise ValidationError(_('Website URL should start with "http://" or "https://".'))
-        return value
+    # def validate_website(self, value):
+    #     if value and not value.startswith(('http://', 'https://')):
+    #         raise ValidationError(_('Website URL should start with "http://" or "https://".'))
+    #     return value
 
     def validate(self, data):
+
+
+        company_name = data.get('company_name')
+        city = data.get('city')
+        country = data.get('country')
+
+        if Account.objects.filter(
+            company_name=company_name, city=city, country=country
+        ).exclude(pk=self.instance.pk if self.instance else None).exists():
+            raise serializers.ValidationError({
+                "error": _("An account with this company name, city, and country already exists.")
+            })
+
         """
         Comprehensive validation for account relationships
         """

@@ -2,7 +2,7 @@ import useSWR, { mutate } from 'swr';
 import { useMemo } from 'react';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/';
+const API_URL = 'http://localhost:8000/app/accounts';
 
 const initialState = {
   modal: false
@@ -10,9 +10,9 @@ const initialState = {
 
 export const endpoints = {
   key: 'app/accounts',
-  list: '/accounts',
+  list: '/accounts/',
   detail: '/accounts/:id',
-  create: '/accounts',
+  create: '/accounts/',
   update: '/accounts/:id',
   delete: '/accounts/:id'
 };
@@ -23,6 +23,7 @@ export function useGetAccounts(filters = {}) {
     `${API_URL}${endpoints.list}/?${params}`,
     async (url) => {
       const response = await axios.get(url);
+      console.log('XXX@ :' + response)
       return response.data;
     },
     {

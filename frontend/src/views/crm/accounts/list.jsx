@@ -22,7 +22,7 @@ import AccountModal from 'sections/crm/accounts/AccountModal';
 import AlertCustomerDelete from 'sections/apps/customer/AlertCustomerDelete';
 import AccountTable from 'sections/crm/accounts/AccountTable';
 
-import { useGetCustomer } from 'api/customer';
+import { useGetAccount, useGetAccounts, deleteAccount } from 'api/(crm)/account'
 
 // assets
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
@@ -35,20 +35,20 @@ import ReactTable from 'views/tables/react-table/column-visibility'
 
 // ==============================|| API CALL||============================== //
 
-const API_URL = 'http://localhost:8000/app/accounts';
+// const API_URL = 'http://localhost:8000/app/accounts';
 
-const accountService = {
-  getAccounts: async (filters = {}) => {
-    const params = new URLSearchParams(filters);
-    const response = await axios.get(`${API_URL}/accounts/?${params}`);
-    return response.data;
-  },
+// const accountService = {
+//   getAccounts: async (filters = {}) => {
+//     const params = new URLSearchParams(filters);
+//     const response = await axios.get(`${API_URL}/accounts/?${params}`);
+//     return response.data.data;
+//   },
   
-  deleteAccount: async (id) => {
-    const response = await axios.delete(`${API_URL}/accounts/${id}/`);
-    return response.data;
-  }
-};
+//   deleteAccount: async (id) => {
+//     const response = await axios.delete(`${API_URL}/accounts/${id}/`);
+//     return response.data;
+//   }
+// };
 
 
 
@@ -65,12 +65,16 @@ export default function AccountListPage() {
   // Fetch accounts with react-query
   const { data: accounts, isLoading } = useQuery({
     queryKey: ['accounts', filters],
-    queryFn: () => accountService.getAccounts(filters)
+    queryFn: () => useGetAccounts(filters),
   });
+
+
+  console.log('Fetched Accounts:', accounts); // Check the fetched data structure
+  console.log('Is Loading:', isLoading);      // Check if it's still loading
 
   // Delete mutation
   const deleteMutation = useMutation({
-    mutationFn: accountService.deleteAccount,
+    mutationFn: deleteAccount,
     onSuccess: () => {
       queryClient.invalidateQueries(['accounts']);
       setOpen(false);
@@ -193,7 +197,7 @@ export default function AccountListPage() {
         header: 'Employees',
         accessorKey: 'number_of_employees',
         cell: ({ getValue }) => (
-          getValue() ? `$${getValue().toLocaleString()}` : 'N/A'
+          getValue() ? `${getValue().toLocaleString()}` : 'N/A'
         ),
         meta: {
           className: 'cell-right'
