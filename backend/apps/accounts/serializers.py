@@ -65,6 +65,7 @@ class AccountSerializer(serializers.ModelSerializer):
 
 
         company_name = data.get('company_name')
+        print(company_name)
         city = data.get('city')
         country = data.get('country')
 
@@ -72,7 +73,7 @@ class AccountSerializer(serializers.ModelSerializer):
             company_name=company_name, city=city, country=country
         ).exclude(pk=self.instance.pk if self.instance else None).exists():
             raise serializers.ValidationError({
-                "error": _("An account with this company name, city, and country already exists.")
+                "error": _("This account already exists.")
             })
 
         """

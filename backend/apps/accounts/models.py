@@ -103,7 +103,7 @@ class Account(models.Model):
 
     class Meta:
         db_table = 'company_accounts'
-        unique_together = ('company_name', 'city', 'country')
+        # unique_together = ('company_name', 'city', 'country')
         verbose_name = _('Account')
         verbose_name_plural = _('Accounts')
         ordering = ['-created_at']
