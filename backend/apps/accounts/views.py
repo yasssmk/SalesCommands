@@ -108,14 +108,14 @@ class AccountAPIView(views.APIView):
                 if new_parent:
                     new_parent.save()
 
-    def hierarchy(self, request, *args, **kwargs):
-        account = self.get_object()
-        hierarchy = account.get_full_hierarchy()
-        return Response({
-            "account": self.serializer_class(account).data,
-            "parents": self.serializer_class(hierarchy['parents'], many=True).data,
-            "children": self.serializer_class(hierarchy['children'], many=True).data,
-        }, status=status.HTTP_200_OK)
+    # def hierarchy(self, request, *args, **kwargs):
+    #     account = self.get_object()
+    #     hierarchy = account.get_full_hierarchy()
+    #     return Response({
+    #         "account": self.serializer_class(account).data,
+    #         "parents": self.serializer_class(hierarchy['parents'], many=True).data,
+    #         "children": self.serializer_class(hierarchy['children'], many=True).data,
+    #     }, status=status.HTTP_200_OK)
 
     def get_object(self):
         """
@@ -124,7 +124,25 @@ class AccountAPIView(views.APIView):
         pk = self.kwargs.get('pk')
         return get_object_or_404(self.queryset.all(), pk=pk)
 
+class AccountHierarchyAPIView(views.APIView):
+    """
+    API for retrieving account hierarchy.
+    """
 
+    queryset = Account.objects.prefetch_related('direct_child_companies')
+    serializer_class = AccountSerializer
+
+    def get(self, pk=None):
+        """
+        Retrieve account hierarchy.
+        """
+        account = get_object_or_404(self.queryset.all(), pk=pk)
+        hierarchy = account.get_full_hierarchy()
+        return Response({
+            "account": self.serializer_class(account).data,
+            "parents": self.serializer_class(hierarchy['parents'], many=True).data,
+            "children": self.serializer_class(hierarchy['children'], many=True).data,
+        }, status=status.HTTP_200_OK)
 
 
 # logger = logging.getLogger(__name__)
