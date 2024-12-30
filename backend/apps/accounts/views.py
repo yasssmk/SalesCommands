@@ -61,6 +61,7 @@ class AccountAPIView(views.APIView):
         """
         Handle CREATE operation.
         """
+        print(request.data)
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             with transaction.atomic():

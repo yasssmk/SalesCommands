@@ -60,7 +60,8 @@ class Account(models.Model):
         null=True, 
         verbose_name=_('Account Type')
     )
-    phone_number = PhoneNumberField(
+    phone_number = models.CharField(
+        max_length=20,
         blank=True, 
         null=True, 
         verbose_name=_('Phone Number')
@@ -71,7 +72,7 @@ class Account(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     # Segmentation
-    number_of_employees = models.PositiveIntegerField(
+    number_of_employees = models.CharField(
         blank=True, 
         null=True, 
         verbose_name=_('Number of Employees')
