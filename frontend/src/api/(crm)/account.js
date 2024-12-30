@@ -11,10 +11,10 @@ const initialState = {
 export const endpoints = {
   key: 'app',
   list: '/accounts/',
-  detail: '/accounts/:id',
+  detail: '/accounts/:id/',
   create: '/accounts/',
-  update: '/accounts/:id',
-  delete: '/accounts/:id'
+  update: '/accounts/:id/',
+  delete: '/accounts/:id/'
 };
 
 export async function  useGetAccounts(filters = {}) {
@@ -37,6 +37,15 @@ export async function deleteAccount(id) {
   const response = await axios.delete(`${API_URL}/accounts/${id}/`);
   if (response.status === 202) {
     return response.message;
+  } else {
+    return response.error
+  }
+}
+
+export async function updateAccount(id, updatedAccount) {
+  const response = await axios.put(`${API_URL}/accounts/${id}/`, updatedAccount);
+  if (response.status === 200) {
+    return response.data;
   } else {
     return response.error
   }
@@ -97,33 +106,33 @@ export function useGetAccount(id) {
 //   }
 // }
 
-export async function updateAccount(id, updatedAccount) {
-  // Update local state optimistically
-  mutate(
-    `${API_URL}${endpoints.list}`,
-    (currentData) => {
-      const updatedAccounts = currentData.accounts.map((account) =>
-        account.id === id ? { ...account, ...updatedAccount } : account
-      );
-      return { ...currentData, accounts: updatedAccounts };
-    },
-    false
-  );
+// export async function updateAccount(id, updatedAccount) {
+//   // Update local state optimistically
+//   mutate(
+//     `${API_URL}${endpoints.list}`,
+//     (currentData) => {
+//       const updatedAccounts = currentData.accounts.map((account) =>
+//         account.id === id ? { ...account, ...updatedAccount } : account
+//       );
+//       return { ...currentData, accounts: updatedAccounts };
+//     },
+//     false
+//   );
 
-  // Make API call
-  try {
-    const response = await axios.put(`${API_URL}${endpoints.update.replace(':id', id)}`, updatedAccount);
-    // Revalidate both the list and the individual account
-    mutate(`${API_URL}${endpoints.list}`);
-    mutate(`${API_URL}${endpoints.detail.replace(':id', id)}`);
-    return response.data;
-  } catch (error) {
-    // Revalidate in case of error
-    mutate(`${API_URL}${endpoints.list}`);
-    mutate(`${API_URL}${endpoints.detail.replace(':id', id)}`);
-    throw error;
-  }
-}
+//   // Make API call
+//   try {
+//     const response = await axios.put(`${API_URL}${endpoints.update.replace(':id', id)}`, updatedAccount);
+//     // Revalidate both the list and the individual account
+//     mutate(`${API_URL}${endpoints.list}`);
+//     mutate(`${API_URL}${endpoints.detail.replace(':id', id)}`);
+//     return response.data;
+//   } catch (error) {
+//     // Revalidate in case of error
+//     mutate(`${API_URL}${endpoints.list}`);
+//     mutate(`${API_URL}${endpoints.detail.replace(':id', id)}`);
+//     throw error;
+//   }
+// }
 
 // export async function deleteAccount(id) {
 //   // Update local state optimistically
