@@ -33,6 +33,16 @@ export async function createAccount(newAccount) {
   }
 }
 
+export async function deleteAccount(id) {
+  const response = await axios.delete(`${API_URL}/accounts/${id}/`);
+  if (response.status === 202) {
+    return response.message;
+  } else {
+    return response.error
+  }
+}
+
+
 
 export function useGetAccount(id) {
   const { data, isLoading, error } = useSWR(
@@ -115,29 +125,29 @@ export async function updateAccount(id, updatedAccount) {
   }
 }
 
-export async function deleteAccount(id) {
-  // Update local state optimistically
-  mutate(
-    `${API_URL}${endpoints.list}`,
-    (currentData) => {
-      const filteredAccounts = currentData.accounts.filter((account) => account.id !== id);
-      return { ...currentData, accounts: filteredAccounts };
-    },
-    false
-  );
+// export async function deleteAccount(id) {
+//   // Update local state optimistically
+//   mutate(
+//     `${API_URL}${endpoints.list}`,
+//     (currentData) => {
+//       const filteredAccounts = currentData.accounts.filter((account) => account.id !== id);
+//       return { ...currentData, accounts: filteredAccounts };
+//     },
+//     false
+//   );
 
-  // Make API call
-  try {
-    const response = await axios.delete(`${API_URL}${endpoints.delete.replace(':id', id)}`);
-    // Revalidate the accounts list after successful deletion
-    mutate(`${API_URL}${endpoints.list}`);
-    return response.data;
-  } catch (error) {
-    // Revalidate in case of error
-    mutate(`${API_URL}${endpoints.list}`);
-    throw error;
-  }
-}
+//   // Make API call
+//   try {
+//     const response = await axios.delete(`${API_URL}${endpoints.delete.replace(':id', id)}`);
+//     // Revalidate the accounts list after successful deletion
+//     mutate(`${API_URL}${endpoints.list}`);
+//     return response.data;
+//   } catch (error) {
+//     // Revalidate in case of error
+//     mutate(`${API_URL}${endpoints.list}`);
+//     throw error;
+//   }
+// }
 
 // Modal state management
 export function useAccountModal() {

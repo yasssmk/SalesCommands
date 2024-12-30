@@ -19,7 +19,7 @@ import { IndeterminateCheckbox } from 'components/third-party/react-table';
 
 import EmptyReactTable from 'views/tables/react-table/empty';
 import AccountModal from 'sections/crm/accounts/AccountModal';
-import AlertCustomerDelete from 'sections/apps/customer/AlertCustomerDelete';
+import AlertAccountDelete from 'sections/crm/accounts/AlertAccountDelete';
 import AccountTable from 'sections/crm/accounts/AccountTable';
 
 import { useGetAccount, useGetAccounts, deleteAccount } from 'api/(crm)/account'
@@ -31,6 +31,7 @@ import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
 
 import ReactTable from 'views/tables/react-table/column-visibility'
+import { set } from 'lodash';
 
 
 // ==============================|| API CALL||============================== //
@@ -60,6 +61,7 @@ export default function AccountListPage() {
   const [open, setOpen] = useState(false);
   const [accountModal, setAccountModal] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState(null);
+  const [accountDeleteName, setAccountDeleteName] = useState('');
   const [accountDeleteId, setAccountDeleteId] = useState('');
   const [filters, setFilters] = useState({});
 
@@ -67,19 +69,6 @@ export default function AccountListPage() {
   const { data: accounts, isLoading } = useQuery({
     queryKey: ['accounts', filters],
     queryFn: () => useGetAccounts(filters),
-  });
-
-
-  // console.log('Fetched Accounts:', accounts); // Check the fetched data structure
-  console.log('Is Loading:', isLoading);      // Check if it's still loading
-
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: deleteAccount,
-    onSuccess: () => {
-      queryClient.invalidateQueries(['accounts']);
-      setOpen(false);
-    }
   });
 
   const handleClose = () => {
@@ -252,6 +241,7 @@ export default function AccountListPage() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setOpen(true);
+                    setAccountDeleteName(row.original.company_name);
                     setAccountDeleteId(row.original.id);
                   }}
                 >
@@ -279,12 +269,12 @@ export default function AccountListPage() {
         }}
         onFilterChange={setFilters}
       />
-      <AlertCustomerDelete 
+      <AlertAccountDelete 
         id={accountDeleteId}
-        title={accountDeleteId}
+        account_name={accountDeleteName}
         open={open}
         handleClose={handleClose}
-        onConfirm={() => deleteMutation.mutate(accountDeleteId)}
+        onConfirm={() => queryClient.invalidateQueries(['accounts'])}
       />
       <AccountModal 
         open={accountModal}

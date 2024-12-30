@@ -259,8 +259,14 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
                 <PhoneInput
                   country={'us'}
                   value={formik.values.phone_number}
-                  onChange={(phone) => setFieldValue('phone_number', phone)}
+                  onChange={(phone) => {
+                    const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+                    setFieldValue('phone_number',formattedPhone)}
+                  }
                   inputStyle={{ width: '100%' }}
+                  inputProps={{
+                    required: true,
+                  }}
                 />
               </Stack>
             </Grid>
