@@ -35,13 +35,14 @@ import ReactTable from 'views/tables/react-table/column-visibility'
 
 // ==============================|| API CALL||============================== //
 
-// const API_URL = 'http://localhost:8000/app/accounts';
+// const API_URL = 'http://localhost:8000/app';
 
 // const accountService = {
 //   getAccounts: async (filters = {}) => {
 //     const params = new URLSearchParams(filters);
 //     const response = await axios.get(`${API_URL}/accounts/?${params}`);
-//     return response.data.data;
+//     console.log('Fetched Accounts:', response.data);
+//     return response.data;
 //   },
   
 //   deleteAccount: async (id) => {
@@ -69,7 +70,7 @@ export default function AccountListPage() {
   });
 
 
-  console.log('Fetched Accounts:', accounts); // Check the fetched data structure
+  // console.log('Fetched Accounts:', accounts); // Check the fetched data structure
   console.log('Is Loading:', isLoading);      // Check if it's still loading
 
   // Delete mutation

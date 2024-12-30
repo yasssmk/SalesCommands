@@ -16,13 +16,13 @@ import { useGetCustomer } from 'api/customer';
 
 // ==============================|| CUSTOMER ADD / EDIT ||============================== //
 
-export default function AccountModal({ open, modalToggler, account }) {
+export default function AccountModal({ open, modalToggler, account, onSuccess }) {
   const { customersLoading: loading } = useGetCustomer();
 
   const closeModal = () => modalToggler(false);
 
   const accountForm = useMemo(
-    () => !loading && <FormAccountAdd account={account || null} closeModal={closeModal} />,
+    () => !loading && <FormAccountAdd account={account || null} closeModal={closeModal}  onSuccess={onSuccess} />,
     // eslint-disable-next-line
     [account, loading]
   );
@@ -72,4 +72,4 @@ export default function AccountModal({ open, modalToggler, account }) {
   );
 }
 
-AccountModal.propTypes = { open: PropTypes.bool, modalToggler: PropTypes.func, account: PropTypes.any };
+AccountModal.propTypes = { open: PropTypes.bool, modalToggler: PropTypes.func, account: PropTypes.any, onSuccess: PropTypes.func };

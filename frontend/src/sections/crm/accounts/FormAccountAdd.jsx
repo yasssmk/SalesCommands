@@ -72,7 +72,7 @@ const getInitialValues = (account) => {
 
 // ==============================|| ACCOUNT ADD/EDIT FORM ||============================== //
 
-export default function FormAccountAdd({ account, closeModal }) {
+export default function FormAccountAdd({ account, closeModal, onSuccess }) {
   const theme = useTheme();
   const [loading, setLoading] = useState(true);
 
@@ -84,9 +84,9 @@ export default function FormAccountAdd({ account, closeModal }) {
     company_name: Yup.string().max(255).required('Company name is required'),
     // industry: Yup.string().max(100),
     // address: Yup.string(),
-    // city: Yup.string().max(50).required('City is required'),
+    city: Yup.string().max(50).required('City is required'),
     // post_code: Yup.string().max(20),
-    // country: Yup.string().max(50).required('Country is required'),
+    country: Yup.string().max(50).required('Country is required'),
     // website: Yup.string().url('Must be a valid URL'),
     // type: Yup.string().max(50),
     // phone_number: Yup.string(),
@@ -122,13 +122,16 @@ export default function FormAccountAdd({ account, closeModal }) {
             }
           });
         }
+        
         setSubmitting(false);
         closeModal();
+        onSuccess()
       } catch (error) {
         console.error(error);
+        const errorMessage = error.response?.data?.message || error.response?.data?.error || 'An unexpected error occurred';
         openSnackbar({
           open: true,
-          message: 'Error occurred.',
+          message: errorMessage,
           variant: 'alert',
           alert: {
             color: 'error'
@@ -355,5 +358,6 @@ export default function FormAccountAdd({ account, closeModal }) {
 
 FormAccountAdd.propTypes = {
   account: PropTypes.object,
-  closeModal: PropTypes.func.isRequired
+  closeModal: PropTypes.func.isRequired,
+  onSuccess: PropTypes.func
 };

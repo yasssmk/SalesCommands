@@ -54,6 +54,7 @@ class AccountAPIView(views.APIView):
             if account_ids:
                 queryset = queryset.filter(id__in=account_ids)
             serializer = self.serializer_class(queryset, many=True)
+
             return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, *args, **kwargs):
@@ -124,25 +125,6 @@ class AccountAPIView(views.APIView):
         pk = self.kwargs.get('pk')
         return get_object_or_404(self.queryset.all(), pk=pk)
 
-class AccountHierarchyAPIView(views.APIView):
-    """
-    API for retrieving account hierarchy.
-    """
-
-    queryset = Account.objects.prefetch_related('direct_child_companies')
-    serializer_class = AccountSerializer
-
-    def get(self, pk=None):
-        """
-        Retrieve account hierarchy.
-        """
-        account = get_object_or_404(self.queryset.all(), pk=pk)
-        hierarchy = account.get_full_hierarchy()
-        return Response({
-            "account": self.serializer_class(account).data,
-            "parents": self.serializer_class(hierarchy['parents'], many=True).data,
-            "children": self.serializer_class(hierarchy['children'], many=True).data,
-        }, status=status.HTTP_200_OK)
 
 
 # logger = logging.getLogger(__name__)
