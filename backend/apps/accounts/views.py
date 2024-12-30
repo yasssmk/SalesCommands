@@ -88,7 +88,7 @@ class AccountAPIView(views.APIView):
         instance = get_object_or_404(self.queryset.all(), pk=pk)  
         with transaction.atomic():
             instance.delete()
-        return Response({"message": "Record deleted successfully."}, status=status.HTTP_200_OK)
+        return Response({"message": "Record deleted successfully."}, status=status.HTTP_202_ACCEPTED)
 
     def perform_create(self, serializer):
         parent = serializer.validated_data.get('parent_company')
