@@ -1,15 +1,15 @@
 import useSWR, { mutate } from 'swr';
 import { useMemo } from 'react';
 import axios from 'axios';
+import { BE_API_URL } from '../config';
 
-const API_URL = 'http://127.0.0.1:8000/app';
+const API_URL = BE_API_URL;
 
 const initialState = {
   modal: false
 };
 
 export const endpoints = {
-  key: 'app',
   list: '/accounts/',
   detail: '/accounts/:id/',
   create: '/accounts/',
@@ -57,112 +57,6 @@ export async function getAccountTypes() {
   return response.data;
 }
 
-
-
-// export function useGetAccount(id) {
-//   const { data, isLoading, error } = useSWR(
-//     id ? `${API_URL}${endpoints.detail.replace(':id', id)}` : null,
-//     async (url) => {
-//       const response = await axios.get(url);
-//       return response.data;
-//     },
-//     {
-//       revalidateIfStale: false,
-//       revalidateOnFocus: false,
-//       revalidateOnReconnect: false
-//     }
-//   );
-
-//   const memoizedValue = useMemo(
-//     () => ({
-//       account: data,
-//       accountLoading: isLoading,
-//       accountError: error
-//     }),
-//     [data, error, isLoading]
-//   );
-
-//   return memoizedValue;
-// }
-
-// export async function createAccount(newAccount) {
-//   // Update local state optimistically
-//   mutate(
-//     `${API_URL}${endpoints.list}`,
-//     async (currentData) => {
-//       const optimisticAccount = { ...newAccount, id: Date.now() }; // Temporary ID
-//       return {
-//         ...currentData,
-//         accounts: [...(currentData?.accounts || []), optimisticAccount]
-//       };
-//     },
-//     false
-//   );
-
-//   // Make API call
-//   try {
-//     const response = await axios.post(`${API_URL}${endpoints.create}`, newAccount);
-//     // Revalidate the accounts list after successful creation
-//     mutate(`${API_URL}${endpoints.list}`);
-//     return response.data;
-//   } catch (error) {
-//     // Revalidate in case of error to restore correct state
-//     mutate(`${API_URL}${endpoints.list}`);
-//     throw error;
-//   }
-// }
-
-// export async function updateAccount(id, updatedAccount) {
-//   // Update local state optimistically
-//   mutate(
-//     `${API_URL}${endpoints.list}`,
-//     (currentData) => {
-//       const updatedAccounts = currentData.accounts.map((account) =>
-//         account.id === id ? { ...account, ...updatedAccount } : account
-//       );
-//       return { ...currentData, accounts: updatedAccounts };
-//     },
-//     false
-//   );
-
-//   // Make API call
-//   try {
-//     const response = await axios.put(`${API_URL}${endpoints.update.replace(':id', id)}`, updatedAccount);
-//     // Revalidate both the list and the individual account
-//     mutate(`${API_URL}${endpoints.list}`);
-//     mutate(`${API_URL}${endpoints.detail.replace(':id', id)}`);
-//     return response.data;
-//   } catch (error) {
-//     // Revalidate in case of error
-//     mutate(`${API_URL}${endpoints.list}`);
-//     mutate(`${API_URL}${endpoints.detail.replace(':id', id)}`);
-//     throw error;
-//   }
-// }
-
-// export async function deleteAccount(id) {
-//   // Update local state optimistically
-//   mutate(
-//     `${API_URL}${endpoints.list}`,
-//     (currentData) => {
-//       const filteredAccounts = currentData.accounts.filter((account) => account.id !== id);
-//       return { ...currentData, accounts: filteredAccounts };
-//     },
-//     false
-//   );
-
-//   // Make API call
-//   try {
-//     const response = await axios.delete(`${API_URL}${endpoints.delete.replace(':id', id)}`);
-//     // Revalidate the accounts list after successful deletion
-//     mutate(`${API_URL}${endpoints.list}`);
-//     return response.data;
-//   } catch (error) {
-//     // Revalidate in case of error
-//     mutate(`${API_URL}${endpoints.list}`);
-//     throw error;
-//   }
-// }
 
 // Modal state management
 export function useAccountModal() {

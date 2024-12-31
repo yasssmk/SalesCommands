@@ -18,6 +18,8 @@ const nextConfig = {
     ]
   },
   env: {
+    BE_API_URL: process.env.APP_API_URL,
+
     NEXT_APP_VERSION: process.env.REACT_APP_VERSION,
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET_KEY,
     NEXTAUTH_SECRET_KEY: process.env.NEXTAUTH_SECRET_KEY,

@@ -65,7 +65,8 @@ class AccountSerializer(serializers.ModelSerializer):
 
 
         company_name = data.get('company_name')
-        print(company_name)
+        if company_name:
+            data['company_name'] = company_name.upper()
         city = data.get('city')
         country = data.get('country')
 
