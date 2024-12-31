@@ -1,6 +1,5 @@
 'use client';
 import { useMemo, useState } from 'react';
-import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // material-ui
@@ -22,7 +21,7 @@ import AccountModal from 'sections/crm/accounts/AccountModal';
 import AlertAccountDelete from 'sections/crm/accounts/AlertAccountDelete';
 import AccountTable from 'sections/crm/accounts/AccountTable';
 
-import { useGetAccount, useGetAccounts, deleteAccount } from 'api/(crm)/account'
+import { useGetAccounts } from 'api/(crm)/account'
 
 // assets
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
@@ -32,26 +31,6 @@ import PlusOutlined from '@ant-design/icons/PlusOutlined';
 
 import ReactTable from 'views/tables/react-table/column-visibility'
 import { set } from 'lodash';
-
-
-// ==============================|| API CALL||============================== //
-
-// const API_URL = 'http://localhost:8000/app';
-
-// const accountService = {
-//   getAccounts: async (filters = {}) => {
-//     const params = new URLSearchParams(filters);
-//     const response = await axios.get(`${API_URL}/accounts/?${params}`);
-//     console.log('Fetched Accounts:', response.data);
-//     return response.data;
-//   },
-  
-//   deleteAccount: async (id) => {
-//     const response = await axios.delete(`${API_URL}/accounts/${id}/`);
-//     return response.data;
-//   }
-// };
-
 
 
 // ==============================|| CUSTOMER LIST ||============================== //

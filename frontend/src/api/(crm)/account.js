@@ -14,7 +14,8 @@ export const endpoints = {
   detail: '/accounts/:id/',
   create: '/accounts/',
   update: '/accounts/:id/',
-  delete: '/accounts/:id/'
+  delete: '/accounts/:id/',
+  accountType: '/accounts/account-types/'
 };
 
 export async function  useGetAccounts(filters = {}) {
@@ -51,33 +52,38 @@ export async function updateAccount(id, updatedAccount) {
   }
 }
 
-
-
-export function useGetAccount(id) {
-  const { data, isLoading, error } = useSWR(
-    id ? `${API_URL}${endpoints.detail.replace(':id', id)}` : null,
-    async (url) => {
-      const response = await axios.get(url);
-      return response.data;
-    },
-    {
-      revalidateIfStale: false,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false
-    }
-  );
-
-  const memoizedValue = useMemo(
-    () => ({
-      account: data,
-      accountLoading: isLoading,
-      accountError: error
-    }),
-    [data, error, isLoading]
-  );
-
-  return memoizedValue;
+export async function getAccountTypes() {
+  const response = await axios.get(`${API_URL}${endpoints.accountType}`);
+  return response.data;
 }
+
+
+
+// export function useGetAccount(id) {
+//   const { data, isLoading, error } = useSWR(
+//     id ? `${API_URL}${endpoints.detail.replace(':id', id)}` : null,
+//     async (url) => {
+//       const response = await axios.get(url);
+//       return response.data;
+//     },
+//     {
+//       revalidateIfStale: false,
+//       revalidateOnFocus: false,
+//       revalidateOnReconnect: false
+//     }
+//   );
+
+//   const memoizedValue = useMemo(
+//     () => ({
+//       account: data,
+//       accountLoading: isLoading,
+//       accountError: error
+//     }),
+//     [data, error, isLoading]
+//   );
+
+//   return memoizedValue;
+// }
 
 // export async function createAccount(newAccount) {
 //   // Update local state optimistically

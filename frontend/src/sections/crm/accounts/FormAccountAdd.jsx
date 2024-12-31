@@ -13,6 +13,7 @@ import FormControl from '@mui/material/FormControl';
 import Grid from '@mui/material/Grid';
 import FormHelperText from '@mui/material/FormHelperText';
 import InputLabel from '@mui/material/InputLabel';
+import Autocomplete from '@mui/material/Autocomplete';
 import ListItemText from '@mui/material/ListItemText';
 import MenuItem from '@mui/material/MenuItem';
 import OutlinedInput from '@mui/material/OutlinedInput';
@@ -31,21 +32,26 @@ import 'react-phone-input-2/lib/material.css';
 // project imports
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 import { openSnackbar } from 'api/snackbar';
-import { createAccount, updateAccount } from 'api/(crm)/account';
+import { createAccount, updateAccount, getAccountTypes } from 'api/(crm)/account';
+import countries from 'data/countries';
 
-// Constants
-const ACCOUNT_TYPES = [
-  { value: 'CUSTOMER', label: 'Customer' },
-  { value: 'PARTNER', label: 'Partner' },
-  { value: 'SUPPLIER', label: 'Supplier' },
-  { value: 'OTHER', label: 'Other' }
-];
 
-const ACCOUNT_CLASSIFICATIONS = [
-  { value: 'ENTERPRISE', label: 'Enterprise' },
-  { value: 'MID_MARKET', label: 'Mid Market' },
-  { value: 'SMB', label: 'Small Business' }
-];
+// Constants (dynamically fetched)
+let ACCOUNT_TYPES = [];
+let ACCOUNT_CLASSIFICATIONS = [];
+
+// Fetch account types and classifications from the API
+(async () => {
+  try {
+    const { types, classifications } = await getAccountTypes();
+    ACCOUNT_TYPES = types;
+    ACCOUNT_CLASSIFICATIONS = classifications;
+  } catch (error) {
+    console.error('Error fetching account types and classifications:', error);
+
+  }
+})();
+
 
 const getInitialValues = (account) => {
   const newAccount = {
@@ -83,16 +89,16 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
   const AccountSchema = Yup.object().shape({
     company_name: Yup.string().max(255).required('Company name is required'),
     // industry: Yup.string().max(100),
-    // address: Yup.string(),
+    address: Yup.string(),
     city: Yup.string().max(50).required('City is required'),
-    // post_code: Yup.string().max(20),
-    country: Yup.string().max(50).required('Country is required'),
-    // website: Yup.string().url('Must be a valid URL'),
-    // type: Yup.string().max(50),
-    // phone_number: Yup.string(),
+    post_code: Yup.string().max(15),
+    country: Yup.string()
+      .max(50).required('Country is required')
+      .test('is-valid-country', 'Invalid country', (value) => 
+        countries.some((country) => country.label === value)
+      ),
     // number_of_employees: Yup.number().positive('Must be a positive number').integer('Must be an integer'),
     // potential: Yup.number().positive('Must be a positive number'),
-    // classification: Yup.string().max(50)
   });
 
   const formik = useFormik({
@@ -142,7 +148,7 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
     }
   });
 
-  const { errors, touched, handleSubmit, isSubmitting, getFieldProps, setFieldValue } = formik;
+  const { values, errors, touched, handleSubmit, isSubmitting, getFieldProps, setFieldValue } = formik;
 
   if (loading)
     return (
@@ -229,15 +235,23 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
             </Grid>
             <Grid item xs={12} md={4}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="country">Country*</InputLabel>
-                <TextField
-                  fullWidth
-                  id="country"
-                  placeholder="Enter Country"
-                  {...getFieldProps('country')}
-                  error={Boolean(touched.country && errors.country)}
-                  helperText={touched.country && errors.country}
-                />
+              <InputLabel htmlFor="country">Country*</InputLabel>
+              <Autocomplete
+                options={countries}
+                getOptionLabel={(option) => option.label}
+                onChange={(event, value) => setFieldValue('country', value?.label || '')}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    fullWidth
+                    placeholder="Country"
+                    error={Boolean(touched.country && errors.country)}
+                    helperText={touched.country && errors.country}
+                  />
+                )}
+                inputValue={values.country}
+                onInputChange={(event, value) => setFieldValue('country', value)}
+              />
               </Stack>
             </Grid>
             <Grid item xs={12} md={6}>

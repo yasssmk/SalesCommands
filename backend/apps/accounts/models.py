@@ -10,6 +10,7 @@ class AccountType(models.TextChoices):
     PROSPECT = 'PROSPECT', _('Prospect')
     PARTNER = 'PARTNER', _('Partner')
     VENDOR = 'VENDOR', _('Vendor')
+    OTHER = 'OTHER', _('Other')
 
 class AccountClassification(models.TextChoices):
     SMB = 'SMB', _('Small and Medium Business')
@@ -60,7 +61,7 @@ class Account(models.Model):
         null=True, 
         verbose_name=_('Account Type')
     )
-    phone_number = models.CharField(
+    phone_number = PhoneNumberField(
         max_length=20,
         blank=True, 
         null=True, 
@@ -127,3 +128,11 @@ class Account(models.Model):
             current = current.parent_company
         
         return hierarchy
+    
+    @staticmethod
+    def get_account_types():
+        return [{'value': choice[0], 'label': choice[1]} for choice in AccountType.choices]
+
+    @staticmethod
+    def get_account_classifications():
+        return [{'value': choice[0], 'label': choice[1]} for choice in AccountClassification.choices]
