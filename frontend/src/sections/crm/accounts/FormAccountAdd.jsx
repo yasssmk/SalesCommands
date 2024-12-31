@@ -34,6 +34,7 @@ import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 import { openSnackbar } from 'api/snackbar';
 import { createAccount, updateAccount, getAccountTypes } from 'api/(crm)/account';
 import countries from 'data/countries';
+import industries from 'data/industries';
 
 
 // Constants (dynamically fetched)
@@ -88,8 +89,10 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
 
   const AccountSchema = Yup.object().shape({
     company_name: Yup.string().max(255).required('Company name is required'),
-    // industry: Yup.string().max(100),
-    address: Yup.string(),
+    industry: Yup.string()
+      .max(100)
+      .test('is-valid-industry', 'Invalid industry', (value) => industries.some((industry) => industry === value)),
+    address: Yup.string().max(255),
     city: Yup.string().max(50).required('City is required'),
     post_code: Yup.string().max(15),
     country: Yup.string()
@@ -174,6 +177,8 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
                   id="company-name"
                   placeholder="Enter Company Name"
                   {...getFieldProps('company_name')}
+                  value={values.company_name.toUpperCase()} // Ensure value is uppercase
+                  onChange={(e) => setFieldValue('company_name', e.target.value.toUpperCase())} // Transform input to uppercase
                   error={Boolean(touched.company_name && errors.company_name)}
                   helperText={touched.company_name && errors.company_name}
                 />
@@ -182,13 +187,21 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
             <Grid item xs={12} md={6}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="industry">Industry</InputLabel>
-                <TextField
-                  fullWidth
-                  id="industry"
-                  placeholder="Enter Industry"
-                  {...getFieldProps('industry')}
-                  error={Boolean(touched.industry && errors.industry)}
-                  helperText={touched.industry && errors.industry}
+                <Autocomplete
+                options={industries}
+                getOptionLabel={(option) => option}
+                onChange={(event, value) => setFieldValue('industry', value)}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    fullWidth
+                    placeholder="Industry"
+                    error={Boolean(touched.industry && errors.industry)}
+                    helperText={touched.industry && errors.industry}
+                  />
+                )}
+                inputValue={values.industry}
+                onInputChange={(event, value) => setFieldValue('industry', value)}
                 />
               </Stack>
             </Grid>
