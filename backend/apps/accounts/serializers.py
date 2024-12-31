@@ -67,11 +67,13 @@ class AccountSerializer(serializers.ModelSerializer):
         company_name = data.get('company_name')
         if company_name:
             data['company_name'] = company_name.upper()
+
+
         city = data.get('city')
         country = data.get('country')
 
         if Account.objects.filter(
-            company_name=company_name, city=city, country=country
+            company_name__iexact=company_name, city__iexact=city, country__iexact=country
         ).exclude(pk=self.instance.pk if self.instance else None).exists():
             raise serializers.ValidationError({
                 "error": _("This account already exists.")
