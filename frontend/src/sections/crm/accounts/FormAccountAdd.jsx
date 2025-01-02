@@ -56,18 +56,18 @@ let ACCOUNT_CLASSIFICATIONS = [];
 
 const getInitialValues = (account) => {
   const newAccount = {
-    company_name: '',
-    industry: '',
-    address: '',
-    city: '',
-    post_code: '',
-    country: '',
-    website: '',
-    type: '',
-    phone_number: '',
-    number_of_employees: '',
-    potential: '',
-    classification: ''
+    company_name: account?.company_name || '',
+    industry: account?.industry || '',
+    address: account?.address || '',
+    city: account?.city || '',
+    post_code: account?.post_code || '',
+    country: account?.country || '',
+    website: account?.website || '',
+    phone_number: account?.phone_number || '',
+    type: account?.type || '',
+    classification: account?.classification || '',
+    number_of_employees: account?.number_of_employees || '',
+    potential: account?.potential || '',
   };
 
   if (account) {
@@ -190,6 +190,7 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
                 <Autocomplete
                 options={industries}
                 getOptionLabel={(option) => option}
+                defaultValue={account?.industry || null}
                 onChange={(event, value) => setFieldValue('industry', value)}
                 renderInput={(params) => (
                   <TextField
@@ -252,6 +253,7 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
               <Autocomplete
                 options={countries}
                 getOptionLabel={(option) => option.label}
+                defaultValue={countries.find((country) => country.label === account?.country) || null}
                 onChange={(event, value) => setFieldValue('country', value?.label || '')}
                 renderInput={(params) => (
                   <TextField
@@ -303,7 +305,8 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
                 <FormControl fullWidth>
                   <Select
                     id="account-type"
-                    {...getFieldProps('type')}
+                    value={values.type || ''}
+                    onChange={(event) => setFieldValue('type', event.target.value)}
                     error={Boolean(touched.type && errors.type)}
                   >
                     {ACCOUNT_TYPES.map((type) => (
@@ -322,16 +325,17 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
               <Stack spacing={1}>
                 <InputLabel htmlFor="classification">Classification</InputLabel>
                 <FormControl fullWidth>
-                  <Select
-                    id="classification"
-                    {...getFieldProps('classification')}
-                    error={Boolean(touched.classification && errors.classification)}
-                  >
-                    {ACCOUNT_CLASSIFICATIONS.map((classification) => (
-                      <MenuItem key={classification.value} value={classification.value}>
-                        <ListItemText primary={classification.label} />
-                      </MenuItem>
-                    ))}
+                <Select
+                  id="classification"
+                  value={values.classification || ''}
+                  onChange={(event) => setFieldValue('classification', event.target.value)}
+                  error={Boolean(touched.classification && errors.classification)}
+                >
+                  {ACCOUNT_CLASSIFICATIONS.map((classification) => (
+                    <MenuItem key={classification.value} value={classification.value}>
+                      <ListItemText primary={classification.label} />
+                    </MenuItem>
+                  ))}
                   </Select>
                 </FormControl>
                 {touched.classification && errors.classification && (

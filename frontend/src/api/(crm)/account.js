@@ -1,9 +1,8 @@
 import useSWR, { mutate } from 'swr';
 import { useMemo } from 'react';
 import axios from 'axios';
-import { BE_API_URL } from '../config';
 
-const API_URL = BE_API_URL;
+const API_URL = process.env.NEXT_APP_API_URL;
 
 const initialState = {
   modal: false
@@ -19,6 +18,7 @@ export const endpoints = {
 };
 
 export async function  useGetAccounts(filters = {}) {
+    console.log('Fetching url:', API_URL);
      const params = new URLSearchParams(filters);
      const response = await axios.get(`${API_URL}/accounts/?${params}`);
      console.log('Fetched Accounts:', response.data);
