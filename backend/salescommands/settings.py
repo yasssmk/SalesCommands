@@ -59,6 +59,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.app_middlewares.security_middleware.InputSanitizationMiddleware',	
 ]
 
 ROOT_URLCONF = 'salescommands.urls'
