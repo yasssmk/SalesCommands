@@ -92,9 +92,9 @@ class InputSanitizationMiddleware:
 
     def process_request(self, request):
         # Check headers for injection attempts
-        for header, value in request.headers.items():
-            if self.check_injection(str(value)):
-                return HttpResponseForbidden("Malicious content detected in headers")
+        # for header, value in request.headers.items():
+        #     if self.check_injection(str(value)):
+        #         return HttpResponseForbidden("Malicious content detected in headers")
 
         # Check GET parameters
         if request.GET:

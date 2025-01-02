@@ -1,8 +1,9 @@
 import useSWR, { mutate } from 'swr';
 import { useMemo } from 'react';
 import axios from 'axios';
+import { sanitizeInput, sanitizeApiCall } from 'utils/InputSanitizer';
 
-const API_URL = process.env.NEXT_APP_API_URL;
+const API_URL = process.env.NEXT_BE_API_URL;
 
 const initialState = {
   modal: false
@@ -17,48 +18,36 @@ export const endpoints = {
   accountType: '/accounts/account-types/'
 };
 
-export async function  useGetAccounts(filters = {}) {
-    console.log('Fetching url:', API_URL);
-     const params = new URLSearchParams(filters);
-     const response = await axios.get(`${API_URL}/accounts/?${params}`);
-     console.log('Fetched Accounts:', response.data);
-     return response.data;
-}
+export const useGetAccounts = sanitizeApiCall(async (filters = {}) => {
+  const sanitizedFilters = sanitizeInput(filters);
+  const params = new URLSearchParams(sanitizedFilters);
+  const response = await axios.get(`${API_URL}/accounts/?${params}`);
+  return response.data;
+});
 
-export async function createAccount(newAccount) {
+
+export const createAccount = sanitizeApiCall(async (newAccount) => {
   const response = await axios.post(`${API_URL}/accounts/`, newAccount);
-  if (response.status === 201) {
-    return response.data;
-  } else {
-    return response.error
-  }
-}
+  return response.status === 201 ? response.data : response.error;
+});
 
-export async function deleteAccount(id) {
-  const response = await axios.delete(`${API_URL}/accounts/${id}/`);
-  if (response.status === 202) {
-    return response.message;
-  } else {
-    return response.error
-  }
-}
+export const deleteAccount = sanitizeApiCall(async (id) => {
+  const sanitizedId = sanitizeInput(id);
+  const response = await axios.delete(`${API_URL}/accounts/${sanitizedId}/`);
+  return response.status === 202 ? response.message : response.error;
+});
 
-export async function updateAccount(id, updatedAccount) {
-  const response = await axios.put(`${API_URL}/accounts/${id}/`, updatedAccount);
-  if (response.status === 200) {
-    return response.data;
-  } else {
-    return response.error
-  }
-}
+export const updateAccount = sanitizeApiCall(async (id, updatedAccount) => {
+  const sanitizedId = sanitizeInput(id);
+  const response = await axios.put(`${API_URL}/accounts/${sanitizedId}/`, updatedAccount);
+  return response.status === 200 ? response.data : response.error;
+});
 
-export async function getAccountTypes() {
+export const getAccountTypes = sanitizeApiCall(async () => {
   const response = await axios.get(`${API_URL}${endpoints.accountType}`);
   return response.data;
-}
+});
 
-
-// Modal state management
 export function useAccountModal() {
   const { data, isLoading } = useSWR(endpoints.key + '/modal', () => initialState, {
     revalidateIfStale: false,
@@ -66,15 +55,13 @@ export function useAccountModal() {
     revalidateOnReconnect: false
   });
 
-  const memoizedValue = useMemo(
+  return useMemo(
     () => ({
       modalState: data,
       modalLoading: isLoading
     }),
     [data, isLoading]
   );
-
-  return memoizedValue;
 }
 
 export function handleAccountModal(modal) {

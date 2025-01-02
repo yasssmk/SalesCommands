@@ -91,7 +91,7 @@ export default function FormAccountAdd({ account, closeModal, onSuccess }) {
     company_name: Yup.string().max(255).required('Company name is required'),
     industry: Yup.string()
       .max(100)
-      .test('is-valid-industry', 'Invalid industry', (value) => industries.some((industry) => industry === value)),
+      .test('is-valid-industry', 'You must choose a valid industry', (value) => industries.some((industry) => industry === value)),
     address: Yup.string().max(255),
     city: Yup.string().max(50).required('City is required'),
     post_code: Yup.string().max(15),
