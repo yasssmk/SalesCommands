@@ -11,6 +11,7 @@ from django.http import JsonResponse
 from .models import Account
 from .serializers import AccountSerializer
 from django.shortcuts import get_object_or_404
+from django.core.cache import cache
 
 
 class AccountAPIView(views.APIView):
@@ -45,18 +46,28 @@ class AccountAPIView(views.APIView):
         """
         Handle READ ALL or READ by account ID.
         """
+        # cache_key = f"account_{pk}" if pk else "accounts_list"
+        # cached_data = cache.get(cache_key)
+
+        # if cached_data:
+        #     return Response(cached_data, status=status.HTTP_200_OK)
+
         if pk:
             instance = get_object_or_404(self.queryset.all(), pk=pk)
             serializer = self.serializer_class(instance)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            data = serializer.data
+
         else:
             account_ids = request.query_params.getlist('account_ids', None)
             queryset = self.queryset.all() 
             if account_ids:
                 queryset = queryset.filter(id__in=account_ids)
             serializer = self.serializer_class(queryset, many=True)
+            data = serializer.data
 
-            return Response(serializer.data, status=status.HTTP_200_OK)
+        # cache.set(cache_key, data, timeout=60 * 60) #1 hour
+
+        return Response(data, status=status.HTTP_200_OK)
 
     def post(self, request, *args, **kwargs):
         """

@@ -2,7 +2,6 @@ import useSWR, { mutate } from 'swr';
 import { useMemo } from 'react';
 import axios from 'axios';
 import { sanitizeInput, sanitizeApiCall } from 'utils/InputSanitizer';
-import { openSnackbar } from 'api/snackbar'
 
 
 const API_URL = process.env.NEXT_BE_API_URL;
@@ -26,7 +25,7 @@ export const useGetAccounts = sanitizeApiCall(async (filters = {}) => {
   try {
     const response = await axios.get(`${API_URL}/accounts/?${params}`);
     return response.data;
-    
+
   } catch (error) {
     throw error;
   }

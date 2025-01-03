@@ -57,10 +57,9 @@ export default function AccountListPage() {
 
   useEffect(() => {
     if (isError) {
-      console.log('Error fetching accounts:');
       openSnackbar({
         open: true,
-        message: 'Error fetching accounts',
+        message: 'Error try again later',
         anchorOrigin: { vertical: 'top', horizontal: 'right' },
         variant: 'alert',
         alert: {
