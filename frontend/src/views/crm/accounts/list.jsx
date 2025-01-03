@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // material-ui
@@ -21,6 +21,8 @@ import AccountModal from 'sections/crm/accounts/AccountModal';
 import AlertAccountDelete from 'sections/crm/accounts/AlertAccountDelete';
 import AccountTable from 'sections/crm/accounts/AccountTable';
 
+import { openSnackbar } from 'api/snackbar'
+
 import { useGetAccounts } from 'api/(crm)/account'
 
 // assets
@@ -31,6 +33,7 @@ import PlusOutlined from '@ant-design/icons/PlusOutlined';
 
 import ReactTable from 'views/tables/react-table/column-visibility'
 import { set } from 'lodash';
+import { use } from 'react';
 
 
 // ==============================|| CUSTOMER LIST ||============================== //
@@ -44,11 +47,31 @@ export default function AccountListPage() {
   const [accountDeleteId, setAccountDeleteId] = useState('');
   const [filters, setFilters] = useState({});
 
+  
+
   // Fetch accounts with react-query
-  const { data: accounts, isLoading } = useQuery({
+  const { data: accounts, isLoading, isError, error} = useQuery({
     queryKey: ['accounts', filters],
     queryFn: () => useGetAccounts(filters),
   });
+
+  useEffect(() => {
+    if (isError) {
+      console.log('Error fetching accounts:');
+      openSnackbar({
+        open: true,
+        message: 'Error fetching accounts',
+        anchorOrigin: { vertical: 'top', horizontal: 'right' },
+        variant: 'alert',
+        alert: {
+          color: 'error'
+        }
+      });
+    }
+  })
+
+  
+  const safeAccounts = accounts ?? [];
 
   const handleClose = () => {
     setOpen(!open);
@@ -240,7 +263,7 @@ export default function AccountListPage() {
   return (
     <>
       <AccountTable
-        data={accounts}
+        data={safeAccounts}
         columns={columns}
         modalToggler={() => {
           setAccountModal(true);

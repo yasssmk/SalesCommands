@@ -57,7 +57,7 @@ export const sanitizeApiCall = (apiFunction) => {
         try {
             return await apiFunction(...sanitizedArgs);
         } catch (error) {
-            console.error('API call failed:', error);
+            // console.error('API call failed:', error);
             throw error;
         }
     };
