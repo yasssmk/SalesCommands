@@ -11,7 +11,7 @@ const initialState = {
 };
 
 export const endpoints = {
-  list: '/accounts/',
+  key: '/accounts/',
   detail: '/accounts/:id/',
   create: '/accounts/',
   update: '/accounts/:id/',
@@ -23,7 +23,7 @@ export const useGetAccounts = sanitizeApiCall(async (filters = {}) => {
   const sanitizedFilters = sanitizeInput(filters);
   const params = new URLSearchParams(sanitizedFilters);
   try {
-    const response = await axios.get(`${API_URL}/accounts/?${params}`);
+    const response = await axios.get(`${API_URL}${endpoints.key}?${params}`);
     return response.data;
 
   } catch (error) {
@@ -33,19 +33,19 @@ export const useGetAccounts = sanitizeApiCall(async (filters = {}) => {
 
 
 export const createAccount = sanitizeApiCall(async (newAccount) => {
-  const response = await axios.post(`${API_URL}/accounts/`, newAccount);
+  const response = await axios.post(`${API_URL}${endpoints.create}`, newAccount);
   return response.status === 201 ? response.data : response.error;
 });
 
 export const deleteAccount = sanitizeApiCall(async (id) => {
   const sanitizedId = sanitizeInput(id);
-  const response = await axios.delete(`${API_URL}/accounts/${sanitizedId}/`);
+  const response = await axios.delete(`${API_URL}${endpoints.key}${sanitizedId}/`);
   return response.status === 202 ? response.message : response.error;
 });
 
 export const updateAccount = sanitizeApiCall(async (id, updatedAccount) => {
   const sanitizedId = sanitizeInput(id);
-  const response = await axios.put(`${API_URL}/accounts/${sanitizedId}/`, updatedAccount);
+  const response = await axios.put(`${API_URL}${endpoints.key}${sanitizedId}/`, updatedAccount);
   return response.status === 200 ? response.data : response.error;
 });
 

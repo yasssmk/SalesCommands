@@ -19,21 +19,33 @@ import DeleteFilled from '@ant-design/icons/DeleteFilled';
 // ==============================|| CUSTOMER - DELETE ||============================== //
 
 export default function AlertAccountDelete({ id, account_name, open, handleClose, onConfirm }) {
+  
   const deletehandler = async () => {
-    await deleteAccount(id).then(() => {
+    try {
+      await deleteAccount(id); // Wait for the delete operation to complete
       openSnackbar({
         open: true,
         message: 'Account deleted successfully',
         anchorOrigin: { vertical: 'top', horizontal: 'right' },
         variant: 'alert',
-
         alert: {
-          color: 'success'
-        }
+          color: 'success',
+        },
       });
-      onConfirm();
-      handleClose();
-    });
+      onConfirm(); // Callback after successful delete
+      handleClose(); // Close the dialog
+    } catch (error) {
+      // Show an error Snackbar with the backend error message or a fallback message
+      openSnackbar({
+        open: true,
+        message: 'An error occurred while deleting the account.',
+        anchorOrigin: { vertical: 'top', horizontal: 'right' },
+        variant: 'alert',
+        alert: {
+          color: 'error',
+        },
+      });
+    }
   };
 
   return (

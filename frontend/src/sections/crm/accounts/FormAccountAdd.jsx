@@ -70,10 +70,6 @@ const getInitialValues = (account) => {
     potential: account?.potential || '',
   };
 
-  if (account) {
-    return _.merge({}, newAccount, account);
-  }
-
   return newAccount;
 };
 
