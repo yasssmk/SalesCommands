@@ -105,28 +105,6 @@ export default function AccountListPage() {
 
   const columns = useMemo(
     () => [
-      // {
-      //   id: 'select',
-      //   header: ({ table }) => (
-      //     <IndeterminateCheckbox
-      //       {...{
-      //         checked: table.getIsAllRowsSelected(),
-      //         indeterminate: table.getIsSomeRowsSelected(),
-      //         onChange: table.getToggleAllRowsSelectedHandler()
-      //       }}
-      //     />
-      //   ),
-      //   cell: ({ row }) => (
-      //     <IndeterminateCheckbox
-      //       {...{
-      //         checked: row.getIsSelected(),
-      //         disabled: !row.getCanSelect(),
-      //         indeterminate: row.getIsSomeSelected(),
-      //         onChange: row.getToggleSelectedHandler()
-      //       }}
-      //     />
-      //   )
-      // },
       {
         id: 'select',
         header: ({ table }) => (
