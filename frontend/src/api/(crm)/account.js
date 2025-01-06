@@ -43,9 +43,10 @@ export const deleteAccount = sanitizeApiCall(async (id) => {
   return response.status === 202 ? response.message : response.error;
 });
 
-export const updateAccount = sanitizeApiCall(async (id, updatedAccount) => {
+export const updateAccount = sanitizeApiCall(async (id, updatedAccount, isBatchUpdate = false) => {
   const sanitizedId = sanitizeInput(id);
-  const response = await axios.put(`${API_URL}${endpoints.key}${sanitizedId}/`, updatedAccount);
+  const method = isBatchUpdate ? 'patch' : 'put';
+  const response = await axios[method](`${API_URL}${endpoints.key}${sanitizedId}/`, updatedAccount);
   return response.status === 200 ? response.data : response.error;
 });
 

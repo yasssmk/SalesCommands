@@ -52,7 +52,7 @@ const getVisibleColumns = (columns) => {
   );
 };
 
-export default function AccountTable({ data, columns, modalToggler }) {
+export default function AccountTable({ data, columns, modalToggler, hasSelectedAccount }) {
   const theme = useTheme();
   const downSM = useMediaQuery(theme.breakpoints.down('sm'));
   
@@ -124,7 +124,7 @@ export default function AccountTable({ data, columns, modalToggler }) {
             }}
           />
           <Button variant="contained" startIcon={<PlusOutlined />} onClick={modalToggler}>
-            Add Account
+            {hasSelectedAccount ? 'Modify Accounts' : 'Add Account'}
           </Button>
           {csvHeaders.length > 0 && (
             <CSVExport

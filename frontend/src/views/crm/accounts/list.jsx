@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // material-ui
@@ -20,6 +20,7 @@ import EmptyReactTable from 'views/tables/react-table/empty';
 import AccountModal from 'sections/crm/accounts/AccountModal';
 import AlertAccountDelete from 'sections/crm/accounts/AlertAccountDelete';
 import AccountTable from 'sections/crm/accounts/AccountTable';
+import { useSelectionManager } from 'utils/selectionManager';
 
 import { openSnackbar } from 'api/snackbar'
 
@@ -42,18 +43,44 @@ export default function AccountListPage() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [accountModal, setAccountModal] = useState(false);
-  const [selectedAccount, setSelectedAccount] = useState(null);
   const [accountDeleteName, setAccountDeleteName] = useState('');
   const [accountDeleteId, setAccountDeleteId] = useState('');
   const [filters, setFilters] = useState({});
 
-  
+  // Initialize the selection manager
+  const {
+    selectedItems,
+    toggleSelection,
+    toggleSelectAll,
+    isSelected,
+    getSelectedItems,
+    clearSelection,
+    setSelectedItems 
+  } = useSelectionManager();
 
   // Fetch accounts with react-query
   const { data: accounts, isLoading, isError, error} = useQuery({
     queryKey: ['accounts', filters],
     queryFn: () => useGetAccounts(filters),
   });
+
+  const selectedAccounts = useMemo(() => 
+    accounts ? getSelectedItems(accounts) : [],
+    [accounts, getSelectedItems]
+  );
+
+  const handleEditClick = useCallback((account) => {
+    clearSelection(); // Clear any existing selections
+    setSelectedItems(new Set([account.id])); // Set only the clicked account as selected
+    setAccountModal(true);
+  }, [clearSelection, setSelectedItems]);
+
+  useEffect(() => {
+    // Clear selection when accounts data changes
+    if (accounts) {
+      clearSelection();
+    }
+  }, [accounts, clearSelection]);
 
   useEffect(() => {
     if (isError) {
@@ -78,6 +105,28 @@ export default function AccountListPage() {
 
   const columns = useMemo(
     () => [
+      // {
+      //   id: 'select',
+      //   header: ({ table }) => (
+      //     <IndeterminateCheckbox
+      //       {...{
+      //         checked: table.getIsAllRowsSelected(),
+      //         indeterminate: table.getIsSomeRowsSelected(),
+      //         onChange: table.getToggleAllRowsSelectedHandler()
+      //       }}
+      //     />
+      //   ),
+      //   cell: ({ row }) => (
+      //     <IndeterminateCheckbox
+      //       {...{
+      //         checked: row.getIsSelected(),
+      //         disabled: !row.getCanSelect(),
+      //         indeterminate: row.getIsSomeSelected(),
+      //         onChange: row.getToggleSelectedHandler()
+      //       }}
+      //     />
+      //   )
+      // },
       {
         id: 'select',
         header: ({ table }) => (
@@ -85,20 +134,33 @@ export default function AccountListPage() {
             {...{
               checked: table.getIsAllRowsSelected(),
               indeterminate: table.getIsSomeRowsSelected(),
-              onChange: table.getToggleAllRowsSelectedHandler()
+              onChange: (e) => {
+                // Handle the table toggle all
+                table.getToggleAllRowsSelectedHandler()(e);
+                
+                // Update our selection manager
+                toggleSelectAll(accounts, e.target.checked);
+              },
             }}
           />
         ),
         cell: ({ row }) => (
           <IndeterminateCheckbox
             {...{
-              checked: row.getIsSelected(),
+              checked: isSelected(row.original),
               disabled: !row.getCanSelect(),
               indeterminate: row.getIsSomeSelected(),
-              onChange: row.getToggleSelectedHandler()
+              onChange: (e) => {
+                // Handle the row toggle
+                row.getToggleSelectedHandler()(e);
+                
+                // Update our selection manager
+                toggleSelection(row.original);
+
+              },
             }}
           />
-        )
+        ),
       },
       // {
       //   header: '#',
@@ -229,8 +291,7 @@ export default function AccountListPage() {
                   color="primary"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedAccount(row.original);
-                    setAccountModal(true);
+                    handleEditClick(row.original);
                   }}
                 >
                   <EditOutlined />
@@ -254,33 +315,38 @@ export default function AccountListPage() {
         }
       }
     ],
-    []
+    [accounts, toggleSelection, toggleSelectAll, isSelected]
   );
+
+  useEffect(() => {
+    clearSelection();
+  }, [filters, clearSelection]);
+
+  console.log('Selected Accs: ', selectedAccounts)
+  console.log('length: ', selectedAccounts.length)
 
   if (isLoading) return <EmptyReactTable />;
 
   return (
     <>
-      <AccountTable
+     <AccountTable
         data={safeAccounts}
         columns={columns}
-        modalToggler={() => {
-          setAccountModal(true);
-          setSelectedAccount(null);
-        }}
+        modalToggler={() => setAccountModal(true)}
         onFilterChange={setFilters}
+        hasSelectedAccount={selectedAccounts.length > 0}
       />
-      <AlertAccountDelete 
+      <AlertAccountDelete
         id={accountDeleteId}
         account_name={accountDeleteName}
         open={open}
         handleClose={handleClose}
         onConfirm={() => queryClient.invalidateQueries(['accounts'])}
       />
-      <AccountModal 
+      <AccountModal
         open={accountModal}
         modalToggler={setAccountModal}
-        account={selectedAccount}
+        accounts={selectedAccounts}
         onSuccess={() => queryClient.invalidateQueries(['accounts'])}
       />
     </>

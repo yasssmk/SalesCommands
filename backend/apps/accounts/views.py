@@ -92,6 +92,19 @@ class AccountAPIView(views.APIView):
                 self.perform_update(serializer)
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def patch(self, request, pk=None, *args, **kwargs):
+        """
+        Handle PATCH operation for partial updates.
+        """
+        instance = get_object_or_404(self.queryset.all(), pk=pk)
+        serializer = self.serializer_class(instance, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            with transaction.atomic():
+                self.perform_update(serializer)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk=None, *args, **kwargs):
         """

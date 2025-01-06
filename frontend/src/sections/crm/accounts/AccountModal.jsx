@@ -1,5 +1,5 @@
 import PropTypes from 'prop-types';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -16,15 +16,22 @@ import { useGetCustomer } from 'api/customer';
 
 // ==============================|| CUSTOMER ADD / EDIT ||============================== //
 
-export default function AccountModal({ open, modalToggler, account, onSuccess }) {
-  const { customersLoading: loading } = useGetCustomer();
+export default function AccountModal({ open, modalToggler, accounts=[], onSuccess }) {
+  // const { customersLoading: loading } = useGetCustomer();
 
-  const closeModal = () => modalToggler(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(false);
+  }, []);
+
+  const closeModal = useCallback(() => modalToggler(false), [modalToggler]);
+
 
   const accountForm = useMemo(
-    () => !loading && <FormAccountAdd account={account || null} closeModal={closeModal}  onSuccess={onSuccess} />,
+    () => !loading && <FormAccountAdd accounts={accounts} closeModal={closeModal}  onSuccess={onSuccess} />,
     // eslint-disable-next-line
-    [account, loading]
+    [accounts, loading]
   );
 
   return (
@@ -72,4 +79,4 @@ export default function AccountModal({ open, modalToggler, account, onSuccess })
   );
 }
 
-AccountModal.propTypes = { open: PropTypes.bool, modalToggler: PropTypes.func, account: PropTypes.any, onSuccess: PropTypes.func };
+AccountModal.propTypes = { open: PropTypes.bool, modalToggler: PropTypes.func, account: PropTypes.object, accounts: PropTypes.array, onSuccess: PropTypes.func };
