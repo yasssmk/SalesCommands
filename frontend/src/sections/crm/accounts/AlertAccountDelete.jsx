@@ -18,35 +18,43 @@ import DeleteFilled from '@ant-design/icons/DeleteFilled';
 
 // ==============================|| CUSTOMER - DELETE ||============================== //
 
-export default function AlertAccountDelete({ id, account_name, open, handleClose, onConfirm }) {
+export default function AlertAccountDelete({ id, account_name, selectedAccounts, open, handleClose, onConfirm }) {
   
-  const deletehandler = async () => {
+  const isBatchDelete = selectedAccounts?.length > 0;
+
+  const deleteHandler = async () => {
     try {
-      await deleteAccount(id); // Wait for the delete operation to complete
-      openSnackbar({
-        open: true,
-        message: 'Account deleted successfully',
-        anchorOrigin: { vertical: 'top', horizontal: 'right' },
-        variant: 'alert',
-        alert: {
-          color: 'success',
-        },
-      });
-      onConfirm(); // Callback after successful delete
-      handleClose(); // Close the dialog
+      if (isBatchDelete) {
+        await Promise.all(selectedAccounts.map(account => deleteAccount(account.id)));
+        openSnackbar({
+          open: true,
+          message: `${selectedAccounts.length} accounts deleted successfully`,
+          anchorOrigin: { vertical: 'top', horizontal: 'right' },
+          variant: 'alert',
+          alert: { color: 'success' }
+        });
+      } else {
+        await deleteAccount(id);
+        openSnackbar({
+          open: true,
+          message: 'Account deleted successfully',
+          anchorOrigin: { vertical: 'top', horizontal: 'right' },
+          variant: 'alert',
+          alert: { color: 'success' }
+        });
+      }
+      onConfirm();
+      handleClose();
     } catch (error) {
-      // Show an error Snackbar with the backend error message or a fallback message
       openSnackbar({
         open: true,
-        message: 'An error occurred while deleting the account.',
-        anchorOrigin: { vertical: 'top', horizontal: 'right' },
+        message: 'An error occurred while deleting.',
         variant: 'alert',
-        alert: {
-          color: 'error',
-        },
+        alert: { color: 'error' }
       });
     }
   };
+
 
   return (
     <Dialog
@@ -67,21 +75,23 @@ export default function AlertAccountDelete({ id, account_name, open, handleClose
             <Typography variant="h4" align="center">
               Are you sure you want to delete?
             </Typography>
-            <Typography align="center">
-              By deleting
-              <Typography variant="subtitle1" component="span">
-                {' '}
-                &quot;{account_name}&quot;{' '}
+            {isBatchDelete ? (
+              <Typography align="center">
+                You are about to delete {selectedAccounts.length} accounts. This action cannot be undone.
               </Typography>
-              , all task assigned to that user will also be deleted.
-            </Typography>
+            ) : (
+              <Typography align="center">
+                By deleting <Typography variant="subtitle1" component="span">&quot;{account_name}&quot;</Typography>, 
+                all related data will also be deleted.
+              </Typography>
+            )}
           </Stack>
 
           <Stack direction="row" spacing={2} sx={{ width: 1 }}>
             <Button fullWidth onClick={handleClose} color="secondary" variant="outlined">
               Cancel
             </Button>
-            <Button fullWidth color="error" variant="contained" onClick={deletehandler} autoFocus>
+            <Button fullWidth color="error" variant="contained" onClick={deleteHandler} autoFocus>
               Delete
             </Button>
           </Stack>

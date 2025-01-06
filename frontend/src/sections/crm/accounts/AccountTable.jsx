@@ -14,6 +14,9 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
+import IconButton from 'components/@extended/IconButton';
+import Tooltip from '@mui/material/Tooltip';
+import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
 
 // third-party
 import {
@@ -52,12 +55,13 @@ const getVisibleColumns = (columns) => {
   );
 };
 
-export default function AccountTable({ data, columns, modalToggler, hasSelectedAccount }) {
+export default function AccountTable({ data, columns, modalToggler, onFilterChange, hasSelectedAccount, onBatchDelete }) {
   const theme = useTheme();
   const downSM = useMediaQuery(theme.breakpoints.down('sm'));
   
   const [columnVisibility, setColumnVisibility] = useState({});
   const [globalFilter, setGlobalFilter] = useState('');
+
   
   const table = useReactTable({
     data,
@@ -126,6 +130,17 @@ export default function AccountTable({ data, columns, modalToggler, hasSelectedA
           <Button variant="contained" startIcon={<PlusOutlined />} onClick={modalToggler}>
             {hasSelectedAccount ? 'Modify Accounts' : 'Add Account'}
           </Button>
+          {hasSelectedAccount &&(
+            <Tooltip title="Delete Selected">
+              <IconButton
+                    color="error"
+                    onClick={onBatchDelete}
+
+                >
+                <DeleteOutlined />
+              </IconButton>
+            </Tooltip>
+          )}
           {csvHeaders.length > 0 && (
             <CSVExport
               data={csvData}

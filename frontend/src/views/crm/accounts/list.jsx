@@ -103,6 +103,18 @@ export default function AccountListPage() {
     setOpen(!open);
   };
 
+  const handleDelete = (singleAccount = null) => {
+    if (singleAccount) {
+      setAccountDeleteName(singleAccount.company_name);
+      setAccountDeleteId(singleAccount.id);
+      clearSelection();
+    } else {
+      setAccountDeleteName('');
+      setAccountDeleteId('');
+    }
+    setOpen(true);
+  };
+
   const columns = useMemo(
     () => [
       {
@@ -300,33 +312,33 @@ export default function AccountListPage() {
     clearSelection();
   }, [filters, clearSelection]);
 
-  console.log('Selected Accs: ', selectedAccounts)
-  console.log('length: ', selectedAccounts.length)
 
   if (isLoading) return <EmptyReactTable />;
 
   return (
     <>
-     <AccountTable
-        data={safeAccounts}
-        columns={columns}
-        modalToggler={() => setAccountModal(true)}
-        onFilterChange={setFilters}
-        hasSelectedAccount={selectedAccounts.length > 0}
-      />
-      <AlertAccountDelete
-        id={accountDeleteId}
-        account_name={accountDeleteName}
-        open={open}
-        handleClose={handleClose}
-        onConfirm={() => queryClient.invalidateQueries(['accounts'])}
-      />
-      <AccountModal
-        open={accountModal}
-        modalToggler={setAccountModal}
-        accounts={selectedAccounts}
-        onSuccess={() => queryClient.invalidateQueries(['accounts'])}
-      />
-    </>
-  );
+    <AccountTable
+       data={safeAccounts}
+       columns={columns}
+       modalToggler={() => setAccountModal(true)}
+       onFilterChange={setFilters}
+       hasSelectedAccount={selectedAccounts.length > 0}
+       onBatchDelete={() => handleDelete()}
+     />
+     <AlertAccountDelete
+       id={accountDeleteId}
+       account_name={accountDeleteName}
+       selectedAccounts={accountDeleteId ? [] : selectedAccounts}
+       open={open}
+       handleClose={handleClose}
+       onConfirm={() => queryClient.invalidateQueries(['accounts'])}
+     />
+     <AccountModal
+       open={accountModal}
+       modalToggler={setAccountModal}
+       accounts={selectedAccounts}
+       onSuccess={() => queryClient.invalidateQueries(['accounts'])}
+     />
+   </>
+ );
 }
