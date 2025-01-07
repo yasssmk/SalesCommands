@@ -23,7 +23,7 @@ const CRM = {
       id: 'accounts',
       title: <FormattedMessage id="accounts" />,
       type: 'item',
-      url: '/crm/accounts',
+      url: '/crm/accounts/table',
       icon: icons.DatabaseOutlined
     }
   ]

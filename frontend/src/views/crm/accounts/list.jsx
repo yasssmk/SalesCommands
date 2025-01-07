@@ -1,6 +1,7 @@
 'use client';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link'
 
 // material-ui
 import Chip from '@mui/material/Chip';
@@ -163,7 +164,24 @@ export default function AccountListPage() {
         header: 'Company Name',
         accessorKey: 'company_name',
         cell: ({ row }) => (
-              <Typography variant="subtitle1">{row.original.company_name}</Typography>
+          <Link 
+            // href={`/crm/views/${row.original.id}`}
+            href="/crm/accounts/views/basic"
+            style={{ textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Typography 
+              variant="subtitle1" 
+              sx={{ 
+                color: 'primary.main',
+                '&:hover': {
+                  textDecoration: 'underline'
+                }
+              }}
+            >
+              {row.original.company_name}
+            </Typography>
+          </Link>
         )
       },
       {
@@ -262,9 +280,11 @@ export default function AccountListPage() {
           className: 'cell-center'
         },
         cell: ({ row }) => {
-          const collapseIcon = row.getCanExpand() ? 
-            <PlusOutlined style={{ transform: row.getIsExpanded() ? 'rotate(45deg)' : 'none' }} /> : 
-            <EyeOutlined />;
+          // const collapseIcon = row.getCanExpand() ? 
+          //   <PlusOutlined style={{ transform: row.getIsExpanded() ? 'rotate(45deg)' : 'none' }} /> : 
+          //   <EyeOutlined />;
+          const collapseIcon =
+            row.getCanExpand() && row.getIsExpanded() ? <PlusOutlined style={{ transform: 'rotate(45deg)' }} /> : <EyeOutlined />;
             
           return (
             <Stack direction="row" alignItems="center" justifyContent="center" spacing={0}>

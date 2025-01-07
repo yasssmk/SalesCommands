@@ -39,6 +39,8 @@ import {
   SelectColumnVisibility
 } from 'components/third-party/react-table';
 
+import ExpandingAccountDetail from './ExpandingAccountDetail';
+
 // assets
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
 
@@ -182,7 +184,7 @@ export default function AccountTable({ data, columns, modalToggler, onFilterChan
                   {row.getIsExpanded() && (
                     <TableRow sx={{ bgcolor: backColor, '&:hover': { bgcolor: `${backColor} !important` } }}>
                       <TableCell colSpan={row.getVisibleCells().length}>
-                        <ExpandingUserDetail data={row.original} />
+                        <ExpandingAccountDetail data={row.original} />
                       </TableCell>
                     </TableRow>
                   )}
