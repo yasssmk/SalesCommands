@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 from pathlib import Path
 import environ
 from django.core.cache.backends.filebased import FileBasedCache
+from datetime import timedelta
 
 env = environ.Env()
 environ.Env.read_env()
@@ -43,9 +44,13 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt',
     'corsheaders',
+    'core',
     'apps.accounts',
-    'clients',
+    'clients.end_users',
+    'product_admin',
     "phonenumber_field",
     'django_filters',
 ]
@@ -59,7 +64,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'apps.app_middlewares.security_middleware.InputSanitizationMiddleware',	
+    'apps.app_middlewares.security_middleware.InputSanitizationMiddleware',
+    'core.middleware.LogRequestHeadersMiddleware'	
 ]
 
 ROOT_URLCONF = 'salescommands.urls'
@@ -128,6 +134,51 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+
+AUTH_USER_MODEL = 'product_admin.ProductAdmin'
+
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_EMAIL_VERIFICATION = 'optional'
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',  # Default backend
+]
+
+REST_FRAMEWORK = {
+    # 'DEFAULT_PERMISSION_CLASSES': [
+    #     'rest_framework.permissions.IsAuthenticated',
+    # ],	
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
+
+
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    
+    'ALGORITHM': 'HS256',                           # Secure algorithm for token signing
+    'SIGNING_KEY': env('JWT_SECRET_KEY'),           # Securely store and load the secret key
+    'VERIFYING_KEY': None,                          # Use if asymmetric keys are needed (e.g., RS256)
+    'AUDIENCE': None,                               # Set if you need to specify a JWT audience
+    'ISSUER': None,                                 # Set if you need to specify a JWT issuer
+
+    'AUTH_HEADER_TYPES': ('Bearer',),              # Standard Bearer token format
+    'USER_ID_FIELD': 'id',                         # Field used for identifying users in tokens
+    'USER_ID_CLAIM': 'user_id',                    # Claim name for the user ID
+
+    'AUTH_COOKIE': 'access_token',                 # Cookie name for access token
+    'AUTH_COOKIE_SECURE': True,                    # Secure cookies (only sent over HTTPS)
+    'AUTH_COOKIE_HTTP_ONLY': True,                 # Prevent JavaScript access
+    'AUTH_COOKIE_SAMESITE': 'Lax',                 # Protect against CSRF attacks
+}
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/

@@ -18,8 +18,11 @@ from django.contrib import admin
 from django.urls import path, include
 
 app_key = "app/"
+client_key = "client/"
+product_admin_key = "product_admin/"
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path(app_key+'accounts/', include('apps.accounts.urls'))
+    path(app_key+'accounts/', include('apps.accounts.urls')),
+    path(product_admin_key, include('product_admin.urls')),
 ]
