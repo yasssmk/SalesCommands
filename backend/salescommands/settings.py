@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'core',
     'apps.accounts',
@@ -161,14 +162,15 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': False,
-    'BLACKLIST_AFTER_ROTATION': False,
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
     
-    'ALGORITHM': 'HS256',                           # Secure algorithm for token signing
-    'SIGNING_KEY': env('JWT_SECRET_KEY'),           # Securely store and load the secret key
-    'VERIFYING_KEY': None,                          # Use if asymmetric keys are needed (e.g., RS256)
-    'AUDIENCE': None,                               # Set if you need to specify a JWT audience
-    'ISSUER': None,                                 # Set if you need to specify a JWT issuer
+    'ALGORITHM': 'HS256',                                       # Secure algorithm for token signing
+    'SIGNING_KEY_ADMIN': env('JWT_ADMIN_SECRET_KEY'),           # Securely store and load the secret key
+    'SIGNING_KEY_USER': env('JWT_USER_SECRET_KEY'),
+    'VERIFYING_KEY': None,                                      # Use if asymmetric keys are needed (e.g., RS256)
+    'AUDIENCE': None,                                           # Set if you need to specify a JWT audience
+    'ISSUER': None,                                             # Set if you need to specify a JWT issuer
 
     'AUTH_HEADER_TYPES': ('Bearer',),              # Standard Bearer token format
     'USER_ID_FIELD': 'id',                         # Field used for identifying users in tokens
@@ -179,6 +181,13 @@ SIMPLE_JWT = {
     'AUTH_COOKIE_HTTP_ONLY': True,                 # Prevent JavaScript access
     'AUTH_COOKIE_SAMESITE': 'Lax',                 # Protect against CSRF attacks
 }
+
+ROLE_REFRESH_LIFETIMES = {
+    'product_admin': timedelta(hours=2),
+    'user_admin': timedelta(days=1),
+    'end_user': timedelta(days=7),
+}
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/

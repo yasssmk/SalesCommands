@@ -42,21 +42,21 @@ class ProductAdmin(BaseModel, AbstractBaseUser, PermissionsMixin):
         ordering = ['-created_at']
 
 
-    # Avoid conflicts by setting unique related_name for groups and permissions
-    groups = models.ManyToManyField(
-        'auth.Group',
-        related_name='product_admin_set',
-        blank=True,
-        help_text=_('The groups this user belongs to. A user will get all permissions granted to each of their groups.'),
-        verbose_name=_('groups'),
-    )
-    user_permissions = models.ManyToManyField(
-        'auth.Permission',
-        related_name='product_admin_set',
-        blank=True,
-        help_text=_('Specific permissions for this user.'),
-        verbose_name=_('user permissions'),
-    )
+    # # Avoid conflicts by setting unique related_name for groups and permissions
+    # groups = models.ManyToManyField(
+    #     'auth.Group',
+    #     related_name='product_admin_set',
+    #     blank=True,
+    #     help_text=_('The groups this user belongs to. A user will get all permissions granted to each of their groups.'),
+    #     verbose_name=_('groups'),
+    # )
+    # user_permissions = models.ManyToManyField(
+    #     'auth.Permission',
+    #     related_name='product_admin_set',
+    #     blank=True,
+    #     help_text=_('Specific permissions for this user.'),
+    #     verbose_name=_('user permissions'),
+    # )
 
     objects = ProductAdminManager()
 
