@@ -51,6 +51,12 @@ class JWTHelpers:
         """Validate and refresh tokens."""
         try:
             refresh = RefreshToken(refresh_token)
+
+            if refresh.has_expired():
+                # Clear cookies if refresh token is expired
+                JWTHelpers.clear_cookie(response, 'access_token')
+                JWTHelpers.clear_cookie(response, 'refresh_token')
+                raise AuthenticationFailed("Token has expired, please login again")
             
             # Get role and set correct signing key
             role = refresh.get('role', 'default')
@@ -86,10 +92,5 @@ class JWTHelpers:
         except Exception as e:
             raise AuthenticationFailed(f"Token refresh failed: {str(e)}")
         
-        
-# Usage Example
-# Set cookies on login response
-# from django.http import JsonResponse
-# response = JsonResponse({"message": "Login successful"})
-# JWTHelpers.set_cookie(response, 'access_token', 'your_access_token_here', max_age=3600)
-# JWTHelpers.set_cookie(response, 'refresh_token', 'your_refresh_token_here', max_age=86400)
+
+

@@ -64,7 +64,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'apps.app_middlewares.security_middleware.InputSanitizationMiddleware',
+    'core.security_middleware.InputSanitizationMiddleware',
     'core.middleware.LogRequestHeadersMiddleware'	
 ]
 
