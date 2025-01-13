@@ -46,7 +46,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
-    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'core',
     'apps.accounts',
@@ -160,10 +159,8 @@ REST_FRAMEWORK = {
 
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=10),
+    'REFRESH_TOKEN_LIFETIME': timedelta(minutes=10),
     
     'ALGORITHM': 'HS256',                                       # Secure algorithm for token signing
     'SIGNING_KEY_ADMIN': env('JWT_ADMIN_SECRET_KEY'),           # Securely store and load the secret key
@@ -180,10 +177,12 @@ SIMPLE_JWT = {
     'AUTH_COOKIE_SECURE': True,                    # Secure cookies (only sent over HTTPS)
     'AUTH_COOKIE_HTTP_ONLY': True,                 # Prevent JavaScript access
     'AUTH_COOKIE_SAMESITE': 'Lax',                 # Protect against CSRF attacks
+
+    'TOKEN_VERIFR_CLASS': 'core.jwt_helpers.CustomTokenVerifier',  # Custom token verifier
 }
 
 ROLE_REFRESH_LIFETIMES = {
-    'product_admin': timedelta(hours=2),
+    'product_admin': timedelta(minutes=10),
     'user_admin': timedelta(days=1),
     'end_user': timedelta(days=7),
 }

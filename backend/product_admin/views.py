@@ -9,7 +9,7 @@ from .serializers import ProductAdminSerializer
 from datetime import timedelta
 from django.conf import settings
 
-refresh_token_lifetime_product_admin = timedelta(days=1)
+
 
 auth_service = AuthService(
     user_model=ProductAdmin,
@@ -23,7 +23,7 @@ class RegisterProductAdminView(APIView):
 
     def post(self, request):
         try:
-            user = auth_service.register_user(ProductAdminSerializer, request.data)
+            auth_service.register_user(ProductAdminSerializer, request.data)
             return Response({"message": "Product admin created successfully"}, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -46,7 +46,7 @@ class LogoutProductAdminView(APIView):
     def post(self, request):
         try:
             response = Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
-            JWTHelpers.logout(response)
+            auth_service.logout_user(request, response)
             return response
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
