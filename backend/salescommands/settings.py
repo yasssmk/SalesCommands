@@ -49,7 +49,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'core',
     'apps.accounts',
-    'clients.end_users',
+    'end_users',
     'product_admin',
     "phonenumber_field",
     'django_filters',
