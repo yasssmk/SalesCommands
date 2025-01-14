@@ -4,7 +4,6 @@ import uuid
 
 class BaseModel(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    last_time_connected = models.DateTimeField(null=True, blank=True, help_text="Last time the entity was accessed or connected.")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

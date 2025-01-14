@@ -13,6 +13,7 @@ from django.conf import settings
 
 auth_service = AuthService(
     user_model=ProductAdmin,
+    serializer_class=ProductAdminSerializer,
     role='product_admin',
     refresh_lifetime=settings.ROLE_REFRESH_LIFETIMES['product_admin']
 )
@@ -23,7 +24,7 @@ class RegisterProductAdminView(APIView):
 
     def post(self, request):
         try:
-            auth_service.register_user(ProductAdminSerializer, request.data)
+            auth_service.register_user(request.data)
             return Response({"message": "Product admin created successfully"}, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -59,3 +60,19 @@ class RefreshTokenView(APIView):
             return response
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
+
+# class UpdatePasswordView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def post(self, request):
+#         try:
+#             response = Response(status=status.HTTP_200_OK)
+#             result = auth_service.update_password(request, response)
+#             response.data = result
+#             return response
+            
+#         except Exception as e:
+#             return Response(
+#                 {"error": "An unexpected error occurred"}, 
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
