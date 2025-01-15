@@ -76,3 +76,84 @@ class RefreshTokenView(APIView):
 #                 {"error": "An unexpected error occurred"}, 
 #                 status=status.HTTP_400_BAD_REQUEST
 #             )
+
+from end_users.models import ClientAccount, UserRole
+from end_users.serializers import ClientAccountSerializer
+from end_users.views import RegisterUserView
+from rest_framework.test import APIRequestFactory
+
+class CreateClientView(APIView):
+    """
+    View to create a new client account and its default admin user.
+    Only accessible by product_admin users.
+    """
+
+    def post(self, request):
+        # Check if the role in the JWT is 'product_admin'
+        # auth_user_role = request.auth.get('role')  # Extract the role from the JWT
+        # if auth_user_role != 'product_admin':
+        #     return Response(
+        #         {"error": "You do not have permission to create a client."},
+        #         status=status.HTTP_403_FORBIDDEN,
+        #     )
+
+        # Extract data for client and admin from the request
+        client_data = request.data.get('client')
+        admin_data = request.data.get('admin')
+
+        if not client_data or not admin_data:
+            return Response(
+                {"error": "Both client and admin data are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Serialize and create the client account
+        client_serializer = ClientAccountSerializer(data=client_data)
+        if not client_serializer.is_valid():
+            return Response(
+                {"error": "Invalid client data.", "details": client_serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        client = client_serializer.save()  # Save the client account
+        print(f"BOOM ID du yenyen {client.id}")
+
+        # Automatically assign the new client's UUID to the admin
+        admin_data['client_account'] = client.id
+
+        # Retrieve the Admin role for the new client (created via signals)
+        try:
+            admin_role = UserRole.objects.get(client_account=client, name="Admin")
+            admin_data['role'] = admin_role.id
+        except UserRole.DoesNotExist:
+            client.delete()  # Rollback the client creation
+            return Response(
+                {"error": "Admin role not found for the new client."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Call RegisterUserView directly to create the admin user
+        factory = APIRequestFactory()
+        admin_request = factory.post(
+            '/client/register/',
+            data=admin_data,
+            format='json',
+            HTTP_AUTHORIZATION=request.headers.get('Authorization'),
+        )
+        register_user_view = RegisterUserView.as_view()
+
+        response = register_user_view(admin_request)
+        if response.status_code != 201:
+            client.delete()  # Rollback the client creation if admin creation fails
+            return Response(
+                {"error": "Failed to create admin user.", "details": response.data},
+                status=response.status_code,
+            )
+
+        return Response(
+            {
+                "message": "Client and admin user created successfully.",
+                "client": client_serializer.data,
+            },
+            status=status.HTTP_201_CREATED,
+        )

@@ -159,8 +159,8 @@ REST_FRAMEWORK = {
 
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=10),
-    'REFRESH_TOKEN_LIFETIME': timedelta(minutes=10),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     
     'ALGORITHM': 'HS256',                                       # Secure algorithm for token signing
     'SIGNING_KEY_ADMIN': env('JWT_ADMIN_SECRET_KEY'),           # Securely store and load the secret key
@@ -182,7 +182,7 @@ SIMPLE_JWT = {
 }
 
 ROLE_REFRESH_LIFETIMES = {
-    'product_admin': timedelta(minutes=10),
+    'product_admin': timedelta(days=1),
     'user_admin': timedelta(days=1),
     'end_user': timedelta(days=7),
 }

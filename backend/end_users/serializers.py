@@ -36,19 +36,24 @@ class TeamSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
 class UserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=False, min_length=8)  # Optional for updates
+    password = serializers.CharField(write_only=True, required=False, min_length=8)  
     organization = serializers.PrimaryKeyRelatedField(read_only=True)
+    role_name = serializers.ReadOnlyField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'password', 'first_name', 'last_name', 'is_active', 'is_staff',
-            'client_account', 'role', 'organization', 'team', 'last_time_connected', 'created_at', 'updated_at'
+            'client_account', 'role', 'role_name', 'organization', 'team', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'last_time_connected', 'organization']
+        read_only_fields = ['created_at', 'updated_at', 'role_name' 'organization']
+    
 
     def create(self, validated_data):
-        # Let the model handle setting the organization based on the team
+        # Ensure role_name is set when creating a user
+        role = validated_data.get('role')
+        if role:
+            validated_data['role_name'] = role.name
         return User.objects.create_user(**validated_data)
 
     # def update(self, instance, validated_data):

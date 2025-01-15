@@ -19,7 +19,7 @@ class RegisterUserView(APIView):
     """
     View to register a new user with additional fields.
     """
-    permission_classes = [IsAuthenticated]
+    # permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user_data = request.data
@@ -57,7 +57,7 @@ class RegisterUserView(APIView):
 
         # Register the user
         try:
-            user = auth_service.register_user(UserSerializer, user_data)
+            user = auth_service.register_user(user_data)
             user_serializer = UserSerializer(user)
             return Response(
                 {"message": "User registered successfully.", "user": user_serializer.data},

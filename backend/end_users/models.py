@@ -116,6 +116,12 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         related_name='users',
         help_text=_("Role assigned to the user."),
     )
+    role_name = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        help_text=_("The name of the role assigned to the user."),
+    )
     organization = models.ForeignKey(
         Organization,
         on_delete=models.SET_NULL,
@@ -167,4 +173,7 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         # Automatically set organization based on the team
         if self.team:
             self.organization = self.team.organization
+        # Update role_name whenever role is set
+        if self.role:
+            self.role_name = self.role.name
         super().save(*args, **kwargs)
