@@ -135,8 +135,6 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-AUTH_USER_MODEL = 'product_admin.ProductAdmin'
-
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_AUTHENTICATION_METHOD = 'email'
@@ -148,11 +146,11 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 REST_FRAMEWORK = {
-    # 'DEFAULT_PERMISSION_CLASSES': [
-    #     'rest_framework.permissions.IsAuthenticated',
-    # ],	
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'core.jwt_helpers.CustomJWTAuthentication',
+    ),
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',
     ),
 }
 
@@ -161,30 +159,27 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    
-    'ALGORITHM': 'HS256',                                       # Secure algorithm for token signing
-    'SIGNING_KEY_ADMIN': env('JWT_ADMIN_SECRET_KEY'),           # Securely store and load the secret key
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY_ADMIN': env('JWT_ADMIN_SECRET_KEY'),
     'SIGNING_KEY_USER': env('JWT_USER_SECRET_KEY'),
-    'VERIFYING_KEY': None,                                      # Use if asymmetric keys are needed (e.g., RS256)
-    'AUDIENCE': None,                                           # Set if you need to specify a JWT audience
-    'ISSUER': None,                                             # Set if you need to specify a JWT issuer
-
-    'AUTH_HEADER_TYPES': ('Bearer',),              # Standard Bearer token format
-    'USER_ID_FIELD': 'id',                         # Field used for identifying users in tokens
-    'USER_ID_CLAIM': 'user_id',                    # Claim name for the user ID
-
-    'AUTH_COOKIE': 'access_token',                 # Cookie name for access token
-    'AUTH_COOKIE_SECURE': True,                    # Secure cookies (only sent over HTTPS)
-    'AUTH_COOKIE_HTTP_ONLY': True,                 # Prevent JavaScript access
-    'AUTH_COOKIE_SAMESITE': 'Lax',                 # Protect against CSRF attacks
-
-    'TOKEN_VERIFR_CLASS': 'core.jwt_helpers.CustomTokenVerifier',  # Custom token verifier
+    'VERIFYING_KEY': None,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    'JTI_CLAIM': 'jti',
+    'TOKEN_USER_CLASS': 'core.jwt_helpers.CustomJWTAuthentication',
+    'AUTH_COOKIE': 'access_token',
+    'AUTH_COOKIE_SECURE': True,
+    'AUTH_COOKIE_HTTP_ONLY': True,
+    'AUTH_COOKIE_SAMESITE': 'Lax',
 }
 
+# Add or update the following settings
 ROLE_REFRESH_LIFETIMES = {
     'product_admin': timedelta(days=1),
     'user_admin': timedelta(days=1),
-    'end_user': timedelta(days=7),
+    'end_users': timedelta(days=7),
 }
 
 
