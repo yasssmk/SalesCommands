@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from phonenumber_field.modelfields import PhoneNumberField
+from core.models import BaseModel, ContactDetailsMixin
 from django.utils.translation import gettext_lazy as _
 
 
@@ -18,90 +19,102 @@ class AccountClassification(models.TextChoices):
     STARTUP = 'STARTUP', _('Startup')
     NONPROFIT = 'NONPROFIT', _('Non-Profit')
 
-class Account(models.Model):
-    # Basic Information
-    company_name = models.CharField(
-        max_length=255, 
-        verbose_name=_('Company Name')
-    )
-    industry = models.CharField(
-        max_length=100, 
-        blank=True, 
-        null=True, 
-        verbose_name=_('Industry')
-    )
-    address = models.TextField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Address')
-    )
-    city = models.CharField(
-        max_length=50, 
-        verbose_name=_('City')
-    )
-    post_code = models.CharField(
-        max_length=20, 
-        blank=True, 
-        null=True, 
-        verbose_name=_('Post Code')
-    )
-    country = models.CharField(
-        max_length=50, 
-        verbose_name=_('Country')
-    )
-    website = models.URLField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Website')
-    )
-    type = models.CharField(
-        max_length=50, 
-        choices=AccountType.choices, 
-        blank=True, 
-        null=True, 
-        verbose_name=_('Account Type')
-    )
-    phone_number = PhoneNumberField(
-        max_length=20,
-        blank=True, 
-        null=True, 
-        verbose_name=_('Phone Number')
-    )
+class Account(BaseModel, ContactDetailsMixin):
+
+    company_name = models.CharField(max_length=255, verbose_name=_('Company Name'))
+    industry = models.CharField(max_length=100, blank=True, null=True, verbose_name=_('Industry'))
+
+    type = models.CharField(max_length=50, choices=AccountType.choices, blank=True, null=True, verbose_name=_('Account Type'))
+    classification = models.CharField(max_length=50, choices=AccountClassification.choices, blank=True, null=True, verbose_name=_('Account Classification'))
     
-    # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    number_of_employees = models.CharField(blank=True, null=True, verbose_name=_('Number of Employees'))
+    potential = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, verbose_name=_('Potential Revenue'))
+    
+    parent_company = models.ForeignKey('self', on_delete=models.SET_NULL, related_name='direct_child_companies', blank=True, null=True, verbose_name=_('Parent Company'))
 
-    # Segmentation
-    number_of_employees = models.CharField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Number of Employees')
-    )
-    potential = models.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        blank=True,
-        null=True,
-        verbose_name=_('Potential Revenue')
-    )
-    classification = models.CharField(
-        max_length=50,
-        choices=AccountClassification.choices,
-        blank=True,
-        null=True,
-        verbose_name=_('Account Classification')
-    )
+    # Basic Information
+    # company_name = models.CharField(
+    #     max_length=255, 
+    #     verbose_name=_('Company Name')
+    # )
+    # industry = models.CharField(
+    #     max_length=100, 
+    #     blank=True, 
+    #     null=True, 
+    #     verbose_name=_('Industry')
+    # )
+    # address = models.TextField(
+    #     blank=True, 
+    #     null=True, 
+    #     verbose_name=_('Address')
+    # )
+    # city = models.CharField(
+    #     max_length=50, 
+    #     verbose_name=_('City')
+    # )
+    # post_code = models.CharField(
+    #     max_length=20, 
+    #     blank=True, 
+    #     null=True, 
+    #     verbose_name=_('Post Code')
+    # )
+    # country = models.CharField(
+    #     max_length=50, 
+    #     verbose_name=_('Country')
+    # )
+    # website = models.URLField(
+    #     blank=True, 
+    #     null=True, 
+    #     verbose_name=_('Website')
+    # )
+    # type = models.CharField(
+    #     max_length=50, 
+    #     choices=AccountType.choices, 
+    #     blank=True, 
+    #     null=True, 
+    #     verbose_name=_('Account Type')
+    # )
+    # phone_number = PhoneNumberField(
+    #     max_length=20,
+    #     blank=True, 
+    #     null=True, 
+    #     verbose_name=_('Phone Number')
+    # )
+    
+    # # Timestamps
+    # created_at = models.DateTimeField(auto_now_add=True)
+    # updated_at = models.DateTimeField(auto_now=True)
 
-    # Parent-Child Relationship
-    parent_company = models.ForeignKey(
-        'self',
-        on_delete=models.SET_NULL,
-        related_name='direct_child_companies',
-        blank=True,
-        null=True,
-        verbose_name=_('Parent Company')
-    )
+    # # Segmentation
+    # number_of_employees = models.CharField(
+    #     blank=True, 
+    #     null=True, 
+    #     verbose_name=_('Number of Employees')
+    # )
+    # potential = models.DecimalField(
+    #     max_digits=15,
+    #     decimal_places=2,
+    #     blank=True,
+    #     null=True,
+    #     verbose_name=_('Potential Revenue')
+    # )
+    # classification = models.CharField(
+    #     max_length=50,
+    #     choices=AccountClassification.choices,
+    #     blank=True,
+    #     null=True,
+    #     verbose_name=_('Account Classification')
+    # )
+
+    # # Parent-Child Relationship
+    # parent_company = models.ForeignKey(
+    #     'self',
+    #     on_delete=models.SET_NULL,
+    #     related_name='direct_child_companies',
+    #     blank=True,
+    #     null=True,
+    #     verbose_name=_('Parent Company')
+    # )
 
     class Meta:
         db_table = 'company_accounts'

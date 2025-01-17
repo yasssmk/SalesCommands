@@ -1,5 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import BaseUserManager
+from django.utils.translation import gettext_lazy as _
+from phonenumber_field.modelfields import PhoneNumberField
+from core.constants import COUNTRIES
 import uuid
 
 class BaseModel(models.Model):
@@ -31,3 +34,28 @@ class CentralizedUserManager(BaseUserManager):
             raise ValueError("Superuser must have is_superuser=True.")
 
         return self.create_user(email, password, **extra_fields)
+    
+class ContactDetailsMixin(models.Model):
+    """
+    Abstract model for storing contact details (used by Accounts and Contacts).
+    """
+
+    address = models.TextField(blank=True, null=True, verbose_name=_('Address'))
+    city = models.CharField(max_length=50, blank=True, null=True, verbose_name=_('City'))
+    post_code = models.CharField(max_length=20, blank=True, null=True, verbose_name=_('Post Code'))
+    state = models.CharField(max_length=50, blank=True, null=True, verbose_name=_('State/Region'))
+        
+    country = models.CharField(
+        max_length=2, choices=COUNTRIES, default='US', verbose_name=_('Country')
+    )
+
+    phone_number = PhoneNumberField(
+        max_length=20, blank=True, null=True, verbose_name=_('Phone Number')
+    )
+    email = models.EmailField(blank=True, null=True, verbose_name=_('Email'))
+
+    website = models.URLField(blank=True, null=True, verbose_name=_('Website'))
+    linkedin = models.URLField(blank=True, null=True, verbose_name=_('LinkedIn Profile'))
+
+    class Meta:
+        abstract = True
