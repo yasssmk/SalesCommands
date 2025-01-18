@@ -4,10 +4,11 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 import logging
+from .apps_auth_mixins import ClientAuthMixin
 
 logger = logging.getLogger(__name__)
 
-class BaseAPIView(views.APIView):
+class BaseAPIView(ClientAuthMixin, views.APIView):
     """
     Base API View with common CRUD operations and utility methods.
     """
@@ -58,6 +59,7 @@ class BaseAPIView(views.APIView):
         """
         queryset = self.get_queryset()
         obj = get_object_or_404(queryset, pk=self.kwargs.get('pk'))
+        self.check_object_permissions(self.request, obj)
         return obj
     
     def handle_exception(self, exc):
@@ -152,16 +154,20 @@ class BaseAPIView(views.APIView):
         """
         Perform object creation. Override for custom behavior.
         """
-        return serializer.save()
+        client_id = self.get_client_id()
+        return serializer.save(client_id=client_id)
 
     def perform_update(self, serializer):
         """
         Perform object update. Override for custom behavior.
         """
-        return serializer.save()
+        instance = serializer.save()
+        self.check_object_permissions(self.request, instance)
+        return instance
 
     def perform_delete(self, instance):
         """
         Perform object deletion. Override for custom behavior.
         """
+        self.check_object_permissions(self.request, instance)
         instance.delete()

@@ -36,12 +36,24 @@ class CentralizedUserManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
     
 class BaseModelApp(models.Model):
-
+    """
+    Base model for all application models that need client tracking
+    """
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    client_id = models.UUIDField(
+        verbose_name=_('Client ID'),
+        help_text=_('ID of the client company this record belongs to'),
+        db_index=True
+    )
 
     class Meta:
         abstract = True
+        
+    def save(self, *args, **kwargs):
+        if not self.client_id and hasattr(kwargs, 'client_id'):
+            self.client_id = kwargs.pop('client_id')
+        super().save(*args, **kwargs)
     
 class ContactDetailsMixin(models.Model):
     """
