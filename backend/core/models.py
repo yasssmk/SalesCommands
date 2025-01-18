@@ -35,6 +35,14 @@ class CentralizedUserManager(BaseUserManager):
 
         return self.create_user(email, password, **extra_fields)
     
+class BaseModelApp(models.Model):
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+    
 class ContactDetailsMixin(models.Model):
     """
     Abstract model for storing contact details (used by Accounts and Contacts).

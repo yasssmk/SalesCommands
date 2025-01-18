@@ -3,11 +3,38 @@ from .models import Account
 from phonenumbers import parse, is_valid_number
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
+from end_users.models import User, Team
+
+class AssignedTeamSerializer(serializers.ModelSerializer):
+    """Serializer for the assigned team summary"""
+    class Meta:
+        model = Team
+        fields = ['id', 'name', 'organization']
+        read_only_fields = fields
+
+class AccountManagerSerializer(serializers.ModelSerializer):
+    """Serializer for the account manager summary"""
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'first_name', 'last_name', 'role_name', 'team']
+        read_only_fields = fields
 
 class AccountSerializer(serializers.ModelSerializer):
     # Field for write operations
-    parent_id = serializers.UUIDField(
+    parent_id = serializers.IntegerField(
         source='parent_company_id',
+        required=False,
+        allow_null=True,
+        write_only=True
+    )
+
+    account_owner_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        write_only=True
+    )
+
+    team_owner_id = serializers.UUIDField(
         required=False,
         allow_null=True,
         write_only=True
@@ -16,6 +43,8 @@ class AccountSerializer(serializers.ModelSerializer):
     # Fields for read operations
     parent_company = serializers.SerializerMethodField(read_only=True)
     direct_child_companies = serializers.SerializerMethodField(read_only=True)
+    account_owner = AccountManagerSerializer(read_only=True)
+    team_owner = AssignedTeamSerializer(read_only=True)
     
     class Meta:
         model = Account
@@ -25,7 +54,8 @@ class AccountSerializer(serializers.ModelSerializer):
             'type', 'phone_number', 'created_at', 'updated_at',
             'number_of_employees', 'potential', 'classification',
             'parent_company', 'parent_id', 'direct_child_companies',
-            'email', 'linkedin'
+            'email', 'linkedin', 'account_owner', 'account_owner_id', 
+            'team_owner', 'team_owner_id'
         ]
         read_only_fields = ['created_at', 'updated_at']
     
@@ -46,8 +76,10 @@ class AccountSerializer(serializers.ModelSerializer):
         } for child in obj.direct_child_companies.all()]
     
     def validate(self, data):
+
         # Convert company name to uppercase
         company_name = data.get('company_name')
+        
         if company_name:
             data['company_name'] = company_name.upper()
         
@@ -63,6 +95,31 @@ class AccountSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "error": "This account already exists."
             })
+        
+        # Validate assigned_to user
+        account_owner_id = data.get('account_owner_id')
+        team_owner_id = data.get('assigned_team_id')
+        
+        if account_owner_id:
+            try:
+                account_owner_id = User.objects.get(id=account_owner_id)
+                if not account_owner_id.is_active:
+                    raise serializers.ValidationError({
+                        'account_owner_id': _("Selected user is not active.")
+                    })
+                
+                # If team is specified, ensure user belongs to that team
+                if team_owner_id:
+                    team = Team.objects.get(id=team_owner_id)
+                    if account_owner_id.team_id != team.id:
+                        raise serializers.ValidationError({
+                            'account_owner_id': _("Account manager must belong to the assigned team.")
+                        })
+                    
+            except User.DoesNotExist:
+                raise serializers.ValidationError({
+                    'account_owner_id': _("Invalid user ID.")
+                })
         
         # Validate parent-child relationship
         parent_id = data.get('parent_company_id')

@@ -1,9 +1,10 @@
 from django.db import models
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from phonenumber_field.modelfields import PhoneNumberField
-from core.models import BaseModel, ContactDetailsMixin
+from core.models import BaseModelApp, ContactDetailsMixin
 from django.utils.translation import gettext_lazy as _
-
+from end_users.models import User, Team, Organization
 
 # Personalization: Users could add new choices 
 class AccountType(models.TextChoices):
@@ -19,7 +20,7 @@ class AccountClassification(models.TextChoices):
     STARTUP = 'STARTUP', _('Startup')
     NONPROFIT = 'NONPROFIT', _('Non-Profit')
 
-class Account(BaseModel, ContactDetailsMixin):
+class Account(BaseModelApp, ContactDetailsMixin):
 
     company_name = models.CharField(max_length=255, verbose_name=_('Company Name'))
     industry = models.CharField(max_length=100, blank=True, null=True, verbose_name=_('Industry'))
@@ -31,90 +32,8 @@ class Account(BaseModel, ContactDetailsMixin):
     potential = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, verbose_name=_('Potential Revenue'))
     
     parent_company = models.ForeignKey('self', on_delete=models.SET_NULL, related_name='direct_child_companies', blank=True, null=True, verbose_name=_('Parent Company'))
-
-    # Basic Information
-    # company_name = models.CharField(
-    #     max_length=255, 
-    #     verbose_name=_('Company Name')
-    # )
-    # industry = models.CharField(
-    #     max_length=100, 
-    #     blank=True, 
-    #     null=True, 
-    #     verbose_name=_('Industry')
-    # )
-    # address = models.TextField(
-    #     blank=True, 
-    #     null=True, 
-    #     verbose_name=_('Address')
-    # )
-    # city = models.CharField(
-    #     max_length=50, 
-    #     verbose_name=_('City')
-    # )
-    # post_code = models.CharField(
-    #     max_length=20, 
-    #     blank=True, 
-    #     null=True, 
-    #     verbose_name=_('Post Code')
-    # )
-    # country = models.CharField(
-    #     max_length=50, 
-    #     verbose_name=_('Country')
-    # )
-    # website = models.URLField(
-    #     blank=True, 
-    #     null=True, 
-    #     verbose_name=_('Website')
-    # )
-    # type = models.CharField(
-    #     max_length=50, 
-    #     choices=AccountType.choices, 
-    #     blank=True, 
-    #     null=True, 
-    #     verbose_name=_('Account Type')
-    # )
-    # phone_number = PhoneNumberField(
-    #     max_length=20,
-    #     blank=True, 
-    #     null=True, 
-    #     verbose_name=_('Phone Number')
-    # )
-    
-    # # Timestamps
-    # created_at = models.DateTimeField(auto_now_add=True)
-    # updated_at = models.DateTimeField(auto_now=True)
-
-    # # Segmentation
-    # number_of_employees = models.CharField(
-    #     blank=True, 
-    #     null=True, 
-    #     verbose_name=_('Number of Employees')
-    # )
-    # potential = models.DecimalField(
-    #     max_digits=15,
-    #     decimal_places=2,
-    #     blank=True,
-    #     null=True,
-    #     verbose_name=_('Potential Revenue')
-    # )
-    # classification = models.CharField(
-    #     max_length=50,
-    #     choices=AccountClassification.choices,
-    #     blank=True,
-    #     null=True,
-    #     verbose_name=_('Account Classification')
-    # )
-
-    # # Parent-Child Relationship
-    # parent_company = models.ForeignKey(
-    #     'self',
-    #     on_delete=models.SET_NULL,
-    #     related_name='direct_child_companies',
-    #     blank=True,
-    #     null=True,
-    #     verbose_name=_('Parent Company')
-    # )
+    account_owner = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_('Account Owner'))
+    team_owner = models.ForeignKey(Team, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_('Team Owner'))
 
     class Meta:
         db_table = 'company_accounts'
@@ -122,6 +41,30 @@ class Account(BaseModel, ContactDetailsMixin):
         verbose_name = _('Account')
         verbose_name_plural = _('Accounts')
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['company_name']),
+            models.Index(fields=['account_owner']),
+            models.Index(fields=['team_owner']),
+        ]
+    
+    def clean(self):
+        """
+        Validate the model
+        """
+        super().clean()
+        
+        # Ensure account_owner user belongs to team_owner if both are set
+        if self.account_owner and self.team_owner:
+            if not self.account_owner.team == self.team_owner:
+                raise ValidationError({
+                    'account_owner' : _("Account manager must belong to the assigned team.")
+                })
+
+    def save(self, *args, **kwargs):
+        # If account_owner is set but team isn't, automatically set the team
+        if self.account_owner and not self.team_owner:
+            self.team_owner= self.account_owner.team
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.company_name} ({self.get_type_display()})"
