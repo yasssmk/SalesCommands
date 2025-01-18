@@ -25,12 +25,15 @@ class BaseAPIView(ClientAuthMixin, views.APIView):
 
     def get_queryset(self):
         """
-        Get the base queryset with entity-specific ID filtering.
+        Get the base queryset with entity-specific ID filtering and client filtering.
         """
         assert self.queryset is not None, "Define queryset in your view"
         
-        # Start with a fresh queryset
+        # Start with base queryset
         queryset = self.queryset.all()
+        
+        # Apply client filtering first
+        queryset = self.filter_queryset_by_client(queryset)
         
         # Get IDs using entity-specific parameter name
         id_param = f"{self.entity_name}_ids"
@@ -57,7 +60,7 @@ class BaseAPIView(ClientAuthMixin, views.APIView):
         """
         Get single object based on ID.
         """
-        queryset = self.get_queryset()
+        queryset = self.get_queryset()  # This already includes client filtering
         obj = get_object_or_404(queryset, pk=self.kwargs.get('pk'))
         self.check_object_permissions(self.request, obj)
         return obj
