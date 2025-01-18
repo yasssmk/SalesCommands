@@ -1,16 +1,20 @@
-# core/views.py
 from rest_framework import views, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
+from rest_framework.exceptions import PermissionDenied
 import logging
-from .apps_auth_mixins import ClientAuthMixin
+from .client_scope import ClientScopeManager
+from django.utils.translation import gettext_lazy as _
+from django.conf import settings
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
-class BaseAPIView(ClientAuthMixin, views.APIView):
+class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
     """
     Base API View with common CRUD operations and utility methods.
+    Handles client scoping and permissions.
     """
     queryset = None
     serializer_class = None
@@ -32,7 +36,7 @@ class BaseAPIView(ClientAuthMixin, views.APIView):
         # Start with base queryset
         queryset = self.queryset.all()
         
-        # Apply client filtering first
+        # Apply client filtering first - this is crucial for security
         queryset = self.filter_queryset_by_client(queryset)
         
         # Get IDs using entity-specific parameter name
@@ -58,22 +62,38 @@ class BaseAPIView(ClientAuthMixin, views.APIView):
     
     def get_object(self):
         """
-        Get single object based on ID.
+        Get single object based on ID with proper client scope checking.
         """
-        queryset = self.get_queryset()  # This already includes client filtering
+        queryset = self.get_queryset()
         obj = get_object_or_404(queryset, pk=self.kwargs.get('pk'))
-        self.check_object_permissions(self.request, obj)
         return obj
-    
+
     def handle_exception(self, exc):
-        """
-        Global exception handler with logging.
-        """
-        logger.error(f"Exception in {self.__class__.__name__}: {str(exc)}", exc_info=True)
+        """Enhanced error handling with detailed messages"""
+        print(f"Exception in {self.__class__.__name__}: {str(exc)}")
+        
+        if settings.DEBUG:
+            error_detail = str(exc)
+        else:
+            error_detail = "An unexpected error occurred"
+            
         return Response({
             "status": "error",
-            "message": "An unexpected error occurred",
-            "error": str(exc)
+            "message": error_detail
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def handle_exception(self, exc):
+        """Enhanced error handling with environment-aware responses"""
+        logger.error(f"Exception in {self.__class__.__name__}: {str(exc)}", exc_info=True)
+        
+        if settings.DEBUG:
+            error_detail = str(exc)
+        else:
+            error_detail = "An unexpected error occurred"
+            
+        return Response({
+            "status": "error",
+            "message": error_detail
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def get(self, request, pk=None, *args, **kwargs):
@@ -97,7 +117,10 @@ class BaseAPIView(ClientAuthMixin, views.APIView):
         Handle POST requests for creating new objects.
         """
         try:
-            serializer = self.serializer_class(data=request.data)
+            serializer = self.serializer_class(
+                data=request.data, 
+                context={'request': request}
+            )
             if serializer.is_valid():
                 with transaction.atomic():
                     instance = self.perform_create(serializer)
@@ -115,7 +138,11 @@ class BaseAPIView(ClientAuthMixin, views.APIView):
         """
         try:
             instance = self.get_object()
-            serializer = self.serializer_class(instance, data=request.data)
+            serializer = self.serializer_class(
+                instance, 
+                data=request.data,
+                context={'request': request}
+            )
             if serializer.is_valid():
                 with transaction.atomic():
                     updated_instance = self.perform_update(serializer)
@@ -131,7 +158,10 @@ class BaseAPIView(ClientAuthMixin, views.APIView):
         try:
             instance = self.get_object()
             serializer = self.serializer_class(
-                instance, data=request.data, partial=True
+                instance, 
+                data=request.data, 
+                partial=True,
+                context={'request': request}
             )
             if serializer.is_valid():
                 with transaction.atomic():
@@ -155,22 +185,23 @@ class BaseAPIView(ClientAuthMixin, views.APIView):
 
     def perform_create(self, serializer):
         """
-        Perform object creation. Override for custom behavior.
+        Perform object creation with client_id.
         """
         client_id = self.get_client_id()
         return serializer.save(client_id=client_id)
 
     def perform_update(self, serializer):
         """
-        Perform object update. Override for custom behavior.
+        Perform object update with client scope check.
         """
-        instance = serializer.save()
-        self.check_object_permissions(self.request, instance)
-        return instance
+        client_id = self.get_client_id()
+        print(f"Updating with client_id: {client_id}")
+        
+        instance = serializer.save(client_id=client_id)  # Add client_id here
+        return instance 
 
     def perform_delete(self, instance):
         """
-        Perform object deletion. Override for custom behavior.
+        Perform object deletion with client scope check.
         """
-        self.check_object_permissions(self.request, instance)
         instance.delete()

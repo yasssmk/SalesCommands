@@ -50,8 +50,13 @@ class AccountAPIView(BaseAPIView):
             instance = serializer.instance
             old_parent = instance.parent_company
             
-            # Perform the update
+            # Get client_id before update
+            client_id = instance.client_id
+            print(f"Original instance client_id: {client_id}")
+            
+            # Perform the update with client_id
             instance = super().perform_update(serializer)
+            print(f"Updated instance client_id: {instance.client_id}")
             
             # Handle parent company changes
             new_parent = serializer.validated_data.get('parent_company')
@@ -62,8 +67,8 @@ class AccountAPIView(BaseAPIView):
                     old_parent.save()
                 if new_parent:
                     new_parent.save()
-                    
-            return instance
+                
+        return instance
 
     @action(detail=True, methods=['get'])
     def hierarchy(self, request, pk=None):

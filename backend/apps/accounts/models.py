@@ -3,6 +3,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from phonenumber_field.modelfields import PhoneNumberField
 from core.models import BaseModelApp, ContactDetailsMixin
+from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User, Team, Organization
 
@@ -20,7 +21,7 @@ class AccountClassification(models.TextChoices):
     STARTUP = 'STARTUP', _('Startup')
     NONPROFIT = 'NONPROFIT', _('Non-Profit')
 
-class Account(BaseModelApp, ContactDetailsMixin):
+class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
 
     company_name = models.CharField(max_length=255, verbose_name=_('Company Name'))
     industry = models.CharField(max_length=100, blank=True, null=True, verbose_name=_('Industry'))
@@ -35,14 +36,15 @@ class Account(BaseModelApp, ContactDetailsMixin):
     account_owner = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_('Account Owner'))
     team_owner = models.ForeignKey(Team, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_('Team Owner'))
 
-    class Meta:
+    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
+        unique_fields=['company_name', 'city', 'country'],
+        index_fields=['company_name']
+    )):
         db_table = 'company_accounts'
-        # unique_together = ('company_name', 'city', 'country')
         verbose_name = _('Account')
         verbose_name_plural = _('Accounts')
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['company_name']),
             models.Index(fields=['account_owner']),
             models.Index(fields=['team_owner']),
         ]

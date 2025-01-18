@@ -4,6 +4,7 @@ from phonenumbers import parse, is_valid_number
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User, Team
+from core.client_scope import ClientScopeManager
 
 class AssignedTeamSerializer(serializers.ModelSerializer):
     """Serializer for the assigned team summary"""
@@ -19,7 +20,7 @@ class AccountManagerSerializer(serializers.ModelSerializer):
         fields = ['id', 'email', 'first_name', 'last_name', 'role_name', 'team']
         read_only_fields = fields
 
-class AccountSerializer(serializers.ModelSerializer):
+class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     # Field for write operations
     parent_id = serializers.IntegerField(
         source='parent_company_id',
@@ -55,9 +56,9 @@ class AccountSerializer(serializers.ModelSerializer):
             'number_of_employees', 'potential', 'classification',
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
-            'team_owner', 'team_owner_id'
+            'team_owner', 'team_owner_id', 'client_id'
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at', 'client_id']
     
     def get_parent_company(self, obj):
         if obj.parent_company:
@@ -77,6 +78,8 @@ class AccountSerializer(serializers.ModelSerializer):
     
     def validate(self, data):
 
+        data = super().validate(data)
+
         # Convert company name to uppercase
         company_name = data.get('company_name')
         
@@ -87,14 +90,12 @@ class AccountSerializer(serializers.ModelSerializer):
         instance = getattr(self, 'instance', None)
         
         # Validate unique constraint
-        if Account.objects.filter(
-            company_name__iexact=company_name,
-            city__iexact=data.get('city'),
-            country__iexact=data.get('country')
-        ).exclude(pk=instance.pk if instance else None).exists():
-            raise serializers.ValidationError({
-                "error": "This account already exists."
-            })
+        self.validate_client_scoped_uniqueness(
+            data=data,
+            unique_fields=['company_name', 'city', 'country'],
+            model_class=Account,
+            error_message=_("An account with this name already exists in your organization for this city and country.")
+        )
         
         # Validate assigned_to user
         account_owner_id = data.get('account_owner_id')
