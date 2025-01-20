@@ -80,6 +80,11 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
     def validate(self, data):
         try:
             data = super().validate(data)
+
+            client_id = self._get_client_id_from_context()
+
+            # Validate all related objects belong to same client
+            self._validate_related_objects_client_scope(data, client_id)
             
             # Convert company name to uppercase if it's present
             company_name = data.get('company_name')
@@ -121,6 +126,36 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             raise serializers.ValidationError({
                 "error": CoreErrorMessages.INVALID_DATA.format(detail=str(e))
             })
+    
+    def _validate_related_objects_client_scope(self, data, client_id):
+        """Ensure all related objects belong to same client"""
+        # Validate parent company
+        parent_id = data.get('parent_company_id')
+        if parent_id:
+            try:
+                parent = Account.objects.get(id=parent_id)
+                if str(parent.client_id) != str(client_id):
+                    raise serializers.ValidationError({
+                        'parent_company': AccountErrorMessages.INVALID_PARENT
+                    })
+            except Account.DoesNotExist:
+                raise serializers.ValidationError({
+                    'parent_company': AccountErrorMessages.PARENT_NOT_FOUND
+                })
+
+        # Validate team
+        team_id = data.get('team_owner_id')
+        if team_id:
+            try:
+                team = Team.objects.select_related('organization').get(id=team_id)
+                if str(team.organization.client_account_id) != str(client_id):
+                    raise serializers.ValidationError({
+                        'team_owner': AccountErrorMessages.TEAM_MISMATCH
+                    })
+            except Team.DoesNotExist:
+                raise serializers.ValidationError({
+                    'team_owner': CoreErrorMessages.OBJECT_NOT_FOUND
+                })
 
     def _validate_account_owner(self, data):
         """Validate account owner and team relationship"""

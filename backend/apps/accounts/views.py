@@ -12,6 +12,7 @@ from .models import Account
 from .serializers import AccountSerializer
 from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
+from datetime import datetime
 
 class AccountAPIView(BaseAPIView):
     """
@@ -70,18 +71,15 @@ class AccountAPIView(BaseAPIView):
         return None
 
     def _update_instance(self, instance, data, partial, client_id):
-        """Override to handle parent-child relationship updates"""
+        """Optimized update with minimal queries"""
         self.validate_client_id(instance)
         
-        # Store old parent for relationship handling
-        old_parent = instance.parent_company
+        # Track fields that need refresh
+        refresh_fields = set()
         
-        # Handle parent_id if present in the data
-        parent_id = data.get('parent_id')
-        if parent_id is not None:
-            new_parent = self._validate_parent_company(parent_id, client_id)
-            # Update the data with the validated parent
-            data['parent_company'] = parent_id
+        # Store old values for relationship changes
+        old_parent = instance.parent_company_id
+        old_team = instance.team_owner_id
         
         serializer = self.serializer_class(
             instance,
@@ -94,19 +92,23 @@ class AccountAPIView(BaseAPIView):
             with transaction.atomic():
                 updated = serializer.save()
                 
-                # Handle parent-child relationship updates if needed
-                new_parent = updated.parent_company
-                if old_parent != new_parent:
-                    if old_parent and not old_parent.direct_child_companies.exclude(
-                        id=instance.id
-                    ).exists():
-                        old_parent.save()
-                    if new_parent:
-                        new_parent.save()
-        else:
-            raise ValidationError(serializer.errors)
-            
-        return serializer
+                # Only refresh changed relationships
+                if old_parent != updated.parent_company_id:
+                    refresh_fields.add('parent_company')
+                    if old_parent:
+                        Account.objects.filter(id=old_parent).update(
+                            updated_at=datetime.now()
+                        )
+                
+                if old_team != updated.team_owner_id:
+                    refresh_fields.add('team_owner')
+                
+                if refresh_fields:
+                    updated.refresh_from_db(fields=refresh_fields)
+                
+                return serializer
+                
+        raise ValidationError(serializer.errors)
 
     @action(detail=True, methods=['get'])
     def hierarchy(self, request, pk=None):

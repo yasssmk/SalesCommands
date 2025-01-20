@@ -62,57 +62,30 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         queryset = self.queryset.all()
         return self.filter_queryset_by_client(queryset)
 
-    def get_objects(self, ids=None):
-        """Get one or multiple objects with client scope checking"""
-        queryset = self.get_queryset()
-        
-        if not ids:
-            pk = self.kwargs.get('pk') or self.request.query_params.get(f'{self.entity_name}_id')
-            if not pk:
-                return None
-            ids = [pk]
-
-        # Validate UUIDs
-        valid_ids = []
-        invalid_ids = []
-        for id_ in ids:
-            try:
-                valid_ids.append(uuid.UUID(str(id_)))
-            except ValueError:
-                invalid_ids.append(id_)
-
-        if invalid_ids:
-            raise ValidationError({
-                'ids': CoreErrorMessages.INVALID_DATA,
-                'invalid_values': invalid_ids
-            })
-
-        # Get and validate objects
-        objects = queryset.filter(id__in=valid_ids)
-        if objects.count() != len(valid_ids):
-            missing = set(str(id_) for id_ in valid_ids) - set(str(obj.id) for obj in objects)
-            raise ValidationError({
-                'error': CoreErrorMessages.OBJECT_NOT_FOUND,
-                'missing_ids': list(missing)
-            })
-            
-        return objects
-
     def get(self, request, *args, **kwargs):
         """Handle GET requests for single or multiple objects"""
         try:
             # Check for specific IDs
             id_param = request.query_params.get(f'{self.entity_name}_ids')
-            ids = [id.strip() for id in id_param.split(',')] if id_param else None
-            
-            # Get objects
-            objects = self.get_objects(ids)
-            if not objects:
-                # No specific IDs requested, return full list
-                objects = self.get_queryset()
+            if id_param:
+                # Split and clean IDs
+                ids = [id_.strip() for id_ in id_param.split(',') if id_.strip()]
+                if not ids:
+                    return Response([], status=status.HTTP_200_OK)
+                
+                # Get objects with the specified IDs
+                objects = self.get_objects(ids)
+            else:
+                # Handle single object request if pk is in URL
+                pk = kwargs.get('pk')
+                if pk:
+                    objects = self.get_objects([pk])
+                else:
+                    # No specific IDs requested, return full list
+                    objects = self.get_queryset()
             
             # Determine if we need pagination
-            many = bool(id_param or not self.kwargs.get('pk'))
+            many = bool(id_param or not kwargs.get('pk'))
             if many and self.paginator is not None:
                 page = self.paginate_queryset(objects)
                 if page is not None:
@@ -123,8 +96,35 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             serializer = self.serializer_class(objects, many=many)
             return Response(serializer.data)
             
+        except ValidationError as exc:
+            return Response(
+                {'error': str(exc.detail)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as exc:
             return self.handle_exception(exc)
+
+    def get_objects(self, ids=None):
+        """Get one or multiple objects with client scope checking"""
+        queryset = self.get_queryset()
+        
+        if not ids:
+            pk = self.kwargs.get('pk') or self.request.query_params.get(f'{self.entity_name}_id')
+            if not pk:
+                return queryset.none()
+            ids = [pk]
+
+        # Convert all IDs to strings for consistent comparison
+        ids = [str(id_).strip() for id_ in ids]
+        
+        # Get and validate objects
+        objects = queryset.filter(id__in=ids)
+        if objects.count() != len(ids):
+            missing = set(ids) - set(str(obj.id) for obj in objects)
+            raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+        return objects
+    
 
     def post(self, request, *args, **kwargs):
         """Handle POST requests for single or batch creation"""
@@ -184,50 +184,87 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             })
                 
         return allowed_data
+    
+    def _batch_validate_client_scope(self, objects):
+        """Validate client scope for multiple objects"""
+        client_id = self.get_client_id()
+        invalid_ids = []
+        
+        for obj in objects:
+            try:
+                if not hasattr(obj, 'client_id'):
+                    raise ValidationError(CoreErrorMessages.CLIENT_SCOPE_UNSUPPORTED)
+                if str(obj.client_id) != str(client_id):
+                    invalid_ids.append(str(obj.id))
+            except AttributeError:
+                invalid_ids.append(str(obj.id))
+                
+        if invalid_ids:
+            raise PermissionDenied({
+                'error': CoreErrorMessages.CLIENT_MISMATCH,
+                'invalid_ids': invalid_ids
+            })
 
     def _update(self, request, partial):
-        """Handle update requests with improved validation"""
+        """Enhanced update with better client scope validation"""
         client_id = self.get_client_id()
         
         try:
             with transaction.atomic():
-                if isinstance(request.data, list):
-                    # Handle batch updates
-                    if all(isinstance(item, (str, uuid.UUID)) for item in request.data):
-                        # Mass update with filtered fields
-                        ids = request.data
-                        update_data = self._get_filtered_update_data(request.query_params)
-                    else:
-                        # Individual updates
-                        ids = [item.get('id') for item in request.data]
-                        if not all(ids):
-                            raise ValidationError({
-                                'error': CoreErrorMessages.BATCH_UPDATE_MISSING_ID
-                            })
-                
+                # Handle multiple objects update
+                id_param = request.query_params.get(f'{self.entity_name}_ids')
+                if id_param:
+                    # Split and clean IDs
+                    ids = [id_.strip() for id_ in id_param.split(',') if id_.strip()]
+                    if not ids:
+                        raise ValidationError("No valid IDs provided")
+
+                    # Get all objects at once
                     objects = self.get_objects(ids)
-                    updated_objects = []
                     
+                    # Validate client scope for all objects
+                    self._batch_validate_client_scope(objects)
+                    
+                    # Use request.data as shared update data for all objects
+                    update_data = request.data
+                    
+                    updated_objects = []
                     for obj in objects:
-                        item_data = next(
-                            (item for item in request.data if str(item.get('id')) == str(obj.id)),
-                            update_data if 'update_data' in locals() else {}
+                        serializer = self.serializer_class(
+                            obj,
+                            data=update_data,
+                            partial=partial,
+                            context={'request': request, 'client_id': client_id}
                         )
-                        serializer = self._update_instance(obj, item_data, partial, client_id)
-                        updated_objects.append(serializer.instance)
-                        
+                        if serializer.is_valid(raise_exception=True):
+                            updated = serializer.save()
+                            updated_objects.append(updated)
+                    
                     serializer = self.serializer_class(updated_objects, many=True)
                     return Response(serializer.data)
-                else:
-                    # Single update
-                    instance = self.get_objects().first()
-                    if not instance:
-                        raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-                    serializer = self._update_instance(instance, request.data, partial, client_id)
-                    return Response(serializer.data)
                     
+                else:
+                    # Single object update
+                    objects = self.get_objects()
+                    if not objects.exists():
+                        raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+                    instance = objects.first()
+                    self.validate_client_id(instance)
+                    
+                    serializer = self.serializer_class(
+                        instance,
+                        data=request.data,
+                        partial=partial,
+                        context={'request': request, 'client_id': client_id}
+                    )
+                    if serializer.is_valid(raise_exception=True):
+                        updated = serializer.save()
+                        return Response(self.serializer_class(updated).data)
+                        
         except Exception as exc:
             return self.handle_exception(exc)
+                           
 
     def delete(self, request, *args, **kwargs):
         """Handle DELETE requests for single or multiple objects"""
