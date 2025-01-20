@@ -1,8 +1,10 @@
 # core/client_scope.py
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from django.conf import settings
 
 class ClientScopeManager:
     """
@@ -109,35 +111,57 @@ class ClientScopeManager:
                 return client_id
                 
             raise AuthenticationFailed(_("Please log in with a user account"))
-
-        def filter_queryset_by_client(self, queryset):
-            """Apply client_id filtering to queryset"""
-            return queryset.filter(client_id=self.get_client_id())
-
-        def get_queryset(self):
-            """Get client-scoped queryset"""
-            assert self.queryset is not None, "Define queryset in your view"
-            return self.filter_queryset_by_client(self.queryset.all())
-
-        def check_object_permissions(self, request, obj):
-            """Ensure object belongs to client"""
-            super().check_object_permissions(request, obj)
+        
+        def validate_client_id(self, obj):
+            """Validate that an object belongs to the current client"""
+            if not hasattr(obj, 'client_id'):
+                raise ValidationError(_("Object does not support client scoping"))
             
-            client_id = self.get_client_id()
-            if not hasattr(obj, 'client_id') or obj.client_id != client_id:
+            current_client = self.get_client_id()
+            if str(obj.client_id) != str(current_client):
                 raise PermissionDenied(_("Not found"))
 
-        def perform_create(self, serializer):
-            """Create with client_id"""
-            return serializer.save(client_id=self.get_client_id())
+        def filter_queryset_by_client(self, queryset):
+            """Apply client_id filtering with additional validation"""
+            client_id = self.get_client_id()
+            filtered_queryset = queryset.filter(client_id=client_id)
+            
+            # Add debugging for development
+            if settings.DEBUG:
+                print(f"Filtering queryset for client {client_id}")
+                print(f"Original count: {queryset.count()}")
+                print(f"Filtered count: {filtered_queryset.count()}")
+                
+            return filtered_queryset
 
-        def perform_update(self, serializer):
-            """Update with client check"""
-            instance = serializer.save()
-            self.check_object_permissions(self.request, instance)
-            return instance
+    def perform_create(self, serializer):
+        """Create with strict client_id enforcement"""
+        client_id = self.get_client_id()
+        instance = serializer.save(client_id=client_id)
+        # Double-check after save
+        self.validate_client_id(instance)
+        return instance
 
-        def perform_delete(self, instance):
-            """Delete with client check"""
-            self.check_object_permissions(self.request, instance)
-            instance.delete()
+    def perform_update(self, serializer):
+        """Update with strict client_id validation"""
+        instance = serializer.instance
+        self.validate_client_id(instance)
+        
+        # Ensure client_id isn't being changed
+        if 'client_id' in serializer.validated_data:
+            raise ValidationError(_("client_id cannot be modified"))
+            
+        updated = serializer.save()
+        # Double-check after save
+        self.validate_client_id(updated)
+        return updated
+
+    def perform_delete(self, instance):
+        """Delete with client_id validation"""
+        self.validate_client_id(instance)
+        instance.delete(client_id=self.get_client_id())  # Pass client_id for final validation
+
+    def check_object_permissions(self, request, obj):
+        """Enhanced permission checking"""
+        super().check_object_permissions(request, obj)
+        self.validate_client_id(obj)

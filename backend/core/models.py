@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import BaseUserManager
 from django.utils.translation import gettext_lazy as _
 from phonenumber_field.modelfields import PhoneNumberField
+from django.core.exceptions import ValidationError
 from core.constants import COUNTRIES
 import uuid
 
@@ -44,16 +45,38 @@ class BaseModelApp(models.Model):
     client_id = models.UUIDField(
         verbose_name=_('Client ID'),
         help_text=_('ID of the client company this record belongs to'),
-        db_index=True
+        db_index=True,
+        editable=False
     )
 
     class Meta:
         abstract = True
         
-    def save(self, *args, **kwargs):
-        if not self.client_id and hasattr(kwargs, 'client_id'):
-            self.client_id = kwargs.pop('client_id')
-        super().save(*args, **kwargs)
+    def save(self, force_insert=False, force_update=False, *args, **kwargs):
+        client_id = kwargs.pop('client_id', None)
+        
+        if not self.pk:  # New instance
+            if not client_id and not self.client_id:
+                raise ValidationError(_('client_id is required when creating a new record'))
+            if client_id:
+                self.client_id = client_id
+        else:  # Existing instance
+            # Prevent client_id from being changed
+            if client_id and client_id != self.client_id:
+                raise ValidationError(_('client_id cannot be modified after creation'))
+            
+            # Double check against database
+            db_instance = self.__class__.objects.get(pk=self.pk)
+            if self.client_id != db_instance.client_id:
+                raise ValidationError(_('client_id cannot be modified after creation'))
+
+        super().save(force_insert=force_insert, force_update=force_update, *args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        client_id = kwargs.pop('client_id', None)
+        if client_id and client_id != self.client_id:
+            raise ValidationError(_('Cannot delete record: client_id mismatch'))
+        super().delete(*args, **kwargs)
     
 class ContactDetailsMixin(models.Model):
     """

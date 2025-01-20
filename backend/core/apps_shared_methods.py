@@ -4,6 +4,7 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 from rest_framework.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 import logging
 from .client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
@@ -12,312 +13,248 @@ from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
     """
-    Base API View with common CRUD operations and utility methods.
-    Handles client scoping and permissions.
+    Base API View with simplified CRUD operations that handle both single and batch operations.
     """
     queryset = None
     serializer_class = None
     entity_name = None
-    # max_batch_size = 100  # Maximum number of items in batch operations
+    pagination_class = StandardResultsSetPagination
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        assert self.entity_name is not None, (
-            f"{self.__class__.__name__} should include an entity_name attribute "
-            "or override get_entity_name()"
-        )
+    @property
+    def paginator(self):
+        """
+        The paginator instance associated with the view, or `None`.
+        """
+        if not hasattr(self, '_paginator'):
+            if self.pagination_class is None:
+                self._paginator = None
+            else:
+                self._paginator = self.pagination_class()
+        return self._paginator
 
+    def paginate_queryset(self, queryset):
+        """
+        Return a single page of results, or `None` if pagination is disabled.
+        """
+        if self.paginator is None:
+            return None
+        return self.paginator.paginate_queryset(queryset, self.request, view=self)
+
+    def get_paginated_response(self, data):
+        """
+        Return a paginated style `Response` object.
+        """
+        assert self.paginator is not None
+        return self.paginator.get_paginated_response(data)
+    
     def get_queryset(self):
-        """
-        Get the base queryset with entity-specific ID filtering and client filtering.
-        """
+        """Get base queryset with client filtering"""
         assert self.queryset is not None, "Define queryset in your view"
-        
-        # Start with base queryset
         queryset = self.queryset.all()
-        
-        # Apply client filtering first - this is crucial for security
-        queryset = self.filter_queryset_by_client(queryset)
-        
-        id_param = f"{self.entity_name}_ids"
-        raw_ids = self.request.query_params.get(id_param, [])
+        return self.filter_queryset_by_client(queryset)
 
-        if raw_ids:
-            try:
-                # Convert to a list of integers
-                ids = [int(id) for id in raw_ids if id.isdigit()]
-                queryset = queryset.filter(id__in=ids)
-            except ValueError:
-                raise ValidationError(_("Invalid ID format. Must be a valid integer list."))
-        
-        # Handle related entity filtering if present
-        related_filters = self.get_related_filters()
-        if related_filters:
-            queryset = queryset.filter(**related_filters)
-        
-        return queryset
-    
-    def get_related_filters(self):
+    def get_objects(self, ids=None):
         """
-        Get filters for related entities.
-        Override in child classes to add specific relation filtering.
-        """
-        return {}
-    
-    def get_object(self):
-        """
-        Get single object based on ID with proper client scope checking.
+        Get one or multiple objects with client scope checking.
+        If ids is None, tries to get single object from URL or query params.
         """
         queryset = self.get_queryset()
-        obj = get_object_or_404(queryset, pk=self.kwargs.get('pk'))
-        return obj
-    
-    def get_objects_by_ids(self, ids):
-        """Get multiple objects with client scope checking."""
-        queryset = self.get_queryset()
-        # # Ensure ids list isn't too large to prevent performance issues
-        # if len(ids) > 100:  # You can adjust this limit
-        #     raise ValidationError(_("Too many items requested. Maximum is 100."))
-            
+        
+        if not ids:
+            # Try to get single ID from URL or query params
+            pk = self.kwargs.get('pk') or self.request.query_params.get(f'{self.entity_name}_id')
+            if not pk:
+                return None
+            ids = [pk]
+
+        # Get and validate objects
         objects = queryset.filter(id__in=ids)
-        print(f"Batch operation - Found {objects.count()} objects for client {self.get_client_id()}")
-        
-        # Verify we found all requested objects
         if objects.count() != len(ids):
-            raise ValidationError(_("Some requested items were not found."))
+            missing = set(str(id) for id in ids) - set(str(obj.id) for obj in objects)
+            raise ValidationError(f"Items not found: {', '.join(missing)}")
             
         return objects
 
-    def handle_exception(self, exc):
-        """Enhanced error handling with detailed messages"""
-        print(f"Exception in {self.__class__.__name__}: {str(exc)}")
-        
-        if settings.DEBUG:
-            error_detail = str(exc)
-        else:
-            error_detail = "An unexpected error occurred"
-            
-        return Response({
-            "status": "error",
-            "message": error_detail
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-
-    def get(self, request, pk=None, *args, **kwargs):
-        """
-        Handle GET requests - list or detail.
-        """
+    def get(self, request, *args, **kwargs):
+        """Handle GET requests for single or multiple objects"""
         try:
-            if pk:
-                instance = self.get_object()
-                serializer = self.serializer_class(instance)
-                return Response(serializer.data)
-            
-            queryset = self.get_queryset()
-        
-            # Handle ID filtering
+            # Check for specific IDs
             id_param = request.query_params.get(f'{self.entity_name}_ids')
-            if id_param:
-                # Split comma-separated string and convert to list
-                ids = [id.strip() for id in id_param.split(',')]
-                try:
-                    queryset = self.get_objects_by_ids(ids)
-                except ValidationError as e:
-                    return Response(
-                        {"error": str(e)},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+            ids = [id.strip() for id in id_param.split(',')] if id_param else None
+            
+            # Get objects
+            objects = self.get_objects(ids)
+            if not objects:
+                # No specific IDs requested, return full list
+                objects = self.get_queryset()
+            
+            # Determine if we need pagination
+            many = bool(id_param or not self.kwargs.get('pk'))
+            if many and self.paginator is not None:
+                page = self.paginate_queryset(objects)
+                if page is not None:
+                    serializer = self.serializer_class(page, many=True)
+                    return self.get_paginated_response(serializer.data)
 
-            serializer = self.serializer_class(queryset, many=True)
+            # If no pagination needed or single object request
+            serializer = self.serializer_class(objects, many=many)
             return Response(serializer.data)
+            
         except Exception as exc:
             return self.handle_exception(exc)
 
     def post(self, request, *args, **kwargs):
-        """
-        Handle POST requests:
-        - Single item creation
-        - Batch creation for list of items
-        """
-        is_batch = isinstance(request.data, list)
+        """Handle POST requests for single or batch creation"""
+        client_id = self.get_client_id()
+        data = request.data if isinstance(request.data, list) else [request.data]
         
-        if is_batch:
-            # if len(request.data) > self.max_batch_size:
-            #     raise ValidationError(_(f"Too many items. Maximum is {self.max_batch_size}."))
-                
-            created_instances = []
+        created_objects = []
+        try:
             with transaction.atomic():
-                for item in request.data:
+                for item in data:
                     serializer = self.serializer_class(
                         data=item,
-                        context={'request': request}
+                        context={'request': request, 'client_id': client_id}
                     )
                     if serializer.is_valid():
-                        instance = self.perform_create(serializer)
-                        created_instances.append(instance)
+                        instance = serializer.save(client_id=client_id)
+                        created_objects.append(instance)
                     else:
-                        raise ValidationError(serializer.errors)
-                        
+                        raise ValidationError(f"Invalid data: {serializer.errors}")
+
+            # Return paginated response for batch creations if needed
+            if len(created_objects) > 1 and self.paginator is not None:
+                page = self.paginate_queryset(created_objects)
+                if page is not None:
+                    serializer = self.serializer_class(page, many=True)
+                    return self.get_paginated_response(serializer.data)
+
+            serializer = self.serializer_class(created_objects, many=True)
             return Response(
-                self.serializer_class(created_instances, many=True).data,
+                serializer.data if len(created_objects) > 1 else serializer.data[0],
                 status=status.HTTP_201_CREATED
             )
-        else:
-            serializer = self.serializer_class(
-                data=request.data,
-                context={'request': request}
-            )
-            if serializer.is_valid():
-                instance = self.perform_create(serializer)
-                return Response(
-                    self.serializer_class(instance).data,
-                    status=status.HTTP_201_CREATED
-                )
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return self.handle_exception(exc)
 
-    def put(self, request, pk=None, *args, **kwargs):
-        """
-        Handle PUT requests:
-        - Single item update if pk provided
-        - Batch update if data is list of items with IDs
-        """
-        is_batch = isinstance(request.data, list)
-        
-        if is_batch:
-            # if len(request.data) > self.max_batch_size:
-            #     raise ValidationError(_(f"Too many items. Maximum is {self.max_batch_size}."))
-                
-            ids = [item.get('id') for item in request.data]
-            if not all(ids):
-                raise ValidationError(_("All items must have an ID"))
-                
-            objects = self.get_objects_by_ids(ids)
-            updated_instances = []
-            
-            with transaction.atomic():
-                for item in request.data:
-                    instance = next(
-                        (obj for obj in objects if str(obj.id) == str(item.get('id'))),
-                        None
-                    )
-                    serializer = self.serializer_class(
-                        instance,
-                        data=item,
-                        context={'request': request}
-                    )
-                    if serializer.is_valid():
-                        updated = self.perform_update(serializer)
-                        updated_instances.append(updated)
-                    else:
-                        raise ValidationError(serializer.errors)
-                        
-            return Response(self.serializer_class(updated_instances, many=True).data)
-        else:
-            instance = self.get_object(pk)
-            serializer = self.serializer_class(
-                instance,
-                data=request.data,
-                context={'request': request}
-            )
-            if serializer.is_valid():
-                updated = self.perform_update(serializer)
-                return Response(self.serializer_class(updated).data)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def put(self, request, *args, **kwargs):
+        """Handle PUT requests"""
+        return self._update(request, False)
 
-    def patch(self, request, pk=None, *args, **kwargs):
-        """
-        Handle PATCH requests:
-        - Single item partial update if pk provided
-        - Batch partial update if data is list of items with IDs
-        """
-        is_batch = isinstance(request.data, list)
-        
-        if is_batch:
-            # if len(request.data) > self.max_batch_size:
-            #     raise ValidationError(_(f"Too many items. Maximum is {self.max_batch_size}."))
-                
-            ids = [item.get('id') for item in request.data]
-            if not all(ids):
-                raise ValidationError(_("All items must have an ID"))
-                
-            objects = self.get_objects_by_ids(ids)
-            updated_instances = []
-            
-            with transaction.atomic():
-                for item in request.data:
-                    instance = next(
-                        (obj for obj in objects if str(obj.id) == str(item.get('id'))),
-                        None
-                    )
-                    serializer = self.serializer_class(
-                        instance,
-                        data=item,
-                        partial=True,
-                        context={'request': request}
-                    )
-                    if serializer.is_valid():
-                        updated = self.perform_update(serializer)
-                        updated_instances.append(updated)
-                    else:
-                        raise ValidationError(serializer.errors)
-                        
-            return Response(self.serializer_class(updated_instances, many=True).data)
-        else:
-            instance = self.get_object(pk)
-            serializer = self.serializer_class(
-                instance,
-                data=request.data,
-                partial=True,
-                context={'request': request}
-            )
-            if serializer.is_valid():
-                updated = self.perform_update(serializer)
-                return Response(self.serializer_class(updated).data)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def patch(self, request, *args, **kwargs):
+        """Handle PATCH requests"""
+        return self._update(request, True)
 
-    def delete(self, request, pk=None, *args, **kwargs):
-        """
-        Handle DELETE requests:
-        - Single item deletion if pk provided
-        - Batch deletion if list of IDs provided in request data
-        """
-        is_batch = isinstance(request.data, list)
-        
-        if is_batch:
-            # if len(request.data) > self.max_batch_size:
-            #     raise ValidationError(_(f"Too many items. Maximum is {self.max_batch_size}."))
-                
-            objects = self.get_objects_by_ids(request.data)
-            
-            with transaction.atomic():
-                deleted_count = 0
-                for obj in objects:
-                    self.perform_delete(obj)
-                    deleted_count += 1
-                    
-            return Response({
-                "message": f"Successfully deleted {deleted_count} items",
-                "count": deleted_count
-            }, status=status.HTTP_200_OK)
-        else:
-            instance = self.get_object(pk)
-            self.perform_delete(instance)
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-    def perform_update(self, serializer):
-        """
-        Perform object update with client scope check.
-        """
+    def _update(self, request, partial):
+        """Handle update requests for single or multiple objects"""
         client_id = self.get_client_id()
-        print(f"Updating with client_id: {client_id}")
         
-        instance = serializer.save(client_id=client_id)  # Add client_id here
-        return instance 
+        try:
+            with transaction.atomic():
+                # Handle different update request formats
+                if isinstance(request.data, list):
+                    if all(isinstance(item, (str, uuid.UUID)) for item in request.data):
+                        # Handle list of IDs with shared update data
+                        ids = request.data
+                        update_data = request.query_params.dict()
+                    else:
+                        # Handle list of objects with individual updates
+                        ids = [item.get('id') for item in request.data]
+                        if not all(ids):
+                            raise ValidationError("All items must have an ID")
+                
+                    objects = self.get_objects(ids)
+                    updated_objects = []
+                    
+                    for obj in objects:
+                        # Get individual update data or use shared data
+                        item_data = next(
+                            (item for item in request.data if str(item.get('id')) == str(obj.id)),
+                            update_data if 'update_data' in locals() else {}
+                        )
+                        serializer = self._update_instance(obj, item_data, partial, client_id)
+                        updated_objects.append(serializer.instance)
+                    
+                    # Return paginated response if needed
+                    if len(updated_objects) > 1 and self.paginator is not None:
+                        page = self.paginate_queryset(updated_objects)
+                        if page is not None:
+                            serializer = self.serializer_class(page, many=True)
+                            return self.get_paginated_response(serializer.data)
 
-    def perform_delete(self, instance):
-        """
-        Perform object deletion with client scope check.
-        """
-        instance.delete()
+                    serializer = self.serializer_class(updated_objects, many=True)
+                    return Response(serializer.data)
+                else:
+                    # Single update
+                    instance = self.get_objects().first()
+                    serializer = self._update_instance(instance, request.data, partial, client_id)
+                    return Response(serializer.data)
+                    
+        except Exception as exc:
+            return self.handle_exception(exc)
+
+    def delete(self, request, *args, **kwargs):
+        """Handle DELETE requests for single or multiple objects"""
+        try:
+            with transaction.atomic():
+                # Handle different delete request formats
+                if isinstance(request.data, list):
+                    ids = request.data
+                else:
+                    # Try to get IDs from query params
+                    id_param = request.query_params.get(f'{self.entity_name}_ids')
+                    ids = [id.strip() for id in id_param.split(',')] if id_param else None
+                
+                # Get and validate objects
+                objects = self.get_objects(ids)
+                if not objects:
+                    raise ValidationError("No objects found to delete")
+                
+                # Validate and delete each object
+                deleted_count = 0
+                failed_ids = []
+                
+                for obj in objects:
+                    try:
+                        self.validate_client_id(obj)
+                        obj.delete()
+                        deleted_count += 1
+                    except Exception as e:
+                        failed_ids.append(str(obj.id))
+                
+                response_data = {
+                    "message": f"Successfully deleted {deleted_count} items",
+                    "count": deleted_count
+                }
+                
+                if failed_ids:
+                    response_data["failed_ids"] = failed_ids
+                    return Response(response_data, status=status.HTTP_207_MULTI_STATUS)
+                
+                return Response(response_data if deleted_count > 1 else None, 
+                              status=status.HTTP_204_NO_CONTENT)
+                
+        except Exception as exc:
+            return self.handle_exception(exc)
+
+    def handle_exception(self, exc):
+        """Standardized error handling"""
+        if isinstance(exc, ValidationError):
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        logger.error(f"Error in {self.__class__.__name__}: {str(exc)}", exc_info=True)
+            
+        return Response(
+            {"error": "An unexpected error occurred" if not settings.DEBUG else str(exc)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

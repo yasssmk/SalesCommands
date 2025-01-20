@@ -77,34 +77,45 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         } for child in obj.direct_child_companies.all()]
     
     def validate(self, data):
-
         data = super().validate(data)
 
-        # Convert company name to uppercase
+        # Convert company name to uppercase if it's present
         company_name = data.get('company_name')
-        
         if company_name:
             data['company_name'] = company_name.upper()
         
         # Get the current instance for update operations
         instance = getattr(self, 'instance', None)
         
-        # Validate unique constraint
-        self.validate_client_scoped_uniqueness(
-            data=data,
-            unique_fields=['company_name', 'city', 'country'],
-            model_class=Account,
-            error_message=_("An account with this name already exists in your organization for this city and country.")
-        )
+        # Only validate uniqueness if any of the unique constraint fields are being updated
+        unique_fields = ['company_name', 'city', 'country']
+        if any(field in data for field in unique_fields):
+            # For PATCH requests, merge with existing data to check complete uniqueness
+            if instance and self.partial:
+                validation_data = {
+                    'company_name': instance.company_name,
+                    'city': instance.city,
+                    'country': instance.country,
+                    **{field: data[field] for field in unique_fields if field in data}
+                }
+            else:
+                validation_data = data
+
+            self.validate_client_scoped_uniqueness(
+                data=validation_data,
+                unique_fields=unique_fields,
+                model_class=Account,
+                error_message=_("An account with this name already exists in your organization for this city and country.")
+            )
         
-        # Validate assigned_to user
+        # Validate account_owner user
         account_owner_id = data.get('account_owner_id')
-        team_owner_id = data.get('assigned_team_id')
+        team_owner_id = data.get('team_owner_id')  # Fixed field name from assigned_team_id
         
         if account_owner_id:
             try:
-                account_owner_id = User.objects.get(id=account_owner_id)
-                if not account_owner_id.is_active:
+                account_owner = User.objects.get(id=account_owner_id)
+                if not account_owner.is_active:
                     raise serializers.ValidationError({
                         'account_owner_id': _("Selected user is not active.")
                     })
@@ -112,7 +123,7 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
                 # If team is specified, ensure user belongs to that team
                 if team_owner_id:
                     team = Team.objects.get(id=team_owner_id)
-                    if account_owner_id.team_id != team.id:
+                    if account_owner.team_id != team.id:
                         raise serializers.ValidationError({
                             'account_owner_id': _("Account manager must belong to the assigned team.")
                         })
@@ -127,25 +138,25 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         if parent_id:
             try:
                 parent = Account.objects.get(id=parent_id)
-                if instance and parent.id == instance.id:
+                if instance and str(parent.id) == str(instance.id):
                     raise serializers.ValidationError({
-                        'parent_id': "A company cannot be its own parent."
+                        'parent_id': _("A company cannot be its own parent.")
                     })
                 
                 # Check for circular references
                 if instance:
                     current = parent
-                    path = {current.id}
+                    path = {str(current.id)}
                     while current.parent_company:
                         current = current.parent_company
-                        if current.id in path or current.id == instance.id:
+                        if str(current.id) in path or str(current.id) == str(instance.id):
                             raise serializers.ValidationError({
-                                'parent_id': "Cannot create a circular parent-child relationship."
+                                'parent_id': _("Cannot create a circular parent-child relationship.")
                             })
-                        path.add(current.id)
+                        path.add(str(current.id))
             except Account.DoesNotExist:
                 raise serializers.ValidationError({
-                    'parent_id': "Invalid parent company ID."
+                    'parent_id': _("Invalid parent company ID.")
                 })
         
         return data
