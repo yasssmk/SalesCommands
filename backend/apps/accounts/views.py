@@ -11,7 +11,7 @@ from core.apps_shared_methods import BaseAPIView
 from .models import Account
 from .serializers import AccountSerializer
 from django.utils.translation import gettext_lazy as _
-
+from core.error_messages import CoreErrorMessages, AccountErrorMessages
 
 class AccountAPIView(BaseAPIView):
     """
@@ -26,11 +26,12 @@ class AccountAPIView(BaseAPIView):
     serializer_class = AccountSerializer
     entity_name = 'account'
 
+    mass_update_allowed_fields = {'type', 'classification', 'account_owner_id', 'team_owner_id'}
+
     def get_queryset(self):
         """Extend base queryset with account-specific filtering"""
         queryset = super().get_queryset()
         
-        # Handle list-based filters
         filter_mappings = {
             'parent_ids': 'parent_company_id__in',
             'types': 'type__in',
@@ -44,8 +45,11 @@ class AccountAPIView(BaseAPIView):
                     filter_list = [v.strip() for v in values.split(',')]
                     queryset = queryset.filter(**{field: filter_list})
                     
-        except ValueError as e:
-            raise ValidationError(_("Invalid filter format provided"))
+        except ValueError:
+            raise ValidationError({
+                'error': CoreErrorMessages.INVALID_FILTER,
+                'detail': f"Invalid format for filter parameters: {', '.join(filter_mappings.keys())}"
+            })
             
         return queryset
 
@@ -55,10 +59,14 @@ class AccountAPIView(BaseAPIView):
             try:
                 parent = Account.objects.get(id=parent_id)
                 if str(parent.client_id) != str(client_id):
-                    raise ValidationError(_("Invalid parent company assignment"))
+                    raise ValidationError({
+                        'parent_id': AccountErrorMessages.INVALID_PARENT
+                    })
                 return parent
             except Account.DoesNotExist:
-                raise ValidationError(_("Parent company not found"))
+                raise ValidationError({
+                    'parent_id': AccountErrorMessages.PARENT_NOT_FOUND
+                })
         return None
 
     def _update_instance(self, instance, data, partial, client_id):
@@ -104,10 +112,9 @@ class AccountAPIView(BaseAPIView):
     def hierarchy(self, request, pk=None):
         """Get the full hierarchy for an account"""
         try:
-            # Get the account instance
             objects = self.get_objects()
             if not objects or objects.count() != 1:
-                raise ValidationError(_("Account not found"))
+                raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
                 
             instance = objects[0]
             hierarchy = instance.get_full_hierarchy()
@@ -126,7 +133,7 @@ class AccountAPIView(BaseAPIView):
         except Exception as exc:
             return self.handle_exception(exc)
         
-        
+
 class AccountChoicesView(APIView):
     """
     API endpoint for retrieving account type and classification choices.

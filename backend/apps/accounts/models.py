@@ -6,6 +6,7 @@ from core.models import BaseModelApp, ContactDetailsMixin
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User, Team, Organization
+from core.error_messages import CoreErrorMessages, AccountErrorMessages, ValidationErrorMessages
 
 # Personalization: Users could add new choices 
 class AccountType(models.TextChoices):
@@ -23,7 +24,17 @@ class AccountClassification(models.TextChoices):
 
 class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
 
-    company_name = models.CharField(max_length=255, verbose_name=_('Company Name'))
+    company_name = models.CharField(
+        max_length=255, 
+        verbose_name=_('Company Name'),
+        error_messages={
+            'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Company name'),
+            'max_length': ValidationErrorMessages.MAX_LENGTH.format(
+                field='Company name',
+                max_length=255
+            )
+        }
+    )
     industry = models.CharField(max_length=100, blank=True, null=True, verbose_name=_('Industry'))
 
     type = models.CharField(max_length=50, choices=AccountType.choices, blank=True, null=True, verbose_name=_('Account Type'))
@@ -59,7 +70,7 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
         if self.account_owner and self.team_owner:
             if not self.account_owner.team == self.team_owner:
                 raise ValidationError({
-                    'account_owner' : _("Account manager must belong to the assigned team.")
+                    'account_owner' : AccountErrorMessages.TEAM_MISMATCH
                 })
 
     def save(self, *args, **kwargs):
