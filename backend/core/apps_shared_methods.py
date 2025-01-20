@@ -196,9 +196,9 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                     instance = self.get_objects().first()
                     serializer = self._update_instance(instance, request.data, partial, client_id)
                     return Response(serializer.data)
-                    
+                
         except Exception as exc:
-            return self.handle_exception(exc)
+             return self.handle_exception(exc)
 
     def delete(self, request, *args, **kwargs):
         """Handle DELETE requests for single or multiple objects"""
