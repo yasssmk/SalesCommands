@@ -9,7 +9,7 @@ import logging
 from .client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
-from uuid import UUID
+import uuid 
 
 logger = logging.getLogger(__name__)
 
