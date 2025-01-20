@@ -83,7 +83,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
 
         if invalid_ids:
             raise ValidationError({
-                'ids': CoreErrorMessages.INVALID_UUID,
+                'ids': CoreErrorMessages.INVALID_DATA,
                 'invalid_values': invalid_ids
             })
 
