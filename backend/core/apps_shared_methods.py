@@ -331,34 +331,56 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             return self.handle_exception(exc)
 
     def handle_exception(self, exc):
-        """Improved error handling with consistent format"""
-        if isinstance(exc, (ValidationError, DRFValidationError)):
-            # Get the error detail, handling both DRF and Django validation errors
-            if hasattr(exc, 'detail'):
-                error_detail = exc.detail
-            else:
-                error_detail = exc.message if hasattr(exc, 'message') else exc.args[0]
-
-            # Format the error response consistently
+        """Standardized error handling with consistent format"""
+        # Handle DRF ValidationError
+        if isinstance(exc, DRFValidationError):
+            error_detail = exc.detail
+            # If error is a dict with nested ErrorDetail
             if isinstance(error_detail, dict):
-                response_data = {'error': error_detail}
-            elif isinstance(error_detail, list):
-                response_data = {'error': error_detail[0] if error_detail else str(exc)}
+                # Handle nested 'error' key case
+                if 'error' in error_detail and isinstance(error_detail['error'], (list, dict)):
+                    error_msg = error_detail['error']
+                    if isinstance(error_msg, list):
+                        error_msg = error_msg[0]
+                    # Clean up nested error messages
+                    if isinstance(error_msg, str) and 'ErrorDetail' in error_msg:
+                        # Extract the actual message from ErrorDetail string
+                        import re
+                        match = re.search(r"string='([^']*)'", error_msg)
+                        error_msg = match.group(1) if match else error_msg
+                else:
+                    # Take the first error message from the dict
+                    error_msg = next(iter(error_detail.values()))[0]
             else:
-                response_data = {'error': str(error_detail)}
-
+                error_msg = str(error_detail[0]) if isinstance(error_detail, list) else str(error_detail)
+            
             return Response(
-                response_data,
+                {'error': error_msg},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
+        # Handle Django ValidationError
+        if isinstance(exc, ValidationError):
+            if hasattr(exc, 'message_dict'):
+                # Get first error message from message_dict
+                error_msg = next(iter(exc.message_dict.values()))[0]
+            else:
+                error_msg = exc.messages[0] if hasattr(exc, 'messages') else str(exc)
+            
+            return Response(
+                {'error': error_msg},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Handle Permission Denied
         if isinstance(exc, PermissionDenied):
             return Response(
                 {'error': CoreErrorMessages.PERMISSION_DENIED},
                 status=status.HTTP_403_FORBIDDEN
             )
             
-        logger.error(f"Error in {self.__class__.__name__}: {str(exc)}", exc_info=True)
+        # Log unexpected errors
+        print(f"Error in {self.__class__.__name__}: {str(exc)}", exc_info=True)
         return Response(
             {'error': CoreErrorMessages.UNEXPECTED_ERROR},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR

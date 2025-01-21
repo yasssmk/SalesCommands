@@ -80,7 +80,6 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
     def validate(self, data):
         try:
             data = super().validate(data)
-
             client_id = self._get_client_id_from_context()
 
             # Validate all related objects belong to same client
@@ -121,12 +120,20 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             self._validate_parent_company(data, instance)
             
             return data
-            
+        
         except serializers.ValidationError as e:
-            raise serializers.ValidationError({
-                "error": CoreErrorMessages.INVALID_DATA.format(detail=str(e))
-            })
-    
+            if hasattr(e, 'detail'):
+                if isinstance(e.detail, dict):
+                    # Get the first error message from the dict
+                    error_msg = next(iter(e.detail.values()))
+                    if isinstance(error_msg, list):
+                        error_msg = error_msg[0]
+                else:
+                    error_msg = e.detail
+            else:
+                error_msg = str(e)
+            raise serializers.ValidationError(error_msg)
+
     def _validate_related_objects_client_scope(self, data, client_id):
         """Ensure all related objects belong to same client"""
         # Validate parent company
@@ -135,13 +142,9 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             try:
                 parent = Account.objects.get(id=parent_id)
                 if str(parent.client_id) != str(client_id):
-                    raise serializers.ValidationError({
-                        'parent_company': AccountErrorMessages.INVALID_PARENT
-                    })
+                    raise serializers.ValidationError(AccountErrorMessages.INVALID_PARENT)
             except Account.DoesNotExist:
-                raise serializers.ValidationError({
-                    'parent_company': AccountErrorMessages.PARENT_NOT_FOUND
-                })
+                raise serializers.ValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
 
         # Validate team
         team_id = data.get('team_owner_id')
@@ -149,13 +152,9 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             try:
                 team = Team.objects.select_related('organization').get(id=team_id)
                 if str(team.organization.client_account_id) != str(client_id):
-                    raise serializers.ValidationError({
-                        'team_owner': AccountErrorMessages.TEAM_MISMATCH
-                    })
+                    raise serializers.ValidationError(AccountErrorMessages.TEAM_MISMATCH)
             except Team.DoesNotExist:
-                raise serializers.ValidationError({
-                    'team_owner': CoreErrorMessages.OBJECT_NOT_FOUND
-                })
+                raise serializers.ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
     def _validate_account_owner(self, data):
         """Validate account owner and team relationship"""
@@ -166,21 +165,15 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             try:
                 account_owner = User.objects.get(id=account_owner_id)
                 if not account_owner.is_active:
-                    raise serializers.ValidationError({
-                        'account_owner_id': AccountErrorMessages.USER_INACTIVE
-                    })
+                    raise serializers.ValidationError(AccountErrorMessages.USER_INACTIVE)
                 
                 if team_owner_id:
                     team = Team.objects.get(id=team_owner_id)
                     if account_owner.team_id != team.id:
-                        raise serializers.ValidationError({
-                            'account_owner_id': AccountErrorMessages.TEAM_MISMATCH
-                        })
+                        raise serializers.ValidationError(AccountErrorMessages.TEAM_MISMATCH)
                     
             except User.DoesNotExist:
-                raise serializers.ValidationError({
-                    'account_owner_id': AccountErrorMessages.INVALID_USER
-                })
+                raise serializers.ValidationError(AccountErrorMessages.INVALID_USER)
 
     def _validate_parent_company(self, data, instance):
         """Validate parent company relationship"""
@@ -191,9 +184,7 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
                 
                 # Check for self-reference
                 if instance and str(parent.id) == str(instance.id):
-                    raise serializers.ValidationError({
-                        'parent_id': AccountErrorMessages.SELF_PARENT
-                    })
+                    raise serializers.ValidationError(AccountErrorMessages.SELF_PARENT)
                 
                 # Check for circular references
                 if instance:
@@ -202,12 +193,8 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
                     while current.parent_company:
                         current = current.parent_company
                         if str(current.id) in path or str(current.id) == str(instance.id):
-                            raise serializers.ValidationError({
-                                'parent_id': AccountErrorMessages.CIRCULAR_HIERARCHY
-                            })
+                            raise serializers.ValidationError(AccountErrorMessages.CIRCULAR_HIERARCHY)
                         path.add(str(current.id))
                         
             except Account.DoesNotExist:
-                raise serializers.ValidationError({
-                    'parent_id': AccountErrorMessages.PARENT_NOT_FOUND
-                })
+                raise serializers.ValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
