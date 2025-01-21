@@ -2,7 +2,7 @@ from rest_framework import views, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
 import logging
@@ -84,6 +84,14 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                     # No specific IDs requested, return full list
                     objects = self.get_queryset()
             
+            if kwargs.get('pk'):
+                objects = objects.first()
+                if not objects:
+                    return Response(
+                        {'error': CoreErrorMessages.OBJECT_NOT_FOUND},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+            
             # Determine if we need pagination
             many = bool(id_param or not kwargs.get('pk'))
             if many and self.paginator is not None:
@@ -120,7 +128,6 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         # Get and validate objects
         objects = queryset.filter(id__in=ids)
         if objects.count() != len(ids):
-            missing = set(ids) - set(str(obj.id) for obj in objects)
             raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
             
         return objects
@@ -230,15 +237,20 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                     
                     updated_objects = []
                     for obj in objects:
-                        serializer = self.serializer_class(
-                            obj,
-                            data=update_data,
-                            partial=partial,
-                            context={'request': request, 'client_id': client_id}
-                        )
-                        if serializer.is_valid(raise_exception=True):
-                            updated = serializer.save()
-                            updated_objects.append(updated)
+                        try:
+                            serializer = self.serializer_class(
+                                obj,
+                                data=update_data,
+                                partial=partial,
+                                context={'request': request, 'client_id': client_id}
+                            )
+                            if serializer.is_valid():
+                                updated = serializer.save()
+                                updated_objects.append(updated)
+                            else:
+                                raise ValidationError(serializer.errors)
+                        except Exception as e:
+                            return self.handle_exception(e)
                     
                     serializer = self.serializer_class(updated_objects, many=True)
                     return Response(serializer.data)
@@ -247,21 +259,29 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                     # Single object update
                     objects = self.get_objects()
                     if not objects.exists():
-                        raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+                        return Response(
+                            {'error': CoreErrorMessages.OBJECT_NOT_FOUND},
+                            status=status.HTTP_404_NOT_FOUND
+                        )
 
                     instance = objects.first()
                     self.validate_client_id(instance)
                     
-                    serializer = self.serializer_class(
-                        instance,
-                        data=request.data,
-                        partial=partial,
-                        context={'request': request, 'client_id': client_id}
-                    )
-                    if serializer.is_valid(raise_exception=True):
-                        updated = serializer.save()
-                        return Response(self.serializer_class(updated).data)
-                        
+                    try:
+                        serializer = self.serializer_class(
+                            instance,
+                            data=request.data,
+                            partial=partial,
+                            context={'request': request, 'client_id': client_id}
+                        )
+                        if serializer.is_valid():
+                            updated = serializer.save()
+                            return Response(self.serializer_class(updated).data)
+                        else:
+                            raise ValidationError(serializer.errors)
+                    except Exception as e:
+                        return self.handle_exception(e)
+                    
         except Exception as exc:
             return self.handle_exception(exc)
                            
@@ -311,10 +331,24 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             return self.handle_exception(exc)
 
     def handle_exception(self, exc):
-        """Standardized error handling"""
-        if isinstance(exc, ValidationError):
+        """Improved error handling with consistent format"""
+        if isinstance(exc, (ValidationError, DRFValidationError)):
+            # Get the error detail, handling both DRF and Django validation errors
+            if hasattr(exc, 'detail'):
+                error_detail = exc.detail
+            else:
+                error_detail = exc.message if hasattr(exc, 'message') else exc.args[0]
+
+            # Format the error response consistently
+            if isinstance(error_detail, dict):
+                response_data = {'error': error_detail}
+            elif isinstance(error_detail, list):
+                response_data = {'error': error_detail[0] if error_detail else str(exc)}
+            else:
+                response_data = {'error': str(error_detail)}
+
             return Response(
-                exc.detail if hasattr(exc, 'detail') else {'error': str(exc)},
+                response_data,
                 status=status.HTTP_400_BAD_REQUEST
             )
             
