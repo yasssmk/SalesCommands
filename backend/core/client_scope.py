@@ -53,43 +53,6 @@ class ClientScopeManager:
         """
         Serializer mixin for client-scoped validation
         """
-        def validate_client_scoped_uniqueness(self, data, unique_fields, model_class=None, error_message=None):
-            """Validate uniqueness within client scope"""
-            model = model_class or self.Meta.model
-            instance = getattr(self, 'instance', None)
-            
-            try:
-                client_id = self._get_client_id_from_context()
-            except serializers.ValidationError as e:
-                raise serializers.ValidationError({
-                    'client_id': str(e)
-                })
-            
-            filter_kwargs = {
-                'client_id': client_id,
-                **{f"{field}__iexact": data.get(field) 
-                   for field in unique_fields 
-                   if data.get(field)}
-            }
-            
-            duplicate_exists = model.objects.filter(
-                **filter_kwargs
-            ).exclude(
-                pk=instance.pk if instance else None
-            ).exists()
-            
-            if duplicate_exists:
-                if not error_message:
-                    field_names = ', '.join(unique_fields)
-                    error_message = CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                        fields=field_names
-                    )
-                raise serializers.ValidationError({
-                    "error": error_message
-                })
-            
-            return data
-            
 
         def _get_client_id_from_context(self):
             """Helper to get client_id from context"""
@@ -102,6 +65,68 @@ class ClientScopeManager:
                 raise serializers.ValidationError(CoreErrorMessages.CLIENT_ID_REQUIRED)
                 
             return client_id
+        
+        def validate_client_scoped_uniqueness(self, data, unique_fields, model_class=None, error_message=None):
+            """Validate uniqueness within client scope"""
+            model = model_class or self.Meta.model
+            instance = getattr(self, 'instance', None)
+            
+            try:
+                client_id = self._get_client_id_from_context()
+            except serializers.ValidationError as e:
+                raise serializers.ValidationError(CoreErrorMessages.AUTH_REQUIRED)
+            
+            # If it's a partial update, include the existing values for missing fields
+            validation_data = data.copy()
+            if instance and self.partial:
+                for field in unique_fields:
+                    if field not in data:
+                        validation_data[field] = getattr(instance, field)
+
+            # Build the query filter for checking duplicates
+            filter_kwargs = {
+                'client_id': client_id,
+                **{f"{field}__iexact": validation_data.get(field) 
+                for field in unique_fields if validation_data.get(field)}
+            }
+
+            duplicate_exists = model.objects.filter(**filter_kwargs).exclude(
+                pk=instance.pk if instance else None
+            ).exists()
+
+            if duplicate_exists:
+                if not error_message:
+                    field_names = ', '.join(unique_fields)
+                    error_message = CoreErrorMessages.UNIQUE_CONSTRAINT.format(fields=field_names)
+                raise serializers.ValidationError(error_message)
+
+            return data
+
+
+        def validate_client_id(self, obj):
+            """Validate that an object belongs to the current client"""
+            if not hasattr(obj, 'client_id'):
+                raise ValidationError(CoreErrorMessages.CLIENT_SCOPE_UNSUPPORTED)
+            
+            current_client = self.get_client_id()
+            if str(obj.client_id) != str(current_client):
+                raise PermissionDenied(CoreErrorMessages.CLIENT_MISMATCH)
+        
+        def _extract_error_message(self, e):
+            """Extracts and formats the error message"""
+            if hasattr(e, 'detail'):
+                error_detail = e.detail
+                if isinstance(error_detail, dict):
+                    # Get first error message from the dict
+                    error_msg = next(iter(error_detail.values()))
+                    if isinstance(error_msg, list):
+                        error_msg = error_msg[0]
+                else:
+                    error_msg = error_detail[0] if isinstance(error_detail, list) else error_detail
+            else:
+                error_msg = str(e)
+
+            return str(error_msg).strip('"\'')
 
     class ViewMixin:
         """
@@ -125,9 +150,7 @@ class ClientScopeManager:
         def validate_client_id(self, obj):
             """Validate that an object belongs to the current client"""
             if not hasattr(obj, 'client_id'):
-                raise ValidationError({
-                    'error': CoreErrorMessages.CLIENT_SCOPE_UNSUPPORTED
-                })
+                raise ValidationError(CoreErrorMessages.CLIENT_SCOPE_UNSUPPORTED)
             
             current_client = self.get_client_id()
             if str(obj.client_id) != str(current_client):
@@ -164,16 +187,13 @@ class ClientScopeManager:
             self.validate_client_id(instance)
             
             if 'client_id' in serializer.validated_data:
-                raise ValidationError({
-                    'client_id': CoreErrorMessages.CLIENT_ID_IMMUTABLE
-                })
+                raise ValidationError(CoreErrorMessages.CLIENT_ID_IMMUTABLE)
                 
             updated = serializer.save()
             self.validate_client_id(updated)
             return updated
-        except Exception as e:
-            print(f"Error in perform_update: {str(e)}", exc_info=True)
-            raise
+        except ValidationError as e:
+            raise serializers.ValidationError(str(e))
 
     def perform_delete(self, instance):
         """Delete with client_id validation"""

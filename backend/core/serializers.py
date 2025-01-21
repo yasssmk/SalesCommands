@@ -5,6 +5,8 @@ from core.error_messages import ValidationErrorMessages, CoreErrorMessages
 from phonenumbers import parse as parse_phone, is_valid_number
 from django.core.validators import URLValidator
 
+
+    
 class ContactDetailsSerializer(serializers.Serializer):
     """Base serializer for contact-related fields"""
 
@@ -52,15 +54,10 @@ class ContactDetailsSerializer(serializers.Serializer):
         }
     )
 
-    country = serializers.ChoiceField(
-        choices=COUNTRIES, 
-        required=True,
+    country = serializers.CharField(
         error_messages={
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Country'),
-            'invalid_choice': CoreErrorMessages.INVALID_CHOICE.format(
-                field='Country',
-                choices=', '.join(dict(COUNTRIES).values())
-            )
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Country')
         }
     )
 
@@ -68,7 +65,7 @@ class ContactDetailsSerializer(serializers.Serializer):
         required=False, 
         allow_blank=True,
         error_messages={
-            'invalid': ValidationErrorMessages.INVALID_PHONE
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Phone')
         }
     )
     
@@ -76,7 +73,7 @@ class ContactDetailsSerializer(serializers.Serializer):
         required=False, 
         allow_blank=True,
         error_messages={
-            'invalid': ValidationErrorMessages.INVALID_EMAIL
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Email')
         }
     )
 
@@ -130,6 +127,18 @@ class ContactDetailsSerializer(serializers.Serializer):
                 return value
             except ValidationError:
                 raise ValidationError(ValidationErrorMessages.INVALID_URL)
+        return value
+    
+    def validate_country(self, value):
+        """Validate country field"""
+        if self.partial and (value is None or value == ''):
+            return value
+            
+        valid_countries = [choice[0] for choice in COUNTRIES]
+        if value not in valid_countries:
+            raise serializers.ValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="Country")
+            )
         return value
 
 class ContactValidationMixin:

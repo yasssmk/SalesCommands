@@ -114,7 +114,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
 
     def get_objects(self, ids=None):
         """Get one or multiple objects with client scope checking"""
-        queryset = self.get_queryset()
+        queryset = self.get_queryset()  # This already applies client filtering
         
         if not ids:
             pk = self.kwargs.get('pk') or self.request.query_params.get(f'{self.entity_name}_id')
@@ -125,10 +125,12 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         # Convert all IDs to strings for consistent comparison
         ids = [str(id_).strip() for id_ in ids]
         
-        # Get and validate objects
+        # Get objects - queryset is already client-scoped from get_queryset()
         objects = queryset.filter(id__in=ids)
+        
+        # If we can't find all requested objects in the client-scoped queryset
         if objects.count() != len(ids):
-            raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            raise PermissionDenied(CoreErrorMessages.OBJECT_NOT_FOUND)
             
         return objects
     
@@ -150,7 +152,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                         instance = serializer.save(client_id=client_id)
                         created_objects.append(instance)
                     else:
-                        raise ValidationError(f"Invalid data: {serializer.errors}")
+                        raise ValidationError(serializer.errors)
 
             # Return paginated response for batch creations if needed
             if len(created_objects) > 1 and self.paginator is not None:
@@ -213,78 +215,74 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             })
 
     def _update(self, request, partial):
-        """Enhanced update with better client scope validation"""
+        """Enhanced update with better client scope validation."""
         client_id = self.get_client_id()
-        
+
         try:
             with transaction.atomic():
                 # Handle multiple objects update
                 id_param = request.query_params.get(f'{self.entity_name}_ids')
                 if id_param:
-                    # Split and clean IDs
                     ids = [id_.strip() for id_ in id_param.split(',') if id_.strip()]
                     if not ids:
-                        raise ValidationError("No valid IDs provided")
+                        raise ValidationError(CoreErrorMessages.NO_OBJECTS_FOUND)
 
-                    # Get all objects at once
                     objects = self.get_objects(ids)
-                    
-                    # Validate client scope for all objects
                     self._batch_validate_client_scope(objects)
-                    
-                    # Use request.data as shared update data for all objects
-                    update_data = request.data
-                    
+
                     updated_objects = []
                     for obj in objects:
                         try:
+                            filtered_data = {key: value for key, value in request.data.items()}
+
                             serializer = self.serializer_class(
                                 obj,
-                                data=update_data,
+                                data=filtered_data,
                                 partial=partial,
                                 context={'request': request, 'client_id': client_id}
                             )
-                            if serializer.is_valid():
-                                updated = serializer.save()
-                                updated_objects.append(updated)
-                            else:
-                                raise ValidationError(serializer.errors)
+
+                            if not serializer.is_valid():
+                                raise DRFValidationError(serializer.errors)
+
+                            updated = serializer.save()
+                            updated_objects.append(updated)
                         except Exception as e:
-                            return self.handle_exception(e)
-                    
+                            raise DRFValidationError(serializer.errors if hasattr(serializer, 'errors') else str(e))
+
                     serializer = self.serializer_class(updated_objects, many=True)
                     return Response(serializer.data)
-                    
+
                 else:
                     # Single object update
                     objects = self.get_objects()
                     if not objects.exists():
-                        return Response(
-                            {'error': CoreErrorMessages.OBJECT_NOT_FOUND},
-                            status=status.HTTP_404_NOT_FOUND
-                        )
+                        raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
                     instance = objects.first()
                     self.validate_client_id(instance)
-                    
-                    try:
-                        serializer = self.serializer_class(
-                            instance,
-                            data=request.data,
-                            partial=partial,
-                            context={'request': request, 'client_id': client_id}
-                        )
-                        if serializer.is_valid():
-                            updated = serializer.save()
-                            return Response(self.serializer_class(updated).data)
-                        else:
-                            raise ValidationError(serializer.errors)
-                    except Exception as e:
-                        return self.handle_exception(e)
-                    
-        except Exception as exc:
+
+                    filtered_data = {key: value for key, value in request.data.items()}
+
+                    serializer = self.serializer_class(
+                        instance,
+                        data=filtered_data,
+                        partial=partial,
+                        context={'request': request, 'client_id': client_id}
+                    )
+
+                    if not serializer.is_valid():
+                        raise DRFValidationError(serializer.errors)
+
+                    updated = serializer.save()
+                    return Response(self.serializer_class(updated).data)
+
+        except (ValidationError, DRFValidationError) as exc:
             return self.handle_exception(exc)
-                           
+        except Exception as exc:
+            logger.error(f"Error in {self.__class__.__name__}: {str(exc)}", exc_info=True)
+            return self.handle_exception(exc)
+                                
 
     def delete(self, request, *args, **kwargs):
         """Handle DELETE requests for single or multiple objects"""
@@ -331,56 +329,28 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             return self.handle_exception(exc)
 
     def handle_exception(self, exc):
-        """Standardized error handling with consistent format"""
-        # Handle DRF ValidationError
-        if isinstance(exc, DRFValidationError):
-            error_detail = exc.detail
-            # If error is a dict with nested ErrorDetail
+        """Improved error handling without modifying error messages incorrectly."""
+        if isinstance(exc, (ValidationError, DRFValidationError)):
+            error_detail = getattr(exc, 'detail', exc.messages if hasattr(exc, 'messages') else str(exc))
+
+            # Keep the original error format and avoid unnecessary modifications
             if isinstance(error_detail, dict):
-                # Handle nested 'error' key case
-                if 'error' in error_detail and isinstance(error_detail['error'], (list, dict)):
-                    error_msg = error_detail['error']
-                    if isinstance(error_msg, list):
-                        error_msg = error_msg[0]
-                    # Clean up nested error messages
-                    if isinstance(error_msg, str) and 'ErrorDetail' in error_msg:
-                        # Extract the actual message from ErrorDetail string
-                        import re
-                        match = re.search(r"string='([^']*)'", error_msg)
-                        error_msg = match.group(1) if match else error_msg
-                else:
-                    # Take the first error message from the dict
-                    error_msg = next(iter(error_detail.values()))[0]
+                return Response({'error': error_detail}, status=status.HTTP_400_BAD_REQUEST)
+
+            elif isinstance(error_detail, list) and error_detail:
+                return Response({'error': error_detail[0]}, status=status.HTTP_400_BAD_REQUEST)
+
             else:
-                error_msg = str(error_detail[0]) if isinstance(error_detail, list) else str(error_detail)
-            
-            return Response(
-                {'error': error_msg},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
-        # Handle Django ValidationError
-        if isinstance(exc, ValidationError):
-            if hasattr(exc, 'message_dict'):
-                # Get first error message from message_dict
-                error_msg = next(iter(exc.message_dict.values()))[0]
-            else:
-                error_msg = exc.messages[0] if hasattr(exc, 'messages') else str(exc)
-            
-            return Response(
-                {'error': error_msg},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
-        # Handle Permission Denied
+                return Response({'error': str(error_detail)}, status=status.HTTP_400_BAD_REQUEST)
+
         if isinstance(exc, PermissionDenied):
             return Response(
-                {'error': CoreErrorMessages.PERMISSION_DENIED},
+                {'error': str(exc.detail) if hasattr(exc, 'detail') else CoreErrorMessages.PERMISSION_DENIED},
                 status=status.HTTP_403_FORBIDDEN
             )
-            
+
         # Log unexpected errors
-        print(f"Error in {self.__class__.__name__}: {str(exc)}", exc_info=True)
+        logger.error(f"Error in {self.__class__.__name__}: {str(exc)}", exc_info=True)
         return Response(
             {'error': CoreErrorMessages.UNEXPECTED_ERROR},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR

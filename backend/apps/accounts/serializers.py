@@ -4,8 +4,10 @@ from phonenumbers import parse, is_valid_number
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User, Team
+from .models import Account, AccountType, AccountClassification
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
+from core.serializers import  ContactDetailsSerializer
 
 class AssignedTeamSerializer(serializers.ModelSerializer):
     """Serializer for the assigned team summary"""
@@ -21,7 +23,7 @@ class AccountManagerSerializer(serializers.ModelSerializer):
         fields = ['id', 'email', 'first_name', 'last_name', 'role_name', 'team']
         read_only_fields = fields
 
-class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     # Field for write operations
     parent_id = serializers.IntegerField(
         source='parent_company_id',
@@ -40,6 +42,18 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         required=False,
         allow_null=True,
         write_only=True
+    )
+
+    type = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+
+    classification = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
     )
     
     # Fields for read operations
@@ -77,124 +91,140 @@ class AccountSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             'type': child.type
         } for child in obj.direct_child_companies.all()]
     
-    def validate(self, data):
-        try:
-            data = super().validate(data)
-            client_id = self._get_client_id_from_context()
 
-            # Validate all related objects belong to same client
-            self._validate_related_objects_client_scope(data, client_id)
-            
-            # Convert company name to uppercase if it's present
-            company_name = data.get('company_name')
-            if company_name:
-                data['company_name'] = company_name.upper()
-            
-            instance = getattr(self, 'instance', None)
-            
-            # Handle unique constraint validation
-            unique_fields = ['company_name', 'city', 'country']
-            if any(field in data for field in unique_fields):
-                validation_data = data
-                if instance and self.partial:
-                    validation_data = {
-                        'company_name': instance.company_name,
-                        'city': instance.city,
-                        'country': instance.country,
-                        **{field: data[field] for field in unique_fields if field in data}
-                    }
-                
-                self.validate_client_scoped_uniqueness(
-                    data=validation_data,
-                    unique_fields=unique_fields,
-                    model_class=Account,
-                    error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                        fields="company name, city and country"
-                    )
-                )
-            
-            # Validate account_owner and team relationship
-            self._validate_account_owner(data)
-            
-            # Validate parent company relationship
-            self._validate_parent_company(data, instance)
-            
-            return data
+    def validate_type(self, value):
+        """Validate type field"""
+        if value is None or value == '':
+            return value
         
-        except serializers.ValidationError as e:
-            if hasattr(e, 'detail'):
-                if isinstance(e.detail, dict):
-                    # Get the first error message from the dict
-                    error_msg = next(iter(e.detail.values()))
-                    if isinstance(error_msg, list):
-                        error_msg = error_msg[0]
-                else:
-                    error_msg = e.detail
+        valid_types = [choice[0] for choice in AccountType.choices]
+        if value not in valid_types:
+            raise serializers.ValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="Type")
+            )
+        return value
+
+    def validate_classification(self, value):
+        """Validate classification field"""
+        if value is None or value == '':
+            return value
+            
+        valid_classifications = [choice[0] for choice in AccountClassification.choices]
+        if value not in valid_classifications:
+            raise serializers.ValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="Classification")
+            )
+        return value
+
+    def validate(self, data):
+        """Complete validation of Account data."""
+        try:
+            if self.partial:
+                # For PATCH requests, only validate fields that were sent
+                fields_to_validate = set(self.initial_data.keys())
+                
+                # Only validate choice fields if they're being updated
+                for field in ['type', 'classification']:
+                    if field in fields_to_validate:
+                        value = data.get(field)
+                        if field == 'type':
+                            self.validate_type(value)
+                        else:
+                            self.validate_classification(value)
+                
+                # For contact fields, only validate if they're being updated
+                contact_fields = {'address', 'city', 'post_code', 'state', 'country', 
+                                'phone_number', 'email', 'website', 'linkedin'}
+                if contact_fields.intersection(fields_to_validate):
+                    # Call parent class's validate_contact_details method
+                    data = super(ContactDetailsSerializer, self).validate(data)
             else:
-                error_msg = str(e)
+                # For full updates (PUT/POST), validate everything
+                data = super(ContactDetailsSerializer, self).validate(data)
+
+            # Get client_id for validations
+            client_id = self._get_client_id_from_context()
+            instance = getattr(self, 'instance', None)
+
+            # Other validations as needed
+            if 'company_name' in data:
+                data['company_name'] = data['company_name'].upper()
+
+            self.validate_client_scoped_uniqueness(
+                data=data,
+                unique_fields=['company_name', 'city', 'country'],
+                model_class=Account,
+                error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                    fields='company name, city, and country'
+                )
+            )
+
+            # Parent company validation if needed
+            if 'parent_company_id' in data:
+                parent_id = data.get('parent_company_id')
+                if parent_id is not None:
+                    self._validate_parent_company(parent_id, client_id, instance)
+
+            # Team and account owner validation if needed
+            if {'account_owner_id', 'team_owner_id'}.intersection(data.keys()):
+                self._validate_account_owner_and_team(data, client_id)
+
+            return data
+
+        except serializers.ValidationError as e:
+            # Extract a clean error message
+            error_msg = self._extract_error_message(e)
             raise serializers.ValidationError(error_msg)
 
-    def _validate_related_objects_client_scope(self, data, client_id):
-        """Ensure all related objects belong to same client"""
-        # Validate parent company
-        parent_id = data.get('parent_company_id')
-        if parent_id:
-            try:
-                parent = Account.objects.get(id=parent_id)
-                if str(parent.client_id) != str(client_id):
-                    raise serializers.ValidationError(AccountErrorMessages.INVALID_PARENT)
-            except Account.DoesNotExist:
-                raise serializers.ValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
+        except serializers.ValidationError as e:
+            # Extract a clean error message
+            error_msg = self._extract_error_message(e)
+            raise serializers.ValidationError(error_msg)
 
-        # Validate team
-        team_id = data.get('team_owner_id')
-        if team_id:
-            try:
-                team = Team.objects.select_related('organization').get(id=team_id)
-                if str(team.organization.client_account_id) != str(client_id):
-                    raise serializers.ValidationError(AccountErrorMessages.TEAM_MISMATCH)
-            except Team.DoesNotExist:
-                raise serializers.ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+    def _validate_parent_company(self, parent_id, client_id, instance):
+        """Validate parent company relationships."""
+        try:
+            parent = Account.objects.get(id=parent_id)
 
-    def _validate_account_owner(self, data):
-        """Validate account owner and team relationship"""
+            if str(parent.client_id) != str(client_id):
+                raise serializers.ValidationError(AccountErrorMessages.INVALID_PARENT)
+
+            # Check for self-reference and circular references
+            if instance and str(parent.id) == str(instance.id):
+                raise serializers.ValidationError(AccountErrorMessages.SELF_PARENT)
+
+            current = parent
+            path = {str(current.id)}
+            while current.parent_company:
+                current = current.parent_company
+                if str(current.id) in path or (instance and str(current.id) == str(instance.id)):
+                    raise serializers.ValidationError(AccountErrorMessages.CIRCULAR_HIERARCHY)
+                path.add(str(current.id))
+        except Account.DoesNotExist:
+            raise serializers.ValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
+
+    def _validate_account_owner_and_team(self, data, client_id):
+        """Validate account owner and team owner relationships."""
         account_owner_id = data.get('account_owner_id')
         team_owner_id = data.get('team_owner_id')
-        
-        if account_owner_id:
+
+        if account_owner_id is not None:
             try:
                 account_owner = User.objects.get(id=account_owner_id)
                 if not account_owner.is_active:
                     raise serializers.ValidationError(AccountErrorMessages.USER_INACTIVE)
-                
+
                 if team_owner_id:
                     team = Team.objects.get(id=team_owner_id)
                     if account_owner.team_id != team.id:
                         raise serializers.ValidationError(AccountErrorMessages.TEAM_MISMATCH)
-                    
             except User.DoesNotExist:
                 raise serializers.ValidationError(AccountErrorMessages.INVALID_USER)
 
-    def _validate_parent_company(self, data, instance):
-        """Validate parent company relationship"""
-        parent_id = data.get('parent_company_id')
-        if parent_id:
+        if team_owner_id is not None:
             try:
-                parent = Account.objects.get(id=parent_id)
-                
-                # Check for self-reference
-                if instance and str(parent.id) == str(instance.id):
-                    raise serializers.ValidationError(AccountErrorMessages.SELF_PARENT)
-                
-                # Check for circular references
-                if instance:
-                    current = parent
-                    path = {str(current.id)}
-                    while current.parent_company:
-                        current = current.parent_company
-                        if str(current.id) in path or str(current.id) == str(instance.id):
-                            raise serializers.ValidationError(AccountErrorMessages.CIRCULAR_HIERARCHY)
-                        path.add(str(current.id))
-                        
-            except Account.DoesNotExist:
-                raise serializers.ValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
+                team = Team.objects.get(id=team_owner_id)
+                if str(team.organization.client_account_id) != str(client_id):
+                    raise serializers.ValidationError(AccountErrorMessages.TEAM_MISMATCH)
+            except Team.DoesNotExist:
+                raise serializers.ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
