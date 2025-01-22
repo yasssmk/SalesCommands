@@ -6,6 +6,8 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from core.error_messages import CoreErrorMessages
+from rest_framework.response import Response
+from rest_framework import views, status
 
 class ClientScopeManager:
     """
@@ -133,9 +135,11 @@ class ClientScopeManager:
         View mixin for client-scoped CRUD operations
         """
         def get_client_id(self):
+            
             """Get client_id from JWT token"""
             if not self.request.auth:
                 raise AuthenticationFailed(CoreErrorMessages.AUTH_REQUIRED)
+
 
             origin = self.request.auth.get('origin')
             

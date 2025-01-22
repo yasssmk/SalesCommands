@@ -2,8 +2,9 @@ from rest_framework import views, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
-from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 import logging
 from .client_scope import ClientScopeManager
@@ -23,6 +24,8 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
     """
     Base API View with simplified CRUD operations that handle both single and batch operations.
     """
+    # permission_classes = [IsAuthenticated]
+
     queryset = None
     serializer_class = None
     entity_name = None
@@ -330,6 +333,12 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
 
     def handle_exception(self, exc):
         """Improved error handling without modifying error messages incorrectly."""
+        
+        if isinstance(exc, AuthenticationFailed):
+            return Response(
+                {"error": str(exc)}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
         if isinstance(exc, (ValidationError, DRFValidationError)):
             error_detail = getattr(exc, 'detail', exc.messages if hasattr(exc, 'messages') else str(exc))
 
