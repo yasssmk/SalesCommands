@@ -37,60 +37,6 @@ class CentralizedUserManager(BaseUserManager):
 
         return self.create_user(email, password, **extra_fields)
     
-class BaseModelApp(models.Model):
-    """
-    Base model for all application models that need client tracking
-    """
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    client_id = models.UUIDField(
-        verbose_name=_('Client ID'),
-        help_text=_('ID of the client company this record belongs to'),
-        db_index=True,
-        editable=False
-    )
-
-    class Meta:
-        abstract = True
-        
-    def save(self, force_insert=False, force_update=False, *args, **kwargs):
-        client_id = kwargs.pop('client_id', None)
-        
-        if not self.pk:  # New instance
-            if not client_id and not self.client_id:
-                raise ValidationError({
-                    'client_id': CoreErrorMessages.CLIENT_ID_REQUIRED
-                })
-            if client_id:
-                self.client_id = client_id
-        else:  # Existing instance
-            # Prevent client_id from being changed
-            if client_id and client_id != self.client_id:
-                raise ValidationError({
-                    'client_id': CoreErrorMessages.CLIENT_ID_IMMUTABLE
-                })
-            
-            # Double check against database
-            try:
-                db_instance = self.__class__.objects.get(pk=self.pk)
-                if self.client_id != db_instance.client_id:
-                    raise ValidationError({
-                        'client_id': CoreErrorMessages.CLIENT_ID_IMMUTABLE
-                    })
-            except self.__class__.DoesNotExist:
-                raise ValidationError({
-                    'id': CoreErrorMessages.OBJECT_NOT_FOUND
-                })
-
-        super().save(force_insert=force_insert, force_update=force_update, *args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        client_id = kwargs.pop('client_id', None)
-        if client_id and client_id != self.client_id:
-            raise ValidationError({
-                'client_id': CoreErrorMessages.CLIENT_MISMATCH
-            })
-        super().delete(*args, **kwargs)
     
 class ContactDetailsMixin(models.Model):
     """

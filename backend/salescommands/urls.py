@@ -23,7 +23,7 @@ product_admin_key = "product_admin/"
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path(app_key+'accounts/', include('apps.accounts.urls')),
+    path(app_key+'accounts/', include('apps.accounts_app.accounts.urls')),
     path(product_admin_key, include('product_admin.urls')),
     path(end_user_key, include('end_users.urls')),
 ]

@@ -1,0 +1,147 @@
+erDiagram
+    Account ||--o{ OrgUnit : has
+    Account ||--o{ Contact : employs
+    Account ||--o{ BuyingProcess : follows
+    Account ||--o{ StrategicGoal : plans
+    Account ||--o{ SalesQualification : qualifies
+    Account ||--o{ AccountOwnership : managed_by
+    Account ||--o{ AccountTerritoryAssignment : assigned_to
+    Account ||--o{ PotentialARR : has
+
+    OrgUnit ||--o{ OrgUnit : contains
+    OrgUnit ||--o{ Contact : contains
+    OrgUnit ||--o{ BuyingProcess : customizes
+    OrgUnit ||--o{ StrategicGoal : targets
+    OrgUnit ||--o{ SalesQualification : tracks
+    OrgUnit ||--o{ PotentialARR : estimates
+
+    SalesTerritory ||--o{ AccountTerritoryAssignment : contains
+    Product ||--o{ PotentialARR : projected_for
+
+    Account {
+        int id PK
+        string name UK
+        string industry
+        int company_size
+        decimal revenue
+        string country
+        string linkedin_url
+        boolean is_enterprise
+        decimal budget
+        jsonb tech_stack
+        jsonb success_kpis
+        string strategic_focus
+        jsonb metadata
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    OrgUnit {
+        int id PK
+        int account_id FK
+        string name
+        int parent_org_unit_id FK
+        string unit_type
+        int estimated_employees
+        jsonb metadata
+        timestamp created_at
+    }
+
+    Contact {
+        int id PK
+        int account_id FK
+        int org_unit_id FK
+        string name
+        string job_title
+        string email UK
+        string linkedin_url
+        string phone
+        string buying_role
+        int influence_score
+        int engagement_score
+        jsonb metadata
+        timestamp created_at
+    }
+
+    BuyingProcess {
+        int id PK
+        int account_id FK
+        int org_unit_id FK
+        decimal approval_budget
+        boolean legal_review_required
+        boolean procurement_involvement
+        boolean finance_approval_required
+        interval approval_timeline
+        jsonb metadata
+        timestamp created_at
+    }
+
+    StrategicGoal {
+        int id PK
+        int account_id FK
+        int org_unit_id FK
+        string goal_type
+        text description
+        date target_date
+        int priority
+        jsonb kpis
+        jsonb metadata
+        timestamp created_at
+    }
+
+    SalesQualification {
+        int id PK
+        int account_id FK
+        int org_unit_id FK
+        string methodology
+        text pain_points
+        jsonb success_kpis
+        jsonb key_stakeholders
+        decimal budget
+        jsonb relevant_tech_stack
+        jsonb metadata
+        timestamp created_at
+    }
+
+    AccountOwnership {
+        int id PK
+        int account_id FK
+        int user_id FK
+        decimal ownership_weight
+        date effective_from
+        date effective_to
+        int assigned_by_user_id
+        timestamp created_at
+    }
+
+    SalesTerritory {
+        int id PK
+        string name
+        string region
+        string country
+        jsonb metadata
+    }
+
+    AccountTerritoryAssignment {
+        int id PK
+        int account_id FK
+        int territory_id FK
+    }
+
+    PotentialARR {
+        int id PK
+        int account_id FK
+        int org_unit_id FK
+        int product_id FK
+        int estimated_users
+        decimal estimated_ARR
+        timestamp created_at
+    }
+
+    Product {
+        int id PK
+        string name UK
+        decimal base_price
+        jsonb metadata
+        timestamp created_at
+    }

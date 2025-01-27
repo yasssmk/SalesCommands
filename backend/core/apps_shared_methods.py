@@ -24,7 +24,6 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
     """
     Base API View with simplified CRUD operations that handle both single and batch operations.
     """
-    # permission_classes = [IsAuthenticated]
 
     queryset = None
     serializer_class = None

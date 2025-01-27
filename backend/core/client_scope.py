@@ -177,7 +177,7 @@ class ClientScopeManager:
         """Create with strict client_id enforcement"""
         try:
             client_id = self.get_client_id()
-            instance = serializer.save(client_id=client_id)
+            instance = serializer.save(client_id=client_id, user=self.request.user)
             self.validate_client_id(instance)
             return instance
         except Exception as e:
@@ -193,7 +193,7 @@ class ClientScopeManager:
             if 'client_id' in serializer.validated_data:
                 raise ValidationError(CoreErrorMessages.CLIENT_ID_IMMUTABLE)
                 
-            updated = serializer.save()
+            updated = serializer.save(user=self.request.user)
             self.validate_client_id(updated)
             return updated
         except ValidationError as e:

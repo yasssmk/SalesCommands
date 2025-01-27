@@ -2,11 +2,14 @@ from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from phonenumber_field.modelfields import PhoneNumberField
-from core.models import BaseModelApp, ContactDetailsMixin
+from core.models import ContactDetailsMixin
+from apps.core_apps.models import BaseModelApp
+from apps.sales_insight.models import SalesInsight
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User, Team, Organization
 from core.error_messages import CoreErrorMessages, AccountErrorMessages, ValidationErrorMessages
+
 
 # Personalization: Users could add new choices 
 class AccountType(models.TextChoices):
@@ -18,6 +21,7 @@ class AccountType(models.TextChoices):
 
 class AccountClassification(models.TextChoices):
     SMB = 'SMB', _('Small and Medium Business')
+    MIDMARKET = 'MIDMARKET', _('Mid-Market')
     ENTERPRISE = 'ENTERPRISE', _('Enterprise')
     STARTUP = 'STARTUP', _('Startup')
     NONPROFIT = 'NONPROFIT', _('Non-Profit')
@@ -40,12 +44,20 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
     type = models.CharField(max_length=50, choices=AccountType.choices, blank=True, null=True, verbose_name=_('Account Type'))
     classification = models.CharField(max_length=50, choices=AccountClassification.choices, blank=True, null=True, verbose_name=_('Account Classification'))
     
-    number_of_employees = models.CharField(blank=True, null=True, verbose_name=_('Number of Employees'))
-    potential = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, verbose_name=_('Potential Revenue'))
-    
+    company_size = models.CharField(blank=True, null=True, verbose_name=_('Number of Employees'))
+    annual_revenue = models.CharField(blank=True, null=True, verbose_name=_('Annual Revenue'))
+
+
+    #Relationships   
     parent_company = models.ForeignKey('self', on_delete=models.SET_NULL, related_name='direct_child_companies', blank=True, null=True, verbose_name=_('Parent Company'))
     account_owner = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_('Account Owner'))
     team_owner = models.ForeignKey(Team, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_('Team Owner'))
+
+    # Sales Insights
+    account_insights = models.OneToOneField(SalesInsight, on_delete=models.SET_NULL, blank=True, null=True, related_name='linked_account', verbose_name=_('Account Insights'))
+
+
+    historical_data = models.JSONField(blank=True, null=True, verbose_name=_('Historical Data'))
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=['company_name', 'city', 'country'],
