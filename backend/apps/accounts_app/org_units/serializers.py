@@ -49,7 +49,7 @@ class AccountOrganizationUnitSerializer(ClientScopeManager.SerializerMixin, seri
     def validate_metadata(self, value):
         """Validate metadata is a valid JSON object"""
         if value is not None and not isinstance(value, dict):
-            raise CoreErrorMessages.INVALID_DATA.format(detail="Metadata must be a valid JSON object")
+            raise serializers.ValidationError(CoreErrorMessages.INVALID_DATA.format(detail="Metadata must be a valid JSON object"))
         return value
     
     def validate(self, data):
@@ -98,7 +98,7 @@ class AccountOrganizationUnitSerializer(ClientScopeManager.SerializerMixin, seri
             if 'estimated_employee_count' in data:
                 count = data['estimated_employee_count']
                 if count is not None and count < 0:
-                    raise AccountErrorMessages.EMPLOYEE_COUNT
+                    raise serializers.ValidationError(AccountErrorMessages.EMPLOYEE_COUNT)
 
             return data
 
@@ -113,15 +113,15 @@ class AccountOrganizationUnitSerializer(ClientScopeManager.SerializerMixin, seri
 
             # Verify same client scope
             if str(parent.client_id) != str(client_id):
-                raise AccountErrorMessages.INVALID_PARENT
+                raise serializers.ValidationError(AccountErrorMessages.INVALID_PARENT)
 
             # Verify same account scope
             if instance and parent.account_id != instance.account_id:
-                raise AccountErrorMessages.INVALID_PARENT_ORG
+                serializers.ValidationError(AccountErrorMessages.INVALID_PARENT_ORG)
 
             # Check for self-reference
             if instance and str(parent.id) == str(instance.id):
-                raise AccountErrorMessages.SELF_PARENT
+                raise serializers.ValidationError(AccountErrorMessages.SELF_PARENT)
 
             # Check for circular references
             current = parent
@@ -129,17 +129,17 @@ class AccountOrganizationUnitSerializer(ClientScopeManager.SerializerMixin, seri
             while current.parent_organization_unit:
                 current = current.parent_organization_unit
                 if str(current.id) in path or (instance and str(current.id) == str(instance.id)):
-                    raise AccountErrorMessages.CIRCULAR_HIERARCHY
+                    raise serializers.ValidationError(AccountErrorMessages.CIRCULAR_HIERARCHY)
                 path.add(str(current.id))
 
         except AccountOrganizationUnit.DoesNotExist:
-            raise AccountErrorMessages.PARENT_NOT_FOUND
+            raise serializers.ValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
     
     def create(self, validated_data):
         """Override create to handle nested relationships"""
         # Ensure account is provided
         if 'account' not in validated_data:
-            raise CoreErrorMessages.REQUIRED_FIELD.format(field='Account')
+            raise serializers.ValidationError(CoreErrorMessages.REQUIRED_FIELD.format(field='Account'))
             
 
         # Create the organization unit
@@ -150,6 +150,6 @@ class AccountOrganizationUnitSerializer(ClientScopeManager.SerializerMixin, seri
         """Override update to handle nested relationships"""
         # Prevent changing the account
         if 'account' in validated_data and validated_data['account'] != instance.account:
-            raise AccountErrorMessages.CHANGE_ACCOUNT_ORG
+            raise serializers.ValidationError(AccountErrorMessages.CHANGE_ACCOUNT_ORG)
 
         return super().update(instance, validated_data)
