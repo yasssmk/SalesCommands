@@ -4,9 +4,10 @@ from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from product_admin.models import ProductAdmin
 from end_users.models import User
+from core.error_messages import CoreErrorMessages
 
 class UUIDEncoder:
     @staticmethod
@@ -23,6 +24,17 @@ class UUIDEncoder:
             return obj
 
 class CustomJWTAuthentication(JWTAuthentication):
+
+    def authenticate(self, request):
+        try:
+            return super().authenticate(request)
+        except InvalidToken:
+            raise AuthenticationFailed(CoreErrorMessages.AUTH_REQUIRED)
+        except TokenError:
+            raise AuthenticationFailed(CoreErrorMessages.AUTH_REQUIRED)
+        except Exception:
+            raise AuthenticationFailed(CoreErrorMessages.AUTH_REQUIRED)
+        
     def get_validated_token(self, raw_token):
         """Override to use custom token class if needed"""
         validated_token = super().get_validated_token(raw_token)

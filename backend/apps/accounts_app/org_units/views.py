@@ -1,9 +1,9 @@
-from django.http import JsonResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.decorators import action
 from django.core.exceptions import ValidationError
+from rest_framework.exceptions import AuthenticationFailed
 from django.db import transaction
 from core.apps_shared_methods import BaseAPIView
 from .models import AccountOrganizationUnit
@@ -30,15 +30,15 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
 
     def get_queryset(self):
         """Extend base queryset with organization unit-specific filtering"""
-        queryset = super().get_queryset()
-        
-        filter_mappings = {
-            'account_id': 'account_id',
-            'parent_ids': 'parent_organization_unit_id__in',
-            'unit_types': 'unit_type__in'
-        }
-        
         try:
+            queryset = super().get_queryset()
+            
+            filter_mappings = {
+                'account_id': 'account_id',
+                'parent_ids': 'parent_organization_unit_id__in',
+                'unit_types': 'unit_type__in'
+            }
+            
             for param, field in filter_mappings.items():
                 values = self.request.query_params.get(param)
                 if values:
@@ -47,14 +47,14 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
                     else:
                         filter_list = [v.strip() for v in values.split(',')]
                         queryset = queryset.filter(**{field: filter_list})
-                    
+                        
+            return queryset
+                
         except ValueError:
             raise ValidationError({
                 'error': CoreErrorMessages.INVALID_FILTER,
                 'detail': f"Invalid format for filter parameters: {', '.join(filter_mappings.keys())}"
             })
-            
-        return queryset
 
     def _validate_parent_unit(self, parent_id, account_id, client_id):
         """Validate parent organization unit exists and belongs to same account and client"""
@@ -67,8 +67,8 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
                     })
                 if str(parent.account_id) != str(account_id):
                     raise ValidationError({
-                    'parent_id': AccountErrorMessages.INVALID_PARENT_ORG 
-                })
+                        'parent_id': AccountErrorMessages.INVALID_PARENT_ORG
+                    })
                 return parent
             except AccountOrganizationUnit.DoesNotExist:
                 raise ValidationError({
@@ -78,46 +78,47 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
 
     def _update_instance(self, instance, data, partial, client_id):
         """Optimized update with minimal queries"""
-        self.validate_client_id(instance)
-        
-        # Track fields that need refresh
-        refresh_fields = set()
-        
-        # Store old values for relationship changes
-        old_parent = instance.parent_organization_unit_id
-        old_account = instance.account_id
-        
-        serializer = self.serializer_class(
-            instance,
-            data=data,
-            partial=partial,
-            context={'request': self.request, 'client_id': client_id}
-        )
-        
-        if serializer.is_valid():
-            with transaction.atomic():
-                # Prevent changing account
-                if 'account' in data and str(data['account']) != str(old_account):
-                    raise ValidationError({
-                        AccountErrorMessages.CHANGE_ACCOUNT_ORG
-                    })
-                
-                updated = serializer.save()
-                
-                # Only refresh changed relationships
-                if old_parent != updated.parent_organization_unit_id:
-                    refresh_fields.add('parent_organization_unit')
-                    if old_parent:
-                        AccountOrganizationUnit.objects.filter(id=old_parent).update(
-                            updated_at=datetime.now()
-                        )
-                
-                if refresh_fields:
-                    updated.refresh_from_db(fields=refresh_fields)
-                
-                return serializer
-                
-        raise ValidationError(serializer.errors)
+        try:
+            self.validate_client_id(instance)
+            
+            # Track fields that need refresh
+            refresh_fields = set()
+            
+            # Store old values for relationship changes
+            old_parent = instance.parent_organization_unit_id
+            old_account = instance.account_id
+            
+            serializer = self.serializer_class(
+                instance,
+                data=data,
+                partial=partial,
+                context={'request': self.request, 'client_id': client_id}
+            )
+            
+            if serializer.is_valid():
+                with transaction.atomic():
+                    # Prevent changing account
+                    if 'account' in data and str(data['account']) != str(old_account):
+                        raise ValidationError(AccountErrorMessages.CHANGE_ACCOUNT_ORG)
+                    
+                    updated = serializer.save()
+                    
+                    # Only refresh changed relationships
+                    if old_parent != updated.parent_organization_unit_id:
+                        refresh_fields.add('parent_organization_unit')
+                        if old_parent:
+                            AccountOrganizationUnit.objects.filter(id=old_parent).update(
+                                updated_at=datetime.now()
+                            )
+                    
+                    if refresh_fields:
+                        updated.refresh_from_db(fields=refresh_fields)
+                    
+                    return serializer
+                    
+            raise ValidationError(serializer.errors)
+        except ValidationError as e:
+            raise ValidationError(e)
 
     @action(detail=True, methods=['get'])
     def hierarchy(self, request, pk=None):

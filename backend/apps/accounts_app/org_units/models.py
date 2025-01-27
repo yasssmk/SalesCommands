@@ -6,7 +6,7 @@ from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, ValidationErrorMessages
 
-class AccountOrganizationUnit(BaseModelApp, AccountLinkedModel):
+class AccountOrganizationUnit(BaseModelApp, ClientScopeManager.ModelMixin, AccountLinkedModel):
     class UnitType(models.TextChoices):
         DEPARTMENT = 'DEPARTMENT', _('Department')
         DIVISION = 'DIVISION', _('Division')
