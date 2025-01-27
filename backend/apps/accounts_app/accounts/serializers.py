@@ -44,6 +44,23 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
         write_only=True
     )
 
+    company_size = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+
+    annual_revenue = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+
+    historical_data = serializers.JSONField(
+        required=False,
+        allow_null=True
+    )
+
     type = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -68,10 +85,10 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             'id', 'company_name', 'industry', 'address', 
             'city', 'post_code', 'state', 'country', 'website', 
             'type', 'phone_number', 'created_at', 'updated_at',
-            'number_of_employees', 'potential', 'classification',
+            'company_size', 'annual_revenue', 'classification',
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
-            'team_owner', 'team_owner_id', 'client_id'
+            'team_owner', 'team_owner_id', 'client_id', 'historical_data'
         ]
         read_only_fields = ['created_at', 'updated_at', 'client_id']
     

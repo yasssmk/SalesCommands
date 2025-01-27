@@ -69,3 +69,23 @@ class BaseModelApp(models.Model):
                 'client_id': CoreErrorMessages.CLIENT_MISMATCH
             })
         super().delete(*args, **kwargs)
+
+class AccountLinkedModel(models.Model):
+    """Base model for entities that need account tracking"""
+    account = models.ForeignKey(
+        'accounts.Account',
+        on_delete=models.CASCADE,
+        verbose_name=_('Account'),
+        related_name='%(class)s_set'
+    )
+
+    class Meta:
+        abstract = True
+        indexes = [
+            models.Index(fields=['account'])
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.account and not self.client_id:
+            self.client_id = self.account.client_id
+        super().save(*args, **kwargs)

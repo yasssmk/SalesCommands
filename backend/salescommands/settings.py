@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'core',
     'apps.core_apps',
     'apps.accounts_app.accounts',
+    'apps.accounts_app.org_units',
     'apps.sales_insight',
     'end_users',
     'product_admin',

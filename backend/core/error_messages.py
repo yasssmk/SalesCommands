@@ -39,13 +39,16 @@ class CoreErrorMessages:
 
 class AccountErrorMessages:
     """Account specific error messages"""
-    INVALID_PARENT = _("Invalid parent company assignment")
-    PARENT_NOT_FOUND = _("Parent company not found")
-    SELF_PARENT = _("A company cannot be its own parent")
+    INVALID_PARENT = _("Invalid parent assignment")
+    PARENT_NOT_FOUND = _("Parent not found")
+    INVALID_PARENT_ORG = _("Parent organization unit must belong to the same account")
+    SELF_PARENT = _("Cannot be its own parent")
     CIRCULAR_HIERARCHY = _("Cannot create a circular parent-child relationship")
     TEAM_MISMATCH = _("Account manager must belong to the assigned team")
     USER_INACTIVE = _("Selected user is not active")
     INVALID_USER = _("Invalid user ID")
+    EMPLOYEE_COUNT = _("Employee count cannot be negative")
+    CHANGE_ACCOUNT_ORG = _("Cannot change the account of an existing organization unit")
 
 class ContactErrorMessages:
     """Contact specific error messages"""

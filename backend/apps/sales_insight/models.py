@@ -1,9 +1,9 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User
-from apps.core_apps.models import BaseModelApp
+from apps.core_apps.models import BaseModelApp, AccountLinkedModel
 
-class SalesInsight(BaseModelApp):
+class SalesInsight(BaseModelApp, AccountLinkedModel):
     """
     Stores sales insights related to an account, an organizational unit, or a sales qualification process.
     """
@@ -19,9 +19,9 @@ class SalesInsight(BaseModelApp):
         verbose_name=_("Insight Type")
     )
 
-    account = models.ForeignKey(
-        'accounts.Account', on_delete=models.CASCADE, blank=True, null=True, related_name="insights_as_account"
-    )
+    # account = models.ForeignKey(
+    #     'accounts.Account', on_delete=models.CASCADE, blank=True, null=True, related_name="insights_as_account"
+    # )
     # org_unit = models.ForeignKey(
     #     'OrgUnit', on_delete=models.CASCADE, blank=True, null=True, related_name="sales_insights"
     # )
