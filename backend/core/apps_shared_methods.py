@@ -301,7 +301,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                 # Get and validate objects
                 objects = self.get_objects(ids)
                 if not objects:
-                    raise ValidationError("No objects found to delete")
+                    raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
                 
                 # Validate and delete each object
                 deleted_count = 0

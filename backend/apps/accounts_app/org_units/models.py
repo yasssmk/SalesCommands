@@ -15,19 +15,12 @@ class AccountOrganizationUnit(BaseModelApp, ClientScopeManager.ModelMixin, Accou
     organization_name = models.CharField(
         max_length=255, 
         verbose_name=_('Organization Name'),
-        error_messages={
-            'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Organization name'),
-            'max_length': ValidationErrorMessages.MAX_LENGTH.format(
-                field='Organization name',
-                max_length=255
-            )
-        }
     )
     
     unit_type = models.CharField(
         max_length=50,
         choices=UnitType.choices,
-        verbose_name=_('Unit Type')
+        verbose_name=_('Unit Type'),
     )
 
     parent_organization_unit = models.ForeignKey(

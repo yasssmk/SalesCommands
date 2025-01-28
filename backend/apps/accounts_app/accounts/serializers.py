@@ -25,6 +25,14 @@ class AccountManagerSerializer(serializers.ModelSerializer):
 
 class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     # Field for write operations
+
+    company_name = serializers.CharField(
+        error_messages={
+            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Company Name'),
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Company Name')
+        }
+    )
+    
     parent_id = serializers.IntegerField(
         source='parent_company_id',
         required=False,
@@ -97,7 +105,8 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             return {
                 'id': obj.parent_company.id,
                 'company_name': obj.parent_company.company_name,
-                'type': obj.parent_company.type
+                'type': obj.parent_company.type,
+                'classification': obj.parent_company.classification
             }
         return None
     
@@ -105,7 +114,8 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
         return [{
             'id': child.id,
             'company_name': child.company_name,
-            'type': child.type
+            'type': child.type,
+            'classification': child.classification
         } for child in obj.direct_child_companies.all()]
     
 
@@ -155,6 +165,7 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
                 if contact_fields.intersection(fields_to_validate):
                     # Call parent class's validate_contact_details method
                     data = super(ContactDetailsSerializer, self).validate(data)
+                    
             else:
                 # For full updates (PUT/POST), validate everything
                 data = super(ContactDetailsSerializer, self).validate(data)
@@ -164,6 +175,11 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             instance = getattr(self, 'instance', None)
 
             # Other validations as needed
+            if not 'city' in data:
+                        raise serializers.ValidationError(
+                            CoreErrorMessages.REQUIRED_FIELD.format(field='city')
+                        )
+            
             if 'company_name' in data:
                 data['company_name'] = data['company_name'].upper()
 

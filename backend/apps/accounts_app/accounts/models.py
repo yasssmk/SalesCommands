@@ -31,14 +31,8 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
     company_name = models.CharField(
         max_length=255, 
         verbose_name=_('Company Name'),
-        error_messages={
-            'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Company name'),
-            'max_length': ValidationErrorMessages.MAX_LENGTH.format(
-                field='Company name',
-                max_length=255
-            )
-        }
     )
+
     industry = models.CharField(max_length=100, blank=True, null=True, verbose_name=_('Industry'))
 
     type = models.CharField(max_length=50, choices=AccountType.choices, blank=True, null=True, verbose_name=_('Account Type'))
