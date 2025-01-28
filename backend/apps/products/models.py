@@ -4,6 +4,8 @@ from apps.core_apps.models import BaseModelApp,AccountLinkedModel
 from apps.sales_insight.models import SalesInsight
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
+from apps.accounts_app.accounts.models import Account
+from apps.accounts_app.org_units.models import AccountOrganizationUnit
 
 class Product(BaseModelApp, ClientScopeManager.ModelMixin, AccountLinkedModel):
 
@@ -71,12 +73,9 @@ from apps.core_apps.models import StandardDepartment
 class ProductTarget(BaseModelApp, ClientScopeManager.ModelMixin, AccountLinkedModel):
 
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="targets")
-    target_type = models.CharField(
-        max_length=20, 
-        choices=[("DEPARTMENT", "Department"), ("COMPANY", "Whole Company")],
-        verbose_name=_("Target Type")
-    )
-    department_name = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Department Name"))
+    
+    # Generic department targeting (globally applicable)
+    target_category = models.ForeignKey(StandardDepartment, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_("Standard Department Category"))
 
     class Meta:
         db_table = "product_targets"
@@ -84,4 +83,26 @@ class ProductTarget(BaseModelApp, ClientScopeManager.ModelMixin, AccountLinkedMo
         verbose_name_plural = _("Product Targets")
 
     def __str__(self):
-        return f"{self.product.name} - {self.target_type} ({self.department_name if self.department_name else 'Company-Wide'})"
+        return f"{self.product.name} - {self.target_category.name if self.target_category else 'General Management'}"
+
+
+class AccountProductTarget(models.Model):
+    """
+    Maps a product's general target (ProductTarget) to a specific account's organizational units.
+    This ensures that a product can target relevant departments within a client's company.
+    """
+    product_target = models.ForeignKey(ProductTarget, on_delete=models.CASCADE, related_name="account_targets")
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="product_targets")
+    org_unit = models.ForeignKey(AccountOrganizationUnit, on_delete=models.CASCADE, blank=True, null=True, verbose_name=_("Specific Organization Unit"))
+
+    # AI Mapping Fields
+    ai_mapping_confidence = models.FloatField(blank=True, null=True, verbose_name=_("AI Mapping Confidence Score"))
+    manually_validated = models.BooleanField(default=False, verbose_name=_("Manually Validated by User"))
+
+    class Meta:
+        db_table = "account_product_targets"
+        verbose_name = _("Account Product Target")
+        verbose_name_plural = _("Account Product Targets")
+
+    def __str__(self):
+        return f"{self.account.company_name} - {self.product_target.product.name} - {self.org_unit.name if self.org_unit else 'No Specific OrgUnit'}"
