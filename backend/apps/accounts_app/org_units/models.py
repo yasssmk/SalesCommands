@@ -54,6 +54,7 @@ class AccountOrganizationUnit(BaseModelApp, ClientScopeManager.ModelMixin, Accou
         index_fields=['organization_name']
     )):
         verbose_name = _('Organization Unit')
+        db_table = 'Organization Unit'
         ordering = ['-created_at', 'organization_name']
         indexes = [
             models.Index(fields=['account']),
