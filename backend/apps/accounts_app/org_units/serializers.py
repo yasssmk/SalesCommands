@@ -20,6 +20,7 @@ class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
     organization_name = serializers.CharField(
         error_messages={
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Organization name'),
+            'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Organization name'),
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Organization name')  
         }
     )
@@ -27,6 +28,7 @@ class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
     unit_type = serializers.CharField(
         error_messages={
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Unit Type'),
+            'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Unit Type'),
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Unit Type')
         }
     )

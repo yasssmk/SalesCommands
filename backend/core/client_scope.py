@@ -86,12 +86,21 @@ class ClientScopeManager:
                         validation_data[field] = getattr(instance, field)
 
             # Build the query filter for checking duplicates
-            filter_kwargs = {
-                'client_id': client_id,
-                **{f"{field}__iexact": validation_data.get(field) 
-                for field in unique_fields if validation_data.get(field)}
-            }
-
+            filter_kwargs = {'client_id': client_id}
+    
+            for field in unique_fields:
+                if validation_data.get(field) is not None:
+                    # Get the field instance from the model
+                    model_field = model._meta.get_field(field)
+                    
+                    # Check if the field is a foreign key
+                    if model_field.is_relation:
+                        # For foreign keys, use exact lookup
+                        filter_kwargs[field] = validation_data.get(field)
+                    else:
+                        # For text fields, use case-insensitive lookup
+                        filter_kwargs[f"{field}__iexact"] = validation_data.get(field)
+                        
             duplicate_exists = model.objects.filter(**filter_kwargs).exclude(
                 pk=instance.pk if instance else None
             ).exists()
