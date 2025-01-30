@@ -6,5 +6,5 @@ from django.utils.deprecation import MiddlewareMixin
 
 class LogRequestHeadersMiddleware(MiddlewareMixin):
     def process_request(self, request):
-        print(f"Request Headers: {request.headers}")
+        # print(f"Request Headers: {request.headers}")
         return None

@@ -9,6 +9,7 @@ from apps.accounts_app.org_units.models import AccountOrganizationUnit
 from core.error_messages import CoreErrorMessages
 from apps.core_apps.models import StandardDepartment
 from django.core.exceptions import ValidationError
+from core.constants import CURRENCY
 
 
 class Product(BaseModelApp, ClientScopeManager.ModelMixin):
@@ -115,6 +116,7 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
     currency = models.CharField(
         max_length=10,
         default="USD",
+        choices=CURRENCY,
         verbose_name=_("Currency")
     )
     available_cycles = models.ManyToManyField(

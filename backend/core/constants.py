@@ -22,3 +22,9 @@ COUNTRIES = [
     ('TR', _('Turkey')), ('UA', _('Ukraine')), ('US', _('United States')),
     ('VN', _('Vietnam')), ('ZA', _('South Africa')), ('ZW', _('Zimbabwe'))
 ]
+
+CURRENCY = [
+    ('USD', _('DOLLAR')),
+    ('EURO', _('EURO')),
+    ('GBP', _('GREAT BRITAIN POUND'))
+]
