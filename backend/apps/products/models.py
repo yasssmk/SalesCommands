@@ -6,6 +6,10 @@ from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from apps.accounts_app.accounts.models import Account
 from apps.accounts_app.org_units.models import AccountOrganizationUnit
+from core.error_messages import CoreErrorMessages
+from apps.core_apps.models import StandardDepartment
+from django.core.exceptions import ValidationError
+
 
 class Product(BaseModelApp, ClientScopeManager.ModelMixin):
 
@@ -41,10 +45,10 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
         db_table = 'products'
         verbose_name = _("Product")
         verbose_name_plural = _("Products")
-        ordering = ['name']
+        ordering = ['product_name']
 
     def __str__(self):
-        return f"{self.name} ({self.get_product_type_display()})"
+        return f"{self.product_name} ({self.get_product_type_display()})"
 
 class BillingCycle(BaseModelApp, ClientScopeManager.ModelMixin):
     """Model to store available billing cycles for pricing"""
@@ -59,7 +63,7 @@ class BillingCycle(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_("Cycle Name"),
         help_text=_("Unique name for this billing cycle offer")
     )
-    
+
     cycle_type = models.CharField(
         max_length=20,
         choices=CycleType.choices,
@@ -77,6 +81,13 @@ class BillingCycle(BaseModelApp, ClientScopeManager.ModelMixin):
         db_table = "billing_cycles"
         verbose_name = _("Billing Cycle")
         verbose_name_plural = _("Billing Cycles")
+    
+    def clean(self):
+        """Ensure multiplier is within valid range."""
+        if (1 > self.multiplier <= 0):
+            raise ValidationError({
+                "multiplier": CoreErrorMessages.INVALID_FIELD.format(field="Multiplier must be between 0 and 1")
+            })
 
     def __str__(self):
         return f"{self.get_cycle_type_display()} (x{self.multiplier})"
@@ -118,8 +129,19 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name = _("Pricing")
         verbose_name_plural = _("Pricing Models")
 
+    def clean(self):
+        """Ensure pricing type is valid."""
+        if self.pricing_type == Pricing.PricingType.SUBSCRIPTION and not self.available_cycles.exists():
+            raise ValidationError({
+                "pricing_type": CoreErrorMessages.REQUIRED_FIELD.format(field="At least one billing cycle for subscription")
+            })
+        if self.pricing_type == Pricing.PricingType.ONE_TIME and self.available_cycles.exists():
+            raise ValidationError({
+                "pricing_type": CoreErrorMessages.INVALID_FIELD.format(field="Billing cycles are not allowed for one-time pricing")
+            })
+
     def __str__(self):
-        return f"{self.product.name} - {self.pricing_type} - {self.base_price} {self.currency}"
+        return f"{self.product.product_name} - {self.pricing_type} - {self.base_price} {self.currency}"
     
 
 from apps.core_apps.models import StandardDepartment
