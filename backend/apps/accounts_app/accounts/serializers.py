@@ -169,13 +169,15 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
                 # For full updates (PUT/POST), validate everything
                 data = super(ContactDetailsSerializer, self).validate(data)
 
+                if "city" not in data:
+                    raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(field="City"))
+
             # Get client_id for validations
             client_id = self._get_client_id_from_context()
             instance = getattr(self, 'instance', None)
 
             # Other validations as needed
-            if "city" not in data:
-                raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(field="City"))
+            
 
             if 'company_name' in data:
                 data['company_name'] = data['company_name'].upper()
