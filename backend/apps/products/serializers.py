@@ -125,6 +125,24 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
                 CoreErrorMessages.INVALID_FIELD.format(field="Currency")
             )
         return value
+    
+    def validate_product(self, product):
+        """Validate product belongs to current client"""
+        if not product:
+            raise serializers.ValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='Product')
+            )
+
+        # Get client_id from context
+        client_id = self._get_client_id_from_context()
+        
+        # Verify product belongs to client
+        if str(product.client_id) != str(client_id):
+            raise serializers.ValidationError(
+                CoreErrorMessages.PERMISSION_DENIED
+            )
+            
+        return product
 
     def validate(self, data):
         """Validate pricing data"""
@@ -147,7 +165,7 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
                     fields='Product and pricing type'
                 )
             )
-
+        
         cycle_ids = data.get('cycle_ids', [])
 
         # Handle pricing type and cycles validation

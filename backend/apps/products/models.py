@@ -42,7 +42,10 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
     potential_cons = models.JSONField(blank=True, null=True, verbose_name=_("Potential Cons"))
     competitors = models.JSONField(blank=True, null=True, verbose_name=_("Most Frequent Competitors"))
 
-    class Meta:
+    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
+        unique_fields=['product_name'],
+        index_fields=['product_type', 'target_category']
+    )):
         db_table = 'products'
         verbose_name = _("Product")
         verbose_name_plural = _("Products")
@@ -126,20 +129,36 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_("Available Billing Cycles")
     )
 
-    class Meta:
+    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
+        unique_fields=['product', 'pricing_type'],
+        index_fields=['pricing_type']
+    )):
         db_table = "product_pricing"
         verbose_name = _("Pricing")
         verbose_name_plural = _("Pricing Models")
 
     def clean(self):
-        """Ensure pricing type is valid."""
-        if self.pricing_type == Pricing.PricingType.SUBSCRIPTION and not self.available_cycles.exists():
+        """Ensure pricing type and client scope are valid."""
+        super().clean()
+        
+        # Validate product belongs to same client
+        if self.product and self.product.client_id != self.client_id:
             raise ValidationError({
-                "pricing_type": CoreErrorMessages.REQUIRED_FIELD.format(field="At least one billing cycle for subscription")
+                "product": CoreErrorMessages.CLIENT_MISMATCH
             })
-        if self.pricing_type == Pricing.PricingType.ONE_TIME and self.available_cycles.exists():
+            
+        if self.pricing_type == self.PricingType.SUBSCRIPTION and not self.available_cycles.exists():
             raise ValidationError({
-                "pricing_type": CoreErrorMessages.INVALID_FIELD.format(field="Billing cycles are not allowed for one-time pricing")
+                "pricing_type": CoreErrorMessages.REQUIRED_FIELD.format(
+                    field="At least one billing cycle for subscription"
+                )
+            })
+            
+        if self.pricing_type == self.PricingType.ONE_TIME and self.available_cycles.exists():
+            raise ValidationError({
+                "pricing_type": CoreErrorMessages.INVALID_FIELD.format(
+                    field="Billing cycles are not allowed for one-time pricing"
+                )
             })
 
     def __str__(self):
