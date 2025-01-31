@@ -144,7 +144,7 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         # Validate product belongs to same client
         if self.product and self.product.client_id != self.client_id:
             raise ValidationError({
-                "product": CoreErrorMessages.CLIENT_MISMATCH
+                "product": CoreErrorMessages.PERMISSION_DENIED
             })
             
         if self.pricing_type == self.PricingType.SUBSCRIPTION and not self.available_cycles.exists():

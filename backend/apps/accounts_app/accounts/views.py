@@ -5,8 +5,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from django.core.exceptions import ValidationError
+from rest_framework import serializers
 from django.db import transaction
+from core.exceptions import StandardizedValidationError
 from core.apps_shared_methods import BaseAPIView
 from .models import Account
 from .serializers import AccountSerializer
@@ -48,10 +49,7 @@ class AccountAPIView(BaseAPIView):
                     queryset = queryset.filter(**{field: filter_list})
                     
         except ValueError:
-            raise ValidationError({
-                'error': CoreErrorMessages.INVALID_FILTER,
-                'detail': f"Invalid format for filter parameters: {', '.join(filter_mappings.keys())}"
-            })
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FILTER)
             
         return queryset
 
@@ -61,55 +59,56 @@ class AccountAPIView(BaseAPIView):
             try:
                 parent = Account.objects.get(id=parent_id)
                 if str(parent.client_id) != str(client_id):
-                    raise ValidationError({
-                        'parent_id': AccountErrorMessages.INVALID_PARENT
-                    })
+                    raise StandardizedValidationError(AccountErrorMessages.INVALID_PARENT)
                 return parent
             except Account.DoesNotExist:
-                raise ValidationError({
-                    'parent_id': AccountErrorMessages.PARENT_NOT_FOUND
-                })
+                raise StandardizedValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
         return None
 
     def _update_instance(self, instance, data, partial, client_id):
-        """Optimized update with minimal queries"""
-        self.validate_client_id(instance)
-        
-        # Track fields that need refresh
-        refresh_fields = set()
-        
-        # Store old values for relationship changes
-        old_parent = instance.parent_company_id
-        old_team = instance.team_owner_id
-        
-        serializer = self.serializer_class(
-            instance,
-            data=data,
-            partial=partial,
-            context={'request': self.request, 'client_id': client_id}
-        )
-        
-        if serializer.is_valid():
-            with transaction.atomic():
-                updated = serializer.save()
+            """Optimized update with minimal queries"""
+            self.validate_client_id(instance)
+            
+            # Track fields that need refresh
+            refresh_fields = set()
+            
+            # Store old values for relationship changes
+            old_parent = instance.parent_company_id
+            old_team = instance.team_owner_id
+            
+            try:
+                serializer = self.serializer_class(
+                    instance,
+                    data=data,
+                    partial=partial,
+                    context={'request': self.request, 'client_id': client_id}
+                )
                 
-                # Only refresh changed relationships
-                if old_parent != updated.parent_company_id:
-                    refresh_fields.add('parent_company')
-                    if old_parent:
-                        Account.objects.filter(id=old_parent).update(
-                            updated_at=datetime.now()
-                        )
+                if serializer.is_valid():
+                    with transaction.atomic():
+                        updated = serializer.save()
+                        
+                        # Only refresh changed relationships
+                        if old_parent != updated.parent_company_id:
+                            refresh_fields.add('parent_company')
+                            if old_parent:
+                                Account.objects.filter(id=old_parent).update(
+                                    updated_at=datetime.now()
+                                )
+                        
+                        if old_team != updated.team_owner_id:
+                            refresh_fields.add('team_owner')
+                        
+                        if refresh_fields:
+                            updated.refresh_from_db(fields=refresh_fields)
+                        
+                        return serializer
                 
-                if old_team != updated.team_owner_id:
-                    refresh_fields.add('team_owner')
-                
-                if refresh_fields:
-                    updated.refresh_from_db(fields=refresh_fields)
-                
-                return serializer
-                
-        raise ValidationError(serializer.errors)
+                # Extract and format error message
+                raise StandardizedValidationError(serializer.errors)
+                    
+            except Exception as e:
+                raise StandardizedValidationError(str(e))
 
     @action(detail=True, methods=['get'])
     def hierarchy(self, request, pk=None):

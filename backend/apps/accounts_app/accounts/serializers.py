@@ -8,6 +8,8 @@ from .models import Account, AccountType, AccountClassification
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.serializers import  ContactDetailsSerializer
+from core.exceptions import StandardizedValidationError
+
 
 class AssignedTeamSerializer(serializers.ModelSerializer):
     """Serializer for the assigned team summary"""
@@ -126,9 +128,8 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
         
         valid_types = [choice[0] for choice in AccountType.choices]
         if value not in valid_types:
-            raise serializers.ValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field="Type")
-            )
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Type"))
+        return value
         return value
 
     def validate_classification(self, value):
@@ -138,9 +139,7 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             
         valid_classifications = [choice[0] for choice in AccountClassification.choices]
         if value not in valid_classifications:
-            raise serializers.ValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field="Classification")
-            )
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Classification"))
         return value
 
     def validate(self, data):
@@ -175,11 +174,9 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             instance = getattr(self, 'instance', None)
 
             # Other validations as needed
-            if not 'city' in data:
-                        raise serializers.ValidationError(
-                            CoreErrorMessages.REQUIRED_FIELD.format(field='city')
-                        )
-            
+            if "city" not in data:
+                raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(field="City"))
+
             if 'company_name' in data:
                 data['company_name'] = data['company_name'].upper()
 
@@ -205,14 +202,7 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             return data
 
         except serializers.ValidationError as e:
-            # Extract a clean error message
-            error_msg = self._extract_error_message(e)
-            raise serializers.ValidationError(error_msg)
-
-        except serializers.ValidationError as e:
-            # Extract a clean error message
-            error_msg = self._extract_error_message(e)
-            raise serializers.ValidationError(error_msg)
+            raise StandardizedValidationError(e.detail)
 
     def _validate_parent_company(self, parent_id, client_id, instance):
         """Validate parent company relationships."""
@@ -220,21 +210,21 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             parent = Account.objects.get(id=parent_id)
 
             if str(parent.client_id) != str(client_id):
-                raise serializers.ValidationError(AccountErrorMessages.INVALID_PARENT)
+                raise StandardizedValidationError(AccountErrorMessages.INVALID_PARENT)
 
             # Check for self-reference and circular references
             if instance and str(parent.id) == str(instance.id):
-                raise serializers.ValidationError(AccountErrorMessages.SELF_PARENT)
+               raise StandardizedValidationError(AccountErrorMessages.SELF_PARENT)
 
             current = parent
             path = {str(current.id)}
             while current.parent_company:
                 current = current.parent_company
                 if str(current.id) in path or (instance and str(current.id) == str(instance.id)):
-                    raise serializers.ValidationError(AccountErrorMessages.CIRCULAR_HIERARCHY)
+                    raise StandardizedValidationError(AccountErrorMessages.CIRCULAR_HIERARCHY)
                 path.add(str(current.id))
         except Account.DoesNotExist:
-            raise serializers.ValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
+            raise StandardizedValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
 
     def _validate_account_owner_and_team(self, data, client_id):
         """Validate account owner and team owner relationships."""
@@ -245,19 +235,19 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             try:
                 account_owner = User.objects.get(id=account_owner_id)
                 if not account_owner.is_active:
-                    raise serializers.ValidationError(AccountErrorMessages.USER_INACTIVE)
+                    raise StandardizedValidationError(AccountErrorMessages.USER_INACTIVE)
 
                 if team_owner_id:
                     team = Team.objects.get(id=team_owner_id)
                     if account_owner.team_id != team.id:
-                        raise serializers.ValidationError(AccountErrorMessages.TEAM_MISMATCH)
+                        raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
             except User.DoesNotExist:
-                raise serializers.ValidationError(AccountErrorMessages.INVALID_USER)
+                raise StandardizedValidationError(AccountErrorMessages.INVALID_USER)
 
         if team_owner_id is not None:
             try:
                 team = Team.objects.get(id=team_owner_id)
                 if str(team.organization.client_account_id) != str(client_id):
-                    raise serializers.ValidationError(AccountErrorMessages.TEAM_MISMATCH)
+                    raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
             except Team.DoesNotExist:
-                raise serializers.ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)

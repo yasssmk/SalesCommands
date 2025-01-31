@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from core.error_messages import CoreErrorMessages
+from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
 from apps.accounts_app.accounts.models import Account
 
 class AccountLinkedSerializerMixin:
@@ -7,47 +8,35 @@ class AccountLinkedSerializerMixin:
     Mixin for serializers of models that inherit from AccountLinkedModel.
     Provides account validation and standardized error messages.
     """
-    # account = serializers.CharField(
-    #     error_messages={
-    #         'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Account'),
-    #         'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Account')  
-    #     }
-    # )
-
+ 
     def validate_account(self, value):
         """Validate account exists and belongs to the current client"""
         if not value:
-            raise serializers.ValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(field='Account')
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field="Account")
             )
             
         try:
             # Get client_id from context (set by view)
             client_id = self.context.get('client_id')
             if not client_id:
-                raise serializers.ValidationError(
-                    CoreErrorMessages.CLIENT_ID_REQUIRED
-                )
+                raise AuthenticationFailed(CoreErrorMessages.CLIENT_ID_REQUIRED)
 
             # Verify account belongs to client
             if str(value.client_id) != str(client_id):
-                raise serializers.ValidationError(
-                    CoreErrorMessages.CLIENT_MISMATCH
-                )
-
+                raise StandardizedPermissionDenied(CoreErrorMessages.CLIENT_MISMATCH)
+            
             return value
 
         except Account.DoesNotExist:
-            raise serializers.ValidationError(
-                CoreErrorMessages.OBJECT_NOT_FOUND
-            )
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
     def validate(self, data):
         """Ensure account is provided"""
         if not self.partial and 'account' not in data:
-            raise serializers.ValidationError({
-                'account': CoreErrorMessages.REQUIRED_FIELD.format(field='Account')
-            })
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field="Account")
+            )
         return super().validate(data)
 
     class Meta:
@@ -81,7 +70,7 @@ class StandardDepartmentSerializer(serializers.ModelSerializer):
         """
         Prevent creation through API
         """
-        raise serializers.ValidationError(
+        raise StandardizedValidationError(
             "Standard departments cannot be created through the API"
         )
 
@@ -89,6 +78,6 @@ class StandardDepartmentSerializer(serializers.ModelSerializer):
         """
         Prevent updates through API
         """
-        raise serializers.ValidationError(
+        raise StandardizedValidationError(
             "Standard departments cannot be modified through the API"
         )

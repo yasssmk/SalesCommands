@@ -9,6 +9,7 @@ from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User, Team, Organization
 from core.error_messages import CoreErrorMessages, AccountErrorMessages, ValidationErrorMessages
+from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
 
 
 # Personalization: Users could add new choices 
@@ -74,10 +75,8 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
         
         # Ensure account_owner user belongs to team_owner if both are set
         if self.account_owner and self.team_owner:
-            if not self.account_owner.team == self.team_owner:
-                raise ValidationError({
-                    'account_owner' : AccountErrorMessages.TEAM_MISMATCH
-                })
+            if self.account_owner.team != self.team_owner:
+                raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH, field_name="account_owner")
 
     def save(self, *args, **kwargs):
         # If account_owner is set but team isn't, automatically set the team

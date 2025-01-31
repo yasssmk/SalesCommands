@@ -1,17 +1,19 @@
 from rest_framework import views, status
 from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
 from django.db import transaction
-from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, ValidationError as DRFValidationError
-from django.core.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
-import logging
-from .client_scope import ClientScopeManager
-from django.utils.translation import gettext_lazy as _
+from rest_framework.exceptions import ValidationError as DRFValidationError, PermissionDenied, AuthenticationFailed
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.shortcuts import get_object_or_404
 from django.conf import settings
-import uuid
+from core.client_scope import ClientScopeManager
+from core.exceptions import (
+    StandardizedValidationError,
+    StandardizedPermissionDenied,
+    StandardizedAuthenticationFailed,
+)
 from core.error_messages import CoreErrorMessages
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -78,21 +80,13 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                 # Get objects with the specified IDs
                 objects = self.get_objects(ids)
             else:
-                # Handle single object request if pk is in URL
-                pk = kwargs.get('pk')
+                pk = kwargs.get("pk")
                 if pk:
-                    objects = self.get_objects([pk])
+                    objects = self.get_objects([pk]).first()
+                    if not objects:
+                        raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
                 else:
-                    # No specific IDs requested, return full list
                     objects = self.get_queryset()
-            
-            if kwargs.get('pk'):
-                objects = objects.first()
-                if not objects:
-                    return Response(
-                        {'error': CoreErrorMessages.OBJECT_NOT_FOUND},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
             
             # Determine if we need pagination
             many = bool(id_param or not kwargs.get('pk'))
@@ -106,11 +100,8 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             serializer = self.serializer_class(objects, many=many)
             return Response(serializer.data)
             
-        except ValidationError as exc:
-            return Response(
-                {'error': str(exc.detail)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        except (DjangoValidationError, DRFValidationError) as exc:
+            return self.handle_exception(exc)
         except Exception as exc:
             return self.handle_exception(exc)
 
@@ -132,7 +123,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         
         # If we can't find all requested objects in the client-scoped queryset
         if objects.count() != len(ids):
-            raise PermissionDenied(CoreErrorMessages.OBJECT_NOT_FOUND)
+            raise StandardizedPermissionDenied(CoreErrorMessages.OBJECT_NOT_FOUND)
             
         return objects
     
@@ -154,7 +145,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                         instance = serializer.save(client_id=client_id)
                         created_objects.append(instance)
                     else:
-                        raise ValidationError(serializer.errors)
+                        raise StandardizedValidationError(serializer.errors)
 
             # Return paginated response for batch creations if needed
             if len(created_objects) > 1 and self.paginator is not None:
@@ -189,10 +180,9 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                 allowed_data[field] = update_data[field]
                 
         if not allowed_data:
-            raise ValidationError({
-                'error': CoreErrorMessages.MASS_UPDATE_INVALID,
-                'allowed_fields': list(self.mass_update_allowed_fields)
-            })
+            raise StandardizedValidationError({
+            CoreErrorMessages.MASS_UPDATE_INVALID: list(self.mass_update_allowed_fields)
+        })
                 
         return allowed_data
     
@@ -204,17 +194,16 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         for obj in objects:
             try:
                 if not hasattr(obj, 'client_id'):
-                    raise ValidationError(CoreErrorMessages.CLIENT_SCOPE_UNSUPPORTED)
+                    raise StandardizedValidationError(CoreErrorMessages.CLIENT_SCOPE_UNSUPPORTED)
                 if str(obj.client_id) != str(client_id):
                     invalid_ids.append(str(obj.id))
             except AttributeError:
                 invalid_ids.append(str(obj.id))
                 
         if invalid_ids:
-            raise PermissionDenied({
-                'error': CoreErrorMessages.CLIENT_MISMATCH,
-                'invalid_ids': invalid_ids
-            })
+            raise StandardizedPermissionDenied({
+            CoreErrorMessages.CLIENT_MISMATCH: invalid_ids
+        })
 
     def _update(self, request, partial):
         """Enhanced update with better client scope validation."""
@@ -227,7 +216,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                 if id_param:
                     ids = [id_.strip() for id_ in id_param.split(',') if id_.strip()]
                     if not ids:
-                        raise ValidationError(CoreErrorMessages.NO_OBJECTS_FOUND)
+                         raise StandardizedValidationError(CoreErrorMessages.NO_OBJECTS_FOUND)
 
                     objects = self.get_objects(ids)
                     self._batch_validate_client_scope(objects)
@@ -245,14 +234,15 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                             )
 
                             if not serializer.is_valid():
-                                raise DRFValidationError(serializer.errors)
+                                raise StandardizedValidationError(serializer.errors)
 
                             updated = serializer.save()
                             updated_objects.append(updated)
+                        
                         except Exception as e:
-                            if hasattr(serializer, 'errors'):
-                                raise DRFValidationError(serializer.errors)
-                            raise DRFValidationError(str(e))
+                            if hasattr(serializer, "errors"):
+                                raise StandardizedValidationError(serializer.errors)
+                            raise StandardizedValidationError(str(e))
 
                     serializer = self.serializer_class(updated_objects, many=True)
                     return Response(serializer.data)
@@ -261,7 +251,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                     # Single object update
                     objects = self.get_objects()
                     if not objects.exists():
-                        raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+                        raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
                     instance = objects.first()
                     self.validate_client_id(instance)
@@ -276,13 +266,11 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                     )
 
                     if not serializer.is_valid():
-                        raise DRFValidationError(serializer.errors)
+                        raise StandardizedValidationError(serializer.errors)
 
                     updated = serializer.save()
                     return Response(self.serializer_class(updated).data)
 
-        except (ValidationError, DRFValidationError) as exc:
-            return self.handle_exception(exc)
         except Exception as exc:
             return self.handle_exception(exc)
                                     
@@ -302,7 +290,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                 # Get and validate objects
                 objects = self.get_objects(ids)
                 if not objects:
-                    raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+                    raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
                 
                 # Validate and delete each object
                 deleted_count = 0
@@ -332,35 +320,30 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             return self.handle_exception(exc)
 
     def handle_exception(self, exc):
-        """Improved error handling without modifying error messages incorrectly."""
+        """Centralized error handling for all API views"""
         
         if isinstance(exc, AuthenticationFailed):
             return Response(
-                {"error": str(exc)}, 
+                StandardizedValidationError._format_detail(CoreErrorMessages.AUTH_REQUIRED),
                 status=status.HTTP_401_UNAUTHORIZED
             )
-        if isinstance(exc, (ValidationError, DRFValidationError)):
-            error_detail = getattr(exc, 'detail', exc.messages if hasattr(exc, 'messages') else str(exc))
-
-            # Keep the original error format and avoid unnecessary modifications
-            if isinstance(error_detail, dict):
-                return Response(error_detail, status=status.HTTP_400_BAD_REQUEST)
-
-            elif isinstance(error_detail, list) and error_detail:
-                return Response(error_detail[0], status=status.HTTP_400_BAD_REQUEST)
-
-            else:
-                return Response(error_detail, status=status.HTTP_400_BAD_REQUEST)
 
         if isinstance(exc, PermissionDenied):
             return Response(
-                {'error': str(exc.detail) if hasattr(exc, 'detail') else CoreErrorMessages.PERMISSION_DENIED},
+                StandardizedValidationError._format_detail(CoreErrorMessages.PERMISSION_DENIED),
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        if isinstance(exc, (DRFValidationError, DjangoValidationError)):
+            detail = exc.detail if hasattr(exc, 'detail') else exc.message_dict
+            return Response(
+                StandardizedValidationError._format_detail(detail),
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Log unexpected errors
-        logger.error(f"Error in {self.__class__.__name__}: {str(exc)}", exc_info=True)
+        logger.error(f"Unexpected error in {self.__class__.__name__}: {str(exc)}", exc_info=True)
         return Response(
-            {'error': CoreErrorMessages.UNEXPECTED_ERROR},
+            StandardizedValidationError._format_detail(CoreErrorMessages.UNEXPECTED_ERROR),
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
