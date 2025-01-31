@@ -25,6 +25,6 @@ COUNTRIES = [
 
 CURRENCY = [
     ('USD', _('DOLLAR')),
-    ('EURO', _('EURO')),
+    ('EUR', _('EURO')),
     ('GBP', _('GREAT BRITAIN POUND'))
 ]

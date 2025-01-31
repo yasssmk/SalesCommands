@@ -250,7 +250,9 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                             updated = serializer.save()
                             updated_objects.append(updated)
                         except Exception as e:
-                            raise DRFValidationError(serializer.errors if hasattr(serializer, 'errors') else str(e))
+                            if hasattr(serializer, 'errors'):
+                                raise DRFValidationError(serializer.errors)
+                            raise DRFValidationError(str(e))
 
                     serializer = self.serializer_class(updated_objects, many=True)
                     return Response(serializer.data)
@@ -282,9 +284,8 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         except (ValidationError, DRFValidationError) as exc:
             return self.handle_exception(exc)
         except Exception as exc:
-            logger.error(f"Error in {self.__class__.__name__}: {str(exc)}", exc_info=True)
             return self.handle_exception(exc)
-                                
+                                    
 
     def delete(self, request, *args, **kwargs):
         """Handle DELETE requests for single or multiple objects"""
@@ -343,13 +344,13 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
 
             # Keep the original error format and avoid unnecessary modifications
             if isinstance(error_detail, dict):
-                return Response({'error': error_detail}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(error_detail, status=status.HTTP_400_BAD_REQUEST)
 
             elif isinstance(error_detail, list) and error_detail:
-                return Response({'error': error_detail[0]}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(error_detail[0], status=status.HTTP_400_BAD_REQUEST)
 
             else:
-                return Response({'error': str(error_detail)}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(error_detail, status=status.HTTP_400_BAD_REQUEST)
 
         if isinstance(exc, PermissionDenied):
             return Response(
