@@ -4,7 +4,8 @@ from apps.core_apps.models import BaseModelApp,AccountLinkedModel
 from apps.sales_insight.models import SalesInsight
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
-from core.error_messages import CoreErrorMessages, ValidationErrorMessages
+from apps.core_apps.models import StandardDepartment
+
 
 class AccountOrganizationUnit(BaseModelApp, ClientScopeManager.ModelMixin, AccountLinkedModel):
     class UnitType(models.TextChoices):
@@ -21,6 +22,14 @@ class AccountOrganizationUnit(BaseModelApp, ClientScopeManager.ModelMixin, Accou
         max_length=50,
         choices=UnitType.choices,
         verbose_name=_('Unit Type'),
+    )
+
+    standard_department = models.ForeignKey(
+        StandardDepartment,
+        on_delete=models.PROTECT,
+        default=1,
+        related_name='organization_units',
+        verbose_name=_('Standard Department')
     )
 
     parent_organization_unit = models.ForeignKey(
@@ -54,7 +63,7 @@ class AccountOrganizationUnit(BaseModelApp, ClientScopeManager.ModelMixin, Accou
         index_fields=['organization_name']
     )):
         verbose_name = _('Organization Unit')
-        db_table = 'Organization Unit'
+        db_table = 'Organization_Unit'
         ordering = ['-created_at', 'organization_name']
         indexes = [
             models.Index(fields=['account']),

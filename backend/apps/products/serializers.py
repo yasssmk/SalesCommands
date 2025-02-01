@@ -5,7 +5,7 @@ from .models import BillingCycle, Pricing, Product
 from apps.core_apps.serializers import StandardDepartmentSerializer
 from django.db import transaction
 from core.constants import CURRENCY
-
+from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
 
 class BillingCycleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     
@@ -37,11 +37,9 @@ class BillingCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
 
         # Validate multiplier
         if not (0 < data.get('multiplier', 1) <= 1):
-            raise serializers.ValidationError({
-                'multiplier': CoreErrorMessages.INVALID_FIELD.format(
-                    field="Multiplier must be between 0 and 1"
-                )
-            })
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
+            field="Multiplier must be between 0 and 1"
+        ))
 
         # Validate unique name within client scope
         self.validate_client_scoped_uniqueness(
@@ -171,11 +169,8 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         # Handle pricing type and cycles validation
         if pricing_type == Pricing.PricingType.ONE_TIME:
             if cycle_ids:
-                raise serializers.ValidationError({
-                    'cycle_ids': CoreErrorMessages.INVALID_FIELD.format(
-                        field='Billing cycles are not allowed for one-time pricing'
-                    )
-                })
+                raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
+                    field="Billing cycles are not allowed for one-time pricing"))
             data['cycle_ids'] = []
                 
         elif pricing_type == Pricing.PricingType.SUBSCRIPTION:

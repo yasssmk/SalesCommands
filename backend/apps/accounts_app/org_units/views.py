@@ -1,15 +1,15 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
 from rest_framework.decorators import action
 from django.core.exceptions import ValidationError
-from rest_framework.exceptions import AuthenticationFailed
 from django.db import transaction
 from core.apps_shared_methods import BaseAPIView
 from .models import AccountOrganizationUnit
 from .serializers import AccountOrganizationUnitSerializer
 from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
+from core.exceptions import StandardizedValidationError
+from apps.core_apps.models import StandardDepartment
 from datetime import datetime
 
 class AccountOrganizationUnitAPIView(BaseAPIView):
@@ -36,13 +36,14 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
             filter_mappings = {
                 'account_id': 'account_id',
                 'parent_ids': 'parent_organization_unit_id__in',
-                'unit_types': 'unit_type__in'
+                'unit_types': 'unit_type__in',
+                'standard_department_id': 'standard_department_id'
             }
             
             for param, field in filter_mappings.items():
                 values = self.request.query_params.get(param)
                 if values:
-                    if param == 'account_id':
+                    if param in ['account_id', 'standard_department_id']:
                         queryset = queryset.filter(**{field: values.strip()})
                     else:
                         filter_list = [v.strip() for v in values.split(',')]
@@ -51,10 +52,9 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
             return queryset
                 
         except ValueError:
-            raise ValidationError({
-                'error': CoreErrorMessages.INVALID_FILTER,
-                'detail': f"Invalid format for filter parameters: {', '.join(filter_mappings.keys())}"
-            })
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FILTER
+                                              .format(detail=f"Invalid format for filter parameters: {', '.join(filter_mappings.keys())}"))
+            
 
     def _validate_parent_unit(self, parent_id, account_id, client_id):
         """Validate parent organization unit exists and belongs to same account and client"""
@@ -62,18 +62,15 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
             try:
                 parent = AccountOrganizationUnit.objects.get(id=parent_id)
                 if str(parent.client_id) != str(client_id):
-                    raise ValidationError({
-                        'parent_id': AccountErrorMessages.INVALID_PARENT
-                    })
+                    raise StandardizedValidationError(AccountErrorMessages.INVALID_PARENT)
+                    
                 if str(parent.account_id) != str(account_id):
-                    raise ValidationError({
-                        'parent_id': AccountErrorMessages.INVALID_PARENT_ORG
-                    })
+                    raise StandardizedValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
                 return parent
+            
             except AccountOrganizationUnit.DoesNotExist:
-                raise ValidationError({
-                    'parent_id': AccountErrorMessages.PARENT_NOT_FOUND
-                })
+                raise StandardizedValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
+            
         return None
 
     def _update_instance(self, instance, data, partial, client_id):
@@ -87,6 +84,7 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
             # Store old values for relationship changes
             old_parent = instance.parent_organization_unit_id
             old_account = instance.account_id
+            old_standard_department = instance.standard_department_id
             
             serializer = self.serializer_class(
                 instance,
@@ -99,7 +97,11 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
                 with transaction.atomic():
                     # Prevent changing account
                     if 'account' in data and str(data['account']) != str(old_account):
-                        raise ValidationError(AccountErrorMessages.CHANGE_ACCOUNT_ORG)
+                        raise StandardizedValidationError(AccountErrorMessages.CHANGE_ACCOUNT_ORG)
+                    
+                    if 'standard_department_id' in data and not partial:
+                        if str(data['standard_department_id']) != str(old_standard_department):
+                            refresh_fields.add('standard_department')
                     
                     updated = serializer.save()
                     
@@ -116,9 +118,9 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
                     
                     return serializer
                     
-            raise ValidationError(serializer.errors)
+            raise StandardizedValidationError(serializer.errors)
         except ValidationError as e:
-            raise ValidationError(e)
+            raise StandardizedValidationError(e.detail)
 
     @action(detail=True, methods=['get'])
     def hierarchy(self, request, pk=None):
@@ -126,15 +128,25 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
         try:
             objects = self.get_objects()
             if not objects or objects.count() != 1:
-                raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
                 
             instance = objects[0]
             
             # Build hierarchy
             hierarchy = {
                 'parents': [],
-                'children': list(instance.child_organization_units.all())
+                'children': []
             }
+            
+            # Get children following hierarchy rules
+            children = instance.child_organization_units.all()
+            for child in children:
+                if instance.unit_type == AccountOrganizationUnit.UnitType.DEPARTMENT:
+                    if child.unit_type in [AccountOrganizationUnit.UnitType.DIVISION, AccountOrganizationUnit.UnitType.TEAM]:
+                        hierarchy['children'].append(child)
+                elif instance.unit_type == AccountOrganizationUnit.UnitType.DIVISION:
+                    if child.unit_type == AccountOrganizationUnit.UnitType.TEAM:
+                        hierarchy['children'].append(child)
             
             # Get parent hierarchy
             current = instance
@@ -152,7 +164,7 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
                 "parents": self.serializer_class(hierarchy['parents'], many=True).data,
                 "children": self.serializer_class(hierarchy['children'], many=True).data,
             })
-            
+        
         except Exception as exc:
             return self.handle_exception(exc)
 
@@ -167,5 +179,21 @@ class OrganizationUnitChoicesView(APIView):
             'unit_types': [
                 {'value': choice[0], 'label': choice[1]} 
                 for choice in AccountOrganizationUnit.UnitType.choices
+            ]
+        })
+
+class StandardDepartmentChoicesView(APIView):
+    """
+    API endpoint for retrieving standard department choices.
+    """
+    def get(self, request):
+        return Response({
+            'standard_departments': [
+                {
+                    'value': dept.id, 
+                    'label': dept.get_name_display(),
+                    'department_type': dept.name
+                } 
+                for dept in StandardDepartment.objects.all().order_by('name')
             ]
         })

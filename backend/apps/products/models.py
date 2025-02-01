@@ -10,7 +10,7 @@ from core.error_messages import CoreErrorMessages
 from apps.core_apps.models import StandardDepartment
 from django.core.exceptions import ValidationError
 from core.constants import CURRENCY
-
+from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
 
 class Product(BaseModelApp, ClientScopeManager.ModelMixin):
 
@@ -35,7 +35,7 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_("Marketing Description")
     )
 
-    target_category = models.ForeignKey(StandardDepartment, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_("Standard Department Category"))
+    target_category = models.ForeignKey(StandardDepartment, on_delete=models.SET_NULL, null=True, verbose_name=_("Standard Department Category"))
 
     # AI & Sales Insights
     value_proposition = models.JSONField(blank=True, null=True, verbose_name=_("Value Proposition"))
@@ -89,9 +89,10 @@ class BillingCycle(BaseModelApp, ClientScopeManager.ModelMixin):
     def clean(self):
         """Ensure multiplier is within valid range."""
         if (1 > self.multiplier <= 0):
-            raise ValidationError({
-                "multiplier": CoreErrorMessages.INVALID_FIELD.format(field="Multiplier must be between 0 and 1")
-            })
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
+            field="Multiplier must be between 0 and 1"
+        ))
+           
 
     def __str__(self):
         return f"{self.get_cycle_type_display()} (x{self.multiplier})"
@@ -143,23 +144,18 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         
         # Validate product belongs to same client
         if self.product and self.product.client_id != self.client_id:
-            raise ValidationError({
-                "product": CoreErrorMessages.PERMISSION_DENIED
-            })
+            raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
             
         if self.pricing_type == self.PricingType.SUBSCRIPTION and not self.available_cycles.exists():
-            raise ValidationError({
-                "pricing_type": CoreErrorMessages.REQUIRED_FIELD.format(
+            raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(
                     field="At least one billing cycle for subscription"
-                )
-            })
+                ))
+            
             
         if self.pricing_type == self.PricingType.ONE_TIME and self.available_cycles.exists():
-            raise ValidationError({
-                "pricing_type": CoreErrorMessages.INVALID_FIELD.format(
-                    field="Billing cycles are not allowed for one-time pricing"
-                )
-            })
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
+                    field="Billing cycles are not allowed for one-time pricing"))
+            
 
     def __str__(self):
         return f"{self.product.product_name} - {self.pricing_type} - {self.base_price} {self.currency}"

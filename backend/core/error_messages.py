@@ -24,14 +24,14 @@ class CoreErrorMessages:
     
     # Field Validation
     REQUIRED_FIELD = _("{field} is required")
-    INVALID_FIELD = _("{field} has an invalid value")
+    INVALID_FIELD = _("Invalid value: {field}")
     FIELD_IMMUTABLE = _("{field} cannot be modified after creation")
     
     # Uniqueness
     UNIQUE_CONSTRAINT = _("An entry with this {fields} already exists in your organization")
     
     # Filtering
-    INVALID_FILTER = _("Invalid filter format provided")
+    INVALID_FILTER = _("Invalid filter format provided {detail}")
     
     # Generic
     UNEXPECTED_ERROR = _("An unexpected error occurred")
@@ -41,7 +41,7 @@ class AccountErrorMessages:
     """Account specific error messages"""
     INVALID_PARENT = _("Invalid parent assignment")
     PARENT_NOT_FOUND = _("Parent not found")
-    INVALID_PARENT_ORG = _("Parent organization unit must belong to the same account")
+    INVALID_PARENT_ORG = _("Invalid relationship : {detail}")
     SELF_PARENT = _("Cannot be its own parent")
     CIRCULAR_HIERARCHY = _("Cannot create a circular parent-child relationship")
     TEAM_MISMATCH = _("Account manager must belong to the assigned team")
