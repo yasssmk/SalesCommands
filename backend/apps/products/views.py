@@ -11,6 +11,7 @@ from .serializers import (
     ProductSerializer, PricingSerializer, BillingCycleSerializer
 )
 from django.core.exceptions import ValidationError
+from core.exceptions import StandardizedValidationError
 
 
 class ProductAPIView(BaseAPIView):
@@ -140,14 +141,12 @@ class BillingCycleAPIView(BaseAPIView):
             with transaction.atomic():
                 objects = self.get_objects()
                 if not objects:
-                    raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+                    raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
                 # Check for dependencies
                 for obj in objects:
                     if obj.pricing_models.exists():
-                        raise ValidationError(
-                            f"Cannot delete billing cycle '{obj.name}' as it is in use"
-                        )
+                        raise StandardizedValidationError(CoreErrorMessages.OBJECT_IN_USE.format(fields={obj.name}))
 
                 return super().delete(request, *args, **kwargs)
         except Exception as exc:

@@ -278,7 +278,6 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Product Type'),
             'invalid_choice': CoreErrorMessages.INVALID_DATA.format(
                 detail='Product Type is not a valid choice',
-                # choices=', '.join([choice[1] for choice in Product.ProductType.choices])
             )
         }
     )
@@ -312,9 +311,8 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
                 # Validate required fields for complete creation/update
                 for field in ['product_name', 'product_type']:
                     if field not in data:
-                        raise serializers.ValidationError({
-                            field: CoreErrorMessages.REQUIRED_FIELD.format(field=field)
-                        })
+                        raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(field=field))
+                        
                 
                 # Validate all JSON fields for complete creation/update
                 for field in ['value_proposition', 'potential_cons', 'competitors']:
@@ -326,7 +324,7 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
                 data=data,
                 unique_fields=['product_name'],
                 error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                    fields='product name within this client'
+                    fields='product name'
                 )
             )
 
@@ -339,11 +337,10 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         """Validate JSON fields structure"""
         if value is not None:
             if not isinstance(value, dict):
-                raise serializers.ValidationError({
-                    field_name: CoreErrorMessages.INVALID_DATA.format(
+                raise StandardizedValidationError(CoreErrorMessages.INVALID_DATA.format(
                         detail=f"{field_name} must be a valid JSON object"
-                    )
-                })
+                    ))
+                
                 
             # Validate specific structure based on field
             if field_name == 'value_proposition':
@@ -362,8 +359,6 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         """Validate required keys in JSON structure"""
         missing_keys = [key for key in required_keys if key not in value]
         if missing_keys:
-            raise serializers.ValidationError({
-                field_name: CoreErrorMessages.INVALID_DATA.format(
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_DATA.format(
                     detail=f"Missing required keys in {field_name}: {', '.join(missing_keys)}"
-                )
-            })
+                ))
