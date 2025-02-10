@@ -263,7 +263,7 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
     pricing_models = PricingSerializer(many=True, read_only=True)
     target_categoryies = StandardDepartmentSerializer(many=True, read_only=True)
 
-    target_category_id = serializers.IntegerField(
+    target_category_id = serializers.ListField(
         child=serializers.IntegerField(),
         write_only=True,
         error_messages={
@@ -278,16 +278,6 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Product Name'),
             'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Product Name'),
             'null': CoreErrorMessages.REQUIRED_FIELD.format(field='Product Name')
-        }
-    )
-    
-    product_type = serializers.ChoiceField(
-        choices=Product.ProductType.choices,
-        error_messages={
-            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Product Type'),
-            'invalid_choice': CoreErrorMessages.INVALID_DATA.format(
-                detail='Product Type is not a valid choice',
-            )
         }
     )
 
@@ -487,7 +477,7 @@ class ProductVariableSerializer(ClientScopeManager.SerializerMixin, serializers.
             if existing_variables.exists():
                 raise StandardizedValidationError(
                     CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                        fields='Label within this Pricing'
+                        fields='Label already exist within this Pricing'
                     )
                 )
 
