@@ -51,7 +51,7 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
                         
             return queryset
                 
-        except ValueError:
+        except ValueError as exc:
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FILTER
                                               .format(detail=f"Invalid format for filter parameters: {', '.join(filter_mappings.keys())}"))
             
@@ -119,8 +119,8 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
                     return serializer
                     
             raise StandardizedValidationError(serializer.errors)
-        except ValidationError as e:
-            raise StandardizedValidationError(e.detail)
+        except Exception as exc:
+            return self.handle_exception(exc)
 
     @action(detail=True, methods=['get'])
     def hierarchy(self, request, pk=None):

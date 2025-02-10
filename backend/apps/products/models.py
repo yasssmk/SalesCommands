@@ -14,20 +14,12 @@ from core.exceptions import StandardizedValidationError, AuthenticationFailed, S
 
 class Product(BaseModelApp, ClientScopeManager.ModelMixin):
 
-    class ProductType(models.TextChoices):
-        REGULAR = "REGULAR", _("Physical or Digital Product")
-        SERVICE = "SERVICE", _("Service-Based Offering")
 
     product_name = models.CharField(
         max_length=255, 
         verbose_name=_('Product Name'),
     )
 
-    product_type = models.CharField(
-        max_length=20, 
-        choices=ProductType.choices, 
-        verbose_name=_("Product Type")
-    )
 
     description = models.TextField(
         blank=True, 
@@ -35,7 +27,12 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_("Marketing Description")
     )
 
-    target_category = models.ForeignKey(StandardDepartment, on_delete=models.SET_NULL, null=True, verbose_name=_("Standard Department Category"))
+    target_categories = models.ManyToManyField(
+        StandardDepartment,
+        blank=True,
+        related_name="products_for_category",
+        verbose_name=_("Standard Department Categories")
+    )
 
     # AI & Sales Insights
     value_proposition = models.JSONField(blank=True, null=True, verbose_name=_("Value Proposition"))
@@ -44,7 +41,7 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=['product_name'],
-        index_fields=['product_type', 'target_category']
+        index_fields=[]
     )):
         db_table = 'products'
         verbose_name = _("Product")
@@ -52,13 +49,14 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
         ordering = ['product_name']
 
     def __str__(self):
-        return f"{self.product_name} ({self.get_product_type_display()})"
+        return f"{self.product_name}"
 
 class BillingCycle(BaseModelApp, ClientScopeManager.ModelMixin):
     """Model to store available billing cycles for pricing"""
     
     class CycleType(models.TextChoices):
         MONTHLY = "MONTHLY", _("Monthly")
+        QUARTERLY = "QUARTERLY", _("Quarterly")
         YEARLY = "YEARLY", _("Yearly")
         THREE_YEARS = "THREE_YEARS", _("3 Years")
 
@@ -88,7 +86,8 @@ class BillingCycle(BaseModelApp, ClientScopeManager.ModelMixin):
     
     def clean(self):
         """Ensure multiplier is within valid range."""
-        if (1 > self.multiplier <= 0):
+        super().clean
+        if not (0 < self.multiplier <= 1):
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
             field="Multiplier must be between 0 and 1"
         ))
@@ -101,6 +100,7 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
     class PricingType(models.TextChoices):
         ONE_TIME = "ONE_TIME", _("One-Time Fee")
         SUBSCRIPTION = "SUBSCRIPTION", _("Subscription")
+        USAGE = "USAGE", _("Usage")
 
     product = models.ForeignKey(
         Product,
@@ -129,6 +129,10 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         blank=True,
         verbose_name=_("Available Billing Cycles")
     )
+
+    # Example: "base_price + (num_seats * 50)"
+    formula = models.TextField(blank=True)
+
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=['product', 'pricing_type'],
@@ -160,26 +164,36 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
     def __str__(self):
         return f"{self.product.product_name} - {self.pricing_type} - {self.base_price} {self.currency}"
     
+class ProductVariable(BaseModelApp, ClientScopeManager.ModelMixin):
+    pricing = models.ForeignKey(Pricing, related_name='variables', on_delete=models.CASCADE)
+
+    label =  models.CharField(max_length=100)
+    rate = models.DecimalField(max_digits=10, decimal_places=4, default=0.0)
+    field_name = models.CharField(max_length=100)
+
+    def __str__(self):
+        return f"{self.pricing.product.product_name} - {self.label}"
+    
 
 from apps.core_apps.models import StandardDepartment
 
-class AccountProductTarget(models.Model):
-    """
-    Maps a product's general target (ProductTarget) to a specific account's organizational units.
-    This ensures that a product can target relevant departments within a client's company.
-    """
-    # product_target = models.ForeignKey(ProductTarget, on_delete=models.CASCADE, related_name="account_targets")
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="product_targets")
-    org_unit = models.ForeignKey(AccountOrganizationUnit, on_delete=models.CASCADE, blank=True, null=True, verbose_name=_("Specific Organization Unit"))
+# class AccountProductTarget(models.Model):
+#     """
+#     Maps a product's general target (ProductTarget) to a specific account's organizational units.
+#     This ensures that a product can target relevant departments within a client's company.
+#     """
+#     # product_target = models.ForeignKey(ProductTarget, on_delete=models.CASCADE, related_name="account_targets")
+#     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="product_targets")
+#     org_unit = models.ForeignKey(AccountOrganizationUnit, on_delete=models.CASCADE, blank=True, null=True, verbose_name=_("Specific Organization Unit"))
 
-    # AI Mapping Fields
-    ai_mapping_confidence = models.FloatField(blank=True, null=True, verbose_name=_("AI Mapping Confidence Score"))
-    manually_validated = models.BooleanField(default=False, verbose_name=_("Manually Validated by User"))
+#     # AI Mapping Fields
+#     ai_mapping_confidence = models.FloatField(blank=True, null=True, verbose_name=_("AI Mapping Confidence Score"))
+#     manually_validated = models.BooleanField(default=False, verbose_name=_("Manually Validated by User"))
 
-    class Meta:
-        db_table = "account_product_targets"
-        verbose_name = _("Account Product Target")
-        verbose_name_plural = _("Account Product Targets")
+#     class Meta:
+#         db_table = "account_product_targets"
+#         verbose_name = _("Account Product Target")
+#         verbose_name_plural = _("Account Product Targets")
 
-    def __str__(self):
-        return f"{self.account.company_name} - {self.product_target.product.name} - {self.org_unit.name if self.org_unit else 'No Specific OrgUnit'}"
+#     def __str__(self):
+#         return f"{self.account.company_name} - {self.product_target.product.name} - {self.org_unit.name if self.org_unit else 'No Specific OrgUnit'}"
