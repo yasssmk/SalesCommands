@@ -123,29 +123,6 @@ class ClientScopeManager:
             if str(obj.client_id) != str(current_client):
                 raise StandardizedPermissionDenied(CoreErrorMessages.CLIENT_MISMATCH)
         
-        # @staticmethod
-        # def _extract_error_message(detail):
-        #     """Extracts the actual error message from DRF's error structures."""
-            
-        #     if isinstance(detail, dict):
-        #         # Extract first error message in dict
-        #         first_key = next(iter(detail.keys()))
-        #         error_value = detail[first_key]
-
-        #         # Handle nested lists inside dicts
-        #         if isinstance(error_value, list) and error_value:
-        #             return str(error_value[0])
-
-        #         return str(error_value)
-
-        #     if isinstance(detail, list) and detail:
-        #         return str(detail[0])  # Extract first error from list
-
-        #     if isinstance(detail, ErrorDetail):
-        #         return str(detail)  # Convert ErrorDetail to string
-
-        #     return str(detail).strip()
-        
     class ViewMixin:
         """
         View mixin for client-scoped CRUD operations

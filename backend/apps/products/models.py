@@ -98,41 +98,80 @@ class BillingCycle(BaseModelApp, ClientScopeManager.ModelMixin):
 
 class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
     class PricingType(models.TextChoices):
-        ONE_TIME = "ONE_TIME", _("One-Time Fee")
+        ASSET = "ASSET", _("Asset")
+        SERVICE = "SERVICE", _("Service")
         SUBSCRIPTION = "SUBSCRIPTION", _("Subscription")
         USAGE = "USAGE", _("Usage")
+
+    class BillingTerms(models.TextChoices):
+        MONTHLY = "MONTHLY", _("Monthly")
+        QUARTERLY = "QUARTERLY", _("Quarterly")
+        YEARLY = "YEARLY", _("Yearly")
+        THREE_YEARS = "THREE_YEARS", _("3 Years")
+
+    class UnitOfMeasure(models.TextChoices):
+        UNIT = "UNIT", _("Unit")
+        SEAT = "SEAT", _("Seats")
+        GB = "GB", _("GIGA BIT")
+        MIN = "MIN", _("Minute")
+        API_CALL = "API_CALL", _("API call")
+        TOKEN = "TOKEN", _("Token")
 
     product = models.ForeignKey(
         Product,
         on_delete=models.CASCADE,
         related_name="pricing_models"
     )
+    
     pricing_type = models.CharField(
         max_length=20,
         choices=PricingType.choices,
         verbose_name=_("Pricing Type")
     )
+
+    unit_of_measure = models.CharField(
+        max_length=20,
+        default="UNIT",
+        choices=UnitOfMeasure.choices,
+        verbose_name=_("Unit of Measure")
+    )
+
+    units_per = models.PositiveIntegerField(
+        default=1,
+        verbose_name=_("Units Per"),
+        help_text=_("Number of base units per billing unit (e.g., 60 minutes per hour)")
+    )
+
+    unit_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=1,
+        verbose_name=_("Unit Price")
+    )
+
     base_price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        verbose_name=_("Base Price")
+        verbose_name=_("Base Price"),
+        help_text=_("Flat fee charged before unit pricing")
     )
+
+    billing_term = models.CharField(
+        max_length=20,
+        choices=BillingTerms.choices,
+        verbose_name=_("Billing Term"),
+        null=True,
+        blank=True
+    )
+
     currency = models.CharField(
-        max_length=10,
-        default="USD",
+        max_length=3,
         choices=CURRENCY,
+        default="USD",
         verbose_name=_("Currency")
     )
-    available_cycles = models.ManyToManyField(
-        BillingCycle,
-        related_name="pricing_models",
-        blank=True,
-        verbose_name=_("Available Billing Cycles")
-    )
 
-    # Example: "base_price + (num_seats * 50)"
     formula = models.TextField(blank=True)
-
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=['product', 'pricing_type'],
@@ -143,37 +182,24 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name_plural = _("Pricing Models")
 
     def clean(self):
-        """Ensure pricing type and client scope are valid."""
+        """Validate business rules for pricing types."""
         super().clean()
-        
-        # Validate product belongs to same client
-        if self.product and self.product.client_id != self.client_id:
-            raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
-            
-        if self.pricing_type == self.PricingType.SUBSCRIPTION and not self.available_cycles.exists():
+
+        # Validate billing term is required for subscription and usage pricing
+        if self.pricing_type in [self.PricingType.SUBSCRIPTION, self.PricingType.USAGE] and not self.billing_term:
             raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(
-                    field="At least one billing cycle for subscription"
-                ))
-            
-            
-        if self.pricing_type == self.PricingType.ONE_TIME and self.available_cycles.exists():
+                field="Billing term is required for subscription and usage pricing"
+            ))
+
+        # Validate billing term is not set for other pricing types
+        if self.pricing_type not in [self.PricingType.SUBSCRIPTION, self.PricingType.USAGE] and self.billing_term:
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
-                    field="Billing cycles are not allowed for one-time pricing"))
-            
+                field="Billing term is not allowed for this pricing type"
+            ))
 
     def __str__(self):
         return f"{self.product.product_name} - {self.pricing_type} - {self.base_price} {self.currency}"
-    
-class ProductVariable(BaseModelApp, ClientScopeManager.ModelMixin):
-    pricing = models.ForeignKey(Pricing, related_name='variables', on_delete=models.CASCADE)
-
-    label =  models.CharField(max_length=100)
-    rate = models.DecimalField(max_digits=10, decimal_places=4, default=0.0)
-    field_name = models.CharField(max_length=100)
-
-    def __str__(self):
-        return f"{self.pricing.product.product_name} - {self.label}"
-    
+      
 
 from apps.core_apps.models import StandardDepartment
 

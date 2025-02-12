@@ -1,76 +1,16 @@
 from rest_framework import serializers
 from core.error_messages import CoreErrorMessages
 from core.client_scope import ClientScopeManager
-from .models import BillingCycle, Pricing, Product, ProductVariable
+from .models import Pricing, Product
 from apps.core_apps.serializers import StandardDepartmentSerializer
-from django.db import transaction
 from core.constants import CURRENCY
-from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
-
-class BillingCycleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
-    
-    name = serializers.CharField(
-        required=True,
-        error_messages={
-            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='The name of the cycling type'),
-            'incorrect_type': CoreErrorMessages.INVALID_FIELD.format(field='cycle type name is too long')
-
-        }
-    )
-    cycle_type = serializers.ChoiceField(
-        choices=BillingCycle.CycleType.choices,
-        error_messages={
-            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Cycling Type'),
-            'invalid_choice': CoreErrorMessages.INVALID_DATA.format(
-                detail=f'Cycling Type must be one of: {[choice[0] for choice in BillingCycle.CycleType.choices]}'
-            )
-        }
-    )
-    class Meta:
-        model = BillingCycle
-        fields = ['id', 'name', 'cycle_type', 'multiplier']
-        read_only_fields = ['created_at', 'updated_at', 'client_id']
-
-    def validate(self, data):
-        """Complete validation of BillingCycle data"""
-        data = super().validate(data)
-
-        # Validate multiplier
-        if not (0 < data.get('multiplier', 1) <= 1):
-            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
-            field="Multiplier must be between 0 and 1"
-        ))
-
-        # Validate unique name within client scope
-        self.validate_client_scoped_uniqueness(
-            data=data,
-            unique_fields=['name'],
-            error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                fields='billing cycle name'
-            )
-        )
-
-        return data
+from core.exceptions import StandardizedValidationError
 
 class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
-    available_cycles = BillingCycleSerializer(many=True, read_only=True)
-    
-    cycle_ids = serializers.ListField(
-        child=serializers.IntegerField(),
-        write_only=True,
-        required=False,
-        allow_null=True,
-        allow_empty=True,
-        error_messages={
-            'does_not_exist': f"{CoreErrorMessages.OBJECT_NOT_FOUND}: Billing cycles with IDs not found",
-            'incorrect_type': CoreErrorMessages.INVALID_FIELD.format(field='cycle ID must be a number')
-        }
-    )
-    # Define product as PrimaryKeyRelatedField
     product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.all(),
         error_messages={
-            'does_not_exist': f"{CoreErrorMessages.OBJECT_NOT_FOUND}: Product IDs not found",
+            'does_not_exist': f"{CoreErrorMessages.OBJECT_NOT_FOUND}: Product not found",
             'incorrect_type': CoreErrorMessages.INVALID_FIELD.format(field='Product ID must be a number'),
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Product')
         }
@@ -86,6 +26,35 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         }
     )
 
+    unit_of_measure = serializers.ChoiceField(
+        choices=Pricing.UnitOfMeasure.choices,
+        error_messages={
+            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Unit of Measure'),
+            'invalid_choice': CoreErrorMessages.INVALID_DATA.format(
+                detail=f'Unit of Measure must be one of: {[choice[0] for choice in Pricing.UnitOfMeasure.choices]}'
+            )
+        }
+    )
+
+    units_per = serializers.IntegerField(
+        min_value=1,
+        error_messages={
+            'min_value': CoreErrorMessages.INVALID_FIELD.format(field='Units Per must be at least 1'),
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Units Per must be a valid number')
+        }
+    )
+
+    unit_price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        error_messages={
+            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Unit Price'),
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Unit Price must be a valid number'),
+            'max_digits': CoreErrorMessages.INVALID_FIELD.format(field='Unit Price cannot exceed 10 digits'),
+            'max_decimal_places': CoreErrorMessages.INVALID_FIELD.format(field='Unit Price cannot exceed 2 decimal places')
+        }
+    )
+
     base_price = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -96,34 +65,41 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             'max_decimal_places': CoreErrorMessages.INVALID_FIELD.format(field='Base Price cannot exceed 2 decimal places')
         }
     )
-    
-    currency = serializers.CharField(
-        max_length=10,
+
+    billing_term = serializers.ChoiceField(
+        choices=Pricing.BillingTerms.choices,
+        allow_null=True,
+        required=False,
         error_messages={
-            'invalid_choice': CoreErrorMessages.INVALID_FIELD.format(field='Invalid currency')
+            'invalid_choice': CoreErrorMessages.INVALID_DATA.format(
+                detail=f'Billing Term must be one of: {[choice[0] for choice in Pricing.BillingTerms.choices]}'
+            )
         }
+    )
+
+    currency = serializers.ChoiceField(
+        choices=CURRENCY,
+        error_messages={
+            'invalid_choice': CoreErrorMessages.INVALID_FIELD.format(
+                field=f'Currency must be one of: {[choice[0] for choice in CURRENCY]}'
+            )
+        }
+    )
+
+    formula = serializers.CharField(
+        required=False,
+        allow_blank=True
     )
 
     class Meta:
         model = Pricing
         fields = [
-            'id', 'pricing_type', 'base_price', 'currency',
-            'available_cycles', 'cycle_ids', 'product'
+            'id', 'product', 'pricing_type', 'unit_of_measure',
+            'units_per', 'unit_price', 'base_price', 'billing_term',
+            'currency', 'formula', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at', 'client_id']
-    
-    def validate_currency(self, value):
-        """Validate country field"""
-        if self.partial and (value is None or value == ''):
-            return value
-            
-        valid_currency= [choice[0] for choice in CURRENCY]
-        if value not in valid_currency:
-            raise serializers.ValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field="Currency")
-            )
-        return value
-    
+
     def validate_product(self, product):
         """Validate product belongs to current client"""
         if not product:
@@ -131,10 +107,8 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
                 CoreErrorMessages.REQUIRED_FIELD.format(field='Product')
             )
 
-        # Get client_id from context
         client_id = self._get_client_id_from_context()
         
-        # Verify product belongs to client
         if str(product.client_id) != str(client_id):
             raise serializers.ValidationError(
                 CoreErrorMessages.PERMISSION_DENIED
@@ -142,8 +116,24 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             
         return product
 
+    def validate_unit_price(self, value):
+        """Validate unit price is non-negative"""
+        if value < 0:
+            raise serializers.ValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field='Unit Price must be non-negative')
+            )
+        return value
+
+    def validate_base_price(self, value):
+        """Validate base price is non-negative"""
+        if value < 0:
+            raise serializers.ValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field='Base Price must be non-negative')
+            )
+        return value
+
     def validate(self, data):
-        """Validate pricing data"""
+        """Complete validation of Pricing data"""
         data = super().validate(data)
 
         # For partial updates, we should use existing values for missing fields
@@ -154,99 +144,44 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             product = data.get('product')
             pricing_type = data.get('pricing_type')
 
-        # Only validate uniqueness if either product or pricing_type is being updated
+        # Validate unique constraint for product and pricing type combination
         if 'product' in data or 'pricing_type' in data:
             self.validate_client_scoped_uniqueness(
-                data={'product_id': product.id, 'pricing_type': pricing_type},
-                unique_fields=['product_id', 'pricing_type'],
+                data={'product': product.id, 'pricing_type': pricing_type},
+                unique_fields=['product', 'pricing_type'],
                 error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                    fields='Product and pricing type'
+                    fields='Product and pricing type combination'
                 )
             )
-        
-        cycle_ids = data.get('cycle_ids', [])
 
-        # Handle pricing type and cycles validation
-        if pricing_type == Pricing.PricingType.ONE_TIME:
-            if cycle_ids:
-                raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
-                    field="Billing cycles are not allowed for one-time pricing"))
-            data['cycle_ids'] = []
-                
-        elif pricing_type == Pricing.PricingType.SUBSCRIPTION:
-            if not cycle_ids and not (self.instance and self.instance.available_cycles.exists()):
+        # Validate billing term requirements based on pricing type
+        billing_term = data.get('billing_term')
+        if pricing_type in [Pricing.PricingType.SUBSCRIPTION, Pricing.PricingType.USAGE]:
+            if not billing_term and not (self.instance and self.instance.billing_term):
                 raise serializers.ValidationError({
-                    'cycle_ids': CoreErrorMessages.REQUIRED_FIELD.format(
-                        field='At least one billing cycle is required for subscription pricing'
+                    'billing_term': CoreErrorMessages.REQUIRED_FIELD.format(
+                        field='Billing term is required for subscription and usage pricing'
                     )
                 })
-                
-            if cycle_ids:
-                available_cycles = BillingCycle.objects.select_for_update().filter(
-                    id__in=cycle_ids,
-                    client_id=self._get_client_id_from_context()
-                )
-                    
-                if available_cycles.count() == 0:
-                    raise serializers.ValidationError({
-                        'cycle_ids': f"{CoreErrorMessages.OBJECT_NOT_FOUND}: cycles IDs not found",
-                    })
-                    
-                found_cycle_ids = set(available_cycles.values_list('id', flat=True))
-                missing_ids = set(cycle_ids) - found_cycle_ids
-                if missing_ids:
-                    raise serializers.ValidationError({
-                        'cycle_ids': f"{CoreErrorMessages.OBJECT_NOT_FOUND}: Billing cycles with IDs {list(missing_ids)} not found"
-                    })
-
-                self.context['validated_cycles'] = available_cycles
-
-        # Validate base price
-        if 'base_price' in data and data.get('base_price', 0) < 0:
+        elif billing_term:
             raise serializers.ValidationError({
-                'base_price': CoreErrorMessages.INVALID_FIELD.format(
-                    field='base_price must be greater than 0'
+                'billing_term': CoreErrorMessages.INVALID_FIELD.format(
+                    field='Billing term is not allowed for this pricing type'
                 )
             })
 
         return data
 
-    def create(self, validated_data):
-        """Create pricing with proper cycle handling"""
-        cycle_ids = validated_data.pop('cycle_ids', [])
-        
-        # Create the pricing instance
-        instance = super().create(validated_data)
-        
-        # Add cycles if any
-        if cycle_ids:
-            cycles = BillingCycle.objects.filter(
-                id__in=cycle_ids,
-                client_id=self._get_client_id_from_context()
-            )
-            instance.available_cycles.set(cycles)
-        
-        return instance
-
-    def update(self, instance, validated_data):
-        """Update pricing with proper cycle handling"""
-        cycle_ids = validated_data.pop('cycle_ids', None)
-        
-        # Update the pricing instance
-        instance = super().update(instance, validated_data)
-        
-        # Update cycles if provided
-        if cycle_ids is not None:
-            if validated_data.get('pricing_type') == Pricing.PricingType.ONE_TIME:
-                instance.available_cycles.clear()
-            else:
-                cycles = BillingCycle.objects.filter(
-                    id__in=cycle_ids,
-                    client_id=self._get_client_id_from_context()
-                )
-                instance.available_cycles.set(cycles)
-        
-        return instance
+class PricingSummarySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+    """Simplified Pricing serializer for nested representations"""
+    
+    class Meta:
+        model = Pricing
+        fields = [
+            'id', 'pricing_type', 'unit_of_measure', 'base_price',
+            'unit_price', 'currency', 'billing_term'
+        ]
+        read_only_fields = fields
     
 class ProductSummarySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """Simplified Product serializer for nested representations"""
@@ -388,98 +323,4 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             product.target_categories.set(categories)
         return product
 
-class ProductVariableSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
-    pricing = serializers.PrimaryKeyRelatedField(
-        queryset=Pricing.objects.all(),
-        error_messages={
-            'does_not_exist': f"{CoreErrorMessages.OBJECT_NOT_FOUND}: Pricing not found",
-            'incorrect_type': CoreErrorMessages.INVALID_FIELD.format(field='Pricing ID must be a number'),
-            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Pricing')
-        }
-    )
-
-    label = serializers.CharField(
-        max_length=100,
-        error_messages={
-            'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Label'),
-            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Label'),
-            'max_length': CoreErrorMessages.INVALID_FIELD.format(field='Label exceeds maximum length')
-        }
-    )
-
-    rate = serializers.DecimalField(
-        max_digits=10, 
-        decimal_places=4,
-        error_messages={
-            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Rate'),
-            'max_digits': CoreErrorMessages.INVALID_FIELD.format(field='Rate has too many digits'),
-            'max_decimal_places': CoreErrorMessages.INVALID_FIELD.format(field='Rate has too many decimal places')
-        }
-    )
-
-    field_name = serializers.CharField(
-        max_length=100,
-        error_messages={
-            'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Field Name'),
-            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Field Name'),
-            'max_length': CoreErrorMessages.INVALID_FIELD.format(field='Field Name exceeds maximum length')
-        }
-    )
-
-    class Meta:
-        model = ProductVariable
-        fields = [
-            'id', 'pricing', 'label', 
-            'rate', 'field_name',
-            'created_at', 'updated_at'
-        ]
-        read_only_fields = ['created_at', 'updated_at', 'client_id']
-
-    def validate_rate(self, value):
-        """Validate that rate is non-negative."""
-        if value < 0:
-            raise serializers.ValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field='Rate must be non-negative')
-            )
-        return value
-
-    def validate_pricing(self, pricing):
-        """Validate pricing belongs to current client."""
-        if not pricing:
-            raise serializers.ValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(field='Pricing')
-            )
-
-        client_id = self._get_client_id_from_context()
-        
-        if str(pricing.client_id) != str(client_id):
-            raise serializers.ValidationError(
-                CoreErrorMessages.PERMISSION_DENIED
-            )
-            
-        return pricing
-
-    def validate(self, data):
-        """Comprehensive validation of ProductVariable data."""
-        data = super().validate(data)
-
-        # Ensure unique label per pricing
-        if 'pricing' in data and 'label' in data:
-            existing_variables = ProductVariable.objects.filter(
-                pricing=data['pricing'], 
-                label=data['label']
-            )
-            
-            # For updates, exclude current instance
-            if self.instance:
-                existing_variables = existing_variables.exclude(id=self.instance.id)
-            
-            if existing_variables.exists():
-                raise StandardizedValidationError(
-                    CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                        fields='Label already exist within this Pricing'
-                    )
-                )
-
-        return data
 
