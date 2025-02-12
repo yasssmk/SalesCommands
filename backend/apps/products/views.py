@@ -54,11 +54,11 @@ class ProductAPIView(BaseAPIView):
 
     def post(self, request, *args, **kwargs):
         """Handle POST requests with proper transaction handling"""
-        client_id = self.get_client_id()
-        data = request.data if isinstance(request.data, list) else [request.data]
-        
-        created_objects = []
         try:
+            client_id = self.get_client_id()
+            data = request.data if isinstance(request.data, list) else [request.data]
+            
+            created_objects = []
             with transaction.atomic():
                 for item in data:
                     serializer = self.serializer_class(
@@ -69,10 +69,8 @@ class ProductAPIView(BaseAPIView):
                         }
                     )
                     if not serializer.is_valid():
-                        return Response(
-                            serializer.errors,
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
+                        raise StandardizedValidationError(serializer.errors)
+                        
                     instance = serializer.save(client_id=client_id)
                     created_objects.append(instance)
 
@@ -95,7 +93,10 @@ class ProductAPIView(BaseAPIView):
 
     def _update(self, request, partial):
         """Update product(s)"""
-        return super()._update(request, partial)  # Validation handled in serializer
+        try:
+            return super()._update(request, partial)
+        except Exception as exc:
+            return self.handle_exception(exc)
 
 class PricingAPIView(BaseAPIView):
     queryset = Pricing.objects.all()
@@ -153,48 +154,19 @@ class PricingAPIView(BaseAPIView):
             return self.summary_serializer_class
         return self.serializer_class
 
-    @action(detail=True, methods=['get'])
-    def calculate_price(self, request, pk=None):
-        """
-        Calculate final price based on pricing model and parameters
-        """
-        instance = self.get_object()
-        
-        try:
-            # Get quantity parameter
-            quantity = request.query_params.get('quantity', 1)
-            try:
-                quantity = float(quantity)
-            except (TypeError, ValueError):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field="quantity must be a number")
-                )
-
-            # Calculate total units
-            total_units = quantity * instance.units_per
-
-            # Calculate price
-            total_price = instance.base_price + (total_units * instance.unit_price)
-
-            return Response({
-                'base_price': instance.base_price,
-                'unit_price': instance.unit_price,
-                'quantity': quantity,
-                'units_per': instance.units_per,
-                'total_units': total_units,
-                'total_price': total_price,
-                'currency': instance.currency,
-                'billing_term': instance.billing_term
-            })
-
-        except Exception as exc:
-            return self.handle_exception(exc)
-
     def post(self, request, *args, **kwargs):
         """Create pricing with validation"""
         try:
             with transaction.atomic():
-                return super().post(request, *args, **kwargs)
+                serializer = self.get_serializer(data=request.data)
+                if not serializer.is_valid():
+                    raise StandardizedValidationError(serializer.errors)
+                    
+                instance = serializer.save(client_id=self.get_client_id())
+                return Response(
+                    self.get_serializer(instance).data,
+                    status=status.HTTP_201_CREATED
+                )
         except Exception as exc:
             return self.handle_exception(exc)
 
@@ -202,6 +174,16 @@ class PricingAPIView(BaseAPIView):
         """Update pricing with validation"""
         try:
             with transaction.atomic():
-                return super()._update(request, partial)
+                instance = self.get_object()
+                serializer = self.get_serializer(
+                    instance,
+                    data=request.data,
+                    partial=partial
+                )
+                if not serializer.is_valid():
+                    raise StandardizedValidationError(serializer.errors)
+                    
+                updated_instance = serializer.save()
+                return Response(self.get_serializer(updated_instance).data)
         except Exception as exc:
             return self.handle_exception(exc)

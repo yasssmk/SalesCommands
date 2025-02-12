@@ -51,50 +51,6 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
     def __str__(self):
         return f"{self.product_name}"
 
-class BillingCycle(BaseModelApp, ClientScopeManager.ModelMixin):
-    """Model to store available billing cycles for pricing"""
-    
-    class CycleType(models.TextChoices):
-        MONTHLY = "MONTHLY", _("Monthly")
-        QUARTERLY = "QUARTERLY", _("Quarterly")
-        YEARLY = "YEARLY", _("Yearly")
-        THREE_YEARS = "THREE_YEARS", _("3 Years")
-
-    name = models.CharField(
-        max_length=255,
-        verbose_name=_("Cycle Name"),
-        help_text=_("Unique name for this billing cycle offer")
-    )
-
-    cycle_type = models.CharField(
-        max_length=20,
-        choices=CycleType.choices,
-        verbose_name=_("Cycle Type")
-    )
-    
-    multiplier = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        verbose_name=_("Price Multiplier"),
-        help_text=_("Multiplier applied to base price (e.g., 0.9 for 10% discount)")
-    )
-    
-    class Meta:
-        db_table = "billing_cycles"
-        verbose_name = _("Billing Cycle")
-        verbose_name_plural = _("Billing Cycles")
-    
-    def clean(self):
-        """Ensure multiplier is within valid range."""
-        super().clean
-        if not (0 < self.multiplier <= 1):
-            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
-            field="Multiplier must be between 0 and 1"
-        ))
-           
-
-    def __str__(self):
-        return f"{self.get_cycle_type_display()} (x{self.multiplier})"
 
 class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
     class PricingType(models.TextChoices):
