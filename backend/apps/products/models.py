@@ -64,7 +64,6 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         MONTHLY = "MONTHLY", _("Monthly")
         QUARTERLY = "QUARTERLY", _("Quarterly")
         YEARLY = "YEARLY", _("Yearly")
-        THREE_YEARS = "THREE_YEARS", _("3 Years")
     
     class ContractPaymentTerm(models.TextChoices):
         MONTHLY = "MONTHLY", _("Monthly")
