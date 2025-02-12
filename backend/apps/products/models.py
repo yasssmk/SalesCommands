@@ -189,6 +189,20 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
                 raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
                     field="Base price must be greater than 0 for asset and service pricing"
                 ))
+        
+        #6 : Pricing term cannot exceed contract term
+        if self.pricing_term == "YEARLY":
+            if self.contract_payment_term == "MONTHLY" or self.contract_payment_term == "QUARTERLY":
+                raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
+                    field="Pricing term cannot exceed contract term"
+                ))
+            
+        if self.pricing_term == "QUARTERLY":
+            if self.contract_payment_term == "MONTHLY":
+                raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
+                    field="Pricing term cannot exceed contract term"
+                ))
+            
 
     def __str__(self):
         return f"{self.product.product_name} - {self.pricing_type} - {self.base_price} {self.currency}"
