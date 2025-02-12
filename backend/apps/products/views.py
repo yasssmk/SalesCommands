@@ -105,7 +105,7 @@ class PricingAPIView(BaseAPIView):
     entity_name = 'pricing'
     mass_update_allowed_fields = {
         'base_price', 'unit_price', 'currency', 
-        'units_per', 'billing_term'
+        'units_per', 'billing_term', 'contract_payment_term'
     }
 
     def get_queryset(self):

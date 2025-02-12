@@ -7,6 +7,7 @@ from core.constants import CURRENCY
 from core.exceptions import StandardizedValidationError
 
 class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+
     product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.all(),
         error_messages={
@@ -22,6 +23,15 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Pricing Type'),
             'invalid_choice': CoreErrorMessages.INVALID_DATA.format(
                 detail=f'Pricing Type must be one of: {[choice[0] for choice in Pricing.PricingType.choices]}'
+            )
+        }
+    )
+
+    contract_payment_term = serializers.ChoiceField(
+        choices=Pricing.ContractPaymentTerm.choices,
+        error_messages={
+            'invalid_choice': CoreErrorMessages.INVALID_DATA.format(
+                detail=f'Contract Payment Term must be one of: {[choice[0] for choice in Pricing.ContractPaymentTerm.choices]}'
             )
         }
     )
@@ -95,7 +105,7 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         model = Pricing
         fields = [
             'id', 'product', 'pricing_type', 'unit_of_measure',
-            'units_per', 'unit_price', 'base_price', 'billing_term',
+            'units_per', 'unit_price', 'base_price', 'billing_term', 'contract_payment_term',
             'currency', 'formula', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at', 'client_id']
@@ -154,22 +164,6 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
                 )
             )
 
-        # Validate billing term requirements based on pricing type
-        billing_term = data.get('billing_term')
-        if pricing_type in [Pricing.PricingType.SUBSCRIPTION, Pricing.PricingType.USAGE]:
-            if not billing_term and not (self.instance and self.instance.billing_term):
-                raise serializers.ValidationError({
-                    'billing_term': CoreErrorMessages.REQUIRED_FIELD.format(
-                        field='Billing term is required for subscription and usage pricing'
-                    )
-                })
-        elif billing_term:
-            raise serializers.ValidationError({
-                'billing_term': CoreErrorMessages.INVALID_FIELD.format(
-                    field='Billing term is not allowed for this pricing type'
-                )
-            })
-
         return data
 
 class PricingSummarySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -178,8 +172,9 @@ class PricingSummarySerializer(ClientScopeManager.SerializerMixin, serializers.M
     class Meta:
         model = Pricing
         fields = [
-            'id', 'pricing_type', 'unit_of_measure', 'base_price',
-            'unit_price', 'currency', 'billing_term'
+            'id', 'pricing_type', 'contract_payment_term',
+            'unit_of_measure', 'units_per', 'unit_price', 
+            'base_price', 'billing_term', 'currency'
         ]
         read_only_fields = fields
     
@@ -243,7 +238,7 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
                     self._validate_json_field(data.get('competitors'), 'competitors')
             else:
                 # Validate required fields for complete creation/update
-                for field in ['product_name', 'product_type']:
+                for field in ['product_name']:
                     if field not in data:
                         raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(field=field))
                         
@@ -305,7 +300,7 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             from apps.core_apps.models import StandardDepartment
             categories = StandardDepartment.objects.filter(
                 id__in=target_category_ids,
-                client_id=self._get_client_id_from_context()  # or whichever logic
+                client_id=self._get_client_id_from_context()  
             )
             product.target_categories.set(categories)
         return product

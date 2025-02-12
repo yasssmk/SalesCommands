@@ -64,6 +64,12 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         QUARTERLY = "QUARTERLY", _("Quarterly")
         YEARLY = "YEARLY", _("Yearly")
         THREE_YEARS = "THREE_YEARS", _("3 Years")
+    
+    class ContractPaymentTerm(models.TextChoices):
+        MONTHLY = "MONTHLY", _("Monthly")
+        QUARTERLY = "QUARTERLY", _("Quarterly")
+        YEARLY = "YEARLY", _("Yearly")
+        ONE_TIME = "ONE_TIME", _("One Time")
 
     class UnitOfMeasure(models.TextChoices):
         UNIT = "UNIT", _("Unit")
@@ -83,6 +89,13 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         max_length=20,
         choices=PricingType.choices,
         verbose_name=_("Pricing Type")
+    )
+
+    contract_payment_term = models.CharField(
+        max_length=20,
+        choices=ContractPaymentTerm.choices,
+        default=ContractPaymentTerm.YEARLY,
+        verbose_name=_("Contract Payment Term")
     )
 
     unit_of_measure = models.CharField(
@@ -141,17 +154,40 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         """Validate business rules for pricing types."""
         super().clean()
 
-        # Validate billing term is required for subscription and usage pricing
-        if self.pricing_type in [self.PricingType.SUBSCRIPTION, self.PricingType.USAGE] and not self.billing_term:
-            raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(
-                field="Billing term is required for subscription and usage pricing"
-            ))
+        # Rule 1: Billing term is required for subscription and usage pricing
+        if self.pricing_type in [self.PricingType.SUBSCRIPTION, self.PricingType.USAGE]:
+            if not self.billing_term:
+                raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(
+                    field="Billing term is required for subscription and usage pricing"
+                ))
 
-        # Validate billing term is not set for other pricing types
-        if self.pricing_type not in [self.PricingType.SUBSCRIPTION, self.PricingType.USAGE] and self.billing_term:
-            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
-                field="Billing term is not allowed for this pricing type"
-            ))
+        # Rule 2: Billing term is not allowed for one time payment
+        if self.product.contract_payment_term == 'ONE_TIME':
+            if self.billing_term:
+                raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
+                    field="Billing term is not allowed for one time payment contract"
+                ))
+
+        # Rule 3: Validate product contract payment term compatibility
+        if self.pricing_type == self.PricingType.SUBSCRIPTION:
+            if self.product.contract_payment_term == 'ONE_TIME':
+                raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
+                    field="Subscription pricing cannot be used with one-time payment products"
+                ))
+
+        # Rule 4: Unit price validation for different pricing types
+        if self.pricing_type in [self.PricingType.SUBSCRIPTION, self.PricingType.USAGE]:
+            if self.unit_price <= 0:
+                raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
+                    field="Unit price must be greater than 0 for subscription and usage pricing"
+                ))
+
+        # Rule 5: Base price validation for asset and service
+        if self.pricing_type in [self.PricingType.ASSET, self.PricingType.SERVICE]:
+            if self.base_price <= 0:
+                raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
+                    field="Base price must be greater than 0 for asset and service pricing"
+                ))
 
     def __str__(self):
         return f"{self.product.product_name} - {self.pricing_type} - {self.base_price} {self.currency}"
