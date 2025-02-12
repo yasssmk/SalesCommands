@@ -203,6 +203,19 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
                     field="Pricing term cannot exceed contract term"
                 ))
             
+    def get_recurrency_label(self):
+            """
+            Returns 'MRR', 'QRR', 'ARR', or 'ONE_TIME' 
+            based on self.contract_payment_term.
+            """
+            if self.contract_payment_term == self.ContractPaymentTerm.MONTHLY:
+                return "MRR"
+            elif self.contract_payment_term == self.ContractPaymentTerm.QUARTERLY:
+                return "QRR"
+            elif self.contract_payment_term == self.ContractPaymentTerm.YEARLY:
+                return "ARR"
+            return "ONE_TIME"
+            
 
     def __str__(self):
         return f"{self.product.product_name} - {self.pricing_type} - {self.base_price} {self.currency}"
