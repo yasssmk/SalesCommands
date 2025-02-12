@@ -126,9 +126,9 @@ class PricingAPIView(BaseAPIView):
             filters['pricing_type'] = pricing_type
 
         # Billing term filter
-        billing_term = self.request.query_params.get('billing_term')
+        pricing_term = self.request.query_params.get('pricing_term')
         if billing_term:
-            filters['billing_term'] = billing_term
+            filters['pricing_term'] = pricing_term
 
         # Unit of measure filter
         unit_of_measure = self.request.query_params.get('unit_of_measure')

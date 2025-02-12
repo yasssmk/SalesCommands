@@ -76,13 +76,13 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         }
     )
 
-    billing_term = serializers.ChoiceField(
-        choices=Pricing.BillingTerms.choices,
+    pricing_term = serializers.ChoiceField(
+        choices=Pricing.PricingTerms.choices,
         allow_null=True,
         required=False,
         error_messages={
             'invalid_choice': CoreErrorMessages.INVALID_DATA.format(
-                detail=f'Billing Term must be one of: {[choice[0] for choice in Pricing.BillingTerms.choices]}'
+                detail=f'Billing Term must be one of: {[choice[0] for choice in Pricing.PricingTerms.choices]}'
             )
         }
     )
@@ -105,7 +105,7 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         model = Pricing
         fields = [
             'id', 'product', 'pricing_type', 'unit_of_measure',
-            'units_per', 'unit_price', 'base_price', 'billing_term', 'contract_payment_term',
+            'units_per', 'unit_price', 'base_price', 'pricing_term', 'contract_payment_term',
             'currency', 'formula', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at', 'client_id']
@@ -174,7 +174,7 @@ class PricingSummarySerializer(ClientScopeManager.SerializerMixin, serializers.M
         fields = [
             'id', 'pricing_type', 'contract_payment_term',
             'unit_of_measure', 'units_per', 'unit_price', 
-            'base_price', 'billing_term', 'currency'
+            'base_price', 'pricing_term', 'currency'
         ]
         read_only_fields = fields
     

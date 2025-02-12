@@ -53,13 +53,14 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
 
 
 class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
+
     class PricingType(models.TextChoices):
         ASSET = "ASSET", _("Asset")
         SERVICE = "SERVICE", _("Service")
         SUBSCRIPTION = "SUBSCRIPTION", _("Subscription")
         USAGE = "USAGE", _("Usage")
 
-    class BillingTerms(models.TextChoices):
+    class PricingTerms(models.TextChoices):
         MONTHLY = "MONTHLY", _("Monthly")
         QUARTERLY = "QUARTERLY", _("Quarterly")
         YEARLY = "YEARLY", _("Yearly")
@@ -125,9 +126,9 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_("Flat fee charged before unit pricing")
     )
 
-    billing_term = models.CharField(
+    pricing_term = models.CharField(
         max_length=20,
-        choices=BillingTerms.choices,
+        choices=PricingTerms.choices,
         verbose_name=_("Billing Term"),
         null=True,
         blank=True
@@ -156,16 +157,16 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
 
         # Rule 1: Billing term is required for subscription and usage pricing
         if self.pricing_type in [self.PricingType.SUBSCRIPTION, self.PricingType.USAGE]:
-            if not self.billing_term:
+            if not self.pricing_term:
                 raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(
-                    field="Billing term is required for subscription and usage pricing"
+                    field="Pricing term is required for subscription and usage pricing"
                 ))
 
         # Rule 2: Billing term is not allowed for one time payment
         if self.product.contract_payment_term == 'ONE_TIME':
-            if self.billing_term:
+            if self.pricing_term:
                 raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
-                    field="Billing term is not allowed for one time payment contract"
+                    field="Pricing term is not allowed for one time payment contract"
                 ))
 
         # Rule 3: Validate product contract payment term compatibility
