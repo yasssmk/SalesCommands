@@ -3,6 +3,7 @@ from core.error_messages import CoreErrorMessages
 from core.client_scope import ClientScopeManager
 from .models import Pricing, Product
 from apps.core_apps.serializers import StandardDepartmentSerializer
+from apps.core_apps.models import StandardDepartment
 from core.constants import CURRENCY
 from core.exceptions import StandardizedValidationError
 
@@ -191,16 +192,18 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
     
     # Related fields
     pricing_models = PricingSerializer(many=True, read_only=True)
-    target_categoryies = StandardDepartmentSerializer(many=True, read_only=True)
+    target_categories = StandardDepartmentSerializer(many=True, read_only=True)
 
-    target_category_id = serializers.ListField(
-        child=serializers.IntegerField(),
+    target_category_ids = serializers.ListField(
+        child=serializers.PrimaryKeyRelatedField(
+            queryset=StandardDepartment.objects.all()
+        ),
         write_only=True,
+        required=False,
         error_messages={
-            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Target department'),
-            'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Target department'),
-            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Target department')
-        })
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Target categories ID')
+        }
+    )
     
     # Custom fields for better validation messages
     product_name = serializers.CharField(
@@ -214,9 +217,10 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
     class Meta:
         model = Product
         fields = [
-            'id', 'product_name', 'product_type', 'description',
-            'target_category', 'target_category_id', 'value_proposition',
-            'potential_cons', 'competitors', 'pricing_models',
+            'id', 'product_name', 'description',
+            'target_categories', 'target_category_ids', 
+            'value_proposition', 'potential_cons', 
+            'competitors', 'pricing_models',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
@@ -297,12 +301,7 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         product = super().create(validated_data)
 
         if target_category_ids:
-            from apps.core_apps.models import StandardDepartment
-            categories = StandardDepartment.objects.filter(
-                id__in=target_category_ids,
-                client_id=self._get_client_id_from_context()  
-            )
-            product.target_categories.set(categories)
+            product.target_categories.set(target_category_ids)
         return product
 
     def update(self, instance, validated_data):
@@ -310,12 +309,7 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         product = super().update(instance, validated_data)
 
         if target_category_ids is not None:
-            from apps.core_apps.models import StandardDepartment
-            categories = StandardDepartment.objects.filter(
-                id__in=target_category_ids,
-                client_id=self._get_client_id_from_context()
-            )
-            product.target_categories.set(categories)
+            product.target_categories.set(target_category_ids)
         return product
 
 

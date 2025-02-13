@@ -25,14 +25,10 @@ class ProductAPIView(BaseAPIView):
         queryset = super().get_queryset()
         
         # Apply filters from query parameters
-        filters = {}
-        for field in ['target_category_id']:
-            value = self.request.query_params.get(field)
-            if value:
-                filters[field] = value
-
-        if filters:
-            queryset = queryset.filter(**filters)
+        # Filter by target category
+        target_category_id = self.request.query_params.get('target_category_id')
+        if target_category_id:
+            queryset = queryset.filter(target_categories__id=target_category_id)
 
         # Text search
         search = self.request.query_params.get('search')
@@ -44,13 +40,17 @@ class ProductAPIView(BaseAPIView):
 
         # Optimize queries
         return queryset.prefetch_related(
+            'target_categories',
             Prefetch(
                 'pricing_models',
                 queryset=Pricing.objects.filter(
                     client_id=self.get_client_id()
                 )
             )
-        ).select_related('target_category')
+        ).select_related(
+            'created_by',
+            'updated_by'
+        ).distinct()
 
     def post(self, request, *args, **kwargs):
         """Handle POST requests with proper transaction handling"""
