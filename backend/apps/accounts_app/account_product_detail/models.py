@@ -114,7 +114,7 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
             )
 
     def calculate_revenue_multiplier(self):
-        """Calculate the revenue multiplier based on pricing term and contract payment term."""
+        """Calculate revenue multiplier based on pricing terms"""
         if not self.selected_pricing:
             return 1
 
@@ -122,31 +122,27 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         pricing_term = pricing.pricing_term
         contract_term = pricing.contract_payment_term
 
-        # If pricing term is yearly, no multiplication needed
-        if pricing_term == pricing.PricingTerms.YEARLY:
-            return 1
+        multiplier_map = {
+            pricing.PricingTerms.YEARLY: 1,
+            pricing.PricingTerms.QUARTERLY: {
+                pricing.ContractPaymentTerm.YEARLY: 4,
+                pricing.ContractPaymentTerm.QUARTERLY: 1
+            },
+            pricing.PricingTerms.MONTHLY: {
+                pricing.ContractPaymentTerm.YEARLY: 12,
+                pricing.ContractPaymentTerm.QUARTERLY: 3,
+                pricing.ContractPaymentTerm.MONTHLY: 1
+            }
+        }
 
-        # If pricing is quarterly
-        if pricing_term == pricing.PricingTerms.QUARTERLY:
-            if contract_term == pricing.ContractPaymentTerm.YEARLY:
-                return 4
-            elif contract_term == pricing.ContractPaymentTerm.QUARTERLY:
-                return 1
-            # Monthly contract term not possible due to validation
-
-        # If pricing is monthly
-        if pricing_term == pricing.PricingTerms.MONTHLY:
-            if contract_term == pricing.ContractPaymentTerm.YEARLY:
-                return 12
-            elif contract_term == pricing.ContractPaymentTerm.QUARTERLY:
-                return 3
-            elif contract_term == pricing.ContractPaymentTerm.MONTHLY:
-                return 1
-
-        return 1  # Default fallback
+        if pricing_term in multiplier_map:
+            if isinstance(multiplier_map[pricing_term], dict):
+                return multiplier_map[pricing_term].get(contract_term, 1)
+            return multiplier_map[pricing_term]
+        return 1
 
     def calculate_potential_revenue(self):
-        """Calculate potential revenue based on pricing model and estimated units."""
+        """Calculate potential revenue based on pricing and units"""
         if not self.selected_pricing or not self.estimated_units:
             return Decimal('0.00')
 
@@ -156,16 +152,12 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         multiplier = self.calculate_revenue_multiplier()
 
         total_amount = base_amount + (unit_amount * Decimal(str(multiplier)))
-        
-        # Set revenue type based on contract payment term
         self.revenue_type = pricing.get_recurrency_label()
         
         return total_amount
 
     def save(self, *args, **kwargs):
-        # Calculate potential revenue before saving
         self.potential_revenue = self.calculate_potential_revenue()
-                   
         super().save(*args, **kwargs)
 
     def __str__(self):
