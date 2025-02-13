@@ -105,7 +105,7 @@ class PricingAPIView(BaseAPIView):
     entity_name = 'pricing'
     mass_update_allowed_fields = {
         'base_price', 'unit_price', 'currency', 
-        'units_per', 'billing_term', 'contract_payment_term'
+        'units_per', 'pricing_term', 'contract_payment_term' 
     }
 
     def get_queryset(self):
@@ -153,37 +153,4 @@ class PricingAPIView(BaseAPIView):
         if self.request.query_params.get('summary'):
             return self.summary_serializer_class
         return self.serializer_class
-
-    def post(self, request, *args, **kwargs):
-        """Create pricing with validation"""
-        try:
-            with transaction.atomic():
-                serializer = self.get_serializer(data=request.data)
-                if not serializer.is_valid():
-                    raise StandardizedValidationError(serializer.errors)
-                    
-                instance = serializer.save(client_id=self.get_client_id())
-                return Response(
-                    self.get_serializer(instance).data,
-                    status=status.HTTP_201_CREATED
-                )
-        except Exception as exc:
-            return self.handle_exception(exc)
-
-    def _update(self, request, partial):
-        """Update pricing with validation"""
-        try:
-            with transaction.atomic():
-                instance = self.get_object()
-                serializer = self.get_serializer(
-                    instance,
-                    data=request.data,
-                    partial=partial
-                )
-                if not serializer.is_valid():
-                    raise StandardizedValidationError(serializer.errors)
-                    
-                updated_instance = serializer.save()
-                return Response(self.get_serializer(updated_instance).data)
-        except Exception as exc:
-            return self.handle_exception(exc)
+    
