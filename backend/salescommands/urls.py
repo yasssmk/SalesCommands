@@ -25,6 +25,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path(app_key+'accounts/', include('apps.accounts_app.accounts.urls')),
     path(app_key+'orgunits/', include('apps.accounts_app.org_units.urls')),
+    path(app_key+'account-products/', include('apps.accounts_app.account_product_detail.urls')), 
     path(app_key+'products/', include('apps.products.urls')),
     path(end_user_key, include('end_users.urls')),
 ]

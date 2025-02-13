@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from products.models import Pricing, Product
-from accounts.models import Account
+from apps.products.models import Pricing, Product
+from apps.accounts_app.accounts.models import Account
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel
 from apps.sales_insight.models import SalesInsight
 from core.client_scope import ClientScopeManager
@@ -30,7 +30,7 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
     
     # Target organizational units within the account
     target_org_units = models.ManyToManyField(
-        'accounts_app.AccountOrganizationUnit',
+        'org_units.AccountOrganizationUnit',
         related_name='product_potentials',
         verbose_name=_("Target Organization Units")
     )

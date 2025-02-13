@@ -1,11 +1,11 @@
-from rest_framework import status
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Sum, F, Value, DecimalField
 from django.db.models.functions import Coalesce
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
-from core.views import BaseAPIView
+from core.apps_shared_methods import BaseAPIView
 from apps.accounts_app.accounts.models import Account
 from .models import AccountProductDetail
 from .serializers import AccountProductDetailSerializer
@@ -17,7 +17,6 @@ from decimal import Decimal
 class AccountProductDetailView(BaseAPIView):
     """
     API View for managing AccountProductDetail instances.
-    Supports standard CRUD operations with client and account scoping.
     """
     queryset = AccountProductDetail.objects.all()
     serializer_class = AccountProductDetailSerializer
@@ -49,8 +48,14 @@ class AccountProductDetailView(BaseAPIView):
         """Get base queryset filtered by account and client."""
         return super().get_queryset().filter(account=self.get_account())
 
-    @action(detail=False, methods=['get'])
-    def summary(self, request, account_id=None):
+    def get(self, request, *args, **kwargs):
+        if 'summary' in request.path:
+            return self.get_summary(request)
+        if 'whitespace' in request.path:
+            return self.get_whitespace(request)
+        return super().get(request, *args, **kwargs)
+
+    def get_summary(self, request):
         """Get revenue summary grouped by type."""
         queryset = self.get_queryset()
         
@@ -72,13 +77,10 @@ class AccountProductDetailView(BaseAPIView):
         summary['total_products'] = queryset.count()
         return Response(summary)
 
-    @action(detail=False, methods=['get'])
-    def whitespace(self, request, account_id=None):
+    def get_whitespace(self, request):
         """Get products not yet analyzed for the account."""
-        # Get products already analyzed
         analyzed_products = self.get_queryset().values_list('product_id', flat=True)
         
-        # Get unanalyzed products for client
         whitespace_products = Product.objects.filter(
             client_id=self.get_client_id()
         ).exclude(
