@@ -20,83 +20,56 @@ class ProductAPIView(BaseAPIView):
     mass_update_allowed_fields = {'description', 'value_proposition', 
                                 'potential_cons', 'competitors', 'target_category_id'}
 
+    def clean_data(self, data):
+        """Clean and prepare data before serializer validation"""
+        cleaned_data = data.copy()
+
+        # Handle target_category_id
+        if 'target_category_id' in cleaned_data:
+            category_id = cleaned_data.pop('target_category_id', None)
+            # Convert empty string or None to empty list
+            if not category_id or str(category_id).strip() == '':
+                cleaned_data['target_category_ids'] = []
+            else:
+                cleaned_data['target_category_ids'] = [category_id]
+
+        return cleaned_data
+
     def get_queryset(self):
         """Get filtered and optimized queryset"""
         queryset = super().get_queryset()
         
-        # Apply filters from query parameters
+        filters = {}
+        
         # Filter by target category
         target_category_id = self.request.query_params.get('target_category_id')
         if target_category_id:
-            queryset = queryset.filter(target_categories__id=target_category_id)
+            filters['target_categories__id'] = target_category_id
 
         # Text search
         search = self.request.query_params.get('search')
         if search:
-            queryset = queryset.filter(
-                Q(product_name__icontains=search) |
-                Q(description__icontains=search)
-            )
+            filters['Q'] = Q(product_name__icontains=search) | Q(description__icontains=search)
+
+        # Apply filters
+        if filters:
+            if 'Q' in filters:
+                q_filter = filters.pop('Q')
+                queryset = queryset.filter(q_filter)
+            queryset = queryset.filter(**filters)
 
         # Optimize queries
         return queryset.prefetch_related(
             'target_categories',
             Prefetch(
                 'pricing_models',
-                queryset=Pricing.objects.filter(
-                    client_id=self.get_client_id()
-                )
+                queryset=Pricing.objects.filter(client_id=self.get_client_id())
             )
         ).select_related(
             'created_by',
             'updated_by'
         ).distinct()
 
-    def post(self, request, *args, **kwargs):
-        """Handle POST requests with proper transaction handling"""
-        try:
-            client_id = self.get_client_id()
-            data = request.data if isinstance(request.data, list) else [request.data]
-            
-            created_objects = []
-            with transaction.atomic():
-                for item in data:
-                    serializer = self.serializer_class(
-                        data=item,
-                        context={
-                            'request': request,
-                            'client_id': client_id
-                        }
-                    )
-                    if not serializer.is_valid():
-                        raise StandardizedValidationError(serializer.errors)
-                        
-                    instance = serializer.save(client_id=client_id)
-                    created_objects.append(instance)
-
-            # Return paginated response for batch creations if needed
-            if len(created_objects) > 1 and self.paginator is not None:
-                page = self.paginate_queryset(created_objects)
-                if page is not None:
-                    serializer = self.serializer_class(page, many=True)
-                    return self.get_paginated_response(serializer.data)
-
-            serializer = self.serializer_class(created_objects, many=True)
-            return Response(
-                serializer.data if len(created_objects) > 1 else serializer.data[0],
-                status=status.HTTP_201_CREATED
-            )
-        
-        except Exception as exc:
-            return self.handle_exception(exc)
-        
-
-    def _update(self, request, partial):
-        """Update product(s)"""
-        try:
-            return super()._update(request, partial)
-        except Exception as exc:
-            return self.handle_exception(exc)
 
 class PricingAPIView(BaseAPIView):
     queryset = Pricing.objects.all()

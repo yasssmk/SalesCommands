@@ -176,9 +176,6 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             client_id = self._get_client_id_from_context()
             instance = getattr(self, 'instance', None)
 
-            # Other validations as needed
-            
-
             if 'company_name' in data:
                 data['company_name'] = data['company_name'].upper()
 

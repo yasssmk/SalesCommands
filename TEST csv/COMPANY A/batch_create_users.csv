@@ -1,0 +1,8 @@
+email,password,first_name,last_name,role
+user1@companya.com,password123,John,Doe,Direction
+user2@companya.com,password123,Jane,Smith,Team_Manager
+user3@companya.com,password123,Bob,Brown,Team_Manager
+user4@companya.com,password123,Bob,Brown,Account_Executive
+user5@companya.com,password123,Bob,Brown,Account_Executive
+user6@companya.com,password123,Bob,Brown,Account_Executive
+user7@companya.com,password123,Bob,Brown,Account_Executive

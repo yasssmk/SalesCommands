@@ -200,6 +200,8 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         ),
         write_only=True,
         required=False,
+        allow_empty=True, 
+        default=list,
         error_messages={
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Target categories ID')
         }
@@ -212,6 +214,27 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Product Name'),
             'null': CoreErrorMessages.REQUIRED_FIELD.format(field='Product Name')
         }
+    )
+
+    description = serializers.CharField(
+        required=False, 
+        allow_blank=True,
+        allow_null=True
+    )
+
+    value_proposition = serializers.JSONField(
+        required=False,
+        allow_null=True
+    )
+
+    potential_cons = serializers.JSONField(
+        required=False,
+        allow_null=True
+    )
+
+    competitors = serializers.JSONField(
+        required=False,
+        allow_null=True
     )
 
     class Meta:
@@ -230,76 +253,45 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
         try:
             data = super().validate(data)
             
-            if self.partial:
-                fields_to_validate = set(self.initial_data.keys())
-                
-                # Validate JSON fields if provided in partial update
-                if 'value_proposition' in fields_to_validate:
-                    self._validate_json_field(data.get('value_proposition'), 'value_proposition')
-                if 'potential_cons' in fields_to_validate:
-                    self._validate_json_field(data.get('potential_cons'), 'potential_cons')
-                if 'competitors' in fields_to_validate:
-                    self._validate_json_field(data.get('competitors'), 'competitors')
-            else:
-                # Validate required fields for complete creation/update
-                for field in ['product_name']:
-                    if field not in data:
-                        raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(field=field))
-                        
-                
-                # Validate all JSON fields for complete creation/update
-                for field in ['value_proposition', 'potential_cons', 'competitors']:
-                    if field in data:
-                        self._validate_json_field(data.get(field), field)
+            # Handle empty description
+            if 'description' in data:
+                description = data.get('description')
+                if not description or description.strip() == '':
+                    data['description'] = None
+            
+            # Handle JSON fields with default structures
+            default_structures = {
+                'value_proposition': {'key_benefits': [], 'target_audience': []},
+                'potential_cons': {'limitations': [], 'risks': []},
+                'competitors': {'direct': [], 'indirect': []}
+            }
+
+            # Always set default structures for empty/missing JSON fields
+            for field, default_structure in default_structures.items():
+                # Convert empty strings, None, or missing values to default structure
+                value = data.get(field)
+                if not value or value == '' or value == {}:
+                    data[field] = default_structure
 
             # Validate unique product name within client scope
-            self.validate_client_scoped_uniqueness(
-                data=data,
-                unique_fields=['product_name'],
-                error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                    fields='product name'
+            if 'product_name' in data:
+                self.validate_client_scoped_uniqueness(
+                    data=data,
+                    unique_fields=['product_name'],
+                    error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                        fields='product name'
+                    )
                 )
-            )
 
             return data
             
         except serializers.ValidationError as e:
-            raise serializers.ValidationError(self._extract_error_message(e))
+            raise StandardizedValidationError(e.detail)
 
-    def _validate_json_field(self, value, field_name):
-        """Validate JSON fields structure"""
-        if value is not None:
-            if not isinstance(value, dict):
-                raise StandardizedValidationError(CoreErrorMessages.INVALID_DATA.format(
-                        detail=f"{field_name} must be a valid JSON object"
-                    ))
-                
-                
-            # Validate specific structure based on field
-            if field_name == 'value_proposition':
-                required_keys = ['key_benefits', 'target_audience']
-                self._validate_json_structure(value, required_keys, field_name)
-            elif field_name == 'potential_cons':
-                required_keys = ['limitations', 'risks']
-                self._validate_json_structure(value, required_keys, field_name)
-            elif field_name == 'competitors':
-                required_keys = ['direct', 'indirect']
-                self._validate_json_structure(value, required_keys, field_name)
-        
-        return value
-
-    def _validate_json_structure(self, value, required_keys, field_name):
-        """Validate required keys in JSON structure"""
-        missing_keys = [key for key in required_keys if key not in value]
-        if missing_keys:
-            raise StandardizedValidationError(CoreErrorMessages.INVALID_DATA.format(
-                    detail=f"Missing required keys in {field_name}: {', '.join(missing_keys)}"
-                ))
-    
     def create(self, validated_data):
         target_category_ids = validated_data.pop('target_category_ids', [])
         product = super().create(validated_data)
-
+        
         if target_category_ids:
             product.target_categories.set(target_category_ids)
         return product
@@ -307,9 +299,7 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
     def update(self, instance, validated_data):
         target_category_ids = validated_data.pop('target_category_ids', None)
         product = super().update(instance, validated_data)
-
+        
         if target_category_ids is not None:
             product.target_categories.set(target_category_ids)
         return product
-
-

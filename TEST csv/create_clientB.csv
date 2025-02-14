@@ -1,0 +1,2 @@
+client_name,client_is_b2b,client_max_users,admin_email,admin_password,admin_first_name,admin_last_name
+COMPANY B,true,8,admin@companyb.com,password123,Jack,Doe

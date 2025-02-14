@@ -28,4 +28,5 @@ urlpatterns = [
     path(app_key+'account-products/', include('apps.accounts_app.account_product_detail.urls')), 
     path(app_key+'products/', include('apps.products.urls')),
     path(end_user_key, include('end_users.urls')),
+    path(product_admin_key, include("product_admin.urls"))
 ]
