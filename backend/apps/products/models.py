@@ -184,7 +184,7 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
 
         # Rule 5: Base price validation for asset and service
         if self.pricing_type in [self.PricingType.ASSET, self.PricingType.SERVICE]:
-            if self.base_price <= 0:
+            if self.base_price < 0:
                 raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
                     field="Base price must be greater than 0 for asset and service pricing"
                 ))

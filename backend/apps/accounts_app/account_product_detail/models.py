@@ -98,12 +98,12 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         """Validate business rules for account product details."""
         super().clean()
 
-        if not self.selected_pricing and self.estimated_units:
-            raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(
-                    field="Selected pricing model is required when setting estimated units"
-                )
-            )
+        # if not self.selected_pricing and self.estimated_units:
+        #     raise StandardizedValidationError(
+        #         CoreErrorMessages.REQUIRED_FIELD.format(
+        #             field="Selected pricing model is required when setting estimated units"
+        #         )
+        #     )
 
         # Ensure selected_pricing belongs to the product
         if self.selected_pricing and self.selected_pricing.product_id != self.product_id:
@@ -147,8 +147,9 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
             return Decimal('0.00')
 
         pricing = self.selected_pricing
+        unit_per = pricing.units_per
         base_amount = pricing.base_price
-        unit_amount = pricing.unit_price * Decimal(str(self.estimated_units))
+        unit_amount = pricing.unit_price * Decimal(str(self.estimated_units))/unit_per
         multiplier = self.calculate_revenue_multiplier()
 
         total_amount = base_amount + (unit_amount * Decimal(str(multiplier)))

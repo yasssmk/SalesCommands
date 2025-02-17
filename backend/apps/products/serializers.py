@@ -12,7 +12,7 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
     product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.all(),
         error_messages={
-            'does_not_exist': f"{CoreErrorMessages.OBJECT_NOT_FOUND}: Product not found",
+            'does_not_exist': f"{CoreErrorMessages.OBJECT_NOT_FOUND}",
             'incorrect_type': CoreErrorMessages.INVALID_FIELD.format(field='Product ID must be a number'),
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Product')
         }

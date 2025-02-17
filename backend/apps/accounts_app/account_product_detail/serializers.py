@@ -118,6 +118,77 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
                     )
         
             return data
+    
+    def _assign_default_pricing_if_needed(self, instance=None, validated_data=None):
+        """
+        If no 'selected_pricing' is provided but 'estimated_units' > 0,
+        fetch the first Pricing model from the product and assign it.
+        """
+        product = validated_data.get('product')
+        if not product and instance:
+            # If product wasn't updated, use the existing
+            product = instance.product
+
+        # If the user didn't explicitly pass a new selected_pricing,
+        # see if we currently have one (instance) or not
+        new_selected_pricing = validated_data.get('selected_pricing')
+        current_pricing = instance.selected_pricing if instance else None
+        
+        # Determine final selected_pricing after update (or create)
+        final_pricing = new_selected_pricing if (new_selected_pricing is not None) else current_pricing
+        
+        # Determine final estimated_units
+        new_estimated_units = validated_data.get('estimated_units')
+        final_estimated_units = new_estimated_units if (new_estimated_units is not None) else (
+            instance.estimated_units if instance else 0
+        )
+
+        # If we STILL don't have a pricing but we do have a positive estimated_units,
+        # we attempt to set the first pricing in the product
+        if not final_pricing and final_estimated_units > 0:
+            pricing_qs = product.pricing_models.filter(client_id=product.client_id)
+            default_pricing = pricing_qs.first()
+            if not default_pricing:
+                # No pricing found for this product
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"No pricing found for product '{product}'"
+                    )
+                )
+            validated_data['selected_pricing'] = default_pricing
+
+    def create(self, validated_data):
+        """
+        1. Possibly auto-assign default pricing.
+        2. Create instance.
+        3. Handle M2M target org units.
+        """
+        target_org_units = validated_data.pop('target_org_units', [])
+        
+        # Attempt to assign default pricing if none given
+        self._assign_default_pricing_if_needed(instance=None, validated_data=validated_data)
+        
+        instance = super().create(validated_data)
+        if target_org_units:
+            instance.target_org_units.set(target_org_units)
+        return instance
+    
+    def update(self, instance, validated_data):
+        """
+        1. Possibly auto-assign default pricing if user has removed pricing or changed product.
+        2. Update instance.
+        3. Handle M2M target org units.
+        """
+        target_org_units = validated_data.pop('target_org_units', None)
+        
+        # Attempt to assign default pricing if none given
+        self._assign_default_pricing_if_needed(instance=instance, validated_data=validated_data)
+        
+        instance = super().update(instance, validated_data)
+        if target_org_units is not None:
+            instance.target_org_units.set(target_org_units)
+        return instance
+
 
     def get_potential_revenue_formatted(self, obj):
         if obj.selected_pricing:
@@ -127,22 +198,3 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
     def get_revenue_label(self, obj):
         return obj.get_revenue_type_display()
     
-    def create(self, validated_data):
-        """Optimized creation with proper relationship handling"""
-        target_org_units = validated_data.pop('target_org_units', [])
-        instance = super().create(validated_data)
-        
-        if target_org_units:
-            instance.target_org_units.set(target_org_units)
-            
-        return instance
-
-    def update(self, instance, validated_data):
-        """Optimized update with proper relationship handling"""
-        target_org_units = validated_data.pop('target_org_units', None)
-        instance = super().update(instance, validated_data)
-        
-        if target_org_units is not None:
-            instance.target_org_units.set(target_org_units)
-            
-        return instance
