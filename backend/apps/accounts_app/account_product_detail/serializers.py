@@ -77,7 +77,7 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
 
     def validate(self, data):
             """Custom validation for the serializer."""
-            data = super().validate(data)  # This includes AccountLinkedSerializerMixin validation
+            data = super().validate(data) 
             
             # Additional product and pricing validations
             client_id = self._get_client_id_from_context()
@@ -118,6 +118,42 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
                     )
         
             return data
+    
+    def _auto_assign_target_org_units_if_needed(self, instance, validated_data):
+        """
+        If 'target_org_units' was NOT provided by the user, and we know the final
+        'product' & 'account', automatically assign any org units that share
+        standard_department with the product's target_categories.
+        """
+        print('1')
+        # If user explicitly passed something for 'target_org_units', do NOT override
+        if 'target_org_units' in validated_data:
+            print('2')
+            return
+
+        # We need final 'product' and 'account'
+        product = validated_data.get('product')
+        if not product and instance:
+            product = instance.product
+
+        account = validated_data.get('account')
+        if not account and instance:
+            account = instance.account
+
+        if not product or not account:
+            return  # can't proceed if product/account is missing
+
+        # Gather all standard_department IDs from the product's target_categories
+        category_ids = product.target_categories.values_list('id', flat=True)
+
+        # Fetch matching org units for that account
+        matching_orgunits = AccountOrganizationUnit.objects.filter(
+            account_id=account.id,
+            standard_department_id__in=category_ids
+        )
+
+        # Assign them to validated_data so they'll be set on the instance
+        validated_data['target_org_units'] = list(matching_orgunits)
     
     def _assign_default_pricing_if_needed(self, instance=None, validated_data=None):
         """
@@ -167,6 +203,8 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
         
         # Attempt to assign default pricing if none given
         self._assign_default_pricing_if_needed(instance=None, validated_data=validated_data)
+
+        self._auto_assign_target_org_units_if_needed(None, validated_data)
         
         instance = super().create(validated_data)
         if target_org_units:
@@ -180,9 +218,10 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
         3. Handle M2M target org units.
         """
         target_org_units = validated_data.pop('target_org_units', None)
-        
+        print(f"CA PAAASSE TA RACE: {target_org_units}")
         # Attempt to assign default pricing if none given
         self._assign_default_pricing_if_needed(instance=instance, validated_data=validated_data)
+        self._auto_assign_target_org_units_if_needed(instance=instance, validated_data=validated_data)
         
         instance = super().update(instance, validated_data)
         if target_org_units is not None:
