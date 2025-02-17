@@ -166,6 +166,26 @@ class PricingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
             )
 
         return data
+    
+    def create(self, validated_data):
+        """
+        Create Pricing instance, call full_clean(), then save.
+        """
+        instance = Pricing(**validated_data)
+        instance.full_clean()  # This calls model-level clean()
+        instance.save()
+        return instance
+
+    def update(self, instance, validated_data):
+        """
+        Update Pricing instance, call full_clean(), then save.
+        For partial updates, override only fields in validated_data.
+        """
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.full_clean()  # This calls model-level clean()
+        instance.save()
+        return instance
 
 class PricingSummarySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """Simplified Pricing serializer for nested representations"""

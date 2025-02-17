@@ -20,7 +20,7 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Product Name'),
     )
 
-
+ 
     description = models.TextField(
         blank=True, 
         null=True, 
@@ -158,11 +158,11 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
         if self.pricing_type in [self.PricingType.SUBSCRIPTION, self.PricingType.USAGE]:
             if not self.pricing_term:
                 raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(
-                    field="Pricing term is required for subscription and usage pricing"
+                    field="Pricing term for subscription and usage pricing"
                 ))
 
         # Rule 2: Billing term is not allowed for one time payment
-        if self.product.contract_payment_term == 'ONE_TIME':
+        if self.contract_payment_term == 'ONE_TIME':
             if self.pricing_term:
                 raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
                     field="Pricing term is not allowed for one time payment contract"
@@ -170,7 +170,7 @@ class Pricing(BaseModelApp, ClientScopeManager.ModelMixin):
 
         # Rule 3: Validate product contract payment term compatibility
         if self.pricing_type == self.PricingType.SUBSCRIPTION:
-            if self.product.contract_payment_term == 'ONE_TIME':
+            if self.contract_payment_term == 'ONE_TIME':
                 raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(
                     field="Subscription pricing cannot be used with one-time payment products"
                 ))
