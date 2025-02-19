@@ -38,6 +38,13 @@ class CoreErrorMessages:
     INVALID_REQUEST = _("Invalid request format")
     OBJECT_IN_USE = _("Cannot delete {fields} as it is in use")
 
+    # AI Service Related
+    INVALID_CONFIG = _("AI service configuration is invalid")
+    SERVICE_UNAVAILABLE = _("AI service is currently unavailable")
+    SERVICE_AUTH_FAILED = _("AI service authentication failed")
+    SERVICE_ERROR = _("AI service error occurred")
+    PROCESSING_FAILED = _("Failed to process transcript")
+
 class AccountErrorMessages:
     """Account specific error messages"""
     INVALID_PARENT = _("Invalid parent assignment")

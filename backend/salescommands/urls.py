@@ -20,6 +20,7 @@ from django.urls import path, include
 app_key = "app/"
 end_user_key = "client/"
 product_admin_key = "product_admin/"
+ai_insights = "insights/"
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -28,5 +29,6 @@ urlpatterns = [
     path(app_key+'account-products/', include('apps.accounts_app.account_product_detail.urls')), 
     path(app_key+'products/', include('apps.products.urls')),
     path(end_user_key, include('end_users.urls')),
+    path(ai_insights, include('apps.sales_insight.urls')),
     path(product_admin_key, include("product_admin.urls"))
 ]
