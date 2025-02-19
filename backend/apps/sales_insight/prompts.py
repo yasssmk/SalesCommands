@@ -595,4 +595,86 @@ def get_contacts_prompt(transcript):
         \"\"\"{transcript}\"\"\"
         """
 
+import json 
 
+def parse_json_with_defaults(json_string):
+    """
+    Safely parse the JSON string and ensure 
+    missing keys become null or empty (if needed).
+    Here, we'll do minimal validation. 
+    In a real scenario, you'd define a full schema check.
+    """
+    try:
+        data = json.loads(json_string)
+        return data
+    except json.JSONDecodeError:
+        # If the AI returns invalid JSON, you can fallback or re-prompt
+        return None
+
+from ai_resquests import call_llm
+
+def get_full_insights(transcript, model="gpt-3.5-turbo"):
+    """
+    Method 2: 
+    1) Send three prompts (account, orgUnits, contacts).
+    2) Parse JSON results.
+    3) Merge into one final structure with 
+       'accountInfo', 'insights.accountInsights', 
+       'insights.orgUnitsInsights', 'insights.contactsInsights'.
+    """
+    # Prompt 1: accountInfo + accountInsights
+    prompt_1 = get_account_insights_prompt(transcript)
+    result_1 = call_llm(prompt_1, model=model)
+    data_1 = parse_json_with_defaults(result_1)
+
+    # Prompt 2: orgUnitsInsights
+    prompt_2 = get_org_units_prompt(transcript)
+    result_2 = call_llm(prompt_2, model=model)
+    data_2 = parse_json_with_defaults(result_2)
+
+    # Prompt 3: contactsInsights
+    prompt_3 = get_contacts_prompt(transcript)
+    result_3 = call_llm(prompt_3, model=model)
+    data_3 = parse_json_with_defaults(result_3)
+
+    # Merge results
+    # Start with a base structure
+    final_structure = {
+        "accountInfo": {
+            "accountName": None,
+            "accountType": None,
+            "classification": None,
+            "employeeCount": 0,
+            "annualRevenue": 0,
+            "buyingDecisionsLocation": None,
+            "parentCompany": {
+                "companyName": None,
+                "accountId": None
+            },
+            "orgUnits": []
+        },
+        "insights": {
+            "accountInsights": {},
+            "orgUnitsInsights": [],
+            "contactsInsights": []
+        }
+    }
+
+    # If accountInfo + accountInsights was successfully parsed:
+    if data_1 and "accountInfo" in data_1 and "insights" in data_1:
+        final_structure["accountInfo"] = data_1.get("accountInfo", final_structure["accountInfo"])
+        final_structure["insights"]["accountInsights"] = data_1["insights"].get("accountInsights", {})
+    else:
+        # fallback to empty if not found
+        pass
+
+    # If orgUnitsInsights was successfully parsed:
+    if data_2 and "orgUnitsInsights" in data_2:
+        final_structure["insights"]["orgUnitsInsights"] = data_2["orgUnitsInsights"]
+
+    # If contactsInsights was successfully parsed:
+    if data_3 and "contactsInsights" in data_3:
+        final_structure["insights"]["contactsInsights"] = data_3["contactsInsights"]
+
+    # Return the final merged JSON
+    return final_structure

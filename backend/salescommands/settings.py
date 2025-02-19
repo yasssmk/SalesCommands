@@ -188,6 +188,12 @@ ROLE_REFRESH_LIFETIMES = {
     'end_users': timedelta(days=7),
 }
 
+#OPEN AI
+
+OPEN_AI_KEY= {
+     "OPEN_AI_KEY": env('OPENAI_KEY')
+} 
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
