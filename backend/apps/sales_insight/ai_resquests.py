@@ -1,7 +1,7 @@
 from openai import OpenAI
 from django.conf import settings
 
-client = OpenAI()
+client = OpenAI(api_key = settings.OPENAI_API_KEY["OPENAI_API_KEY"])
 
 def call_llm(prompt, model="gpt-3.5-turbo", temperature=0.0):
     """
@@ -22,7 +22,8 @@ def call_llm(prompt, model="gpt-3.5-turbo", temperature=0.0):
         ],
         temperature=temperature
     )
-    return completion["choices"][0]["message"]["content"]
+
+    return completion.choices[0].message.content
 
 
 
