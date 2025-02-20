@@ -1,7 +1,8 @@
 from rest_framework import status
 from django.conf import settings
-import openai
 from rest_framework.response import Response
+from openai import OpenAIError, AuthenticationError, APIError
+import openai
 from core.exceptions import StandardizedValidationError, StandardizedAuthenticationFailed
 from core.error_messages import CoreErrorMessages
 from .prompts import get_full_insights
@@ -20,7 +21,7 @@ class TranscriptAnalysisView(BaseAPIView):
         super().__init__(*args, **kwargs)
         # Initialize OpenAI with error handling
         try:
-            api_key = settings.OPEN_AI_KEY["OPEN_AI_KEY"]
+            api_key = settings.OPENAI_API_KEY["OPENAI_API_KEY"]
             if not api_key:
                 raise StandardizedValidationError(CoreErrorMessages.INVALID_CONFIG)
             openai.api_key = api_key
@@ -54,9 +55,9 @@ class TranscriptAnalysisView(BaseAPIView):
 
             return Response(insights, status=status.HTTP_200_OK)
 
-        except openai.error.AuthenticationError:
-            raise StandardizedAuthenticationFailed(CoreErrorMessages.SERVICE_AUTH_FAILED)
-        except openai.error.APIError as e:
+        except APIError as e:
+            raise StandardizedAuthenticationFailed(f"{CoreErrorMessages.SERVICE_AUTH_FAILED} :{str(e)}" )
+        except OpenAIError as e:
             raise StandardizedValidationError(f"{CoreErrorMessages.SERVICE_ERROR}: {str(e)}")
         except Exception as e:
             return self.handle_exception(e)

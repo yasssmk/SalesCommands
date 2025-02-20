@@ -8,6 +8,8 @@ class InputSanitizationMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         
+        self.excluded_prefix = '/insights/'
+
         self.sql_patterns = [
             # Basic SQL injection
             r"(?i)(\b(select|insert|update|delete|drop|union|exec|declare)\b)",
@@ -47,6 +49,12 @@ class InputSanitizationMiddleware:
         
         self.sql_regex = [re.compile(pattern, re.IGNORECASE | re.MULTILINE) for pattern in self.sql_patterns]
         self.xss_regex = [re.compile(pattern) for pattern in self.xss_patterns]
+
+    def should_skip_sanitization(self, request):
+        """
+        Check if the request path should skip sanitization
+        """
+        return request.path.startswith(self.excluded_prefix)
 
     def check_injection(self, value):
         """Enhanced checking with multiple decodings"""
@@ -120,6 +128,10 @@ class InputSanitizationMiddleware:
         return None
 
     def __call__(self, request):
+
+        if self.should_skip_sanitization(request):
+            return self.get_response(request)
+        
         response = self.process_request(request)
         if response:
             return response
