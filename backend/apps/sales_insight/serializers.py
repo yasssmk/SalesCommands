@@ -9,7 +9,7 @@ class TranscriptAnalysisSerializer(ClientScopeManager.SerializerMixin):
     Includes validation and client scope checking.
     """
     transcript = serializers.CharField(required=True)
-    model = serializers.CharField(required=False, default='gpt-3.5-turbo')
+    model = serializers.CharField(required=False, default='gpt-4o-mini')
 
     def validate_transcript(self, value):
         """Validate transcript content"""
@@ -19,7 +19,7 @@ class TranscriptAnalysisSerializer(ClientScopeManager.SerializerMixin):
 
     def validate_model(self, value):
         """Validate model selection"""
-        allowed_models = ['gpt-3.5-turbo', 'gpt-4']  # Add other allowed models
+        allowed_models = ['gpt-4o-mini', 'gpt-4o']  # Add other allowed models
         if value not in allowed_models:
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field='model'))
         return value

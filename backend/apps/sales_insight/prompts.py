@@ -9,7 +9,7 @@ COMMON_INSTRUCTIONS = """
     Produce JSON **only** for the "accountInfo" and "accountInsights" sections, 
     following these rules:
 
-    1. If data for a field is not found, fill it with null, 0, false, or an empty array ([]) as appropriate.
+    1. If data for a field is not found, fill it with null, 0, false, or an empty array ([]) as appropriate but Feel free to interpret partial statements if it seems reasonable.
     2. Use arrays or objects exactly as shown in the structure.
     3. Do not add extra keys. 
     4. Output must be valid JSON with correct nesting.
@@ -34,7 +34,7 @@ ACCOUNT_INSIGHTS_DEFINITIONS = """
     ACCOUNT INSIGHTS FIELDS:
     - objectives: Major business goals or outcomes the company wants.
     - compellingEvents: Time-sensitive events or triggers that influence decisions.
-    - motivations: Reasons driving their interest in new solutions.
+    - motivations: Reasons driving their interest in business.
     - keyKPIs: Key performance indicators they care about.
     - criteria: High-level conditions or requirements to select a product/solution.
     - painPoints: Main problems or obstacles the entire account faces.
@@ -316,6 +316,16 @@ JSON STRUCTURE:
 }
 """
 
+FALLBACK_PROMPT_IF_ERROR = """\
+You provided invalid or incomplete JSON. 
+Please correct it so it is valid JSON with proper braces and no repeated or missing keys.
+
+Original (malformed) JSON:
+{malformed_json}
+
+Return ONLY valid JSON. Do not add extra commentary.
+"""
+
 # =====================================
 # PROMPT-BUILDING FUNCTIONS
 # =====================================
@@ -325,8 +335,12 @@ def get_account_insights_prompt(transcript):
     Builds a prompt for "accountInfo" + "accountInsights" using
     centralized definitions and instructions.
     """
+    print(f"GET ACCOUNT METH: {COMMON_INSTRUCTIONS}")
+    print(f"GET ACCOUNT METH: {ACCOUNT_INSIGHTS_DEFINITIONS}")
+    print(f"GET ACCOUNT METH: {transcript}")
     return f"""{COMMON_INSTRUCTIONS}
 {ACCOUNT_INSIGHTS_DEFINITIONS}
+
 Now, return only the 'accountInfo' and 'accountInsights' sections in valid JSON.
 TRANSCRIPT:
 \"\"\"{transcript}\"\"\""""
@@ -375,27 +389,64 @@ def parse_json_with_defaults(json_string):
         # If the AI returns invalid JSON, you can fallback or re-prompt
         return None
 
+def strip_backticks_and_code_fences(llm_text: str) -> str:
+    """
+    Removes triple backticks or code fences from the model's response
+    so that json.loads(...) won't fail.
+    """
+    # Quick approach: remove any leading/trailing ``` with optional `json`
+    clean = llm_text.strip()
+    clean = clean.replace("```json", "").replace("```", "")
+    return clean.strip()
+
 from .ai_resquests import call_llm
 
-def get_full_insights(transcript, model="gpt-3.5-turbo"):
-
-    # Prompt 1: accountInfo + accountInsights
+def get_full_insights(transcript):
+    # 1) Make the initial prompt and parse result for Account + Insights
     prompt_1 = get_account_insights_prompt(transcript)
-    result_1 = call_llm(prompt_1, model=model)
-    data_1 = parse_json_with_defaults(result_1)
+    result_1 = call_llm(prompt_1)
+    # Remove any triple-backticks
+    result_1_stripped = strip_backticks_and_code_fences(result_1)
+    data_1 = parse_json_with_defaults(result_1_stripped)
+    print(f"RESULT 1 (stripped): {result_1_stripped}")
 
-    # Prompt 2: orgUnitsInsights
+    if data_1 is None or "accountInfo" not in data_1 or "insights" not in data_1:
+        # Fallback if JSON is invalid or missing top-level "insights"
+        fix_prompt_1 = FALLBACK_PROMPT_IF_ERROR.format(malformed_json=result_1_stripped)
+        new_result_1 = call_llm(fix_prompt_1)
+        new_result_1_stripped = strip_backticks_and_code_fences(new_result_1)
+        data_1 = parse_json_with_defaults(new_result_1_stripped)
+        print(f"FALLBACK RESULT 1 (stripped): {new_result_1_stripped}")
+
+    # 2) orgUnitsInsights
     prompt_2 = get_org_units_prompt(transcript)
-    result_2 = call_llm(prompt_2, model=model)
-    data_2 = parse_json_with_defaults(result_2)
+    result_2 = call_llm(prompt_2)
+    result_2_stripped = strip_backticks_and_code_fences(result_2)
+    data_2 = parse_json_with_defaults(result_2_stripped)
+    print(f"RESULT 2 (stripped): {result_2_stripped}")
 
-    # Prompt 3: contactsInsights
+    if data_2 is None or "orgUnitsInsights" not in data_2:
+        fix_prompt_2 = FALLBACK_PROMPT_IF_ERROR.format(malformed_json=result_2_stripped)
+        new_result_2 = call_llm(fix_prompt_2)
+        new_result_2_stripped = strip_backticks_and_code_fences(new_result_2)
+        data_2 = parse_json_with_defaults(new_result_2_stripped)
+        print(f"FALLBACK RESULT 2 (stripped): {new_result_2_stripped}")
+
+    # 3) contactsInsights
     prompt_3 = get_contacts_prompt(transcript)
-    result_3 = call_llm(prompt_3, model=model)
-    data_3 = parse_json_with_defaults(result_3)
+    result_3 = call_llm(prompt_3)
+    result_3_stripped = strip_backticks_and_code_fences(result_3)
+    data_3 = parse_json_with_defaults(result_3_stripped)
+    print(f"RESULT 3 (stripped): {result_3_stripped}")
 
-    # Merge results
-    # Start with a base structure
+    if data_3 is None or "contactsInsights" not in data_3:
+        fix_prompt_3 = FALLBACK_PROMPT_IF_ERROR.format(malformed_json=result_3_stripped)
+        new_result_3 = call_llm(fix_prompt_3)
+        new_result_3_stripped = strip_backticks_and_code_fences(new_result_3)
+        data_3 = parse_json_with_defaults(new_result_3_stripped)
+        print(f"FALLBACK RESULT 3 (stripped): {new_result_3_stripped}")
+
+    # Start with a base final structure
     final_structure = {
         "accountInfo": {
             "accountName": None,
@@ -417,21 +468,20 @@ def get_full_insights(transcript, model="gpt-3.5-turbo"):
         }
     }
 
-    # If accountInfo + accountInsights was successfully parsed:
-    if data_1 and "accountInfo" in data_1 and "insights" in data_1:
+    print(f"DATA 1: {data_1}")
+    print(f"DATA 2: {data_2}")
+    print(f"DATA 3: {data_3}")
+    # Merge accountInfo + accountInsights if data_1 is valid
+    if data_1 and "accountInfo" in data_1 and "accountInsights" in data_1:
         final_structure["accountInfo"] = data_1.get("accountInfo", final_structure["accountInfo"])
-        final_structure["insights"]["accountInsights"] = data_1["insights"].get("accountInsights", {})
-    else:
-        # fallback to empty if not found
-        pass
+        final_structure["insights"]["accountInsights"] = data_1.get("accountInsights", {})
 
-    # If orgUnitsInsights was successfully parsed:
+    # Merge orgUnitsInsights if data_2 is valid
     if data_2 and "orgUnitsInsights" in data_2:
         final_structure["insights"]["orgUnitsInsights"] = data_2["orgUnitsInsights"]
 
-    # If contactsInsights was successfully parsed:
+    # Merge contactsInsights if data_3 is valid
     if data_3 and "contactsInsights" in data_3:
         final_structure["insights"]["contactsInsights"] = data_3["contactsInsights"]
 
-    # Return the final merged JSON
     return final_structure

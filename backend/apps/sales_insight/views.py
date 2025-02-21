@@ -45,11 +45,10 @@ class TranscriptAnalysisView(BaseAPIView):
 
             # Get validated data
             transcript = serializer.validated_data['transcript']
-            model = serializer.validated_data.get('model', 'gpt-3.5-turbo')
             
             # Process through OpenAI
 
-            insights = get_full_insights(transcript, model=model)
+            insights = get_full_insights(transcript)
    
             
             if not insights:
