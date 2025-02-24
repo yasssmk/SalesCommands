@@ -19,31 +19,38 @@
 # """
 
 COMMON_INSTRUCTIONS = """
-    You are an AI assistant that extracts sales qualification data from text and return structured sales qualification insight in JSON format. 
-    I will provide you with a sanitized transcript from email conversation, call notes or a complete call transcript between a sales AE and interlocutors either from a prospect or a client companies. 
-    You will extract and sum up the relevant information for the sales qualification and organize them as explained below; This data will be used later by sales team to spot sales opportunities, estimate the potential of an account, white space analysis and understand the main pain points and process of an account to make sales strategies around by sales teams. Think like an expanded MEDPICC turn into a JSON.
-The structure will have differents levels: 
-1.	Account level: Qualification data related to and/or impacting the business as a whole
-2.	organizational units: Qualification data related to and/or impacting the specific department mentioned
-3.	Contact: Qualification data related to and/or impacting the specific contact.
-For each level you’ll look for specific sales qualification information following these rules:
-1.	If data for a field is not found (stated or confirmed by the interlocutors), fill it with null, 0, false, or an empty array ([]) as appropriate but feel free to interpret partial statements if it seems reasonable.
-2.	Use arrays or objects exactly as shown in the structure.
-3.	Do not add extra keys. 
-4.	Output must be valid JSON with correct nesting.
-Here is a comprehensive guide of the qualification to be adapted for each level if applicable:
-1.	Account Information for ICP profiling and Filtering
-Role: The purpose of this step is to gather basic account information to determine if the prospect fits the Ideal Customer Profile (ICP). This helps in segmenting and prioritizing leads that are more likely to convert.
-2.	Understand Business Goals and Objectives.
-Role: This phase involves comprehending the overarching goals and objectives of the business, department, or interlocutor. By understanding their strategic priorities and the metrics they use to measure success, salesperson can tailor your pitch to better align with their needs.
-3.	Understand Pains and Challenges to Reach Their Goals and Their Impact
-Role: Identify the specific pain points and challenges that the prospect is facing in achieving their business goals. Understanding these issues helps in positioning a solution as a remedy.
-4.	Current Status Quo
-Role: Understanding the current situation, including their existing solutions and processes. This helps in identifying gaps and opportunities for sales team product or service.
-5.	Understand Their Buying Process and Their Stakeholders
-Role: Gain insights into the prospect's buying process and identify key stakeholders involved in the decision-making. Knowing this helps in navigating the sales process more effectively.
-6.	Did They Already Have or Are They Planning to Make a Purchase to Improve/Solve Challenges Stated
-Role: Determine if the prospect has already made or is planning to make a purchase to address their challenges. This helps gauge their readiness to buy and tailor your approach accordingly
+    You are an AI assistant that extracts sales qualification data from text and returns structured sales qualification insight in JSON format. 
+    I will provide you with a sanitized transcript from email conversations, call notes, or a complete call transcript between a sales AE and interlocutors, either from prospect or client companies. 
+    You will extract and summarize the relevant information for sales qualification and organize them as explained below. This data will be used later by the sales team to spot opportunities, estimate potential, analyze white space, and make strategic decisions around accounts.
+    Think of your output as an expanded version of MEDPICC, turned into JSON format, with clear and actionable insights.
+    The structure will have different levels: 
+        1. Account level: Qualification data related to and/or impacting the business as a whole.
+        2. Organizational units: Qualification data related to and/or impacting the specific department mentioned.
+        3. Contact: Qualification data related to and/or impacting the specific contact.
+    Here are the rules:
+        1. If any data is missing or unclear, use `null`, `0`, `false`, or `[]` (empty array) as appropriate, but make logical inferences where possible.
+        2. Focus on providing actionable, detailed insights—specifically objectives, pain points, and impacts. For example, if an objective is mentioned, describe it in actionable terms with clear metrics or timelines where possible.
+        3. Avoid assuming data that isn’t explicitly mentioned; however, interpret partial statements logically to provide insights based on context.
+        4. Ensure that the format adheres strictly to the required JSON schema.
+        5. Avoid unnecessary commentary or assumptions in your responses. Stick to the data that is given and inferred in the context.
+    Additional clarifications:
+        - For **objectives**, make them measurable and actionable. For example, "Increase sales by 20% over the next quarter" rather than vague statements like "increase sales."
+        - For **motivations**, clearly describe the reasons driving the company's business interest. For example, "Increase market share" or "Improve product quality."
+        - For **implications**, quantify the impact wherever possible. For instance, "If this pain point is not resolved, the company risks a 10% revenue loss."
+        - Be mindful of **role-specific insights** and **departmental segmentation**. For example, when providing insights related to an individual, link them to their specific department or role within the company (e.g., Marketing, IT, etc.).
+    Here is a comprehensive guide of the qualification to be adapted for each level if applicable:
+        1. Account Information for ICP profiling and Filtering
+        Role: The purpose of this step is to gather basic account information to determine if the prospect fits the Ideal Customer Profile (ICP). This helps in segmenting and prioritizing leads that are more likely to convert.
+        2. Understand Business Goals and Objectives.
+        Role: This phase involves comprehending the overarching goals and objectives of the business, department, or interlocutor. By understanding their strategic priorities and the metrics they use to measure success, the salesperson can tailor your pitch to better align with their needs.
+        3. Understand Pains and Challenges to Reach Their Goals and Their Impact
+        Role: Identify the specific pain points and challenges that the prospect is facing in achieving their business goals. Understanding these issues helps in positioning a solution as a remedy.
+        4. Current Status Quo
+        Role: Understanding the current situation, including their existing solutions and processes. This helps in identifying gaps and opportunities for sales team products or services.
+        5. Understand Their Buying Process and Their Stakeholders
+        Role: Gain insights into the prospect's buying process and identify key stakeholders involved in the decision-making. Knowing this helps in navigating the sales process more effectively.
+        6. Did They Already Have or Are They Planning to Make a Purchase to Improve/Solve Challenges Stated
+        Role: Determine if the prospect has already made or is planning to make a purchase to address their challenges. This helps gauge their readiness to buy and tailor your approach accordingly.
 """
 
 ACCOUNT_INSIGHTS_DEFINITIONS = """
@@ -54,33 +61,32 @@ ACCOUNT_INSIGHTS_DEFINITIONS = """
     Short definitions of each field:
     ACCOUNT INFO FIELDS:
     - accountName: The company's official or recognized name.
-    - accountType: e.g. is CLIENT, PROSPECT or PARTNER.
+    - accountType: e.g. CLIENT, PROSPECT, or PARTNER.
     - classification: Segment or size category (e.g. SMB, MIDMARKET, ENTERPRISE).
     - employeeCount: Approximate number of employees in the entire company if stated.
     - annualRevenue: Approximate annual revenue as a numeric value if stated.
-    - buyingDecisionsLocation: Where or by whom major purchasing decisions are made. ( e.g Headquarter, parent account ...)
+    - buyingDecisionsLocation: Where or by whom major purchasing decisions are made (e.g., Headquarter, parent account ...).
     - parentCompany: If this company is a subsidiary (with "companyName" & "accountId").
     - orgUnits: Array of organizational units (we will fill them in another step, so leave it empty or default).
 
     ACCOUNT INSIGHTS FIELDS:
-    - objectives: Major business goals or outcomes the company wants.
-    - compellingEvents: Time-sensitive events or triggers that influence decisions. (e.g new law, new ceo, loss in revenue or quality ...)
-    - motivations: Reasons driving their interest in business. ( e.g increase market share, increase marging, be the #1 brand for ..., )
-    - keyKPIs: Key performance indicators they follow to measure their success.
+    - objectives: Major business goals or outcomes the company wants. Please ensure they are actionable and measurable (e.g., “Increase revenue by 15% within 6 months”).
+    - compellingEvents: Time-sensitive events or triggers that influence decisions (e.g., new law, new CEO, loss in revenue or quality).
+    - motivations: Reasons driving their interest in business (e.g., increase market share, reduce operational costs, become an industry leader).
+    - keyKPIs: Key performance indicators they follow to measure their success (e.g., growth rate, operational efficiency, customer retention).
     - criteria: High-level conditions or requirements to select a product/solution.
-    - painPoints: Main problems or obstacles the entire account faces.
-    - implications: Consequences if those pain points are not resolve, best if traduced in quantizable unit ( e.g dollars, time, revenue loss).
-    - currentTechStack: Tools or technologies they currently use (with sub-fields):
-    - techName: name of the solution they use, businessGoal: What is the reason they use this tool, popularityScore (0-10): Based on the way they describe the product's pros and cons estimate a popularity score fropm 0 (bad) to 10 (great) among the company, pros: What do they like about this product, improvementPoints: What is missing and would help them a lot (reach a 10 score in popularity), yearsOfUsage: Since how many years they have been using this solution if stated, costs: Everything stated reslated to price and contract of the solution, renewalDate: if a subscription contract have they stated when the contract ends.
+    - painPoints: Main problems or obstacles the entire account faces (e.g., manual data entry, inefficient workflow).
+    - implications: Consequences if those pain points are not resolved, quantified where possible (e.g., a 10% decrease in sales if this issue isn't addressed).
+    - currentTechStack: Tools or technologies they currently use, If the duration of usage ("yearsOfUsage") is not mentioned, leave the field null or empty. Do not invent this data. (with sub-fields):
+      - techName: Name of the solution they use, businessGoal: What is the reason they use this tool, popularityScore (0-10): Based on the way they describe the product's pros and cons, estimate a popularity score from 0 (bad) to 10 (great) among the company, pros: What do they like about this product, improvementPoints: What is missing and would help them a lot (to reach a 10 score in popularity), yearsOfUsage: Since how many years they have been using this solution (only if stated, do not invent the data), costs: Everything stated related to price and contract of the solution, renewalDate: If a subscription contract, have they stated when the contract ends.
     - partners: Other external vendors or consulting firms they work with.
     - budget: Estimated total budget for new initiatives.
     - newBudgetStartDate: When a new budget cycle or pool of funds becomes available.
     - buyingProcess: Steps or phases the account goes through to evaluate and purchase solutions (with sub-fields):
-    - stepName: arbitrary name of the process, department: what department company, stakeholderRole, influenceScore (0-10): the importance of the role and the weight in the decision, stepGoals: what is the role of this step (e.g IT: check the technical integration within the echosystem, Legal: check the contract...), expectedOutcomes, averageTimeInDays: if stated the average time it takes for this step, this will help the sales team to measure how long take the whole buying process and act accordingly.
-    - projects: Determine if the prospect has already made or is planning to make a purchase to address their challenges (with sub-fields):
-    - projectName: arbitrary name of the, targetYear: When the purchase is or was planned, keyInitiatives: reason and motivation to make the purches, compellingEvents: did a specific event force them to make this project (e.g: New regulation, event that have negatively impacted the business...), products: What kind of product we are talking about, metrics: What metrics will they use to measure the success of the purchase (e.g productivity, cost, time...), painPoints: What pain points they are trying to resolve, impacts,
-        decisionCriteria: what will they be looking at for the choice of solution , hasStarted (bool), relevantDates (milestones), budgetAllocation, estimatedUnitsNeeded,
-        unitOfMeasure, and stakeholders who are involved.
+      - stepName: Arbitrary name of the process, department: What department of the company, stakeholderRole, influenceScore (0-10): The importance of the role and the weight in the decision, stepGoals: What is the role of this step (e.g., IT: check the technical integration within the ecosystem), expectedOutcomes: Expected results of this step, averageTimeInDays: If stated, the average time it takes for this step.
+
+    - projects: Determine if the prospect has already made or is planning to make a purchase to address their challenges, If the duration of usage ("yearsOfUsage") is not mentioned, leave the field null or empty. Do not invent this data. (with sub-fields):
+      - projectName: Arbitrary name of the project, targetYear: When the purchase is or was planned (do not invent the data), keyInitiatives: Reason and motivation to make the purchase, compellingEvents: Did a specific event force them to make this project (e.g., new regulation, event negatively impacting the business), products: What kind of product we are talking about, metrics: What metrics will they use to measure the success of the purchase (e.g., productivity, cost, time), painPoints: What pain points they are trying to resolve, impacts, decisionCriteria: What will they be looking at for the choice of solution, hasStarted (bool), relevantDates (milestones), budgetAllocation, estimatedUnitsNeeded, unitOfMeasure, and stakeholders who are involved.
 
     JSON STRUCTURE TO RETURN (for this prompt):
 
@@ -190,12 +196,14 @@ orgUnitsInsights fields:
 - criteria: Requirements for solutions or changes.
 - painPoints: Challenges or issues the unit faces.
 - implications: Consequences if those issues aren’t solved.
-- currentTechStack: Tools this unit uses (same sub-fields as above).
+- currentTechStack: Tools this unit uses, If the duration of usage ("yearsOfUsage") is not mentioned, leave the field null or empty. Do not invent this data. (same sub-fields as above).
 - partners: External collaborators or vendors.
 - budget: The approximate budget the unit controls.
 - newBudgetStartDate: When new funds might become available.
 - buyingProcess: Steps specific to this unit’s purchasing cycle (stepName, department, stakeholderRole, influenceScore, stepGoals, expectedOutcomes, averageTimeInDays).
-- projects: Ongoing or future projects at the unit level (same sub-fields as accountInsights projects).
+- projects: past,ongoing or future projects at the unit level,  If the duration of usage ("yearsOfUsage") is not mentioned, leave the field null or empty. Do not invent this data. (same sub-fields as accountInsights projects).
+
+Ensure that each unit’s objectives, pain points, and buying process are clearly tied to their respective department. Each organizational unit should have detailed, actionable insights specific to their role within the company, such as technology needs, project goals, and KPIs.
 
 JSON STRUCTURE:
 
@@ -296,10 +304,12 @@ contactsInsights fields:
 - criteria: The contact's personal selection criteria.
 - painPoints: Individual-level frustrations.
 - implications: What happens if these issues aren't solved (for them).
-- currentTechStack: Tools this contact personally uses (same sub-fields as above).
+- currentTechStack: Tools this contact personally uses, If the duration of usage ("yearsOfUsage") is not mentioned, leave the field null or empty. Do not invent this data. (same sub-fields as above).
 - partners: External personal vendor relationships or resources.
 - hasBudgetAuthority: Boolean indicating if they can approve spending.
 - projectsInvolved: A list of projects they are part of.
+
+Ensure that you are linking each contact’s objectives and pain points directly to their specific role, responsibilities, and the overall departmental goals. Focus on how the contact’s decisions impact the purchasing process, and quantify the implications where possible.
 
 JSON STRUCTURE:
 
@@ -439,7 +449,6 @@ def get_full_insights(transcript):
     # Remove any triple-backticks
     result_1_stripped = strip_backticks_and_code_fences(result_1)
     data_1 = parse_json_with_defaults(result_1_stripped)
-    print(f"RESULT 1 (stripped): {result_1_stripped}")
 
     if data_1 is None or "accountInfo" not in data_1 or "insights" not in data_1:
         # Fallback if JSON is invalid or missing top-level "insights"
@@ -447,35 +456,30 @@ def get_full_insights(transcript):
         new_result_1 = call_llm(fix_prompt_1)
         new_result_1_stripped = strip_backticks_and_code_fences(new_result_1)
         data_1 = parse_json_with_defaults(new_result_1_stripped)
-        print(f"FALLBACK RESULT 1 (stripped): {new_result_1_stripped}")
 
     # 2) orgUnitsInsights
     prompt_2 = get_org_units_prompt(transcript)
     result_2 = call_llm(prompt_2)
     result_2_stripped = strip_backticks_and_code_fences(result_2)
     data_2 = parse_json_with_defaults(result_2_stripped)
-    print(f"RESULT 2 (stripped): {result_2_stripped}")
 
     if data_2 is None or "orgUnitsInsights" not in data_2:
         fix_prompt_2 = FALLBACK_PROMPT_IF_ERROR.format(malformed_json=result_2_stripped)
         new_result_2 = call_llm(fix_prompt_2)
         new_result_2_stripped = strip_backticks_and_code_fences(new_result_2)
         data_2 = parse_json_with_defaults(new_result_2_stripped)
-        print(f"FALLBACK RESULT 2 (stripped): {new_result_2_stripped}")
 
     # 3) contactsInsights
     prompt_3 = get_contacts_prompt(transcript)
     result_3 = call_llm(prompt_3)
     result_3_stripped = strip_backticks_and_code_fences(result_3)
     data_3 = parse_json_with_defaults(result_3_stripped)
-    print(f"RESULT 3 (stripped): {result_3_stripped}")
 
     if data_3 is None or "contactsInsights" not in data_3:
         fix_prompt_3 = FALLBACK_PROMPT_IF_ERROR.format(malformed_json=result_3_stripped)
         new_result_3 = call_llm(fix_prompt_3)
         new_result_3_stripped = strip_backticks_and_code_fences(new_result_3)
         data_3 = parse_json_with_defaults(new_result_3_stripped)
-        print(f"FALLBACK RESULT 3 (stripped): {new_result_3_stripped}")
 
     # Start with a base final structure
     final_structure = {
@@ -499,9 +503,6 @@ def get_full_insights(transcript):
         }
     }
 
-    print(f"DATA 1: {data_1}")
-    print(f"DATA 2: {data_2}")
-    print(f"DATA 3: {data_3}")
     # Merge accountInfo + accountInsights if data_1 is valid
     if data_1 and "accountInfo" in data_1 and "accountInsights" in data_1:
         final_structure["accountInfo"] = data_1.get("accountInfo", final_structure["accountInfo"])
