@@ -3,7 +3,7 @@ from django.conf import settings
 
 client = OpenAI(api_key = settings.OPENAI_API_KEY["OPENAI_API_KEY"])
 model = "gpt-4o-mini"
-temperature = 0.3
+temperature = 0.0
 
 def call_llm(prompt, model=model, temperature=temperature):
     """

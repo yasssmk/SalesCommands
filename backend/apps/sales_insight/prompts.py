@@ -3,16 +3,47 @@
 # =====================================
 # CENTRALIZED DEFINITIONS & INSTRUCTIONS
 # =====================================
-COMMON_INSTRUCTIONS = """
-    You are an AI assistant that extracts structured sales insights from text. 
-    I will provide you with a sanitized transcript from email conversation, call notes or a complete call transcript. 
-    Produce JSON **only** for the "accountInfo" and "accountInsights" sections, 
-    following these rules:
+# COMMON_INSTRUCTIONS = """
+#     You are an AI assistant that extracts structured sales qualification insights from text. 
+#     I will provide you with a sanitized transcript from email conversation, call notes or a complete call transcript between a sales AE and an interlocutor either a prospect, a client or a partner.
+#     You will extract and sum up the relevant information for the sales qualification and organize them as explained below; This data will be used later by sales team to spot opportunity, estimate the potential of an account, white space analysis and understand the main pain points and process of an account to make sales strategies around.
 
-    1. If data for a field is not found, fill it with null, 0, false, or an empty array ([]) as appropriate but Feel free to interpret partial statements if it seems reasonable.
-    2. Use arrays or objects exactly as shown in the structure.
-    3. Do not add extra keys. 
-    4. Output must be valid JSON with correct nesting.
+
+#     Produce JSON **only** for the "accountInfo" and "accountInsights" sections, 
+#     following these rules:
+
+#     1. If data for a field is not found, fill it with null, 0, false, or an empty array ([]) as appropriate but Feel free to interpret partial statements if it seems reasonable.
+#     2. Use arrays or objects exactly as shown in the structure.
+#     3. Do not add extra keys. 
+#     4. Output must be valid JSON with correct nesting.
+# """
+
+COMMON_INSTRUCTIONS = """
+    You are an AI assistant that extracts sales qualification data from text and return structured sales qualification insight in JSON format. 
+    I will provide you with a sanitized transcript from email conversation, call notes or a complete call transcript between a sales AE and interlocutors either from a prospect or a client companies. 
+    You will extract and sum up the relevant information for the sales qualification and organize them as explained below; This data will be used later by sales team to spot sales opportunities, estimate the potential of an account, white space analysis and understand the main pain points and process of an account to make sales strategies around by sales teams. Think like an expanded MEDPICC turn into a JSON.
+The structure will have differents levels: 
+1.	Account level: Qualification data related to and/or impacting the business as a whole
+2.	organizational units: Qualification data related to and/or impacting the specific department mentioned
+3.	Contact: Qualification data related to and/or impacting the specific contact.
+For each level you’ll look for specific sales qualification information following these rules:
+1.	If data for a field is not found (stated or confirmed by the interlocutors), fill it with null, 0, false, or an empty array ([]) as appropriate but feel free to interpret partial statements if it seems reasonable.
+2.	Use arrays or objects exactly as shown in the structure.
+3.	Do not add extra keys. 
+4.	Output must be valid JSON with correct nesting.
+Here is a comprehensive guide of the qualification to be adapted for each level if applicable:
+1.	Account Information for ICP profiling and Filtering
+Role: The purpose of this step is to gather basic account information to determine if the prospect fits the Ideal Customer Profile (ICP). This helps in segmenting and prioritizing leads that are more likely to convert.
+2.	Understand Business Goals and Objectives.
+Role: This phase involves comprehending the overarching goals and objectives of the business, department, or interlocutor. By understanding their strategic priorities and the metrics they use to measure success, salesperson can tailor your pitch to better align with their needs.
+3.	Understand Pains and Challenges to Reach Their Goals and Their Impact
+Role: Identify the specific pain points and challenges that the prospect is facing in achieving their business goals. Understanding these issues helps in positioning a solution as a remedy.
+4.	Current Status Quo
+Role: Understanding the current situation, including their existing solutions and processes. This helps in identifying gaps and opportunities for sales team product or service.
+5.	Understand Their Buying Process and Their Stakeholders
+Role: Gain insights into the prospect's buying process and identify key stakeholders involved in the decision-making. Knowing this helps in navigating the sales process more effectively.
+6.	Did They Already Have or Are They Planning to Make a Purchase to Improve/Solve Challenges Stated
+Role: Determine if the prospect has already made or is planning to make a purchase to address their challenges. This helps gauge their readiness to buy and tailor your approach accordingly
 """
 
 ACCOUNT_INSIGHTS_DEFINITIONS = """
@@ -23,32 +54,32 @@ ACCOUNT_INSIGHTS_DEFINITIONS = """
     Short definitions of each field:
     ACCOUNT INFO FIELDS:
     - accountName: The company's official or recognized name.
-    - accountType: e.g. CLIENT, PROSPECT, PARTNER.
+    - accountType: e.g. is CLIENT, PROSPECT or PARTNER.
     - classification: Segment or size category (e.g. SMB, MIDMARKET, ENTERPRISE).
-    - employeeCount: Approximate number of employees in the entire company.
-    - annualRevenue: Approximate annual revenue as a numeric value.
-    - buyingDecisionsLocation: Where or by whom major purchasing decisions are made.
+    - employeeCount: Approximate number of employees in the entire company if stated.
+    - annualRevenue: Approximate annual revenue as a numeric value if stated.
+    - buyingDecisionsLocation: Where or by whom major purchasing decisions are made. ( e.g Headquarter, parent account ...)
     - parentCompany: If this company is a subsidiary (with "companyName" & "accountId").
     - orgUnits: Array of organizational units (we will fill them in another step, so leave it empty or default).
 
     ACCOUNT INSIGHTS FIELDS:
     - objectives: Major business goals or outcomes the company wants.
-    - compellingEvents: Time-sensitive events or triggers that influence decisions.
-    - motivations: Reasons driving their interest in business.
-    - keyKPIs: Key performance indicators they care about.
+    - compellingEvents: Time-sensitive events or triggers that influence decisions. (e.g new law, new ceo, loss in revenue or quality ...)
+    - motivations: Reasons driving their interest in business. ( e.g increase market share, increase marging, be the #1 brand for ..., )
+    - keyKPIs: Key performance indicators they follow to measure their success.
     - criteria: High-level conditions or requirements to select a product/solution.
     - painPoints: Main problems or obstacles the entire account faces.
-    - implications: Consequences if those pain points are not resolved.
+    - implications: Consequences if those pain points are not resolve, best if traduced in quantizable unit ( e.g dollars, time, revenue loss).
     - currentTechStack: Tools or technologies they currently use (with sub-fields):
-    - techName, businessGoal, popularityScore (0-10), pros, improvementPoints, yearsOfUsage, costs, renewalDate.
+    - techName: name of the solution they use, businessGoal: What is the reason they use this tool, popularityScore (0-10): Based on the way they describe the product's pros and cons estimate a popularity score fropm 0 (bad) to 10 (great) among the company, pros: What do they like about this product, improvementPoints: What is missing and would help them a lot (reach a 10 score in popularity), yearsOfUsage: Since how many years they have been using this solution if stated, costs: Everything stated reslated to price and contract of the solution, renewalDate: if a subscription contract have they stated when the contract ends.
     - partners: Other external vendors or consulting firms they work with.
     - budget: Estimated total budget for new initiatives.
     - newBudgetStartDate: When a new budget cycle or pool of funds becomes available.
     - buyingProcess: Steps or phases the account goes through to evaluate and purchase solutions (with sub-fields):
-    - stepName, department, stakeholderRole, influenceScore (0-10), stepGoals, expectedOutcomes, averageTimeInDays.
-    - projects: Upcoming or ongoing initiatives relevant to the entire account (with sub-fields):
-    - projectName, targetYear, keyInitiatives, compellingEvents, products, metrics, painPoints, impacts,
-        decisionCriteria, hasStarted (bool), relevantDates (milestones), budgetAllocation, estimatedUnitsNeeded,
+    - stepName: arbitrary name of the process, department: what department company, stakeholderRole, influenceScore (0-10): the importance of the role and the weight in the decision, stepGoals: what is the role of this step (e.g IT: check the technical integration within the echosystem, Legal: check the contract...), expectedOutcomes, averageTimeInDays: if stated the average time it takes for this step, this will help the sales team to measure how long take the whole buying process and act accordingly.
+    - projects: Determine if the prospect has already made or is planning to make a purchase to address their challenges (with sub-fields):
+    - projectName: arbitrary name of the, targetYear: When the purchase is or was planned, keyInitiatives: reason and motivation to make the purches, compellingEvents: did a specific event force them to make this project (e.g: New regulation, event that have negatively impacted the business...), products: What kind of product we are talking about, metrics: What metrics will they use to measure the success of the purchase (e.g productivity, cost, time...), painPoints: What pain points they are trying to resolve, impacts,
+        decisionCriteria: what will they be looking at for the choice of solution , hasStarted (bool), relevantDates (milestones), budgetAllocation, estimatedUnitsNeeded,
         unitOfMeasure, and stakeholders who are involved.
 
     JSON STRUCTURE TO RETURN (for this prompt):
