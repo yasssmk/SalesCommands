@@ -1,7 +1,6 @@
 from django.db import models
 from django.conf import settings
 from apps.core_apps.models import BaseModelApp,AccountLinkedModel
-from apps.sales_insight.models import SalesInsight
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from apps.accounts_app.accounts.models import Account

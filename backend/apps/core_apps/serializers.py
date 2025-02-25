@@ -8,7 +8,14 @@ class AccountLinkedSerializerMixin:
     Mixin for serializers of models that inherit from AccountLinkedModel.
     Provides account validation and standardized error messages.
     """
- 
+    
+    def get_account(self, obj):
+        """Return minimal account information"""
+        return {
+            'id': obj.account.id,
+            'company_name': obj.account.company_name
+        } if obj.account else None
+    
     def validate_account(self, value):
         """Validate account exists and belongs to the current client"""
         if not value:

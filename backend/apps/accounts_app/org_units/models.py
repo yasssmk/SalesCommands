@@ -1,9 +1,8 @@
 from django.db import models
 from django.conf import settings
 from apps.core_apps.models import BaseModelApp,AccountLinkedModel
-from apps.sales_insight.models import SalesInsight
 from core.client_scope import ClientScopeManager
-from sales_insight.models import QualificationModel
+from apps.sales_insight.models  import QualificationModel
 from django.utils.translation import gettext_lazy as _
 from apps.core_apps.models import StandardDepartment
 
@@ -49,14 +48,6 @@ class AccountOrganizationUnit(BaseModelApp, ClientScopeManager.ModelMixin, Accou
     metadata = models.JSONField(
         blank=True, 
         null=True
-    )
-
-    org_insights = models.OneToOneField(
-        SalesInsight, 
-        on_delete=models.SET_NULL, 
-        blank=True, 
-        null=True, 
-        related_name='linked_org'
     )
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(

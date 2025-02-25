@@ -28,7 +28,6 @@ class Contact(BaseModelApp, ClientScopeManager.ModelMixin, AccountLinkedModel, Q
         verbose_name=_('Organization Unit')
     )
     
-    
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=['account', 'email'],
         index_fields=['first_name', 'last_name']

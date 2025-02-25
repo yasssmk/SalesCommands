@@ -9,6 +9,8 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.serializers import  ContactDetailsSerializer
 from core.exceptions import StandardizedValidationError
+from apps.sales_insight.models.qualification_model import QualificationChange
+from apps.sales_insight.serializers.qualification_serializers import QualificationFieldsSerializer
 
 
 class AssignedTeamSerializer(serializers.ModelSerializer):
@@ -25,7 +27,7 @@ class AccountManagerSerializer(serializers.ModelSerializer):
         fields = ['id', 'email', 'first_name', 'last_name', 'role_name', 'team']
         read_only_fields = fields
 
-class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class AccountSerializer(ContactDetailsSerializer, QualificationFieldsSerializer, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     # Field for write operations
 
     company_name = serializers.CharField(
@@ -66,11 +68,6 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
         allow_null=True
     )
 
-    historical_data = serializers.JSONField(
-        required=False,
-        allow_null=True
-    )
-
     type = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -83,7 +80,9 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
         allow_null=True
     )
     
+
     # Fields for read operations
+    historical_data = serializers.JSONField(required=False, allow_null=True, read_only=True)
     parent_company = serializers.SerializerMethodField(read_only=True)
     direct_child_companies = serializers.SerializerMethodField(read_only=True)
     account_owner = AccountManagerSerializer(read_only=True)
@@ -98,9 +97,14 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             'company_size', 'annual_revenue', 'classification',
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
-            'team_owner', 'team_owner_id', 'client_id', 'historical_data'
+            'team_owner', 'team_owner_id', 'client_id', 'historical_data',
+            'objectives', 'compelling_events', 'motivations', 'key_kpis',
+            'criteria', 'pain_points', 'implications', 'current_tech_stack',
+            'partners', 'buying_process', 'projects', 'budget', 
+            'new_budget_start_date', 'has_qualification_data',
+            'pending_changes_count'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'client_id']
+        read_only_fields = ['created_at', 'updated_at', 'client_id', 'historical_data']
     
     def get_parent_company(self, obj):
         if obj.parent_company:
@@ -130,7 +134,7 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
         if value not in valid_types:
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Type"))
         return value
-        return value
+
 
     def validate_classification(self, value):
         """Validate classification field"""
@@ -198,7 +202,7 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             if {'account_owner_id', 'team_owner_id'}.intersection(data.keys()):
                 self._validate_account_owner_and_team(data, client_id)
 
-            return data
+            return super().validate(data)
 
         except serializers.ValidationError as e:
             raise StandardizedValidationError(e.detail)

@@ -3,10 +3,8 @@ from django.utils.translation import gettext_lazy as _
 from apps.products.models import Pricing, Product
 from apps.accounts_app.accounts.models import Account
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel
-from apps.sales_insight.models import SalesInsight
 from core.client_scope import ClientScopeManager
 from decimal import Decimal
-
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _

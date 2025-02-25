@@ -440,7 +440,7 @@ def strip_backticks_and_code_fences(llm_text: str) -> str:
     clean = clean.replace("```json", "").replace("```", "")
     return clean.strip()
 
-from ai_resquests import call_llm
+from .ai_resquests import call_llm
 
 def get_full_insights(transcript):
     # 1) Make the initial prompt and parse result for Account + Insights

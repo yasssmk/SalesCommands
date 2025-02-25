@@ -4,11 +4,10 @@ from django.core.exceptions import ValidationError
 from phonenumber_field.modelfields import PhoneNumberField
 from core.models import ContactDetailsMixin
 from apps.core_apps.models import BaseModelApp
-from apps.sales_insight.models import SalesInsight
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User, Team, Organization
-from sales_insight.models import QualificationModel
+from apps.sales_insight.models.qualification_model import QualificationModel
 from core.error_messages import AccountErrorMessages
 from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
 

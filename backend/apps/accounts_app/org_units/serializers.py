@@ -6,6 +6,14 @@ from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from apps.core_apps.serializers import AccountLinkedSerializerMixin
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.models import StandardDepartment
+from apps.sales_insight.serializers.qualification_serializers import QualificationFieldsSerializer
+
+class StandardDepartmentSerializer(serializers.ModelSerializer):
+    """Serializer for the standard department"""
+    class Meta:
+        model = StandardDepartment
+        fields = ['id', 'name']
+        read_only_fields = fields
 
 class OrganizationUnitSummarySerializer(serializers.ModelSerializer):
     """Serializer for nested organization unit representations"""
@@ -14,7 +22,8 @@ class OrganizationUnitSummarySerializer(serializers.ModelSerializer):
         fields = ['id', 'organization_name', 'unit_type', 'estimated_employee_count']
         read_only_fields = fields
 
-class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin, 
+class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
+                                        QualificationFieldsSerializer, 
                                       ClientScopeManager.SerializerMixin, 
                                       serializers.ModelSerializer):
     # Write-only fields
@@ -42,10 +51,6 @@ class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Standard department')
         })
     
-    standard_department = serializers.CharField(
-        source='standard_department.name',
-        read_only=True
-    )
 
     parent_unit_id = serializers.IntegerField(
         source='parent_organization_unit_id',
@@ -55,8 +60,13 @@ class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
     )
 
     # Read-only fields
+    standard_department = StandardDepartmentSerializer(read_only=True)
     parent_organization_unit = OrganizationUnitSummarySerializer(read_only=True)
     child_organization_units = OrganizationUnitSummarySerializer(many=True, read_only=True)
+    
+    # Historical data is read-only
+    historical_data = serializers.JSONField(required=False, allow_null=True, read_only=True)
+    
 
     class Meta:
         model = AccountOrganizationUnit
@@ -66,9 +76,15 @@ class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
             'child_organization_units', 'estimated_employee_count',
             'metadata', 'org_insights', 'account', 'created_at', 
             'updated_at', 'client_id', 'standard_department',
-            'standard_department_id'
+            'standard_department_id',
+            # Qualification fields
+            'objectives', 'compelling_events', 'motivations', 'key_kpis',
+            'criteria', 'pain_points', 'implications', 'current_tech_stack',
+            'partners', 'buying_process', 'projects', 'budget', 
+            'new_budget_start_date', 'historical_data', 'has_qualification_data',
+            'pending_changes_count'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'client_id']
+        read_only_fields = ['created_at', 'updated_at', 'client_id', 'historical_data']
 
     def validate(self, data):
         """Complete validation of AccountOrganizationUnit data."""
@@ -222,3 +238,21 @@ class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
                     detail="Parent organization unit not found"
                 )
             )
+    
+    def get_parent_organization_unit(self, obj):
+        """Return parent organization unit information"""
+        if obj.parent_organization_unit:
+            return {
+                'id': obj.parent_organization_unit.id,
+                'organization_name': obj.parent_organization_unit.organization_name,
+                'unit_type': obj.parent_organization_unit.unit_type
+            }
+        return None
+    
+    def get_child_organization_units(self, obj):
+        """Return child organization units"""
+        return [{
+            'id': child.id,
+            'organization_name': child.organization_name,
+            'unit_type': child.unit_type
+        } for child in obj.child_organization_units.all()]
