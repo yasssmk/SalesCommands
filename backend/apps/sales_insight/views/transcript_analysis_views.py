@@ -5,7 +5,7 @@ from openai import OpenAIError, AuthenticationError, APIError
 import openai
 from core.exceptions import StandardizedValidationError, StandardizedAuthenticationFailed
 from core.error_messages import CoreErrorMessages
-from .prompts import get_full_insights
+from .services.qualification_prompts_service import get_full_insights
 from .serializers import TranscriptAnalysisSerializer
 from core.apps_shared_methods import BaseAPIView
 

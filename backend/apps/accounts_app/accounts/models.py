@@ -8,7 +8,8 @@ from apps.sales_insight.models import SalesInsight
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User, Team, Organization
-from core.error_messages import CoreErrorMessages, AccountErrorMessages, ValidationErrorMessages
+from sales_insight.models import QualificationModel
+from core.error_messages import AccountErrorMessages
 from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
 
 
@@ -27,7 +28,7 @@ class AccountClassification(models.TextChoices):
     STARTUP = 'STARTUP', _('Startup')
     NONPROFIT = 'NONPROFIT', _('Non-Profit')
 
-class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
+class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, QualificationModel):
 
     company_name = models.CharField(
         max_length=255, 
@@ -48,11 +49,6 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
     account_owner = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_('Account Owner'))
     team_owner = models.ForeignKey(Team, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_('Team Owner'))
 
-    # Sales Insights
-    account_insights = models.OneToOneField(SalesInsight, on_delete=models.SET_NULL, blank=True, null=True, related_name='linked_account', verbose_name=_('Account Insights'))
-
-
-    historical_data = models.JSONField(blank=True, null=True, verbose_name=_('Historical Data'))
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=['company_name', 'city', 'country'],

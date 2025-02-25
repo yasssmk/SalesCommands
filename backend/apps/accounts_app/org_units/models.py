@@ -3,11 +3,12 @@ from django.conf import settings
 from apps.core_apps.models import BaseModelApp,AccountLinkedModel
 from apps.sales_insight.models import SalesInsight
 from core.client_scope import ClientScopeManager
+from sales_insight.models import QualificationModel
 from django.utils.translation import gettext_lazy as _
 from apps.core_apps.models import StandardDepartment
 
 
-class AccountOrganizationUnit(BaseModelApp, ClientScopeManager.ModelMixin, AccountLinkedModel):
+class AccountOrganizationUnit(BaseModelApp, ClientScopeManager.ModelMixin, AccountLinkedModel, QualificationModel):
     class UnitType(models.TextChoices):
         DEPARTMENT = 'DEPARTMENT', _('Department')
         DIVISION = 'DIVISION', _('Division')
