@@ -5,7 +5,7 @@ from django.db.models import Q, F, Prefetch
 from apps.sales_insight.models import QualificationChange
 from apps.accounts_app.accounts.models import Account
 from apps.accounts_app.org_units.models import AccountOrganizationUnit
-from apps.contacts.models import Contact
+from apps.accounts_app.contacts.models import Contact
 from core.exceptions import StandardizedValidationError
 
 class QualificationService:
