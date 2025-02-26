@@ -74,21 +74,6 @@ class RefreshTokenView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
 
-# class UpdatePasswordView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request):
-#         try:
-#             response = Response(status=status.HTTP_200_OK)
-#             result = auth_service.update_password(request, response)
-#             response.data = result
-#             return response
-            
-#         except Exception as e:
-#             return Response(
-#                 {"error": "An unexpected error occurred"}, 
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
 
 from end_users.models import ClientAccount, UserRole
 from end_users.serializers import ClientAccountSerializer, UserSerializer
@@ -140,24 +125,6 @@ class CreateClientView(APIView):
                     {"error": "Admin role not found for the new client."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-
-            # Call RegisterUserView directly to create the admin user
-            # factory = APIRequestFactory()
-            # admin_request = factory.post(
-            #     '/client/register/',
-            #     data=admin_data,
-            #     format='json',
-            #     HTTP_AUTHORIZATION=request.headers.get('Authorization'),
-            # )
-            # register_user_view = RegisterUserView.as_view()
-
-            # response = register_user_view(admin_request)
-            # if response.status_code != 201:
-            #     client.delete()  # Rollback the client creation if admin creation fails
-            #     return Response(
-            #         {"error": "Failed to create admin user.", "details": response.data},
-            #         status=response.status_code,
-            #     )
 
             user_serializer = UserSerializer(data=admin_data)
             if not user_serializer.is_valid():
