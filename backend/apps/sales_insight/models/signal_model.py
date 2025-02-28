@@ -1,105 +1,196 @@
 from django.db import models
 from django.utils import timezone
-from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
+from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel
-from apps.accounts_app.contacts.models import Contact
-from apps.accounts_app.account_product_detail.models import AccountProductDetail
-
-from apps.accounts_app.org_units.models import AccountOrganizationUnit
 
 class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     """
-    Signal model that tracks changes in key entities and attributes.
+    Signal model that tracks valuable sales insights from AI analysis 
+    and other sources to support sales prioritization and action planning.
     """
 
-    class EntityType(models.TextChoices):
-        ACCOUNT = "account", "Account"
-        ORG_UNIT = "org_unit", "Organization Unit"
-        CONTACT = "contact", "Contact"
-        APD = "account_product_detail", "Account-Product Detail"
-        # Add more as needed
-
-    class SignalStatus(models.TextChoices):
-        OPEN = "open", "Open"
-        RESOLVED = "resolved", "Resolved"
-        DORMANT = "dormant", "Dormant"
-
+    class Category(models.TextChoices):
+        PROFILE = 'PROFILE', _('Profile Data')
+        GOALS = 'GOALS', _('Business/Unit Goals')
+        PROCESS = 'PROCESS', _('Process')
+        QUALIFICATION = 'QUALIFICATION', _('Qualification')
+        PROJECT = 'PROJECT', _('Project')
+    
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        APPROVED = 'APPROVED', _('Approved')
+        REJECTED = 'REJECTED', _('Rejected')
+        APPLIED = 'APPLIED', _('Applied')
+        DORMANT = 'DORMANT', _('Dormant')
+    
     class Confidence(models.TextChoices):
-        HIGH = "HIGH", "High"
-        MEDIUM = "MEDIUM", "Medium"
-        LOW = "LOW", "Low"
-
-    entity_type = models.CharField(
-        max_length=50, 
-        choices=EntityType.choices, 
-        verbose_name="Entity Type"
-    )
-
-    field_name = models.CharField(max_length=100, verbose_name="Field Name")
-    value = models.JSONField(blank=True, null=True, verbose_name="Signal Value")
-
-    signal_type = models.CharField(max_length=50, default="CUMULATIVE")  # or use choices
-    confidence = models.CharField(
-        max_length=10, 
-        choices=Confidence.choices, 
-        default=Confidence.MEDIUM
-    )
-
-    status = models.CharField(
+        HIGH = 'HIGH', _('High')
+        MEDIUM = 'MEDIUM', _('Medium')
+        LOW = 'LOW', _('Low')
+    
+    class Urgency(models.TextChoices):
+        CRITICAL = 'CRITICAL', _('Critical')
+        HIGH = 'HIGH', _('High')
+        MEDIUM = 'MEDIUM', _('Medium')
+        LOW = 'LOW', _('Low')
+    
+    class EntityType(models.TextChoices):
+        ACCOUNT = 'ACCOUNT', _('Account')
+        ORG_UNIT = 'ORG_UNIT', _('Organization Unit')
+        CONTACT = 'CONTACT', _('Contact')
+        ACCOUNT_PRODUCT = 'ACCOUNT_PRODUCT', _('Account Product Detail')
+    
+    # Signal classification
+    category = models.CharField(
         max_length=20, 
-        choices=SignalStatus.choices, 
-        default=SignalStatus.OPEN
+        choices=Category.choices,
+        verbose_name=_('Signal Category')
     )
-
-    source = models.CharField(max_length=50, blank=True, null=True)
-    timestamp = models.DateTimeField(default=timezone.now)
-    revisit_date = models.DateTimeField(blank=True, null=True)
-    resolved_date = models.DateTimeField(blank=True, null=True)
-
-    # ForeignKey fields dynamically assigned based on entity type
+    
+    # Field & Value
+    entity_type = models.CharField(
+        max_length=20, 
+        choices=EntityType.choices,
+        verbose_name=_('Entity Type')
+    )
+    
+    field_name = models.CharField(
+        max_length=100,
+        verbose_name=_('Field Name')
+    )
+    
+    value = models.JSONField(
+        verbose_name=_('Signal Value')
+    )
+    
+    # Prioritization fields
+    confidence = models.CharField(
+        max_length=10,
+        choices=Confidence.choices,
+        default=Confidence.MEDIUM,
+        verbose_name=_('Confidence Level')
+    )
+    
+    potential_value = models.IntegerField(
+        default=0,
+        verbose_name=_('Revenue Potential'),
+        help_text=_('Estimated revenue impact (0-100)')
+    )
+    
+    urgency = models.CharField(
+        max_length=10,
+        choices=Urgency.choices,
+        default=Urgency.MEDIUM,
+        verbose_name=_('Urgency Level')
+    )
+    
+    # Product alignment
+    product_alignment = models.ForeignKey(
+        'products.Product',
+        related_name='aligned_signals',
+        blank=True,
+        verbose_name=_('Aligned Products')
+    )
+    
+    # Status and lifecycle
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name=_('Signal Status')
+    )
+    
+    # Dates and timestamps
+    source = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name=_('Data Source')
+    )
+    
+    revisit_date = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name=_('Revisit Date')
+    )
+    
+    applied_date = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name=_('Applied Date')
+    )
+    
+    # Entity references (beyond account)
     org_unit = models.ForeignKey(
-        AccountOrganizationUnit,
+        'accounts_app.AccountOrganizationUnit',
         on_delete=models.CASCADE,
         related_name='signals',
-        null=True, blank=True,
-        verbose_name=_("Linked Org Unit")
+        null=True,
+        blank=True,
+        verbose_name=_('Organization Unit')
     )
-
+    
     contact = models.ForeignKey(
-        Contact,
+        'accounts_app.Contact',
         on_delete=models.CASCADE,
         related_name='signals',
-        null=True, blank=True,
-        verbose_name=_("Linked Contact")
+        null=True,
+        blank=True,
+        verbose_name=_('Contact')
     )
-
+    
+    # Changed back to ForeignKey (one signal per APD, instead of a many-to-many)
     account_product_detail = models.ForeignKey(
-        AccountProductDetail,
+        'accounts_app.AccountProductDetail',
         on_delete=models.CASCADE,
         related_name='signals',
-        null=True, blank=True,
-        verbose_name=_("Linked Account-Product Detail")
+        null=True,
+        blank=True,
+        verbose_name=_('Account Product Detail')
+    )
+    
+    # Approval tracking
+    approved_by = models.ForeignKey(
+        'end_users.User',
+        on_delete=models.SET_NULL,
+        related_name='approved_signals',
+        null=True,
+        blank=True,
+        verbose_name=_('Approved By')
+    )
+    
+    approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_('Approved At')
+    )
+    
+    # Parent signal for clustering related signals
+    parent_signal = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        related_name='child_signals',
+        null=True,
+        blank=True,
+        verbose_name=_('Parent Signal')
     )
 
+    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
+        index_fields=['category', 'entity_type', 'status', 'urgency']
+    )):
+        db_table = 'signals'
+        verbose_name = _('Signal')
+        verbose_name_plural = _('Signals')
+        ordering = ['-urgency', '-potential_value', '-created_at']
+        indexes = [
+            models.Index(fields=['account']),
+            models.Index(fields=['org_unit']),
+            models.Index(fields=['contact']),
+            models.Index(fields=['account_product_detail']),
+            models.Index(fields=['revisit_date']),
+            models.Index(fields=['applied_date']),
+        ]
+    
     def __str__(self):
-        return f"{self.entity_type} - {self.field_name} [{self.signal_type}]"
-
-    def save(self, *args, **kwargs):
-        """
-        Enforce ForeignKey constraint dynamically based on entity_type.
-        Ensure only the correct ForeignKey field is populated.
-        """
-        entity_map = {
-            self.EntityType.ACCOUNT: self.account,  
-            self.EntityType.ORG_UNIT: self.org_unit,
-            self.EntityType.CONTACT: self.contact,
-            self.EntityType.APD: self.account_product_detail,
-        }
-
-        # Ensure only one ForeignKey is filled
-        for entity, value in entity_map.items():
-            if entity == self.entity_type and not value:
-                raise ValueError(f"Signal must be linked to a {entity}")
-
-        super().save(*args, **kwargs)
+        return f"{self.get_category_display()}: {self.field_name} [{self.get_status_display()}]"
