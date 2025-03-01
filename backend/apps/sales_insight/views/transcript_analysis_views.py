@@ -7,12 +7,14 @@ from core.exceptions import StandardizedValidationError, StandardizedAuthenticat
 from core.error_messages import CoreErrorMessages
 from ..services.qualification_prompts_service import get_full_insights
 from ..serializers.transript_serializer import TranscriptAnalysisSerializer
+from ..services.signal_parsing_service import SignalParsingService
+from ..serializers.signal_summary_serializer import SignalSummarySerializer
 from core.apps_shared_methods import BaseAPIView
 
 class TranscriptAnalysisView(BaseAPIView):
     """
     API view for analyzing transcripts using OpenAI.
-    Follows the client-scoped architecture and standardized error handling.
+    Creates signals from AI insights and returns them for user validation.
     """
     serializer_class = TranscriptAnalysisSerializer
     entity_name = 'transcript'
@@ -30,8 +32,8 @@ class TranscriptAnalysisView(BaseAPIView):
 
     def post(self, request, *args, **kwargs):
         """
-        Analyze transcript using OpenAI.
-        Handles both single and batch analysis requests.
+        Analyze transcript using OpenAI and create signals.
+        Returns created signals for user validation instead of raw insights.
         """
         try:
             # Validate incoming data
@@ -45,16 +47,65 @@ class TranscriptAnalysisView(BaseAPIView):
 
             # Get validated data
             transcript = serializer.validated_data['transcript']
+            account = serializer.validated_data['account']
+            org_unit = serializer.validated_data.get('org_unit')
             
-            # Process through OpenAI
-
+            # Process through OpenAI to get structured insights
             insights = get_full_insights(transcript)
-   
-            
             if not insights:
                 raise StandardizedValidationError(CoreErrorMessages.PROCESSING_FAILED)
-
-            return Response(insights, status=status.HTTP_200_OK)
+                
+            # Parse insights into signals
+            signals = SignalParsingService.parse_insights(
+                insights=insights,
+                account=account,
+                org_unit=org_unit,
+                source='transcript_analysis',
+                user=request.user
+            )
+            
+            # Return signals for user validation
+            signal_serializer = SignalSummarySerializer(
+                signals, 
+                many=True,
+                context={'request': request, 'client_id': self.get_client_id()}
+            )
+            
+            # Group signals by category for better UX
+            signals_by_category = {}
+            for signal in signals:
+                category = signal.get_category_display()
+                if category not in signals_by_category:
+                    signals_by_category[category] = []
+                signals_by_category[category].append(
+                    SignalSummarySerializer(
+                        signal, 
+                        context={'request': request, 'client_id': self.get_client_id()}
+                    ).data
+                )
+            
+            # Group signals by urgency for prioritization
+            signals_by_urgency = {}
+            for signal in signals:
+                urgency = signal.get_urgency_display()
+                if urgency not in signals_by_urgency:
+                    signals_by_urgency[urgency] = []
+                signals_by_urgency[urgency].append(
+                    SignalSummarySerializer(
+                        signal, 
+                        context={'request': request, 'client_id': self.get_client_id()}
+                    ).data
+                )
+            
+            return Response({
+                'success': True,
+                'signals_count': len(signals),
+                'signals': signal_serializer.data,
+                'signals_by_category': signals_by_category,
+                'signals_by_urgency': signals_by_urgency,
+                # Include raw insights for debugging during development
+                'raw_insights': insights if settings.DEBUG else None
+            }, status=status.HTTP_200_OK)
 
         except APIError as e:
             raise StandardizedAuthenticationFailed(f"{CoreErrorMessages.SERVICE_AUTH_FAILED} :{str(e)}" )

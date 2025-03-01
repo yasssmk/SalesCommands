@@ -1,3 +1,4 @@
+# apps/sales_insight/models/signal_model.py
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -85,10 +86,12 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Urgency Level')
     )
     
-    # Product alignment
+    # Product alignment - using string reference instead of direct import
     product_alignment = models.ForeignKey(
         'products.Product',
         related_name='aligned_signals',
+        on_delete=models.CASCADE,
+        null=True,
         blank=True,
         verbose_name=_('Aligned Products')
     )
@@ -121,9 +124,9 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Applied Date')
     )
     
-    # Entity references (beyond account)
+    # Entity references - corrected module paths
     org_unit = models.ForeignKey(
-        'accounts_app.AccountOrganizationUnit',
+        'org_units.AccountOrganizationUnit',
         on_delete=models.CASCADE,
         related_name='signals',
         null=True,
@@ -132,7 +135,7 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     )
     
     contact = models.ForeignKey(
-        'accounts_app.Contact',
+        'contacts.Contact',
         on_delete=models.CASCADE,
         related_name='signals',
         null=True,
@@ -140,9 +143,8 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Contact')
     )
     
-    # Changed back to ForeignKey (one signal per APD, instead of a many-to-many)
     account_product_detail = models.ForeignKey(
-        'accounts_app.AccountProductDetail',
+        'account_product_detail.AccountProductDetail',
         on_delete=models.CASCADE,
         related_name='signals',
         null=True,

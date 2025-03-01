@@ -5,6 +5,7 @@ from django.conf import settings
 from phonenumber_field.modelfields import PhoneNumberField
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel
 from apps.sales_insight.models import QualificationModel
+from apps.accounts_app.org_units.models import AccountOrganizationUnit
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 
@@ -20,7 +21,7 @@ class Contact(BaseModelApp, ClientScopeManager.ModelMixin, AccountLinkedModel, Q
     
     # Relationships
     organization_unit = models.ForeignKey(
-        'accounts.AccountOrganizationUnit',
+        AccountOrganizationUnit,
         on_delete=models.SET_NULL,
         related_name='contacts',
         blank=True,

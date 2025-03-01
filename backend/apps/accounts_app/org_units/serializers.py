@@ -74,7 +74,7 @@ class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
             'id', 'organization_name', 'unit_type', 
             'parent_organization_unit', 'parent_unit_id',
             'child_organization_units', 'estimated_employee_count',
-            'metadata', 'org_insights', 'account', 'created_at', 
+            'metadata', 'account', 'created_at', 
             'updated_at', 'client_id', 'standard_department',
             'standard_department_id',
             # Qualification fields

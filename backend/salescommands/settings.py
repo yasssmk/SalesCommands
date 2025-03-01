@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'apps.accounts_app.accounts',
     'apps.accounts_app.org_units',
     'apps.accounts_app.account_product_detail',
+    'apps.accounts_app.contacts',
     'apps.products',
     'apps.sales_insight',
     'end_users',
