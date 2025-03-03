@@ -121,6 +121,30 @@ class SignalView(BaseAPIView):
             
         return self.filter_queryset_by_client(queryset)
     
+    def post(self, request, *args, **kwargs):
+        """Handle POST requests for approving, rejecting, or applying signals"""
+        if 'approve' in request.path:
+            return self.approve(request, *args, **kwargs)
+        elif 'reject' in request.path:
+            return self.reject(request, *args, **kwargs)
+        elif 'apply' in request.path:
+            return self.apply(request, *args, **kwargs)
+        elif 'bulk-action' in request.path:
+            return self.bulk_action(request, *args, **kwargs)
+        else:
+            # Standard POST behavior for creating signals
+            return super().post(request, *args, **kwargs)
+
+    def get(self, request, *args, **kwargs):
+        """Handle GET requests for signal list, detail, by-entity, and summary"""
+        if 'by-entity' in request.path:
+            return self.by_entity(request, *args, **kwargs)
+        elif 'summary' in request.path:
+            return self.summary(request, *args, **kwargs)
+        else:
+            # Standard GET behavior for listing or retrieving signals
+            return super().get(request, *args, **kwargs)
+    
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
         """Approve a signal"""
