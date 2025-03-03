@@ -20,7 +20,6 @@ class AccountOrganizationUnitAPIView(BaseAPIView):
     queryset = AccountOrganizationUnit.objects.select_related(
         'account',
         'parent_organization_unit',
-        'org_insights'
     ).prefetch_related('child_organization_units')
     
     serializer_class = AccountOrganizationUnitSerializer
