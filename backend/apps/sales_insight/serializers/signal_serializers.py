@@ -9,7 +9,7 @@ from apps.accounts_app.org_units.models import AccountOrganizationUnit
 from apps.accounts_app.contacts.models import Contact
 from apps.accounts_app.account_product_detail.models import AccountProductDetail
 from apps.products.models import Product
-from models import Signal
+from ..models import Signal
 
 class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """

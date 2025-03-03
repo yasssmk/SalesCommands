@@ -5,7 +5,7 @@ from .qualification_serializers import (
     ProcessAIDataSerializer
 )
 from .transript_serializer import TranscriptAnalysisSerializer
-from signal_serializers import SignalBulkActionSerializer, SignalSerializer
+from .signal_serializers import SignalBulkActionSerializer, SignalSerializer
 
 __all__ = [
     'SalesInsightSerializer',

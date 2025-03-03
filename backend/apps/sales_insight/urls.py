@@ -9,14 +9,14 @@ urlpatterns = [
     path('signals/<int:pk>/', SignalView.as_view(), name='signal-detail'),
     
     # Signal Actions
-    path('signals/<int:pk>/approve/', SignalView.as_view({"post": "approve"}), name='signal-approve'),
-    path('signals/<int:pk>/reject/', SignalView.as_view({"post": "reject"}), name='signal-reject'),
-    path('signals/<int:pk>/apply/', SignalView.as_view({"post": "apply"}), name='signal-apply'),
+    path('signals/<int:pk>/approve/', SignalView.as_view(), name='signal-approve'),
+    path('signals/<int:pk>/reject/', SignalView.as_view(), name='signal-reject'),
+    path('signals/<int:pk>/apply/', SignalView.as_view(), name='signal-apply'),
     
     # Bulk Actions
-    path('signals/bulk-action/', SignalView.as_view({"post": "bulk_action"}), name='signal-bulk-action'),
+    path('signals/bulk-action/', SignalView.as_view(), name='signal-bulk-action'),
     
     # Specialized Views
-    path('signals/by-entity/', SignalView.as_view({"get": "by_entity"}), name='signals-by-entity'),
-    path('signals/summary/', SignalView.as_view({"get": "summary"}), name='signals-summary'),
+    path('signals/by-entity/', SignalView.as_view(), name='signals-by-entity'),
+    path('signals/summary/', SignalView.as_view(), name='signals-summary'),
 ]
