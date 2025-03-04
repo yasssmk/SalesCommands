@@ -178,6 +178,13 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Parent Signal')
     )
 
+    metadata = models.JSONField(
+        verbose_name=_('Metadata'),
+        help_text=_('Additional metadata for validations, history, and context'),
+        null=True,
+        blank=True
+)
+
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         index_fields=['category', 'entity_type', 'status', 'urgency']
     )):

@@ -44,6 +44,7 @@ class CoreErrorMessages:
     SERVICE_AUTH_FAILED = _("AI service authentication failed")
     SERVICE_ERROR = _("AI service error occurred")
     PROCESSING_FAILED = _("Failed to process transcript")
+    INVALID_OPERATION = _("{operation}")
 
 class AccountErrorMessages:
     """Account specific error messages"""

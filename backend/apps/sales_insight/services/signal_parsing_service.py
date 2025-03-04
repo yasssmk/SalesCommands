@@ -2,6 +2,7 @@
 
 from django.utils import timezone
 from ..models import Signal
+from apps.core_apps.models import StandardDepartment
 from apps.accounts_app.org_units.models import AccountOrganizationUnit
 from apps.accounts_app.contacts.models import Contact
 from apps.accounts_app.account_product_detail.models import AccountProductDetail
@@ -136,7 +137,61 @@ class SignalParsingService:
             signals.append(signal)
             
         return signals
-    
+    @classmethod
+    def _find_matching_org_unit(cls, account, org_name, client_id):
+        """
+        Find existing org unit or matching standard department.
+        Returns:
+        - exact_match: Exact org unit match if found
+        - similar_units: List of similar org units
+        - std_department: Matching standard department (for creation)
+        """
+        results = {
+            'exact_match': None,
+            'similar_units': [],
+            'std_department': None
+        }
+        
+        # Step 1: Try to find exact match by name
+        exact_match = AccountOrganizationUnit.objects.filter(
+            account_id=account.id,
+            organization_name__iexact=org_name,
+            client_id=client_id
+        ).first()
+        
+        if exact_match:
+            results['exact_match'] = exact_match
+            return results
+        
+        # Step 2: Try to match keywords to find a standard department
+        from apps.core_apps.models import StandardDepartment
+        std_dept = None
+        
+        dept_keywords = org_name.lower().split()
+        if dept_keywords:
+            for keyword in dept_keywords:
+                if len(keyword) >= 3:  # Only consider meaningful keywords
+                    possible_depts = StandardDepartment.objects.filter(
+                        name__icontains=keyword
+                    )
+                    if possible_depts.exists():
+                        std_dept = possible_depts.first()
+                        break
+        
+        # If we found a standard department, look for other org units with it
+        if std_dept:
+            results['std_department'] = std_dept
+            similar_units = AccountOrganizationUnit.objects.filter(
+                account_id=account.id,
+                standard_department=std_dept,
+                client_id=client_id
+            )
+            
+            if similar_units.exists():
+                results['similar_units'] = list(similar_units)
+        
+        return results
+
     @classmethod
     def _parse_account_insights(cls, account_insights, account, client_id, source, user):
         """Parse account-level insights"""
@@ -237,44 +292,18 @@ class SignalParsingService:
             if not org_name:
                 continue
                 
-            # Try to find or use provided org unit
-            target_org_unit = provided_org_unit
+            # Try to find or match org unit
+            org_unit_results = cls._find_matching_org_unit(account, org_name, client_id)
+            target_org_unit = org_unit_results['exact_match']
             
-            # If no specific org unit provided, try to find by name
-            if not target_org_unit:
-                try:
-                    # Find org unit by name (case-insensitive)
-                    target_org_unit = AccountOrganizationUnit.objects.filter(
-                        account_id=account.id,
-                        organization_name__iexact=org_name,
-                        client_id=client_id
-                    ).first()
-                    
-                    # Create org unit if it doesn't exist
-                    if not target_org_unit:
-                        # Find a standard department based on unit_type, or use default (1)
-                        from apps.core_apps.models import StandardDepartment
-                        standard_dept = StandardDepartment.objects.filter(
-                            name__icontains=unit_type
-                        ).first() or StandardDepartment.objects.get(id=1)
-                        
-                        # Create org unit
-                        target_org_unit = AccountOrganizationUnit.objects.create(
-                            account=account,
-                            organization_name=org_name,
-                            unit_type=cls._map_unit_type(unit_type),
-                            standard_department=standard_dept,
-                            client_id=client_id,
-                            created_by=user,
-                            updated_by=user
-                        )
-                except Exception as e:
-                    # Log error and continue
-                    print(f"Error creating org unit: {str(e)}")
-                    continue
-            
-            if not target_org_unit:
-                continue
+            # Create signals with metadata about org unit validation needs
+            org_unit_metadata = {
+                'needs_validation': True,
+                'proposed_name': org_name,
+                'proposed_unit_type': unit_type,
+                'matching_std_department_id': org_unit_results['std_department'].id if org_unit_results['std_department'] else None,
+                'similar_unit_ids': [unit.id for unit in org_unit_results['similar_units']]
+            }
                 
             # Process qualification fields
             qualification_fields = [
@@ -292,10 +321,10 @@ class SignalParsingService:
             
             for json_field, model_field, value_score, urgency in qualification_fields:
                 if json_field in org_insight and org_insight[json_field]:
-                    # Create qualification signal for org unit
+                    # Create signal with org unit validation metadata
                     signal = Signal.objects.create(
                         account=account,
-                        org_unit=target_org_unit,
+                        org_unit=target_org_unit,  # May be None
                         category=Signal.Category.QUALIFICATION,
                         entity_type=Signal.EntityType.ORG_UNIT,
                         field_name=model_field,
@@ -305,18 +334,19 @@ class SignalParsingService:
                         urgency=urgency,
                         status=Signal.Status.PENDING,
                         source=source,
+                        metadata=org_unit_metadata,
                         client_id=client_id,
                         created_by=user,
                         updated_by=user
                     )
                     signals.append(signal)
                     
-                    # For high-value signals, find product alignment and APD
-                    if value_score >= 60:
-                        products = cls._detect_and_set_product_alignment(signal, org_insight[json_field])
+            # For high-value signals, find product alignment and APD
+            # if value_score >= 60:
+            #     products = cls._detect_and_set_product_alignment(signal, org_insight[json_field])
                         
-                        # Link to APDs
-                        cls._link_to_account_product_details(signal, account, products, target_org_unit)
+            # # Link to APDs
+            # cls._link_to_account_product_details(signal, account, products, target_org_unit)
             
             # Process tech stack (special handling)
             if 'currentTechStack' in org_insight and org_insight['currentTechStack']:
