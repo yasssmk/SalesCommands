@@ -9,7 +9,6 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.serializers import  ContactDetailsSerializer
 from core.exceptions import StandardizedValidationError
-from apps.sales_insight.models.qualification_model import QualificationChange
 from apps.sales_insight.serializers.qualification_serializers import QualificationFieldsSerializer
 
 

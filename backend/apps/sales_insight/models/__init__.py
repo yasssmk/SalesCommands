@@ -1,4 +1,4 @@
-from .qualification_model import QualificationChange, QualificationModel
+from .qualification_model import QualificationModel
 from .signal_model import Signal
 
-__all__=['QualificationModel', 'QualificationChange', 'Signal']
+__all__=['QualificationModel','Signal']
