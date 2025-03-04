@@ -13,6 +13,7 @@ from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel
 from decimal import Decimal
+from django.utils import timezone
 
 class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     """
@@ -83,6 +84,13 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         help_text=_("Additional notes about product potential in this account")
     )
 
+    historical_data = models.JSONField(
+        blank=True,
+        null=True,
+        verbose_name=_("Historical Data"),
+        help_text=_("Stores changes in key fields over time")
+    )
+
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=['account', 'product'],
         index_fields=['revenue_type']
@@ -91,6 +99,24 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         verbose_name = _("Account Product Detail")
         verbose_name_plural = _("Account Product Details")
         ordering = ['-potential_revenue', 'product__product_name']
+
+    def track_field_change(self, field_name, old_value, new_value, user):
+        """
+        Tracks changes to fields and updates historical_data.
+        """
+        if not self.historical_data:
+            self.historical_data = {}
+
+        if field_name not in self.historical_data:
+            self.historical_data[field_name] = []
+
+        self.historical_data[field_name].append({
+            'old_value': old_value,
+            'new_value': new_value,
+            'changed_at': timezone.now().isoformat(),
+            'changed_by': str(user.id) if user else None,
+            'source': 'signal'
+        })
 
     def clean(self):
         """Validate business rules for account product details."""
@@ -156,7 +182,25 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         return total_amount
 
     def save(self, *args, **kwargs):
+        """
+        Override save method to track changes before saving.
+        Also ensures that `self.potential_revenue` is calculated before saving.
+        """
+        user = kwargs.pop('user', None)  # Extract user if provided in save()
+
+        if self.pk:  # Only track changes for existing records
+            old_instance = AccountProductDetail.objects.get(pk=self.pk)
+
+            for field in ['estimated_units', 'selected_pricing', 'potential_revenue', 'ai_relevance_score']:
+                old_value = getattr(old_instance, field, None)
+                new_value = getattr(self, field, None)
+
+                if old_value != new_value:
+                    self.track_field_change(field, old_value, new_value, user)
+
+        # ✅ Keep potential revenue calculation before saving
         self.potential_revenue = self.calculate_potential_revenue()
+
         super().save(*args, **kwargs)
 
     def __str__(self):

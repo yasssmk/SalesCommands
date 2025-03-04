@@ -41,6 +41,8 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
         required=False
     )
 
+    historical_data = serializers.JSONField(read_only=True)
+
     # Calculated fields
     potential_revenue_formatted = serializers.SerializerMethodField()
     revenue_label = serializers.SerializerMethodField()
@@ -63,6 +65,7 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
             'revenue_label',
             'ai_relevance_score',
             'notes',
+            'historical_data',
             'created_at',
             'updated_at'
         ]
@@ -214,18 +217,34 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
     def update(self, instance, validated_data):
         """
         1. Possibly auto-assign default pricing if user has removed pricing or changed product.
-        2. Update instance.
-        3. Handle M2M target org units.
+        2. Track changes before updating.
+        3. Update instance.
+        4. Handle M2M target org units.
         """
         target_org_units = validated_data.pop('target_org_units', None)
-        print(f"CA PAAASSE TA RACE: {target_org_units}")
+
+        # Retrieve user from request context
+        user = self.context['request'].user if 'request' in self.context else None
+
+        # Track changes for specific fields before updating instance
+        for field in ['estimated_units', 'selected_pricing', 'potential_revenue', 'ai_relevance_score']:
+            if field in validated_data:
+                old_value = getattr(instance, field)
+                new_value = validated_data[field]
+                if old_value != new_value:
+                    instance.track_field_change(field, old_value, new_value, user)
+
         # Attempt to assign default pricing if none given
         self._assign_default_pricing_if_needed(instance=instance, validated_data=validated_data)
         self._auto_assign_target_org_units_if_needed(instance=instance, validated_data=validated_data)
-        
+
+        # Update instance
         instance = super().update(instance, validated_data)
+
+        # Update target org units if provided
         if target_org_units is not None:
             instance.target_org_units.set(target_org_units)
+
         return instance
 
 

@@ -89,197 +89,176 @@ class SignalApplicationService:
                 current_value = getattr(account, field_name)
                 setattr(account, field_name, value)
                 
-                # Save with the user for audit trail
-                if user:
-                    account.save(user=user)
-                else:
-                    account.save()
-                
-                # Record history if available
-                if hasattr(account, 'historical_data') and isinstance(account.historical_data, dict):
-                    if field_name not in account.historical_data:
-                        account.historical_data[field_name] = []
-                    
-                    account.historical_data[field_name].append({
-                        'old_value': current_value,
-                        'new_value': value,
-                        'changed_at': timezone.now().isoformat(),
-                        'changed_by': str(user.id) if user else None,
-                        'source': 'signal',
-                        'signal_id': str(signal.id)
-                    })
-                    
-                    # Save historical data
-                    account.save(update_fields=['historical_data'])
-                
+                account.save(user=user)
+
+                # Initialize historical data tracking
+                if not account.historical_data:
+                    account.historical_data = {}
+
+                if field_name not in account.historical_data:
+                    account.historical_data[field_name] = []
+
+                account.historical_data[field_name].append({
+                    'old_value': current_value,
+                    'new_value': value,
+                    'changed_at': timezone.now().isoformat(),
+                    'changed_by': str(user.id) if user else None,
+                    'source': 'signal',
+                    'signal_id': str(signal.id)
+                })
+
+                # Save historical changes
+                account.save(update_fields=['historical_data'])
                 return True
                 
         return False
     
     @classmethod
     def _apply_to_org_unit(cls, signal, user):
-        """Apply signal to organization unit"""
+        """Apply signal to organization unit, tracking both qualification and specific field changes."""
         org_unit = signal.org_unit
         if not org_unit:
             return False
             
         field_name = signal.field_name
         value = signal.value
-        
-        # Qualification fields vs. regular fields
-        if field_name in ['objectives', 'compelling_events', 'motivations', 
-                        'key_kpis', 'criteria', 'pain_points', 'implications',
-                        'current_tech_stack', 'partners', 'buying_process', 
-                        'projects', 'budget', 'new_budget_start_date']:
-            # Use QualificationModel's update method to track history
+
+        if field_name in [
+            'objectives', 'compelling_events', 'motivations', 'key_kpis',
+            'criteria', 'pain_points', 'implications', 'current_tech_stack',
+            'partners', 'buying_process', 'projects', 'budget', 'new_budget_start_date'
+        ]:
+            # ✅ Qualification fields: use `update_qualification_field()`
             if hasattr(org_unit, 'update_qualification_field'):
                 org_unit.update_qualification_field(field_name, value, user)
                 return True
-        else:
-            # Regular field update
-            if hasattr(org_unit, field_name):
-                # Simple fields
-                current_value = getattr(org_unit, field_name)
-                setattr(org_unit, field_name, value)
-                
-                # Save with the user for audit trail
-                if user:
-                    org_unit.save(user=user)
-                else:
-                    org_unit.save()
-                
-                # Record history if available
-                if hasattr(org_unit, 'historical_data') and isinstance(org_unit.historical_data, dict):
-                    if field_name not in org_unit.historical_data:
-                        org_unit.historical_data[field_name] = []
-                    
-                    org_unit.historical_data[field_name].append({
-                        'old_value': current_value,
-                        'new_value': value,
-                        'changed_at': timezone.now().isoformat(),
-                        'changed_by': str(user.id) if user else None,
-                        'source': 'signal',
-                        'signal_id': str(signal.id)
-                    })
-                    
-                    # Save historical data
-                    org_unit.save(update_fields=['historical_data'])
-                
-                return True
-                
+
+        elif field_name in ['unit_type']:  # Add any org-unit-specific fields that need tracking
+            # 🔥 Custom tracking for org-unit-specific fields
+            current_value = getattr(org_unit, field_name, None)
+            setattr(org_unit, field_name, value)
+
+            org_unit.save(user=user)
+
+            if not org_unit.historical_data:
+                org_unit.historical_data = {}
+
+            if field_name not in org_unit.historical_data:
+                org_unit.historical_data[field_name] = []
+
+            org_unit.historical_data[field_name].append({
+                'old_value': current_value,
+                'new_value': value,
+                'changed_at': timezone.now().isoformat(),
+                'changed_by': str(user.id) if user else None,
+                'source': 'signal',
+                'signal_id': str(signal.id)
+            })
+
+            org_unit.save(update_fields=['historical_data'])
+            return True
+
         return False
-    
+
     @classmethod
     def _apply_to_contact(cls, signal, user):
-        """Apply signal to contact"""
+        """Apply signal to contact, tracking both qualification and specific field changes."""
         contact = signal.contact
         if not contact:
             return False
             
         field_name = signal.field_name
         value = signal.value
-        
-        # Qualification fields vs. regular fields
-        if field_name in ['objectives', 'compelling_events', 'motivations', 
-                       'key_kpis', 'criteria', 'pain_points', 'implications',
-                       'current_tech_stack', 'partners', 'buying_process', 
-                       'projects', 'budget', 'new_budget_start_date']:
-            # Use QualificationModel's update method to track history
+
+        if field_name in [
+            'objectives', 'compelling_events', 'motivations', 'key_kpis',
+            'criteria', 'pain_points', 'implications', 'current_tech_stack',
+            'partners', 'buying_process', 'projects', 'budget', 'new_budget_start_date'
+        ]:
+            # ✅ Qualification fields: use `update_qualification_field()`
             if hasattr(contact, 'update_qualification_field'):
                 contact.update_qualification_field(field_name, value, user)
                 return True
-        else:
-            # Regular field update
-            if hasattr(contact, field_name):
-                # Simple fields
-                current_value = getattr(contact, field_name)
-                setattr(contact, field_name, value)
-                
-                # Save with the user for audit trail
-                if user:
-                    contact.save(user=user)
-                else:
-                    contact.save()
-                
-                # Record history if available
-                if hasattr(contact, 'historical_data') and isinstance(contact.historical_data, dict):
-                    if field_name not in contact.historical_data:
-                        contact.historical_data[field_name] = []
-                    
-                    contact.historical_data[field_name].append({
-                        'old_value': current_value,
-                        'new_value': value,
-                        'changed_at': timezone.now().isoformat(),
-                        'changed_by': str(user.id) if user else None,
-                        'source': 'signal',
-                        'signal_id': str(signal.id)
-                    })
-                    
-                    # Save historical data
-                    contact.save(update_fields=['historical_data'])
-                
-                return True
-                
+
+        elif field_name in ['job_title', 'influence_level']:  # Add any contact-specific fields that need tracking
+            # 🔥 Custom tracking for contact-specific fields
+            current_value = getattr(contact, field_name, None)
+            setattr(contact, field_name, value)
+
+            contact.save(user=user)
+
+            if not contact.historical_data:
+                contact.historical_data = {}
+
+            if field_name not in contact.historical_data:
+                contact.historical_data[field_name] = []
+
+            contact.historical_data[field_name].append({
+                'old_value': current_value,
+                'new_value': value,
+                'changed_at': timezone.now().isoformat(),
+                'changed_by': str(user.id) if user else None,
+                'source': 'signal',
+                'signal_id': str(signal.id)
+            })
+
+            contact.save(update_fields=['historical_data'])
+            return True
+
         return False
-    
+
     @classmethod
     def _apply_to_account_product(cls, signal, user):
-        """Apply signal to account product detail"""
+        """Apply signal to account product detail, tracking relevant field changes."""
         apd = signal.account_product_detail
         if not apd:
             return False
             
         field_name = signal.field_name
         value = signal.value
-        
-        # Handle special fields specific to AccountProductDetail
+
         if field_name == 'ai_relevance_score' and isinstance(value, (int, float)):
             apd.ai_relevance_score = value
-            
-            # Save with the user for audit trail
-            if user:
-                apd.save(user=user)
-            else:
-                apd.save()
+            apd.save(user=user)
             return True
-            
+
         elif field_name == 'notes':
-            # Append to existing notes if present
             existing_notes = apd.notes or ""
             new_notes = f"{existing_notes}\n\n{value}" if existing_notes else value
             apd.notes = new_notes
-            
-            # Save with the user for audit trail
-            if user:
-                apd.save(user=user)
-            else:
-                apd.save()
+            apd.save(user=user)
             return True
-            
+
         elif field_name == 'estimated_units' and isinstance(value, (int, str)):
-            # Convert to int if needed
-            units = int(value) if isinstance(value, str) else value
-            apd.estimated_units = units
-            
-            # Save with the user for audit trail
-            if user:
-                apd.save(user=user)
-            else:
-                apd.save()
+            apd.estimated_units = int(value) if isinstance(value, str) else value
+            apd.save(user=user)
             return True
-            
+
         elif hasattr(apd, field_name):
-            # Regular field update
+            # 🔥 Custom tracking for account product-specific fields
             current_value = getattr(apd, field_name)
             setattr(apd, field_name, value)
-            
-            # Save with the user for audit trail
-            if user:
-                apd.save(user=user)
-            else:
-                apd.save()
+
+            apd.save(user=user)
+
+            if not apd.historical_data:
+                apd.historical_data = {}
+
+            if field_name not in apd.historical_data:
+                apd.historical_data[field_name] = []
+
+            apd.historical_data[field_name].append({
+                'old_value': current_value,
+                'new_value': value,
+                'changed_at': timezone.now().isoformat(),
+                'changed_by': str(user.id) if user else None,
+                'source': 'signal',
+                'signal_id': str(signal.id)
+            })
+
+            apd.save(update_fields=['historical_data'])
             return True
-                
+
         return False
         
     @classmethod
