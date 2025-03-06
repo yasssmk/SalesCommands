@@ -145,6 +145,15 @@ class SignalLifecycleService:
                 if signal.id == target_signal.id:
                     continue
                     
+                # Skip signals that are already merged
+                if signal.status == Signal.Status.MERGED:
+                    results['failed_count'] += 1
+                    results['failed_ids'].append({
+                        'id': str(signal.id),
+                        'reason': 'Signal is already merged into another signal'
+                    })
+                    continue
+                    
                 # Validate signals are compatible for merging
                 if signal.category != target_signal.category or signal.field_name != target_signal.field_name:
                     results['failed_count'] += 1

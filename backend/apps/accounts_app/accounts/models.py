@@ -3,13 +3,14 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from phonenumber_field.modelfields import PhoneNumberField
 from core.models import ContactDetailsMixin
-from apps.core_apps.models import BaseModelApp
+from apps.core_apps.models import BaseModelApp, SignalAwareMixin
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User, Team, Organization
 from apps.sales_insight.models.qualification_model import QualificationModel
 from core.error_messages import AccountErrorMessages
 from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
+from django.utils import timezone
 
 
 # Personalization: Users could add new choices 
@@ -27,7 +28,7 @@ class AccountClassification(models.TextChoices):
     STARTUP = 'STARTUP', _('Startup')
     NONPROFIT = 'NONPROFIT', _('Non-Profit')
 
-class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, QualificationModel):
+class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, QualificationModel, SignalAwareMixin):
 
     company_name = models.CharField(
         max_length=255, 
@@ -105,3 +106,154 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
     @staticmethod
     def get_account_classifications():
         return [{'value': choice[0], 'label': choice[1]} for choice in AccountClassification.choices]
+    
+    def update_qualification_field(self, field_name, new_value, user, signal=None):
+        """
+        Enhanced update method for qualification fields that tracks signal information
+        
+        Args:
+            field_name (str): Field name to update
+            new_value: New value for the field
+            user (User): User making the update
+            signal (Signal, optional): Signal driving this update
+        """
+        # Get current value
+        current_value = getattr(self, field_name)
+        
+        # Update the field
+        setattr(self, field_name, new_value)
+        
+        # Initialize historical_data if it doesn't exist
+        if not self.historical_data:
+            self.historical_data = {}
+        
+        # Initialize field history if it doesn't exist
+        if field_name not in self.historical_data:
+            self.historical_data[field_name] = []
+        
+        # Create history entry
+        history_entry = {
+            'old_value': current_value,
+            'new_value': new_value,
+            'changed_at': timezone.now().isoformat(),
+            'changed_by': str(user.id) if user else None,
+        }
+        
+        # Add signal data if provided
+        if signal:
+            history_entry.update({
+                'source': 'signal',
+                'signal_id': str(signal.id),
+                'signal_category': signal.category,
+                'signal_confidence': signal.confidence,
+                'confirmation_count': signal.confirmation_count
+            })
+            
+            # Also track in signal_metadata
+            self.track_signal_update(signal, field_name, current_value, new_value)
+        
+        # Add to historical data
+        self.historical_data[field_name].append(history_entry)
+        
+        # Save the model
+        self.save(user=user)
+        
+        return True
+    
+    def get_qualification_data(self, include_signal_info=False):
+        """
+        Get all qualification data for this account with optional signal information
+        
+        Args:
+            include_signal_info (bool): Whether to include signal source information
+            
+        Returns:
+            dict: All qualification fields with optional signal metadata
+        """
+        qualification_fields = [
+            'objectives', 'compelling_events', 'motivations', 'key_kpis',
+            'criteria', 'pain_points', 'implications', 'current_tech_stack',
+            'partners', 'buying_process', 'projects', 'budget', 'new_budget_start_date'
+        ]
+        
+        result = {}
+        
+        for field in qualification_fields:
+            value = getattr(self, field)
+            result[field] = value
+            
+            if include_signal_info and value is not None:
+                # Add signal metadata if available
+                signals = self.get_related_signals(field_name=field, include_expired=True)
+                
+                # Only include if we have signals
+                if any(s.exists() for s in signals.values()):
+                    signal_info = {}
+                    
+                    for status, queryset in signals.items():
+                        if queryset.exists():
+                            signal_info[status] = [{
+                                'id': s.id,
+                                'category': s.category,
+                                'source': s.source,
+                                'created_at': s.created_at,
+                                'confirmation_count': s.confirmation_count,
+                                'confidence': s.confidence,
+                                'potential_value': s.potential_value
+                            } for s in queryset]
+                            
+                    result[f"{field}_signals"] = signal_info
+                    
+                # Add signal metadata from the model
+                metadata = self.get_field_signal_metadata(field)
+                if metadata:
+                    result[f"{field}_metadata"] = metadata
+                    
+        return result
+    
+    def get_profile_data(self, include_signal_info=False):
+        """
+        Get profile data for this account with optional signal information
+        
+        Args:
+            include_signal_info (bool): Whether to include signal source information
+            
+        Returns:
+            dict: Profile fields with optional signal metadata
+        """
+        profile_fields = [
+            'company_name', 'industry', 'type', 'classification',
+            'company_size', 'annual_revenue'
+        ]
+        
+        result = {}
+        
+        for field in profile_fields:
+            value = getattr(self, field)
+            result[field] = value
+            
+            if include_signal_info:
+                # Add signal information if available
+                signals = self.get_related_signals(
+                    field_name=field,
+                    category='PROFILE',
+                    include_expired=True
+                )
+                
+                # Only include if we have signals
+                if any(s.exists() for s in signals.values()):
+                    signal_info = {}
+                    
+                    for status, queryset in signals.items():
+                        if queryset.exists():
+                            signal_info[status] = [{
+                                'id': s.id,
+                                'category': s.category,
+                                'source': s.source,
+                                'created_at': s.created_at,
+                                'confirmation_count': s.confirmation_count
+                            } for s in queryset]
+                            
+                    result[f"{field}_signals"] = signal_info
+                    
+        return result

@@ -10,7 +10,7 @@ from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.serializers import  ContactDetailsSerializer
 from core.exceptions import StandardizedValidationError
 from apps.sales_insight.serializers.qualification_serializers import QualificationFieldsSerializer
-
+from apps.sales_insight.serializers import SignalSerializer
 
 class AssignedTeamSerializer(serializers.ModelSerializer):
     """Serializer for the assigned team summary"""
@@ -86,6 +86,14 @@ class AccountSerializer(ContactDetailsSerializer, QualificationFieldsSerializer,
     direct_child_companies = serializers.SerializerMethodField(read_only=True)
     account_owner = AccountManagerSerializer(read_only=True)
     team_owner = AssignedTeamSerializer(read_only=True)
+
+    # New fields for signal metadata
+    signal_metadata = serializers.JSONField(required=False, allow_null=True, read_only=True)
+    include_signal_info = serializers.BooleanField(write_only=True, required=False, default=False)
+    
+    # Add field to determine if we should include signal data in responses
+    qualification_with_signals = serializers.SerializerMethodField(read_only=True)
+    profile_with_signals = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Account
@@ -101,9 +109,10 @@ class AccountSerializer(ContactDetailsSerializer, QualificationFieldsSerializer,
             'criteria', 'pain_points', 'implications', 'current_tech_stack',
             'partners', 'buying_process', 'projects', 'budget', 
             'new_budget_start_date', 'has_qualification_data',
-            'pending_changes_count'
+            'pending_changes_count', 'signal_metadata', 'include_signal_info',
+            'qualification_with_signals', 'profile_with_signals'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'client_id', 'historical_data']
+        read_only_fields = ['created_at', 'updated_at', 'client_id', 'historical_data', 'signal_metadata', 'qualification_with_signals', 'profile_with_signals']
     
     def get_parent_company(self, obj):
         if obj.parent_company:
@@ -253,3 +262,36 @@ class AccountSerializer(ContactDetailsSerializer, QualificationFieldsSerializer,
                     raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
             except Team.DoesNotExist:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+    def get_qualification_with_signals(self, obj):
+        """Get qualification data with signals if requested"""
+        # Check if signal info was requested
+        include_signals = self.context.get('include_signal_info', False)
+        if not include_signals:
+            return None
+            
+        return obj.get_qualification_data(include_signal_info=True)
+    
+    def get_profile_with_signals(self, obj):
+        """Get profile data with signals if requested"""
+        # Check if signal info was requested
+        include_signals = self.context.get('include_signal_info', False)
+        if not include_signals:
+            return None
+            
+        return obj.get_profile_data(include_signal_info=True)
+    
+    def to_representation(self, instance):
+        """Customize output based on query parameters"""
+        # Get representation from parent class
+        representation = super().to_representation(instance)
+        
+        # Check whether to include signal data
+        include_signals = self.context.get('include_signal_info', False)
+        
+        # If not including signals, remove the related fields to keep response clean
+        if not include_signals:
+            representation.pop('qualification_with_signals', None)
+            representation.pop('profile_with_signals', None)
+        
+        return representation

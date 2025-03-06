@@ -53,6 +53,16 @@ class AccountAPIView(BaseAPIView):
             
         return queryset
 
+    def get_serializer_context(self):
+        """Add signal info flag to serializer context"""
+        context = super().get_serializer_context()
+        
+        # Check if signal info was requested via query param
+        include_signal_info = self.request.query_params.get('include_signal_info', 'false').lower() == 'true'
+        context['include_signal_info'] = include_signal_info
+        
+        return context
+
     def _validate_parent_company(self, parent_id, client_id):
         """Validate parent company exists and belongs to same client"""
         if parent_id:
@@ -131,6 +141,84 @@ class AccountAPIView(BaseAPIView):
                 "parents": self.serializer_class(hierarchy['parents'], many=True).data,
                 "children": self.serializer_class(hierarchy['children'], many=True).data,
             })
+            
+        except Exception as exc:
+            return self.handle_exception(exc)
+    
+    @action(detail=True, methods=['get'])
+    def signals(self, request, pk=None):
+        """Get all signals related to this account"""
+        try:
+            account = self.get_objects([pk]).first()
+            if not account:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+            # Get query params for filtering
+            field_name = request.query_params.get('field_name')
+            category = request.query_params.get('category')
+            include_expired = request.query_params.get('include_expired', 'false').lower() == 'true'
+            
+            # Get related signals
+            signals = account.get_related_signals(
+                field_name=field_name,
+                category=category,
+                include_expired=include_expired
+            )
+            
+            # Prepare response with categorized signals
+            result = {}
+            for status, queryset in signals.items():
+                if queryset.exists():
+                    from apps.sales_insight.serializers import SignalSerializer
+                    result[status] = SignalSerializer(queryset, many=True).data
+                else:
+                    result[status] = []
+            
+            return Response(result)
+            
+        except Exception as exc:
+            return self.handle_exception(exc)
+    
+    @action(detail=True, methods=['get'])
+    def field_signals(self, request, pk=None):
+        """Get signals related to a specific field"""
+        try:
+            account = self.get_objects([pk]).first()
+            if not account:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+            # Get field name from query params (required)
+            field_name = request.query_params.get('field_name')
+            if not field_name:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="field_name")
+                )
+            
+            # Get signals for this field
+            signals = account.get_related_signals(
+                field_name=field_name,
+                include_expired=True
+            )
+            
+            # Get field signal metadata if available
+            field_metadata = account.get_field_signal_metadata(field_name)
+            
+            # Prepare response
+            result = {
+                'field_name': field_name,
+                'current_value': getattr(account, field_name, None),
+                'metadata': field_metadata
+            }
+            
+            # Add signals by status
+            for status, queryset in signals.items():
+                if queryset.exists():
+                    from apps.sales_insight.serializers import SignalSerializer
+                    result[f'{status}_signals'] = SignalSerializer(queryset, many=True).data
+                else:
+                    result[f'{status}_signals'] = []
+            
+            return Response(result)
             
         except Exception as exc:
             return self.handle_exception(exc)
