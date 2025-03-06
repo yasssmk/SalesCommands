@@ -120,33 +120,31 @@ class AccountAPIView(BaseAPIView):
             except Exception as e:
                 raise StandardizedValidationError(str(e))
 
-    @action(detail=True, methods=['get'])
-    def hierarchy(self, request, pk=None):
-        """Get the full hierarchy for an account"""
-        try:
-            objects = self.get_objects()
-            if not objects or objects.count() != 1:
-                raise ValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-                
-            instance = objects[0]
-            hierarchy = instance.get_full_hierarchy()
+    def dispatch(self, request, *args, **kwargs):
+        """Custom dispatch to handle different endpoints"""
+        # Check if this is a signals or field-signals endpoint
+        path = request.path.split('/')
+        
+        # Path will contain segments like ['', 'api', 'accounts', '1', 'signals', '']
+        if len(path) > 4:
+            endpoint_type = path[4]  # Get the endpoint type
             
-            # Validate all related objects are within client scope
-            all_related = hierarchy['parents'] + hierarchy['children']
-            for related in all_related:
-                self.validate_client_id(related)
+            if endpoint_type == 'signals':
+                if request.method == 'GET':
+                    return self.get_signals(request, *args, **kwargs)
             
-            return Response({
-                "account": self.serializer_class(instance).data,
-                "parents": self.serializer_class(hierarchy['parents'], many=True).data,
-                "children": self.serializer_class(hierarchy['children'], many=True).data,
-            })
+            elif endpoint_type == 'field-signals':
+                if request.method == 'GET':
+                    return self.get_field_signals(request, *args, **kwargs)
             
-        except Exception as exc:
-            return self.handle_exception(exc)
+            elif endpoint_type == 'hierarchy':
+                if request.method == 'GET':
+                    return self.get_hierarchy(request, *args, **kwargs)
+        
+        # Default to standard dispatch
+        return super().dispatch(request, *args, **kwargs)
     
-    @action(detail=True, methods=['get'])
-    def signals(self, request, pk=None):
+    def get_signals(self, request, pk=None, *args, **kwargs):
         """Get all signals related to this account"""
         try:
             account = self.get_objects([pk]).first()
@@ -179,8 +177,7 @@ class AccountAPIView(BaseAPIView):
         except Exception as exc:
             return self.handle_exception(exc)
     
-    @action(detail=True, methods=['get'])
-    def field_signals(self, request, pk=None):
+    def get_field_signals(self, request, pk=None, *args, **kwargs):
         """Get signals related to a specific field"""
         try:
             account = self.get_objects([pk]).first()
@@ -219,6 +216,29 @@ class AccountAPIView(BaseAPIView):
                     result[f'{status}_signals'] = []
             
             return Response(result)
+            
+        except Exception as exc:
+            return self.handle_exception(exc)
+    
+    def get_hierarchy(self, request, pk=None, *args, **kwargs):
+        """Get the full hierarchy for an account"""
+        try:
+            account = self.get_objects([pk]).first()
+            if not account:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+                
+            hierarchy = account.get_full_hierarchy()
+            
+            # Validate all related objects are within client scope
+            all_related = hierarchy['parents'] + hierarchy['children']
+            for related in all_related:
+                self.validate_client_id(related)
+            
+            return Response({
+                "account": self.serializer_class(account).data,
+                "parents": self.serializer_class(hierarchy['parents'], many=True).data,
+                "children": self.serializer_class(hierarchy['children'], many=True).data,
+            })
             
         except Exception as exc:
             return self.handle_exception(exc)
