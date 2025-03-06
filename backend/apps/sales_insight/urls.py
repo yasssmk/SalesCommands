@@ -19,4 +19,6 @@ urlpatterns = [
     # Specialized Views
     path('signals/by-entity/', SignalView.as_view(), name='signals-by-entity'),
     path('signals/summary/', SignalView.as_view(), name='signals-summary'),
+
+    path('signals/resolve-org-unit/', SignalView.as_view(), name='signal-resolve-org-unit'),
 ]

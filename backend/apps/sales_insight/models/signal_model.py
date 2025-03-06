@@ -1,9 +1,9 @@
-# apps/sales_insight/models/signal_model.py
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel
+
 
 class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     """
@@ -23,18 +23,7 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         APPROVED = 'APPROVED', _('Approved')
         REJECTED = 'REJECTED', _('Rejected')
         APPLIED = 'APPLIED', _('Applied')
-        DORMANT = 'DORMANT', _('Dormant')
-    
-    class Confidence(models.TextChoices):
-        HIGH = 'HIGH', _('High')
-        MEDIUM = 'MEDIUM', _('Medium')
-        LOW = 'LOW', _('Low')
-    
-    class Urgency(models.TextChoices):
-        CRITICAL = 'CRITICAL', _('Critical')
-        HIGH = 'HIGH', _('High')
-        MEDIUM = 'MEDIUM', _('Medium')
-        LOW = 'LOW', _('Low')
+        MERGED = 'MERGED', _('Merged')
     
     class EntityType(models.TextChoices):
         ACCOUNT = 'ACCOUNT', _('Account')
@@ -65,43 +54,24 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Signal Value')
     )
     
-    # Prioritization fields
-    confidence = models.CharField(
-        max_length=10,
-        choices=Confidence.choices,
-        default=Confidence.MEDIUM,
-        verbose_name=_('Confidence Level')
-    )
-    
-    potential_value = models.IntegerField(
-        default=0,
-        verbose_name=_('Revenue Potential'),
-        help_text=_('Estimated revenue impact (0-100)')
-    )
-    
-    urgency = models.CharField(
-        max_length=10,
-        choices=Urgency.choices,
-        default=Urgency.MEDIUM,
-        verbose_name=_('Urgency Level')
-    )
-    
-    # Product alignment - using string reference instead of direct import
-    product_alignment = models.ForeignKey(
-        'products.Product',
-        related_name='aligned_signals',
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        verbose_name=_('Aligned Products')
-    )
-    
     # Status and lifecycle
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
         default=Status.PENDING,
         verbose_name=_('Signal Status')
+    )
+    
+    # New fields for lifecycle management
+    confirmation_count = models.PositiveIntegerField(default=0, verbose_name=_('Confirmation Count'))
+    last_confirmed_at = models.DateTimeField(auto_now_add=True, verbose_name=_('Last Confirmed At'))
+    merged_into = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        related_name='merged_from_signals',
+        null=True,
+        blank=True,
+        verbose_name=_('Merged Into Signal')
     )
     
     # Dates and timestamps
@@ -124,7 +94,17 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Applied Date')
     )
     
-    # Entity references - corrected module paths
+    # Product alignment
+    product_alignment = models.ForeignKey(
+        'products.Product',
+        related_name='aligned_signals',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        verbose_name=_('Aligned Products')
+    )
+    
+    # Entity references
     org_unit = models.ForeignKey(
         'org_units.AccountOrganizationUnit',
         on_delete=models.CASCADE,
@@ -183,23 +163,16 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         help_text=_('Additional metadata for validations, history, and context'),
         null=True,
         blank=True
-)
-
-    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
-        index_fields=['category', 'entity_type', 'status', 'urgency']
-    )):
-        db_table = 'signals'
-        verbose_name = _('Signal')
-        verbose_name_plural = _('Signals')
-        ordering = ['-urgency', '-potential_value', '-created_at']
-        indexes = [
-            models.Index(fields=['account']),
-            models.Index(fields=['org_unit']),
-            models.Index(fields=['contact']),
-            models.Index(fields=['account_product_detail']),
-            models.Index(fields=['revisit_date']),
-            models.Index(fields=['applied_date']),
-        ]
+    )
     
+    def get_effective_status(self):
+        """Calculate the effective status based on age and signal type"""
+        from ..services.signal_lifecycle_service import SignalLifecycleService
+        return SignalLifecycleService.get_effective_status(self)
+        
+    def is_effectively_expired(self):
+        """Check if the signal is effectively expired"""
+        return self.get_effective_status() == "EXPIRED"
+
     def __str__(self):
         return f"{self.get_category_display()}: {self.field_name} [{self.get_status_display()}]"
