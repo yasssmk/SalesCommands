@@ -120,6 +120,59 @@ class SignalLifecycleService:
             return target_signal
     
     @classmethod
+    def bulk_merge(cls, target_signal, signals, user=None):
+        """
+        Merge multiple signals into a target signal.
+        
+        Args:
+            target_signal: Signal to merge into
+            signals: List or QuerySet of signals to merge from
+            user: User performing the merge
+            
+        Returns:
+            dict: Summary of results with counts
+        """
+        results = {
+            'total': len(signals),
+            'merged_count': 0,
+            'failed_count': 0,
+            'failed_ids': []
+        }
+        
+        for signal in signals:
+            try:
+                # Skip the target signal if it's in the list
+                if signal.id == target_signal.id:
+                    continue
+                    
+                # Validate signals are compatible for merging
+                if signal.category != target_signal.category or signal.field_name != target_signal.field_name:
+                    results['failed_count'] += 1
+                    results['failed_ids'].append({
+                        'id': str(signal.id),
+                        'reason': 'Signal category or field_name does not match target signal'
+                    })
+                    continue
+                
+                # Perform the merge
+                cls.merge_signals(
+                    target_signal=target_signal,
+                    source_signal=signal,
+                    user=user
+                )
+                
+                results['merged_count'] += 1
+                
+            except Exception as e:
+                results['failed_count'] += 1
+                results['failed_ids'].append({
+                    'id': str(signal.id),
+                    'reason': str(e)
+                })
+        
+        return results
+    
+    @classmethod
     def get_effective_status(cls, signal):
         """
         Calculate the effective status of a signal based on its age and category.

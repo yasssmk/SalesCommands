@@ -111,7 +111,19 @@ class SignalView(BaseAPIView):
             approved_after = self.request.query_params.get('approved_after')
             if approved_after:
                 queryset = queryset.filter(approved_at__gte=approved_after)
+
+            #Lifecycle filters
+            min_confirmations = self.request.query_params.get('min_confirmations')
+            if min_confirmations and min_confirmations.isdigit():
+                queryset = queryset.filter(confirmation_count__gte=int(min_confirmations))
                 
+            # Effective status filter
+            effective_status = self.request.query_params.get('effective_status')
+            if effective_status:
+                # This is trickier since it's a calculated field
+                # For now, we'll just filter exact matches to database status
+                queryset = queryset.filter(status=effective_status)
+                    
             # General search
             search = self.request.query_params.get('search')
             if search:
@@ -475,6 +487,40 @@ class SignalView(BaseAPIView):
             elif action == 'apply':
                 results = SignalApplicationService.bulk_apply_signals(signals, request.user)
                 return Response(results)
+            
+            elif action == 'merge':
+                # For merge action, we need a target signal to merge into
+                target_signal_id = request.data.get('target_signal_id')
+                if not target_signal_id:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(field="target_signal_id")
+                    )
+                
+                # Get target signal
+                try:
+                    target_signal = Signal.objects.get(
+                        id=target_signal_id,
+                        client_id=self.get_client_id()
+                    )
+                except Signal.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.OBJECT_NOT_FOUND.format(entity="Target signal")
+                    )
+                
+                # Import the lifecycle service
+                from ..services.signal_lifecycle_service import SignalLifecycleService
+                
+                # Perform bulk merge
+                results = SignalLifecycleService.bulk_merge(
+                    target_signal=target_signal,
+                    signals=signals,
+                    user=request.user
+                )
+                
+                # Include the updated target signal in the response
+                results['target_signal'] = self.serializer_class(target_signal).data
+                
+                return Response(results)
                 
             else:
                 raise StandardizedValidationError(
@@ -556,5 +602,91 @@ class SignalView(BaseAPIView):
                 'high_value_count': high_value_count
             })
                 
+        except Exception as e:
+            return self.handle_exception(e)
+        
+    @action(detail=True, methods=['post'])
+    def merge(self, request, pk=None):
+        """
+        Merge this signal into another signal for confirmation tracking.
+        
+        POST /api/signals/{id}/merge/
+        """
+        try:
+            # Get source signal (the one being merged)
+            source_signal = self.get_objects([pk]).first()
+            if not source_signal:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+            # Get target signal ID from request
+            target_signal_id = request.data.get('target_signal_id')
+            if not target_signal_id:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="target_signal_id")
+                )
+            
+            # Get target signal
+            try:
+                target_signal = Signal.objects.get(
+                    id=target_signal_id,
+                    client_id=self.get_client_id()
+                )
+            except Signal.DoesNotExist:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.OBJECT_NOT_FOUND.format(entity="Target signal")
+                )
+            
+            # Import the service
+            from ..services.signal_lifecycle_service import SignalLifecycleService
+            
+            # Perform the merge
+            merged_signal = SignalLifecycleService.merge_signals(
+                target_signal=target_signal,
+                source_signal=source_signal,
+                user=request.user
+            )
+            
+            # Return the updated target signal
+            return Response({
+                'success': True,
+                'message': 'Signal merged successfully',
+                'signal': self.serializer_class(merged_signal).data
+            })
+        
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @action(detail=True, methods=['post'])
+    def confirm(self, request, pk=None):
+        """
+        Confirm a signal, incrementing confirmation count and updating last_confirmed_at.
+        
+        POST /api/signals/{id}/confirm/
+        """
+        try:
+            signal = self.get_objects([pk]).first()
+            if not signal:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+            # Import the service
+            from ..services.signal_lifecycle_service import SignalLifecycleService
+            
+            # Source of confirmation (optional)
+            source = request.data.get('source', 'manual_confirmation')
+            
+            # Confirm the signal
+            updated_signal = SignalLifecycleService.confirm_signal(
+                signal=signal,
+                user=request.user,
+                source=source
+            )
+            
+            # Return the updated signal
+            return Response({
+                'success': True,
+                'message': f'Signal confirmed (count: {updated_signal.confirmation_count})',
+                'signal': self.serializer_class(updated_signal).data
+            })
+        
         except Exception as e:
             return self.handle_exception(e)

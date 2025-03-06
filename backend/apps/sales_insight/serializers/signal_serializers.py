@@ -72,6 +72,12 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
 
     org_unit_validation = serializers.SerializerMethodField(read_only=True)
     entity_validation_status = serializers.SerializerMethodField(read_only=True)
+
+    effective_status = serializers.SerializerMethodField(read_only=True)
+    confirmation_count = serializers.IntegerField(read_only=True)
+    last_confirmed_at = serializers.DateTimeField(read_only=True)
+    merged_from_signals_count = serializers.SerializerMethodField(read_only=True)
+    merged_into_signal = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Signal
@@ -94,6 +100,11 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
             'approved_by', 'approved_by_summary', 'approved_at',
             'parent_signal', 'parent_signal_id',
             'metadata', 'org_unit_validation', 'entity_validation_status',
+            'confirmation_count',
+            'last_confirmed_at',
+            'effective_status',
+            'merged_from_signals_count',
+            'merged_into_signal',
             'created_at', 'updated_at', 'client_id'
         ]
         read_only_fields = [
@@ -101,8 +112,31 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
             'category_label', 'status_label', 'confidence_label', 'urgency_label', 'entity_type_label',
             'account_summary', 'org_unit_summary', 'contact_summary', 'account_product_detail_summary',
             'product_alignment_summary', 'approved_by_summary', 'applied_date',
-            'org_unit_validation', 'entity_validation_status'
+            'org_unit_validation', 'entity_validation_status','confirmation_count',
+            'last_confirmed_at',
+            'effective_status',
+            'merged_from_signals_count',
+            'merged_into_signal',
         ]
+
+    def get_effective_status(self, obj):
+        """Get the effective status with expiration calculation"""
+        return obj.get_effective_status()
+    
+    def get_merged_from_signals_count(self, obj):
+        """Count signals that have been merged into this one"""
+        return obj.merged_from_signals.count() if hasattr(obj, 'merged_from_signals') else 0
+    
+    def get_merged_into_signal(self, obj):
+        """Get summary of the signal this one was merged into"""
+        if obj.merged_into:
+            return {
+                'id': obj.merged_into.id,
+                'category': obj.merged_into.get_category_display(),
+                'field_name': obj.merged_into.field_name,
+                'status': obj.merged_into.status
+            }
+        return None
     
     def get_category_label(self, obj):
         return obj.get_category_display()
