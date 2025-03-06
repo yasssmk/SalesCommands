@@ -211,3 +211,50 @@ class SignalStatusService:
                     })
                     
             return results
+
+    @classmethod
+    def update_status_by_age(cls, signal, user=None):
+        """
+        Update signal status based on its age if needed.
+        
+        Args:
+            signal: The signal to update
+            user: User performing the action
+            
+        Returns:
+            Signal: The updated signal (or unchanged if no update needed)
+        """
+        from ..services.signal_lifecycle_service import SignalLifecycleService
+        
+        # Only process APPROVED/APPLIED signals
+        if signal.status not in [Signal.Status.APPROVED, Signal.Status.APPLIED]:
+            return signal
+            
+        # Get effective status
+        effective_status = SignalLifecycleService.get_effective_status(signal)
+        
+        # If effective status differs from current status, update it
+        if effective_status != signal.status:
+            with transaction.atomic():
+                previous_status = signal.status
+                signal.status = effective_status
+                
+                # Initialize metadata if needed
+                if not signal.metadata:
+                    signal.metadata = {}
+                    
+                # Track status history
+                if 'status_history' not in signal.metadata:
+                    signal.metadata['status_history'] = []
+                    
+                signal.metadata['status_history'].append({
+                    'from_status': previous_status,
+                    'to_status': effective_status,
+                    'changed_by': 'system',
+                    'changed_at': timezone.now().isoformat(),
+                    'reason': 'Automatic status update based on age'
+                })
+                
+                signal.save()
+        
+        return signal
