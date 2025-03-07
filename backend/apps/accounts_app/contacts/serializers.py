@@ -1,12 +1,13 @@
 from rest_framework import serializers
 from .models import Contact
 from core.serializers import ContactDetailsSerializer
-from apps.core_apps.serializers import AccountLinkedSerializerMixin
+from apps.core_apps.serializers import AccountLinkedSerializerMixin, SignalAwareSerializerMixin
 from core.client_scope import ClientScopeManager
 from sales_insight.serializers.qualification_serializers import QualificationFieldsSerializer
 from core.exceptions import StandardizedValidationError, CoreErrorMessages
 
-class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin, QualificationFieldsSerializer, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin, QualificationFieldsSerializer, 
+                        SignalAwareSerializerMixin, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Serializer for the Contact model with qualification fields
     """
@@ -50,9 +51,13 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin, 
             'objectives', 'compelling_events', 'motivations', 'key_kpis',
             'criteria', 'pain_points', 'implications', 'current_tech_stack',
             'partners', 'projects', 'budget', 'new_budget_start_date',
-            'has_qualification_data', 'pending_changes_count'
+            'has_qualification_data', 'pending_changes_count',
+            'signal_metadata', 'include_signal_info',
+            'qualification_with_signals', 'profile_with_signals'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'client_id', 'historical_data', 'full_name']
+        read_only_fields = ['created_at', 'updated_at', 'client_id', 'historical_data', 'full_name',
+                            'signal_metadata', 'qualification_with_signals', 'profile_with_signals'
+                            ]
     
     def get_full_name(self, obj):
         """Get the contact's full name"""
