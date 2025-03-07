@@ -86,14 +86,6 @@ class AccountSerializer(ContactDetailsSerializer, QualificationFieldsSerializer,
     direct_child_companies = serializers.SerializerMethodField(read_only=True)
     account_owner = AccountManagerSerializer(read_only=True)
     team_owner = AssignedTeamSerializer(read_only=True)
-
-    # New fields for signal metadata
-    signal_metadata = serializers.JSONField(required=False, allow_null=True, read_only=True)
-    include_signal_info = serializers.BooleanField(write_only=True, required=False, default=False)
-    
-    # Add field to determine if we should include signal data in responses
-    qualification_with_signals = serializers.SerializerMethodField(read_only=True)
-    profile_with_signals = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Account

@@ -6,6 +6,7 @@ from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from apps.core_apps.serializers import AccountLinkedSerializerMixin
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.models import StandardDepartment
+from apps.core_apps.serializers import SignalAwareSerializerMixin
 from apps.sales_insight.serializers.qualification_serializers import QualificationFieldsSerializer
 
 class StandardDepartmentSerializer(serializers.ModelSerializer):
@@ -24,7 +25,8 @@ class OrganizationUnitSummarySerializer(serializers.ModelSerializer):
 
 class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
                                         QualificationFieldsSerializer, 
-                                      ClientScopeManager.SerializerMixin, 
+                                      ClientScopeManager.SerializerMixin,
+                                      SignalAwareSerializerMixin, 
                                       serializers.ModelSerializer):
     # Write-only fields
     organization_name = serializers.CharField(
@@ -66,7 +68,7 @@ class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
     
     # Historical data is read-only
     historical_data = serializers.JSONField(required=False, allow_null=True, read_only=True)
-    
+  
 
     class Meta:
         model = AccountOrganizationUnit
@@ -82,9 +84,13 @@ class AccountOrganizationUnitSerializer(AccountLinkedSerializerMixin,
             'criteria', 'pain_points', 'implications', 'current_tech_stack',
             'partners', 'buying_process', 'projects', 'budget', 
             'new_budget_start_date', 'historical_data', 'has_qualification_data',
-            'pending_changes_count'
+            'pending_changes_count','signal_metadata', 'include_signal_info',
+            'qualification_with_signals', 'profile_with_signals'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'client_id', 'historical_data']
+        read_only_fields = [
+            'created_at', 'updated_at', 'client_id', 'historical_data',
+            'signal_metadata', 'qualification_with_signals', 'profile_with_signals'
+        ]
 
     def validate(self, data):
         """Complete validation of AccountOrganizationUnit data."""
