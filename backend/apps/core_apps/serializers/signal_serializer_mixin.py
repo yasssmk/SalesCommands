@@ -36,3 +36,21 @@ class SignalAwareSerializerMixin(serializers.Serializer):
             representation.pop('profile_with_signals', None)
         
         return representation
+    
+    def create(self, validated_data):
+        """Remove signal-specific fields before creating the model instance."""
+        # Remove signal-specific fields
+        if 'include_signal_info' in validated_data:
+            validated_data.pop('include_signal_info')
+            
+        # Call the parent's create method
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        """Remove signal-specific fields before updating the model instance."""
+        # Remove signal-specific fields
+        if 'include_signal_info' in validated_data:
+            validated_data.pop('include_signal_info')
+            
+        # Call the parent's update method
+        return super().update(instance, validated_data)

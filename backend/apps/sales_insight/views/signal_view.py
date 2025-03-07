@@ -335,6 +335,48 @@ class SignalView(BaseAPIView):
             if not signal:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
             
+            if signal.entity_type == Signal.EntityType.ORG_UNIT and 'org_unit_id' in request.data:
+                try:
+                    org_unit_id = request.data['org_unit_id']
+                    org_unit = AccountOrganizationUnit.objects.get(id=org_unit_id)
+                    
+                    # Validate org_unit belongs to the same account
+                    if str(org_unit.account_id) != str(signal.account_id):
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_FIELD.format(
+                                field="Organization unit must belong to the same account as the signal"
+                            )
+                        )
+                    
+                    # Update the signal with the org_unit
+                    signal.org_unit = org_unit
+                    signal.save(update_fields=['org_unit'])
+                except AccountOrganizationUnit.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.OBJECT_NOT_FOUND.format(entity="Organization Unit")
+                    )
+            
+            if signal.entity_type == Signal.EntityType.CONTACT and 'contact_id' in request.data:
+                try:
+                    contact_id = request.data['contact_id']
+                    contact = Contact.objects.get(id=contact_id)
+                    
+                    # Validate contact belongs to the same account
+                    if str(contact.account_id) != str(signal.account_id):
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_FIELD.format(
+                                field="Contact must belong to the same account as the signal"
+                            )
+                        )
+                    
+                    # Update the signal with the contact
+                    signal.contact = contact
+                    signal.save(update_fields=['contact'])
+                except Contact.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.OBJECT_NOT_FOUND.format(entity="Contact")
+                    )
+                
             # Check for required entities
             validation_result = self._validate_signal_entities(signal)
             if not validation_result['is_valid']:

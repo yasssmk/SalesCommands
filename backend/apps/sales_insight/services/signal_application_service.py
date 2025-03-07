@@ -134,7 +134,7 @@ class SignalApplicationService:
                 org_unit.update_qualification_field(field_name, value, user)
                 return True
 
-        elif field_name in ['unit_type']:  # Add any org-unit-specific fields that need tracking
+        elif field_name in ['unit_type', 'organization_name', 'estimated_employee_count']:  # Add any org-unit-specific fields that need tracking
             # 🔥 Custom tracking for org-unit-specific fields
             current_value = getattr(org_unit, field_name, None)
             setattr(org_unit, field_name, value)
@@ -182,7 +182,7 @@ class SignalApplicationService:
                 contact.update_qualification_field(field_name, value, user)
                 return True
 
-        elif field_name in ['job_title', 'influence_level']:  # Add any contact-specific fields that need tracking
+        elif field_name in ['job_title', 'influence_level', 'first_name', 'last_name']:  # Add any contact-specific fields that need tracking
             # 🔥 Custom tracking for contact-specific fields
             current_value = getattr(contact, field_name, None)
             setattr(contact, field_name, value)
