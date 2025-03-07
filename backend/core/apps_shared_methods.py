@@ -322,7 +322,6 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
 
     def handle_exception(self, exc):
         """Centralized error handling for all API views"""
-
         if isinstance(exc, ParseError):
             formatted_detail = StandardizedValidationError._format_detail(
                 CoreErrorMessages.INVALID_DATA.format(detail="Malformed JSON in request body")

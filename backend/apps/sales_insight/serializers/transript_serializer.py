@@ -36,6 +36,8 @@ class TranscriptAnalysisSerializer(AccountLinkedSerializerMixin, ClientScopeMana
         """Validate transcript content"""
         if not value.strip():
             raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(field='transcript'))
+        if len(value.strip()) < 100:
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_DATA.format(detail="Message too short to be analyzed")) 
         return value.strip()
 
     def validate_model(self, value):
