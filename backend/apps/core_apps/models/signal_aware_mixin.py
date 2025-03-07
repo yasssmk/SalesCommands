@@ -1,5 +1,3 @@
-# apps/core_apps/models/signal_aware_mixin.py
-
 from django.db import models
 from django.utils import timezone
 import logging
@@ -7,34 +5,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 class SignalAwareMixin(models.Model):
-    """
-    Mixin that provides signal awareness capabilities to models.
-    Used to track signal history and provide a consistent interface
-    for signal-related operations across Account, OrgUnit, Contact, and APD models.
-    """
-    # Field to store signal-specific metadata
-    signal_metadata = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name='Signal Metadata'
-    )
+    """Mixin that provides signal awareness capabilities to models."""
+    signal_metadata = models.JSONField(blank=True, null=True, verbose_name='Signal Metadata')
     
     class Meta:
         abstract = True
     
     def get_related_signals(self, field_name=None, category=None, include_expired=False):
-        """
-        Get all signals that contributed to a field value.
-        
-        Args:
-            field_name (str, optional): Specific field to get signals for
-                                        If None, returns all signals
-            category (str, optional): Filter by signal category
-            include_expired (bool): Whether to include signals with effective status 'EXPIRED'
-        
-        Returns:
-            dict: Dictionary with active, merged, and expired signals for the field
-        """
+        """Get all signals that contributed to a field value."""
         from apps.sales_insight.models import Signal
         from django.db.models import Q
         
@@ -67,9 +45,7 @@ class SignalAwareMixin(models.Model):
             query = query.filter(category=category)
         
         # Get active signals (approved or applied)
-        active_signals = query.filter(
-            status__in=['APPROVED', 'APPLIED']
-        )
+        active_signals = query.filter(status__in=['APPROVED', 'APPLIED'])
         
         # Get merged signals
         merged_signals = query.filter(
@@ -86,10 +62,7 @@ class SignalAwareMixin(models.Model):
         if include_expired:
             from apps.sales_insight.services.signal_lifecycle_service import SignalLifecycleService
             
-            # We need to manually check for expired signals
-            potentially_expired = query.filter(
-                status__in=['APPROVED', 'APPLIED']
-            )
+            potentially_expired = query.filter(status__in=['APPROVED', 'APPLIED'])
             
             expired_ids = []
             for signal in potentially_expired:
@@ -104,30 +77,14 @@ class SignalAwareMixin(models.Model):
         return result
     
     def get_field_signal_metadata(self, field_name):
-        """
-        Get all signal metadata for a specific field.
-        
-        Args:
-            field_name (str): Field name to get metadata for
-            
-        Returns:
-            dict: Signal metadata for the field
-        """
+        """Get all signal metadata for a specific field."""
         if not self.signal_metadata or field_name not in self.signal_metadata:
             return {}
             
         return self.signal_metadata[field_name]
     
     def track_signal_update(self, signal, field_name, old_value, new_value):
-        """
-        Track a signal update in the model's signal metadata.
-        
-        Args:
-            signal (Signal): Signal that triggered the update
-            field_name (str): Field name that was updated
-            old_value: Previous value
-            new_value: New value
-        """
+        """Track a signal update in the model's signal metadata."""
         # Initialize signal_metadata if needed
         if not self.signal_metadata:
             self.signal_metadata = {}
@@ -158,3 +115,115 @@ class SignalAwareMixin(models.Model):
         self.signal_metadata[field_name]['last_confirmed_at'] = timezone.now().isoformat()
         
         self.save(update_fields=['signal_metadata'])
+
+
+class SignalEnabledQualificationMixin(models.Model):
+    """Mixin that extends QualificationModel with signal-aware methods."""
+    
+    class Meta:
+        abstract = True
+        
+    def update_qualification_field(self, field_name, new_value, user, signal=None):
+        """Enhanced update method for qualification fields that tracks signal information."""
+        # Get current value
+        current_value = getattr(self, field_name)
+        
+        # Update the field
+        setattr(self, field_name, new_value)
+        
+        # Initialize historical_data if it doesn't exist
+        if not self.historical_data:
+            self.historical_data = {}
+        
+        # Initialize field history if it doesn't exist
+        if field_name not in self.historical_data:
+            self.historical_data[field_name] = []
+        
+        # Create history entry
+        history_entry = {
+            'old_value': current_value,
+            'new_value': new_value,
+            'changed_at': timezone.now().isoformat(),
+            'changed_by': str(user.id) if user else None,
+        }
+        
+        # Add signal data if provided
+        if signal:
+            history_entry.update({
+                'source': 'signal',
+                'signal_id': str(signal.id),
+                'signal_category': signal.category,
+                'signal_confidence': signal.confidence,
+                'confirmation_count': signal.confirmation_count
+            })
+            
+            # Also track in signal_metadata
+            self.track_signal_update(signal, field_name, current_value, new_value)
+        
+        # Add to historical data
+        self.historical_data[field_name].append(history_entry)
+        
+        # Save the model
+        self.save(user=user)
+        
+        return True
+    
+    def get_qualification_data(self, include_signal_info=False):
+        """Get all qualification data with optional signal information."""
+        qualification_fields = [
+            'objectives', 'compelling_events', 'motivations', 'key_kpis',
+            'criteria', 'pain_points', 'implications', 'current_tech_stack',
+            'partners', 'buying_process', 'projects', 'budget', 'new_budget_start_date'
+        ]
+        
+        return self._get_field_data_with_signals(qualification_fields, include_signal_info)
+    
+    def get_profile_data(self, include_signal_info=False, profile_fields=None):
+        """Get profile data with optional signal information."""
+        if profile_fields is None:
+            # Default profile fields - override in subclasses if needed
+            profile_fields = []
+            
+        return self._get_field_data_with_signals(profile_fields, include_signal_info, 'PROFILE')
+    
+    def _get_field_data_with_signals(self, fields, include_signal_info=False, category=None):
+        """Shared method to get field data with optional signal information."""
+        result = {}
+        
+        for field in fields:
+            if hasattr(self, field):
+                value = getattr(self, field)
+                result[field] = value
+                
+                if include_signal_info and value is not None:
+                    # Add signal information if available
+                    signals = self.get_related_signals(
+                        field_name=field,
+                        category=category,
+                        include_expired=True
+                    )
+                    
+                    # Only include if we have signals
+                    if any(s.exists() for s in signals.values()):
+                        signal_info = {}
+                        
+                        for status, queryset in signals.items():
+                            if queryset.exists():
+                                signal_info[status] = [{
+                                    'id': s.id,
+                                    'category': s.category,
+                                    'source': s.source,
+                                    'created_at': s.created_at,
+                                    'confirmation_count': s.confirmation_count,
+                                    'confidence': getattr(s, 'confidence', None),
+                                    'potential_value': getattr(s, 'potential_value', None)
+                                } for s in queryset]
+                                
+                        result[f"{field}_signals"] = signal_info
+                        
+                    # Add signal metadata from the model
+                    metadata = self.get_field_signal_metadata(field)
+                    if metadata:
+                        result[f"{field}_metadata"] = metadata
+                    
+        return result

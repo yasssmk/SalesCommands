@@ -3,7 +3,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from phonenumber_field.modelfields import PhoneNumberField
 from core.models import ContactDetailsMixin
-from apps.core_apps.models import BaseModelApp, SignalAwareMixin
+from apps.core_apps.models import BaseModelApp, SignalAwareMixin, SignalEnabledQualificationMixin
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
 from end_users.models import User, Team, Organization
@@ -28,7 +28,7 @@ class AccountClassification(models.TextChoices):
     STARTUP = 'STARTUP', _('Startup')
     NONPROFIT = 'NONPROFIT', _('Non-Profit')
 
-class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, QualificationModel, SignalAwareMixin):
+class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, QualificationModel, SignalAwareMixin, SignalEnabledQualificationMixin):
 
     company_name = models.CharField(
         max_length=255, 
@@ -212,48 +212,9 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
         return result
     
     def get_profile_data(self, include_signal_info=False):
-        """
-        Get profile data for this account with optional signal information
-        
-        Args:
-            include_signal_info (bool): Whether to include signal source information
-            
-        Returns:
-            dict: Profile fields with optional signal metadata
-        """
+        """Get profile data with signals if requested"""
         profile_fields = [
             'company_name', 'industry', 'type', 'classification',
             'company_size', 'annual_revenue'
         ]
-        
-        result = {}
-        
-        for field in profile_fields:
-            value = getattr(self, field)
-            result[field] = value
-            
-            if include_signal_info:
-                # Add signal information if available
-                signals = self.get_related_signals(
-                    field_name=field,
-                    category='PROFILE',
-                    include_expired=True
-                )
-                
-                # Only include if we have signals
-                if any(s.exists() for s in signals.values()):
-                    signal_info = {}
-                    
-                    for status, queryset in signals.items():
-                        if queryset.exists():
-                            signal_info[status] = [{
-                                'id': s.id,
-                                'category': s.category,
-                                'source': s.source,
-                                'created_at': s.created_at,
-                                'confirmation_count': s.confirmation_count
-                            } for s in queryset]
-                            
-                    result[f"{field}_signals"] = signal_info
-                    
-        return result
+        return self._get_field_data_with_signals(profile_fields, include_signal_info, 'PROFILE')

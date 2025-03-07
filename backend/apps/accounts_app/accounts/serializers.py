@@ -10,7 +10,7 @@ from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.serializers import  ContactDetailsSerializer
 from core.exceptions import StandardizedValidationError
 from apps.sales_insight.serializers.qualification_serializers import QualificationFieldsSerializer
-from apps.sales_insight.serializers import SignalSerializer
+from ...core_apps.serializers import SignalAwareSerializerMixin
 
 class AssignedTeamSerializer(serializers.ModelSerializer):
     """Serializer for the assigned team summary"""
@@ -26,7 +26,7 @@ class AccountManagerSerializer(serializers.ModelSerializer):
         fields = ['id', 'email', 'first_name', 'last_name', 'role_name', 'team']
         read_only_fields = fields
 
-class AccountSerializer(ContactDetailsSerializer, QualificationFieldsSerializer, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class AccountSerializer(ContactDetailsSerializer, QualificationFieldsSerializer, ClientScopeManager.SerializerMixin,SignalAwareSerializerMixin, serializers.ModelSerializer):
     # Field for write operations
 
     company_name = serializers.CharField(
@@ -263,35 +263,3 @@ class AccountSerializer(ContactDetailsSerializer, QualificationFieldsSerializer,
             except Team.DoesNotExist:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
             
-    def get_qualification_with_signals(self, obj):
-        """Get qualification data with signals if requested"""
-        # Check if signal info was requested
-        include_signals = self.context.get('include_signal_info', False)
-        if not include_signals:
-            return None
-            
-        return obj.get_qualification_data(include_signal_info=True)
-    
-    def get_profile_with_signals(self, obj):
-        """Get profile data with signals if requested"""
-        # Check if signal info was requested
-        include_signals = self.context.get('include_signal_info', False)
-        if not include_signals:
-            return None
-            
-        return obj.get_profile_data(include_signal_info=True)
-    
-    def to_representation(self, instance):
-        """Customize output based on query parameters"""
-        # Get representation from parent class
-        representation = super().to_representation(instance)
-        
-        # Check whether to include signal data
-        include_signals = self.context.get('include_signal_info', False)
-        
-        # If not including signals, remove the related fields to keep response clean
-        if not include_signals:
-            representation.pop('qualification_with_signals', None)
-            representation.pop('profile_with_signals', None)
-        
-        return representation
