@@ -1,8 +1,6 @@
 from django.db import models
 from core.models import ContactDetailsMixin
-from django.utils import timezone
 from django.conf import settings
-from phonenumber_field.modelfields import PhoneNumberField
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel, SignalEnabledQualificationMixin, SignalAwareMixin
 from apps.sales_insight.models import QualificationModel
 from apps.accounts_app.org_units.models import AccountOrganizationUnit

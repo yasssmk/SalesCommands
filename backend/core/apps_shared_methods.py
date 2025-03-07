@@ -13,6 +13,7 @@ from core.exceptions import (
     StandardizedAuthenticationFailed,
 )
 from core.error_messages import CoreErrorMessages
+from rest_framework.exceptions import ParseError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -321,6 +322,15 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
 
     def handle_exception(self, exc):
         """Centralized error handling for all API views"""
+
+        if isinstance(exc, ParseError):
+            formatted_detail = StandardizedValidationError._format_detail(
+                CoreErrorMessages.INVALID_DATA.format(detail="Malformed JSON in request body")
+            )
+            return Response(
+                formatted_detail,
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         if isinstance(exc, AuthenticationFailed):
             return Response(

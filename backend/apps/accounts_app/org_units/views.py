@@ -10,9 +10,10 @@ from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.models import StandardDepartment
+from apps.core_apps.views import SignalAwareViewMixin
 from datetime import datetime
 
-class AccountOrganizationUnitAPIView(BaseAPIView):
+class AccountOrganizationUnitAPIView(BaseAPIView,SignalAwareViewMixin):
     """
     API View for AccountOrganizationUnit management with parent-child relationship handling.
     """

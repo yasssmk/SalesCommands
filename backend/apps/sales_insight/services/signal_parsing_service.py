@@ -106,9 +106,6 @@ class SignalParsingService:
                     entity_type=Signal.EntityType.ACCOUNT,
                     field_name=model_field,
                     value=account_info[json_field],
-                    confidence=Signal.Confidence.MEDIUM,
-                    potential_value=10,  # Profile data has indirect revenue impact
-                    urgency=Signal.Urgency.MEDIUM,
                     status=Signal.Status.PENDING,
                     source=source,
                     client_id=client_id,
@@ -125,9 +122,6 @@ class SignalParsingService:
                 entity_type=Signal.EntityType.ACCOUNT,
                 field_name='parent_company',
                 value=account_info['parentCompany'],
-                confidence=Signal.Confidence.MEDIUM,
-                potential_value=5,
-                urgency=Signal.Urgency.LOW,
                 status=Signal.Status.PENDING,
                 source=source,
                 client_id=client_id,
@@ -199,19 +193,19 @@ class SignalParsingService:
         
         # Process qualification fields
         qualification_fields = [
-            ('objectives', 'objectives', 30, Signal.Urgency.MEDIUM),
-            ('compellingEvents', 'compelling_events', 60, Signal.Urgency.HIGH),
-            ('motivations', 'motivations', 40, Signal.Urgency.MEDIUM),
-            ('keyKPIs', 'key_kpis', 30, Signal.Urgency.MEDIUM),
-            ('criteria', 'criteria', 50, Signal.Urgency.MEDIUM),
-            ('painPoints', 'pain_points', 70, Signal.Urgency.HIGH),
-            ('implications', 'implications', 60, Signal.Urgency.HIGH),
-            ('partners', 'partners', 20, Signal.Urgency.LOW),
-            ('budget', 'budget', 50, Signal.Urgency.MEDIUM),
-            ('newBudgetStartDate', 'new_budget_start_date', 40, Signal.Urgency.MEDIUM)
+            ('objectives', 'objectives'),
+            ('compellingEvents', 'compelling_events'),
+            ('motivations', 'motivations'),
+            ('keyKPIs', 'key_kpis'),
+            ('criteria', 'criteria'),
+            ('painPoints', 'pain_points'),
+            ('implications', 'implications'),
+            ('partners', 'partners'),
+            ('budget', 'budget'),
+            ('newBudgetStartDate', 'new_budget_start_date')
         ]
         
-        for json_field, model_field, value_score, urgency in qualification_fields:
+        for json_field, model_field in qualification_fields:
             if json_field in account_insights and account_insights[json_field]:
                 # Create qualification signal
                 signal = Signal.objects.create(
@@ -220,9 +214,6 @@ class SignalParsingService:
                     entity_type=Signal.EntityType.ACCOUNT,
                     field_name=model_field,
                     value=account_insights[json_field],
-                    confidence=Signal.Confidence.MEDIUM,
-                    potential_value=value_score,
-                    urgency=urgency,
                     status=Signal.Status.PENDING,
                     source=source,
                     client_id=client_id,
@@ -231,10 +222,10 @@ class SignalParsingService:
                 )
                 signals.append(signal)
                 
-                # For high-value signals, try to find product alignment
-                if value_score >= 50:
+                # For high-priority fields, try to find product alignment
+                if model_field in ['pain_points', 'compelling_events', 'implications']:
                     cls._detect_and_set_product_alignment(signal, account_insights[json_field])
-        
+    
         # Process tech stack (special handling)
         if 'currentTechStack' in account_insights and account_insights['currentTechStack']:
             tech_stack_signals = cls._parse_tech_stack(
@@ -255,9 +246,6 @@ class SignalParsingService:
                 entity_type=Signal.EntityType.ACCOUNT,
                 field_name='buying_process',
                 value=account_insights['buyingProcess'],
-                confidence=Signal.Confidence.MEDIUM,
-                potential_value=40,  # Process knowledge is valuable for sales
-                urgency=Signal.Urgency.MEDIUM,
                 status=Signal.Status.PENDING,
                 source=source,
                 client_id=client_id,
@@ -307,19 +295,19 @@ class SignalParsingService:
                 
             # Process qualification fields
             qualification_fields = [
-                ('objectives', 'objectives', 40, Signal.Urgency.MEDIUM),
-                ('compellingEvents', 'compelling_events', 70, Signal.Urgency.HIGH),
-                ('motivations', 'motivations', 50, Signal.Urgency.MEDIUM),
-                ('keyKPIs', 'key_kpis', 40, Signal.Urgency.MEDIUM),
-                ('criteria', 'criteria', 60, Signal.Urgency.MEDIUM),
-                ('painPoints', 'pain_points', 80, Signal.Urgency.HIGH),  # Higher value for org unit pains
-                ('implications', 'implications', 70, Signal.Urgency.HIGH),
-                ('partners', 'partners', 30, Signal.Urgency.LOW),
-                ('budget', 'budget', 60, Signal.Urgency.MEDIUM),
-                ('newBudgetStartDate', 'new_budget_start_date', 50, Signal.Urgency.MEDIUM)
+                ('objectives', 'objectives'),
+                ('compellingEvents', 'compelling_events'),
+                ('motivations', 'motivations'),
+                ('keyKPIs', 'key_kpis'),
+                ('criteria', 'criteria'),
+                ('painPoints', 'pain_points'),  
+                ('implications', 'implications'),
+                ('partners', 'partners'),
+                ('budget', 'budget'),
+                ('newBudgetStartDate', 'new_budget_start_date')
             ]
             
-            for json_field, model_field, value_score, urgency in qualification_fields:
+            for json_field, model_field in qualification_fields:
                 if json_field in org_insight and org_insight[json_field]:
                     # Create signal with org unit validation metadata
                     signal = Signal.objects.create(
@@ -329,9 +317,6 @@ class SignalParsingService:
                         entity_type=Signal.EntityType.ORG_UNIT,
                         field_name=model_field,
                         value=org_insight[json_field],
-                        confidence=Signal.Confidence.MEDIUM,
-                        potential_value=value_score,
-                        urgency=urgency,
                         status=Signal.Status.PENDING,
                         source=source,
                         metadata=org_unit_metadata,
@@ -453,9 +438,6 @@ class SignalParsingService:
                         entity_type=Signal.EntityType.CONTACT,
                         field_name='objectives',
                         value=objective,
-                        confidence=Signal.Confidence.MEDIUM,
-                        potential_value=50,  # Individual objectives are valuable
-                        urgency=Signal.Urgency.MEDIUM,
                         status=Signal.Status.PENDING,
                         source=source,
                         client_id=client_id,
@@ -472,15 +454,15 @@ class SignalParsingService:
             
             # Process other qualification fields
             qualification_fields = [
-                ('motivations', 'motivations', 40, Signal.Urgency.MEDIUM),
-                ('keyKPIs', 'key_kpis', 50, Signal.Urgency.MEDIUM),
-                ('criteria', 'criteria', 60, Signal.Urgency.MEDIUM),
-                ('painPoints', 'pain_points', 70, Signal.Urgency.HIGH),
-                ('implications', 'implications', 60, Signal.Urgency.HIGH),
-                ('hasBudgetAuthority', 'budget_authority', 80, Signal.Urgency.HIGH)
+                ('motivations', 'motivations'),
+                ('keyKPIs', 'key_kpis'),
+                ('criteria', 'criteria'),
+                ('painPoints', 'pain_points'),
+                ('implications', 'implications'),
+                ('hasBudgetAuthority', 'budget_authority')
             ]
             
-            for json_field, model_field, value_score, urgency in qualification_fields:
+            for json_field, model_field in qualification_fields:
                 if json_field in contact_insight and contact_insight[json_field]:
                     # Create qualification signal for contact
                     signal = Signal.objects.create(
@@ -491,9 +473,6 @@ class SignalParsingService:
                         entity_type=Signal.EntityType.CONTACT,
                         field_name=model_field,
                         value=contact_insight[json_field],
-                        confidence=Signal.Confidence.MEDIUM,
-                        potential_value=value_score,
-                        urgency=urgency,
                         status=Signal.Status.PENDING,
                         source=source,
                         client_id=client_id,
@@ -503,7 +482,7 @@ class SignalParsingService:
                     signals.append(signal)
                     
                     # For high-value signals, find product alignment and APD
-                    if value_score >= 60:
+                    if model_field in ['pain_points', 'compelling_events', 'implications']:
                         products = cls._detect_and_set_product_alignment(signal, contact_insight[json_field])
                         
                         # Link to APDs
@@ -534,9 +513,6 @@ class SignalParsingService:
                         entity_type=Signal.EntityType.CONTACT,
                         field_name='project_involvement',
                         value=project,
-                        confidence=Signal.Confidence.MEDIUM,
-                        potential_value=60,  # Project involvement is valuable
-                        urgency=Signal.Urgency.HIGH,
                         status=Signal.Status.PENDING,
                         source=source,
                         client_id=client_id,
@@ -568,9 +544,6 @@ class SignalParsingService:
                 entity_type=entity_type,
                 field_name='current_tech_stack',
                 value=tech_item,
-                confidence=Signal.Confidence.MEDIUM,
-                potential_value=70,  # Tech stack is highly valuable
-                urgency=Signal.Urgency.HIGH,
                 status=Signal.Status.PENDING,
                 source=source,
                 client_id=client_id,
@@ -603,9 +576,6 @@ class SignalParsingService:
                 entity_type=entity_type,
                 field_name='projects',
                 value=project,
-                confidence=Signal.Confidence.MEDIUM,
-                potential_value=90,  # Projects have highest value (direct opportunities)
-                urgency=Signal.Urgency.CRITICAL,  # Projects often have timelines
                 status=Signal.Status.PENDING,
                 source=source,
                 client_id=client_id,
@@ -688,7 +658,7 @@ class SignalParsingService:
                 ).first()
                 
                 # If no APD exists, consider creating one
-                if not apd and signal.potential_value >= 70:  # Only for high-value signals
+                if not apd :  
                     # Create APD with minimal info
                     try:
                         # Get default pricing if available
@@ -703,7 +673,7 @@ class SignalParsingService:
                             estimated_units=units,
                             selected_pricing=default_pricing,
                             client_id=account.client_id,
-                            ai_relevance_score=signal.potential_value / 100.0  # Convert to 0-1 scale
+
                         )
                         
                         # Add org unit to target units if provided
@@ -719,11 +689,6 @@ class SignalParsingService:
                     signal.account_product_detail = apd
                     signal.save(update_fields=['account_product_detail'])
                     
-                    # Update AI relevance score if we have a high-value signal
-                    if signal.potential_value > 60 and (not apd.ai_relevance_score or 
-                                                     signal.potential_value/100.0 > apd.ai_relevance_score):
-                        apd.ai_relevance_score = signal.potential_value / 100.0
-                        apd.save(update_fields=['ai_relevance_score'])
                         
         except Exception as e:
             # Log error but don't block signal processing

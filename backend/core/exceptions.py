@@ -2,6 +2,7 @@
 from rest_framework.exceptions import ValidationError, PermissionDenied, AuthenticationFailed, ErrorDetail
 from django.core.exceptions import ValidationError as DjangoValidationError
 from core.error_messages import CoreErrorMessages
+from rest_framework.exceptions import ParseError
 
 class StandardizedValidationError(ValidationError):
     """Returns 400 Bad Request with a clean error message"""
@@ -15,6 +16,9 @@ class StandardizedValidationError(ValidationError):
         """Format the detail into our standard error structure"""
         if detail is None:
             return {"error": CoreErrorMessages.UNEXPECTED_ERROR}
+        
+        if isinstance(detail, ParseError):
+            return {"error": detail}
 
         # For direct string messages
         if isinstance(detail, str):

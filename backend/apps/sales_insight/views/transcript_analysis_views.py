@@ -2,6 +2,7 @@ from rest_framework import status
 from django.conf import settings
 from rest_framework.response import Response
 from openai import OpenAIError, AuthenticationError, APIError
+from rest_framework.exceptions import ParseError
 import openai
 from core.exceptions import StandardizedValidationError, StandardizedAuthenticationFailed
 from core.error_messages import CoreErrorMessages
@@ -36,6 +37,7 @@ class TranscriptAnalysisView(BaseAPIView):
         Returns created signals for user validation instead of raw insights.
         """
         try:
+            
             # Validate incoming data
             serializer = self.serializer_class(
                 data=request.data,
@@ -84,25 +86,12 @@ class TranscriptAnalysisView(BaseAPIView):
                     ).data
                 )
             
-            # Group signals by urgency for prioritization
-            signals_by_urgency = {}
-            for signal in signals:
-                urgency = signal.get_urgency_display()
-                if urgency not in signals_by_urgency:
-                    signals_by_urgency[urgency] = []
-                signals_by_urgency[urgency].append(
-                    SignalSummarySerializer(
-                        signal, 
-                        context={'request': request, 'client_id': self.get_client_id()}
-                    ).data
-                )
             
             return Response({
                 'success': True,
                 'signals_count': len(signals),
                 'signals': signal_serializer.data,
                 'signals_by_category': signals_by_category,
-                'signals_by_urgency': signals_by_urgency,
                 # Include raw insights for debugging during development
                 'raw_insights': insights if settings.DEBUG else None
             }, status=status.HTTP_200_OK)

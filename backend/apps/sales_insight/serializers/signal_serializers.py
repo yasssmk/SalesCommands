@@ -59,8 +59,6 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
     # Read-only display fields
     category_label = serializers.SerializerMethodField()
     status_label = serializers.SerializerMethodField()
-    confidence_label = serializers.SerializerMethodField()
-    urgency_label = serializers.SerializerMethodField()
     entity_type_label = serializers.SerializerMethodField()
     
     account_summary = serializers.SerializerMethodField()
@@ -87,9 +85,6 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
             'category', 'category_label',
             'entity_type', 'entity_type_label',
             'field_name', 'value',
-            'confidence', 'confidence_label',
-            'potential_value',
-            'urgency', 'urgency_label',
             'status', 'status_label',
             'source',
             'revisit_date', 'applied_date',
@@ -109,7 +104,7 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
         ]
         read_only_fields = [
             'id', 'created_at', 'updated_at', 'client_id',
-            'category_label', 'status_label', 'confidence_label', 'urgency_label', 'entity_type_label',
+            'category_label', 'status_label', 'entity_type_label',
             'account_summary', 'org_unit_summary', 'contact_summary', 'account_product_detail_summary',
             'product_alignment_summary', 'approved_by_summary', 'applied_date',
             'org_unit_validation', 'entity_validation_status','confirmation_count',
@@ -143,12 +138,6 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
     
     def get_status_label(self, obj):
         return obj.get_status_display()
-    
-    def get_confidence_label(self, obj):
-        return obj.get_confidence_display()
-    
-    def get_urgency_label(self, obj):
-        return obj.get_urgency_display()
     
     def get_entity_type_label(self, obj):
         return obj.get_entity_type_display()

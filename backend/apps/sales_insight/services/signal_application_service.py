@@ -89,7 +89,8 @@ class SignalApplicationService:
                 current_value = getattr(account, field_name)
                 setattr(account, field_name, value)
                 
-                account.save(user=user)
+                if hasattr(account, 'track_signal_update'):
+                    account.track_signal_update(signal, field_name, current_value, value)
 
                 # Initialize historical data tracking
                 if not account.historical_data:
@@ -138,7 +139,8 @@ class SignalApplicationService:
             current_value = getattr(org_unit, field_name, None)
             setattr(org_unit, field_name, value)
 
-            org_unit.save(user=user)
+            if hasattr(org_unit, 'track_signal_update'):
+                org_unit.track_signal_update(signal, field_name, current_value, value)
 
             if not org_unit.historical_data:
                 org_unit.historical_data = {}
@@ -185,7 +187,8 @@ class SignalApplicationService:
             current_value = getattr(contact, field_name, None)
             setattr(contact, field_name, value)
 
-            contact.save(user=user)
+            if hasattr(contact, 'track_signal_update'):
+                contact.track_signal_update(signal, field_name, current_value, value)
 
             if not contact.historical_data:
                 contact.historical_data = {}

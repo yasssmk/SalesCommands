@@ -9,7 +9,6 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
     """
     category_label = serializers.SerializerMethodField()
     entity_type_label = serializers.SerializerMethodField()
-    urgency_label = serializers.SerializerMethodField()
     field_display_name = serializers.SerializerMethodField()
     
     # Entity summaries
@@ -23,7 +22,6 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
             'id', 'account', 'category', 'category_label', 
             'entity_type', 'entity_type_label',
             'field_name', 'field_display_name',
-            'potential_value', 'urgency', 'urgency_label',
             'value', 'org_unit_summary', 'contact_summary',
             'account_product_detail_summary'
         ]
@@ -33,9 +31,6 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
     
     def get_entity_type_label(self, obj):
         return obj.get_entity_type_display()
-    
-    def get_urgency_label(self, obj):
-        return obj.get_urgency_display()
     
     def get_field_display_name(self, obj):
         """Convert field_name to a user-friendly display name"""
