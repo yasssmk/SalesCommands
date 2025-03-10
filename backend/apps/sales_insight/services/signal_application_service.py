@@ -109,7 +109,7 @@ class SignalApplicationService:
                 })
 
                 # Save historical changes
-                account.save(update_fields=['historical_data'])
+                account.save(update_fields=[field_name,'historical_data'])
                 return True
                 
         return False
@@ -117,10 +117,11 @@ class SignalApplicationService:
     @classmethod
     def _apply_to_org_unit(cls, signal, user):
         """Apply signal to organization unit, tracking both qualification and specific field changes."""
-        org_unit = signal.org_unit
-        if not org_unit:
+        org_unit_id = signal.org_unit_id
+        if not org_unit_id:
             return False
             
+        org_unit = AccountOrganizationUnit.objects.get(id=org_unit_id)
         field_name = signal.field_name
         value = signal.value
 
@@ -165,10 +166,12 @@ class SignalApplicationService:
     @classmethod
     def _apply_to_contact(cls, signal, user):
         """Apply signal to contact, tracking both qualification and specific field changes."""
-        contact = signal.contact
-        if not contact:
+        contact_id = signal.contact_id
+        if not contact_id:
             return False
             
+        # Get a fresh contact instance for each signal application
+        contact = Contact.objects.get(id=contact_id)
         field_name = signal.field_name
         value = signal.value
 
@@ -263,6 +266,8 @@ class SignalApplicationService:
             return True
 
         return False
+    
+    
         
     @classmethod
     def bulk_apply_signals(cls, signals, user=None):

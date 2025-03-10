@@ -514,9 +514,14 @@ class SignalView(BaseAPIView):
             if signals.count() != len(signal_ids):
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
             
+            entity_references = {}
+            for key in ['org_unit_id', 'contact_id', 'account_product_detail_id']:
+                if key in request.data:
+                    entity_references[key] = request.data[key]
+            
             # Apply requested action to all signals
             if action == 'approve':
-                results = SignalStatusService.bulk_approve(signals, request.user)
+                results = SignalStatusService.bulk_approve(signals, request.user, entity_references)
                 return Response(results)
                 
             elif action == 'reject':

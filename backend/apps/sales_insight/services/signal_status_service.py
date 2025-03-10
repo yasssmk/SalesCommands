@@ -132,13 +132,14 @@ class SignalStatusService:
             return signal
     
     @classmethod
-    def bulk_approve(cls, signals, user=None):
+    def bulk_approve(cls, signals, user=None, entity_references=None):
         """
-        Approve multiple signals in bulk.
+        Approve multiple signals in bulk with optional entity references.
         
         Args:
             signals: QuerySet or list of Signal objects to approve
             user: User performing the approval
+            entity_references: Optional dict with entity references like {'org_unit_id': 12}
             
         Returns:
             dict: Summary of results with counts
@@ -152,16 +153,71 @@ class SignalStatusService:
         
         for signal in signals:
             try:
-                # Allow approval from any status except APPLIED
-                if signal.status != Signal.Status.APPLIED:
-                    cls.approve_signal(signal, user)
-                    results['approved_count'] += 1
-                else:
+                # Skip already applied signals
+                if signal.status == Signal.Status.APPLIED:
                     results['failed_count'] += 1
                     results['failed_ids'].append({
                         'id': str(signal.id),
                         'reason': 'Signal has already been applied'
                     })
+                    continue
+                    
+                # If entity references are provided and the signal needs them, update first
+                if entity_references:
+                    if signal.entity_type == Signal.EntityType.ORG_UNIT and 'org_unit_id' in entity_references:
+                        try:
+                            from apps.accounts_app.org_units.models import AccountOrganizationUnit
+                            org_unit = AccountOrganizationUnit.objects.get(id=entity_references['org_unit_id'])
+                            
+                            # Validate org_unit belongs to the same account
+                            if str(org_unit.account_id) != str(signal.account_id):
+                                results['failed_count'] += 1
+                                results['failed_ids'].append({
+                                    'id': str(signal.id),
+                                    'reason': 'Organization unit does not belong to the same account as the signal'
+                                })
+                                continue
+                            
+                            # Update the signal with the org_unit
+                            signal.org_unit = org_unit
+                            signal.save(update_fields=['org_unit'])
+                        except Exception as e:
+                            results['failed_count'] += 1
+                            results['failed_ids'].append({
+                                'id': str(signal.id),
+                                'reason': f'Error updating org_unit: {str(e)}'
+                            })
+                            continue
+                            
+                    if signal.entity_type == Signal.EntityType.CONTACT and 'contact_id' in entity_references:
+                        try:
+                            from apps.accounts_app.contacts.models import Contact
+                            contact = Contact.objects.get(id=entity_references['contact_id'])
+                            
+                            # Validate contact belongs to the same account
+                            if str(contact.account_id) != str(signal.account_id):
+                                results['failed_count'] += 1
+                                results['failed_ids'].append({
+                                    'id': str(signal.id),
+                                    'reason': 'Contact does not belong to the same account as the signal'
+                                })
+                                continue
+                            
+                            # Update the signal with the contact
+                            signal.contact = contact
+                            signal.save(update_fields=['contact'])
+                        except Exception as e:
+                            results['failed_count'] += 1
+                            results['failed_ids'].append({
+                                'id': str(signal.id),
+                                'reason': f'Error updating contact: {str(e)}'
+                            })
+                            continue
+                
+                # Now approve the signal
+                cls.approve_signal(signal, user)
+                results['approved_count'] += 1
+                
             except Exception as e:
                 results['failed_count'] += 1
                 results['failed_ids'].append({
