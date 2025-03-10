@@ -63,7 +63,7 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     )
     
     # New fields for lifecycle management
-    confirmation_count = models.PositiveIntegerField(default=0, verbose_name=_('Confirmation Count'))
+    confirmation_count = models.PositiveIntegerField(default=1, verbose_name=_('Confirmation Count'))
     last_confirmed_at = models.DateTimeField(auto_now_add=True, verbose_name=_('Last Confirmed At'))
     merged_into = models.ForeignKey(
         'self',
