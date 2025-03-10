@@ -148,6 +148,8 @@ class SignalView(BaseAPIView):
             return self.resolve_org_unit(request, *args, **kwargs)
         elif 'bulk-update' in request.path:
             return self.bulk_update(request, *args, **kwargs)
+        elif 'merge' in request.path:
+            return self.merge(request, *args, **kwargs)
         else:
             # Standard POST behavior
             return super().post(request, *args, **kwargs)
@@ -655,6 +657,7 @@ class SignalView(BaseAPIView):
         POST /api/signals/{id}/merge/
         """
         try:
+
             # Get source signal (the one being merged)
             source_signal = self.get_objects([pk]).first()
             if not source_signal:
