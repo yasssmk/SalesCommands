@@ -357,6 +357,10 @@ def get_contacts_prompt(transcript):
 
 
 import json 
+from apps.LLM_calls.services import LLMProviderService
+llm_service = LLMProviderService()
+
+system_message = "You are a helpful, structured data extraction assistant."
 
 def parse_json_with_defaults(json_string):
     """
@@ -381,7 +385,7 @@ def parse_and_fallback_if_needed(llm_response, prompt):
     
     if data is None:
         fallback_prompt = FALLBACK_PROMPT_IF_ERROR.format(malformed_json=stripped_response)
-        new_response = call_llm(fallback_prompt)
+        new_response = llm_service.call_llm(user_prompt=fallback_prompt, system_message=system_message )
         stripped_new_response = strip_backticks_and_code_fences(new_response)
         data = parse_json_with_defaults(stripped_new_response)
 
@@ -397,22 +401,24 @@ def strip_backticks_and_code_fences(llm_text: str) -> str:
     clean = clean.replace("```json", "").replace("```", "")
     return clean.strip()
 
-from .ai_resquests import call_llm
+# from .ai_resquests import call_llm
+
+
 
 def get_full_insights(transcript):
     """ Extracts all qualification data from a transcript """
 
     # 1) Extract Account Insights
     prompt_1 = get_account_insights_prompt(transcript)
-    data_1 = parse_and_fallback_if_needed(call_llm(prompt_1), prompt_1)
+    data_1 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_1,system_message=system_message), prompt_1)
 
     # 2) Extract Org Units Insights
     prompt_2 = get_org_units_prompt(transcript)
-    data_2 = parse_and_fallback_if_needed(call_llm(prompt_2), prompt_2)
+    data_2 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_2,system_message=system_message), prompt_2)
 
     # 3) Extract Contacts Insights
     prompt_3 = get_contacts_prompt(transcript)
-    data_3 = parse_and_fallback_if_needed(call_llm(prompt_3), prompt_3)
+    data_3 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_3,system_message=system_message), prompt_3)
 
     # Base JSON structure
     final_structure = {

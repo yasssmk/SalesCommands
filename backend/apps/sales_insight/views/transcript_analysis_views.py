@@ -20,16 +20,16 @@ class TranscriptAnalysisView(BaseAPIView):
     serializer_class = TranscriptAnalysisSerializer
     entity_name = 'transcript'
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Initialize OpenAI with error handling
-        try:
-            api_key = settings.OPENAI_API_KEY["OPENAI_API_KEY"]
-            if not api_key:
-                raise StandardizedValidationError(CoreErrorMessages.INVALID_CONFIG)
-            openai.api_key = api_key
-        except Exception as e:
-            raise StandardizedValidationError(CoreErrorMessages.SERVICE_UNAVAILABLE)
+    # def __init__(self, *args, **kwargs):
+    #     super().__init__(*args, **kwargs)
+    #     # Initialize OpenAI with error handling
+    #     try:
+    #         api_key = settings.OPENAI_API_KEY["OPENAI_API_KEY"]
+    #         if not api_key:
+    #             raise StandardizedValidationError(CoreErrorMessages.INVALID_CONFIG)
+    #         openai.api_key = api_key
+    #     except Exception as e:
+    #         raise StandardizedValidationError(CoreErrorMessages.SERVICE_UNAVAILABLE)
 
     def post(self, request, *args, **kwargs):
         """
