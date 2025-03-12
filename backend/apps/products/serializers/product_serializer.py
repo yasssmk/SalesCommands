@@ -6,7 +6,7 @@ from apps.core_apps.serializers import StandardDepartmentSerializer
 from apps.core_apps.models import StandardDepartment
 from core.exceptions import StandardizedValidationError
 from .pricing_serializer import PricingSerializer
-from .competitor_serializer import CompetitorSummarySerializer
+
 
 class ProductSummarySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """Simplified Product serializer for nested representations"""
@@ -68,6 +68,8 @@ class ProductSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSer
 
     def get_competitors(self, obj):
         """Return list of competitors for this product"""
+        from .competitor_serializer import CompetitorSummarySerializer
+        
         competitors = obj.competitor_list.all()
         return CompetitorSummarySerializer(competitors, many=True, context=self.context).data
 

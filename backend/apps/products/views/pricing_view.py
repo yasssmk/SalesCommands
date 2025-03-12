@@ -1,7 +1,7 @@
 from rest_framework.decorators import action
 from core.apps_shared_methods import BaseAPIView
-from .models import  Pricing
-from .serializers import (PricingSerializer, PricingSummarySerializer)
+from ..models import  Pricing
+from ..serializers import (PricingSerializer, PricingSummarySerializer)
 
 
 
