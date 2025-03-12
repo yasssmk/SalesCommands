@@ -1,15 +1,11 @@
 from django.db import models
-from django.conf import settings
-from apps.core_apps.models import BaseModelApp,AccountLinkedModel
+from apps.core_apps.models import BaseModelApp
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
-from apps.accounts_app.accounts.models import Account
-from apps.accounts_app.org_units.models import AccountOrganizationUnit
 from core.error_messages import CoreErrorMessages
 from apps.core_apps.models import StandardDepartment
-from django.core.exceptions import ValidationError
 from core.constants import CURRENCY
-from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
+from core.exceptions import StandardizedValidationError
 
 class Product(BaseModelApp, ClientScopeManager.ModelMixin):
 
@@ -34,9 +30,29 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
     )
 
     # AI & Sales Insights
-    value_proposition = models.JSONField(blank=True, null=True, verbose_name=_("Value Proposition"))
-    potential_cons = models.JSONField(blank=True, null=True, verbose_name=_("Potential Cons"))
     competitors = models.JSONField(blank=True, null=True, verbose_name=_("Most Frequent Competitors"))
+    key_features = models.JSONField(
+        blank=True, 
+        null=True, 
+        default=list,
+        verbose_name=_("Key Features"),
+        help_text=_("List of product features with their functions and roles")
+    )
+    
+    key_benefits = models.JSONField(
+        blank=True, 
+        null=True, 
+        default=list,
+        verbose_name=_("Key Benefits"),
+        help_text=_("Tangible values the product delivers to customers")
+    )
+
+    typical_implementation_time = models.PositiveIntegerField(
+        blank=True, 
+        null=True, 
+        verbose_name=_("Typical Implementation Time (Days)"),
+        help_text=_("Average number of days to implement this product")
+    )
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=['product_name'],
