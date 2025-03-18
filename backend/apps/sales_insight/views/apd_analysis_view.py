@@ -1,4 +1,4 @@
-# apps/sales_insight/views/account_product_alignment_view.py
+# apps/sales_insight/views/apd_analysis_view.py
 
 from rest_framework import status
 from rest_framework.decorators import action
@@ -9,20 +9,30 @@ from core.apps_shared_methods import BaseAPIView
 from apps.accounts_app.accounts.models import Account
 from apps.accounts_app.org_units.models import AccountOrganizationUnit
 from apps.products.models import Product
-from apps.LLM_calls.services import LLMProviderService
-from ..services.apd_prompts_service import call_second_llm_for_alignment
+from apps.accounts_app.account_product_detail.models import AccountProductDetail
+from apps.sales_insight.services.apd_analysis_service import APDAnalysisService
+from apps.sales_insight.services.apd_update_service import APDUpdateService
 import json
 
-class AccountProductAlignmentView(BaseAPIView):
+class APDAnalysisView(BaseAPIView):
     """
-    API View for analyzing account or org unit signals against product information
-    to generate comprehensive alignment insights for the Account Product Detail.
+    API View for analyzing account/org unit signals against products
+    and automatically updating Account Product Detail records with insights.
     """
     
     def post(self, request, *args, **kwargs):
         """
-        Custom post method that analyzes objectives, pain points, and economic factors
-        from either an account or organization unit against product benefits.
+        Analyze account/org unit against product and automatically update APD.
+        
+        POST /api/insights/analyze-apd/
+        
+        Required fields:
+            - account_id: ID of the account to analyze
+            - product_id: ID of the product to compare against
+            
+        Optional fields:
+            - org_unit_id: ID of a specific org unit to analyze
+            - contact_id: ID of a specific contact to include in analysis
         """
         try:
             # Validate required fields
@@ -36,29 +46,30 @@ class AccountProductAlignmentView(BaseAPIView):
                     CoreErrorMessages.REQUIRED_FIELD.format(field="product_id")
                 )
             
-            # Get the account
+            # Get input parameters
             account_id = request.data['account_id']
+            product_id = request.data['product_id']
+            org_unit_id = request.data.get('org_unit_id')
+            contact_id = request.data.get('contact_id')
+            
+            # Validate entities exist and user has access
             try:
                 account = Account.objects.get(id=account_id)
                 self.validate_client_id(account)
             except Account.DoesNotExist:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.OBJECT_NOT_FOUND.format(entity="Account")
+                    CoreErrorMessages.OBJECT_NOT_FOUND
                 )
-            
-            # Get the product
-            product_id = request.data['product_id']
+                
             try:
                 product = Product.objects.get(id=product_id)
                 self.validate_client_id(product)
             except Product.DoesNotExist:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.OBJECT_NOT_FOUND.format(entity="Product")
+                    CoreErrorMessages.OBJECT_NOT_FOUND
                 )
             
-            # Determine if we're analyzing an org unit or the main account
-            org_unit = None
-            org_unit_id = request.data.get('org_unit_id')
+            # Verify org_unit if specified
             if org_unit_id:
                 try:
                     org_unit = AccountOrganizationUnit.objects.get(id=org_unit_id)
@@ -73,151 +84,60 @@ class AccountProductAlignmentView(BaseAPIView):
                         )
                 except AccountOrganizationUnit.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.OBJECT_NOT_FOUND.format(entity="Organization Unit")
+                        CoreErrorMessages.OBJECT_NOT_FOUND
                     )
             
-            # Get objectives and pain points - either from org unit if specified, or from account
-            if org_unit:
-                objectives = org_unit.objectives or []
-                pain_points = org_unit.pain_points or []
-                entity_name = f"{org_unit.organization_name} (Org Unit)"
-                entity_id = str(org_unit.id)
-                entity_type = "org_unit"
-            else:
-                objectives = account.objectives or []
-                pain_points = account.pain_points or []
-                entity_name = account.company_name
-                entity_id = str(account.id)
-                entity_type = "account"
-                
-            # Check if we have enough data for meaningful analysis
-            has_objectives = len(objectives) > 0
-            has_pain_points = len(pain_points) > 0
-            
-            if not has_objectives and not has_pain_points:
-                return Response({
-                    'success': False,
-                    'message': f'No objectives or pain points found for {entity_type} {entity_name}',
-                    'account_id': str(account.id),
-                    'entity_type': entity_type,
-                    'entity_id': entity_id,
-                    'product_id': str(product.id),
-                    'results': None
-                }, status=status.HTTP_200_OK)
-                
-            # Get product benefits and features
-            product_benefits = product.key_benefits or []
-            product_features = product.key_features or []
-            
-            combined_product_info = product_benefits + product_features
-            
-            if not combined_product_info:
-                return Response({
-                    'success': False,
-                    'message': 'No benefits or features defined for this product',
-                    'account_id': str(account.id),
-                    'entity_type': entity_type,
-                    'entity_id': entity_id,
-                    'product_id': str(product.id),
-                    'results': None
-                }, status=status.HTTP_200_OK)
-            
-            # Call LLM service for comprehensive alignment
-            llm_service = LLMProviderService()
-            alignment_json = call_second_llm_for_alignment(
-                objectives,
-                pain_points,
-                combined_product_info
+            # Call the analysis service
+            analysis_results = APDAnalysisService.analyze_product_alignment(
+                account_id=account_id,
+                product_id=product_id,
+                org_unit_id=org_unit_id,
+                contact_id=contact_id
             )
             
-            # Parse the response
-            try:
-                if isinstance(alignment_json, str):
-                    # Try to extract JSON if it's wrapped in markdown or other text
-                    import re
-                    json_match = re.search(r'```json\s*(.*?)\s*```', alignment_json, re.DOTALL)
-                    if json_match:
-                        try:
-                            alignment_results = json.loads(json_match.group(1))
-                        except json.JSONDecodeError:
-                            # If that didn't work, try loading the whole string
-                            try:
-                                alignment_results = json.loads(alignment_json)
-                            except json.JSONDecodeError:
-                                alignment_results = {"error": "Failed to parse LLM response"}
-                    else:
-                        # If no JSON code block, try loading the whole string
-                        try:
-                            alignment_results = json.loads(alignment_json)
-                        except json.JSONDecodeError:
-                            alignment_results = {"error": "Failed to parse LLM response"}
-                else:
-                    alignment_results = alignment_json
-            except Exception as e:
-                alignment_results = {"error": f"Failed to process LLM response: {str(e)}"}
+            # Check if we have valid analysis results
+            if "message" in analysis_results and "analysis_results" not in analysis_results:
+                # Handle case where there's not enough data for analysis
+                return Response({
+                    'success': False,
+                    'message': analysis_results["message"],
+                    'account_id': str(account_id),
+                    'product_id': str(product_id)
+                }, status=status.HTTP_200_OK)
             
-            # Calculate coverage percentage
-            coverage_stats = self._calculate_coverage_stats(alignment_results, objectives, pain_points)
+            # Automatically update the APD with analysis results
+            apd, created = APDUpdateService.apply_analysis_to_apd(
+                analysis_results=analysis_results,
+                account_id=account_id,
+                product_id=product_id,
+                user=request.user
+            )
             
+            # Prepare response data
             response_data = {
                 'success': True,
-                'account_id': str(account.id),
-                'entity_type': entity_type,
-                'entity_id': entity_id,
-                'product_id': str(product.id),
-                'entity_name': entity_name,
-                'product_name': product.product_name,
-                'coverage_stats': coverage_stats,
-                'results': alignment_results
+                'account_id': str(account_id),
+                'entity_type': analysis_results.get('entity_type'),
+                'entity_id': analysis_results.get('entity_id'),
+                'product_id': str(product_id),
+                'entity_name': analysis_results.get('entity_name'),
+                'product_name': analysis_results.get('product_name'),
+                'coverage_stats': analysis_results.get('coverage_stats'),
+                'apd_updated': True,
+                'apd_id': str(apd.id),
+                'apd_created': created,
+                'apd_relevance_score': apd.ai_relevance_score
             }
+            
+            # Include signal quality metadata for UI highlighting
+            if "signal_quality" in analysis_results:
+                response_data['signal_quality'] = analysis_results['signal_quality']
+            
+            # Include analysis results
+            response_data['analysis_results'] = analysis_results.get('analysis_results', {})
             
             return Response(response_data, status=status.HTTP_200_OK)
                 
         except Exception as e:
             return self.handle_exception(e)
     
-    def _calculate_coverage_stats(self, alignment_results, objectives, pain_points):
-        """
-        Calculate coverage statistics based on analysis results
-        """
-        stats = {
-            'objectives_coverage_percent': 0,
-            'pain_points_coverage_percent': 0,
-            'overall_coverage_percent': 0
-        }
-        
-        # Check if results have the expected structure
-        if not alignment_results or "error" in alignment_results:
-            return stats
-        
-        # Calculate objective coverage
-        objectives_count = len(objectives)
-        covered_objectives = 0
-        
-        if objectives_count > 0 and 'objectives' in alignment_results:
-            for obj in alignment_results['objectives']:
-                if obj.get('matchingProductBenefit') and len(obj.get('matchingProductBenefit', [])) > 0:
-                    covered_objectives += 1
-            
-            stats['objectives_coverage_percent'] = round((covered_objectives / objectives_count) * 100)
-        
-        # Calculate pain points coverage
-        pain_points_count = len(pain_points)
-        covered_pain_points = 0
-        
-        if pain_points_count > 0 and 'painPointsAnalysis' in alignment_results:
-            pains_coverage = alignment_results['painPointsAnalysis'].get('painsCoverage', [])
-            for pain in pains_coverage:
-                if (pain.get('matchingProductFeatures') and len(pain.get('matchingProductFeatures', [])) > 0) or \
-                   (pain.get('matchingProductBenefits') and len(pain.get('matchingProductBenefits', [])) > 0):
-                    covered_pain_points += 1
-            
-            stats['pain_points_coverage_percent'] = round((covered_pain_points / pain_points_count) * 100)
-        
-        # Calculate overall coverage
-        total_items = objectives_count + pain_points_count
-        if total_items > 0:
-            covered_items = covered_objectives + covered_pain_points
-            stats['overall_coverage_percent'] = round((covered_items / total_items) * 100)
-        
-        return stats

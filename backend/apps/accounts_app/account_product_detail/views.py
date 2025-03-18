@@ -14,6 +14,8 @@ from apps.accounts_app.accounts.models import Account
 from apps.products.models import Product
 from apps.products.serializers import ProductSerializer
 from decimal import Decimal
+from django.shortcuts import redirect
+from django.urls import reverse
 
 class AccountProductDetailView(BaseAPIView):
     """
@@ -291,3 +293,61 @@ class AccountProductDetailView(BaseAPIView):
             return Response(serializer.data)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'])
+    def analyze(self, request, pk=None):
+        """
+        Trigger analysis for an APD and redirect to the analysis view.
+        
+        GET /api/account-product-details/{id}/analyze/
+        """
+        apd = self.get_objects([pk]).first()
+        if not apd:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        
+        # Redirect to analysis view with correct parameters
+        analysis_url = reverse('analyze_apd')
+        redirect_url = f"{analysis_url}?account_id={apd.account_id}&product_id={apd.product_id}"
+        
+        return redirect(redirect_url)
+    
+    @action(detail=True, methods=['post'])
+    def refresh_analysis(self, request, pk=None):
+        """
+        Refresh the analysis data for this APD.
+        This triggers a new analysis and updates the APD with the results.
+        
+        POST /api/account-product-details/{id}/refresh-analysis/
+        """
+        from apps.sales_insight.services.apd_analysis_service import APDAnalysisService
+        from apps.sales_insight.services.apd_update_service import APDUpdateService
+        
+        apd = self.get_objects([pk]).first()
+        if not apd:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        
+        try:
+            # Run analysis
+            analysis_results = APDAnalysisService.analyze_product_alignment(
+                account_id=apd.account_id,
+                product_id=apd.product_id
+            )
+            
+            # Update APD with results
+            updated_apd, _ = APDUpdateService.apply_analysis_to_apd(
+                analysis_results=analysis_results,
+                account_id=apd.account_id,
+                product_id=apd.product_id,
+                user=request.user
+            )
+            
+            # Return updated APD
+            serializer = self.serializer_class(updated_apd)
+            return Response({
+                'success': True,
+                'message': 'Analysis refreshed successfully',
+                'data': serializer.data
+            })
+        
+        except Exception as e:
+            return self.handle_exception(e)

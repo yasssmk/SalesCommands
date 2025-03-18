@@ -217,7 +217,6 @@ class APDAnalysisService:
                 "last_confirmed": signal.last_confirmed_at,
                 "effective_status": effective_status,
                 "age_days": age_days,
-                "confidence": signal.confidence,
                 "source": signal.source
             }
         
@@ -238,7 +237,6 @@ class APDAnalysisService:
                 "last_confirmed": signal.last_confirmed_at,
                 "effective_status": effective_status,
                 "age_days": age_days,
-                "confidence": signal.confidence,
                 "source": signal.source
             }
         
@@ -288,7 +286,6 @@ class APDAnalysisService:
                         "last_confirmed": metadata["last_confirmed"].isoformat() if metadata["last_confirmed"] else None,
                         "effective_status": metadata["effective_status"],
                         "age_days": metadata["age_days"],
-                        "confidence": metadata["confidence"],
                         "source": metadata["source"],
                         "signal_id": signal_id
                     }
@@ -362,7 +359,6 @@ class APDAnalysisService:
             "objectives_coverage_percent": 0,
             "pain_points_coverage_percent": 0,
             "overall_coverage_percent": 0,
-            "confidence_weighted_coverage": 0
         }
         
         if not analysis_results or "error" in analysis_results:
@@ -424,13 +420,6 @@ class APDAnalysisService:
             covered_items = covered_objectives + covered_pain_points
             stats["overall_coverage_percent"] = round((covered_items / total_items) * 100)
             
-            # Calculate confidence-weighted coverage
-            total_quality_sum = objective_quality_sum + pain_quality_sum
-            if covered_items > 0:
-                avg_quality = total_quality_sum / covered_items
-                stats["confidence_weighted_coverage"] = round((covered_items / total_items) * avg_quality * 100)
-            else:
-                stats["confidence_weighted_coverage"] = 0
         
         return stats
     
