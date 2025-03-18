@@ -78,6 +78,43 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         help_text=_("AI-generated score for product relevance to this account")
     )
 
+    # Analysis data storage
+    objectives_alignment = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name=_("Objectives Alignment"),
+        help_text=_("Alignment between account objectives and product benefits")
+    )
+    
+    pain_points_coverage = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name=_("Pain Points Coverage"),
+        help_text=_("Coverage of account pain points by product features")
+    )
+    
+    economic_impact = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name=_("Economic Impact"),
+        help_text=_("Economic impact analysis of the product for this account")
+    )
+    
+    coverage_stats = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name=_("Coverage Statistics"),
+        help_text=_("Statistical metrics about product coverage")
+    )
+    
+    last_analysis_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Last Analysis Date"),
+        help_text=_("When the product alignment was last analyzed")
+    )
+
+
     notes = models.TextField(
         blank=True,
         verbose_name=_("Analysis Notes"),
@@ -191,7 +228,8 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         if self.pk:  # Only track changes for existing records
             old_instance = AccountProductDetail.objects.get(pk=self.pk)
 
-            for field in ['estimated_units', 'selected_pricing', 'potential_revenue', 'ai_relevance_score']:
+            for field in ['estimated_units', 'selected_pricing', 'potential_revenue', 'ai_relevance_score',
+                         'objectives_alignment', 'pain_points_coverage', 'economic_impact']:
                 old_value = getattr(old_instance, field, None)
                 new_value = getattr(self, field, None)
 
@@ -200,6 +238,12 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
 
         # ✅ Keep potential revenue calculation before saving
         self.potential_revenue = self.calculate_potential_revenue()
+
+        # Update last_analysis_date if analysis fields are being updated
+        analysis_fields = ['objectives_alignment', 'pain_points_coverage', 'economic_impact', 'coverage_stats']
+        if any(hasattr(self, field) and getattr(self, field) != getattr(self.__class__.objects.get(pk=self.pk), field, None) 
+               for field in analysis_fields if self.pk):
+            self.last_analysis_date = timezone.now()
 
         super().save(*args, **kwargs)
 

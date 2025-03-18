@@ -10,20 +10,19 @@ from apps.accounts_app.accounts.models import Account
 from apps.accounts_app.org_units.models import AccountOrganizationUnit
 from apps.products.models import Product
 from apps.LLM_calls.services import LLMProviderService
-from ..services.apd_prompts_service import call_second_llm_for_objectives
-from ..serializers.apd_analyze_serializer import APDAnalysisSerializer, ObjectiveAlignmentResponseSerializer
+from ..services.apd_prompts_service import call_second_llm_for_alignment
 import json
 
 class AccountProductAlignmentView(BaseAPIView):
     """
     API View for analyzing account or org unit signals against product information
-    to generate alignment insights for the Account Product Detail.
+    to generate comprehensive alignment insights for the Account Product Detail.
     """
     
     def post(self, request, *args, **kwargs):
         """
-        Custom post method that analyzes objectives from either an account or
-        organization unit against product benefits.
+        Custom post method that analyzes objectives, pain points, and economic factors
+        from either an account or organization unit against product benefits.
         """
         try:
             # Validate required fields
@@ -77,22 +76,28 @@ class AccountProductAlignmentView(BaseAPIView):
                         CoreErrorMessages.OBJECT_NOT_FOUND.format(entity="Organization Unit")
                     )
             
-            # Get objectives - either from org unit if specified, or from account
+            # Get objectives and pain points - either from org unit if specified, or from account
             if org_unit:
                 objectives = org_unit.objectives or []
+                pain_points = org_unit.pain_points or []
                 entity_name = f"{org_unit.organization_name} (Org Unit)"
                 entity_id = str(org_unit.id)
                 entity_type = "org_unit"
             else:
                 objectives = account.objectives or []
+                pain_points = account.pain_points or []
                 entity_name = account.company_name
                 entity_id = str(account.id)
                 entity_type = "account"
                 
-            if not objectives:
+            # Check if we have enough data for meaningful analysis
+            has_objectives = len(objectives) > 0
+            has_pain_points = len(pain_points) > 0
+            
+            if not has_objectives and not has_pain_points:
                 return Response({
                     'success': False,
-                    'message': f'No objectives found for {entity_type} {entity_name}',
+                    'message': f'No objectives or pain points found for {entity_type} {entity_name}',
                     'account_id': str(account.id),
                     'entity_type': entity_type,
                     'entity_id': entity_id,
@@ -100,12 +105,16 @@ class AccountProductAlignmentView(BaseAPIView):
                     'results': None
                 }, status=status.HTTP_200_OK)
                 
-            # Get product benefits
+            # Get product benefits and features
             product_benefits = product.key_benefits or []
-            if not product_benefits:
+            product_features = product.key_features or []
+            
+            combined_product_info = product_benefits + product_features
+            
+            if not combined_product_info:
                 return Response({
                     'success': False,
-                    'message': 'No key benefits defined for this product',
+                    'message': 'No benefits or features defined for this product',
                     'account_id': str(account.id),
                     'entity_type': entity_type,
                     'entity_id': entity_id,
@@ -113,12 +122,12 @@ class AccountProductAlignmentView(BaseAPIView):
                     'results': None
                 }, status=status.HTTP_200_OK)
             
-            # Call LLM service to align objectives with benefits
+            # Call LLM service for comprehensive alignment
             llm_service = LLMProviderService()
-            alignment_json = call_second_llm_for_objectives(
-                objectives, 
-                product_benefits,
-                llm_service
+            alignment_json = call_second_llm_for_alignment(
+                objectives,
+                pain_points,
+                combined_product_info
             )
             
             # Parse the response
@@ -147,6 +156,9 @@ class AccountProductAlignmentView(BaseAPIView):
             except Exception as e:
                 alignment_results = {"error": f"Failed to process LLM response: {str(e)}"}
             
+            # Calculate coverage percentage
+            coverage_stats = self._calculate_coverage_stats(alignment_results, objectives, pain_points)
+            
             response_data = {
                 'success': True,
                 'account_id': str(account.id),
@@ -155,6 +167,7 @@ class AccountProductAlignmentView(BaseAPIView):
                 'product_id': str(product.id),
                 'entity_name': entity_name,
                 'product_name': product.product_name,
+                'coverage_stats': coverage_stats,
                 'results': alignment_results
             }
             
@@ -162,3 +175,49 @@ class AccountProductAlignmentView(BaseAPIView):
                 
         except Exception as e:
             return self.handle_exception(e)
+    
+    def _calculate_coverage_stats(self, alignment_results, objectives, pain_points):
+        """
+        Calculate coverage statistics based on analysis results
+        """
+        stats = {
+            'objectives_coverage_percent': 0,
+            'pain_points_coverage_percent': 0,
+            'overall_coverage_percent': 0
+        }
+        
+        # Check if results have the expected structure
+        if not alignment_results or "error" in alignment_results:
+            return stats
+        
+        # Calculate objective coverage
+        objectives_count = len(objectives)
+        covered_objectives = 0
+        
+        if objectives_count > 0 and 'objectives' in alignment_results:
+            for obj in alignment_results['objectives']:
+                if obj.get('matchingProductBenefit') and len(obj.get('matchingProductBenefit', [])) > 0:
+                    covered_objectives += 1
+            
+            stats['objectives_coverage_percent'] = round((covered_objectives / objectives_count) * 100)
+        
+        # Calculate pain points coverage
+        pain_points_count = len(pain_points)
+        covered_pain_points = 0
+        
+        if pain_points_count > 0 and 'painPointsAnalysis' in alignment_results:
+            pains_coverage = alignment_results['painPointsAnalysis'].get('painsCoverage', [])
+            for pain in pains_coverage:
+                if (pain.get('matchingProductFeatures') and len(pain.get('matchingProductFeatures', [])) > 0) or \
+                   (pain.get('matchingProductBenefits') and len(pain.get('matchingProductBenefits', [])) > 0):
+                    covered_pain_points += 1
+            
+            stats['pain_points_coverage_percent'] = round((covered_pain_points / pain_points_count) * 100)
+        
+        # Calculate overall coverage
+        total_items = objectives_count + pain_points_count
+        if total_items > 0:
+            covered_items = covered_objectives + covered_pain_points
+            stats['overall_coverage_percent'] = round((covered_items / total_items) * 100)
+        
+        return stats

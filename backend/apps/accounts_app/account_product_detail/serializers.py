@@ -43,6 +43,18 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
 
     historical_data = serializers.JSONField(read_only=True)
 
+     # Analysis data fields
+    objectives_alignment = serializers.JSONField(required=False, allow_null=True)
+    pain_points_coverage = serializers.JSONField(required=False, allow_null=True)
+    economic_impact = serializers.JSONField(required=False, allow_null=True)
+    coverage_stats = serializers.JSONField(required=False, allow_null=True)
+    
+    # Analysis summary fields
+    objectives_coverage_percent = serializers.SerializerMethodField()
+    pain_points_coverage_percent = serializers.SerializerMethodField()
+    overall_coverage_percent = serializers.SerializerMethodField()
+    has_analysis_data = serializers.SerializerMethodField()
+
     # Calculated fields
     potential_revenue_formatted = serializers.SerializerMethodField()
     revenue_label = serializers.SerializerMethodField()
@@ -64,6 +76,15 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
             'revenue_type',
             'revenue_label',
             'ai_relevance_score',
+            'objectives_alignment',
+            'pain_points_coverage',
+            'economic_impact',
+            'coverage_stats',
+            'objectives_coverage_percent',
+            'pain_points_coverage_percent',
+            'overall_coverage_percent',
+            'has_analysis_data',
+            'last_analysis_date',
             'notes',
             'historical_data',
             'created_at',
@@ -75,7 +96,8 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
             'revenue_type',
             'created_at',
             'updated_at',
-            'client_id'
+            'client_id',
+            'last_analysis_date'
         ]
 
     def validate(self, data):
@@ -128,10 +150,8 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
         'product' & 'account', automatically assign any org units that share
         standard_department with the product's target_categories.
         """
-        print('1')
         # If user explicitly passed something for 'target_org_units', do NOT override
         if 'target_org_units' in validated_data:
-            print('2')
             return
 
         # We need final 'product' and 'account'
@@ -248,6 +268,30 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
         return instance
 
 
+    # Method fields for coverage statistics
+    def get_objectives_coverage_percent(self, obj):
+        """Calculate objectives coverage percentage from stored coverage stats"""
+        if obj.coverage_stats and 'objectives_coverage_percent' in obj.coverage_stats:
+            return obj.coverage_stats['objectives_coverage_percent']
+        return 0
+    
+    def get_pain_points_coverage_percent(self, obj):
+        """Calculate pain points coverage percentage from stored coverage stats"""
+        if obj.coverage_stats and 'pain_points_coverage_percent' in obj.coverage_stats:
+            return obj.coverage_stats['pain_points_coverage_percent']
+        return 0
+    
+    def get_overall_coverage_percent(self, obj):
+        """Calculate overall coverage percentage from stored coverage stats"""
+        if obj.coverage_stats and 'overall_coverage_percent' in obj.coverage_stats:
+            return obj.coverage_stats['overall_coverage_percent']
+        return 0
+    
+    def get_has_analysis_data(self, obj):
+        """Check if APD has any analysis data"""
+        return bool(obj.objectives_alignment or obj.pain_points_coverage or obj.economic_impact)
+
+    # Revenue formatting methods
     def get_potential_revenue_formatted(self, obj):
         if obj.selected_pricing:
             return f"{obj.selected_pricing.currency} {obj.potential_revenue:,.2f}"

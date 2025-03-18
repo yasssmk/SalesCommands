@@ -1,62 +1,84 @@
-import json 
+# # second_llm_prompt_service.py
+
+import json
 from apps.LLM_calls.services import LLMProviderService
 llm_service = LLMProviderService()
 
-# second_llm_prompt_service.py
-
 SECOND_CALL_COMMON_INSTRUCTIONS = """
-    You are an AI assistant that aligns the account's objectives with a product's key benefits or features. 
-    I will provide:
-      1) A set of account objectives (from the first LLM call).
-      2) The product's key benefits or features.
+    You are an AI assistant that provides a structured JSON aligning:
+      1) Account objectives with product benefits
+      2) Pain points with product features/benefits
 
-    Your job is to produce a structured JSON showing how each objective can be addressed by the product's benefits, 
-    including a brief explanation of why it helps, and an expected outcome or potential KPI impact.
+    We will provide:
+      - A list of 'account objectives' (from the first LLM call)
+      - A list of 'pain points' discovered
+      - A list of 'product key benefits' or 'product features'
 
-    ***RULES***
-      1. If an objective has no relevant matching product benefit, leave 'matchingProductBenefit' as an empty array.
-      2. Do NOT invent data not implied by the text. If uncertain, keep it minimal or empty.
-      3. Provide realistic, concise bullet points for 'whyItHelps' and 'expectedOutcome'.
-      4. Return ONLY valid JSON. No extra commentary, code fences, or text.
-      5. The exact JSON structure must match:
+    Your output must have the following JSON structure:
 
-      {
-        "objectives": [
+    {
+      "objectives": [
+        {
+          "objectiveStatement": "",
+          "matchingProductBenefit": [],
+          "whyItHelps": [],
+          "expectedOutcome": []
+        }
+      ],
+      "painPointsAnalysis": {
+        "painsCoverage": [
           {
-            "objectiveStatement": "",
-            "matchingProductBenefit": [],
-            "whyItHelps": [],
-            "expectedOutcome": []
+            "painPoint": "",
+            "matchingProductFeatures": [],
+            "matchingProductBenefits": [],
+            "whyItHelps": []
           }
         ]
       }
+    }
 
-    ***NOTE***:
-      - "matchingProductBenefit" refers to the product's 'key_benefits' or 'key_features' if they directly address that objective.
-      - "whyItHelps" is a short explanation bullet list.
-      - "expectedOutcome" is how the client’s objective may be fulfilled or improved by using those benefits.
+    ***RULES***
+    1. If an objective has no relevant matching product benefit, leave 'matchingProductBenefit' empty.
+    2. For each pain point, list which product features/benefits address it. If none applies, leave them empty.
+    3. Do NOT invent data not implied by the text. If uncertain, keep it minimal or empty.
+    4. Provide concise bullet points for 'whyItHelps' and 'expectedOutcome'.
+    5. Return ONLY valid JSON with no extra commentary or code fences.
+
+    ***NOTE***
+    - "matchingProductBenefit" under objectives ties to product 'key_benefits' or 'key_features' if they support that objective.
+    - "painPointsAnalysis.painsCoverage": For each pain, fill 'matchingProductFeatures' or 'matchingProductBenefits' as relevant.
+    - "whyItHelps" is a brief explanation of how those benefits/features solve the problem or reach the goal.
+    - "expectedOutcome" is how the client’s objective may be fulfilled/improved. (Only in the objectives section)
 """
 
-def get_objective_alignment_prompt(account_objectives, product_benefits):
+def get_second_call_prompt(
+    account_objectives,    # list of objective strings
+    account_pain_points,   # list of pain point strings
+    product_benefits       # list of benefits/features (strings)
+):
     """
-    Builds a prompt to align the account's objectives with the product's benefits.
-    Arguments:
-      account_objectives: list of strings from the first LLM call
-      product_benefits: list of strings or short bullet points from the Product model
+    Builds a prompt for the second LLM call, combining both:
+     - objectives → product benefits alignment
+     - pain points → product features/benefits alignment
     """
-    # Convert lists to bullet-form or to any format you prefer for clarity
+    # Convert lists into bullet-form for clarity in the prompt
     objectives_text = "\n".join(f"- {obj}" for obj in account_objectives)
-    benefits_text = "\n".join(f"- {benefit}" for benefit in product_benefits)
+    pains_text = "\n".join(f"- {pain}" for pain in account_pain_points)
+    benefits_text = "\n".join(f"- {b}" for b in product_benefits)
 
     return f"""{SECOND_CALL_COMMON_INSTRUCTIONS}
 
-Account Objectives:
+ACCOUNT OBJECTIVES:
 {objectives_text}
 
-Product Key Benefits/Features:
+ACCOUNT PAIN POINTS:
+{pains_text}
+
+PRODUCT KEY BENEFITS/FEATURES:
 {benefits_text}
 
-Now, return the final JSON with structure:
+Now, return the JSON in this exact shape:
+
 {{
   "objectives": [
     {{
@@ -65,14 +87,36 @@ Now, return the final JSON with structure:
       "whyItHelps": [],
       "expectedOutcome": []
     }}
-  ]
+  ],
+  "painPointsAnalysis": {{
+    "painsCoverage": [
+      {{
+        "painPoint": "",
+        "matchingProductFeatures": [],
+        "matchingProductBenefits": [],
+        "whyItHelps": []
+      }}
+    ]
+  }}
 }}
 
-Provide one array item per account objective. If a product benefit clearly fits that objective, place it in 'matchingProductBenefit'. Otherwise, leave it empty.
+For each objective in 'objectives', fill the 4 fields. For each pain point, create an entry in painsCoverage. If a product benefit/feature clearly applies, list it; otherwise leave them empty.
 """
 
-def call_second_llm_for_objectives(account_objectives, product_benefits, llm_service):
-    prompt = get_objective_alignment_prompt(account_objectives, product_benefits)
+def call_second_llm_for_alignment(
+    account_objectives, 
+    account_pain_points, 
+    product_benefits
+):
+    """
+    Calls the LLM using the prompt built above, returning the raw JSON string.
+    (You can parse it afterwards with your parse_and_fallback_if_needed if desired.)
+    """
+    prompt = get_second_call_prompt(
+        account_objectives, 
+        account_pain_points, 
+        product_benefits
+    )
     response_text = llm_service.call_llm(user_prompt=prompt)
-    # You’d parse or validate the JSON here similarly to parse_and_fallback_if_needed
+    # Optionally parse or validate the JSON here
     return response_text
