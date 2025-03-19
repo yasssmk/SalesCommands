@@ -38,12 +38,8 @@ SECOND_CALL_COMMON_INSTRUCTIONS = """
       },
 
       "economicImpact": {
-        "currentPainCost": "",
-        "timeOrMoneySaved": "",
-        "unitsThatMatter": "",
-        "existingSolutionCost": "",
-        "estimatedAccountPotential": "",
-        "additionalCosts": []
+        "implications":[],
+        "ProductValueAdded": []
       }
     }
 
@@ -57,7 +53,7 @@ SECOND_CALL_COMMON_INSTRUCTIONS = """
     ***NOTE***
       - "objectives": for each account objective, match relevant product benefit(s) and outline 'whyItHelps' plus 'expectedOutcome'.
       - "painPointsAnalysis": how each pain is addressed by product features/benefits.
-      - "economicImpact": an overview of costs, savings, the relevant unit (FTE, seats, etc.), existing solution cost, total potential, and any extra costs.
+      - "economicImpact": an overview of implication costs and how the product will bring value, in a quantifible way if possible, to the customer.
 """
 
 def get_second_call_prompt(
@@ -109,19 +105,15 @@ Now, return the final JSON with this structure:
     ]
   }},
   "economicImpact": {{
-    "currentPainCost": "",
-    "timeOrMoneySaved": "",
-    "unitsThatMatter": "",
-    "existingSolutionCost": "",
-    "estimatedAccountPotential": "",
-    "additionalCosts": []
+    "implications": [],
+    "ProductValueAdded": []
   }}
 }}
 
 For each objective in 'objectives', fill the 4 fields. 
 For each pain point, create an item in 'painsCoverage'. 
 If a product feature/benefit fits, list it under matchingProductFeatures/Benefits, otherwise leave them empty.
-In 'economicImpact', fill the fields if the transcript or data suggest them, or set them empty if not mentioned.
+In 'economicImpact', fill the implications and ProductValueAdded fields based on economic benefits or cost savings.
 """
 
 def call_second_llm_for_alignment(
@@ -134,6 +126,26 @@ def call_second_llm_for_alignment(
         account_pain_points, 
         product_benefits
     )
+    print('GOO')
     response_text = llm_service.call_llm(user_prompt=prompt)
+    print(response_text)
     # Optionally parse or validate JSON here
     return response_text
+
+# def call_second_llm_for_alignment(account_objectives, account_pain_points, product_benefits):
+#     try:
+#         prompt = get_second_call_prompt(
+#             account_objectives, 
+#             account_pain_points, 
+#             product_benefits
+#         )
+#         print(f"Calling LLM with second prompt: {prompt[:100]}...")  # Log just the beginning
+#         response_text = llm_service.call_llm(user_prompt=prompt)
+#         print(f"LLM response received: {len(response_text)} characters")
+#         # Optionally parse or validate JSON here
+#         return response_text
+#     except Exception as e:
+#         print(f"Error in call_second_llm_for_alignment: {str(e)}")
+#         import traceback
+#         traceback.print_exc()
+#         raise  # Re-raise to allow proper error handling

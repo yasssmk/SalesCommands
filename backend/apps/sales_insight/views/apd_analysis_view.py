@@ -86,15 +86,19 @@ class APDAnalysisView(BaseAPIView):
                     raise StandardizedValidationError(
                         CoreErrorMessages.OBJECT_NOT_FOUND
                     )
-            
             # Call the analysis service
-            analysis_results = APDAnalysisService.analyze_product_alignment(
-                account_id=account_id,
-                product_id=product_id,
-                org_unit_id=org_unit_id,
-                contact_id=contact_id
-            )
-            
+            try:
+                analysis_results = APDAnalysisService.analyze_product_alignment(
+                    account_id=account_id,
+                    product_id=product_id,
+                    org_unit_id=org_unit_id,
+                    contact_id=contact_id
+                )
+            except Exception as analysis_error:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.SERVICE_ERROR
+                )
+                
             # Check if we have valid analysis results
             if "message" in analysis_results and "analysis_results" not in analysis_results:
                 # Handle case where there's not enough data for analysis

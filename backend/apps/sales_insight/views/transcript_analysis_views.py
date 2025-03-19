@@ -37,7 +37,6 @@ class TranscriptAnalysisView(BaseAPIView):
         Returns created signals for user validation instead of raw insights.
         """
         try:
-            
             # Validate incoming data
             serializer = self.serializer_class(
                 data=request.data,

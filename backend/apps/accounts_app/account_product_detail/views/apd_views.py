@@ -351,3 +351,52 @@ class AccountProductDetailView(BaseAPIView):
         
         except Exception as e:
             return self.handle_exception(e)
+        
+    # Add this method to your existing AccountProductDetailView class
+
+    @action(detail=True, methods=['get'])
+    def tech_relationships(self, request, pk=None):
+        """
+        Get tech relationships for this APD.
+        
+        GET /api/account-products/{id}/tech-relationships/
+        """
+        apd = self.get_objects([pk]).first()
+        if not apd:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+        # Check for tech relationships
+        relationships = apd.tech_relationships or []
+        
+        # Get entities with tech stack
+        account = apd.account
+        org_units = account.accountorganizationunit_set.all()
+        
+        # Find entities with tech stack
+        entities_with_tech = []
+        
+        # Check account
+        if account.current_tech_stack:
+            entities_with_tech.append({
+                'entity_type': 'ACCOUNT',
+                'entity_id': str(account.id),
+                'entity_name': account.company_name,
+                'tech_count': len(account.current_tech_stack) if isinstance(account.current_tech_stack, list) else 1
+            })
+        
+        # Check org units
+        for org_unit in org_units:
+            if org_unit.current_tech_stack:
+                entities_with_tech.append({
+                    'entity_type': 'ORG_UNIT',
+                    'entity_id': str(org_unit.id),
+                    'entity_name': org_unit.organization_name,
+                    'tech_count': len(org_unit.current_tech_stack) if isinstance(org_unit.current_tech_stack, list) else 1
+                })
+        
+        return Response({
+            'tech_relationships': relationships,
+            'entities_with_tech': entities_with_tech,
+            'product_id': str(apd.product_id),
+            'product_name': apd.product.product_name
+        })

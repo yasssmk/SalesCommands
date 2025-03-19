@@ -428,9 +428,23 @@ def get_full_insights(transcript):
         "accountInfo": data_1.get("accountInfo", {}),
         "insights": {
             "accountInsights": data_1.get("accountInsights", {}),
-            "orgUnitsInsights": data_2.get("orgUnitsInsights", []),
             "contactsInsights": data_3.get("contactsInsights", [])
         }
     }
+    
+    # Handle org units insights with the new structure
+    if isinstance(data_2, dict):
+        if "orgUnitsInsights" in data_2:
+            final_structure["insights"]["orgUnitsInsights"] = data_2["orgUnitsInsights"]
+        elif "orgUnitInfo" in data_2:
+            # New format with both orgUnitInfo and orgUnitsInsights
+            final_structure["insights"]["orgUnitInfo"] = data_2.get("orgUnitInfo", {})
+            final_structure["insights"]["orgUnitsInsights"] = data_2.get("orgUnitsInsights", [])
+        else:
+            # Fallback in case the format is unexpected
+            final_structure["insights"]["orgUnitsInsights"] = []
+    else:
+        # If it's already a list, assume it's the orgUnitsInsights array directly
+        final_structure["insights"]["orgUnitsInsights"] = data_2 or []
 
     return final_structure
