@@ -226,59 +226,59 @@ class SignalApplicationService:
 
         return False
 
-    @classmethod
-    def _apply_to_account_product(cls, signal, user):
-        """Apply signal to account product detail, tracking relevant field changes."""
-        apd = signal.account_product_detail
-        if not apd:
-            return False
+    # @classmethod
+    # def _apply_to_account_product(cls, signal, user):
+    #     """Apply signal to account product detail, tracking relevant field changes."""
+    #     apd = signal.account_product_detail
+    #     if not apd:
+    #         return False
             
-        field_name = signal.field_name
-        value = signal.value
+    #     field_name = signal.field_name
+    #     value = signal.value
 
-        if field_name == 'ai_relevance_score' and isinstance(value, (int, float)):
-            apd.ai_relevance_score = value
-            apd.save(user=user)
-            return True
+    #     if field_name == 'ai_relevance_score' and isinstance(value, (int, float)):
+    #         apd.ai_relevance_score = value
+    #         apd.save(user=user)
+    #         return True
 
-        elif field_name == 'notes':
-            existing_notes = apd.notes or ""
-            new_notes = f"{existing_notes}\n\n{value}" if existing_notes else value
-            apd.notes = new_notes
-            apd.save(user=user)
-            return True
+    #     elif field_name == 'notes':
+    #         existing_notes = apd.notes or ""
+    #         new_notes = f"{existing_notes}\n\n{value}" if existing_notes else value
+    #         apd.notes = new_notes
+    #         apd.save(user=user)
+    #         return True
 
-        elif field_name == 'estimated_units' and isinstance(value, (int, str)):
-            apd.estimated_units = int(value) if isinstance(value, str) else value
-            apd.save(user=user)
-            return True
+    #     elif field_name == 'estimated_units' and isinstance(value, (int, str)):
+    #         apd.estimated_units = int(value) if isinstance(value, str) else value
+    #         apd.save(user=user)
+    #         return True
 
-        elif hasattr(apd, field_name):
-            # 🔥 Custom tracking for account product-specific fields
-            current_value = getattr(apd, field_name)
-            setattr(apd, field_name, value)
+    #     elif hasattr(apd, field_name):
+    #         # 🔥 Custom tracking for account product-specific fields
+    #         current_value = getattr(apd, field_name)
+    #         setattr(apd, field_name, value)
 
-            apd.save(user=user)
+    #         apd.save(user=user)
 
-            if not apd.historical_data:
-                apd.historical_data = {}
+    #         if not apd.historical_data:
+    #             apd.historical_data = {}
 
-            if field_name not in apd.historical_data:
-                apd.historical_data[field_name] = []
+    #         if field_name not in apd.historical_data:
+    #             apd.historical_data[field_name] = []
 
-            apd.historical_data[field_name].append({
-                'old_value': current_value,
-                'new_value': value,
-                'changed_at': timezone.now().isoformat(),
-                'changed_by': str(user.id) if user else None,
-                'source': 'signal',
-                'signal_id': str(signal.id)
-            })
+    #         apd.historical_data[field_name].append({
+    #             'old_value': current_value,
+    #             'new_value': value,
+    #             'changed_at': timezone.now().isoformat(),
+    #             'changed_by': str(user.id) if user else None,
+    #             'source': 'signal',
+    #             'signal_id': str(signal.id)
+    #         })
 
-            apd.save(update_fields=['historical_data'])
-            return True
+    #         apd.save(update_fields=['historical_data'])
+    #         return True
 
-        return False
+    #     return False
     
     
         

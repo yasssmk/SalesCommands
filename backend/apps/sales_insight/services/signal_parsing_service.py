@@ -273,6 +273,13 @@ class SignalParsingService:
         """Parse organization unit insights"""
         signals = []
         
+        # Check if we have org_unit_info at the top level
+        org_unit_info = None
+        if isinstance(org_units_insights, dict) and 'orgUnitInfo' in org_units_insights:
+            org_unit_info = org_units_insights.get('orgUnitInfo', {})
+            # Extract actual insights array
+            org_units_insights = org_units_insights.get('orgUnitsInsights', [])
+        
         for org_insight in org_units_insights:
             org_name = org_insight.get('organizationName')
             unit_type = org_insight.get('unitType')
@@ -292,6 +299,25 @@ class SignalParsingService:
                 'matching_std_department_id': org_unit_results['std_department'].id if org_unit_results['std_department'] else None,
                 'similar_unit_ids': [unit.id for unit in org_unit_results['similar_units']]
             }
+            
+            # Handle employee count from org_unit_info if available
+            if org_unit_info and 'employeeCount' in org_unit_info and org_unit_info['employeeCount'] > 0:
+                employee_count = org_unit_info['employeeCount']
+                signal = Signal.objects.create(
+                    account=account,
+                    org_unit=target_org_unit,  # May be None
+                    category=Signal.Category.PROFILE,
+                    entity_type=Signal.EntityType.ORG_UNIT,
+                    field_name='estimated_employee_count',
+                    value=employee_count,
+                    status=Signal.Status.PENDING,
+                    source=source,
+                    metadata=org_unit_metadata,
+                    client_id=client_id,
+                    created_by=user,
+                    updated_by=user
+                )
+                signals.append(signal)
                 
             # Process qualification fields
             qualification_fields = [
@@ -325,13 +351,6 @@ class SignalParsingService:
                         updated_by=user
                     )
                     signals.append(signal)
-                    
-            # For high-value signals, find product alignment and APD
-            # if value_score >= 60:
-            #     products = cls._detect_and_set_product_alignment(signal, org_insight[json_field])
-                        
-            # # Link to APDs
-            # cls._link_to_account_product_details(signal, account, products, target_org_unit)
             
             # Process tech stack (special handling)
             if 'currentTechStack' in org_insight and org_insight['currentTechStack']:

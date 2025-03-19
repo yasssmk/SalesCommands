@@ -162,6 +162,9 @@ ORG_UNITS_DEFINITIONS = """
 JSON STRUCTURE:
 
 {
+  "orgUnitInfo": {
+        "employeeCount": 0,
+    },
   "orgUnitsInsights": [
     {
       "organizationName": "",
