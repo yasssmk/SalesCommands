@@ -1,5 +1,6 @@
 from django.urls import path
-from .views import AccountProductDetailView
+from .views import AccountProductDetailView, TechRelationshipView
+
 
 
 app_name = 'account_product_detail'
@@ -16,4 +17,6 @@ urlpatterns = [
     path('summary/', AccountProductDetailView.as_view(), name='summary'),
     path('whitespace/', AccountProductDetailView.as_view(), name='whitespace'),
     path('analysis-summary/', AccountProductDetailView.as_view(), name='analysis_summary'),
+
+     path('tech-relationships/', TechRelationshipView.as_view(), name='tech_relationships'),
 ]
