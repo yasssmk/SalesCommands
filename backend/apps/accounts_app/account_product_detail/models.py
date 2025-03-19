@@ -114,6 +114,13 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         help_text=_("When the product alignment was last analyzed")
     )
 
+    tech_relationships = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name=_("Tech Stack Relationships"),
+        help_text=_("Relationships between this product and customer's existing technologies")
+    )
+    
 
     notes = models.TextField(
         blank=True,
@@ -229,7 +236,7 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
             old_instance = AccountProductDetail.objects.get(pk=self.pk)
 
             for field in ['estimated_units', 'selected_pricing', 'potential_revenue', 'ai_relevance_score',
-                         'objectives_alignment', 'pain_points_coverage', 'economic_impact']:
+                         'objectives_alignment', 'pain_points_coverage', 'economic_impact', 'tech_relationships']:
                 old_value = getattr(old_instance, field, None)
                 new_value = getattr(self, field, None)
 
@@ -240,7 +247,7 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         self.potential_revenue = self.calculate_potential_revenue()
 
         # Update last_analysis_date if analysis fields are being updated
-        analysis_fields = ['objectives_alignment', 'pain_points_coverage', 'economic_impact', 'coverage_stats']
+        analysis_fields = ['objectives_alignment', 'pain_points_coverage', 'economic_impact', 'coverage_stats', 'tech_relationships']
         if any(hasattr(self, field) and getattr(self, field) != getattr(self.__class__.objects.get(pk=self.pk), field, None) 
                for field in analysis_fields if self.pk):
             self.last_analysis_date = timezone.now()

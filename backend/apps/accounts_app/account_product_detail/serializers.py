@@ -42,6 +42,7 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
     )
 
     historical_data = serializers.JSONField(read_only=True)
+    tech_relationships = serializers.JSONField(required=False, allow_null=True)
 
      # Analysis data fields
     objectives_alignment = serializers.JSONField(required=False, allow_null=True)
@@ -87,6 +88,7 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
             'last_analysis_date',
             'notes',
             'historical_data',
+            'tech_relationships',
             'created_at',
             'updated_at'
         ]
