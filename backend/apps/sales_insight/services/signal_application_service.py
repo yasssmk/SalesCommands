@@ -138,6 +138,15 @@ class SignalApplicationService:
         elif field_name in ['unit_type', 'organization_name', 'estimated_employee_count']:  # Add any org-unit-specific fields that need tracking
             # 🔥 Custom tracking for org-unit-specific fields
             current_value = getattr(org_unit, field_name, None)
+        
+            # For estimated_employee_count, ensure it's an integer
+            if field_name == 'estimated_employee_count' and value is not None:
+                try:
+                    value = int(value)
+                except (ValueError, TypeError):
+                    # If conversion fails, use the original value
+                    pass
+                    
             setattr(org_unit, field_name, value)
 
             if hasattr(org_unit, 'track_signal_update'):
@@ -157,6 +166,10 @@ class SignalApplicationService:
                 'source': 'signal',
                 'signal_id': str(signal.id)
             })
+
+            update_fields = [field_name]
+            if org_unit.historical_data:
+                update_fields.append('historical_data')
 
             org_unit.save(update_fields=['historical_data'])
             return True
