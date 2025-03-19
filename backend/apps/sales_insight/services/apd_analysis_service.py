@@ -38,6 +38,7 @@ class APDAnalysisService:
             StandardizedValidationError: If entities don't exist or belong to different clients
         """
         try:
+            
             # Fetch required entities
             account = Account.objects.get(id=account_id)
             product = Product.objects.get(id=product_id)
@@ -101,6 +102,7 @@ class APDAnalysisService:
         product_benefits = product.key_benefits or []
         product_features = product.key_features or []
         combined_product_info = product_benefits + product_features
+        replaceable_tech_stack = cls._extract_replaceable_tech_stack(account, org_unit, product_id)
         
         # Check if we have enough data for analysis
         if not objectives and not pain_points:
@@ -114,20 +116,24 @@ class APDAnalysisService:
         # Call LLM service for alignment analysis
         try:
             llm_service = LLMProviderService()
+            # Ensure we pass all required parameters
             alignment_json = call_second_llm_for_alignment(
-                objectives,
-                pain_points,
-                combined_product_info
+                account_objectives=objectives,
+                account_pain_points=pain_points,
+                product_benefits=combined_product_info,
+                replaceable_tech_stack=replaceable_tech_stack  # Make sure this parameter is passed
             )
         except Exception as e:
+            print(f"Error calling LLM: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise StandardizedValidationError(
-                CoreErrorMessages.SERVICE_ERROR.format(
-                    message=f"LLM service error: {str(e)}"
-                )
+                CoreErrorMessages.SERVICE_ERROR
             )
         
         # Parse and enhance the response with signal quality
         analysis_results = cls._parse_llm_response(alignment_json)
+        
         if analysis_results:
             # Check for error in analysis results
             if "error" in analysis_results:
@@ -151,23 +157,24 @@ class APDAnalysisService:
             )
             
             result['coverage_stats'] = coverage_stats
-            
+
             # Prepare structured data for APD storage
             cls._prepare_apd_structured_data(
                 result['apd_structured_data'],
                 analysis_results,
-                coverage_stats
+                coverage_stats,
+                replaceable_tech_stack
             )
-        
+
         result['analysis_results'] = analysis_results
-        
+
         return result
     
     @classmethod
     def _get_quality_signals(cls, account_id, org_unit_id=None):
         """
         Get signals with quality indicators (confirmation count, recency, etc.)
-        for objectives and pain points.
+        for objectives, pain points, and implications.
         
         Returns dict with structure:
         {
@@ -182,12 +189,14 @@ class APDAnalysisService:
                     }
                 }
             },
-            "pain_points": {...}
+            "pain_points": {...},
+            "implications": {...}
         }
         """
         result = {
             "objectives": {"signals": [], "quality_metadata": {}},
-            "pain_points": {"signals": [], "quality_metadata": {}}
+            "pain_points": {"signals": [], "quality_metadata": {}},
+            "implications": {"signals": [], "quality_metadata": {}} 
         }
         
         # Base query for account signals
@@ -200,45 +209,27 @@ class APDAnalysisService:
         if org_unit_id:
             base_query = base_query.filter(org_unit_id=org_unit_id)
         
-        # Get objective signals
-        objective_signals = base_query.filter(field_name='objectives')
-        for signal in objective_signals:
-            result["objectives"]["signals"].append(signal)
+        # Process each field type
+        for field_name in ["objectives", "pain_points", "implications"]:
+            field_signals = base_query.filter(field_name=field_name)
             
-            # Get effective status that considers expiration
-            effective_status = SignalLifecycleService.get_effective_status(signal)
-            
-            # Calculate age in days
-            age_days = (timezone.now() - signal.last_confirmed_at).days
-            
-            # Store quality metadata
-            result["objectives"]["quality_metadata"][str(signal.id)] = {
-                "confirmation_count": signal.confirmation_count,
-                "last_confirmed": signal.last_confirmed_at,
-                "effective_status": effective_status,
-                "age_days": age_days,
-                "source": signal.source
-            }
-        
-        # Get pain point signals
-        pain_point_signals = base_query.filter(field_name='pain_points')
-        for signal in pain_point_signals:
-            result["pain_points"]["signals"].append(signal)
-            
-            # Get effective status that considers expiration
-            effective_status = SignalLifecycleService.get_effective_status(signal)
-            
-            # Calculate age in days
-            age_days = (timezone.now() - signal.last_confirmed_at).days
-            
-            # Store quality metadata
-            result["pain_points"]["quality_metadata"][str(signal.id)] = {
-                "confirmation_count": signal.confirmation_count,
-                "last_confirmed": signal.last_confirmed_at,
-                "effective_status": effective_status,
-                "age_days": age_days,
-                "source": signal.source
-            }
+            for signal in field_signals:
+                result[field_name]["signals"].append(signal)
+                
+                # Get effective status that considers expiration
+                effective_status = SignalLifecycleService.get_effective_status(signal)
+                
+                # Calculate age in days
+                age_days = (timezone.now() - signal.last_confirmed_at).days
+                
+                # Store quality metadata
+                result[field_name]["quality_metadata"][str(signal.id)] = {
+                    "confirmation_count": signal.confirmation_count,
+                    "last_confirmed": signal.last_confirmed_at,
+                    "effective_status": effective_status,
+                    "age_days": age_days,
+                    "source": signal.source
+                }
         
         return result
     
@@ -424,7 +415,7 @@ class APDAnalysisService:
         return stats
     
     @classmethod
-    def _prepare_apd_structured_data(cls, apd_data, analysis_results, coverage_stats):
+    def _prepare_apd_structured_data(cls, apd_data, analysis_results, coverage_stats, replaceable_tech_stack=None):
         """
         Prepare structured data for storage in APD model.
         This formats the LLM analysis into a structure compatible with our model fields.
@@ -441,8 +432,8 @@ class APDAnalysisService:
         apd_data['coverage_stats'] = coverage_stats
         
         # Set AI relevance score based on confidence-weighted coverage
-        apd_data['ai_relevance_score'] = coverage_stats.get('confidence_weighted_coverage', 0) / 100
-        
+        # apd_data['ai_relevance_score'] = coverage_stats.get('confidence_weighted_coverage', 0) / 100
+        apd_data['ai_relevance_score'] = 0
         # Format objectives alignment
         if "objectives" in analysis_results:
             apd_data['objectives_alignment'] = {
@@ -474,19 +465,47 @@ class APDAnalysisService:
             }
         
         # Format economic impact
-        if "economicImpact" in analysis_results:
-            economic = analysis_results["economicImpact"]
-            apd_data['economic_impact'] = {
-                "current_pain_cost": economic.get("currentPainCost", ""),
-                "potential_savings": economic.get("timeOrMoneySaved", ""),
-                "relevant_units": economic.get("unitsThatMatter", ""),
-                "existing_solution_cost": economic.get("existingSolutionCost", ""),
-                "estimated_potential": economic.get("estimatedAccountPotential", ""),
-                "additional_costs": economic.get("additionalCosts", [])
+        if "valueSection" in analysis_results:
+            value_section = analysis_results["valueSection"]
+            
+            economic_impact = {
+                "cost_implications": value_section.get("costOfImplications", ""),
+                "status_quo_cost": value_section.get("statusQuoCost", ""),
+                "benefit_impacts": []
             }
             
-            # Try to extract numeric values for economic metrics
-            cls._extract_numeric_values(apd_data['economic_impact'])
+            # Process product benefit impacts
+            if "productBenefitImpact" in value_section:
+                for benefit in value_section["productBenefitImpact"]:
+                    benefit_impact = {
+                        "benefit_name": benefit.get("benefitName", ""),
+                        "qualitative_benefit": benefit.get("qualitativeBenefit", ""),
+                        "estimated_savings": benefit.get("estimatedTimeOrMoneySaved", "")
+                    }
+                    economic_impact["benefit_impacts"].append(benefit_impact)
+            
+            # Process TCO summary
+            if "tcoSummary" in value_section:
+                tco_summary = value_section["tcoSummary"]
+                
+                economic_impact["tco_arguments"] = []
+                if "arguments" in tco_summary:
+                    for arg in tco_summary["arguments"]:
+                        tco_arg = {
+                            "title": arg.get("argumentTitle", ""),
+                            "description": arg.get("argumentDescription", ""),
+                            "formula": arg.get("formulaOrEstimation", ""),
+                            "assumptions": arg.get("assumptions", [])
+                        }
+                        economic_impact["tco_arguments"].append(tco_arg)
+                
+                economic_impact["overall_value_statement"] = tco_summary.get("overallValueStatement", "")
+            
+            # Add replaceable tech stack information if provided
+            if replaceable_tech_stack:
+                economic_impact["replaceable_tech"] = replaceable_tech_stack
+            
+            apd_data['economic_impact'] = economic_impact
     
     @classmethod
     def _extract_numeric_values(cls, economic_data):
@@ -528,3 +547,76 @@ class APDAnalysisService:
             return float(clean_str) * multiplier
         except ValueError:
             return None
+        
+    @classmethod
+    def _extract_replaceable_tech_stack(cls, account, org_unit=None, product_id=None):
+        """
+        Extract tech stack items that could potentially be replaced by the specified product.
+        
+        Args:
+            account: The account object
+            org_unit: Optional organization unit
+            product_id: ID of the product to check replacement potential
+            
+        Returns:
+            list: Tech stack items with replacement potential and cost information
+        """
+        replaceable_tech = []
+        
+        # Determine which entity to use for tech stack
+        entity = org_unit if org_unit else account
+        
+        # Check if entity has tech stack
+        if not hasattr(entity, 'current_tech_stack') or not entity.current_tech_stack:
+            return replaceable_tech
+        
+        # Ensure tech stack is a list
+        tech_stack = entity.current_tech_stack
+        if not isinstance(tech_stack, list):
+            tech_stack = [tech_stack]
+        
+        # Extract tech items that have relationship or cost data
+        for index, tech_item in enumerate(tech_stack):
+            # Check if this item has a relationship with the product
+            has_relationship = False
+            is_replaceable = False
+            
+            if 'relationship' in tech_item:
+                relationship = tech_item['relationship']
+                if str(relationship.get('product_id')) == str(product_id):
+                    has_relationship = True
+                    # Check if relationship type is REPLACE
+                    if relationship.get('relationship_type') == 'REPLACE':
+                        is_replaceable = True
+            
+            # Extract cost information if available
+            costs = tech_item.get('costs', [])
+            renewal_date = tech_item.get('renewalDate')
+            approx_cost = None
+            
+            # Try to extract numeric cost from the costs field
+            if costs:
+                import re
+                for cost_item in costs:
+                    if isinstance(cost_item, str):
+                        # Look for currency amounts
+                        matches = re.findall(r'[$€£¥]?\s*[\d,]+(?:\.\d+)?(?:\s*[kKmMbBtT])?', cost_item)
+                        if matches:
+                            approx_cost = matches[0]
+                            break
+            
+            # Add to replaceable if:
+            # 1. It has an explicit REPLACE relationship with this product, or
+            # 2. It has cost information (making it a candidate for replacement analysis)
+            if is_replaceable or approx_cost:
+                replaceable_tech.append({
+                    'techName': tech_item.get('techName', f"Technology {index+1}"),
+                    'approxCost': approx_cost or "unknown",
+                    'renewalDate': renewal_date or "N/A",
+                    'businessGoal': tech_item.get('businessGoal', ''),
+                    'pros': tech_item.get('pros', ''),
+                    'improvementPoints': tech_item.get('improvementPoints', ''),
+                    'explicit_replacement': is_replaceable
+                })
+        
+        return replaceable_tech
