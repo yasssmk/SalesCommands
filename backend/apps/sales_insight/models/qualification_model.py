@@ -35,7 +35,10 @@ class QualificationModel(models.Model):
         
     def update_qualification_field(self, field_name, new_value, user):
         """
-        Update a qualification field and record change history
+        Update a qualification field and record change history.
+        
+        For absolute fields (like revenue, employee count), the new value replaces the old one.
+        For cumulative fields (like objectives, pain points), the new value is merged with existing values.
         
         Args:
             field_name (str): Field name to update
@@ -44,11 +47,36 @@ class QualificationModel(models.Model):
         """
         from django.utils import timezone
         
+        # Define which fields are absolute (replace old value) vs cumulative (add to existing)
+        absolute_fields = ['budget', 'new_budget_start_date', 'company_size', 'annual_revenue', 'estimated_employee_count']
+        cumulative_fields = ['objectives', 'compelling_events', 'motivations', 'key_kpis', 
+                            'criteria', 'pain_points', 'implications', 'projects', 'partners']
+        
         # Get current value
         current_value = getattr(self, field_name)
         
-        # Update the field
-        setattr(self, field_name, new_value)
+        # Determine how to update the field based on its type
+        if field_name in absolute_fields:
+            # For absolute fields, simply replace the old value
+            final_value = new_value
+        elif field_name in cumulative_fields:
+            # For cumulative fields (lists), merge with existing values
+            if current_value is None:
+                # If no current value, just use the new value
+                final_value = new_value
+            else:
+                # Merge lists without duplicates
+                if isinstance(current_value, list) and isinstance(new_value, list):
+                    # Convert everything to strings for comparison
+                    current_str_set = set(str(item) for item in current_value)
+                    new_items = [item for item in new_value if str(item) not in current_str_set]
+                    final_value = current_value + new_items
+                else:
+                    # If not a list, handle as absolute field
+                    final_value = new_value
+        else:
+            # Complex fields like current_tech_stack, buying_process handled as absolute
+            final_value = new_value
         
         # Initialize historical_data if it doesn't exist
         if not self.historical_data:
@@ -58,13 +86,22 @@ class QualificationModel(models.Model):
         if field_name not in self.historical_data:
             self.historical_data[field_name] = []
         
-        # Add to historical data
-        self.historical_data[field_name].append({
-            'old_value': current_value,
-            'new_value': new_value,
-            'changed_at': timezone.now().isoformat(),
-            'changed_by': str(user.id) if user else None
-        })
+        # Only record history if the value actually changed
+        if current_value != final_value:
+            # Add to historical data
+            self.historical_data[field_name].append({
+                'old_value': current_value,
+                'new_value': final_value,
+                'changed_at': timezone.now().isoformat(),
+                'changed_by': str(user.id) if user else None
+            })
+            
+            # Update the field
+            setattr(self, field_name, final_value)
+            
+            # Save the model
+            self.save(user=user)
+            
+            return True
         
-        # Save the model
-        self.save(user=user)
+        return False
