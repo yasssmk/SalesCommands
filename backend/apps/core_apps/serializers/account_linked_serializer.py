@@ -1,7 +1,8 @@
 
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
-from apps.accounts_app.accounts.models import Account
+# from apps.accounts_app.accounts.models import Account
+from apps.accounts.models import Account
 
 class AccountLinkedSerializerMixin:
     """

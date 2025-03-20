@@ -2,8 +2,7 @@
 
 from django.utils import timezone
 from django.db.models import Q
-from apps.accounts_app.accounts.models import Account
-from apps.accounts_app.org_units.models import AccountOrganizationUnit
+from apps.accounts.models import Account
 from apps.products.models import Product
 from apps.LLM_calls.services import LLMProviderService
 from ..models import Signal
@@ -13,7 +12,7 @@ from core.exceptions import CoreErrorMessages, StandardizedValidationError
 import json
 import re
 
-class APDAnalysisService:
+class APRAnalysisService:
     """
     Service for analyzing account/org unit signals in relation to products,
     with awareness of signal lifecycle and quality.
@@ -42,31 +41,20 @@ class APDAnalysisService:
             # Fetch required entities
             account = Account.objects.get(id=account_id)
             product = Product.objects.get(id=product_id)
-            
-            org_unit = None
-            if org_unit_id:
-                org_unit = AccountOrganizationUnit.objects.get(id=org_unit_id)
-                # Verify org unit belongs to account
-                if str(org_unit.account_id) != str(account_id):
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_FIELD.format(
-                            field="Organization unit must belong to the specified account"
-                        )
-                    )
+                   
         except Account.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
         except Product.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-        except AccountOrganizationUnit.DoesNotExist:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
         
         # Prepare the base result structure
         result = {
             'account_id': str(account_id),
-            'entity_type': 'org_unit' if org_unit else 'account',
-            'entity_id': str(org_unit_id) if org_unit else str(account_id),
+            'entity_type': 'account',
+            'entity_id': account_id,
             'product_id': str(product_id),
-            'entity_name': org_unit.organization_name if org_unit else account.company_name,
+            'entity_name': account.company_name,
             'product_name': product.product_name,
             'signal_quality': {
                 'objectives': {},
@@ -102,7 +90,7 @@ class APDAnalysisService:
         product_benefits = product.key_benefits or []
         product_features = product.key_features or []
         combined_product_info = product_benefits + product_features
-        replaceable_tech_stack = cls._extract_replaceable_tech_stack(account, org_unit, product_id)
+        replaceable_tech_stack = cls._extract_replaceable_tech_stack(account, product_id)
         
         # Check if we have enough data for analysis
         if not objectives and not pain_points:
@@ -171,7 +159,7 @@ class APDAnalysisService:
         return result
     
     @classmethod
-    def _get_quality_signals(cls, account_id, org_unit_id=None):
+    def _get_quality_signals(cls, account_id):
         """
         Get signals with quality indicators (confirmation count, recency, etc.)
         for objectives, pain points, and implications.
@@ -205,9 +193,6 @@ class APDAnalysisService:
             status__in=[Signal.Status.APPROVED, Signal.Status.APPLIED]
         )
         
-        # Add org unit filter if specified
-        if org_unit_id:
-            base_query = base_query.filter(org_unit_id=org_unit_id)
         
         # Process each field type
         for field_name in ["objectives", "pain_points", "implications"]:
@@ -549,7 +534,7 @@ class APDAnalysisService:
             return None
         
     @classmethod
-    def _extract_replaceable_tech_stack(cls, account, org_unit=None, product_id=None):
+    def _extract_replaceable_tech_stack(cls, account, product_id=None):
         """
         Extract tech stack items that could potentially be replaced by the specified product.
         
@@ -564,7 +549,7 @@ class APDAnalysisService:
         replaceable_tech = []
         
         # Determine which entity to use for tech stack
-        entity = org_unit if org_unit else account
+        entity = account
         
         # Check if entity has tech stack
         if not hasattr(entity, 'current_tech_stack') or not entity.current_tech_stack:

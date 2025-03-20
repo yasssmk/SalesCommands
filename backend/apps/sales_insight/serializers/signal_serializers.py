@@ -4,10 +4,11 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.serializers import AccountLinkedSerializerMixin
-from apps.accounts_app.accounts.models import Account
-from apps.accounts_app.org_units.models import AccountOrganizationUnit
-from apps.accounts_app.contacts.models import Contact
-from apps.accounts_app.account_product_detail.models import AccountProductDetail
+from apps.accounts.models import Account, AccountProductRelationship, Contact
+# from apps.accounts_app.accounts.models import Account
+# from apps.accounts_app.org_units.models import AccountOrganizationUnit
+# from apps.accounts_app.contacts.models import Contact
+# from apps.accounts_app.account_product_detail.models import AccountProductDetail
 from apps.products.models import Product
 from ..models import Signal
 
@@ -16,13 +17,13 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
     Serializer for the Signal model with proper validation and client scoping.
     """
     # Write-only fields
-    org_unit_id = serializers.PrimaryKeyRelatedField(
-        source='org_unit',
-        queryset=AccountOrganizationUnit.objects.all(),
-        required=False,
-        allow_null=True,
-        write_only=True
-    )
+    # org_unit_id = serializers.PrimaryKeyRelatedField(
+    #     source='org_unit',
+    #     queryset=AccountOrganizationUnit.objects.all(),
+    #     required=False,
+    #     allow_null=True,
+    #     write_only=True
+    # )
     
     contact_id = serializers.PrimaryKeyRelatedField(
         source='contact',
@@ -32,9 +33,9 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
         write_only=True
     )
     
-    account_product_detail_id = serializers.PrimaryKeyRelatedField(
-        source='account_product_detail',
-        queryset=AccountProductDetail.objects.all(),
+    account_product_relationship_id = serializers.PrimaryKeyRelatedField(
+        source='account_product_relationship',
+        queryset=AccountProductRelationship.objects.all(),
         required=False,
         allow_null=True,
         write_only=True
@@ -62,13 +63,14 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
     entity_type_label = serializers.SerializerMethodField()
     
     account_summary = serializers.SerializerMethodField()
-    org_unit_summary = serializers.SerializerMethodField()
+    # org_unit_summary is removed
     contact_summary = serializers.SerializerMethodField()
-    account_product_detail_summary = serializers.SerializerMethodField()
+    # Update field name
+    account_product_relationship_summary = serializers.SerializerMethodField()
     product_alignment_summary = serializers.SerializerMethodField()
     approved_by_summary = serializers.SerializerMethodField()
 
-    org_unit_validation = serializers.SerializerMethodField(read_only=True)
+    # org_unit_validation is removed
     entity_validation_status = serializers.SerializerMethodField(read_only=True)
 
     effective_status = serializers.SerializerMethodField(read_only=True)
@@ -76,7 +78,7 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
     last_confirmed_at = serializers.DateTimeField(read_only=True)
     merged_from_signals_count = serializers.SerializerMethodField(read_only=True)
     merged_into_signal = serializers.SerializerMethodField(read_only=True)
-    
+
     class Meta:
         model = Signal
         fields = [
@@ -88,13 +90,13 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
             'status', 'status_label',
             'source',
             'revisit_date', 'applied_date',
-            'org_unit', 'org_unit_id', 'org_unit_summary',
             'contact', 'contact_id', 'contact_summary',
-            'account_product_detail', 'account_product_detail_id', 'account_product_detail_summary',
+            'account_product_relationship', 'account_product_relationship_id', 'account_product_relationship_summary',
             'product_alignment', 'product_alignment_id', 'product_alignment_summary',
             'approved_by', 'approved_by_summary', 'approved_at',
             'parent_signal', 'parent_signal_id',
-            'metadata', 'org_unit_validation', 'entity_validation_status',
+            'metadata', 
+            'entity_validation_status',
             'confirmation_count',
             'last_confirmed_at',
             'effective_status',
@@ -105,9 +107,11 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
         read_only_fields = [
             'id', 'created_at', 'updated_at', 'client_id',
             'category_label', 'status_label', 'entity_type_label',
-            'account_summary', 'org_unit_summary', 'contact_summary', 'account_product_detail_summary',
+            'account_summary', 
+            'contact_summary', 
+            'account_product_relationship_summary',
             'product_alignment_summary', 'approved_by_summary', 'applied_date',
-            'org_unit_validation', 'entity_validation_status','confirmation_count',
+            'entity_validation_status','confirmation_count',
             'last_confirmed_at',
             'effective_status',
             'merged_from_signals_count',
@@ -168,14 +172,14 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
             }
         return None
     
-    def get_account_product_detail_summary(self, obj):
-        if obj.account_product_detail:
-            apd = obj.account_product_detail
+    def get_account_product_relationship_summary(self, obj):
+        if obj.account_product_relationship:  # Update attribute name
+            apr = obj.account_product_relationship  # Update variable name
             return {
-                'id': apd.id,
-                'product_name': apd.product.product_name if apd.product else None,
-                'estimated_units': apd.estimated_units,
-                'potential_revenue': str(apd.potential_revenue)
+                'id': apr.id,
+                'product_name': apr.product.product_name if apr.product else None,
+                'estimated_units': apr.estimated_units,
+                'potential_revenue': str(apr.potential_revenue)
             }
         return None
     
@@ -195,66 +199,23 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
             }
         return None
     
-    def get_org_unit_validation(self, obj):
-        """Returns org unit validation info if needed"""
-        if obj.entity_type == Signal.EntityType.ORG_UNIT and obj.metadata:
-            if obj.metadata.get('needs_validation'):
-                # Get similar units
-                similar_units = []
-                if obj.metadata.get('similar_unit_ids'):
-                    unit_ids = obj.metadata.get('similar_unit_ids')
-                    units = AccountOrganizationUnit.objects.filter(id__in=unit_ids)
-                    similar_units = [
-                        {
-                            'id': unit.id,
-                            'organization_name': unit.organization_name,
-                            'unit_type': unit.unit_type,
-                            'standard_department': unit.standard_department.name if unit.standard_department else None
-                        }
-                        for unit in units
-                    ]
-                
-                # Get standard department
-                std_dept = None
-                if obj.metadata.get('matching_std_department_id'):
-                    try:
-                        from apps.core_apps.models import StandardDepartment
-                        dept = StandardDepartment.objects.get(
-                            id=obj.metadata.get('matching_std_department_id')
-                        )
-                        std_dept = {
-                            'id': dept.id,
-                            'name': dept.name,
-                            'display_name': dept.get_name_display()
-                        }
-                    except:
-                        pass
-                
-                return {
-                    'needs_validation': True,
-                    'proposed_name': obj.metadata.get('proposed_name'),
-                    'proposed_unit_type': obj.metadata.get('proposed_unit_type'),
-                    'matching_std_department': std_dept,
-                    'similar_units': similar_units
-                }
-        
-        return {'needs_validation': False}
-
+   
     def get_entity_validation_status(self, obj):
         """Returns validation status for the associated entity"""
         result = {
             'account_valid': True,
-            'org_unit_valid': obj.org_unit is not None if obj.entity_type == Signal.EntityType.ORG_UNIT else True,
+            # 'org_unit_valid' removed
             'contact_valid': obj.contact is not None if obj.entity_type == Signal.EntityType.CONTACT else True,
-            'apd_valid': obj.account_product_detail is not None if obj.entity_type == Signal.EntityType.ACCOUNT_PRODUCT else True
+            # Update field name
+            'apr_valid': obj.account_product_relationship is not None if obj.entity_type == Signal.EntityType.ACCOUNT_PRODUCT else True
         }
         
         # Check if any entity needs validation
         result['needs_validation'] = not all([
             result['account_valid'],
-            result['org_unit_valid'],
+            # 'org_unit_valid' removed from check
             result['contact_valid'],
-            result['apd_valid']
+            result['apr_valid']
         ])
         
         return result
@@ -276,14 +237,6 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
                 CoreErrorMessages.REQUIRED_FIELD.format(field='Account')
             )
         
-        # Validate org_unit belongs to account
-        org_unit = data.get('org_unit')
-        if org_unit and org_unit.account.id != account.id:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(
-                    field='Organization unit must belong to the specified account'
-                )
-            )
             
         # Validate contact belongs to account
         contact = data.get('contact')
@@ -294,12 +247,12 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
                 )
             )
             
-        # Validate account_product_detail belongs to account
-        apd = data.get('account_product_detail')
-        if apd and apd.account.id != account.id:
+        # Update field name
+        apr = data.get('account_product_relationship')
+        if apr and apr.account.id != account.id:
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_FIELD.format(
-                    field='Account product detail must belong to the specified account'
+                    field='Account product relationship must belong to the specified account'
                 )
             )
             
@@ -311,12 +264,7 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
         # Validate entity_type matches provided entities
         entity_type = data.get('entity_type')
         if entity_type:
-            if entity_type == Signal.EntityType.ORG_UNIT and not org_unit:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(
-                        field='Organization unit is required for ORG_UNIT entity type'
-                    )
-                )
+            # Remove org_unit validation
                 
             if entity_type == Signal.EntityType.CONTACT and not contact:
                 raise StandardizedValidationError(
@@ -325,10 +273,10 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
                     )
                 )
                 
-            if entity_type == Signal.EntityType.ACCOUNT_PRODUCT and not apd:
+            if entity_type == Signal.EntityType.ACCOUNT_PRODUCT and not apr:
                 raise StandardizedValidationError(
                     CoreErrorMessages.REQUIRED_FIELD.format(
-                        field='Account product detail is required for ACCOUNT_PRODUCT entity type'
+                        field='Account product relationship is required for ACCOUNT_PRODUCT entity type'
                     )
                 )
         

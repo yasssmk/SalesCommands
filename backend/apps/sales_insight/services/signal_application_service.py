@@ -3,10 +3,8 @@
 from django.utils import timezone
 from django.db import transaction
 from ..models import Signal
-from apps.accounts_app.accounts.models import Account
-from apps.accounts_app.org_units.models import AccountOrganizationUnit
-from apps.accounts_app.contacts.models import Contact
-from apps.accounts_app.account_product_detail.models import AccountProductDetail
+from apps.accounts.models import Contact
+# from apps.accounts_app.account_product_detail.models import AccountProductDetail
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 
@@ -45,8 +43,6 @@ class SignalApplicationService:
             
             if signal.entity_type == Signal.EntityType.ACCOUNT:
                 success = cls._apply_to_account(signal, user)
-            elif signal.entity_type == Signal.EntityType.ORG_UNIT:
-                success = cls._apply_to_org_unit(signal, user)
             elif signal.entity_type == Signal.EntityType.CONTACT:
                 success = cls._apply_to_contact(signal, user)
             elif signal.entity_type == Signal.EntityType.ACCOUNT_PRODUCT:
@@ -114,67 +110,6 @@ class SignalApplicationService:
                 
         return False
     
-    @classmethod
-    def _apply_to_org_unit(cls, signal, user):
-        """Apply signal to organization unit, tracking both qualification and specific field changes."""
-        org_unit_id = signal.org_unit_id
-        if not org_unit_id:
-            return False
-            
-        org_unit = AccountOrganizationUnit.objects.get(id=org_unit_id)
-        field_name = signal.field_name
-        value = signal.value
-
-        if field_name in [
-            'objectives', 'compelling_events', 'motivations', 'key_kpis',
-            'criteria', 'pain_points', 'implications', 'current_tech_stack',
-            'partners', 'buying_process', 'projects', 'budget', 'new_budget_start_date'
-        ]:
-            # ✅ Qualification fields: use `update_qualification_field()`
-            if hasattr(org_unit, 'update_qualification_field'):
-                org_unit.update_qualification_field(field_name, value, user)
-                return True
-
-        elif field_name in ['unit_type', 'organization_name', 'estimated_employee_count']:  # Add any org-unit-specific fields that need tracking
-            # 🔥 Custom tracking for org-unit-specific fields
-            current_value = getattr(org_unit, field_name, None)
-        
-            # For estimated_employee_count, ensure it's an integer
-            if field_name == 'estimated_employee_count' and value is not None:
-                try:
-                    value = int(value)
-                except (ValueError, TypeError):
-                    # If conversion fails, use the original value
-                    pass
-                    
-            setattr(org_unit, field_name, value)
-
-            if hasattr(org_unit, 'track_signal_update'):
-                org_unit.track_signal_update(signal, field_name, current_value, value)
-
-            if not org_unit.historical_data:
-                org_unit.historical_data = {}
-
-            if field_name not in org_unit.historical_data:
-                org_unit.historical_data[field_name] = []
-
-            org_unit.historical_data[field_name].append({
-                'old_value': current_value,
-                'new_value': value,
-                'changed_at': timezone.now().isoformat(),
-                'changed_by': str(user.id) if user else None,
-                'source': 'signal',
-                'signal_id': str(signal.id)
-            })
-
-            update_fields = [field_name]
-            if org_unit.historical_data:
-                update_fields.append('historical_data')
-
-            org_unit.save(update_fields=['historical_data'])
-            return True
-
-        return False
 
     @classmethod
     def _apply_to_contact(cls, signal, user):

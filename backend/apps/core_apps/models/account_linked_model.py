@@ -4,10 +4,10 @@ from django.utils.translation import gettext_lazy as _
 class AccountLinkedModel(models.Model):
     """Base model for entities that need account tracking"""
     account = models.ForeignKey(
-        'accounts.Account',
+        'accounts_new.Account',
         on_delete=models.CASCADE,
         verbose_name=_('Account'),
-        related_name='%(class)s_set'
+        related_name='%(class)s_set_new'
     )
 
     class Meta:

@@ -1,5 +1,6 @@
 from .account_linked_serializer import AccountLinkedSerializerMixin
 from .standar_dpt_serializer import StandardDepartmentSerializer
 from .signal_serializer_mixin import SignalAwareSerializerMixin
+from .historical_tracking_serializer import HistoricalTrackingSerializerMixin
 
-__all__=['AccountLinkedSerializerMixin', 'StandardDepartmentSerializer', 'SignalAwareSerializerMixin' ]
+__all__=['AccountLinkedSerializerMixin', 'StandardDepartmentSerializer', 'SignalAwareSerializerMixin', 'HistoricalTrackingSerializerMixin' ]

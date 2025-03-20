@@ -11,7 +11,7 @@ from ..models import Signal
 from ..serializers import SignalSerializer
 from ..services.signal_status_service import SignalStatusService
 from ..services.signal_application_service import SignalApplicationService
-from apps.accounts_app.org_units.models import AccountOrganizationUnit
+# from apps.accounts_app.org_units.models import AccountOrganizationUnit
 
 class SignalView(BaseAPIView):
     """
@@ -20,9 +20,8 @@ class SignalView(BaseAPIView):
     """
     queryset = Signal.objects.select_related(
         'account',
-        'org_unit',
         'contact',
-        'account_product_detail',
+        'account_product_relationship',
         'approved_by',
         'parent_signal'
     ).prefetch_related('product_alignment')
@@ -41,16 +40,13 @@ class SignalView(BaseAPIView):
             if account_id:
                 queryset = queryset.filter(account_id=account_id)
                 
-            org_unit_id = self.request.query_params.get('org_unit_id')
-            if org_unit_id:
-                queryset = queryset.filter(org_unit_id=org_unit_id)
                 
             contact_id = self.request.query_params.get('contact_id')
             if contact_id:
                 queryset = queryset.filter(contact_id=contact_id)
                 
-            apd_id = self.request.query_params.get('account_product_detail_id')
-            if apd_id:
+            apr_id = self.request.query_params.get('account_product_relationship_id')
+            if apr_id:
                 queryset = queryset.filter(account_product_detail_id=apd_id)
             
             # Entity type filter
@@ -144,8 +140,6 @@ class SignalView(BaseAPIView):
             return self.apply(request, *args, **kwargs)
         elif 'bulk-action' in request.path:
             return self.bulk_action(request, *args, **kwargs)
-        elif 'resolve-org-unit' in request.path:
-            return self.resolve_org_unit(request, *args, **kwargs)
         elif 'bulk-update' in request.path:
             return self.bulk_update(request, *args, **kwargs)
         elif 'merge' in request.path:
@@ -164,170 +158,6 @@ class SignalView(BaseAPIView):
             # Standard GET behavior for listing or retrieving signals
             return super().get(request, *args, **kwargs)
     
-    @action(detail=False, methods=['post'])
-    def resolve_org_unit(self, request):
-        """
-        Resolve organization unit validation by:
-        1. Selecting an existing org unit
-        2. Creating a new one
-        3. Rejecting signals if no valid org unit is available
-        """
-        try:
-            # Validate input
-            if 'action' not in request.data:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field="action")
-                )
-                
-            action = request.data['action']
-            valid_actions = ['select_existing', 'create_new', 'reject_signals']
-            
-            if action not in valid_actions:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(
-                        field=f"action must be one of: {', '.join(valid_actions)}"
-                    )
-                )
-                
-            if 'signal_ids' not in request.data or not isinstance(request.data['signal_ids'], list):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field="signal_ids")
-                )
-                
-            signal_ids = request.data['signal_ids']
-            signals = Signal.objects.filter(id__in=signal_ids)
-            
-            with transaction.atomic():
-                # 1. Select existing org unit
-                if action == 'select_existing':
-                    if 'org_unit_id' not in request.data:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.REQUIRED_FIELD.format(field="org_unit_id")
-                        )
-                        
-                    org_unit_id = request.data['org_unit_id']
-                    org_unit = AccountOrganizationUnit.objects.get(id=org_unit_id)
-                    self.validate_client_id(org_unit)
-                    
-                    # Update all signals to reference this org unit
-                    for signal in signals:
-                        self.validate_client_id(signal)
-                        
-                        # Ensure org unit belongs to the same account
-                        if org_unit.account_id != signal.account_id:
-                            raise StandardizedValidationError(
-                                CoreErrorMessages.INVALID_FIELD.format(
-                                    field="Organization unit must belong to the same account"
-                                )
-                            )
-                            
-                        # Update signal and clear validation metadata
-                        signal.org_unit = org_unit
-                        
-                        if signal.metadata:
-                            # Remove validation flags but keep other metadata
-                            signal.metadata.pop('needs_validation', None)
-                            signal.metadata.pop('proposed_name', None)
-                            signal.metadata.pop('proposed_unit_type', None)
-                            signal.metadata.pop('matching_std_department_id', None)
-                            signal.metadata.pop('similar_unit_ids', None)
-                        
-                        signal.save()
-                    
-                    return Response({
-                        'success': True,
-                        'action': 'select_existing',
-                        'org_unit_id': org_unit_id,
-                        'updated_signals': len(signals)
-                    })
-                    
-                # 2. Create new org unit
-                elif action == 'create_new':
-                    if 'org_unit_data' not in request.data:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.REQUIRED_FIELD.format(field="org_unit_data")
-                        )
-                        
-                    org_unit_data = request.data['org_unit_data']
-                    
-                    # Validate org unit data
-                    required_fields = ['name', 'unit_type', 'standard_department_id']
-                    for field in required_fields:
-                        if field not in org_unit_data:
-                            raise StandardizedValidationError(
-                                CoreErrorMessages.REQUIRED_FIELD.format(field=field)
-                            )
-                    
-                    # Get account from the first signal
-                    first_signal = signals.first()
-                    if not first_signal:
-                        raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-                        
-                    self.validate_client_id(first_signal)
-                    account = first_signal.account
-                    
-                    # Get standard department
-                    from apps.core_apps.models import StandardDepartment
-                    std_dept = StandardDepartment.objects.get(id=org_unit_data['standard_department_id'])
-                    
-                    # Create new org unit
-                    new_org_unit = AccountOrganizationUnit.objects.create(
-                        account=account,
-                        organization_name=org_unit_data['name'],
-                        unit_type=org_unit_data['unit_type'],
-                        standard_department=std_dept,
-                        client_id=account.client_id,
-                        created_by=request.user,
-                        updated_by=request.user
-                    )
-                    
-                    # Update all signals to reference this new org unit
-                    for signal in signals:
-                        self.validate_client_id(signal)
-                        
-                        # Update signal and clear validation metadata
-                        signal.org_unit = new_org_unit
-                        
-                        if signal.metadata:
-                            # Remove validation flags but keep other metadata
-                            signal.metadata.pop('needs_validation', None)
-                            signal.metadata.pop('proposed_name', None)
-                            signal.metadata.pop('proposed_unit_type', None)
-                            signal.metadata.pop('matching_std_department_id', None)
-                            signal.metadata.pop('similar_unit_ids', None)
-                        
-                        signal.save()
-                    
-                    return Response({
-                        'success': True,
-                        'action': 'create_new',
-                        'org_unit_id': new_org_unit.id,
-                        'updated_signals': len(signals)
-                    })
-                    
-                # 3. Reject signals
-                elif action == 'reject_signals':
-                    # Get optional rejection reason
-                    reason = request.data.get('reason', 'Organization unit validation failed')
-                    
-                    # Reject all signals
-                    rejected_count = 0
-                    for signal in signals:
-                        self.validate_client_id(signal)
-                        
-                        # Only reject signals that are still pending
-                        if signal.status == Signal.Status.PENDING:
-                            SignalStatusService.reject_signal(signal, request.user, reason)
-                            rejected_count += 1
-                    
-                    return Response({
-                        'success': True,
-                        'action': 'reject_signals',
-                        'rejected_count': rejected_count
-                    })
-            
-        except Exception as e:
-            return self.handle_exception(e)
     
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
@@ -336,27 +166,6 @@ class SignalView(BaseAPIView):
             signal = self.get_objects([pk]).first()
             if not signal:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-            
-            if signal.entity_type == Signal.EntityType.ORG_UNIT and 'org_unit_id' in request.data:
-                try:
-                    org_unit_id = request.data['org_unit_id']
-                    org_unit = AccountOrganizationUnit.objects.get(id=org_unit_id)
-                    
-                    # Validate org_unit belongs to the same account
-                    if str(org_unit.account_id) != str(signal.account_id):
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.INVALID_FIELD.format(
-                                field="Organization unit must belong to the same account as the signal"
-                            )
-                        )
-                    
-                    # Update the signal with the org_unit
-                    signal.org_unit = org_unit
-                    signal.save(update_fields=['org_unit'])
-                except AccountOrganizationUnit.DoesNotExist:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.OBJECT_NOT_FOUND.format(entity="Organization Unit")
-                    )
             
             if signal.entity_type == Signal.EntityType.CONTACT and 'contact_id' in request.data:
                 try:
@@ -411,7 +220,6 @@ class SignalView(BaseAPIView):
             'message': 'Signal is valid',
             'validation': {
                 'account_valid': True,
-                'org_unit_valid': True,
                 'contact_valid': True,
                 'apd_valid': True
             }
@@ -422,12 +230,6 @@ class SignalView(BaseAPIView):
             result['is_valid'] = False
             result['message'] = 'Signal must be associated with an account'
             result['validation']['account_valid'] = False
-        
-        # Check org unit if entity_type is ORG_UNIT
-        if signal.entity_type == Signal.EntityType.ORG_UNIT and not signal.org_unit:
-            result['is_valid'] = False
-            result['message'] = 'Organization unit signal must be associated with an org unit'
-            result['validation']['org_unit_valid'] = False
         
         # Check contact if entity_type is CONTACT
         if signal.entity_type == Signal.EntityType.CONTACT and not signal.contact:
@@ -515,7 +317,7 @@ class SignalView(BaseAPIView):
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
             
             entity_references = {}
-            for key in ['org_unit_id', 'contact_id', 'account_product_detail_id']:
+            for key in ['contact_id', 'account_product_detail_id']:
                 if key in request.data:
                     entity_references[key] = request.data[key]
             

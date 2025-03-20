@@ -3,8 +3,8 @@ from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from apps.core_apps.serializers import AccountLinkedSerializerMixin
-from apps.accounts_app.accounts.models import Account
-from apps.accounts_app.org_units.models import AccountOrganizationUnit
+from apps.accounts.models import Account
+# from apps.accounts_app.org_units.models import AccountOrganizationUnit
 
 class TranscriptAnalysisSerializer(AccountLinkedSerializerMixin, ClientScopeManager.SerializerMixin, serializers.Serializer):
     """
@@ -19,18 +19,18 @@ class TranscriptAnalysisSerializer(AccountLinkedSerializerMixin, ClientScopeMana
         required=True 
     )
     
-    org_unit = serializers.PrimaryKeyRelatedField(
-        queryset=AccountOrganizationUnit.objects.all(),
-        required=False,
-        allow_null=True
-    )
-    org_unit_id = serializers.PrimaryKeyRelatedField(
-        source='org_unit',
-        queryset=AccountOrganizationUnit.objects.all(),
-        required=False,
-        allow_null=True,
-        write_only=True
-    )
+    # org_unit = serializers.PrimaryKeyRelatedField(
+    #     queryset=AccountOrganizationUnit.objects.all(),
+    #     required=False,
+    #     allow_null=True
+    # )
+    # org_unit_id = serializers.PrimaryKeyRelatedField(
+    #     source='org_unit',
+    #     queryset=AccountOrganizationUnit.objects.all(),
+    #     required=False,
+    #     allow_null=True,
+    #     write_only=True
+    # )
 
     def validate_transcript(self, value):
         """Validate transcript content"""
@@ -54,16 +54,5 @@ class TranscriptAnalysisSerializer(AccountLinkedSerializerMixin, ClientScopeMana
         # Double-check we have an account
         if 'account' not in data:
             raise StandardizedValidationError(CoreErrorMessages.REQUIRED_FIELD.format(field="Account"))
-        
-        # Validate org_unit belongs to account if provided
-        org_unit = data.get('org_unit')
-        account = data.get('account')
-        
-        if org_unit and account and org_unit.account_id != account.id:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(
-                    field="Organization unit must belong to the specified account"
-                )
-            )
-            
+
         return data

@@ -1,19 +1,21 @@
+# apps/account/serializers/apr_serializer.py
+
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
-from apps.accounts_app.org_units.serializers import AccountOrganizationUnitSerializer
-from apps.accounts_app.org_units.models import AccountOrganizationUnit
-from apps.core_apps.serializers import AccountLinkedSerializerMixin
-from apps.accounts_app.accounts.models import Account
+from apps.core_apps.serializers import AccountLinkedSerializerMixin, HistoricalTrackingSerializerMixin
+from apps.accounts.models import Contact, AccountProductRelationship, RevenueType
+from apps.accounts.serializers.contact_serializer import ContactSerializer
 from apps.products.models import Product, Pricing
 from apps.products.serializers import ProductSerializer, PricingSerializer
-from .models import AccountProductDetail
 
-class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+
+class AccountProductRelationshipSerializer(AccountLinkedSerializerMixin, HistoricalTrackingSerializerMixin, 
+                                          ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
-    Serializer for AccountProductDetail with nested relations and calculated fields.
+    Serializer for AccountProductRelationship with nested relations and calculated fields.
     """
 
     product = ProductSerializer(read_only=True)
@@ -32,25 +34,20 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
         allow_null=True
     )
     
-    target_org_units = AccountOrganizationUnitSerializer(many=True, read_only=True)
-    target_org_unit_ids = serializers.PrimaryKeyRelatedField(
-        source='target_org_units',
-        queryset=AccountOrganizationUnit.objects.all(),
+    target_contacts = ContactSerializer(many=True, read_only=True)
+    target_contact_ids = serializers.PrimaryKeyRelatedField(
+        source='target_contacts',
+        queryset=Contact.objects.all(),
         write_only=True,
         many=True,
         required=False
     )
 
-    historical_data = serializers.JSONField(read_only=True)
-    tech_relationships = serializers.JSONField(required=False, allow_null=True)
-    buying_process = serializers.JSONField(required=False, allow_null=True)
-    sales_cycle_estimated_days = serializers.IntegerField(required=False, allow_null=True)
-
-     # Analysis data fields
+    # Analysis data fields
     objectives_alignment = serializers.JSONField(required=False, allow_null=True)
     pain_points_coverage = serializers.JSONField(required=False, allow_null=True)
     economic_impact = serializers.JSONField(required=False, allow_null=True)
-    coverage_stats = serializers.JSONField(required=False, allow_null=True)
+    contribution_to_coverage = serializers.JSONField(required=False, allow_null=True)
     
     # Analysis summary fields
     objectives_coverage_percent = serializers.SerializerMethodField()
@@ -61,9 +58,9 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
     # Calculated fields
     potential_revenue_formatted = serializers.SerializerMethodField()
     revenue_label = serializers.SerializerMethodField()
-    
+
     class Meta:
-        model = AccountProductDetail
+        model = AccountProductRelationship
         fields = [
             'id',
             'account',
@@ -71,8 +68,8 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
             'product_id',
             'selected_pricing',
             'selected_pricing_id',
-            'target_org_units',
-            'target_org_unit_ids',
+            'target_contacts',
+            'target_contact_ids',
             'estimated_units',
             'potential_revenue',
             'potential_revenue_formatted',
@@ -82,7 +79,7 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
             'objectives_alignment',
             'pain_points_coverage',
             'economic_impact',
-            'coverage_stats',
+            'contribution_to_coverage',
             'objectives_coverage_percent',
             'pain_points_coverage_percent',
             'overall_coverage_percent',
@@ -90,99 +87,62 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
             'last_analysis_date',
             'notes',
             'historical_data',
-            'tech_relationships',
             'buying_process',
-            'sales_cycle_estimated_days',
             'created_at',
             'updated_at'
         ]
         read_only_fields = [
             'id', 
             'potential_revenue',
-            'revenue_type',
+            'historical_data',
             'created_at',
             'updated_at',
-            'client_id',
             'last_analysis_date'
         ]
 
     def validate(self, data):
-            """Custom validation for the serializer."""
-            data = super().validate(data) 
-            
-            # Additional product and pricing validations
-            client_id = self._get_client_id_from_context()
-            
-            # Validate client scoping for product
-            product = data.get('product')
-            if product and str(product.client_id) != str(client_id):
-                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
-            
-            # Validate selected pricing belongs to product
-            pricing = data.get('selected_pricing')
-            if pricing:
-                if not product:
-                    product = self.instance.product if self.instance else None
-                    
-                if not product or pricing.product_id != product.id:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_FIELD.format(
-                            field="Selected pricing must belong to the selected product"
-                        )
-                    )
-                
-                if str(pricing.client_id) != str(client_id):
-                    raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
-            
-            if 'target_org_units' in data:
-                account = data.get('account') or self.instance.account
-                org_units = data['target_org_units']
-                invalid_units = [
-                    unit for unit in org_units 
-                    if unit.account_id != account.id
-                ]
-                if invalid_units:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_FIELD.format(
-                            field="Target organization units must belong to the account"
-                        )
-                    )
+        """Custom validation for the serializer."""
+        data = super().validate(data) 
         
-            return data
+        # Additional product and pricing validations
+        client_id = self._get_client_id_from_context()
+        
+        # Validate client scoping for product
+        product = data.get('product')
+        if product and str(product.client_id) != str(client_id):
+            raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+        
+        # Validate selected pricing belongs to product
+        pricing = data.get('selected_pricing')
+        if pricing:
+            if not product:
+                product = self.instance.product if self.instance else None
+                
+            if not product or pricing.product_id != product.id:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field="Selected pricing must belong to the selected product"
+                    )
+                )
+            
+            if str(pricing.client_id) != str(client_id):
+                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+        
+        if 'target_contacts' in data:
+            account = data.get('account') or self.instance.account
+            contacts = data['target_contacts']
+            invalid_contacts = [
+                contact for contact in contacts 
+                if contact.account_id != account.id
+            ]
+            if invalid_contacts:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field="Target contacts must belong to the account"
+                    )
+                )
     
-    def _auto_assign_target_org_units_if_needed(self, instance, validated_data):
-        """
-        If 'target_org_units' was NOT provided by the user, and we know the final
-        'product' & 'account', automatically assign any org units that share
-        standard_department with the product's target_categories.
-        """
-        # If user explicitly passed something for 'target_org_units', do NOT override
-        if 'target_org_units' in validated_data:
-            return
-
-        # We need final 'product' and 'account'
-        product = validated_data.get('product')
-        if not product and instance:
-            product = instance.product
-
-        account = validated_data.get('account')
-        if not account and instance:
-            account = instance.account
-
-        if not product or not account:
-            return  # can't proceed if product/account is missing
-
-        # Gather all standard_department IDs from the product's target_categories
-        category_ids = product.target_categories.values_list('id', flat=True)
-
-        # Fetch matching org units for that account
-        matching_orgunits = AccountOrganizationUnit.objects.filter(
-            account_id=account.id,
-            standard_department_id__in=category_ids
-        )
-
-        # Assign them to validated_data so they'll be set on the instance
-        validated_data['target_org_units'] = list(matching_orgunits)
+        return data
     
     def _assign_default_pricing_if_needed(self, instance=None, validated_data=None):
         """
@@ -232,8 +192,6 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
         
         # Attempt to assign default pricing if none given
         self._assign_default_pricing_if_needed(instance=None, validated_data=validated_data)
-
-        self._auto_assign_target_org_units_if_needed(None, validated_data)
         
         instance = super().create(validated_data)
         if target_org_units:
@@ -247,7 +205,6 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
         3. Update instance.
         4. Handle M2M target org units.
         """
-        target_org_units = validated_data.pop('target_org_units', None)
 
         # Retrieve user from request context
         user = self.context['request'].user if 'request' in self.context else None
@@ -262,14 +219,9 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
 
         # Attempt to assign default pricing if none given
         self._assign_default_pricing_if_needed(instance=instance, validated_data=validated_data)
-        self._auto_assign_target_org_units_if_needed(instance=instance, validated_data=validated_data)
 
         # Update instance
         instance = super().update(instance, validated_data)
-
-        # Update target org units if provided
-        if target_org_units is not None:
-            instance.target_org_units.set(target_org_units)
 
         return instance
 
@@ -305,4 +257,3 @@ class AccountProductDetailSerializer(AccountLinkedSerializerMixin, ClientScopeMa
 
     def get_revenue_label(self, obj):
         return obj.get_revenue_type_display()
-    

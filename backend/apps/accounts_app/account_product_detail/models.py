@@ -120,6 +120,20 @@ class AccountProductDetail(BaseModelApp, AccountLinkedModel, ClientScopeManager.
         verbose_name=_("Tech Stack Relationships"),
         help_text=_("Relationships between this product and customer's existing technologies")
     )
+
+    buying_process = models.JSONField(
+    verbose_name=_('Buying Process'),
+    help_text=_('Structured representation of the customer buying process'),
+    blank=True,
+    null=True
+)
+
+    sales_cycle_estimated_days = models.PositiveIntegerField(
+        verbose_name=_('Estimated Sales Cycle (Days)'),
+        help_text=_('Estimated total duration of the sales cycle in days'),
+        blank=True, 
+        null=True
+    )
     
 
     notes = models.TextField(

@@ -1,29 +1,27 @@
-# apps/sales_insight/services/apd_update_service.py
+# apps/sales_insight/services/apr_update_service.py
 
 from django.utils import timezone
 from django.db import transaction
-from apps.accounts_app.accounts.models import Account
-from apps.accounts_app.org_units.models import AccountOrganizationUnit
+from apps.accounts.models import Account, AccountProductRelationship
 from apps.products.models import Product
-from apps.accounts_app.account_product_detail.models import AccountProductDetail
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 import json
 import re
 
-class APDUpdateService:
+class APRUpdateService:
     """
     Service for updating Account Product Detail models with insights
     from signal analysis.
     """
     
     @classmethod
-    def apply_analysis_to_apd(cls, analysis_results, account_id, product_id, user=None):
+    def apply_analysis_to_apr(cls, analysis_results, account_id, product_id, user=None):
         """
         Apply analysis results to an existing or new AccountProductDetail.
         
         Args:
-            analysis_results: Results from APDAnalysisService
+            analysis_results: Results from aprAnalysisService
             account_id: Account ID
             product_id: Product ID
             user: User performing the update
@@ -41,10 +39,10 @@ class APDUpdateService:
                 )
             )
         
-        if not analysis_results.get("apd_structured_data"):
+        if not analysis_results.get("apr_structured_data"):
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_DATA.format(
-                    detail="Missing structured data for APD update"
+                    detail="Missing structured data for apr update"
                 )
             )
             
@@ -54,16 +52,16 @@ class APDUpdateService:
         except (Account.DoesNotExist, Product.DoesNotExist):
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
         
-        # Try to find existing APD
+        # Try to find existing apr
         try:
-            apd = AccountProductDetail.objects.get(
+            apr = AccountProductRelationship.objects.get(
                 account_id=account_id,
                 product_id=product_id
             )
             created = False
-        except AccountProductDetail.DoesNotExist:
-            # Create new APD with minimal info
-            apd = AccountProductDetail(
+        except AccountProductRelationship.DoesNotExist:
+            # Create new apr with minimal info
+            apr = AccountProductRelationship(
                 account=account,
                 product=product,
                 estimated_units=1,  # Default minimum
@@ -72,62 +70,43 @@ class APDUpdateService:
             created = True
         
         with transaction.atomic():
-            # Get structured data ready for the APD
-            structured_data = analysis_results["apd_structured_data"]
+            # Get structured data ready for the apr
+            structured_data = analysis_results["apr_structured_data"]
             
-            # Update APD with structured analysis data
-            apd.objectives_alignment = structured_data.get("objectives_alignment")
-            apd.pain_points_coverage = structured_data.get("pain_points_coverage")
-            apd.economic_impact = structured_data.get("economic_impact")
-            apd.coverage_stats = analysis_results.get("coverage_stats") or structured_data.get("coverage_stats")
-            apd.ai_relevance_score = structured_data.get("ai_relevance_score")
+            # Update apr with structured analysis data
+            apr.objectives_alignment = structured_data.get("objectives_alignment")
+            apr.pain_points_coverage = structured_data.get("pain_points_coverage")
+            apr.economic_impact = structured_data.get("economic_impact")
+            apr.coverage_stats = analysis_results.get("coverage_stats") or structured_data.get("coverage_stats")
+            apr.ai_relevance_score = structured_data.get("ai_relevance_score")
             
             # Set last analysis date
-            apd.last_analysis_date = timezone.now()
+            apr.last_analysis_date = timezone.now()
             
-            # Add org units from analysis if they exist
-            if "entity_type" in analysis_results and analysis_results["entity_type"] == "org_unit":
-                org_unit_id = analysis_results.get("entity_id")
-                if org_unit_id:
-                    try:
-                        org_unit = AccountOrganizationUnit.objects.get(id=org_unit_id)
-                        if org_unit.account_id != account.id:
-                            raise StandardizedValidationError(
-                                CoreErrorMessages.INVALID_FIELD.format(
-                                    field="Organization unit must belong to the account"
-                                )
-                            )
-                            
-                        # Check if this org unit is already in the target list
-                        if not apd.target_org_units.filter(id=org_unit_id).exists():
-                            apd.target_org_units.add(org_unit)
-                    except AccountOrganizationUnit.DoesNotExist:
-                        # Skip if org unit doesn't exist
-                        pass
             
             # Format analysis for notes if requested
             notes_update = cls._format_analysis_for_notes(analysis_results)
             
             # Update notes - append rather than replace
             if notes_update:
-                existing_notes = apd.notes or ""
+                existing_notes = apr.notes or ""
                 timestamp = timezone.now().strftime("%Y-%m-%d %H:%M")
                 
                 new_notes = f"{existing_notes}\n\n=== AI Analysis {timestamp} ===\n{notes_update}"
-                apd.notes = new_notes
+                apr.notes = new_notes
             
             # Try to extract estimated units from economic impact if available
             if structured_data.get("economic_impact") and "units_count" in structured_data["economic_impact"]:
                 units_count = structured_data["economic_impact"]["units_count"]
                 if isinstance(units_count, int) and units_count > 0:
-                    apd.estimated_units = units_count
+                    apr.estimated_units = units_count
             
             # Add metadata about this update
-            if not apd.historical_data:
-                apd.historical_data = {}
+            if not apr.historical_data:
+                apr.historical_data = {}
                 
-            if "ai_analysis" not in apd.historical_data:
-                apd.historical_data["ai_analysis"] = []
+            if "ai_analysis" not in apr.historical_data:
+                apr.historical_data["ai_analysis"] = []
                 
             # Record analysis metadata for audit
             analysis_meta = {
@@ -138,12 +117,12 @@ class APDUpdateService:
                 "entity_id": analysis_results.get("entity_id")
             }
             
-            apd.historical_data["ai_analysis"].append(analysis_meta)
+            apr.historical_data["ai_analysis"].append(analysis_meta)
             
-            # Save the APD with the user context
-            apd.save(user=user)
+            # Save the apr with the user context
+            apr.save(user=user)
             
-            return apd, created
+            return apr, created
     
     @classmethod
     def _format_analysis_for_notes(cls, analysis_results):

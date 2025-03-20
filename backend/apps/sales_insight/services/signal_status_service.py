@@ -139,7 +139,7 @@ class SignalStatusService:
         Args:
             signals: QuerySet or list of Signal objects to approve
             user: User performing the approval
-            entity_references: Optional dict with entity references like {'org_unit_id': 12}
+            entity_references: Optional dict with entity references like {'contact_id': 12}
             
         Returns:
             dict: Summary of results with counts
@@ -164,34 +164,9 @@ class SignalStatusService:
                     
                 # If entity references are provided and the signal needs them, update first
                 if entity_references:
-                    if signal.entity_type == Signal.EntityType.ORG_UNIT and 'org_unit_id' in entity_references:
-                        try:
-                            from apps.accounts_app.org_units.models import AccountOrganizationUnit
-                            org_unit = AccountOrganizationUnit.objects.get(id=entity_references['org_unit_id'])
-                            
-                            # Validate org_unit belongs to the same account
-                            if str(org_unit.account_id) != str(signal.account_id):
-                                results['failed_count'] += 1
-                                results['failed_ids'].append({
-                                    'id': str(signal.id),
-                                    'reason': 'Organization unit does not belong to the same account as the signal'
-                                })
-                                continue
-                            
-                            # Update the signal with the org_unit
-                            signal.org_unit = org_unit
-                            signal.save(update_fields=['org_unit'])
-                        except Exception as e:
-                            results['failed_count'] += 1
-                            results['failed_ids'].append({
-                                'id': str(signal.id),
-                                'reason': f'Error updating org_unit: {str(e)}'
-                            })
-                            continue
-                            
                     if signal.entity_type == Signal.EntityType.CONTACT and 'contact_id' in entity_references:
                         try:
-                            from apps.accounts_app.contacts.models import Contact
+                            from apps.accounts.models import Contact  # Updated import
                             contact = Contact.objects.get(id=entity_references['contact_id'])
                             
                             # Validate contact belongs to the same account
@@ -211,6 +186,32 @@ class SignalStatusService:
                             results['failed_ids'].append({
                                 'id': str(signal.id),
                                 'reason': f'Error updating contact: {str(e)}'
+                            })
+                            continue
+                    
+                    # Update APR references
+                    if signal.entity_type == Signal.EntityType.ACCOUNT_PRODUCT and 'account_product_relationship_id' in entity_references:
+                        try:
+                            from apps.accounts.models import AccountProductRelationship  # Updated import
+                            apr = AccountProductRelationship.objects.get(id=entity_references['account_product_relationship_id'])
+                            
+                            # Validate APR belongs to the same account
+                            if str(apr.account_id) != str(signal.account_id):
+                                results['failed_count'] += 1
+                                results['failed_ids'].append({
+                                    'id': str(signal.id),
+                                    'reason': 'Account product relationship does not belong to the same account as the signal'
+                                })
+                                continue
+                            
+                            # Update the signal with the APR
+                            signal.account_product_relationship = apr  # Updated attribute name
+                            signal.save(update_fields=['account_product_relationship'])  # Updated field name
+                        except Exception as e:
+                            results['failed_count'] += 1
+                            results['failed_ids'].append({
+                                'id': str(signal.id),
+                                'reason': f'Error updating account product relationship: {str(e)}'
                             })
                             continue
                 

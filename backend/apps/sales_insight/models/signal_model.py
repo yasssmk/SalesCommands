@@ -27,7 +27,6 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     
     class EntityType(models.TextChoices):
         ACCOUNT = 'ACCOUNT', _('Account')
-        ORG_UNIT = 'ORG_UNIT', _('Organization Unit')
         CONTACT = 'CONTACT', _('Contact')
         ACCOUNT_PRODUCT = 'ACCOUNT_PRODUCT', _('Account Product Detail')
     
@@ -104,18 +103,8 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Aligned Products')
     )
     
-    # Entity references
-    org_unit = models.ForeignKey(
-        'org_units.AccountOrganizationUnit',
-        on_delete=models.CASCADE,
-        related_name='signals',
-        null=True,
-        blank=True,
-        verbose_name=_('Organization Unit')
-    )
-    
     contact = models.ForeignKey(
-        'contacts.Contact',
+        'accounts_new.Contact',
         on_delete=models.CASCADE,
         related_name='signals',
         null=True,
@@ -123,13 +112,13 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Contact')
     )
     
-    account_product_detail = models.ForeignKey(
-        'account_product_detail.AccountProductDetail',
+    account_product_relationship = models.ForeignKey(
+        'accounts_new.AccountProductRelationship',
         on_delete=models.CASCADE,
         related_name='signals',
         null=True,
         blank=True,
-        verbose_name=_('Account Product Detail')
+        verbose_name=_('Account Product relationship')
     )
     
     # Approval tracking
