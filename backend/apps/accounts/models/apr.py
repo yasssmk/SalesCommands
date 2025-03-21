@@ -122,12 +122,24 @@ class AccountProductRelationship(BaseModelApp, AccountLinkedModel, ClientScopeMa
     def __str__(self):
         return f"{self.account.company_name} - {self.product.product_name}"
     
+    def post(self, request, *args, **kwargs):
+        try:
+            print(f"Received request data: {request.data}")
+            response = super().post(request, *args, **kwargs)
+            print(f"Response status: {response.status_code}")
+            return response
+        except Exception as e:
+            import traceback
+            print(f"View-level Error: {str(e)}")
+            print(traceback.format_exc())
+            raise
+    
     def save(self, *args, **kwargs):
+
         # Calculate potential revenue if pricing is selected
         if self.selected_pricing and self.estimated_units:
             # Get the price value from the pricing model
-            price = self.selected_pricing.price or 0
-            self.potential_revenue = price * self.estimated_units
+            self.potential_revenue = self.calculate_potential_revenue()
         
         # Set last analysis date if applicable fields were updated
         analysis_fields = ['objectives_alignment', 'pain_points_coverage', 
@@ -205,4 +217,3 @@ class AccountProductRelationship(BaseModelApp, AccountLinkedModel, ClientScopeMa
 
     def __str__(self):
         return f"{self.account.company_name} - {self.product.product_name} ({self.revenue_type})"
-    

@@ -188,14 +188,12 @@ class AccountProductRelationshipSerializer(AccountLinkedSerializerMixin, Histori
         2. Create instance.
         3. Handle M2M target org units.
         """
-        target_org_units = validated_data.pop('target_org_units', [])
         
         # Attempt to assign default pricing if none given
         self._assign_default_pricing_if_needed(instance=None, validated_data=validated_data)
         
         instance = super().create(validated_data)
-        if target_org_units:
-            instance.target_org_units.set(target_org_units)
+
         return instance
     
     def update(self, instance, validated_data):
@@ -227,29 +225,29 @@ class AccountProductRelationshipSerializer(AccountLinkedSerializerMixin, Histori
 
 
     # Method fields for coverage statistics
-    def get_objectives_coverage_percent(self, obj):
-        """Calculate objectives coverage percentage from stored coverage stats"""
-        if obj.coverage_stats and 'objectives_coverage_percent' in obj.coverage_stats:
-            return obj.coverage_stats['objectives_coverage_percent']
-        return 0
+    # def get_objectives_coverage_percent(self, obj):
+    #     """Calculate objectives coverage percentage from stored coverage stats"""
+    #     if obj.coverage_stats and 'objectives_coverage_percent' in obj.coverage_stats:
+    #         return obj.coverage_stats['objectives_coverage_percent']
+    #     return 0
     
-    def get_pain_points_coverage_percent(self, obj):
-        """Calculate pain points coverage percentage from stored coverage stats"""
-        if obj.coverage_stats and 'pain_points_coverage_percent' in obj.coverage_stats:
-            return obj.coverage_stats['pain_points_coverage_percent']
-        return 0
+    # def get_pain_points_coverage_percent(self, obj):
+    #     """Calculate pain points coverage percentage from stored coverage stats"""
+    #     if obj.coverage_stats and 'pain_points_coverage_percent' in obj.coverage_stats:
+    #         return obj.coverage_stats['pain_points_coverage_percent']
+    #     return 0
     
-    def get_overall_coverage_percent(self, obj):
-        """Calculate overall coverage percentage from stored coverage stats"""
-        if obj.coverage_stats and 'overall_coverage_percent' in obj.coverage_stats:
-            return obj.coverage_stats['overall_coverage_percent']
-        return 0
+    # def get_overall_coverage_percent(self, obj):
+    #     """Calculate overall coverage percentage from stored coverage stats"""
+    #     if obj.coverage_stats and 'overall_coverage_percent' in obj.coverage_stats:
+    #         return obj.coverage_stats['overall_coverage_percent']
+    #     return 0
     
-    def get_has_analysis_data(self, obj):
-        """Check if APD has any analysis data"""
-        return bool(obj.objectives_alignment or obj.pain_points_coverage or obj.economic_impact)
+    # def get_has_analysis_data(self, obj):
+    #     """Check if APD has any analysis data"""
+    #     return bool(obj.objectives_alignment or obj.pain_points_coverage or obj.economic_impact)
 
-    # Revenue formatting methods
+    # # Revenue formatting methods
     def get_potential_revenue_formatted(self, obj):
         if obj.selected_pricing:
             return f"{obj.selected_pricing.currency} {obj.potential_revenue:,.2f}"
@@ -257,3 +255,32 @@ class AccountProductRelationshipSerializer(AccountLinkedSerializerMixin, Histori
 
     def get_revenue_label(self, obj):
         return obj.get_revenue_type_display()
+
+    def get_objectives_coverage_percent(self, obj):
+        try:
+            return obj.coverage_stats.get('objectives_coverage_percent', 0) if hasattr(obj, 'coverage_stats') else 0
+        except Exception:
+            return 0
+
+    def get_pain_points_coverage_percent(self, obj):
+        try:
+            return obj.coverage_stats.get('pain_points_coverage_percent', 0) if hasattr(obj, 'coverage_stats') else 0
+        except Exception:
+            return 0
+
+    def get_overall_coverage_percent(self, obj):
+        try:
+            return obj.coverage_stats.get('overall_coverage_percent', 0) if hasattr(obj, 'coverage_stats') else 0
+        except Exception:
+            return 0
+
+    def get_has_analysis_data(self, obj):
+        try:
+            return bool(
+                obj.objectives_alignment or 
+                obj.pain_points_coverage or 
+                obj.economic_impact
+            )
+        except Exception:
+            return False
+        

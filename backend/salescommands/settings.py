@@ -29,6 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-1gqx+c6khp7ji5bf$q%k&=x%#t918n(hn5mi^k)%e+4yb$ydif'
 
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -61,6 +62,7 @@ INSTALLED_APPS = [
     'product_admin',
     "phonenumber_field",
     'django_filters',
+    'debug_toolbar',
 ]
 
 MIDDLEWARE = [
@@ -73,7 +75,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'core.security_middleware.InputSanitizationMiddleware',
-    'core.middleware.LogRequestHeadersMiddleware'	
+    'core.middleware.LogRequestHeadersMiddleware',
+    'debug_toolbar.middleware.DebugToolbarMiddleware',	
 ]
 
 ROOT_URLCONF = 'salescommands.urls'
