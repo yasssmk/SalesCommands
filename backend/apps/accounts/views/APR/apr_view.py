@@ -1,4 +1,3 @@
-from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Sum, F, Value, DecimalField
@@ -6,29 +5,27 @@ from django.db.models.functions import Coalesce
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from core.apps_shared_methods import BaseAPIView
-from apps.accounts_app.accounts.models import Account
 from django.db import transaction
-from .models import AccountProductDetail
-from .serializers import AccountProductDetailSerializer
-from apps.accounts_app.accounts.models import Account
+from ...models import AccountProductRelationship
+from ...serializers import AccountProductRelationshipSerializer
 from apps.products.models import Product
 from apps.products.serializers import ProductSerializer
 from decimal import Decimal
 from django.shortcuts import redirect
 from django.urls import reverse
 
-class AccountProductDetailView(BaseAPIView):
+class AccountProductRelationshipView(BaseAPIView):
     """
     API View for managing AccountProductDetail instances with proper client scoping.
     Supports CRUD operations and additional analysis endpoints.
     """
-    queryset = AccountProductDetail.objects.select_related(
+    queryset = AccountProductRelationship.objects.select_related(
         'account',
         'product',
         'selected_pricing'
     ).prefetch_related('target_org_units')
     
-    serializer_class = AccountProductDetailSerializer
+    serializer_class = AccountProductRelationshipSerializer
     entity_name = 'account_product_detail'
     
     def get_queryset(self):
@@ -319,8 +316,8 @@ class AccountProductDetailView(BaseAPIView):
         
         POST /api/account-product-details/{id}/refresh-analysis/
         """
-        from backend.apps.sales_insight.services.apr_analysis_service import APDAnalysisService
-        from backend.apps.sales_insight.services.apr_update_service import APDUpdateService
+        from backend.apps.sales_insight.services.apr_analysis_service import APRAnalysisService
+        from backend.apps.sales_insight.services.apr_update_service import APRUpdateService
         
         apd = self.get_objects([pk]).first()
         if not apd:
@@ -328,13 +325,13 @@ class AccountProductDetailView(BaseAPIView):
         
         try:
             # Run analysis
-            analysis_results = APDAnalysisService.analyze_product_alignment(
+            analysis_results = APRAnalysisService.analyze_product_alignment(
                 account_id=apd.account_id,
                 product_id=apd.product_id
             )
             
             # Update APD with results
-            updated_apd, _ = APDUpdateService.apply_analysis_to_apd(
+            updated_apd, _ = APRUpdateService.apply_analysis_to_apd(
                 analysis_results=analysis_results,
                 account_id=apd.account_id,
                 product_id=apd.product_id,
@@ -351,3 +348,43 @@ class AccountProductDetailView(BaseAPIView):
         
         except Exception as e:
             return self.handle_exception(e)
+        
+    # Add this method to your existing AccountProductDetailView class
+
+    @action(detail=True, methods=['get'])
+    def tech_relationships(self, request, pk=None):
+        """
+        Get tech relationships for this APD.
+        
+        GET /api/account-products/{id}/tech-relationships/
+        """
+        apd = self.get_objects([pk]).first()
+        if not apd:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+        # Check for tech relationships
+        relationships = apd.tech_relationships or []
+        
+        # Get entities with tech stack
+        account = apd.account
+        org_units = account.accountorganizationunit_set.all()
+        
+        # Find entities with tech stack
+        entities_with_tech = []
+        
+        # Check account
+        if account.current_tech_stack:
+            entities_with_tech.append({
+                'entity_type': 'ACCOUNT',
+                'entity_id': str(account.id),
+                'entity_name': account.company_name,
+                'tech_count': len(account.current_tech_stack) if isinstance(account.current_tech_stack, list) else 1
+            })
+        
+        
+        return Response({
+            'tech_relationships': relationships,
+            'entities_with_tech': entities_with_tech,
+            'product_id': str(apd.product_id),
+            'product_name': apd.product.product_name
+        })

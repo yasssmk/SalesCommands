@@ -319,8 +319,8 @@ class AccountProductDetailView(BaseAPIView):
         
         POST /api/account-product-details/{id}/refresh-analysis/
         """
-        from apps.sales_insight.services.apd_analysis_service import APDAnalysisService
-        from apps.sales_insight.services.apd_update_service import APDUpdateService
+        from backend.apps.sales_insight.services.apr_analysis_service import APDAnalysisService
+        from backend.apps.sales_insight.services.apr_update_service import APDUpdateService
         
         apd = self.get_objects([pk]).first()
         if not apd:

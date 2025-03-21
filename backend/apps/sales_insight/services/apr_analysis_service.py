@@ -6,8 +6,8 @@ from apps.accounts.models import Account
 from apps.products.models import Product
 from apps.LLM_calls.services import LLMProviderService
 from ..models import Signal
-from ..services.apd_prompts_service import call_second_llm_for_alignment
-from ..services.signal_lifecycle_service import SignalLifecycleService
+from .apd_prompts_service import call_second_llm_for_alignment
+from .signal_lifecycle_service import SignalLifecycleService
 from core.exceptions import CoreErrorMessages, StandardizedValidationError
 import json
 import re
