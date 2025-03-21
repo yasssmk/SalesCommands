@@ -6,7 +6,6 @@ from core.serializers import ContactDetailsSerializer
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.exceptions import StandardizedValidationError
-from apps.sales_insight.serializers.qualification_serializers import QualificationFieldsSerializer
 from apps.core_apps.serializers import SignalAwareSerializerMixin, HistoricalTrackingSerializerMixin
 from end_users.models import User, Team
 from ..models import Account, AccountType, AccountClassification
@@ -25,7 +24,7 @@ class AccountManagerSerializer(serializers.ModelSerializer):
         fields = ['id', 'email', 'first_name', 'last_name', 'role_name', 'team']
         read_only_fields = fields
 
-class AccountSerializer(ContactDetailsSerializer, QualificationFieldsSerializer, 
+class AccountSerializer(ContactDetailsSerializer,
                         HistoricalTrackingSerializerMixin, ClientScopeManager.SerializerMixin, 
                         SignalAwareSerializerMixin, serializers.ModelSerializer):
     # Field for write operations
@@ -88,20 +87,16 @@ class AccountSerializer(ContactDetailsSerializer, QualificationFieldsSerializer,
     class Meta:
         model = Account
         fields = [
-            'id', 'company_name', 'industry', 'address_line1', 'address_line2', 
-            'city', 'postal_code', 'state', 'country', 'website', 
-            'type', 'phone', 'created_at', 'updated_at',
+            'id', 'company_name', 'industry', 'address', 
+            'city', 'post_code', 'state', 'country', 'website', 
+            'type', 'phone_number',
             'company_size', 'annual_revenue', 'classification',
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
             'team_owner', 'team_owner_id', 'client_id', 'historical_data',
             'objectives', 'compelling_events', 'motivations', 'key_kpis',
-            'criteria', 'pain_points', 'implications',
-            'partners', 'projects', 'budget', 
-            'new_budget_start_date', 'coverage_stats',
-            'has_qualification_data', 'pending_changes_count', 
-            'signal_metadata', 'include_signal_info',
-            'qualification_with_signals', 'profile_with_signals'
+            'criteria', 'pain_points', 'implications', 'coverage_stats',
+            'signal_metadata',
         ]
         read_only_fields = [
             'created_at', 'updated_at', 'client_id', 'historical_data', 

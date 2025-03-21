@@ -61,161 +61,120 @@ class SignalApplicationService:
                 signal.save(update_fields=['status', 'applied_date'])
                 
             return success
-    
+        
     @classmethod
     def _apply_to_account(cls, signal, user):
-        """Apply signal to account"""
+        """Apply signal to account with comprehensive historical tracking"""
         account = signal.account
         field_name = signal.field_name
         value = signal.value
         
-        # Qualification fields vs. regular fields
-        if field_name in ['objectives', 'compelling_events', 'motivations', 
-                        'key_kpis', 'criteria', 'pain_points', 'implications',
-                        'current_tech_stack', 'partners', 'buying_process', 
-                        'projects', 'budget', 'new_budget_start_date']:
-            # Use QualificationModel's update method to track history
-            if hasattr(account, 'update_qualification_field'):
-                account.update_qualification_field(field_name, value, user)
-                return True
-        else:
-            # Regular field update
-            if hasattr(account, field_name):
-                # Simple fields like type, classification, etc.
-                current_value = getattr(account, field_name)
-                setattr(account, field_name, value)
-                
-                if hasattr(account, 'track_signal_update'):
-                    account.track_signal_update(signal, field_name, current_value, value)
-
-                # Initialize historical data tracking
-                if not account.historical_data:
-                    account.historical_data = {}
-
-                if field_name not in account.historical_data:
-                    account.historical_data[field_name] = []
-
-                account.historical_data[field_name].append({
-                    'old_value': current_value,
-                    'new_value': value,
-                    'changed_at': timezone.now().isoformat(),
-                    'changed_by': str(user.id) if user else None,
-                    'source': 'signal',
-                    'signal_id': str(signal.id)
-                })
-
-                # Save historical changes
-                account.save(update_fields=[field_name,'historical_data'])
-                return True
-                
-        return False
-    
+        # Qualification fields 
+        qualification_fields = [
+            'objectives', 'compelling_events', 'motivations', 
+            'key_kpis', 'criteria', 'pain_points', 'implications',
+        ]
+        
+        # Ensure historical_data exists
+        if not hasattr(account, 'historical_data') or not account.historical_data:
+            account.historical_data = {}
+        
+        # Current value before update
+        current_value = getattr(account, field_name, None)
+        
+        # Update the field
+        setattr(account, field_name, value)
+        
+        # Prepare history entry
+        history_entry = {
+            'old_value': current_value,
+            'new_value': value,
+            'changed_at': timezone.now().isoformat(),
+            'changed_by': str(user.id) if user else None,
+            'source': 'signal',
+            'signal_id': str(signal.id)
+        }
+        
+        # Add signal-specific details
+        if signal:
+            history_entry.update({
+                'signal_category': signal.category,
+                'signal_source': signal.source,
+                'confirmation_count': signal.confirmation_count
+            })
+        
+        # Initialize field history if needed
+        if field_name not in account.historical_data:
+            account.historical_data[field_name] = []
+        
+        # Add to historical data
+        account.historical_data[field_name].append(history_entry)
+        
+        # Track signal update in signal metadata
+        if hasattr(account, 'track_signal_update'):
+            account.track_signal_update(signal, field_name, current_value, value)
+        
+        # Save the account
+        account.save(user=user, update_fields=[field_name, 'historical_data'])
+        
+        return True
 
     @classmethod
     def _apply_to_contact(cls, signal, user):
-        """Apply signal to contact, tracking both qualification and specific field changes."""
-        contact_id = signal.contact_id
-        if not contact_id:
-            return False
-            
-        # Get a fresh contact instance for each signal application
-        contact = Contact.objects.get(id=contact_id)
+        """Apply signal to contact with comprehensive historical tracking"""
+        contact = signal.contact
         field_name = signal.field_name
         value = signal.value
-
-        if field_name in [
-            'objectives', 'compelling_events', 'motivations', 'key_kpis',
-            'criteria', 'pain_points', 'implications', 'current_tech_stack',
-            'partners', 'buying_process', 'projects', 'budget', 'new_budget_start_date'
-        ]:
-            # ✅ Qualification fields: use `update_qualification_field()`
-            if hasattr(contact, 'update_qualification_field'):
-                contact.update_qualification_field(field_name, value, user)
-                return True
-
-        elif field_name in ['job_title', 'influence_level', 'first_name', 'last_name']:  # Add any contact-specific fields that need tracking
-            # 🔥 Custom tracking for contact-specific fields
-            current_value = getattr(contact, field_name, None)
-            setattr(contact, field_name, value)
-
-            if hasattr(contact, 'track_signal_update'):
-                contact.track_signal_update(signal, field_name, current_value, value)
-
-            if not contact.historical_data:
-                contact.historical_data = {}
-
-            if field_name not in contact.historical_data:
-                contact.historical_data[field_name] = []
-
-            contact.historical_data[field_name].append({
-                'old_value': current_value,
-                'new_value': value,
-                'changed_at': timezone.now().isoformat(),
-                'changed_by': str(user.id) if user else None,
-                'source': 'signal',
-                'signal_id': str(signal.id)
+        
+        # Qualification fields 
+        qualification_fields = [
+            'objectives', 'compelling_events', 'motivations', 
+            'key_kpis', 'criteria', 'pain_points', 'implications',
+        ]
+        
+        # Ensure historical_data exists
+        if not hasattr(contact, 'historical_data') or not contact.historical_data:
+            contact.historical_data = {}
+        
+        # Current value before update
+        current_value = getattr(contact, field_name, None)
+        
+        # Update the field
+        setattr(contact, field_name, value)
+        
+        # Prepare history entry
+        history_entry = {
+            'old_value': current_value,
+            'new_value': value,
+            'changed_at': timezone.now().isoformat(),
+            'changed_by': str(user.id) if user else None,
+            'source': 'signal',
+            'signal_id': str(signal.id)
+        }
+        
+        # Add signal-specific details
+        if signal:
+            history_entry.update({
+                'signal_category': signal.category,
+                'signal_source': signal.source,
+                'confirmation_count': signal.confirmation_count
             })
-
-            contact.save(update_fields=['historical_data'])
-            return True
-
-        return False
-
-    # @classmethod
-    # def _apply_to_account_product(cls, signal, user):
-    #     """Apply signal to account product detail, tracking relevant field changes."""
-    #     apd = signal.account_product_detail
-    #     if not apd:
-    #         return False
-            
-    #     field_name = signal.field_name
-    #     value = signal.value
-
-    #     if field_name == 'ai_relevance_score' and isinstance(value, (int, float)):
-    #         apd.ai_relevance_score = value
-    #         apd.save(user=user)
-    #         return True
-
-    #     elif field_name == 'notes':
-    #         existing_notes = apd.notes or ""
-    #         new_notes = f"{existing_notes}\n\n{value}" if existing_notes else value
-    #         apd.notes = new_notes
-    #         apd.save(user=user)
-    #         return True
-
-    #     elif field_name == 'estimated_units' and isinstance(value, (int, str)):
-    #         apd.estimated_units = int(value) if isinstance(value, str) else value
-    #         apd.save(user=user)
-    #         return True
-
-    #     elif hasattr(apd, field_name):
-    #         # 🔥 Custom tracking for account product-specific fields
-    #         current_value = getattr(apd, field_name)
-    #         setattr(apd, field_name, value)
-
-    #         apd.save(user=user)
-
-    #         if not apd.historical_data:
-    #             apd.historical_data = {}
-
-    #         if field_name not in apd.historical_data:
-    #             apd.historical_data[field_name] = []
-
-    #         apd.historical_data[field_name].append({
-    #             'old_value': current_value,
-    #             'new_value': value,
-    #             'changed_at': timezone.now().isoformat(),
-    #             'changed_by': str(user.id) if user else None,
-    #             'source': 'signal',
-    #             'signal_id': str(signal.id)
-    #         })
-
-    #         apd.save(update_fields=['historical_data'])
-    #         return True
-
-    #     return False
-    
-    
+        
+        # Initialize field history if needed
+        if field_name not in contact.historical_data:
+            contact.historical_data[field_name] = []
+        
+        # Add to historical data
+        contact.historical_data[field_name].append(history_entry)
+        
+        # Track signal update in signal metadata
+        if hasattr(contact, 'track_signal_update'):
+            contact.track_signal_update(signal, field_name, current_value, value)
+        
+        # Save the contact
+        contact.save(user=user, update_fields=[field_name, 'historical_data'])
+        
+        return True
         
     @classmethod
     def bulk_apply_signals(cls, signals, user=None):

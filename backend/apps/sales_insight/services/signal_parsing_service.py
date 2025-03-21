@@ -82,7 +82,6 @@ class SignalParsingService:
             'classification': 'classification',
             'employeeCount': 'company_size',
             'annualRevenue': 'annual_revenue',
-            'buyingDecisionsLocation': 'metadata'  # Store in metadata JSON field
         }
         
         for json_field, model_field in profile_fields.items():
@@ -118,7 +117,6 @@ class SignalParsingService:
             ('criteria', 'criteria'),
             ('painPoints', 'pain_points'),
             ('implications', 'implications'),
-            ('partners', 'partners'),
             ('budget', 'budget'),
             ('newBudgetStartDate', 'new_budget_start_date')
         ]
@@ -505,19 +503,3 @@ class SignalParsingService:
             # Log error but don't block signal processing
             print(f"Error linking to APD: {str(e)}")
     
-    @classmethod
-    def _map_unit_type(cls, unit_type_str):
-        """Map text unit type to model choice"""
-        from apps.accounts_app.org_units.models import AccountOrganizationUnit
-        
-        unit_type_str = (unit_type_str or '').upper()
-        
-        if 'DEPARTMENT' in unit_type_str:
-            return AccountOrganizationUnit.UnitType.DEPARTMENT
-        elif 'DIVISION' in unit_type_str:
-            return AccountOrganizationUnit.UnitType.DIVISION
-        elif 'TEAM' in unit_type_str:
-            return AccountOrganizationUnit.UnitType.TEAM
-        else:
-            # Default to department
-            return AccountOrganizationUnit.UnitType.DEPARTMENT

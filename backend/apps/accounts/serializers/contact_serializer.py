@@ -7,10 +7,9 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.serializers import AccountLinkedSerializerMixin, HistoricalTrackingSerializerMixin, SignalAwareSerializerMixin
-from apps.sales_insight.serializers.qualification_serializers import QualificationFieldsSerializer
 from ..models import Contact, InfluenceLevel
 
-class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin, QualificationFieldsSerializer, 
+class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
                        HistoricalTrackingSerializerMixin, SignalAwareSerializerMixin, 
                        ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
@@ -32,9 +31,6 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin, 
     account = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
     
-    # Qualification indicators
-    has_qualification_data = serializers.SerializerMethodField(read_only=True)
-    pending_changes_count = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Contact
@@ -44,15 +40,11 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin, 
             'account', 'account_id', 'address_line1', 'address_line2',
             'city', 'postal_code', 'state', 'country', 'website', 'linkedin',
             'created_at', 'updated_at', 'client_id', 'historical_data',
-            # Qualification fields
-            'objectives', 'pain_points', 'criteria', 'buying_authority', 'notes',
-            'has_qualification_data', 'pending_changes_count',
-            'signal_metadata', 'include_signal_info',
-            'qualification_with_signals', 'profile_with_signals'
+            'signal_metadata', 
         ]
         read_only_fields = [
             'created_at', 'updated_at', 'client_id', 'historical_data', 'full_name',
-            'signal_metadata', 'qualification_with_signals', 'profile_with_signals'
+            'signal_metadata'
         ]
     
     def get_full_name(self, obj):

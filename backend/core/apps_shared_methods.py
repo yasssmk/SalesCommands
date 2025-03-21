@@ -131,6 +131,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
 
     def post(self, request, *args, **kwargs):
         """Handle POST requests for single or batch creation"""
+        print('YOOO')
         client_id = self.get_client_id()
         data = request.data if isinstance(request.data, list) else [request.data]
         

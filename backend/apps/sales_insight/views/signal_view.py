@@ -276,6 +276,15 @@ class SignalView(BaseAPIView):
             if not signal:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
                 
+            # Validate signal entities before applying
+            validation_result = self._validate_signal_entities(signal)
+            if not validation_result['is_valid']:
+                return Response({
+                    'success': False,
+                    'message': validation_result['message'],
+                    'validation': validation_result
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
             # Apply signal using the service
             success = SignalApplicationService.apply_signal(signal, request.user)
             

@@ -239,3 +239,12 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
         self.save(user=user)
         
         return True
+
+    def get_qualification_data(self, include_signal_info=False):
+        """Get all qualification data with optional signal information."""
+        qualification_fields = [
+            'objectives', 'compelling_events', 'motivations', 
+            'key_kpis', 'criteria', 'pain_points', 'implications', 
+        ]
+        
+        return self._get_field_data_with_signals(qualification_fields, include_signal_info)

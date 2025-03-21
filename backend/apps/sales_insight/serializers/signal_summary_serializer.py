@@ -46,12 +46,6 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
             'criteria': 'Decision Criteria',
             'pain_points': 'Pain Points',
             'implications': 'Implications',
-            'current_tech_stack': 'Current Technology',
-            'buying_process': 'Buying Process',
-            'partners': 'Partners',
-            'budget': 'Budget',
-            'new_budget_start_date': 'Budget Start Date',
-            'projects': 'Projects',
             'budget_authority': 'Budget Authority'
         }
         return field_mapping.get(obj.field_name, obj.field_name.replace('_', ' ').title())
