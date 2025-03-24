@@ -2,7 +2,7 @@
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from django.utils import timezone
+
 
 class HistoricalTrackingModel(models.Model):
     """
@@ -27,59 +27,104 @@ class HistoricalTrackingModel(models.Model):
             new_value: New value
             user (User, optional): User who made the change
         """
-        # Initialize historical_data if it doesn't exist
-        if not self.historical_data:
-            self.historical_data = {}
+        from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
         
-        # Initialize field history if it doesn't exist
-        if field_name not in self.historical_data:
-            self.historical_data[field_name] = []
-        
-        # Create history entry
-        history_entry = {
-            'old_value': old_value,
-            'new_value': new_value,
-            'changed_at': timezone.now().isoformat(),
-            'changed_by': str(user.id) if user else None,
-            'source': 'manual'
-        }
-        
-        # Add to historical data
-        self.historical_data[field_name].append(history_entry)
-        
-        return True
+        return HistoricalTrackingService._track_change(
+            instance=self,
+            field_name=field_name,
+            old_value=old_value,
+            new_value=new_value,
+            user=user,
+            signal=None,
+            save_model=False  # Don't automatically save the model
+        )
     
-    def track_signal_update(self, signal, field_name, old_value, new_value):
+    def update_tracked_field(self, field_name, new_value, user=None):
         """
-        Track updates driven by signals
+        Update a field and track the change
         
         Args:
-            signal: Signal instance
-            field_name: Field being updated
-            old_value: Previous value
-            new_value: New value
+            field_name (str): Field name to update
+            new_value: New value for the field
+            user (User, optional): User making the change
+            
+        Returns:
+            bool: Whether the update was successful
         """
-        # Initialize historical_data if it doesn't exist
-        if not self.historical_data:
-            self.historical_data = {}
+        from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
         
-        # Initialize field history if it doesn't exist
-        if field_name not in self.historical_data:
-            self.historical_data[field_name] = []
+        return HistoricalTrackingService.update_field(
+            instance=self,
+            field_name=field_name,
+            new_value=new_value,
+            user=user
+        )
+    
+    def update_tracked_json_item(self, field_name, item_id, new_item, id_key='id', user=None):
+        """
+        Update a single item in a JSONField array
         
-        # Create history entry with signal data
-        history_entry = {
-            'old_value': old_value,
-            'new_value': new_value,
-            'changed_at': timezone.now().isoformat(),
-            'changed_by': str(signal.created_by_id) if signal.created_by_id else None,
-            'source': 'signal',
-            'signal_id': str(signal.id),
-            'signal_category': signal.category,
-            'signal_confidence': getattr(signal, 'confidence', None)
-        }
+        Args:
+            field_name (str): JSONField name
+            item_id: ID of the item to update
+            new_item: New value for the item
+            id_key (str): Key used as identifier in the JSON objects
+            user (User, optional): User making the change
+            
+        Returns:
+            bool: Whether the update was successful
+        """
+        from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
         
-        # Add to historical data
-        self.historical_data[field_name].append(history_entry)
+        return HistoricalTrackingService.update_json_item(
+            instance=self,
+            field_name=field_name,
+            item_id=item_id,
+            new_item=new_item,
+            id_key=id_key,
+            user=user
+        )
+    
+    def add_tracked_json_item(self, field_name, new_item, user=None):
+        """
+        Add an item to a JSONField array
         
-        return True
+        Args:
+            field_name (str): JSONField name
+            new_item: Item to add
+            user (User, optional): User making the change
+            
+        Returns:
+            bool: Whether the addition was successful
+        """
+        from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
+        
+        return HistoricalTrackingService.add_json_item(
+            instance=self,
+            field_name=field_name,
+            new_item=new_item,
+            user=user
+        )
+    
+    def remove_tracked_json_item(self, field_name, item_id, id_key='id', user=None):
+        """
+        Remove an item from a JSONField array
+        
+        Args:
+            field_name (str): JSONField name
+            item_id: ID of the item to remove
+            id_key (str): Key used as identifier in the JSON objects
+            user (User, optional): User making the change
+            
+        Returns:
+            bool: Whether the removal was successful
+        """
+        from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
+        
+        return HistoricalTrackingService.remove_json_item(
+            instance=self,
+            field_name=field_name,
+            item_id=item_id,
+            id_key=id_key,
+            user=user
+        )

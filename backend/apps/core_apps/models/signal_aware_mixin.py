@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils import timezone
 import logging
+from ..services.historical_tracking_service import HistoricalTrackingService
 
 logger = logging.getLogger(__name__)
 
@@ -124,49 +125,58 @@ class SignalEnabledQualificationMixin(models.Model):
         abstract = True
         
     def update_qualification_field(self, field_name, new_value, user, signal=None):
-        """Enhanced update method for qualification fields that tracks signal information."""
-        # Get current value
-        current_value = getattr(self, field_name)
+        """
+        Enhanced update method for qualification fields that tracks signal information.
+        Now uses the HistoricalTrackingService for DRY implementation.
+        """
+        # Use the service to update and track
+        success = HistoricalTrackingService.update_field(
+            instance=self,
+            field_name=field_name,
+            new_value=new_value,
+            user=user,
+            signal=signal,
+            update_model=True
+        )
         
-        # Update the field
-        setattr(self, field_name, new_value)
-        
-        # Initialize historical_data if it doesn't exist
-        if not self.historical_data:
-            self.historical_data = {}
-        
-        # Initialize field history if it doesn't exist
-        if field_name not in self.historical_data:
-            self.historical_data[field_name] = []
-        
-        # Create history entry
-        history_entry = {
-            'old_value': current_value,
-            'new_value': new_value,
-            'changed_at': timezone.now().isoformat(),
-            'changed_by': str(user.id) if user else None,
-        }
-        
-        # Add signal data if provided
-        if signal:
-            history_entry.update({
-                'source': 'signal',
-                'signal_id': str(signal.id),
-                'signal_category': signal.category,
-                'signal_confidence': signal.confidence,
-                'confirmation_count': signal.confirmation_count
-            })
-            
-            # Also track in signal_metadata
-            self.track_signal_update(signal, field_name, current_value, new_value)
-        
-        # Add to historical data
-        self.historical_data[field_name].append(history_entry)
-        
-        # Save the model
-        self.save(user=user)
-        
-        return True
+        return success
+    
+    def add_qualification_item(self, field_name, new_item, user, signal=None):
+        """
+        Add a single item to a qualification list field (like pain_points, objectives).
+        """
+        return HistoricalTrackingService.add_json_item(
+            instance=self,
+            field_name=field_name,
+            new_item=new_item,
+            user=user,
+            signal=signal
+        )
+    
+    def update_qualification_item(self, field_name, item_id, new_item, user, signal=None):
+        """
+        Update a specific item in a qualification list field.
+        """
+        return HistoricalTrackingService.update_json_item(
+            instance=self,
+            field_name=field_name,
+            item_id=item_id,
+            new_item=new_item,
+            user=user,
+            signal=signal
+        )
+    
+    def remove_qualification_item(self, field_name, item_id, user, signal=None):
+        """
+        Remove a specific item from a qualification list field.
+        """
+        return HistoricalTrackingService.remove_json_item(
+            instance=self,
+            field_name=field_name,
+            item_id=item_id,
+            user=user,
+            signal=signal
+        )
     
     def get_qualification_data(self, include_signal_info=False):
         """Get all qualification data with optional signal information."""

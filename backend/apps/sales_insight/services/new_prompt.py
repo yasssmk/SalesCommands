@@ -223,6 +223,7 @@ SAMPLE JSON:
 {
   "LeadsInsights": [
     {
+      "CompelingEvents": [],
       "PainPoints": [],
       "AwarenessLevel": "",
       "PlanningToChangeOrBuy": false,
@@ -262,6 +263,7 @@ Example JSON structure (final shape might vary):
       "expectedTime": "",
       "valueToShow": ""
     },
+    "CompelingEvents": [],
     "budget": 0,
     "DoesOurSolutionCoverExpectations": false,
     "valueWantedThisStep": [],
