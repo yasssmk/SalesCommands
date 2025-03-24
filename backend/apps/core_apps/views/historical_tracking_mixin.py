@@ -4,6 +4,8 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import status
 from rest_framework.response import Response
 import copy
+from core.exceptions import StandardizedValidationError
+from core.error_messages import CoreErrorMessages
 
 
 class HistoricalTrackingViewMixin:
@@ -89,14 +91,66 @@ class HistoricalTrackingViewMixin:
         for field in self.tracked_json_fields:
             # Only process field if it was in the request
             if field in request_data and field in original_values:
-                # Get old and new values
-                old_json = original_values[field] or []
-                new_json = getattr(instance, field) or []
+                field_data = request_data.get(field)
                 
-                # If overall field was changed
-                if old_json != new_json:
-                    # Complete field replacement
-                    if not self._handle_json_item_operations(field, request_data):
+                # Check if this is an item operation rather than full field replacement
+                operation_performed = False
+                
+                if isinstance(field_data, dict) and 'operation' in field_data:
+                    operation = field_data.get('operation')
+                    item_id = field_data.get('item_id')
+                    item = field_data.get('item')
+                    id_key = field_data.get('id_key', 'id')
+                    
+                    # Handle different operations
+                    try:
+                        if operation == 'add' and item:
+                            if hasattr(instance, 'add_tracked_json_item'):
+                                operation_performed = instance.add_tracked_json_item(
+                                    field, item, user
+                                )
+                            elif hasattr(instance, 'add_qualification_item'):
+                                operation_performed = instance.add_qualification_item(
+                                    field, item, user
+                                )
+                                
+                        elif operation == 'update' and item_id and item:
+                            if hasattr(instance, 'update_tracked_json_item'):
+                                operation_performed = instance.update_tracked_json_item(
+                                    field, item_id, item, id_key, user
+                                )
+                            elif hasattr(instance, 'update_qualification_item'):
+                                operation_performed = instance.update_qualification_item(
+                                    field, item_id, item, user
+                                )
+                                
+                        elif operation == 'remove' and item_id:
+                            if hasattr(instance, 'remove_tracked_json_item'):
+                                operation_performed = instance.remove_tracked_json_item(
+                                    field, item_id, id_key, user
+                                )
+                            elif hasattr(instance, 'remove_qualification_item'):
+                                operation_performed = instance.remove_qualification_item(
+                                    field, item_id, user
+                                )
+                    except StandardizedValidationError:
+                        # Re-raise standardized errors
+                        raise
+                    except Exception:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_OPERATION.format(
+                                operation=f"Failed to perform {operation} operation on {field}"
+                            )
+                        )
+                
+                # If no item operation was performed, track as complete field update
+                if not operation_performed:
+                    # Get old and new values
+                    old_json = original_values[field] or []
+                    new_json = getattr(instance, field) or []
+                    
+                    # If overall field was changed
+                    if old_json != new_json:
                         # Track entire field update
                         if hasattr(instance, 'track_field_change'):
                             instance.track_field_change(field, old_json, new_json, user)

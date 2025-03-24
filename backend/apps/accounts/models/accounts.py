@@ -77,13 +77,7 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
         null=True, 
         verbose_name=_('Objectives')
     )
-    
-    compelling_events = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Compelling Events')
-    )
-    
+       
     motivations = models.JSONField(
         blank=True, 
         null=True, 
@@ -96,12 +90,6 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
         verbose_name=_('Key KPIs')
     )
     
-    criteria = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Criteria')
-    )
-    
     pain_points = models.JSONField(
         blank=True, 
         null=True, 
@@ -112,13 +100,6 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
         blank=True, 
         null=True, 
         verbose_name=_('Implications')
-    )
-    
-    # Coverage statistics
-    coverage_stats = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Coverage Statistics')
     )
 
     # Relationships   
@@ -187,64 +168,3 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
     def get_account_classifications():
         return [{'value': choice[0], 'label': choice[1]} for choice in AccountClassification.choices]
     
-    def update_qualification_field(self, field_name, new_value, user, signal=None):
-        """
-        Enhanced update method for qualification fields that tracks signal information
-        
-        Args:
-            field_name (str): Field name to update
-            new_value: New value for the field
-            user (User): User making the update
-            signal (Signal, optional): Signal driving this update
-        """
-        # Get current value
-        current_value = getattr(self, field_name)
-        
-        # Update the field
-        setattr(self, field_name, new_value)
-        
-        # Initialize historical_data if it doesn't exist
-        if not self.historical_data:
-            self.historical_data = {}
-        
-        # Initialize field history if it doesn't exist
-        if field_name not in self.historical_data:
-            self.historical_data[field_name] = []
-        
-        # Create history entry
-        history_entry = {
-            'old_value': current_value,
-            'new_value': new_value,
-            'changed_at': timezone.now().isoformat(),
-            'changed_by': str(user.id) if user else None,
-        }
-        
-        # Add signal data if provided
-        if signal:
-            history_entry.update({
-                'source': 'signal',
-                'signal_id': str(signal.id),
-                'signal_category': signal.category,
-                'signal_confidence': signal.confidence,
-                'confirmation_count': signal.confirmation_count
-            })
-            
-            # Also track in signal_metadata
-            self.track_signal_update(signal, field_name, current_value, new_value)
-        
-        # Add to historical data
-        self.historical_data[field_name].append(history_entry)
-        
-        # Save the model
-        self.save(user=user)
-        
-        return True
-
-    def get_qualification_data(self, include_signal_info=False):
-        """Get all qualification data with optional signal information."""
-        qualification_fields = [
-            'objectives', 'compelling_events', 'motivations', 
-            'key_kpis', 'criteria', 'pain_points', 'implications', 
-        ]
-        
-        return self._get_field_data_with_signals(qualification_fields, include_signal_info)

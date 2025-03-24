@@ -153,15 +153,27 @@ class SignalEnabledQualificationMixin(models.Model):
             signal=signal
         )
     
-    def update_qualification_item(self, field_name, item_id, new_item, user, signal=None):
+    def update_qualification_item(self, field_name, item_id, new_item, user, signal=None, id_key='id'):
         """
         Update a specific item in a qualification list field.
+        
+        Args:
+            field_name (str): JSONField name
+            item_id: ID of the item to update
+            new_item: New value for the item
+            user (User): User making the change
+            signal (Signal, optional): Signal driving this update
+            id_key (str): Key used as identifier in the JSON objects
+            
+        Returns:
+            bool: Whether the update was successful
         """
         return HistoricalTrackingService.update_json_item(
             instance=self,
             field_name=field_name,
             item_id=item_id,
             new_item=new_item,
+            id_key=id_key,
             user=user,
             signal=signal
         )

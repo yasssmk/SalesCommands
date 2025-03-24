@@ -34,7 +34,7 @@ class CoreErrorMessages:
     INVALID_FILTER = _("Invalid filter format provided {detail}")
     
     # Generic
-    UNEXPECTED_ERROR = _("An unexpected error occurred")
+    UNEXPECTED_ERROR = _("An unexpected error occurred: {detail}")
     INVALID_REQUEST = _("Invalid request format")
     OBJECT_IN_USE = _("Cannot delete {fields} as it is in use")
 
