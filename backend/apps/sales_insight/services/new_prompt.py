@@ -7,10 +7,10 @@ COMMON_INSTRUCTIONS = """
 
     We specifically categorize insights at different levels:
        1) Account level
-       2) Organizational units
-       3) Contacts
-       4) If "IsOpportunity = True", use the Opportunity section
-       5) If "IsOpportunity = False", use the Lead section
+       2) Contacts
+       3) TechStack
+       4) Buying Process
+       5) Lead or Opportunity
 
     Follow these rules:
       1. If data is unclear or missing, use null/0/false/[] as appropriate. 
@@ -66,15 +66,11 @@ ACCOUNT_INSIGHTS_DEFINITIONS = """
       - employeeCount: Approximate number of employees, if stated
       - annualRevenue: Numeric revenue, if stated
       - buyingDecisions: Whether they have the final authority to make a purchase (True/False), if stated
-      - orgUnits: An array of org units (leave empty here)
 
     ACCOUNT INSIGHTS FIELDS:
       - objectives, compellingEvents, motivations, keyKPIs, criteria
       - painPoints, implications
-      - currentTechStack (array of sub-objects)
       - partners: external vendors or consulting firms
-      - budget, newBudgetStartDate
-      - buyingProcess (array of sub-objects: Stakeholder, departmentName, stepDescription, stepGoal, influenceScore, Criterias, KeyKpis, averageTimeInDays)
 
     JSON STRUCTURE TO RETURN (for this prompt):
 
@@ -83,41 +79,15 @@ ACCOUNT_INSIGHTS_DEFINITIONS = """
           "employeeCount": 0,
           "annualRevenue": 0,
           "buyingDecisions": "",
-          "orgUnits": []
       },
       "insights": {
           "accountInsights": {
               "objectives": [],
-              "compellingEvents": [],
               "motivations": [],
+              "metrics":[],
               "painPoints": [],
               "implications": [],
-              "currentTechStack": [
-                 {
-                    "techName": "",
-                    "businessGoal": "",
-                    "pros": "",
-                    "improvementPoints": "",
-                    "yearsOfUsage": "",
-                    "costs": "",
-                    "renewalDate": ""
-                 }
-              ],
               "partners": [],
-              "budget": 0,
-              "newBudgetStartDate": "",
-              "buyingProcess": [
-                  {
-                      "Stakeholder": "",
-                      "departmentName": "",
-                      "stepDescription": "",
-                      "stepGoal": "",
-                      "influenceScore": 0,
-                      "Criterias": [],
-                      "KeyKpis": [],
-                      "averageTimeInDays": 0
-                  }
-              ]
           }
       }
     }

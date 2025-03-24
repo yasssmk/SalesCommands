@@ -8,7 +8,7 @@ from django.utils import timezone
 from core.models import ContactDetailsMixin
 from apps.core_apps.models import BaseModelApp, SignalAwareMixin, SignalEnabledQualificationMixin
 from core.client_scope import ClientScopeManager
-from core.error_messages import AccountErrorMessages
+from core.error_messages import AccountErrorMessages, CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.models import HistoricalTrackingModel
 from end_users.models import User, Team
@@ -84,10 +84,10 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
         verbose_name=_('Motivations')
     )
     
-    key_kpis = models.JSONField(
+    metrics = models.JSONField(
         blank=True, 
         null=True, 
-        verbose_name=_('Key KPIs')
+        verbose_name=_('Metrics')
     )
     
     pain_points = models.JSONField(
@@ -112,6 +112,14 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
         verbose_name=_('Parent Company')
     )
     
+    partners = models.ManyToManyField(
+        'self',
+        symmetrical=False,
+        related_name='partnered_with',
+        blank=True,
+        verbose_name=_('Partners')
+    )
+
     account_owner = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_('Account Owner'))
     team_owner = models.ForeignKey(Team, on_delete=models.SET_NULL, blank=True, null=True, verbose_name=_('Team Owner'))
 
@@ -167,4 +175,82 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
     @staticmethod
     def get_account_classifications():
         return [{'value': choice[0], 'label': choice[1]} for choice in AccountClassification.choices]
+    
+    def validate_partner(self, partner):
+        """
+        Validate that a partner has the correct type.
+        To be called before adding a partner relationship.
+        
+        Args:
+            partner: Account to validate as a partner
+            
+        Returns:
+            bool: Whether the partner is valid
+            
+        Raises:
+            StandardizedValidationError: If partner validation fails
+        """
+        if partner.type != AccountType.PARTNER:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD,
+                detail="partners"
+            )
+        return True
+        
+    def add_partner(self, partner, user=None):
+        """
+        Add a partner to this account with validation.
+        
+        Args:
+            partner: Account to add as a partner
+            user: User making the change
+            
+        Returns:
+            bool: Whether the partner was added successfully
+        """
+        # Validate the partner
+        if not self.validate_partner(partner):
+            return False
+            
+        # Add the partner
+        self.partners.add(partner)
+        
+        # Track the change
+        old_partners = list(self.partners.all().values_list('id', flat=True))
+        new_partners = old_partners + [partner.id]
+        
+        # Track the change if historical tracking is supported
+        if hasattr(self, 'track_field_change'):
+            self.track_field_change('partners', old_partners, new_partners, user)
+            
+        return True
+        
+    def remove_partner(self, partner, user=None):
+        """
+        Remove a partner from this account.
+        
+        Args:
+            partner: Account to remove as a partner
+            user: User making the change
+            
+        Returns:
+            bool: Whether the partner was removed successfully
+        """
+        if partner not in self.partners.all():
+            return False
+            
+        # Get partners before removal
+        old_partners = list(self.partners.all().values_list('id', flat=True))
+        
+        # Remove the partner
+        self.partners.remove(partner)
+        
+        # Get partners after removal
+        new_partners = list(self.partners.all().values_list('id', flat=True))
+        
+        # Track the change if historical tracking is supported
+        if hasattr(self, 'track_field_change'):
+            self.track_field_change('partners', old_partners, new_partners, user)
+            
+        return True
     
