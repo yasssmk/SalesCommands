@@ -60,7 +60,7 @@ COMMON_INSTRUCTIONS = """
 ACCOUNT_INSIGHTS_DEFINITIONS = """
     We have two main sections to fill in a single JSON:
       1) "accountInfo"
-      2) "accountInsights" (All data linked to the entire Account)
+      2) "accountInsights"
     
     ACCOUNT INFO FIELDS:
       - employeeCount: Approximate number of employees, if stated.
@@ -70,10 +70,10 @@ ACCOUNT_INSIGHTS_DEFINITIONS = """
     ACCOUNT INSIGHTS FIELDS:
       - For **objectives**, make them measurable and actionable (e.g., “Increase sales by 20% within 6 months”).
       - For **motivations**, specify reasons driving interest (e.g., “Expand market share”).
-      - For **metrics** 
-      - For **painPoints**
+      - For **metrics** , Key performance indicators they follow to measure their success (e.g., growth rate, operational efficiency, customer retention).
+      - For **painPoints**, Main problems or obstacles they face (e.g., manual data entry, inefficient workflow).
       - For **implications**, quantify the impact (e.g., “Risk losing 10% of revenue”).
-      - For **partners**
+      - For **partners**, Other external vendors or consulting firms they work with.
 
     JSON STRUCTURE TO RETURN (for this prompt):
 
