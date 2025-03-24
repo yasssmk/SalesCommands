@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from core.serializers import ContactDetailsSerializer
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
-from core.exceptions import StandardizedValidationError
+from core.exceptions import StandardizedValidationError, StandardizedPermissionDenied
 from apps.core_apps.serializers import SignalAwareSerializerMixin, HistoricalTrackingSerializerMixin
 from end_users.models import User, Team
 from ..models import Account, AccountType, AccountClassification
@@ -78,10 +78,18 @@ class AccountSerializer(ContactDetailsSerializer,
         allow_null=True
     )
 
+    partner_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        write_only=True
+    )
+    
+    partners = serializers.SerializerMethodField(read_only=True)
+
     # JSON fields that support item operations
     objectives = serializers.JSONField(required=False, allow_null=True)
     motivations = serializers.JSONField(required=False, allow_null=True)
-    key_kpis = serializers.JSONField(required=False, allow_null=True)
+    metrics = serializers.JSONField(required=False, allow_null=True)
     pain_points = serializers.JSONField(required=False, allow_null=True)
     implications = serializers.JSONField(required=False, allow_null=True)
 
@@ -101,8 +109,9 @@ class AccountSerializer(ContactDetailsSerializer,
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
             'team_owner', 'team_owner_id', 'client_id', 'historical_data',
-            'objectives', 'motivations', 'key_kpis',
+            'objectives', 'motivations', 'metrics',
             'pain_points', 'implications',
+            'partners', 'partner_ids',
             'signal_metadata', 'qualification_with_signals', 'profile_with_signals'
         ]
         read_only_fields = [
@@ -128,6 +137,14 @@ class AccountSerializer(ContactDetailsSerializer,
             'classification': child.classification
         } for child in obj.direct_child_companies.all()]
     
+    def get_partners(self, obj):
+        """Get partner accounts for this account."""
+        return [{
+            'id': partner.id,
+            'company_name': partner.company_name,
+            'type': partner.type
+        } for partner in obj.partners.all()]
+    
     def validate_type(self, value):
         """Validate type field"""
         if value is None or value == '':
@@ -150,51 +167,65 @@ class AccountSerializer(ContactDetailsSerializer,
         return value
     
     def _process_json_item_operation(self, instance, field_name, data, user):
-        """
-        Process JSON item operations for qualification fields.
-        Supports add, update, and remove operations.
-        
-        Args:
-            instance: Account instance
-            field_name: Field name to operate on
-            data: Operation data
-            user: User making the change
-            
-        Returns:
-            bool: Whether operation was successful
-        """
-        if not isinstance(data, dict) or 'operation' not in data:
+        """Process JSON item operations - optimized version."""
+        if not isinstance(data, dict):
             return False
             
         operation = data.get('operation')
-        item_id = data.get('item_id')
-        item = data.get('item')
-        id_key = data.get('id_key', 'id')
-        
+        if not operation:
+            return False
+            
         try:
-            if operation == 'add' and item:
-                if hasattr(instance, 'add_qualification_item'):
-                    return instance.add_qualification_item(field_name, item, user)
+            # Dispatch based on operation type
+            if operation == 'add':
+                item = data.get('item')
+                if not item:
+                    return False
                     
-            elif operation == 'update' and item_id and item:
+                # Try qualification method first, then tracked method
+                for method_name in ['add_qualification_item', 'add_tracked_json_item']:
+                    if hasattr(instance, method_name):
+                        method = getattr(instance, method_name)
+                        return method(field_name, item, user)
+                        
+            elif operation == 'update':
+                item_id = data.get('item_id')
+                item = data.get('item')
+                id_key = data.get('id_key', 'id')
+                
+                if not (item_id and item):
+                    return False
+                    
+                # Try both methods
                 if hasattr(instance, 'update_qualification_item'):
-                    return instance.update_qualification_item(
-                        field_name, item_id, item, user, None, id_key
-                    )
+                    return instance.update_qualification_item(field_name, item_id, item, user, None, id_key)
+                elif hasattr(instance, 'update_tracked_json_item'):
+                    return instance.update_tracked_json_item(field_name, item_id, item, id_key, user)
                     
-            elif operation == 'remove' and item_id:
+            elif operation == 'remove':
+                item_id = data.get('item_id')
+                id_key = data.get('id_key', 'id')
+                
+                if not item_id:
+                    return False
+                    
+                # Try both methods
                 if hasattr(instance, 'remove_qualification_item'):
-                    return instance.remove_qualification_item(field_name, item_id, user)
+                    return instance.remove_qualification_item(field_name, item_id, user, None)
+                elif hasattr(instance, 'remove_tracked_json_item'):
+                    return instance.remove_tracked_json_item(field_name, item_id, id_key, user)
+            
+            # Unknown operation
+            return False
+            
         except StandardizedValidationError:
             raise
-        except Exception:
+        except Exception as e:
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_OPERATION.format(
                     operation=f"Failed to perform {operation} operation on {field_name}"
                 )
             )
-            
-        return False
 
     def validate(self, data):
         """Complete validation of Account data."""
@@ -251,6 +282,10 @@ class AccountSerializer(ContactDetailsSerializer,
             # Team and account owner validation if needed
             if {'account_owner_id', 'team_owner_id'}.intersection(data.keys()):
                 self._validate_account_owner_and_team(data, client_id)
+            
+            if 'partner_ids' in data:
+                self._validate_partners(data['partner_ids'], self._get_client_id_from_context())
+            
 
             return super().validate(data)
 
@@ -304,15 +339,67 @@ class AccountSerializer(ContactDetailsSerializer,
                     raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
             except Team.DoesNotExist:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-              
+
+    def _validate_partners(self, partner_ids, client_id):
+        """
+        Validate that partners exist and have the correct type.
+        Uses standardized error handling and client scoping patterns.
+        """
+        if not partner_ids:
+            return
+        
+        # For each partner ID, validate separately to provide clear error messages
+        for partner_id in partner_ids:
+            try:
+                # Get the partner and validate existence
+                try:
+                    partner = Account.objects.get(id=partner_id)
+                except Account.DoesNotExist:
+                    raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+                
+                # Validate client scope
+                if str(partner.client_id) != str(client_id):
+                    raise StandardizedPermissionDenied(CoreErrorMessages.CLIENT_MISMATCH)
+                
+                # Validate partner type
+                if partner.type != AccountType.PARTNER:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(field="Partner type")
+                    )
+                    
+            except StandardizedValidationError:
+                raise
+            except StandardizedPermissionDenied:
+                raise
+            except Exception as e:
+                raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR.format(detail=e))
+    
+    def create(self, validated_data):
+        """Handle creation with partners."""
+        partner_ids = validated_data.pop('partner_ids', None)
+        
+        # Create the account
+        instance = super().create(validated_data)
+        
+        # Add partners if provided
+        if partner_ids:
+            user = self.context.get('request').user if self.context.get('request') else None
+            self._add_partners(instance, partner_ids, user)
+            
+        return instance
+                          
     def update(self, instance, validated_data):
         """
-        Override update to handle JSON item operations.
+        Override update to handle JSON item operations and partners.
         """
+        # Get user from request context
         user = self.context.get('request').user if self.context.get('request') else None
         
+        # Handle partners separately
+        partner_ids = validated_data.pop('partner_ids', None)
+        
         # Check for JSON item operations in request data
-        json_fields = {'objectives', 'motivations', 'key_kpis', 'pain_points', 'implications'}
+        json_fields = {'objectives', 'motivations', 'metrics', 'pain_points', 'implications'}
         
         for field_name in json_fields:
             # Get the field data from the original request
@@ -326,5 +413,42 @@ class AccountSerializer(ContactDetailsSerializer,
                         if field_name in validated_data:
                             validated_data.pop(field_name)
         
-        # Use the parent update method for remaining fields
-        return super().update(instance, validated_data)
+        # Call parent update method to handle regular field updates
+        instance = super().update(instance, validated_data)
+        
+        # Update partners if provided
+        if partner_ids is not None:
+            self._update_partners(instance, partner_ids, user)
+        
+        return instance
+    
+    def _add_partners(self, instance, partner_ids, user):
+        """Add partners to the account."""
+        for partner_id in partner_ids:
+            try:
+                partner = Account.objects.get(id=partner_id)
+                instance.add_partner(partner, user)
+            except Account.DoesNotExist:
+                pass  # Already validated in _validate_partners
+    
+    def _update_partners(self, instance, partner_ids, user):
+        """Update partners for the account (replace existing partners)."""
+        # Get existing partners
+        current_partners = set(instance.partners.all().values_list('id', flat=True))
+        new_partners = set(partner_ids)
+        
+        # Remove partners that are no longer in the list
+        for partner_id in current_partners - new_partners:
+            try:
+                partner = Account.objects.get(id=partner_id)
+                instance.remove_partner(partner, user)
+            except Account.DoesNotExist:
+                pass
+        
+        # Add new partners
+        for partner_id in new_partners - current_partners:
+            try:
+                partner = Account.objects.get(id=partner_id)
+                instance.add_partner(partner, user)
+            except Account.DoesNotExist:
+                pass
