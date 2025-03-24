@@ -78,6 +78,13 @@ class AccountSerializer(ContactDetailsSerializer,
         allow_null=True
     )
 
+    # JSON fields that support item operations
+    objectives = serializers.JSONField(required=False, allow_null=True)
+    motivations = serializers.JSONField(required=False, allow_null=True)
+    key_kpis = serializers.JSONField(required=False, allow_null=True)
+    pain_points = serializers.JSONField(required=False, allow_null=True)
+    implications = serializers.JSONField(required=False, allow_null=True)
+
     # Fields for read operations
     parent_company = serializers.SerializerMethodField(read_only=True)
     direct_child_companies = serializers.SerializerMethodField(read_only=True)
@@ -94,9 +101,9 @@ class AccountSerializer(ContactDetailsSerializer,
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
             'team_owner', 'team_owner_id', 'client_id', 'historical_data',
-            'objectives', 'compelling_events', 'motivations', 'key_kpis',
-            'criteria', 'pain_points', 'implications', 'coverage_stats',
-            'signal_metadata',
+            'objectives', 'motivations', 'key_kpis',
+            'pain_points', 'implications',
+            'signal_metadata', 'qualification_with_signals', 'profile_with_signals'
         ]
         read_only_fields = [
             'created_at', 'updated_at', 'client_id', 'historical_data', 
@@ -141,6 +148,53 @@ class AccountSerializer(ContactDetailsSerializer,
         if value not in valid_classifications:
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Classification"))
         return value
+    
+    def _process_json_item_operation(self, instance, field_name, data, user):
+        """
+        Process JSON item operations for qualification fields.
+        Supports add, update, and remove operations.
+        
+        Args:
+            instance: Account instance
+            field_name: Field name to operate on
+            data: Operation data
+            user: User making the change
+            
+        Returns:
+            bool: Whether operation was successful
+        """
+        if not isinstance(data, dict) or 'operation' not in data:
+            return False
+            
+        operation = data.get('operation')
+        item_id = data.get('item_id')
+        item = data.get('item')
+        id_key = data.get('id_key', 'id')
+        
+        try:
+            if operation == 'add' and item:
+                if hasattr(instance, 'add_qualification_item'):
+                    return instance.add_qualification_item(field_name, item, user)
+                    
+            elif operation == 'update' and item_id and item:
+                if hasattr(instance, 'update_qualification_item'):
+                    return instance.update_qualification_item(
+                        field_name, item_id, item, user, None, id_key
+                    )
+                    
+            elif operation == 'remove' and item_id:
+                if hasattr(instance, 'remove_qualification_item'):
+                    return instance.remove_qualification_item(field_name, item_id, user)
+        except StandardizedValidationError:
+            raise
+        except Exception:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_OPERATION.format(
+                    operation=f"Failed to perform {operation} operation on {field_name}"
+                )
+            )
+            
+        return False
 
     def validate(self, data):
         """Complete validation of Account data."""
@@ -250,3 +304,27 @@ class AccountSerializer(ContactDetailsSerializer,
                     raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
             except Team.DoesNotExist:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+              
+    def update(self, instance, validated_data):
+        """
+        Override update to handle JSON item operations.
+        """
+        user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Check for JSON item operations in request data
+        json_fields = {'objectives', 'motivations', 'key_kpis', 'pain_points', 'implications'}
+        
+        for field_name in json_fields:
+            # Get the field data from the original request
+            if field_name in self.initial_data:
+                field_data = self.initial_data[field_name]
+                
+                # Try to process as an item operation
+                if isinstance(field_data, dict) and 'operation' in field_data:
+                    # Process operation and remove from validated_data if successful
+                    if self._process_json_item_operation(instance, field_name, field_data, user):
+                        if field_name in validated_data:
+                            validated_data.pop(field_name)
+        
+        # Use the parent update method for remaining fields
+        return super().update(instance, validated_data)

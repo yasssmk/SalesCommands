@@ -351,7 +351,6 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             )
 
         # Log unexpected errors
-        logger.error(f"Unexpected error in {self.__class__.__name__}: {str(exc)}", exc_info=True)
         return Response(
             StandardizedValidationError._format_detail(CoreErrorMessages.UNEXPECTED_ERROR),
             status=status.HTTP_500_INTERNAL_SERVER_ERROR

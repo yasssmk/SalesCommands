@@ -154,28 +154,6 @@ class HistoricalTrackingViewMixin:
                         # Track entire field update
                         if hasattr(instance, 'track_field_change'):
                             instance.track_field_change(field, old_json, new_json, user)
-    
-    def _handle_json_item_operations(self, field, request_data):
-        """
-        Check if request contains item operations rather than whole field replacement
-        Return True if item operations were handled
-        """
-        # Detect operations on individual items
-        field_data = request_data.get(field, {})
-        
-        # Check if this is a list operation by looking for operation key
-        if isinstance(field_data, dict) and 'operation' in field_data:
-            operation = field_data.get('operation')
-            item_id = field_data.get('item_id')
-            item = field_data.get('item')
-            
-            # Handle different operations
-            if operation == 'add' and item:
-                return True
-            elif operation in ('update', 'remove') and item_id:
-                return True
-        
-        return False
 
 
 class AccountHistoricalTrackingMixin(HistoricalTrackingViewMixin):

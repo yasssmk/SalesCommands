@@ -29,15 +29,22 @@ class HistoricalTrackingModel(models.Model):
         """
         from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
         
-        return HistoricalTrackingService._track_change(
-            instance=self,
-            field_name=field_name,
-            old_value=old_value,
-            new_value=new_value,
-            user=user,
-            signal=None,
-            save_model=False  # Don't automatically save the model
+        tracked = HistoricalTrackingService._track_change(
+        instance=self,
+        field_name=field_name,
+        old_value=old_value,
+        new_value=new_value,
+        user=user,
+        signal=None,
+        save_model=False  # Don't automatically save the model
         )
+        
+        # Initialize historical_data if it doesn't exist
+        if self.historical_data is None:
+            self.historical_data = {}
+        
+        # Ensure changes are saved (the service might not save the instance)
+        return tracked
     
     def update_tracked_field(self, field_name, new_value, user=None):
         """

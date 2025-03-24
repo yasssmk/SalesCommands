@@ -30,7 +30,7 @@ class HistoricalTrackingService:
                 return False
             
             with transaction.atomic():
-            # Update the field if requested
+                # Update the field if requested
                 if update_model:
                     setattr(instance, field_name, new_value)
                 
@@ -45,10 +45,10 @@ class HistoricalTrackingService:
                     return False
                 
                 return True
+            
         except StandardizedValidationError:
             raise
         except Exception as e:
-
             raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR.format(detail=e))
         
     @staticmethod
@@ -154,7 +154,7 @@ class HistoricalTrackingService:
         except StandardizedValidationError:
             raise
         except Exception as e:
-            raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR)
+            raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR.format(detail=e))
     
     @staticmethod
     def remove_json_item(instance, field_name, item_id, id_key='id', user=None, signal=None):
