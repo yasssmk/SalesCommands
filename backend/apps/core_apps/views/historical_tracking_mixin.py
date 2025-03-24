@@ -162,10 +162,10 @@ class AccountHistoricalTrackingMixin(HistoricalTrackingViewMixin):
     # Fields to track for Account model
     tracked_fields = {
         'company_name', 'industry', 'type', 'classification', 
-        'company_size', 'annual_revenue'
+        'company_size', 'annual_revenue', 'has_buying_decision'
     }
     
     # JSON fields to track for Account model
     tracked_json_fields = {
-        'objectives', 'motivations', 'key_kpis', 'pain_points', 'implications'
+        'objectives', 'motivations', 'metrics', 'pain_points', 'implications'
     }

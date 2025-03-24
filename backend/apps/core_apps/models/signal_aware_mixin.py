@@ -193,7 +193,7 @@ class SignalEnabledQualificationMixin(models.Model):
     def get_qualification_data(self, include_signal_info=False):
         """Get all qualification data with optional signal information."""
         qualification_fields = [
-            'objectives', 'compelling_events', 'motivations', 'key_kpis',
+            'objectives', 'compelling_events', 'motivations', 'metrics',
             'criteria', 'pain_points', 'implications', 
         ]
         

@@ -92,6 +92,10 @@ class AccountSerializer(ContactDetailsSerializer,
     metrics = serializers.JSONField(required=False, allow_null=True)
     pain_points = serializers.JSONField(required=False, allow_null=True)
     implications = serializers.JSONField(required=False, allow_null=True)
+    has_buying_decision = serializers.BooleanField(
+        required=False,
+        default=False
+    )
 
     # Fields for read operations
     parent_company = serializers.SerializerMethodField(read_only=True)
@@ -110,7 +114,7 @@ class AccountSerializer(ContactDetailsSerializer,
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
             'team_owner', 'team_owner_id', 'client_id', 'historical_data',
             'objectives', 'motivations', 'metrics',
-            'pain_points', 'implications',
+            'pain_points', 'implications', 'has_buying_decision',
             'partners', 'partner_ids',
             'signal_metadata', 'qualification_with_signals', 'profile_with_signals'
         ]

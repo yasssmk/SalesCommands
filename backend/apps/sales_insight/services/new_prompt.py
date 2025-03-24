@@ -60,17 +60,20 @@ COMMON_INSTRUCTIONS = """
 ACCOUNT_INSIGHTS_DEFINITIONS = """
     We have two main sections to fill in a single JSON:
       1) "accountInfo"
-      2) "accountInsights" (All data linked to the entire Account, not to a specific department)
+      2) "accountInsights" (All data linked to the entire Account)
     
     ACCOUNT INFO FIELDS:
-      - employeeCount: Approximate number of employees, if stated
-      - annualRevenue: Numeric revenue, if stated
+      - employeeCount: Approximate number of employees, if stated.
+      - annualRevenue: Numeric revenue, if stated.
       - buyingDecisions: Whether they have the final authority to make a purchase (True/False), if stated
 
     ACCOUNT INSIGHTS FIELDS:
-      - objectives, compellingEvents, motivations, keyKPIs, criteria
-      - painPoints, implications
-      - partners: external vendors or consulting firms
+      - For **objectives**, make them measurable and actionable (e.g., “Increase sales by 20% within 6 months”).
+      - For **motivations**, specify reasons driving interest (e.g., “Expand market share”).
+      - For **metrics** 
+      - For **painPoints**
+      - For **implications**, quantify the impact (e.g., “Risk losing 10% of revenue”).
+      - For **partners**
 
     JSON STRUCTURE TO RETURN (for this prompt):
 

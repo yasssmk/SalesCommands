@@ -102,6 +102,12 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
         verbose_name=_('Implications')
     )
 
+    has_buying_decision = models.BooleanField(
+        default=True,
+        verbose_name=_('Has Buying Decision'),
+        help_text=_('Indicates if this account has authority to make buying decisions')
+    )
+
     # Relationships   
     parent_company = models.ForeignKey(
         'self', 
