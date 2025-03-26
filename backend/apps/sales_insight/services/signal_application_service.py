@@ -64,60 +64,48 @@ class SignalApplicationService:
         
     @classmethod
     def _apply_to_account(cls, signal, user):
-        """Apply signal to account with comprehensive historical tracking"""
-        account = signal.account
-        field_name = signal.field_name
-        value = signal.value
+        """
+        Apply signal to account using the appropriate historical tracking method.
         
-        # Qualification fields 
-        qualification_fields = [
-            'objectives', 'compelling_events', 'motivations', 
-            'key_kpis', 'criteria', 'pain_points', 'implications',
-        ]
-        
-        # Ensure historical_data exists
-        if not hasattr(account, 'historical_data') or not account.historical_data:
-            account.historical_data = {}
-        
-        # Current value before update
-        current_value = getattr(account, field_name, None)
-        
-        # Update the field
-        setattr(account, field_name, value)
-        
-        # Prepare history entry
-        history_entry = {
-            'old_value': current_value,
-            'new_value': value,
-            'changed_at': timezone.now().isoformat(),
-            'changed_by': str(user.id) if user else None,
-            'source': 'signal',
-            'signal_id': str(signal.id)
-        }
-        
-        # Add signal-specific details
-        if signal:
-            history_entry.update({
-                'signal_category': signal.category,
-                'signal_source': signal.source,
-                'confirmation_count': signal.confirmation_count
-            })
-        
-        # Initialize field history if needed
-        if field_name not in account.historical_data:
-            account.historical_data[field_name] = []
-        
-        # Add to historical data
-        account.historical_data[field_name].append(history_entry)
-        
-        # Track signal update in signal metadata
-        if hasattr(account, 'track_signal_update'):
-            account.track_signal_update(signal, field_name, current_value, value)
-        
-        # Save the account
-        account.save(user=user, update_fields=[field_name, 'historical_data'])
-        
-        return True
+        Args:
+            signal: Signal to apply
+            user: User applying the signal
+            
+        Returns:
+            bool: Success indicator
+        """
+        try:
+            account = signal.account
+            field_name = signal.field_name
+            value = signal.value
+            
+            # For qualification category signals, use update_qualification_field
+            if signal.category == Signal.Category.QUALIFICATION:
+                return account.update_qualification_field(field_name, value, user, signal)
+            
+            # For profile category signals, use update_tracked_field
+            if signal.category == Signal.Category.PROFILE:
+                return account.update_tracked_field(field_name, value, user)
+            
+            # For other categories, choose based on field name
+            json_array_fields = [
+                'objectives', 'motivations', 'metrics', 
+                'pain_points', 'implications', 'partners'
+            ]
+            
+            if field_name in json_array_fields:
+                return account.update_qualification_field(field_name, value, user, signal)
+            else:
+                return account.update_tracked_field(field_name, value, user)
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_OPERATION.format(
+                    operation=f"Error applying signal: {str(e)}"
+                )
+            )
 
     @classmethod
     def _apply_to_contact(cls, signal, user):

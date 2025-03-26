@@ -15,7 +15,7 @@ class SignalParsingService:
     """
     
     @classmethod
-    def parse_insights(cls, insights, account, org_unit=None, source='ai_analysis', user=None):
+    def parse_insights(cls, insights, account, source='ai_analysis', user=None):
         """
         Parse structured insights from LLM into Signal objects.
         
@@ -78,10 +78,9 @@ class SignalParsingService:
         
         # Basic profile fields mapping (JSON field → model field)
         profile_fields = {
-            'accountType': 'type',
-            'classification': 'classification',
             'employeeCount': 'company_size',
             'annualRevenue': 'annual_revenue',
+            'buyingDecisions': 'has_buying_decision'
         }
         
         for json_field, model_field in profile_fields.items():
@@ -111,14 +110,11 @@ class SignalParsingService:
         # Process qualification fields
         qualification_fields = [
             ('objectives', 'objectives'),
-            ('compellingEvents', 'compelling_events'),
             ('motivations', 'motivations'),
-            ('keyKPIs', 'key_kpis'),
-            ('criteria', 'criteria'),
+            ('metrics', 'metrics'),
             ('painPoints', 'pain_points'),
             ('implications', 'implications'),
-            ('budget', 'budget'),
-            ('newBudgetStartDate', 'new_budget_start_date')
+            ('partners', 'partners')
         ]
         
         for json_field, model_field in qualification_fields:
@@ -137,52 +133,6 @@ class SignalParsingService:
                     updated_by=user
                 )
                 signals.append(signal)
-                
-                # For high-priority fields, try to find product alignment
-                if model_field in ['pain_points', 'compelling_events', 'implications']:
-                    cls._detect_and_set_product_alignment(signal, account_insights[json_field])
-    
-        # Process tech stack (special handling)
-        if 'currentTechStack' in account_insights and account_insights['currentTechStack']:
-            tech_stack_signals = cls._parse_tech_stack(
-                account_insights['currentTechStack'],
-                account,
-                client_id,
-                source,
-                user,
-                Signal.EntityType.ACCOUNT
-            )
-            signals.extend(tech_stack_signals)
-        
-        # Process buying process
-        if 'buyingProcess' in account_insights and account_insights['buyingProcess']:
-            signal = Signal.objects.create(
-                account=account,
-                category=Signal.Category.PROCESS,
-                entity_type=Signal.EntityType.ACCOUNT,
-                field_name='buying_process',
-                value=account_insights['buyingProcess'],
-                status=Signal.Status.PENDING,
-                source=source,
-                client_id=client_id,
-                created_by=user,
-                updated_by=user
-            )
-            signals.append(signal)
-        
-        # Process projects (highest value signals)
-        if 'projects' in account_insights and account_insights['projects']:
-            project_signals = cls._parse_projects(
-                account_insights['projects'],
-                account,
-                client_id,
-                source,
-                user,
-                Signal.EntityType.ACCOUNT
-            )
-            signals.extend(project_signals)
-            
-        return signals
     
     @classmethod
     def _parse_contact_insights(cls, contacts_insights, account, client_id, source, user):
@@ -408,98 +358,5 @@ class SignalParsingService:
             
         return signals
     
-    @classmethod
-    def _detect_and_set_product_alignment(cls, signal, data, is_competitor=False):
-        """
-        Detect product alignment from text and set on signal.
-        Returns list of detected products.
-        """
-        try:
-            # Get all products for simple keyword matching
-            # In a real system, this would use NLP/ML for better matching
-            all_products = Product.objects.all()
-            matched_products = []
-            
-            # Convert data to string for text search
-            if isinstance(data, dict):
-                search_text = str(data)
-            elif isinstance(data, list):
-                search_text = " ".join([str(item) for item in data])
-            else:
-                search_text = str(data)
-                
-            search_text = search_text.lower()
-            
-            # Simple keyword matching
-            for product in all_products:
-                # Check if product name appears in text
-                if product.product_name.lower() in search_text:
-                    matched_products.append(product)
-                    
-                # Check custom keywords if available
-                if hasattr(product, 'keywords') and product.keywords:
-                    keywords = product.keywords.lower().split(',')
-                    for keyword in keywords:
-                        if keyword.strip() in search_text:
-                            if product not in matched_products:
-                                matched_products.append(product)
-            
-            # Add products to signal
-            if matched_products:
-                signal.product_alignment.add(*matched_products)
-                
-            return matched_products
-            
-        except Exception as e:
-            # Log error but don't block signal creation
-            print(f"Error in product alignment detection: {str(e)}")
-            return []
     
-    @classmethod
-    def _link_to_account_product_details(cls, signal, account, products,
-                                       is_competitor=False, estimated_units=None, budget=None):
-        """Link signal to appropriate AccountProductDetail objects"""
-        try:
-            if not products:
-                return
-                
-            for product in products:
-                # Try to find existing APD
-                apr = AccountProductRelationship.objects.filter(
-                    account=account,
-                    product=product
-                ).first()
-                
-                # If no APD exists, consider creating one
-                if not apr :  
-                    # Create APD with minimal info
-                    try:
-                        # Get default pricing if available
-                        default_pricing = product.pricing_models.first()
-                        
-                        # Estimate units based on signal or default to 1
-                        units = estimated_units or 1
-                        
-                        apr = AccountProductRelationship.objects.create(
-                        account=account,
-                        product=product,
-                        estimated_units=units,
-                        selected_pricing=default_pricing,
-                        client_id=account.client_id,
-                    )
-                        
-                            
-                    except Exception as e:
-                        print(f"Error creating APD: {str(e)}")
-                        continue
-                
-                # Link signal to APD if we found or created one
-                if apr:
-                    signal.account_product_relationship = apr
-                    signal.save(update_fields=['account_product_relationship'])
-                    
-                        
-        except Exception as e:
-            # Log error but don't block signal processing
-            print(f"Error linking to APD: {str(e)}")
     

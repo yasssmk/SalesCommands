@@ -249,3 +249,107 @@ Example JSON structure (final shape might vary):
   }
 }
 """
+
+FALLBACK_PROMPT_IF_ERROR = """\
+You provided invalid or incomplete JSON. 
+Please correct it so it is valid JSON with proper braces and no repeated or missing keys.
+
+Original (malformed) JSON:
+{malformed_json}
+
+Return ONLY valid JSON. Do not add extra commentary.
+"""
+
+
+
+def get_account_insights_prompt(transcript):
+    """
+    Builds a prompt for "accountInfo" + "accountInsights" using
+    centralized definitions and instructions.
+    """
+    print(f"GET ACCOUNT METH: {COMMON_INSTRUCTIONS}")
+    print(f"GET ACCOUNT METH: {ACCOUNT_INSIGHTS_DEFINITIONS}")
+    print(f"GET ACCOUNT METH: {transcript}")
+    return f"""{COMMON_INSTRUCTIONS}
+{ACCOUNT_INSIGHTS_DEFINITIONS}
+
+Now, return only the 'accountInfo' and 'accountInsights' sections in valid JSON.
+TRANSCRIPT:
+\"\"\"{transcript}\"\"\""""
+
+
+
+import json 
+from apps.LLM_calls.services import LLMProviderService
+llm_service = LLMProviderService()
+
+system_message = "You are a helpful, structured data extraction assistant."
+
+def parse_json_with_defaults(json_string):
+    """
+    Safely parse the JSON string and ensure 
+    missing keys become null or empty (if needed).
+    Here, we'll do minimal validation. 
+    In a real scenario, you'd define a full schema check.
+    """
+    try:
+        data = json.loads(json_string)
+        return data
+    except json.JSONDecodeError:
+        # If the AI returns invalid JSON, you can fallback or re-prompt
+        return None
+  
+def parse_and_fallback_if_needed(llm_response, prompt):
+    """ 
+    Try parsing LLM response, apply fallback if needed.
+    """
+    stripped_response = strip_backticks_and_code_fences(llm_response)
+    data = parse_json_with_defaults(stripped_response)
+    
+    if data is None:
+        fallback_prompt = FALLBACK_PROMPT_IF_ERROR.format(malformed_json=stripped_response)
+        new_response = llm_service.call_llm(user_prompt=fallback_prompt, system_message=system_message )
+        stripped_new_response = strip_backticks_and_code_fences(new_response)
+        data = parse_json_with_defaults(stripped_new_response)
+
+    return data
+    
+
+def strip_backticks_and_code_fences(llm_text: str) -> str:
+    """
+    Removes triple backticks or code fences from the model's response
+    so that json.loads(...) won't fail.
+    """
+    # Quick approach: remove any leading/trailing ``` with optional `json`
+    clean = llm_text.strip()
+    clean = clean.replace("```json", "").replace("```", "")
+    return clean.strip()
+
+
+def get_full_insights(transcript):
+    """ Extracts all qualification data from a transcript """
+
+    # 1) Extract Account Insights
+    prompt_1 = get_account_insights_prompt(transcript)
+    data_1 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_1,system_message=system_message), prompt_1)
+
+
+    # 2) Extract Org Units Insights
+    # prompt_2 = get_org_units_prompt(transcript)
+    # data_2 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_2,system_message=system_message), prompt_2)
+
+    # 3) Extract Contacts Insights
+    # prompt_3 = get_contacts_prompt(transcript)
+    # data_3 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_3,system_message=system_message), prompt_3)
+
+    # Base JSON structure
+    final_structure = {
+        "accountInfo": data_1.get("accountInfo", {}),
+        "insights": {
+            "accountInsights": data_1.get("accountInsights", {}),
+            # "contactsInsights": data_3.get("contactsInsights", [])
+        }
+    }
+    
+    
+    return final_structure
