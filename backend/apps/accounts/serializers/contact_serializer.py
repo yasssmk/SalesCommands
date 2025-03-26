@@ -6,7 +6,8 @@ from core.serializers import ContactDetailsSerializer
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
-from apps.core_apps.serializers import AccountLinkedSerializerMixin, HistoricalTrackingSerializerMixin, SignalAwareSerializerMixin
+from apps.core_apps.models import StandardDepartment
+from apps.core_apps.serializers import AccountLinkedSerializerMixin, HistoricalTrackingSerializerMixin, SignalAwareSerializerMixin, StandardDepartmentSerializer
 from ..models import Contact, InfluenceLevel
 
 class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
@@ -26,19 +27,33 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
     )
     
     influence_levels = serializers.SerializerMethodField(read_only=True)
+
     
     # Read-only fields
     account = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
+
+    # Standard department fields
+    department = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    standard_department = StandardDepartmentSerializer(read_only=True)
+    standard_department_id = serializers.PrimaryKeyRelatedField(
+        queryset=StandardDepartment.objects.all(),
+        source='standard_department',
+        required=False,
+        allow_null=True,
+        write_only=True
+    )
     
     
     class Meta:
         model = Contact
         fields = [
             'id', 'first_name', 'last_name', 'full_name', 'email', 'phone',
-            'job_title', 'department', 'influence_level', 'influence_levels',
-            'account', 'account_id', 'address_line1', 'address_line2',
-            'city', 'postal_code', 'state', 'country', 'website', 'linkedin',
+            'job_title', 'department', 'standard_department', 'standard_department_id',
+            'influence_level', 'influence_levels',
+            'account', 'account_id',
+            'linkedin', 'objectives', 'motivations', 'pain_points', 'metrics',
+            'has_buying_authority', 'notes',
             'created_at', 'updated_at', 'client_id', 'historical_data',
             'signal_metadata', 
         ]
@@ -72,6 +87,13 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
         if hasattr(obj, 'get_pending_signals_count'):
             return obj.get_pending_signals_count()
         return 0
+    
+    def get_standard_departments(self, obj):
+        """Get available standard departments"""
+        return [
+            {'id': dept.id, 'name': dept.name, 'display_name': dept.get_name_display()}
+            for dept in StandardDepartment.objects.all()
+        ]
     
     def validate(self, data):
         """Validate contact data"""

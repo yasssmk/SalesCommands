@@ -9,9 +9,9 @@ from ..serializers import AccountSerializer
 from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from datetime import datetime
-from apps.core_apps.views import SignalAwareViewMixin, HistoricalTrackingViewMixin
+from apps.core_apps.views import SignalAwareViewMixin, AccountHistoricalTrackingMixin
 
-class AccountAPIView(BaseAPIView, SignalAwareViewMixin, HistoricalTrackingViewMixin):
+class AccountAPIView(BaseAPIView, SignalAwareViewMixin, AccountHistoricalTrackingMixin):
     """
     API View for Account management with parent-child relationship handling.
     """

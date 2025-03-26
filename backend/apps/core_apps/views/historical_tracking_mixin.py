@@ -169,3 +169,17 @@ class AccountHistoricalTrackingMixin(HistoricalTrackingViewMixin):
     tracked_json_fields = {
         'objectives', 'motivations', 'metrics', 'pain_points', 'implications'
     }
+
+class ContactHistoricalTrackingMixin(HistoricalTrackingViewMixin):
+    """Contact-specific implementation of the historical tracking mixin"""
+    
+    # Fields to track for Contact model
+    tracked_fields = {
+        'first_name', 'last_name', 'job_title', 'department', 
+        'influence_level', 'email', 'phone', 'has_buying_authority'
+    }
+    
+    # JSON fields to track for Contact model
+    tracked_json_fields = {
+        'objectives', 'motivations', 'pain_points', 'metrics'
+    }

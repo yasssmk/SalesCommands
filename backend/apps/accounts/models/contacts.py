@@ -59,6 +59,12 @@ class Contact(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, Contact
         null=True,
         verbose_name=_('Personal Objectives')
     )
+
+    motivations = models.JSONField(
+        blank=True, 
+        null=True, 
+        verbose_name=_('Motivations')
+    )
     
     pain_points = models.JSONField(
         blank=True,
@@ -66,13 +72,13 @@ class Contact(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, Contact
         verbose_name=_('Personal Pain Points')
     )
     
-    criteria = models.JSONField(
-        blank=True,
-        null=True,
-        verbose_name=_('Decision Criteria')
+    metrics = models.JSONField(
+        blank=True, 
+        null=True, 
+        verbose_name=_('Metrics')
     )
     
-    buying_authority = models.BooleanField(
+    has_buying_authority = models.BooleanField(
         default=False,
         verbose_name=_('Has Buying Authority')
     )
@@ -103,6 +109,6 @@ class Contact(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, Contact
         """Get profile data with signals if requested"""
         profile_fields = [
             'first_name', 'last_name', 'job_title', 'influence_level',
-            'email', 'phone', 'linkedin', 'department', 'buying_authority'
+            'email', 'phone', 'linkedin', 'department', 'has_buying_authority'
         ]
         return self._get_field_data_with_signals(profile_fields, include_signal_info, 'PROFILE')

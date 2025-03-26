@@ -2,26 +2,27 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import transaction
 from core.apps_shared_methods import BaseAPIView
-from apps.core_apps.views import SignalAwareViewMixin
+from apps.core_apps.views import SignalAwareViewMixin, ContactHistoricalTrackingMixin
+from apps.core_apps.models import StandardDepartment
 from ..models import Contact
 from ..serializers import ContactSerializer
 from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.exceptions import StandardizedValidationError
 
-class ContactAPIView(BaseAPIView, SignalAwareViewMixin):
+class ContactAPIView(BaseAPIView, SignalAwareViewMixin, ContactHistoricalTrackingMixin):
     """
     API View for Contact management with signal awareness.
     """
     
     queryset = Contact.objects.select_related(
-        'account'
+        'account', 'standard_department'
     )
     
     serializer_class = ContactSerializer
     entity_name = 'contact'
 
-    mass_update_allowed_fields = {'job_title', 'influence_level'}
+    mass_update_allowed_fields = {'job_title', 'influence_level', 'department', 'standard_department_id'}
 
     def get_queryset(self):
         """Extend base queryset with contact-specific filtering"""
@@ -31,6 +32,8 @@ class ContactAPIView(BaseAPIView, SignalAwareViewMixin):
             filter_mappings = {
                 'account_id': 'account_id',
                 'influence_level': 'influence_level',
+                'department': 'department__icontains',
+                'standard_department_id': 'standard_department_id',
                 'search': None  # Special handling for search
             }
             
@@ -44,7 +47,8 @@ class ContactAPIView(BaseAPIView, SignalAwareViewMixin):
                         Q(first_name__icontains=search_term) | 
                         Q(last_name__icontains=search_term) |
                         Q(email__icontains=search_term) |
-                        Q(job_title__icontains=search_term)
+                        Q(job_title__icontains=search_term) |
+                        Q(department__icontains=search_term)
                     )
                         
             return queryset
@@ -60,7 +64,7 @@ class ContactAPIView(BaseAPIView, SignalAwareViewMixin):
             
             # Store old values for relationship changes
             old_account = instance.account_id
-            old_org_unit = instance.organization_unit_id
+          
             
             serializer = self.serializer_class(
                 instance,
@@ -90,16 +94,21 @@ class ContactChoicesView(APIView):
     """
     def get(self, request):
         """Get common choices for contacts"""
-        # Example influence levels - adjust as needed
+        from ..models import InfluenceLevel
+        
+        # Get influence levels from the model
         influence_levels = [
-            {'value': 'DECISION_MAKER', 'label': _('Decision Maker')},
-            {'value': 'INFLUENCER', 'label': _('Influencer')},
-            {'value': 'APPROVER', 'label': _('Approver')},
-            {'value': 'USER', 'label': _('User')},
-            {'value': 'CHAMPION', 'label': _('Champion')},
-            {'value': 'BLOCKER', 'label': _('Blocker')},
+            {'value': choice[0], 'label': choice[1]} 
+            for choice in InfluenceLevel.choices
+        ]
+        
+        # Get standard departments
+        standard_departments = [
+            {'id': dept.id, 'name': dept.name, 'display_name': dept.get_name_display()}
+            for dept in StandardDepartment.objects.all()
         ]
         
         return Response({
-            'influence_levels': influence_levels
+            'influence_levels': influence_levels,
+            'standard_departments': standard_departments
         })
