@@ -16,21 +16,11 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
     """
     Serializer for the Contact model with qualification fields and signal awareness.
     """
-    # Write-only fields
-    account_id = serializers.UUIDField(
-        required=True,
-        write_only=True,
-        error_messages={
-            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Account ID'),
-            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Account ID')
-        }
-    )
     
     influence_levels = serializers.SerializerMethodField(read_only=True)
 
     
     # Read-only fields
-    account = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
 
     # Standard department fields
@@ -48,14 +38,14 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
     class Meta:
         model = Contact
         fields = [
-            'id', 'first_name', 'last_name', 'full_name', 'email', 'phone',
+            'id', 'first_name', 'last_name', 'full_name', 'email', 'phone_number',
             'job_title', 'department', 'standard_department', 'standard_department_id',
             'influence_level', 'influence_levels',
             'account', 'account_id',
             'linkedin', 'objectives', 'motivations', 'pain_points', 'metrics',
             'has_buying_authority', 'notes',
             'created_at', 'updated_at', 'client_id', 'historical_data',
-            'signal_metadata', 
+            'signal_metadata'
         ]
         read_only_fields = [
             'created_at', 'updated_at', 'client_id', 'historical_data', 'full_name',

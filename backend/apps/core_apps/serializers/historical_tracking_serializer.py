@@ -46,7 +46,7 @@ class HistoricalTrackingSerializerMixin:
         except StandardizedValidationError:
             raise
         except Exception as e:
-            raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR)
+            raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR.format(detail=e))
     
     def to_representation(self, instance):
         """

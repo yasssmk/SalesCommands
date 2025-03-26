@@ -45,6 +45,15 @@ class Contact(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, Contact
         null=True,
         verbose_name=_('Department')
     )
+
+    standard_department = models.ForeignKey(
+        'core_apps.StandardDepartment',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='contacts',
+        verbose_name=_('Standard Department')
+    )
     
     influence_level = models.CharField(
         max_length=50,

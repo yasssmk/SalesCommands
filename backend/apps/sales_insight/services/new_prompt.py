@@ -70,8 +70,8 @@ ACCOUNT_INSIGHTS_DEFINITIONS = """
     ACCOUNT INSIGHTS FIELDS:
       - For **objectives**, make them measurable and actionable (e.g., “Increase sales by 20% within 6 months”).
       - For **motivations**, specify reasons driving interest (e.g., “Expand market share”).
-      - For **metrics** , Key performance indicators they follow to measure their success (e.g., growth rate, operational efficiency, customer retention).
-      - For **painPoints**, Main problems or obstacles they face (e.g., manual data entry, inefficient workflow).
+      - For **metrics** , Key performance indicators copmapny follows to measure its success (e.g., growth rate, operational efficiency, customer retention).
+      - For **painPoints**, Main problems or obstacles company face (e.g., manual data entry, inefficient workflow).
       - For **implications**, quantify the impact (e.g., “Risk losing 10% of revenue”).
       - For **partners**, Other external vendors or consulting firms they work with.
 
@@ -153,11 +153,16 @@ CONTACTS_DEFINITIONS = """
     Return ONLY "contactsInsights" array in valid JSON.
     This array includes all stakeholders in the process, along with their objectives, motivations, KPIs, and personal impact.
 
-    contactsInsights fields:
-      contactName, role, orgUnit, influenceLevel,
-      contactRoles, objectives (array of {goal, metrics, timeline}),
-      motivations, keyKPIs, criteria, painPoints, implications,
-      hasBudgetAuthority
+     CONTACT INSIGHTS FIELDS:
+      - For **ContactName**, Full name of the contact if stated.
+      - For **jobTitle**, Name of the contact position in the company if stated.
+      - For **department**, Name of the department contact works if stated, use one from the list: ["General Management", "Human Resources (HR)", "Finance & Accounting", "Information Technology (IT)", "Marketing & Communications", "Sales & Business Development", "Customer Support & Success", "Operations & Supply Chain", "Legal & Compliance", "Procurement & Vendor Management", "Engineering & R&D", "Product Management", "Data & Analytics", "Security & Risk Management", "Healthcare Administration", "Clinical & Medical Staff", "Retail & Store Operations", "Manufacturing & Production", "Logistics & Transportation", "Construction & Engineering", "Education & Training", "Government & Public Services", "Media & Content Creation"]
+      - For **objectives**, personal objectives for the contact or it´s team if stated. make them measurable and actionable (e.g., “Increase sales by 20% within 6 months”).
+      - For **motivations**, personal motivations for the contact or it´s team if stated. specify reasons driving interest (e.g., “Expand market share”).
+      - For **metrics** , personal Key performance indicators they follow to measure their success for the contact or it´s team (e.g., growth rate, operational efficiency, customer retention).
+      - For **painPoints**, Main problems or obstacles contact or it´s team face (e.g., manual data entry, inefficient workflow).
+      - For **implications**, quantify the impact for the contact or it´s team (e.g., “Risk increasing 10% of work load”).
+      - For **hasBudgetAuthority**, Does the contact has the Authority to make a purchase?
 
 SAMPLE JSON:
 
@@ -165,23 +170,14 @@ SAMPLE JSON:
   "contactsInsights": [
     {
       "contactName": "",
-      "role": "",
-      "orgUnit": "",
-      "influenceLevel": "",
-      "contactRoles": [],
-      "objectives": [
-        {
-          "goal": "",
-          "metrics": "",
-          "timeline": []
-        }
-      ],
+      "jobTitle": "",
+      "department":,
+      "objectives": [],
       "motivations": [],
-      "keyKPIs": [],
-      "criteria": [],
+      "metrics": [],
       "painPoints": [],
       "implications": [],
-      "hasBudgetAuthority": false
+      "hasBudgetAuthority": false,
     }
   ]
 }

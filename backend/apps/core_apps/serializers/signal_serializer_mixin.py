@@ -82,7 +82,7 @@ class SignalAwareSerializerMixin(serializers.Serializer):
             raise
         except Exception as e:
             # Handle unexpected errors
-            raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR)
+            raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR.format(detail=e))
     
     def create(self, validated_data):
         """Remove signal-specific fields before creating the model instance."""
@@ -98,7 +98,7 @@ class SignalAwareSerializerMixin(serializers.Serializer):
             raise
         except Exception as e:
             # Handle unexpected errors
-            raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR)
+            raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR.format(detail=e))
     
     def update(self, instance, validated_data):
         """Remove signal-specific fields before updating the model instance."""
@@ -114,4 +114,4 @@ class SignalAwareSerializerMixin(serializers.Serializer):
             raise
         except Exception as e:
             # Handle unexpected errors
-            raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR)
+            raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR.format(detail=e))
