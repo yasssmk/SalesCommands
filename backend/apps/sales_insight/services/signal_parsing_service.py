@@ -69,6 +69,16 @@ class SignalParsingService:
                     user
                 )
                 signals.extend(contact_signals)
+        
+        if 'techStack' in insights:
+            tech_stack_signals = cls._parse_tech_stack_data(
+                insights['techStack'],
+                account,
+                client_id,
+                source,
+                user
+            )
+            signals.extend(tech_stack_signals)
                 
         return signals
     
@@ -261,34 +271,71 @@ class SignalParsingService:
         return signals
         
     @classmethod
-    def _parse_tech_stack(cls, tech_stack, account, client_id, source, user, entity_type, org_unit=None, contact=None):
-        """Parse tech stack into signals with competitor analysis"""
+    def _parse_tech_stack_data(cls, tech_stack, account, client_id, source, user):
+        """
+        Parse tech stack data from transcript analysis.
+        Creates signals for tech stack information.
+        
+        Args:
+            tech_stack: List of tech stack items from the transcript
+            account: Account object
+            client_id: Client ID
+            source: Source of the insights
+            user: User who initiated the analysis
+            
+        Returns:
+            list: Created Signal objects for tech stack
+        """
         signals = []
         
         for tech_item in tech_stack:
-            # Tech stack is very valuable for competitor analysis and product alignment
+            tech_name = tech_item.get('techName')
+            purpose = tech_item.get('purpose', [])
+            pros = tech_item.get('pros', [])
+            improvement_points = tech_item.get('improvementPoints', []) 
+            years_of_usage = tech_item.get('yearsOfUsage')
+            costs = tech_item.get('costs', [])
+            renewal_date = tech_item.get('renewalDate')
+            
+            if not tech_name:
+                continue
+            
+            # Create metadata with all tech stack information
+            metadata = {
+                'tech_name': tech_name,
+                'purpose': purpose,
+                'pros': pros,
+                'improvement_points': improvement_points,
+                'years_of_usage': years_of_usage,
+                'costs': costs,
+                'renewal_date': renewal_date,
+                'needs_assignment': True  # Indicates this needs user review
+            }
+            
+            # Create a signal for the tech stack item
             signal = Signal.objects.create(
                 account=account,
-                contact=contact,
                 category=Signal.Category.QUALIFICATION,
-                entity_type=entity_type,
-                field_name='current_tech_stack',
-                value=tech_item,
+                entity_type=Signal.EntityType.ACCOUNT,
+                field_name='tech_stack',
+                value={
+                    'tech_name': tech_name,
+                    'purpose': purpose,
+                    'pros': pros,
+                    'cons': improvement_points,  # Map improvement_points to cons
+                    'years_of_usage': years_of_usage,
+                    'costs': costs,
+                    'renewal_date': renewal_date
+                },
                 status=Signal.Status.PENDING,
                 source=source,
                 client_id=client_id,
                 created_by=user,
-                updated_by=user
+                updated_by=user,
+                metadata=metadata
             )
             signals.append(signal)
-            
-            # Find competitor products and set product alignment
-            tech_name = tech_item.get('techName', '')
-            products = cls._detect_and_set_product_alignment(signal, tech_name, is_competitor=True)
-            
-            # Link to APDs based on competitor analysis
-            cls._link_to_account_product_details(signal, account, products, org_unit, is_competitor=True)
-            
+        
         return signals
     
     @classmethod

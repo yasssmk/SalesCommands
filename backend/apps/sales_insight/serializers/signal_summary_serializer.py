@@ -12,9 +12,9 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
     field_display_name = serializers.SerializerMethodField()
     
     # Entity summaries
-    org_unit_summary = serializers.SerializerMethodField()
     contact_summary = serializers.SerializerMethodField()
-    account_product_detail_summary = serializers.SerializerMethodField()
+    tech_stack_summary = serializers.SerializerMethodField()
+    account_product_relationship_summary = serializers.SerializerMethodField()
     
     class Meta:
         model = Signal
@@ -22,8 +22,8 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
             'id', 'account', 'category', 'category_label', 
             'entity_type', 'entity_type_label',
             'field_name', 'field_display_name',
-            'value', 'org_unit_summary', 'contact_summary',
-            'account_product_detail_summary'
+            'value', 'contact_summary',
+            'tech_stack_summary', 'account_product_relationship_summary'
         ]
     
     def get_category_label(self, obj):
@@ -40,12 +40,11 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
             'company_size': 'Company Size',
             'annual_revenue': 'Annual Revenue',
             'objectives': 'Business Objectives',
-            'compelling_events': 'Compelling Events',
             'motivations': 'Motivations',
-            'key_kpis': 'Key KPIs',
-            'criteria': 'Decision Criteria',
+            'metrics': 'Key Metrics',
             'pain_points': 'Pain Points',
             'implications': 'Implications',
+            'tech_stack': 'Technology Stack',
             'budget_authority': 'Budget Authority'
         }
         return field_mapping.get(obj.field_name, obj.field_name.replace('_', ' ').title())
@@ -59,13 +58,26 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
             }
         return None
     
-    def get_account_product_detail_summary(self, obj):
-        if obj.account_product_detail:
-            apd = obj.account_product_detail
+    def get_tech_stack_summary(self, obj):
+        """Get summary of tech stack if this signal is for a tech stack item"""
+        if obj.field_name == 'tech_stack' and isinstance(obj.value, dict):
+            tech_data = obj.value
             return {
-                'id': apd.id,
-                'product_name': apd.product.product_name if apd.product else None,
-                'estimated_units': apd.estimated_units,
-                'potential_revenue': str(apd.potential_revenue)
+                'tech_name': tech_data.get('tech_name', ''),
+                'purpose': tech_data.get('purpose', []),
+                'pros_count': len(tech_data.get('pros', [])),
+                'cons_count': len(tech_data.get('cons', [])),
+                'has_renewal_date': bool(tech_data.get('renewal_date'))
+            }
+        return None
+    
+    def get_account_product_relationship_summary(self, obj):
+        if obj.account_product_relationship:
+            apr = obj.account_product_relationship
+            return {
+                'id': apr.id,
+                'product_name': apr.product.product_name if apr.product else None,
+                'estimated_units': apr.estimated_units,
+                'potential_revenue': str(apr.potential_revenue)
             }
         return None

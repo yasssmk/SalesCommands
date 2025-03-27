@@ -188,7 +188,6 @@ TECH_STACK_DEFINITION = """
       - For **renewalDate**, Only is technology is a subscription and only if stated the date of the comtact renewal (e.g, November 2025)
 
 
-
     {
       "techStack": [
          {

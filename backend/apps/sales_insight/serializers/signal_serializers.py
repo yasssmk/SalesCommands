@@ -16,14 +16,6 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
     """
     Serializer for the Signal model with proper validation and client scoping.
     """
-    # Write-only fields
-    # org_unit_id = serializers.PrimaryKeyRelatedField(
-    #     source='org_unit',
-    #     queryset=AccountOrganizationUnit.objects.all(),
-    #     required=False,
-    #     allow_null=True,
-    #     write_only=True
-    # )
     
     contact_id = serializers.PrimaryKeyRelatedField(
         source='contact',

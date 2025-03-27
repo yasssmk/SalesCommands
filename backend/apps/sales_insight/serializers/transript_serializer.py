@@ -13,24 +13,16 @@ class TranscriptAnalysisSerializer(AccountLinkedSerializerMixin, ClientScopeMana
     """
     transcript = serializers.CharField(required=True)
     model = serializers.CharField(required=False, default='gpt-4o-mini')
-
+    analysis_type = serializers.ChoiceField(
+        choices=['full', 'tech_stack_only', 'contacts_only', 'account_only'],
+        required=False,
+        default='full'
+    )
     account = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.all(),
         required=True 
     )
     
-    # org_unit = serializers.PrimaryKeyRelatedField(
-    #     queryset=AccountOrganizationUnit.objects.all(),
-    #     required=False,
-    #     allow_null=True
-    # )
-    # org_unit_id = serializers.PrimaryKeyRelatedField(
-    #     source='org_unit',
-    #     queryset=AccountOrganizationUnit.objects.all(),
-    #     required=False,
-    #     allow_null=True,
-    #     write_only=True
-    # )
 
     def validate_transcript(self, value):
         """Validate transcript content"""
