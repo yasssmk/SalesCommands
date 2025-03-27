@@ -183,3 +183,17 @@ class ContactHistoricalTrackingMixin(HistoricalTrackingViewMixin):
     tracked_json_fields = {
         'objectives', 'motivations', 'pain_points', 'metrics'
     }
+
+class TechStackHistoricalTrackingMixin(HistoricalTrackingViewMixin):
+    """TechStack-specific implementation of the historical tracking mixin"""
+    
+    # Fields to track for TechStack model
+    tracked_fields = {
+        'tech_name', 'purpose', 'annual_cost', 
+        'renewal_date', 'years_of_usage', 'notes'
+    }
+    
+    # JSON fields to track for TechStack model
+    tracked_json_fields = {
+        'pros', 'cons'
+    }

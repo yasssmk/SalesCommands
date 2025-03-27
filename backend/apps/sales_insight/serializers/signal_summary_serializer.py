@@ -50,15 +50,6 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
         }
         return field_mapping.get(obj.field_name, obj.field_name.replace('_', ' ').title())
     
-    def get_org_unit_summary(self, obj):
-        if obj.org_unit:
-            return {
-                'id': obj.org_unit.id,
-                'organization_name': obj.org_unit.organization_name,
-                'unit_type': obj.org_unit.unit_type
-            }
-        return None
-    
     def get_contact_summary(self, obj):
         if obj.contact:
             return {

@@ -35,15 +35,6 @@ COMMON_INSTRUCTIONS = """
          - KeyKpis: How they will measure success in this step
          - averageTimeInDays: How long this step might take before moving to the next one
 
-      - For **TechStack**: a list of products or solutions the interlocutors mentioned using:
-         Sub-object:
-           - "techName": Name of the solution
-           - "businessGoal": Purpose of using this solution
-           - "pros": Positive statements made about this product
-           - "improvementPoints": What the product lacks to address all pains
-           - "yearsOfUsage": How long they have been using this solution/product, if stated
-           - "costs": A list of various costs (e.g., "Subscription cost", "Maintenance cost"), and include amounts if stated
-           - "renewalDate": If it's a subscription, when the contract will end
 
       - For **departmentName**, use one from the list: ["General Management", "Human Resources (HR)", "Finance & Accounting", "Information Technology (IT)", "Marketing & Communications", "Sales & Business Development", "Customer Support & Success", "Operations & Supply Chain", "Legal & Compliance", "Procurement & Vendor Management", "Engineering & R&D", "Product Management", "Data & Analytics", "Security & Risk Management", "Healthcare Administration", "Clinical & Medical Staff", "Retail & Store Operations", "Manufacturing & Production", "Logistics & Transportation", "Construction & Engineering", "Education & Training", "Government & Public Services", "Media & Content Creation"]
 
@@ -51,8 +42,8 @@ COMMON_INSTRUCTIONS = """
     
     Below is a comprehensive guide if needed:
        1. Account Info + Insights
-       2. Org Units Insights
-       3. Contacts Insights
+       2. Contacts Insights
+       3. techStack
        4. Focus on key fields: objectives, painPoints, currentTechStack, buyingProcess, projects, etc.
 """
 
@@ -183,6 +174,37 @@ SAMPLE JSON:
 }
 """
 
+TECH_STACK_DEFINITION = """
+    Return ONLY "TechStack" array in valid JSON.
+    This array includes all product and solution the company is using.
+
+    TECH STACK FIELDS:
+      - For **TechtName**, Name of the product or technology.
+      - For **purpose**, The reason of their purchase or business objective expected using this product/technology.
+      - For **pros**, Anything they like or are satisfied about this product/technology
+      - For **improvementPoints**, Anything they would like the product-technology to do or any pain point regarding its usage.
+      - For **yearsOfUsage**, For how long they have been using this prodcut/technology, if stated.
+      - For **costs** , Any costs related to the product/technology. State the name of the cost then, only if stated the price. (e.g., subcription price: 3000$ per month, maintenance cost).
+      - For **renewalDate**, Only is technology is a subscription and only if stated the date of the comtact renewal (e.g, November 2025)
+
+
+
+    {
+      "techStack": [
+         {
+            "techName": "",
+            "purpose":[],
+            "pros": [],
+            "improvementPoints": [],
+            "yearsOfUsage": null,
+            "costs": [],
+            "renewalDate": ""
+         }
+      ]
+    }
+
+
+"""
 
 LEADS_DEFINITION = """
 This applies when the Company, OrgUnit, or Contact is aware of a specific pain point and is considering buying a solution in the future.

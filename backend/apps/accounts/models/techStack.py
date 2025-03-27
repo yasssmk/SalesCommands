@@ -57,6 +57,12 @@ class TechStack(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin)
         null=True,
         verbose_name=_('Years of Usage')
     )
+
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_('Notes')
+    )
     
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints()):
         verbose_name = _('Tech Stack')

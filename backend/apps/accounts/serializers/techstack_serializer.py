@@ -26,6 +26,7 @@ class TechStackSerializer(AccountLinkedSerializerMixin, HistoricalTrackingSerial
             'annual_cost',
             'renewal_date',
             'years_of_usage',
+            'note',
             'historical_data',
             'created_at',
             'updated_at'
