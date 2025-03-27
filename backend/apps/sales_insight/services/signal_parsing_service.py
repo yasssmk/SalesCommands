@@ -7,6 +7,7 @@ from ..models import Signal
 # from apps.accounts_app.account_product_detail.models import AccountProductDetail
 from apps.accounts.models import Account, Contact, AccountProductRelationship
 from apps.products.models import Product
+from django.db.models import  Q
 
 class SignalParsingService:
     """
@@ -136,104 +137,83 @@ class SignalParsingService:
     
     @classmethod
     def _parse_contact_insights(cls, contacts_insights, account, client_id, source, user):
-        """Parse contact insights"""
+        """
+        Parse contact insights without automatically creating contacts.
+        Creates signals with contact information that users can assign later.
+        """
         signals = []
         
         for contact_insight in contacts_insights:
             contact_name = contact_insight.get('contactName')
-            role = contact_insight.get('role')
-            org_unit_name = contact_insight.get('orgUnit')
+            job_title = contact_insight.get('jobTitle')
+            department = contact_insight.get('department')
+            has_budget_authority = contact_insight.get('hasBudgetAuthority', False)
             
             if not contact_name:
                 continue
-                
-            # Try to find contact by name
-            from apps.accounts.models import Contact
             
-            # Split name into first and last (simple approach)
+            # Store contact details in the signal metadata for later assignment
+            contact_details = {
+                'name': contact_name,
+                'job_title': job_title,
+                'department': department,
+                'has_budget_authority': has_budget_authority
+            }
+            
+            # Try to find potential matches to suggest
+            potential_matches = []
             name_parts = contact_name.split(' ', 1)
             first_name = name_parts[0] if len(name_parts) > 0 else ''
             last_name = name_parts[1] if len(name_parts) > 1 else ''
             
-            target_contact = None
             try:
-                # Find contact by name (case-insensitive)
-                target_contact = Contact.objects.filter(
+                # Find contacts by name (case-insensitive)
+                from apps.accounts.models import Contact
+                
+                matching_contacts = Contact.objects.filter(
                     account_id=account.id,
-                    first_name__iexact=first_name,
-                    last_name__iexact=last_name,
                     client_id=client_id
-                ).first()
+                ).filter(
+                    Q(first_name__iexact=first_name, last_name__iexact=last_name) |
+                    Q(email__icontains=first_name.lower())
+                )[:5]  # Limit to 5 suggestions
                 
-                # Create contact if it doesn't exist
-                if not target_contact:
+                # Add potential matches (just IDs and names for now)
+                for contact in matching_contacts:
+                    potential_matches.append({
+                        'id': str(contact.id),
+                        'name': f"{contact.first_name} {contact.last_name}",
+                        'job_title': contact.job_title,
+                        'email': contact.email
+                    })
                     
-                    # Create contact
-                    target_contact = Contact.objects.create(
-                        account=account,
-                        first_name=first_name,
-                        last_name=last_name,
-                        job_title=role,
-                        client_id=client_id,
-                        created_by=user,
-                        updated_by=user
-                    )
-
             except Exception as e:
-                # Log error and continue
-                print(f"Error finding/creating contact: {str(e)}")
-                continue
-                
-            if not target_contact:
-                continue
-                
-            # Find org unit for the contact
-            target_org_unit = target_contact.org_unit
+                # Log error but continue
+                print(f"Error finding potential contact matches: {str(e)}")
             
-            # Process contact-level insights
-            # Objectives (handled specially because of nested structure)
-            if 'objectives' in contact_insight and contact_insight['objectives']:
-                for objective in contact_insight['objectives']:
-                    # Create objective signal
-                    signal = Signal.objects.create(
-                        account=account,
-                        contact=target_contact,
-                        org_unit=target_org_unit,
-                        category=Signal.Category.GOALS,
-                        entity_type=Signal.EntityType.CONTACT,
-                        field_name='objectives',
-                        value=objective,
-                        status=Signal.Status.PENDING,
-                        source=source,
-                        client_id=client_id,
-                        created_by=user,
-                        updated_by=user
-                    )
-                    signals.append(signal)
-                    
-                    # For high-value signals, find product alignment and APD
-                    products = cls._detect_and_set_product_alignment(signal, objective)
-                    
-                    # Link to APDs
-                    cls._link_to_account_product_details(signal, account, products, target_org_unit)
-            
-            # Process other qualification fields
+            # Process qualification fields
             qualification_fields = [
+                ('objectives', 'objectives'),
                 ('motivations', 'motivations'),
-                ('keyKPIs', 'key_kpis'),
-                ('criteria', 'criteria'),
+                ('metrics', 'metrics'),
                 ('painPoints', 'pain_points'),
-                ('implications', 'implications'),
-                ('hasBudgetAuthority', 'budget_authority')
+                ('implications', 'implications')
             ]
             
+            # Create signals for each qualification field
             for json_field, model_field in qualification_fields:
                 if json_field in contact_insight and contact_insight[json_field]:
-                    # Create qualification signal for contact
+                    # Initialize metadata
+                    metadata = {
+                        'contact_details': contact_details,
+                        'potential_matches': potential_matches,
+                        'needs_assignment': True
+                    }
+                    
+                    # Create the signal without assigning to a contact yet
                     signal = Signal.objects.create(
                         account=account,
-                        contact=target_contact,
-                        org_unit=target_org_unit,
+                        # No contact assigned yet
                         category=Signal.Category.QUALIFICATION,
                         entity_type=Signal.EntityType.CONTACT,
                         field_name=model_field,
@@ -242,58 +222,44 @@ class SignalParsingService:
                         source=source,
                         client_id=client_id,
                         created_by=user,
-                        updated_by=user
+                        updated_by=user,
+                        metadata=metadata
                     )
                     signals.append(signal)
+            
+            # Add signals for profile fields (department, has_budget_authority)
+            profile_fields = [
+                ('department', 'department'),
+                ('hasBudgetAuthority', 'has_buying_authority')
+            ]
+            
+            for json_field, model_field in profile_fields:
+                if json_field in contact_insight and contact_insight[json_field]:
+                    # Create profile signal with same metadata
+                    metadata = {
+                        'contact_details': contact_details,
+                        'potential_matches': potential_matches,
+                        'needs_assignment': True
+                    }
                     
-                    # For high-value signals, find product alignment and APD
-                    if model_field in ['pain_points', 'compelling_events', 'implications']:
-                        products = cls._detect_and_set_product_alignment(signal, contact_insight[json_field])
-                        
-                        # Link to APDs
-                        cls._link_to_account_product_details(signal, account, products, target_org_unit)
-            
-            # Process tech stack (special handling)
-            if 'currentTechStack' in contact_insight and contact_insight['currentTechStack']:
-                tech_stack_signals = cls._parse_tech_stack(
-                    contact_insight['currentTechStack'],
-                    account,
-                    client_id,
-                    source,
-                    user,
-                    Signal.EntityType.CONTACT,
-                    target_org_unit,
-                    target_contact
-                )
-                signals.extend(tech_stack_signals)
-            
-            # Process projects involved
-            if 'projectsInvolved' in contact_insight and contact_insight['projectsInvolved']:
-                for project in contact_insight['projectsInvolved']:
                     signal = Signal.objects.create(
                         account=account,
-                        contact=target_contact,
-                        org_unit=target_org_unit,
-                        category=Signal.Category.PROJECT,
+                        # No contact assigned yet
+                        category=Signal.Category.PROFILE,
                         entity_type=Signal.EntityType.CONTACT,
-                        field_name='project_involvement',
-                        value=project,
+                        field_name=model_field,
+                        value=contact_insight[json_field],
                         status=Signal.Status.PENDING,
                         source=source,
                         client_id=client_id,
                         created_by=user,
-                        updated_by=user
+                        updated_by=user,
+                        metadata=metadata
                     )
                     signals.append(signal)
-                    
-                    # For project signals, find product alignment and APD
-                    products = cls._detect_and_set_product_alignment(signal, project)
-                    
-                    # Link to APDs
-                    cls._link_to_account_product_details(signal, account, products, target_org_unit)
-                
+            
         return signals
-    
+        
     @classmethod
     def _parse_tech_stack(cls, tech_stack, account, client_id, source, user, entity_type, org_unit=None, contact=None):
         """Parse tech stack into signals with competitor analysis"""

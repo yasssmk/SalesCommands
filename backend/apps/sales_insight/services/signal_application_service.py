@@ -109,60 +109,65 @@ class SignalApplicationService:
 
     @classmethod
     def _apply_to_contact(cls, signal, user):
-        """Apply signal to contact with comprehensive historical tracking"""
-        contact = signal.contact
-        field_name = signal.field_name
-        value = signal.value
-        
-        # Qualification fields 
-        qualification_fields = [
-            'objectives', 'compelling_events', 'motivations', 
-            'key_kpis', 'criteria', 'pain_points', 'implications',
-        ]
-        
-        # Ensure historical_data exists
-        if not hasattr(contact, 'historical_data') or not contact.historical_data:
-            contact.historical_data = {}
-        
-        # Current value before update
-        current_value = getattr(contact, field_name, None)
-        
-        # Update the field
-        setattr(contact, field_name, value)
-        
-        # Prepare history entry
-        history_entry = {
-            'old_value': current_value,
-            'new_value': value,
-            'changed_at': timezone.now().isoformat(),
-            'changed_by': str(user.id) if user else None,
-            'source': 'signal',
-            'signal_id': str(signal.id)
-        }
-        
-        # Add signal-specific details
-        if signal:
-            history_entry.update({
-                'signal_category': signal.category,
-                'signal_source': signal.source,
-                'confirmation_count': signal.confirmation_count
-            })
-        
-        # Initialize field history if needed
-        if field_name not in contact.historical_data:
-            contact.historical_data[field_name] = []
-        
-        # Add to historical data
-        contact.historical_data[field_name].append(history_entry)
-        
-        # Track signal update in signal metadata
-        if hasattr(contact, 'track_signal_update'):
-            contact.track_signal_update(signal, field_name, current_value, value)
-        
-        # Save the contact
-        contact.save(user=user, update_fields=[field_name, 'historical_data'])
-        
-        return True
+        """Apply signal to contact with the updated field structure"""
+        try:
+            contact = signal.contact
+            field_name = signal.field_name
+            value = signal.value
+            
+            # Qualification JSON fields
+            json_array_fields = [
+                'objectives', 'motivations', 'metrics', 
+                'pain_points', 'implications'
+            ]
+            
+            # Profile fields
+            profile_fields = [
+                'first_name', 'last_name', 'job_title', 'department',
+                'has_buying_authority', 'influence_level', 'email', 'phone'
+            ]
+            
+            # For JSON array fields (qualifications)
+            if field_name in json_array_fields:
+                # Single item to add to array
+                if isinstance(value, dict):
+                    if hasattr(contact, 'add_qualification_item'):
+                        return contact.add_qualification_item(field_name, value, user, signal)
+                # Complete array replacement
+                elif isinstance(value, list):
+                    if hasattr(contact, 'update_qualification_field'):
+                        return contact.update_qualification_field(field_name, value, user, signal)
+            
+            # For profile fields (regular contact properties)
+            elif field_name in profile_fields:
+                if hasattr(contact, 'update_tracked_field'):
+                    return contact.update_tracked_field(field_name, value, user)
+            
+            # Fallback: use the most appropriate method available
+            if hasattr(contact, 'update_qualification_field'):
+                return contact.update_qualification_field(field_name, value, user, signal)
+            elif hasattr(contact, 'update_tracked_field'):
+                return contact.update_tracked_field(field_name, value, user)
+            
+            # Last resort: direct update with historical tracking
+            from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
+            return HistoricalTrackingService.update_field(
+                instance=contact,
+                field_name=field_name,
+                new_value=value,
+                user=user,
+                signal=signal,
+                update_model=True
+            )
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_OPERATION.format(
+                    operation=f"Error applying signal: {str(e)}"
+                )
+            )
         
     @classmethod
     def bulk_apply_signals(cls, signals, user=None):

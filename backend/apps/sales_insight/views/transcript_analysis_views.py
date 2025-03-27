@@ -49,7 +49,7 @@ class TranscriptAnalysisView(BaseAPIView):
             # Get validated data
             transcript = serializer.validated_data['transcript']
             account = serializer.validated_data['account']
-            org_unit = serializer.validated_data.get('org_unit')
+            contact = serializer.validated_data.get('contact')
             
             # Process through OpenAI to get structured insights
             insights = get_full_insights(transcript)
@@ -60,7 +60,6 @@ class TranscriptAnalysisView(BaseAPIView):
             signals = SignalParsingService.parse_insights(
                 insights=insights,
                 account=account,
-                org_unit=org_unit,
                 source='transcript_analysis',
                 user=request.user
             )

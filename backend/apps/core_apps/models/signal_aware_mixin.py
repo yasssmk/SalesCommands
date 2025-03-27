@@ -25,7 +25,6 @@ class SignalAwareMixin(models.Model):
         # Add entity-specific filters
         entity_map = {
             'account': (Signal.EntityType.ACCOUNT, None),
-            'accountorganizationunit': (Signal.EntityType.ORG_UNIT, 'org_unit_id'),
             'contact': (Signal.EntityType.CONTACT, 'contact_id'),
             'accountproductdetail': (Signal.EntityType.ACCOUNT_PRODUCT, 'account_product_detail_id')
         }
