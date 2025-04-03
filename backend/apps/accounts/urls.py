@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import AccountAPIView, AccountChoicesView, ContactAPIView, ContactChoicesView, AccountProductRelationshipView, TechRelationshipView
+from .views import AccountAPIView, AccountChoicesView, ContactAPIView, ContactChoicesView, AccountProductRelationshipView, TechRelationshipView, BuyingProcessStepView
 
 
 urlpatterns = [
@@ -23,6 +23,13 @@ urlpatterns = [
     
     # Choice endpoints
     path('contacts/choices/', ContactChoicesView.as_view(), name='contact-choices'),
+
+    # Buying Process Steps
+    path('buying-process-steps/', BuyingProcessStepView.as_view(), name='buying-process-step-list'),
+    path('buying-process-steps/<int:pk>/', BuyingProcessStepView.as_view(), name='buying-process-step-detail'),
+    path('buying-process-steps/account/<int:account_id>/', BuyingProcessStepView.as_view(), name='buying-process-steps-by-account'),
+    path('buying-process-steps/<int:pk>/position/', BuyingProcessStepView.as_view(), name='buying-process-step-position'),
+    path('buying-process-steps/<int:pk>/contacts/', BuyingProcessStepView.as_view(), name='buying-process-step-contacts'),
 
     #APR
 
