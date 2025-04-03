@@ -7,27 +7,21 @@ from django.db.models import Max, F
 from core.apps_shared_methods import BaseAPIView
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-from apps.accounts.models.buyingProcess import BuyingProcessStep, BuyingProcessStepContact
-from apps.accounts.serializers.buyingprocess_serializer import BuyingProcessStepSerializer
-from apps.core_apps.views import HistoricalTrackingViewMixin
+from apps.accounts.models.buyingProcess import BuyingProcess, BuyingProcessStep, BuyingProcessStepContact
+from apps.accounts.serializers.buyingprocess_serializer import BuyingProcessSerializer, BuyingProcessStepSerializer
+from apps.core_apps.views import SignalAwareViewMixin, BuyingProcessTrackingMixin, BuyingProcessStepTrackingMixin
 
-class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
+class BuyingProcessView(BaseAPIView, SignalAwareViewMixin, BuyingProcessTrackingMixin):
     """
-    API view for managing buying process steps with lifecycle tracking.
+    API view for managing buying processes with lifecycle tracking.
     """
-    queryset = BuyingProcessStep.objects.select_related('account').prefetch_related('contacts')
-    serializer_class = BuyingProcessStepSerializer
-    entity_name = 'buying_process_step'
+    queryset = BuyingProcess.objects.select_related('account').prefetch_related('steps')
+    serializer_class = BuyingProcessSerializer
+    entity_name = 'buying_process'
     
-    # Fields to track for BuyingProcessStep model
+    # Fields to track for BuyingProcess model
     tracked_fields = {
-        'step_index', 'department_name', 'step_description', 
-        'step_goal', 'influence_score', 'average_time_in_days'
-    }
-    
-    # JSON fields to track
-    tracked_json_fields = {
-        'criterias', 'metrics'
+        'name', 'description', 'status', 'estimated_timeline_days', 'product'
     }
     
     def get_queryset(self):
@@ -39,8 +33,60 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
         if account_id:
             queryset = queryset.filter(account_id=account_id)
             
-        # Order by step_index by default
-        return queryset.order_by('account_id', 'step_index')
+        return queryset
+    
+    def get_with_steps(self, request, pk=None):
+        """
+        Get a buying process with all its steps.
+        
+        GET /api/buying-processes/{id}/with-steps
+        """
+        process = self.get_object()
+        
+        # Get steps ordered by index
+        steps = process.steps.all().order_by('step_index')
+        
+        # Create response with nested steps
+        process_data = self.get_serializer(process).data
+        process_data['steps'] = BuyingProcessStepSerializer(steps, many=True).data
+        
+        return Response(process_data)
+
+class BuyingProcessStepView(BaseAPIView,SignalAwareViewMixin, BuyingProcessStepTrackingMixin):
+    """
+    API view for managing buying process steps.
+    """
+    queryset = BuyingProcessStep.objects.select_related('process', 'account').prefetch_related('contacts')
+    serializer_class = BuyingProcessStepSerializer
+    entity_name = 'buying_process_step'
+    
+    # Fields to track for BuyingProcessStep model
+    tracked_fields = {
+        'step_index', 'depends_on_steps', 'stakeholder', 'department_name', 
+        'step_description', 'step_goal', 'influence_score', 'average_time_in_days'
+    }
+    
+    # JSON fields to track
+    tracked_json_fields = {
+        'criterias', 'metrics'
+    }
+    
+    def get_queryset(self):
+        """Filter queryset by process or account if specified"""
+        queryset = super().get_queryset()
+        
+        # Filter by process if provided
+        process_id = self.request.query_params.get('process_id')
+        if process_id:
+            queryset = queryset.filter(process_id=process_id)
+        
+        # Filter by account if provided
+        account_id = self.request.query_params.get('account_id')
+        if account_id:
+            queryset = queryset.filter(account_id=account_id)
+            
+        # Order by process and step_index by default
+        return queryset.order_by('process_id', 'step_index')
     
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -52,16 +98,16 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
         """
         # Check if position/step_index is provided
         step_index = request.data.get('step_index')
-        account_id = request.data.get('account_id')
+        process_id = request.data.get('process_id')
         
-        if not account_id:
+        if not process_id:
             raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(field="account_id")
+                CoreErrorMessages.REQUIRED_FIELD.format(field="process_id")
             )
         
-        # Get the current max step_index for this account
+        # Get the current max step_index for this process
         max_step = BuyingProcessStep.objects.filter(
-            account_id=account_id
+            process_id=process_id
         ).aggregate(max_step=Max('step_index'))['max_step'] or -1
         
         data = request.data.copy()
@@ -76,7 +122,7 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
             if 0 <= step_index <= max_step + 1:
                 # Move all steps with equal or higher index up by one
                 BuyingProcessStep.objects.filter(
-                    account_id=account_id,
+                    process_id=process_id,
                     step_index__gte=step_index
                 ).update(step_index=F('step_index') + 1)
                 
@@ -92,19 +138,27 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
         # Use the user from the request for tracking
         instance = serializer.save(user=request.user)
         
-        # Track changes for all fields
-        for field in self.tracked_fields:
-            if hasattr(instance, field) and getattr(instance, field) is not None:
-                value = getattr(instance, field)
-                reason = request.data.get('change_reason', 'Initial creation')
-                instance.track_field_change(field, None, value, request.user, None, reason)
-                
-        # Track JSON fields
-        for field in self.tracked_json_fields:
-            if hasattr(instance, field) and getattr(instance, field) is not None:
-                value = getattr(instance, field)
-                reason = request.data.get('change_reason', 'Initial creation')
-                instance.track_field_change(field, None, value, request.user, None, reason)
+        # Track the creation in the parent process's historical data
+        try:
+            process = BuyingProcess.objects.get(id=process_id)
+            reason = request.data.get('change_reason', 'Step added')
+            
+            # Get all steps for the process
+            steps_data = [
+                {
+                    'id': step.id,
+                    'index': step.step_index,
+                    'description': step.step_description
+                }
+                for step in process.steps.all().order_by('step_index')
+            ]
+            
+            # Track the addition of this step in the process's historical data
+            process.track_field_change('steps', None, steps_data, request.user, None, reason)
+            
+        except Exception as e:
+            # Log but continue - step creation succeeded even if tracking failed
+            print(f"Error tracking step creation in process history: {str(e)}")
         
         return Response(
             self.get_serializer(instance).data,
@@ -120,7 +174,7 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
         Requires new_index in the request data.
         """
         step = self.get_object()
-        account_id = step.account_id
+        process_id = step.process_id
         
         try:
             new_index = int(request.data.get('new_index'))
@@ -134,7 +188,7 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
         
         # Get the max index in the process
         max_index = BuyingProcessStep.objects.filter(
-            account_id=account_id
+            process_id=process_id
         ).aggregate(max_idx=Max('step_index'))['max_idx'] or 0
         
         # Validate the new index
@@ -157,14 +211,14 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
         if new_index > current_index:
             # Moving down - shift steps in between down
             BuyingProcessStep.objects.filter(
-                account_id=account_id,
+                process_id=process_id,
                 step_index__gt=current_index,
                 step_index__lte=new_index
             ).update(step_index=F('step_index') - 1)
         else:
             # Moving up - shift steps in between up
             BuyingProcessStep.objects.filter(
-                account_id=account_id,
+                process_id=process_id,
                 step_index__gte=new_index,
                 step_index__lt=current_index
             ).update(step_index=F('step_index') + 1)
@@ -173,8 +227,26 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
         step.step_index = new_index
         step.save(update_fields=['step_index'])
         
-        # Track the change in historical data
-        step.track_field_change('step_index', old_value, new_index, request.user, None, reason)
+        # Also update the process's historical record
+        try:
+            process = step.process
+            
+            # Get updated steps data
+            steps_data = [
+                {
+                    'id': s.id,
+                    'index': s.step_index,
+                    'description': s.step_description
+                }
+                for s in process.steps.all().order_by('step_index')
+            ]
+            
+            # Track changes to step ordering in the process
+            process.track_field_change('step_ordering', None, steps_data, request.user, None, f"Step {step.id} moved to position {new_index}")
+            
+        except Exception as e:
+            # Log but continue - step reordering succeeded even if tracking failed
+            print(f"Error tracking step reordering in process history: {str(e)}")
         
         return Response(self.get_serializer(step).data)
     
@@ -223,7 +295,7 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
         
         # Track the change
         old_value = list(existing_contacts)
-        new_value = list(new_contacts)
+        new_value = list(contact_ids)
         reason = request.data.get('change_reason', 'Contacts updated')
         
         # Remove contacts
@@ -242,27 +314,42 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
                 created_by=request.user
             )
         
-        # Track the change in historical data
-        step.track_field_change('contacts', old_value, new_value, request.user, None, reason)
+        # Also update the process's historical record
+        try:
+            process = step.process
+            
+            # Track the contact change in the process
+            contacts_data = {
+                'step_id': step.id,
+                'step_index': step.step_index,
+                'old_contacts': old_value,
+                'new_contacts': new_value
+            }
+            
+            process.track_field_change('step_contacts', None, contacts_data, request.user, None, reason)
+            
+        except Exception as e:
+            # Log but continue - contact update succeeded even if tracking failed
+            print(f"Error tracking contact update in process history: {str(e)}")
         
         # Get updated step
         step.refresh_from_db()
         return Response(self.get_serializer(step).data)
     
-    def get_by_account(self, request, account_id=None):
+    def get_by_process(self, request, process_id=None):
         """
-        Get all steps for a specific account, ordered by step_index.
+        Get all steps for a specific process, ordered by step_index.
         
-        GET /api/buying-process-steps/account/{account_id}
+        GET /api/buying-process-steps/process/{process_id}
         """
-        # Validate the account_id
-        if not account_id:
+        # Validate the process_id
+        if not process_id:
             raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(field="account_id")
+                CoreErrorMessages.REQUIRED_FIELD.format(field="process_id")
             )
             
-        # Get steps for this account
-        steps = self.queryset.filter(account_id=account_id).order_by('step_index')
+        # Get steps for this process
+        steps = self.queryset.filter(process_id=process_id).order_by('step_index')
         
         # Paginate if needed
         page = self.paginate_queryset(steps)
@@ -277,11 +364,11 @@ class BuyingProcessStepView(BaseAPIView, HistoricalTrackingViewMixin):
         """Custom dispatch to handle different endpoints"""
         path = request.path.split('/')
         
-        # Handle account-specific endpoint
-        if len(path) > 3 and path[3] == 'account' and len(path) > 4:
-            account_id = path[4]
+        # Handle process-specific endpoint
+        if len(path) > 3 and path[3] == 'process' and len(path) > 4:
+            process_id = path[4]
             if request.method == 'GET':
-                return self.get_by_account(request, account_id)
+                return self.get_by_process(request, process_id)
         
         # Handle step-specific endpoints
         if len(path) > 4:

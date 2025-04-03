@@ -205,6 +205,39 @@ TECH_STACK_DEFINITION = """
 
 """
 
+BUYING_PROCESS_DEFINITION = """
+  Return ONLY "buyingProcess" array in valid JSON.
+  This array includes all steps the company will go through to close a deal.
+  This is crucial for qualification, to understand each step, prepare for it, maximize value, and have a clear idea of how long the process will take for forecasting.
+
+  BUYING PROCESS FIELDS:
+    - For **stakeholder**, Role of the person responsible for this step (e.g., "CEO", "Project Manager", "CTO")
+    - For **department**, Name of the department contact works if stated, use one from the list: ["General Management", "Human Resources (HR)", "Finance & Accounting", "Information Technology (IT)", "Marketing & Communications", "Sales & Business Development", "Customer Support & Success", "Operations & Supply Chain", "Legal & Compliance", "Procurement & Vendor Management", "Engineering & R&D", "Product Management", "Data & Analytics", "Security & Risk Management", "Healthcare Administration", "Clinical & Medical Staff", "Retail & Store Operations", "Manufacturing & Production", "Logistics & Transportation", "Construction & Engineering", "Education & Training", "Government & Public Services", "Media & Content Creation"]
+    - For **stepDescription**, What will be done in this step (e.g., "Demo", "POC", "Legal revision of the contract")
+    - For **stepGoal**, What the step aims to achieve (e.g., "Technical validation", "Budget validation")
+    - For **influenceScore**, How important this step is for moving forward
+    - For **criterias**, What they will be looking for (e.g., "Is it within budget?", "Does it work in our ecosystem?", "Does it cover all our needs?")
+    - For **metrics**, Key performance indicators they follow to measure their success in this step (e.g., growth rate, operational efficiency, customer retention).
+    - For **averageTimeInDays**, How long this step might take before moving to the next one.
+
+  {
+    "buyingProcess": 
+      [
+        {
+          "stakeholder": "",
+          "department": "",
+          "stepDescription": "",
+          "stepGoal": "",
+          "influenceScore": 0,
+          "criterias": [],
+          "metrics": [],
+          "averageTimeInDays": 0
+        }
+      ]
+  }
+
+"""
+
 LEADS_DEFINITION = """
 This applies when the Company, OrgUnit, or Contact is aware of a specific pain point and is considering buying a solution in the future.
 

@@ -179,13 +179,21 @@ class HistoricalTrackingViewMixin:
 class BuyingProcessTrackingMixin(HistoricalTrackingViewMixin):
     """BuyingProcess-specific implementation of the historical tracking mixin"""
     
+    # Fields to track for BuyingProcess model
+    tracked_fields = {
+        'name', 'description', 'status', 'estimated_timeline_days', 'product'
+    }
+
+class BuyingProcessStepTrackingMixin(HistoricalTrackingViewMixin):
+    """BuyingProcessStep-specific implementation of the historical tracking mixin"""
+    
     # Fields to track for BuyingProcessStep model
     tracked_fields = {
-        'step_index', 'department_name', 'step_description', 
-        'step_goal', 'influence_score', 'average_time_in_days'
+        'step_index', 'depends_on_steps', 'stakeholder', 'department_name', 
+        'step_description', 'step_goal', 'influence_score', 'average_time_in_days'
     }
     
-    # JSON fields to track for BuyingProcessStep model
+    # JSON fields to track
     tracked_json_fields = {
         'criterias', 'metrics'
     }

@@ -79,6 +79,16 @@ class SignalParsingService:
                 user
             )
             signals.extend(tech_stack_signals)
+
+        if 'buyingProcess' in insights:
+            buying_process_signals = cls._parse_buying_process_data(
+                insights['buyingProcess'],
+                account,
+                client_id,
+                source,
+                user
+            )
+            signals.extend(buying_process_signals)
                 
         return signals
     
@@ -336,6 +346,59 @@ class SignalParsingService:
             )
             signals.append(signal)
         
+        return signals
+    
+    @classmethod
+    def _parse_buying_process_data(cls, buying_process_data, account, client_id, source, user):
+        """
+        Parse buying process data from transcript analysis.
+        Creates a signal for each identified buying process step.
+        
+        Args:
+            buying_process_data: List of buying process steps from the transcript
+            account: Account object
+            client_id: Client ID
+            source: Source of the insights
+            user: User who initiated the analysis
+            
+        Returns:
+            list: Created Signal objects for buying process steps
+        """
+        signals = []
+        
+        for step_data in buying_process_data:
+            # Standardize the step data format
+            formatted_step = {
+                'stakeholder': step_data.get('stakeholder', ''),
+                'department_name': step_data.get('department', ''),
+                'step_description': step_data.get('stepDescription', ''),
+                'step_goal': step_data.get('stepGoal', ''),
+                'influence_score': step_data.get('influenceScore', 0),
+                'criterias': step_data.get('criterias', []),
+                'metrics': step_data.get('metrics', []),
+                'average_time_in_days': step_data.get('averageTimeInDays', 0)
+            }
+            
+            # Create a signal for this step
+            signal = Signal.objects.create(
+                account=account,
+                category=Signal.Category.PROCESS,
+                entity_type=Signal.EntityType.PROCESS_STEP,
+                field_name='buying_process_step',
+                value=formatted_step,
+                status=Signal.Status.PENDING,
+                source=source,
+                client_id=client_id,
+                created_by=user,
+                updated_by=user,
+                metadata={
+                    'needs_position_assignment': True,  # Flag that position needs to be assigned
+                    'needs_process_assignment': True,   # Flag that process needs to be assigned
+                    'step_data': formatted_step
+                }
+            )
+            signals.append(signal)
+    
         return signals
     
     @classmethod

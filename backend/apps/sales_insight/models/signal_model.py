@@ -29,6 +29,7 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         ACCOUNT = 'ACCOUNT', _('Account')
         CONTACT = 'CONTACT', _('Contact')
         ACCOUNT_PRODUCT = 'ACCOUNT_PRODUCT', _('Account Product Detail')
+        PROCESS_STEP = 'PROCESS_STEP', _('Process Step')
     
     # Signal classification
     category = models.CharField(
@@ -104,7 +105,7 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     )
     
     contact = models.ForeignKey(
-        'accounts_new.Contact',
+        'accounts.Contact',
         on_delete=models.CASCADE,
         related_name='signals',
         null=True,
@@ -113,7 +114,7 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     )
     
     account_product_relationship = models.ForeignKey(
-        'accounts_new.AccountProductRelationship',
+        'accounts.AccountProductRelationship',
         on_delete=models.CASCADE,
         related_name='signals',
         null=True,

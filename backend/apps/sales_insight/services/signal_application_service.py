@@ -45,6 +45,8 @@ class SignalApplicationService:
                 success = cls._apply_to_account(signal, user)
             elif signal.entity_type == Signal.EntityType.CONTACT:
                 success = cls._apply_to_contact(signal, user)
+            elif signal.entity_type == Signal.EntityType.PROCESS_STEP:
+                success = cls._apply_buying_process_step(signal, user)
             elif signal.entity_type == Signal.EntityType.ACCOUNT_PRODUCT:
                 success = cls._apply_to_account_product(signal, user)
             else:
@@ -166,6 +168,111 @@ class SignalApplicationService:
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_OPERATION.format(
                     operation=f"Error applying signal: {str(e)}"
+                )
+            )
+        
+    @classmethod
+    def _apply_buying_process_step(cls, signal, user):
+        """
+        Apply a buying process step signal by creating a new step.
+        Process ID and step index should be set in signal metadata before application.
+        
+        Args:
+            signal: Signal containing buying process step data
+            user: User applying the signal
+            
+        Returns:
+            bool: Success indicator
+        """
+        from apps.accounts.models.buyingProcess import BuyingProcess, BuyingProcessStep
+        from django.db.models import Max
+        
+        account = signal.account
+        step_data = signal.value
+        
+        # Get process_id and step_index from metadata (should be set before application)
+        metadata = signal.metadata or {}
+        process_id = metadata.get('process_id')
+        step_index = metadata.get('step_index')
+        
+        try:
+            # Validate process exists and belongs to account
+            if not process_id:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="process_id in signal metadata")
+                )
+                
+            try:
+                process = BuyingProcess.objects.get(id=process_id)
+                if process.account_id != account.id:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field="Process must belong to the same account"
+                        )
+                    )
+            except BuyingProcess.DoesNotExist:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+                
+            # Determine step position
+            if step_index is None:
+                # If no position specified, place at the end
+                max_index = BuyingProcessStep.objects.filter(
+                    process_id=process_id
+                ).aggregate(max_index=Max('step_index'))['max_index'] or -1
+                step_index = max_index + 1
+                
+            # Create the new step
+            step = BuyingProcessStep.objects.create(
+                process=process,
+                account=account,
+                step_index=step_index,
+                stakeholder=step_data.get('stakeholder', ''),
+                department_name=step_data.get('department_name', ''),
+                step_description=step_data.get('step_description', ''),
+                step_goal=step_data.get('step_goal', ''),
+                influence_score=step_data.get('influence_score', 0),
+                criterias=step_data.get('criterias', []),
+                metrics=step_data.get('metrics', []),
+                average_time_in_days=step_data.get('average_time_in_days', 0),
+                client_id=account.client_id,
+                created_by=user
+            )
+            
+            # Update signal metadata
+            signal.metadata['applied_to_step_id'] = step.id
+            signal.metadata['applied_to_process_id'] = process.id
+            signal.metadata['applied_step_index'] = step_index
+            signal.save(update_fields=['metadata'])
+            
+            # Track in process history
+            reason = f"Step created from signal {signal.id}"
+            
+            try:
+                # Record this step addition in the process history
+                process.track_field_change(
+                    'steps',
+                    None,
+                    {
+                        'added_step_id': step.id,
+                        'step_index': step_index,
+                        'signal_id': str(signal.id)
+                    },
+                    user,
+                    signal=signal,
+                    reason=reason
+                )
+            except Exception as e:
+                # Log error but continue - step creation succeeded
+                print(f"Error tracking step in process history: {str(e)}")
+            
+            return True
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_OPERATION.format(
+                    operation=f"Error creating buying process step: {str(e)}"
                 )
             )
         

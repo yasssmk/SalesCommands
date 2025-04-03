@@ -17,7 +17,7 @@ class HistoricalTrackingModel(models.Model):
     class Meta:
         abstract = True
     
-    def track_field_change(self, field_name, old_value, new_value, user=None):
+    def track_field_change(self, field_name, old_value, new_value, user=None, signal=None, reason=None):
         """
         Track changes to any field in historical data
         
@@ -29,14 +29,15 @@ class HistoricalTrackingModel(models.Model):
         """
         from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
         
-        tracked = HistoricalTrackingService._track_change(
-        instance=self,
-        field_name=field_name,
-        old_value=old_value,
-        new_value=new_value,
-        user=user,
-        signal=None,
-        save_model=False  # Don't automatically save the model
+        tracked = HistoricalTrackingService.update_field(
+            instance=self,
+            field_name=field_name,
+            old_value=old_value,
+            new_value=new_value,
+            user=user,
+            signal=signal,
+            update_model=False,  # Don't automatically update the model field
+            reason=reason  # Pass the reason parameter
         )
         
         # Initialize historical_data if it doesn't exist

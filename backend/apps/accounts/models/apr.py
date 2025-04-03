@@ -103,7 +103,7 @@ class AccountProductRelationship(BaseModelApp, AccountLinkedModel, ClientScopeMa
     
     # Product-specific buying steps
     buying_process = models.ForeignKey(
-        'accounts_new.BuyingProcessStep',
+        'accounts.BuyingProcessStep',
         on_delete=models.SET_NULL,
         related_name='product_relationships',
         null=True,
