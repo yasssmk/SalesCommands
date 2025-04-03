@@ -47,7 +47,7 @@ class BuyingProcessStepSerializer(AccountLinkedSerializerMixin, HistoricalTracki
             'step_goal',
             'influence_score',
             'criterias',
-            'key_kpis',
+            'metrics',
             'average_time_in_days',
             'contacts',
             'contact_ids',

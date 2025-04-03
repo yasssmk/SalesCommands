@@ -13,11 +13,11 @@ class TranscriptAnalysisSerializer(AccountLinkedSerializerMixin, ClientScopeMana
     """
     transcript = serializers.CharField(required=True)
     model = serializers.CharField(required=False, default='gpt-4o-mini')
-    analysis_type = serializers.ChoiceField(
-        choices=['full', 'tech_stack_only', 'contacts_only', 'account_only'],
-        required=False,
-        default='full'
-    )
+    # analysis_type = serializers.ChoiceField(
+    #     choices=['full', 'tech_stack_only', 'contacts_only', 'account_only'],
+    #     required=False,
+    #     default='full'
+    # )
     account = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.all(),
         required=True 

@@ -11,10 +11,19 @@ class HistoricalTrackingService:
     """Service for tracking historical data changes in models with JSONField support."""
     
     @staticmethod
-    def update_field(instance, field_name, new_value, user=None, signal=None, update_model=True):
+    def update_field(instance, field_name, new_value, user=None, signal=None, update_model=True, reason=None):
         """
         Update a field with a completely new value and track the change in historical data.
         Works with both regular fields and JSONFields.
+        
+        Args:
+            instance: Model instance to update
+            field_name: Field to update
+            new_value: New value to set
+            user: User making the change
+            signal: Optional signal driving the update
+            update_model: Whether to update the model field
+            source_context: Additional context about the source of manual update (e.g., 'quick_edit', 'bulk_update')
         """
         try:
             # Get current value
@@ -34,9 +43,9 @@ class HistoricalTrackingService:
                 if update_model:
                     setattr(instance, field_name, new_value)
                 
-                # Track the change
+                # Track the change with user-provided reason
                 result = HistoricalTrackingService._track_change(
-                    instance, field_name, current_value, new_value, user, signal, update_model
+                    instance, field_name, current_value, new_value, user, signal, update_model, reason
                 )
                 
                 if not result:
@@ -229,16 +238,16 @@ class HistoricalTrackingService:
             return str(value)
 
     @staticmethod
-    def _track_change(instance, field_name, old_value, new_value, user, signal, save_model):
+    def _track_change(instance, field_name, old_value, new_value, user, signal, save_model, reason=None):
         """Internal method to track field changes with JSON serialization safety"""
         try:
             # Ensure values are JSON serializable
             safe_old_value = HistoricalTrackingService._ensure_json_serializable(old_value)
             safe_new_value = HistoricalTrackingService._ensure_json_serializable(new_value)
             
-            # Create history entry
+            # Create history entry with user-provided reason
             history_entry = HistoricalTrackingService._create_history_entry(
-                safe_old_value, safe_new_value, user, signal
+                safe_old_value, safe_new_value, user, signal, reason
             )
             
             # Add to history and save if needed
@@ -253,6 +262,7 @@ class HistoricalTrackingService:
             raise
         except Exception as e:
             raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR.format(detail=e))
+
         
     @staticmethod
     def _track_json_change(instance, field_name, old_value, new_value, user, signal, 
@@ -285,7 +295,7 @@ class HistoricalTrackingService:
             raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR.format(detail=e))
     
     @staticmethod
-    def _create_history_entry(old_value, new_value, user, signal):
+    def _create_history_entry(old_value, new_value, user, signal, reason=None):
         """Create a history entry dictionary with standardized user handling"""
         try:
             # Standardized way to get user ID
@@ -301,29 +311,54 @@ class HistoricalTrackingService:
                     except Exception:
                         raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
             
+            # Initialize history entry
             history_entry = {
                 'old_value': old_value,
                 'new_value': new_value,
                 'changed_at': timezone.now().isoformat(),
-                'changed_by': user_id,
-                'source': 'manual'
+                'changed_by': user_id
             }
             
             # Add signal data if provided
             if signal:
                 try:
+                    # Enhanced signal tracking with more metadata
                     history_entry.update({
                         'source': 'signal',
                         'signal_id': str(signal.id),
                         'signal_category': getattr(signal, 'category', None),
+                        'signal_status': getattr(signal, 'status', None),
+                        'signal_source': getattr(signal, 'source', None),
                         'signal_confidence': getattr(signal, 'confidence', None),
                         'confirmation_count': getattr(signal, 'confirmation_count', None)
                     })
+                    
+                    # Track merged signal information if this signal was merged from others
+                    merged_from_signals = getattr(signal, 'merged_from_signals', None)
+                    if merged_from_signals and hasattr(merged_from_signals, 'all') and merged_from_signals.exists():
+                        history_entry['merged_from_signals'] = [str(s.id) for s in merged_from_signals.all()]
+                    
+                    # Track activity information if available
+                    activity = getattr(signal, 'activity', None)
+                    if activity:
+                        history_entry['activity_id'] = str(activity.id)
+                        history_entry['activity_type'] = getattr(activity, 'type', None)
+                        history_entry['activity_date'] = getattr(activity, 'created_at', None)
+                        if hasattr(activity, 'activity_data'):
+                            history_entry['activity_data'] = activity.activity_data
+                        
                 except Exception as e:
                     raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_DATA.format(detail="Invalid signal data")
-                )
-            
+                        CoreErrorMessages.INVALID_DATA.format(detail=f"Invalid signal data: {str(e)}")
+                    )
+            else:
+                # Manual update
+                history_entry['source'] = 'manual'
+                
+                # Add user-provided reason if available
+                if reason:
+                    history_entry['reason'] = reason
+                    
             return history_entry
         except Exception as e:
             raise StandardizedValidationError(CoreErrorMessages.UNEXPECTED_ERROR.format(detail=e))
@@ -345,10 +380,18 @@ class HistoricalTrackingService:
             
             # Initialize field history if it doesn't exist
             if field_name not in instance.historical_data:
-                instance.historical_data[field_name] = []
+                instance.historical_data[field_name] = {
+                    'changes': []
+                }
+            elif 'changes' not in instance.historical_data[field_name]:
+                # Convert from old format (list) to new format (dict with changes array)
+                old_entries = instance.historical_data[field_name]
+                instance.historical_data[field_name] = {
+                    'changes': old_entries if isinstance(old_entries, list) else []
+                }
             
             # Add to historical data
-            instance.historical_data[field_name].append(history_entry)
+            instance.historical_data[field_name]['changes'].append(history_entry)
             
             # Also track in signal_metadata if model supports it and entry is from a signal
             if history_entry.get('source') == 'signal' and hasattr(instance, 'track_signal_update'):

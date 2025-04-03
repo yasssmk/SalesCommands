@@ -20,6 +20,19 @@ class HistoricalTrackingSerializerMixin:
             # Get user from request context
             user = self.context.get('request').user if self.context.get('request') else None
             
+            # Check for signal_id in context
+            signal = None
+            signal_id = self.context.get('signal_id')
+            if signal_id:
+                try:
+                    from apps.sales_insight.models import Signal
+                    try:
+                        signal = Signal.objects.get(id=signal_id)
+                    except Signal.DoesNotExist:
+                        pass
+                except ImportError:
+                    pass
+            
             # Store original values for comparison
             original_values = {}
             for field_name in validated_data.keys():
@@ -36,7 +49,7 @@ class HistoricalTrackingSerializerMixin:
                     
                     # Compare values and track if different
                     if old_value != new_value:
-                        instance.track_field_change(field_name, old_value, new_value, user)
+                        instance.track_field_change(field_name, old_value, new_value, user, signal)
                 
                 # Make sure changes are saved
                 if hasattr(instance, 'save'):
@@ -59,3 +72,37 @@ class HistoricalTrackingSerializerMixin:
             representation['historical_data'] = instance.historical_data
         
         return representation
+    
+    def get_signal_history(self, instance, field_name):
+        """
+        Get signal history for a specific field.
+        Returns a list of signal IDs that have modified this field.
+        """
+        if not hasattr(instance, 'historical_data') or not instance.historical_data:
+            return []
+            
+        # Check if field has historical entries
+        if field_name not in instance.historical_data:
+            return []
+            
+        # Extract signal IDs from changes
+        signal_history = []
+        
+        # Handle both old and new format
+        changes = instance.historical_data[field_name]
+        if isinstance(changes, dict) and 'changes' in changes:
+            changes = changes['changes']
+            
+        for change in changes:
+            if isinstance(change, dict) and change.get('source') == 'signal':
+                signal_id = change.get('signal_id')
+                if signal_id and signal_id not in signal_history:
+                    signal_history.append(signal_id)
+                    
+                # Also include merged signals if present
+                merged_signals = change.get('merged_from_signals', [])
+                for merged_id in merged_signals:
+                    if merged_id and merged_id not in signal_history:
+                        signal_history.append(merged_id)
+                        
+        return signal_history

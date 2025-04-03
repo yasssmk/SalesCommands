@@ -64,17 +64,33 @@ class HistoricalTrackingViewMixin:
             instance.refresh_from_db()
             user = request.user if hasattr(request, 'user') else None
             
+            # Get signal ID if provided in request data
+            signal = None
+            signal_id = request.data.get('signal_id')
+            if signal_id:
+                try:
+                    # Load signal if provided
+                    from apps.sales_insight.models import Signal
+                    try:
+                        signal = Signal.objects.get(id=signal_id)
+                    except Signal.DoesNotExist:
+                        # Just log warning but continue with tracking
+                        pass
+                except ImportError:
+                    # Signal module not available, continue without signal
+                    pass
+            
             # Process tracked fields
             if self.tracked_fields:
-                self._process_field_changes(instance, original_values, user)
+                self._process_field_changes(instance, original_values, user, signal)
             
             # Process JSON fields (if applicable)
             if self.tracked_json_fields:
-                self._process_json_field_changes(instance, original_values, request.data, user)
+                self._process_json_field_changes(instance, original_values, request.data, user, signal)
         
         return response
     
-    def _process_field_changes(self, instance, original_values, user):
+    def _process_field_changes(self, instance, original_values, user, signal=None):
         """Process changes to regular fields"""
         for field in self.tracked_fields:
             if field in original_values:
@@ -84,9 +100,13 @@ class HistoricalTrackingViewMixin:
                 # Only track if value changed
                 if old_value != new_value:
                     if hasattr(instance, 'track_field_change'):
-                        instance.track_field_change(field, old_value, new_value, user)
+                        # Get the change reason from the request data if available
+                        reason = self.request.data.get('change_reason')
+                        
+                        # Call track_field_change with the reason
+                        instance.track_field_change(field, old_value, new_value, user, signal, reason)
     
-    def _process_json_field_changes(self, instance, original_values, request_data, user):
+    def _process_json_field_changes(self, instance, original_values, request_data, user, signal=None):
         """Process changes to JSON fields with array data"""
         for field in self.tracked_json_fields:
             # Only process field if it was in the request
@@ -107,31 +127,31 @@ class HistoricalTrackingViewMixin:
                         if operation == 'add' and item:
                             if hasattr(instance, 'add_tracked_json_item'):
                                 operation_performed = instance.add_tracked_json_item(
-                                    field, item, user
+                                    field, item, user, signal
                                 )
                             elif hasattr(instance, 'add_qualification_item'):
                                 operation_performed = instance.add_qualification_item(
-                                    field, item, user
+                                    field, item, user, signal
                                 )
                                 
                         elif operation == 'update' and item_id and item:
                             if hasattr(instance, 'update_tracked_json_item'):
                                 operation_performed = instance.update_tracked_json_item(
-                                    field, item_id, item, id_key, user
+                                    field, item_id, item, id_key, user, signal
                                 )
                             elif hasattr(instance, 'update_qualification_item'):
                                 operation_performed = instance.update_qualification_item(
-                                    field, item_id, item, user
+                                    field, item_id, item, user, signal
                                 )
                                 
                         elif operation == 'remove' and item_id:
                             if hasattr(instance, 'remove_tracked_json_item'):
                                 operation_performed = instance.remove_tracked_json_item(
-                                    field, item_id, id_key, user
+                                    field, item_id, id_key, user, signal
                                 )
                             elif hasattr(instance, 'remove_qualification_item'):
                                 operation_performed = instance.remove_qualification_item(
-                                    field, item_id, user
+                                    field, item_id, user, signal
                                 )
                     except StandardizedValidationError:
                         # Re-raise standardized errors
@@ -153,7 +173,22 @@ class HistoricalTrackingViewMixin:
                     if old_json != new_json:
                         # Track entire field update
                         if hasattr(instance, 'track_field_change'):
-                            instance.track_field_change(field, old_json, new_json, user)
+                            instance.track_field_change(field, old_json, new_json, user, signal)
+
+
+class BuyingProcessTrackingMixin(HistoricalTrackingViewMixin):
+    """BuyingProcess-specific implementation of the historical tracking mixin"""
+    
+    # Fields to track for BuyingProcessStep model
+    tracked_fields = {
+        'step_index', 'department_name', 'step_description', 
+        'step_goal', 'influence_score', 'average_time_in_days'
+    }
+    
+    # JSON fields to track for BuyingProcessStep model
+    tracked_json_fields = {
+        'criterias', 'metrics'
+    }
 
 
 class AccountHistoricalTrackingMixin(HistoricalTrackingViewMixin):

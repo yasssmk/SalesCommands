@@ -53,11 +53,11 @@ class BuyingProcessStep(BaseModelApp, AccountLinkedModel, ClientScopeManager.Mod
         verbose_name=_('Criterias')
     )
     
-    key_kpis = models.JSONField(
+    metrics = models.JSONField(
         blank=True,
         null=True,
         default=list,
-        verbose_name=_('Key KPIs')
+        verbose_name=_('metrics')
     )
     
     average_time_in_days = models.PositiveIntegerField(
@@ -81,7 +81,7 @@ class BuyingProcessStep(BaseModelApp, AccountLinkedModel, ClientScopeManager.Mod
         return f"{self.account.company_name} - Step {self.step_index}: {self.step_description[:30]}"
 
 
-class BuyingProcessStepContact(models.Model):
+class BuyingProcessStepContact(BaseModelApp):
     """Junction table linking buying process steps to contacts."""
     step = models.ForeignKey(
         'accounts_new.BuyingProcessStep',  
@@ -97,10 +97,6 @@ class BuyingProcessStepContact(models.Model):
         verbose_name=_('Contact')
     )
     
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name=_('Created At')
-    )
     
     class Meta:
         verbose_name = _('Buying Process Step Contact')
