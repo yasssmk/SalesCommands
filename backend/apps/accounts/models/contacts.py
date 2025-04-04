@@ -88,7 +88,8 @@ class Contact(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, Contact
     )
     
     has_buying_authority = models.BooleanField(
-        default=False,
+        blank=True,
+        null=True,
         verbose_name=_('Has Buying Authority')
     )
     

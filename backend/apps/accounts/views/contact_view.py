@@ -64,7 +64,12 @@ class ContactAPIView(BaseAPIView, SignalAwareViewMixin, ContactHistoricalTrackin
             
             # Store old values for relationship changes
             old_account = instance.account_id
-          
+            
+            # Store original values for tracking changes
+            original_values = {}
+            for field_name in data.keys():
+                if hasattr(instance, field_name):
+                    original_values[field_name] = getattr(instance, field_name)
             
             serializer = self.serializer_class(
                 instance,
@@ -79,8 +84,14 @@ class ContactAPIView(BaseAPIView, SignalAwareViewMixin, ContactHistoricalTrackin
                     if 'account_id' in data and str(data['account_id']) != str(old_account):
                         raise StandardizedValidationError(AccountErrorMessages.CHANGE_CONTACT_ACCOUNT)
                     
-                    
                     updated = serializer.save()
+                    
+                    # Manual historical tracking if needed
+                    user = self.request.user if hasattr(self.request, 'user') else None
+                    for field_name, old_value in original_values.items():
+                        new_value = getattr(updated, field_name)
+                        if old_value != new_value and hasattr(updated, 'track_field_change'):
+                            updated.track_field_change(field_name, old_value, new_value, user)
                     
                     return serializer
                     

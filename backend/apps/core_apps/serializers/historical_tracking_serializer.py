@@ -3,6 +3,7 @@
 from rest_framework import serializers
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
+from django.db import models
 
 class HistoricalTrackingSerializerMixin:
     """
@@ -111,3 +112,110 @@ class HistoricalTrackingSerializerMixin:
                         signal_history.append(merged_id)
                         
         return signal_history
+    
+    def _process_json_item_operation(self, instance, field_name, data, user):
+        """Process JSON item operations - standardized handling for all models."""
+        if not isinstance(data, dict):
+            return False
+            
+        operation = data.get('operation')
+        if not operation:
+            return False
+            
+        try:
+            # Dispatch based on operation type
+            if operation == 'add':
+                item = data.get('item')
+                if not item:
+                    return False
+                    
+                # Try qualification method first, then tracked method
+                for method_name in ['add_qualification_item', 'add_tracked_json_item']:
+                    if hasattr(instance, method_name):
+                        method = getattr(instance, method_name)
+                        return method(field_name, item, user)
+                        
+            elif operation == 'update':
+                item_id = data.get('item_id')
+                item = data.get('item')
+                id_key = data.get('id_key', 'id')
+                
+                if not (item_id and item):
+                    return False
+                    
+                # Try both methods
+                if hasattr(instance, 'update_qualification_item'):
+                    return instance.update_qualification_item(field_name, item_id, item, user, None, id_key)
+                elif hasattr(instance, 'update_tracked_json_item'):
+                    return instance.update_tracked_json_item(field_name, item_id, item, id_key, user)
+                    
+            elif operation == 'remove':
+                item_id = data.get('item_id')
+                id_key = data.get('id_key', 'id')
+                
+                if not item_id:
+                    return False
+                    
+                # Try both methods
+                if hasattr(instance, 'remove_qualification_item'):
+                    return instance.remove_qualification_item(field_name, item_id, user, None)
+                elif hasattr(instance, 'remove_tracked_json_item'):
+                    return instance.remove_tracked_json_item(field_name, item_id, id_key, user)
+            
+            # Unknown operation
+            return False
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_OPERATION.format(
+                    operation=f"Failed to perform {operation} operation on {field_name}"
+                )
+            )
+    
+    def update(self, instance, validated_data):
+        """
+        Generic update method for models with historical tracking.
+        Handles JSON item operations and tracks field changes.
+        """
+        # Get user from request context
+        user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Store original values for tracking changes
+        original_values = {}
+        for field_name in validated_data.keys():
+            if hasattr(instance, field_name):
+                original_values[field_name] = getattr(instance, field_name)
+        
+        # Check for JSON fields in the model
+        json_field_names = []
+        for field in instance._meta.get_fields():
+            if isinstance(field, models.JSONField):
+                json_field_names.append(field.name)
+        
+        # Process any JSON operations in the initial data
+        for field_name in json_field_names:
+            # Get the field data from the original request
+            if field_name in self.initial_data:
+                field_data = self.initial_data[field_name]
+                
+                # Try to process as an item operation
+                if isinstance(field_data, dict) and 'operation' in field_data:
+                    # Process operation and remove from validated_data if successful
+                    if self._process_json_item_operation(instance, field_name, field_data, user):
+                        if field_name in validated_data:
+                            validated_data.pop(field_name)
+        
+        # Call parent update method to handle regular field updates
+        instance = serializers.ModelSerializer.update(self, instance, validated_data)
+        
+        # Explicitly track any fields that might have been missed
+        for field_name, old_value in original_values.items():
+            new_value = getattr(instance, field_name)
+            
+            # Only track if value changed
+            if old_value != new_value and hasattr(instance, 'track_field_change'):
+                instance.track_field_change(field_name, old_value, new_value, user)
+        
+        return instance

@@ -95,6 +95,15 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
         account = data.get('account')
         if account and str(account.client_id) != str(client_id):
             raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+        
+        self.validate_client_scoped_uniqueness(
+                data=data,
+                unique_fields=['account', 'email'],
+                model_class=Contact,
+                error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                    fields='Account and Email'
+                )
+            )
             
         # Validate influence level
         influence_level = data.get('influence_level')
@@ -104,3 +113,4 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
             )
         
         return data
+    
