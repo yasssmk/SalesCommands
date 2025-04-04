@@ -40,20 +40,25 @@ class HistoricalTrackingSerializerMixin:
                     original_values[field_name] = getattr(instance, field_name)
             
             # Call the parent update method to update fields
-            instance = super().update(instance, validated_data)
+            # Use serializers.ModelSerializer.update directly to avoid MRO issues
+            instance = serializers.ModelSerializer.update(self, instance, validated_data)
             
-            # Now track the changes explicitly
-            if hasattr(instance, 'track_field_change'):
-                for field_name, old_value in original_values.items():
-                    new_value = getattr(instance, field_name)
-                    
-                    # Compare values and track if different
-                    if old_value != new_value:
-                        instance.track_field_change(field_name, old_value, new_value, user, signal)
+            # Now track the changes explicitly using HistoricalTrackingService directly
+            from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
+            
+            for field_name, old_value in original_values.items():
+                new_value = getattr(instance, field_name)
                 
-                # Make sure changes are saved
-                if hasattr(instance, 'save'):
-                    instance.save(update_fields=['historical_data'])
+                # Compare values and track if different
+                if old_value != new_value:
+                    HistoricalTrackingService.update_field(
+                        instance=instance,
+                        field_name=field_name,
+                        new_value=new_value,
+                        user=user,
+                        signal=signal,
+                        update_model=False
+                    )
             
             return instance
         except StandardizedValidationError:

@@ -2,7 +2,7 @@
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-
+from django.utils import timezone
 
 class HistoricalTrackingModel(models.Model):
     """
@@ -26,27 +26,51 @@ class HistoricalTrackingModel(models.Model):
             old_value: Previous value
             new_value: New value
             user (User, optional): User who made the change
+            signal (Signal, optional): Signal that triggered the change
+            reason (str, optional): Reason for the change (deprecated)
         """
-        from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
-        
-        tracked = HistoricalTrackingService.update_field(
-            instance=self,
-            field_name=field_name,
-            old_value=old_value,
-            new_value=new_value,
-            user=user,
-            signal=signal,
-            update_model=False,  # Don't automatically update the model field
-            reason=reason  # Pass the reason parameter
-        )
-        
-        # Initialize historical_data if it doesn't exist
         if self.historical_data is None:
             self.historical_data = {}
+            
+        # Initialize field entry if it doesn't exist
+        if field_name not in self.historical_data:
+            self.historical_data[field_name] = {
+                'changes': []
+            }
+        elif not isinstance(self.historical_data.get(field_name), dict):
+            # Handle case where it's not a dict (legacy format)
+            old_value_stored = self.historical_data.get(field_name)
+            self.historical_data[field_name] = {
+                'changes': [old_value_stored] if old_value_stored else []
+            }
+        elif 'changes' not in self.historical_data[field_name]:
+            # Handle case where 'changes' key is missing
+            self.historical_data[field_name]['changes'] = []
+            
+        # Create change entry
+        now = timezone.now().isoformat()
+        change_entry = {
+            'old_value': old_value,
+            'new_value': new_value,
+            'changed_at': now,
+            'changed_by': str(user.id) if user else None,
+            'source': 'signal' if signal else 'manual'
+        }
         
-        # Ensure changes are saved (the service might not save the instance)
-        return tracked
-    
+        # Add signal information if present
+        if signal:
+            change_entry['signal_id'] = str(signal.id)
+            change_entry['signal_category'] = getattr(signal, 'category', None)
+            change_entry['signal_status'] = getattr(signal, 'status', None)
+        
+        # Add to changes list
+        self.historical_data[field_name]['changes'].append(change_entry)
+        
+        # Save the instance
+        self.save(update_fields=['historical_data'])
+        
+        return True
+            
     def update_tracked_field(self, field_name, new_value, user=None):
         """
         Update a field and track the change

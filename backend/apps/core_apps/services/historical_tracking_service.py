@@ -245,9 +245,9 @@ class HistoricalTrackingService:
             safe_old_value = HistoricalTrackingService._ensure_json_serializable(old_value)
             safe_new_value = HistoricalTrackingService._ensure_json_serializable(new_value)
             
-            # Create history entry with user-provided reason
+            # Create history entry
             history_entry = HistoricalTrackingService._create_history_entry(
-                safe_old_value, safe_new_value, user, signal, reason
+                safe_old_value, safe_new_value, user, signal
             )
             
             # Add to history and save if needed
@@ -383,12 +383,15 @@ class HistoricalTrackingService:
                 instance.historical_data[field_name] = {
                     'changes': []
                 }
-            elif 'changes' not in instance.historical_data[field_name]:
+            elif not isinstance(instance.historical_data[field_name], dict):
                 # Convert from old format (list) to new format (dict with changes array)
                 old_entries = instance.historical_data[field_name]
                 instance.historical_data[field_name] = {
                     'changes': old_entries if isinstance(old_entries, list) else []
                 }
+            elif 'changes' not in instance.historical_data[field_name]:
+                # If 'changes' key is missing, initialize it
+                instance.historical_data[field_name]['changes'] = []
             
             # Add to historical data
             instance.historical_data[field_name]['changes'].append(history_entry)
@@ -432,18 +435,37 @@ class HistoricalTrackingService:
         try:
             if not hasattr(instance, 'save'):
                 return False
+            
+            # Ensure historical_data is marked for update
+            update_fields = None
+            if hasattr(instance, 'historical_data'):
+                update_fields = ['historical_data']
                 
             # Check if save method accepts a user parameter
             save_params = instance.save.__code__.co_varnames
             
-            if 'user' in save_params:
-                # If the save method accepts a user parameter, use it
-                instance.save(user=user)
-            else:
-                # Otherwise, use the standard save method
-                instance.save()
-                
-            return True
+            try:
+                if 'user' in save_params:
+                    # If the save method accepts a user parameter, use it
+                    if update_fields:
+                        instance.save(user=user, update_fields=update_fields)
+                    else:
+                        instance.save(user=user)
+                else:
+                    # Otherwise, use the standard save method
+                    if update_fields:
+                        instance.save(update_fields=update_fields)
+                    else:
+                        instance.save()
+                    
+                return True
+            except Exception:
+                # Try again without update_fields as fallback
+                if 'user' in save_params:
+                    instance.save(user=user)
+                else:
+                    instance.save()
+                return True
         except StandardizedValidationError:
             raise
         except Exception as e:

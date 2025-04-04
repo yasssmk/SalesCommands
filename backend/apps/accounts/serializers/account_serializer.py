@@ -399,6 +399,12 @@ class AccountSerializer(ContactDetailsSerializer,
         # Get user from request context
         user = self.context.get('request').user if self.context.get('request') else None
         
+        # Store original values for tracking changes
+        original_values = {}
+        for field_name in validated_data.keys():
+            if hasattr(instance, field_name):
+                original_values[field_name] = getattr(instance, field_name)
+        
         # Handle partners separately
         partner_ids = validated_data.pop('partner_ids', None)
         
@@ -420,9 +426,26 @@ class AccountSerializer(ContactDetailsSerializer,
         # Call parent update method to handle regular field updates
         instance = super().update(instance, validated_data)
         
+        # Explicitly track any fields that might have been missed
+        for field_name, old_value in original_values.items():
+            new_value = getattr(instance, field_name)
+            
+            # Only track if value changed
+            if old_value != new_value and hasattr(instance, 'track_field_change'):
+                instance.track_field_change(field_name, old_value, new_value, user)
+        
         # Update partners if provided
         if partner_ids is not None:
+            # Store original partners for tracking
+            original_partners = list(instance.partners.all().values_list('id', flat=True))
+            
+            # Update partners
             self._update_partners(instance, partner_ids, user)
+            
+            # Track partner changes
+            new_partners = list(instance.partners.all().values_list('id', flat=True))
+            if original_partners != new_partners and hasattr(instance, 'track_field_change'):
+                instance.track_field_change('partners', original_partners, new_partners, user)
         
         return instance
     

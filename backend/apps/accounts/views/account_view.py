@@ -72,49 +72,68 @@ class AccountAPIView(BaseAPIView, SignalAwareViewMixin, AccountHistoricalTrackin
         return None
 
     def _update_instance(self, instance, data, partial, client_id):
-            """Optimized update with minimal queries"""
-            self.validate_client_id(instance)
+        """Optimized update with minimal queries"""
+        self.validate_client_id(instance)
+        
+        # Track fields that need refresh
+        refresh_fields = set()
+        
+        # Store old values for relationship changes
+        old_parent = instance.parent_company_id
+        old_team = instance.team_owner_id
+        
+        try:
+            # Create serializer context
+            context = {
+                'request': self.request, 
+                'client_id': client_id
+            }
             
-            # Track fields that need refresh
-            refresh_fields = set()
+            serializer = self.serializer_class(
+                instance,
+                data=data,
+                partial=partial,
+                context=context
+            )
             
-            # Store old values for relationship changes
-            old_parent = instance.parent_company_id
-            old_team = instance.team_owner_id
-            
-            try:
-                serializer = self.serializer_class(
-                    instance,
-                    data=data,
-                    partial=partial,
-                    context={'request': self.request, 'client_id': client_id}
-                )
-                
-                if serializer.is_valid():
-                    with transaction.atomic():
-                        updated = serializer.save()
-                        
-                        # Only refresh changed relationships
-                        if old_parent != updated.parent_company_id:
-                            refresh_fields.add('parent_company')
-                            if old_parent:
-                                Account.objects.filter(id=old_parent).update(
-                                    updated_at=datetime.now()
-                                )
-                        
-                        if old_team != updated.team_owner_id:
-                            refresh_fields.add('team_owner')
-                        
-                        if refresh_fields:
-                            updated.refresh_from_db(fields=refresh_fields)
-                        
-                        return serializer
-                
-                # Extract and format error message
-                raise StandardizedValidationError(serializer.errors)
+            if serializer.is_valid():
+                with transaction.atomic():
+                    # Store original values for tracking
+                    original_values = {}
+                    for field_name in serializer.validated_data.keys():
+                        if hasattr(instance, field_name):
+                            original_values[field_name] = getattr(instance, field_name)
                     
-            except Exception as e:
-                raise StandardizedValidationError(str(e))
+                    updated = serializer.save()
+                    
+                    # Only refresh changed relationships
+                    if old_parent != updated.parent_company_id:
+                        refresh_fields.add('parent_company')
+                        if old_parent:
+                            Account.objects.filter(id=old_parent).update(
+                                updated_at=datetime.now()
+                            )
+                    
+                    if old_team != updated.team_owner_id:
+                        refresh_fields.add('team_owner')
+                    
+                    if refresh_fields:
+                        updated.refresh_from_db(fields=refresh_fields)
+                    
+                    # Manual historical tracking if needed
+                    user = self.request.user if hasattr(self.request, 'user') else None
+                    for field_name, old_value in original_values.items():
+                        new_value = getattr(updated, field_name)
+                        if old_value != new_value and hasattr(updated, 'track_field_change'):
+                            updated.track_field_change(field_name, old_value, new_value, user)
+                    
+                    return serializer
+                
+            # Extract and format error message
+            raise StandardizedValidationError(serializer.errors)
+                    
+        except Exception as e:
+            raise StandardizedValidationError(str(e))
 
     def dispatch(self, request, *args, **kwargs):
         """Custom dispatch to handle different endpoints"""

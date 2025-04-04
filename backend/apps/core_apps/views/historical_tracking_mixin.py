@@ -22,16 +22,16 @@ class HistoricalTrackingViewMixin:
     tracked_json_fields = None  # example: {'objectives', 'motivations', 'key_kpis', 'pain_points'}
     
     def update(self, request, *args, **kwargs):
-        """
-        Override update method to track changes when objects are updated via PUT
-        """
-        return self._track_update(request, *args, partial=False, **kwargs)
-        
+        # Pass change_reason to serializer context if provided
+        if 'change_reason' in request.data:
+            self.get_serializer_context()['change_reason'] = request.data.get('change_reason')
+        return super().update(request, *args, **kwargs)
+
     def partial_update(self, request, *args, **kwargs):
-        """
-        Override partial_update method to track changes when objects are updated via PATCH
-        """
-        return self._track_update(request, *args, partial=True, **kwargs)
+        # Pass change_reason to serializer context if provided
+        if 'change_reason' in request.data:
+            self.get_serializer_context()['change_reason'] = request.data.get('change_reason')
+        return super().partial_update(request, *args, **kwargs)
     
     def _track_update(self, request, *args, partial=False, **kwargs):
         """
@@ -92,19 +92,33 @@ class HistoricalTrackingViewMixin:
     
     def _process_field_changes(self, instance, original_values, user, signal=None):
         """Process changes to regular fields"""
+        changed = False
+        
         for field in self.tracked_fields:
             if field in original_values:
                 old_value = original_values[field]
                 new_value = getattr(instance, field)
                 
-                # Only track if value changed
+                # Only track if value changed - add debug print
                 if old_value != new_value:
+                    print(f"FIELD CHANGED: {field} from {old_value} to {new_value}")
+                    changed = True
+                    
                     if hasattr(instance, 'track_field_change'):
-                        # Get the change reason from the request data if available
-                        reason = self.request.data.get('change_reason')
+                        # Get the change reason
+                        reason = self.request.data.get('change_reason', f"Changed {field}")
                         
-                        # Call track_field_change with the reason
-                        instance.track_field_change(field, old_value, new_value, user, signal, reason)
+                        # Track the change
+                        success = instance.track_field_change(field, old_value, new_value, user, signal, reason)
+                        print(f"TRACKING RESULT: {success}")
+        
+        # If changes were detected but not tracked, force historical data update
+        if changed and (not instance.historical_data or instance.historical_data == {}):
+            print("FORCED HISTORICAL UPDATE")
+            # Initialize historical_data if empty
+            if not instance.historical_data:
+                instance.historical_data = {}
+            instance.save(update_fields=['historical_data'])
     
     def _process_json_field_changes(self, instance, original_values, request_data, user, signal=None):
         """Process changes to JSON fields with array data"""
