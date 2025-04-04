@@ -26,7 +26,7 @@ class TechStackSerializer(AccountLinkedSerializerMixin, HistoricalTrackingSerial
             'annual_cost',
             'renewal_date',
             'years_of_usage',
-            'note',
+            'notes',
             'historical_data',
             'created_at',
             'updated_at'
@@ -43,5 +43,15 @@ class TechStackSerializer(AccountLinkedSerializerMixin, HistoricalTrackingSerial
         
         if account and str(account.client_id) != str(client_id):
             raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+        
+        self.validate_client_scoped_uniqueness(
+                data=data,
+                unique_fields=['account', 'tech_name'],
+                model_class=TechStack,
+                error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                    fields='account and tech Name'
+                )
+            )
+
         
         return data

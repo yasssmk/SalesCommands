@@ -5,9 +5,9 @@ from django.utils.translation import gettext_lazy as _
 from apps.core_apps.models import BaseModelApp
 from core.client_scope import ClientScopeManager
 from .accounts import Account
-from apps.core_apps.models import AccountLinkedModel
+from apps.core_apps.models import AccountLinkedModel, HistoricalTrackingModel
 
-class TechStack(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
+class TechStack(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin, HistoricalTrackingModel):
     """
     Model to track technologies used by an account.
     """

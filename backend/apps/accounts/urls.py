@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import AccountAPIView, AccountChoicesView, ContactAPIView, ContactChoicesView, AccountProductRelationshipView, TechRelationshipView, BuyingProcessStepView, BuyingProcessView
+from .views import AccountAPIView, AccountChoicesView, ContactAPIView, ContactChoicesView, AccountProductRelationshipView, TechRelationshipView, TechStackAPIView, BuyingProcessStepView, BuyingProcessView
 
 urlpatterns = [
     
@@ -20,6 +20,11 @@ urlpatterns = [
     path('contacts/<int:pk>/signals/', ContactAPIView.as_view(), name='contact-signals'),
     path('contacts/<int:pk>/field-signals/', ContactAPIView.as_view(), name='contact-field-signals'),
     
+    # TechStack endpoints
+    path('techstack/', TechStackAPIView.as_view(), name='techstack-list'),
+    path('techstack/<int:pk>/', TechStackAPIView.as_view(), name='techstack-detail'),
+    path('account/<int:account_id>/techstack/', TechStackAPIView.as_view(), name='account-techstack-list'),
+
     # Choice endpoints
     path('contacts/choices/', ContactChoicesView.as_view(), name='contact-choices'),
 
