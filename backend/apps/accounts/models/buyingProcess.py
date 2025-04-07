@@ -4,7 +4,9 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel, HistoricalTrackingModel
 from core.client_scope import ClientScopeManager
-from apps.accounts.models.contacts import Contact 
+from apps.accounts.models.contacts import Contact
+from apps.core_apps.models import StandardDepartment
+from django.db.models import Sum
 
 class BuyingProcess(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, ClientScopeManager.ModelMixin):
     """
@@ -22,24 +24,6 @@ class BuyingProcess(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, C
         verbose_name=_('Process Description')
     )
     
-    status = models.CharField(
-        max_length=50,
-        choices=(
-            ('ACTIVE', _('Active')),
-            ('COMPLETED', _('Completed')),
-            ('DRAFT', _('Draft'))
-        ),
-        default='ACTIVE',
-        verbose_name=_('Process Status')
-    )
-    
-    estimated_timeline_days = models.PositiveIntegerField(
-        blank=True,
-        null=True,
-        verbose_name=_('Estimated Timeline (Days)')
-    )
-
-    
     product = models.ForeignKey(
         'products.Product',
         on_delete=models.SET_NULL,
@@ -53,9 +37,30 @@ class BuyingProcess(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, C
         verbose_name = _('Buying Process')
         verbose_name_plural = _('Buying Processes')
         ordering = ['-updated_at']
+        unique_together = [('account', 'name'), ('account', 'product')]
         
     def __str__(self):
         return f"{self.name} - {self.account.company_name}"
+    
+    @property
+    def estimated_timeline_days(self):
+        """
+        Calculate the estimated timeline days by summing the average_time_in_days of all steps.
+        Returns None if any step has a missing average_time_in_days.
+        """
+        steps = self.steps.all()
+        
+        # Check if any step has a null/zero average_time_in_days
+        if steps.filter(average_time_in_days__isnull=True).exists() or steps.filter(average_time_in_days=0).exists():
+            return None
+            
+        # If no steps, return 0
+        if not steps.exists():
+            return 0
+            
+        # Sum the average_time_in_days of all steps
+        total_days = steps.aggregate(Sum('average_time_in_days'))['average_time_in_days__sum']
+        return total_days
     
 class BuyingProcessStep(BaseModelApp, ClientScopeManager.ModelMixin):
     """
@@ -75,18 +80,13 @@ class BuyingProcessStep(BaseModelApp, ClientScopeManager.ModelMixin):
         related_name='buying_process_steps'
     )
     
-    step_index = models.PositiveSmallIntegerField(
-        default=0,
-        verbose_name=_('Step Index'),
-        help_text=_('Order of this step in the process')
-    )
-    
-    depends_on_steps = models.JSONField(
+    previous_step = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        related_name='next_steps',
         blank=True,
         null=True,
-        default=list,
-        verbose_name=_('Dependencies'),
-        help_text=_('IDs of steps that must be completed before this one')
+        verbose_name=_('Previous Step')
     )
     
     stakeholder = models.CharField(
@@ -96,11 +96,12 @@ class BuyingProcessStep(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Stakeholder')
     )
     
-    department_name = models.CharField(
-        max_length=255,
+    standard_department = models.ForeignKey(
+        StandardDepartment,
+        on_delete=models.SET_NULL,
         blank=True,
         null=True,
-        verbose_name=_('Department Name')
+        verbose_name=_('Department')
     )
     
     step_description = models.TextField(
@@ -134,7 +135,8 @@ class BuyingProcessStep(BaseModelApp, ClientScopeManager.ModelMixin):
     )
     
     average_time_in_days = models.PositiveIntegerField(
-        default=0,
+        blank=True,
+        null=True,
         verbose_name=_('Average Time in Days')
     )
     
@@ -148,10 +150,24 @@ class BuyingProcessStep(BaseModelApp, ClientScopeManager.ModelMixin):
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints()):
         verbose_name = _('Buying Process Step')
         verbose_name_plural = _('Buying Process Steps')
-        ordering = ['process', 'step_index']
+        ordering = ['id']  # Default ordering by ID
         
     def __str__(self):
-        return f"{self.process.name} - Step {self.step_index}: {self.step_description[:30]}"
+        return f"{self.process.name} - {self.step_description[:30]}"
+    
+    @property
+    def next_step(self):
+        """Get the next step in the process."""
+        try:
+            return self.next_steps.first()
+        except:
+            return None
+    
+    def save(self, *args, **kwargs):
+        """Override save to ensure account matches process account."""
+        if self.process and not self.account_id:
+            self.account = self.process.account
+        super().save(*args, **kwargs)
 
 
 class BuyingProcessStepContact(BaseModelApp, ClientScopeManager.ModelMixin):
@@ -170,11 +186,10 @@ class BuyingProcessStepContact(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Contact')
     )
     
-    
     class Meta:
         verbose_name = _('Buying Process Step Contact')
         verbose_name_plural = _('Buying Process Step Contacts')
         unique_together = ('step', 'contact')
         
     def __str__(self):
-        return f"{self.step} - {self.contact}" 
+        return f"{self.step} - {self.contact}"
