@@ -6,7 +6,7 @@ from rest_framework.exceptions import ParseError
 import openai
 from core.exceptions import StandardizedValidationError, StandardizedAuthenticationFailed
 from core.error_messages import CoreErrorMessages
-from ..services.qualification_prompts_service import get_full_insights
+from ..services.new_prompt import get_full_insights
 from ..serializers.transript_serializer import TranscriptAnalysisSerializer
 from ..services.signal_parsing_service import SignalParsingService
 from ..serializers.signal_summary_serializer import SignalSummarySerializer
@@ -19,17 +19,6 @@ class TranscriptAnalysisView(BaseAPIView):
     """
     serializer_class = TranscriptAnalysisSerializer
     entity_name = 'transcript'
-
-    # def __init__(self, *args, **kwargs):
-    #     super().__init__(*args, **kwargs)
-    #     # Initialize OpenAI with error handling
-    #     try:
-    #         api_key = settings.OPENAI_API_KEY["OPENAI_API_KEY"]
-    #         if not api_key:
-    #             raise StandardizedValidationError(CoreErrorMessages.INVALID_CONFIG)
-    #         openai.api_key = api_key
-    #     except Exception as e:
-    #         raise StandardizedValidationError(CoreErrorMessages.SERVICE_UNAVAILABLE)
 
     def post(self, request, *args, **kwargs):
         """

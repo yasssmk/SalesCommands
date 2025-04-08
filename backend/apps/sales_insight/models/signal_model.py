@@ -13,8 +13,8 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
 
     class Category(models.TextChoices):
         PROFILE = 'PROFILE', _('Profile Data')
-        GOALS = 'GOALS', _('Business/Unit Goals')
         PROCESS = 'PROCESS', _('Process')
+        TECH_STACK = 'TECH_STACK', _('Technology Stack')
         QUALIFICATION = 'QUALIFICATION', _('Qualification')
         PROJECT = 'PROJECT', _('Project')
     
@@ -29,7 +29,6 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         ACCOUNT = 'ACCOUNT', _('Account')
         CONTACT = 'CONTACT', _('Contact')
         ACCOUNT_PRODUCT = 'ACCOUNT_PRODUCT', _('Account Product Detail')
-        PROCESS_STEP = 'PROCESS_STEP', _('Process Step')
     
     # Signal classification
     category = models.CharField(

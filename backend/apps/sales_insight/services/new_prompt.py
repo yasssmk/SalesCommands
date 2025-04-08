@@ -7,10 +7,10 @@ COMMON_INSTRUCTIONS = """
 
     We specifically categorize insights at different levels:
        1) Account level
-       2) Contacts
+       2) Contacts level
        3) TechStack
        4) Buying Process
-       5) Lead or Opportunity
+
 
     Follow these rules:
       1. If data is unclear or missing, use null/0/false/[] as appropriate. 
@@ -18,33 +18,7 @@ COMMON_INSTRUCTIONS = """
       3. Provide measurable objectives whenever possible.
       4. Focus on data relevant to sales qualification: pains, goals, budgets, processes, etc.
       5. Return valid JSON matching the exact structures shown, with no extra commentary.
-    
-    Additional clarifications:
-      - For **objectives**, make them measurable and actionable (e.g., “Increase sales by 20% within 6 months”).
-      - For **motivations**, specify reasons driving interest (e.g., “Expand market share”).
-      - For **implications**, quantify the impact (e.g., “Risk losing 10% of revenue”).
-      - For **BuyingProcess**, list an array of the different steps Sales will go through to close a deal, including who the stakeholders are, their role/department, their influence in the process, how they will validate the process, what criteria they will look for, and how long each step might last. This is crucial for qualification, to understand each step, prepare for it, maximize value, and have a clear idea of how long the process will take for forecasting.
 
-       Sub-object example for BuyingProcess:
-         - Stakeholder: Role of the person responsible for this step (e.g., "CEO", "Project Manager", "CTO")
-         - departmentName: Name of the Account department for this step (e.g., "IT", "Sales", "General Management", etc.)
-         - stepDescription: What will be done in this step (e.g., "Demo", "POC", "Legal revision of the contract")
-         - stepGoal: What the step aims to achieve (e.g., "Technical validation", "Budget validation")
-         - influenceScore: How important this step is for moving forward
-         - Criterias: What they will be looking for (e.g., "Is it within budget?", "Does it work in our ecosystem?", "Does it cover all our needs?")
-         - KeyKpis: How they will measure success in this step
-         - averageTimeInDays: How long this step might take before moving to the next one
-
-
-      - For **departmentName**, use one from the list: ["General Management", "Human Resources (HR)", "Finance & Accounting", "Information Technology (IT)", "Marketing & Communications", "Sales & Business Development", "Customer Support & Success", "Operations & Supply Chain", "Legal & Compliance", "Procurement & Vendor Management", "Engineering & R&D", "Product Management", "Data & Analytics", "Security & Risk Management", "Healthcare Administration", "Clinical & Medical Staff", "Retail & Store Operations", "Manufacturing & Production", "Logistics & Transportation", "Construction & Engineering", "Education & Training", "Government & Public Services", "Media & Content Creation"]
-
-      - Each level (Account, OrgUnit, Contact) can have relevant pains, processes, or budget data.
-    
-    Below is a comprehensive guide if needed:
-       1. Account Info + Insights
-       2. Contacts Insights
-       3. techStack
-       4. Focus on key fields: objectives, painPoints, currentTechStack, buyingProcess, projects, etc.
 """
 
 
@@ -86,59 +60,6 @@ ACCOUNT_INSIGHTS_DEFINITIONS = """
       }
     }
 """
-
-
-ORG_UNITS_DEFINITIONS = """
-    Return ONLY "orgUnitsInsights" array in valid JSON.
-    Qualification data specific to a given department within the Account.
-
-    orgUnitsInsights fields:
-      departmentName, objectives, compellingEvents, motivations,
-      painPoints, implications, currentTechStack, partners,
-      budget, newBudgetStartDate, buyingProcess
-
-JSON STRUCTURE:
-
-{
-  "orgUnitsInsights": [
-    {
-      "departmentName": "",
-      "objectives": [],
-      "compellingEvents": [],
-      "motivations": [],
-      "painPoints": [],
-      "implications": [],
-      "currentTechStack": [
-         {
-            "techName": "",
-            "businessGoal": "",
-            "pros": "",
-            "improvementPoints": "",
-            "yearsOfUsage": "",
-            "costs": "",
-            "renewalDate": ""
-         }
-      ],
-      "partners": [],
-      "budget": 0,
-      "newBudgetStartDate": "",
-      "buyingProcess": [
-         {
-            "Stakeholder": "",
-            "departmentName": "",
-            "stepDescription": "",
-            "stepGoal": "",
-            "influenceScore": 0,
-            "Criterias": [],
-            "KeyKpis": [],
-            "averageTimeInDays": 0
-         }
-      ]
-    }
-  ]
-}
-"""
-
 
 CONTACTS_DEFINITIONS = """
     Return ONLY "contactsInsights" array in valid JSON.
@@ -186,7 +107,6 @@ TECH_STACK_DEFINITION = """
       - For **yearsOfUsage**, For how long they have been using this prodcut/technology, if stated.
       - For **costs** , Any costs related to the product/technology. State the name of the cost then, only if stated the price. (e.g., subcription price: 3000$ per month, maintenance cost).
       - For **renewalDate**, Only is technology is a subscription and only if stated the date of the comtact renewal (e.g, November 2025)
-
 
     {
       "techStack": [
@@ -317,15 +237,42 @@ def get_account_insights_prompt(transcript):
     Builds a prompt for "accountInfo" + "accountInsights" using
     centralized definitions and instructions.
     """
-    print(f"GET ACCOUNT METH: {COMMON_INSTRUCTIONS}")
-    print(f"GET ACCOUNT METH: {ACCOUNT_INSIGHTS_DEFINITIONS}")
-    print(f"GET ACCOUNT METH: {transcript}")
     return f"""{COMMON_INSTRUCTIONS}
 {ACCOUNT_INSIGHTS_DEFINITIONS}
 
 Now, return only the 'accountInfo' and 'accountInsights' sections in valid JSON.
 TRANSCRIPT:
 \"\"\"{transcript}\"\"\""""
+
+def get_contacts_prompt(transcript):
+    """
+    Builds a prompt for "contactsInsights" only, using centralized definitions.
+    """
+    return f"""{COMMON_INSTRUCTIONS}
+        {CONTACTS_DEFINITIONS}
+        Return only the 'contactsInsights' array in valid JSON.
+        TRANSCRIPT:
+        \"\"\"{transcript}\"\"\""""
+
+def get_techstack_prompt(transcript):
+    """
+    Builds a prompt for "TechStack" only, using centralized definitions.
+    """
+    return f"""{COMMON_INSTRUCTIONS}
+        {TECH_STACK_DEFINITION}
+        Return only the 'techStack' array in valid JSON.
+        TRANSCRIPT:
+        \"\"\"{transcript}\"\"\""""
+
+def get_buying_process_prompt(transcript):
+    """
+    Builds a prompt for "buyingProcess" only, using centralized definitions.
+    """
+    return f"""{COMMON_INSTRUCTIONS}
+        {BUYING_PROCESS_DEFINITION}
+        Return only the 'buyingProcess' array in valid JSON.
+        TRANSCRIPT:
+        \"\"\"{transcript}\"\"\""""
 
 
 
@@ -383,23 +330,30 @@ def get_full_insights(transcript):
     prompt_1 = get_account_insights_prompt(transcript)
     data_1 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_1,system_message=system_message), prompt_1)
 
+    # 2) Extract Contacts Insights
+    prompt_2 = get_contacts_prompt(transcript)
+    data_2 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_2,system_message=system_message), prompt_2)
 
-    # 2) Extract Org Units Insights
-    # prompt_2 = get_org_units_prompt(transcript)
-    # data_2 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_2,system_message=system_message), prompt_2)
+    # 3) Extract teckStack Insights
+    prompt_3 = get_techstack_prompt(transcript)
+    data_3 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_3,system_message=system_message), prompt_3)
 
-    # 3) Extract Contacts Insights
-    # prompt_3 = get_contacts_prompt(transcript)
-    # data_3 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_3,system_message=system_message), prompt_3)
+    #4) Extract Buying Process Insights
+    prompt_4 = get_buying_process_prompt(transcript)
+    data_4 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_4,system_message=system_message), prompt_4)
+
 
     # Base JSON structure
     final_structure = {
         "accountInfo": data_1.get("accountInfo", {}),
         "insights": {
             "accountInsights": data_1.get("accountInsights", {}),
-            # "contactsInsights": data_3.get("contactsInsights", [])
+            "contactsInsights": data_2.get("contactsInsights", []),
+            "techStack": data_3.get("techStack", []),	
+            "buyingProcess": data_4.get("buyingProcess", []),
         }
     }
     
+    print("Final JSON structure:", final_structure)
     
     return final_structure

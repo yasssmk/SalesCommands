@@ -11,19 +11,13 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
     entity_type_label = serializers.SerializerMethodField()
     field_display_name = serializers.SerializerMethodField()
     
-    # Entity summaries
-    contact_summary = serializers.SerializerMethodField()
-    tech_stack_summary = serializers.SerializerMethodField()
-    account_product_relationship_summary = serializers.SerializerMethodField()
-    
     class Meta:
         model = Signal
         fields = [
             'id', 'account', 'category', 'category_label', 
             'entity_type', 'entity_type_label',
             'field_name', 'field_display_name',
-            'value', 'contact_summary',
-            'tech_stack_summary', 'account_product_relationship_summary'
+            'value'
         ]
     
     def get_category_label(self, obj):
@@ -49,35 +43,3 @@ class SignalSummarySerializer(AccountLinkedSerializerMixin, serializers.ModelSer
         }
         return field_mapping.get(obj.field_name, obj.field_name.replace('_', ' ').title())
     
-    def get_contact_summary(self, obj):
-        if obj.contact:
-            return {
-                'id': obj.contact.id,
-                'name': f"{getattr(obj.contact, 'first_name', '')} {getattr(obj.contact, 'last_name', '')}".strip(),
-                'role': getattr(obj.contact, 'job_title', None)
-            }
-        return None
-    
-    def get_tech_stack_summary(self, obj):
-        """Get summary of tech stack if this signal is for a tech stack item"""
-        if obj.field_name == 'tech_stack' and isinstance(obj.value, dict):
-            tech_data = obj.value
-            return {
-                'tech_name': tech_data.get('tech_name', ''),
-                'purpose': tech_data.get('purpose', []),
-                'pros_count': len(tech_data.get('pros', [])),
-                'cons_count': len(tech_data.get('cons', [])),
-                'has_renewal_date': bool(tech_data.get('renewal_date'))
-            }
-        return None
-    
-    def get_account_product_relationship_summary(self, obj):
-        if obj.account_product_relationship:
-            apr = obj.account_product_relationship
-            return {
-                'id': apr.id,
-                'product_name': apr.product.product_name if apr.product else None,
-                'estimated_units': apr.estimated_units,
-                'potential_revenue': str(apr.potential_revenue)
-            }
-        return None

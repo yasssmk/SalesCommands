@@ -2,12 +2,9 @@
 
 from django.utils import timezone
 from ..models import Signal
-# from apps.accounts_app.org_units.models import AccountOrganizationUnit
-# from apps.accounts_app.contacts.models import Contact
-# from apps.accounts_app.account_product_detail.models import AccountProductDetail
 from apps.accounts.models import Account, Contact, AccountProductRelationship
 from apps.products.models import Product
-from django.db.models import  Q
+from django.db.models import Q
 
 class SignalParsingService:
     """
@@ -33,7 +30,7 @@ class SignalParsingService:
         client_id = account.client_id
         
         # Process account info - PROFILE category
-        if 'accountInfo' in insights:
+        if insights.get('accountInfo'):
             profile_signals = cls._parse_profile_data(
                 insights['accountInfo'], 
                 account, 
@@ -41,14 +38,15 @@ class SignalParsingService:
                 source, 
                 user
             )
-            signals.extend(profile_signals)
+            if profile_signals:
+                signals.extend(profile_signals)
         
         # Process insights data
-        if 'insights' in insights:
+        if insights.get('insights'):
             insights_data = insights['insights']
             
             # Account-level insights
-            if 'accountInsights' in insights_data:
+            if insights_data.get('accountInsights') and insights_data['accountInsights']:
                 account_signals = cls._parse_account_insights(
                     insights_data['accountInsights'], 
                     account, 
@@ -56,11 +54,11 @@ class SignalParsingService:
                     source, 
                     user
                 )
-                signals.extend(account_signals)
+                if account_signals:
+                    signals.extend(account_signals)
             
-                
             # Contact insights
-            if 'contactsInsights' in insights_data:
+            if insights_data.get('contactsInsights') and insights_data['contactsInsights']:
                 contact_signals = cls._parse_contact_insights(
                     insights_data['contactsInsights'], 
                     account, 
@@ -68,29 +66,34 @@ class SignalParsingService:
                     source, 
                     user
                 )
-                signals.extend(contact_signals)
+                if contact_signals:
+                    signals.extend(contact_signals)
         
-        if 'techStack' in insights:
-            tech_stack_signals = cls._parse_tech_stack_data(
-                insights['techStack'],
-                account,
-                client_id,
-                source,
-                user
-            )
-            signals.extend(tech_stack_signals)
+            # Tech stack data
+            if insights_data.get('techStack') and insights_data['techStack']:
+                tech_stack_signals = cls._parse_tech_stack_data(
+                    insights_data['techStack'],
+                    account,
+                    client_id,
+                    source,
+                    user
+                )
+                if tech_stack_signals:
+                    signals.extend(tech_stack_signals)
 
-        if 'buyingProcess' in insights:
-            buying_process_signals = cls._parse_buying_process_data(
-                insights['buyingProcess'],
-                account,
-                client_id,
-                source,
-                user
-            )
-            signals.extend(buying_process_signals)
-                
-        return signals
+            # Buying process data
+            if insights_data.get('buyingProcess') and insights_data['buyingProcess']:
+                buying_process_signals = cls._parse_buying_process_data(
+                    insights_data['buyingProcess'],
+                    account,
+                    client_id,
+                    source,
+                    user
+                )
+                if buying_process_signals:
+                    signals.extend(buying_process_signals)
+                    
+            return signals
     
     @classmethod
     def _parse_profile_data(cls, account_info, account, client_id, source, user):
@@ -105,7 +108,7 @@ class SignalParsingService:
         }
         
         for json_field, model_field in profile_fields.items():
-            if json_field in account_info and account_info[json_field]:
+            if json_field in account_info and account_info[json_field] is not None:
                 # Profile data usually has low-medium urgency but is foundational
                 signal = Signal.objects.create(
                     account=account,
@@ -154,6 +157,8 @@ class SignalParsingService:
                     updated_by=user
                 )
                 signals.append(signal)
+        
+        return signals
     
     @classmethod
     def _parse_contact_insights(cls, contacts_insights, account, client_id, source, user):
@@ -297,7 +302,7 @@ class SignalParsingService:
             list: Created Signal objects for tech stack
         """
         signals = []
-        
+        print(f"Tech Stack Data: {tech_stack}")
         for tech_item in tech_stack:
             tech_name = tech_item.get('techName')
             purpose = tech_item.get('purpose', [])
@@ -325,14 +330,14 @@ class SignalParsingService:
             # Create a signal for the tech stack item
             signal = Signal.objects.create(
                 account=account,
-                category=Signal.Category.QUALIFICATION,
+                category=Signal.Category.TECH_STACK,
                 entity_type=Signal.EntityType.ACCOUNT,
                 field_name='tech_stack',
                 value={
                     'tech_name': tech_name,
                     'purpose': purpose,
                     'pros': pros,
-                    'cons': improvement_points,  # Map improvement_points to cons
+                    'cons': improvement_points,  
                     'years_of_usage': years_of_usage,
                     'costs': costs,
                     'renewal_date': renewal_date
@@ -365,7 +370,7 @@ class SignalParsingService:
             list: Created Signal objects for buying process steps
         """
         signals = []
-        
+        print(f"Buying Process Data: {buying_process_data}")
         for step_data in buying_process_data:
             # Standardize the step data format
             formatted_step = {
@@ -383,7 +388,7 @@ class SignalParsingService:
             signal = Signal.objects.create(
                 account=account,
                 category=Signal.Category.PROCESS,
-                entity_type=Signal.EntityType.PROCESS_STEP,
+                entity_type=Signal.EntityType.ACCOUNT,
                 field_name='buying_process_step',
                 value=formatted_step,
                 status=Signal.Status.PENDING,
@@ -397,42 +402,7 @@ class SignalParsingService:
                     'step_data': formatted_step
                 }
             )
+            print(f"Created Buying Process Signal: {signal.id} with data: {formatted_step}")
             signals.append(signal)
     
         return signals
-    
-    @classmethod
-    def _parse_projects(cls, projects, account, client_id, source, user, entity_type, org_unit=None, contact=None):
-        """Parse projects into signals - highest value insights"""
-        signals = []
-        
-        for project in projects:
-            # Projects represent concrete opportunities for selling
-            signal = Signal.objects.create(
-                account=account,
-                contact=contact,
-                category=Signal.Category.PROJECT,
-                entity_type=entity_type,
-                field_name='projects',
-                value=project,
-                status=Signal.Status.PENDING,
-                source=source,
-                client_id=client_id,
-                created_by=user,
-                updated_by=user
-            )
-            signals.append(signal)
-            
-            # Set product alignment based on project description
-            project_name = project.get('projectName', '')
-            products = cls._detect_and_set_product_alignment(signal, project)
-            
-            # Create or find APDs for project and link them
-            cls._link_to_account_product_details(signal, account, products, 
-                                                estimated_units=project.get('estimatedUnitsNeeded'),
-                                                budget=project.get('budgetAllocation'))
-            
-        return signals
-    
-    
-    
