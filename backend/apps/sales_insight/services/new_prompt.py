@@ -28,9 +28,9 @@ ACCOUNT_INSIGHTS_DEFINITIONS = """
       2) "accountInsights"
     
     ACCOUNT INFO FIELDS:
-      - employeeCount: Approximate number of employees, if stated.
-      - annualRevenue: Numeric revenue, if stated.
-      - buyingDecisions: Whether they have the final authority to make a purchase (True/False), if stated
+      - employeeCount: Approximate number of employees, if explicitly mentioned.
+      - annualRevenue: Numeric revenue, if explicitly mentioned.
+      - buyingDecisions: Whether they have the final authority to make a purchase (True/False), if explicitly mentioned
 
     ACCOUNT INSIGHTS FIELDS:
       - For **objectives**, make them measurable and actionable (e.g., “Increase sales by 20% within 6 months”).
@@ -97,7 +97,7 @@ SAMPLE JSON:
 
 TECH_STACK_DEFINITION = """
     Return ONLY "TechStack" array in valid JSON.
-    This array includes all product and solution the company is using.
+    This array includes all product and solution, explicitly mentioned, the company is using.
 
     TECH STACK FIELDS:
       - For **TechtName**, Name of the product or technology.
@@ -129,6 +129,7 @@ BUYING_PROCESS_DEFINITION = """
   Return ONLY "buyingProcess" array in valid JSON.
   This array includes all steps the company will go through to close a deal.
   This is crucial for qualification, to understand each step, prepare for it, maximize value, and have a clear idea of how long the process will take for forecasting.
+  Only include steps that are explicitly mentioned in the transcript. If the step is not mentioned, do not include it.
 
   BUYING PROCESS FIELDS:
     - For **stakeholder**, Role of the person responsible for this step (e.g., "CEO", "Project Manager", "CTO")
@@ -139,6 +140,7 @@ BUYING_PROCESS_DEFINITION = """
     - For **criterias**, What they will be looking for (e.g., "Is it within budget?", "Does it work in our ecosystem?", "Does it cover all our needs?")
     - For **metrics**, Key performance indicators they follow to measure their success in this step (e.g., growth rate, operational efficiency, customer retention).
     - For **averageTimeInDays**, How long this step might take before moving to the next one.
+    - For **trascriptExtract**, The part of the transcript where this step is mentioned.
 
   {
     "buyingProcess": 
@@ -151,7 +153,8 @@ BUYING_PROCESS_DEFINITION = """
           "influenceScore": 0,
           "criterias": [],
           "metrics": [],
-          "averageTimeInDays": 0
+          "averageTimeInDays": 0, 
+          "trascriptExtract": ""
         }
       ]
   }

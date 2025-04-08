@@ -1,9 +1,6 @@
 # apps/sales_insight/services/signal_parsing_service.py
 
-from django.utils import timezone
 from ..models import Signal
-from apps.accounts.models import Account, Contact, AccountProductRelationship
-from apps.products.models import Product
 from django.db.models import Q
 
 class SignalParsingService:
@@ -109,6 +106,15 @@ class SignalParsingService:
         
         for json_field, model_field in profile_fields.items():
             if json_field in account_info and account_info[json_field] is not None:
+
+                if json_field == 'employeeCount' and account_info[json_field] == 0:
+                    # Do not create signal if employee count is 0
+                    continue
+
+                if json_field == 'annualRevenue' and account_info[json_field] == 0:
+                    # Do not create signal if annual revenue is 0
+                    continue
+                
                 # Profile data usually has low-medium urgency but is foundational
                 signal = Signal.objects.create(
                     account=account,
