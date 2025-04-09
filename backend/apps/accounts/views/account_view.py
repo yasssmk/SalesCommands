@@ -10,6 +10,8 @@ from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from datetime import datetime
 from apps.core_apps.views import SignalAwareViewMixin, AccountHistoricalTrackingMixin
+from apps.core_apps.models import StandardDepartment
+from rest_framework.decorators import action
 
 class AccountAPIView(BaseAPIView, SignalAwareViewMixin, AccountHistoricalTrackingMixin):
     """
@@ -50,12 +52,26 @@ class AccountAPIView(BaseAPIView, SignalAwareViewMixin, AccountHistoricalTrackin
         return queryset
 
     def get_serializer_context(self):
-        """Add signal info flag to serializer context"""
+        """Add signal info and department filter to serializer context"""
         context = super().get_serializer_context()
         
         # Check if signal info was requested via query param
         include_signal_info = self.request.query_params.get('include_signal_info', 'false').lower() == 'true'
         context['include_signal_info'] = include_signal_info
+        
+        # Check if department breakdown was requested
+        include_department_breakdown = self.request.query_params.get('include_department_breakdown', 'false').lower() == 'true'
+        context['include_department_breakdown'] = include_department_breakdown
+        
+        # Check if department filter was specified
+        department_id = self.request.query_params.get('department_id')
+        if department_id:
+            try:
+                department = StandardDepartment.objects.get(id=department_id)
+                context['department'] = department
+            except StandardDepartment.DoesNotExist:
+                # Just ignore invalid department
+                pass
         
         return context
 
@@ -137,7 +153,7 @@ class AccountAPIView(BaseAPIView, SignalAwareViewMixin, AccountHistoricalTrackin
 
     def dispatch(self, request, *args, **kwargs):
         """Custom dispatch to handle different endpoints"""
-        # Check if this is a signals or field-signals endpoint
+        # Check if this is a signals, field-signals, or qualification endpoint
         path = request.path.split('/')
         
         # Path will contain segments like ['', 'api', 'accounts', '1', 'signals', '']
@@ -155,9 +171,75 @@ class AccountAPIView(BaseAPIView, SignalAwareViewMixin, AccountHistoricalTrackin
             elif endpoint_type == 'hierarchy':
                 if request.method == 'GET':
                     return self.get_hierarchy(request, *args, **kwargs)
+                    
+            elif endpoint_type == 'qualification':
+                if request.method == 'GET':
+                    return self.get_qualification(request, *args, **kwargs)
         
         # Default to standard dispatch
         return super().dispatch(request, *args, **kwargs)
+    
+    @action(detail=True, methods=['get'])
+    def get_qualification(self, request, *args, **kwargs):
+        """
+        Get qualification data for an account with filtering options.
+        
+        GET /api/accounts/{id}/qualification/
+        """
+        try:
+            account = self.get_objects([kwargs.get('pk')]).first()
+            if not account:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+            # Parse filter parameters
+            department_id = request.query_params.get('department_id')
+            field_name = request.query_params.get('field_name')
+            min_confirmations = request.query_params.get('min_confirmations')
+            source_contact_id = request.query_params.get('source_contact_id')
+            include_signal_info = request.query_params.get('include_signal_info', 'false').lower() == 'true'
+            
+            # Build filters
+            filters = {}
+            
+            if department_id:
+                try:
+                    department = StandardDepartment.objects.get(id=department_id)
+                    filters['department'] = department
+                except StandardDepartment.DoesNotExist:
+                    pass
+            
+            if field_name:
+                # Convert from comma-separated string to list if needed
+                if ',' in field_name:
+                    field_names = [name.strip() for name in field_name.split(',')]
+                    filters['field_names'] = field_names
+                else:
+                    filters['field_names'] = [field_name]
+            
+            if min_confirmations and min_confirmations.isdigit():
+                filters['min_confirmations'] = int(min_confirmations)
+            
+            if source_contact_id:
+                from ..models import Contact
+                try:
+                    contact = Contact.objects.get(id=source_contact_id)
+                    filters['source_contact'] = contact
+                except Contact.DoesNotExist:
+                    pass
+            
+            filters['include_signal_info'] = include_signal_info
+            
+            # Get qualification data with filters
+            from apps.signals.services.signal_data_service import SignalDataService
+            qualification_data = SignalDataService.get_account_qualification_data(
+                account=account,
+                **filters
+            )
+            
+            return Response(qualification_data)
+            
+        except Exception as e:
+            return self.handle_exception(e)
     
         
 

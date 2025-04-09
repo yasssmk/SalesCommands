@@ -12,6 +12,9 @@ urlpatterns = [
     path('<int:pk>/field-signals/', AccountAPIView.as_view(), name='account-field-signals'),
     path('<int:pk>/hierarchy/', AccountAPIView.as_view(), name='account-hierarchy'),
 
+    # New qualification data endpoint
+    path('<int:pk>/qualification/', AccountAPIView.as_view(), name='account-qualification'),
+
     #Contacts
     path('contacts/', ContactAPIView.as_view(), name='contact-list'),
     path('contacts/<int:pk>/', ContactAPIView.as_view(), name='contact-detail'),
@@ -24,6 +27,9 @@ urlpatterns = [
     path('techstack/', TechStackAPIView.as_view(), name='techstack-list'),
     path('techstack/<int:pk>/', TechStackAPIView.as_view(), name='techstack-detail'),
     path('account/<int:account_id>/techstack/', TechStackAPIView.as_view(), name='account-techstack-list'),
+
+    # New tech stack evaluation endpoint
+    path('techstack/<int:pk>/evaluation/', TechStackAPIView.as_view(), name='techstack-evaluation'),
 
     # Choice endpoints
     path('contacts/choices/', ContactChoicesView.as_view(), name='contact-choices'),

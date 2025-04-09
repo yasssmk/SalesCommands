@@ -1,12 +1,7 @@
 from django.urls import path
-from .views.transcript_analysis_views import TranscriptAnalysisView
-from .views.apr_analysis_view import APRAnalysisView
 from .views.signal_view import SignalView
 
 urlpatterns = [
-    path('analyze-transcript/', TranscriptAnalysisView.as_view(), name='analyze-transcript'),
-    path('analyze-apd/', APRAnalysisView.as_view(), name='analyze-apd'),
-    path('analyze-apd/update-apd/', APRAnalysisView.as_view(), name='update-apd'),
 
     # Signal CRUD
     path('signals/', SignalView.as_view(), name='signal-list'),

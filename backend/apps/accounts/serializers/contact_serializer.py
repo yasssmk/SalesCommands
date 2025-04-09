@@ -22,9 +22,9 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
     
     # Read-only fields
     full_name = serializers.SerializerMethodField()
+    department_name = serializers.SerializerMethodField(read_only=True)
 
     # Standard department fields
-    department = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     standard_department = StandardDepartmentSerializer(read_only=True)
     standard_department_id = serializers.PrimaryKeyRelatedField(
         queryset=StandardDepartment.objects.all(),
@@ -33,28 +33,33 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
         allow_null=True,
         write_only=True
     )
+
+    provided_signals_count = serializers.SerializerMethodField(read_only=True)
     
     
     class Meta:
         model = Contact
         fields = [
             'id', 'first_name', 'last_name', 'full_name', 'email', 'phone_number',
-            'job_title', 'department', 'standard_department', 'standard_department_id',
+            'job_title', 'department_name', 'standard_department', 'standard_department_id',
             'influence_level', 'influence_levels',
             'account', 'account_id',
-            'linkedin', 'objectives', 'motivations', 'pain_points', 'metrics',
-            'has_buying_authority', 'notes',
+            'linkedin', 'has_buying_authority', 'notes',
             'created_at', 'updated_at', 'client_id', 'historical_data',
-            'signal_metadata'
+            'provided_signals_count'
         ]
         read_only_fields = [
             'created_at', 'updated_at', 'client_id', 'historical_data', 'full_name',
-            'signal_metadata'
+            'department_name', 'provided_signals_count'
         ]
     
     def get_full_name(self, obj):
         """Get the contact's full name"""
         return f"{obj.first_name} {obj.last_name}"
+    
+    def get_department_name(self, obj):
+        """Get department name from standard_department"""
+        return obj.standard_department.get_name_display() if obj.standard_department else None
     
     def get_account(self, obj):
         """Return minimal account information"""
@@ -67,23 +72,10 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
         """Get available influence levels"""
         return [{'value': choice[0], 'label': choice[1]} for choice in InfluenceLevel.choices]
     
-    def get_has_qualification_data(self, obj):
-        """Check if contact has any qualification data"""
-        qualification_fields = ['objectives', 'pain_points', 'criteria']
-        return any(bool(getattr(obj, field)) for field in qualification_fields)
-    
-    def get_pending_changes_count(self, obj):
-        """Get count of pending signals for this contact"""
-        if hasattr(obj, 'get_pending_signals_count'):
-            return obj.get_pending_signals_count()
-        return 0
-    
-    def get_standard_departments(self, obj):
-        """Get available standard departments"""
-        return [
-            {'id': dept.id, 'name': dept.name, 'display_name': dept.get_name_display()}
-            for dept in StandardDepartment.objects.all()
-        ]
+    def get_provided_signals_count(self, obj):
+        """Get count of signals provided by this contact"""
+        from apps.signals.models import Signal
+        return Signal.objects.filter(source_contact=obj).count()
     
     def validate(self, data):
         """Validate contact data"""

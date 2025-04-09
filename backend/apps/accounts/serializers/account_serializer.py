@@ -87,11 +87,8 @@ class AccountSerializer(ContactDetailsSerializer,
     partners = serializers.SerializerMethodField(read_only=True)
 
     # JSON fields that support item operations
-    objectives = serializers.JSONField(required=False, allow_null=True)
-    motivations = serializers.JSONField(required=False, allow_null=True)
-    metrics = serializers.JSONField(required=False, allow_null=True)
-    pain_points = serializers.JSONField(required=False, allow_null=True)
-    implications = serializers.JSONField(required=False, allow_null=True)
+    qualification_data = serializers.SerializerMethodField(read_only=True)
+    qualification_by_department = serializers.SerializerMethodField(read_only=True)
     has_buying_decision = serializers.BooleanField(
         required=False,
         default=True
@@ -113,14 +110,14 @@ class AccountSerializer(ContactDetailsSerializer,
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
             'team_owner', 'team_owner_id', 'client_id', 'historical_data',
-            'objectives', 'motivations', 'metrics',
-            'pain_points', 'implications', 'has_buying_decision',
+            'qualification_data', 'qualification_by_department', 'has_buying_decision',
             'partners', 'partner_ids',
-            'signal_metadata', 'qualification_with_signals', 'profile_with_signals'
+            'signal_metadata', 
         ]
         read_only_fields = [
             'created_at', 'updated_at', 'client_id', 'historical_data', 
-            'signal_metadata', 'qualification_with_signals', 'profile_with_signals'
+            'qualification_data', 'qualification_by_department',
+            'signal_metadata'
         ]
     
     def get_parent_company(self, obj):
@@ -148,6 +145,24 @@ class AccountSerializer(ContactDetailsSerializer,
             'company_name': partner.company_name,
             'type': partner.type
         } for partner in obj.partners.all()]
+    
+    def get_qualification_data(self, obj):
+        """Get qualification data from signals."""
+        # Check if include_signal_info is in context
+        include_signal_info = self.context.get('include_signal_info', False)
+        department = self.context.get('department', None)
+        
+        return obj.get_qualification_data(
+            include_signal_info=include_signal_info,
+            department=department
+        )
+    
+    def get_qualification_by_department(self, obj):
+        """Get qualification data organized by department."""
+        # Only include if explicitly requested
+        if self.context.get('include_department_breakdown', False):
+            return obj.get_qualification_by_department()
+        return None
     
     def validate_type(self, value):
         """Validate type field"""

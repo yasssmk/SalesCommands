@@ -62,30 +62,6 @@ class Contact(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, Contact
         verbose_name=_('Influence Level')
     )
     
-    # Personal qualification data
-    objectives = models.JSONField(
-        blank=True,
-        null=True,
-        verbose_name=_('Personal Objectives')
-    )
-
-    motivations = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Motivations')
-    )
-    
-    pain_points = models.JSONField(
-        blank=True,
-        null=True,
-        verbose_name=_('Personal Pain Points')
-    )
-    
-    metrics = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Metrics')
-    )
     
     has_buying_authority = models.BooleanField(
         blank=True,
@@ -114,6 +90,12 @@ class Contact(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, Contact
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}"
+    
+    @property
+    def department_name(self):
+        """Get department name from standard_department"""
+        return self.standard_department.get_name_display() if self.standard_department else None
+    
     
     def get_profile_data(self, include_signal_info=False):
         """Get profile data with signals if requested"""

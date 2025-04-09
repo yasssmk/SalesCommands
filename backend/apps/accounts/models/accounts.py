@@ -12,6 +12,7 @@ from core.error_messages import AccountErrorMessages, CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.models import HistoricalTrackingModel
 from end_users.models import User, Team
+from apps.signals.services import SignalDataService
 
 # Personalization: Users could add new choices 
 class AccountType(models.TextChoices):
@@ -70,36 +71,6 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
         blank=True, 
         null=True, 
         verbose_name=_('Annual Revenue')
-    )
-
-    objectives = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Objectives')
-    )
-       
-    motivations = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Motivations')
-    )
-    
-    metrics = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Metrics')
-    )
-    
-    pain_points = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Pain Points')
-    )
-    
-    implications = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name=_('Implications')
     )
 
     has_buying_decision = models.BooleanField(
@@ -260,3 +231,47 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
             
         return True
     
+    def get_qualification_signals(self, field_name=None, department=None, 
+                                min_confirmations=None, include_expired=False):
+        """Get qualification signals for this account."""
+        from apps.signals.models import Signal
+        
+        # Base query for qualification signals
+        query = Signal.objects.filter(
+            account=self,
+            category=Signal.Category.QUALIFICATION,
+            entity_type=Signal.EntityType.ACCOUNT
+        )
+        
+        # Add field filter if provided
+        if field_name:
+            if isinstance(field_name, list):
+                query = query.filter(field_name__in=field_name)
+            else:
+                query = query.filter(field_name=field_name)
+        
+        # Get filtered signals
+        return SignalDataService.get_field_signals(
+            account=self,
+            field_name=field_name,
+            entity_type=Signal.EntityType.ACCOUNT,
+            department=department,
+            min_confirmations=min_confirmations,
+            include_expired=include_expired,
+            status=[Signal.Status.APPROVED, Signal.Status.APPLIED]
+        )
+    
+    def get_qualification_data(self, include_signal_info=False, department=None, 
+                             min_confirmations=None, field_names=None):
+        """Get qualification data from signals."""
+        return SignalDataService.get_account_qualification_data(
+            account=self,
+            field_names=field_names,
+            department=department,
+            min_confirmations=min_confirmations,
+            include_signal_info=include_signal_info
+        )
+    
+    def get_qualification_by_department(self):
+        """Get qualification data organized by department."""
+        return SignalDataService.get_profile_by_department(self)
