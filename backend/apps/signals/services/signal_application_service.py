@@ -3,7 +3,7 @@
 from django.utils import timezone
 from django.db import transaction
 from ..models import Signal
-from apps.accounts.models import Account, Contact, TechStack
+
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 
@@ -65,13 +65,6 @@ class SignalApplicationService:
         """
         Apply signal to account. For qualification data, we just mark the signal as applied.
         For direct model fields, we update the account model.
-        
-        Args:
-            signal: Signal to apply
-            user: User applying the signal
-            
-        Returns:
-            bool: Success indicator
         """
         try:
             account = signal.account
@@ -80,26 +73,41 @@ class SignalApplicationService:
             
             # For qualification category signals, the signal itself is the source of truth
             if signal.category == Signal.Category.QUALIFICATION:
-                # Just track the signal application in historical_data
+                # Track the signal application in signal_metadata
+                if not account.signal_metadata:
+                    account.signal_metadata = {}
+                    
+                # Initialize field entry if needed
+                if field_name not in account.signal_metadata:
+                    account.signal_metadata[field_name] = {
+                        'applied_signals': [],
+                        'last_application': None
+                    }
+                
+                # Add application record
+                application_record = {
+                    'signal_id': str(signal.id),
+                    'applied_at': timezone.now().isoformat(),
+                    'applied_by': str(user.id) if user else None,
+                    'value': value,
+                    'source_contact_id': str(signal.source_contact.id) if signal.source_contact else None,
+                    'source_department_id': str(signal.source_department.id) if signal.source_department else None
+                }
+                
+                account.signal_metadata[field_name]['applied_signals'].append(application_record)
+                account.signal_metadata[field_name]['last_application'] = application_record
+                
+                # Also track in historical_data for audit trail
                 if hasattr(account, 'track_field_change'):
-                    # Get current value from signal data service
-                    from apps.signals.services.signal_data_service import SignalDataService
-                    current_data = SignalDataService.get_field_data(
-                        account=account,
-                        field_name=field_name
-                    )
-                    
-                    current_value = current_data.get('value', []) if current_data else []
-                    
-                    # Record the change
                     account.track_field_change(
                         field_name=field_name,
-                        old_value=current_value,
+                        old_value=None,  # We don't track previous values for qualification data
                         new_value=value,
                         user=user,
                         signal=signal
                     )
                 
+                account.save(update_fields=['signal_metadata', 'historical_data'])
                 return True
             
             # For PROFILE category signals, update direct account fields
@@ -116,7 +124,30 @@ class SignalApplicationService:
                     if hasattr(account, 'track_field_change'):
                         account.track_field_change(field_name, old_value, value, user, signal)
                     
-                    account.save(update_fields=[field_name, 'historical_data'])
+                    # Also track in signal_metadata
+                    if not account.signal_metadata:
+                        account.signal_metadata = {}
+                        
+                    if field_name not in account.signal_metadata:
+                        account.signal_metadata[field_name] = {
+                            'applied_signals': [],
+                            'last_application': None
+                        }
+                    
+                    application_record = {
+                        'signal_id': str(signal.id),
+                        'applied_at': timezone.now().isoformat(),
+                        'applied_by': str(user.id) if user else None,
+                        'old_value': old_value,
+                        'new_value': value,
+                        'source_contact_id': str(signal.source_contact.id) if signal.source_contact else None,
+                        'source_department_id': str(signal.source_department.id) if signal.source_department else None
+                    }
+                    
+                    account.signal_metadata[field_name]['applied_signals'].append(application_record)
+                    account.signal_metadata[field_name]['last_application'] = application_record
+                    
+                    account.save(update_fields=[field_name, 'historical_data', 'signal_metadata'])
                     return True
                 
                 # For other profile fields, just mark as applied without updating model
@@ -131,7 +162,6 @@ class SignalApplicationService:
             raise StandardizedValidationError({
                 CoreErrorMessages.INVALID_OPERATION: f"Error applying signal: {str(e)}"
             })
-
     @classmethod
     def _apply_to_techstack(cls, signal, user):
         """
@@ -159,6 +189,7 @@ class SignalApplicationService:
             # Find the relevant tech stack or create one
             tech_stack = None
             if tech_stack_name:
+                from apps.accounts.models import TechStack
                 # Try to find existing tech stack
                 tech_stack = TechStack.objects.filter(
                     account=account,

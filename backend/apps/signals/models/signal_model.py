@@ -134,7 +134,7 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Merged Into Signal')
     )
     
-    # Dates and timestamps
+    #Later to connect with activity
     source = models.CharField(
         max_length=50,
         blank=True,
@@ -142,6 +142,7 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Data Source')
     )
     
+    # Dates and timestamps
     revisit_date = models.DateTimeField(
         blank=True,
         null=True,
@@ -216,106 +217,12 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     )
 
     def clean(self):
-        """Validate signal data"""
+        """Minimal clean method with basic validations"""
         super().clean()
         
-        # Validate field_name matches category
-        if self.field_name in self.FIELD_CATEGORIES:
-            expected_category = self.FIELD_CATEGORIES[self.field_name]
-            if self.category != expected_category:
-                raise StandardizedValidationError({CoreErrorMessages.INVALID_DATA: {
-                    'detail': f"Field '{self.field_name}' should be in category '{expected_category}', not '{self.category}'"}
-                })
-        
-        # Validate value format based on field type
-        self._validate_field_value()
-        
+        # Set source department from contact if available and not set
         if self.source_contact and not self.source_department and hasattr(self.source_contact, 'standard_department'):
             self.source_department = self.source_contact.standard_department
-    
-    def _validate_field_value(self):
-        """Validate that the value matches the expected format for the field"""
-        if self.field_name is None or self.value is None:
-            return
-        
-        try:
-            # Map fields to their validators
-            validators = {
-                self.Field.OBJECTIVES: FieldValidators.validate_objectives,
-                self.Field.PAIN_POINTS: FieldValidators.validate_pain_points,
-                self.Field.METRICS: FieldValidators.validate_metrics,
-                self.Field.ANNUAL_COSTS: FieldValidators.validate_annual_costs,
-                self.Field.START_YEAR_OF_USAGE: FieldValidators.validate_start_year
-            }
-            
-            # Run the appropriate validator if available
-            if self.field_name in validators:
-                validators[self.field_name](self.value)
-            
-            # For other list fields, just verify it's a list
-            list_fields = [
-                self.Field.MOTIVATIONS,
-                self.Field.IMPLICATIONS,
-                self.Field.PROS,
-                self.Field.CONS
-            ]
-            
-            if self.field_name in list_fields and not isinstance(self.value, list):
-                raise StandardizedValidationError({
-                    CoreErrorMessages.INVALID_DATA: {
-                        "detail": f"Field '{self.field_name}' requires a list value, got {type(self.value).__name__}"
-                    }
-                })
-        
-        except StandardizedValidationError:
-            # Re-raise validation errors
-            raise
-        except Exception as e:
-            # Wrap other errors
-            raise StandardizedValidationError({
-                CoreErrorMessages.INVALID_DATA: {
-                    "detail": f"Error validating field '{self.field_name}': {str(e)}"
-                }
-            })
-
-    @staticmethod
-    def validate_signal_data(field_name, value, category=None):
-        """
-        Static validation method for signal data (enhanced version).
-        
-        Args:
-            field_name: Field name to validate
-            value: Value to validate
-            category: Optional category to validate
-            
-        Returns:
-            tuple: (is_valid, error_message)
-        """
-        try:
-            # Validate category match if provided
-            if category and field_name in Signal.FIELD_CATEGORIES:
-                expected_category = Signal.FIELD_CATEGORIES[field_name]
-                if category != expected_category:
-                    return False, f"Field '{field_name}' should be in category '{expected_category}', not '{category}'"
-            
-            # Create a temporary signal object to use the instance method
-            temp_signal = Signal(field_name=field_name, value=value, category=category)
-            
-            # Run the validation
-            temp_signal._validate_field_value()
-            
-            return True, None
-            
-        except StandardizedValidationError as e:
-            # Extract error message from the standardized error
-            if isinstance(e.detail, dict) and 'error' in e.detail:
-                if isinstance(e.detail['error'], dict) and 'detail' in e.detail['error']:
-                    return False, e.detail['error']['detail']
-                return False, e.detail['error']
-            return False, str(e)
-        except Exception as e:
-            return False, str(e)
-
 
     @classmethod
     def get_signals_for_field(cls, account, field_name, status=None, department=None, min_confirmations=None):

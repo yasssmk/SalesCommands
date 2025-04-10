@@ -7,6 +7,7 @@ from django.utils import timezone
 class HistoricalTrackingModel(models.Model):
     """
     Model mixin that provides historical data tracking functionality.
+    Enhanced to work with signal-based qualification data.
     """
     historical_data = models.JSONField(
         blank=True,
@@ -62,6 +63,10 @@ class HistoricalTrackingModel(models.Model):
             change_entry['signal_id'] = str(signal.id)
             change_entry['signal_category'] = getattr(signal, 'category', None)
             change_entry['signal_status'] = getattr(signal, 'status', None)
+            change_entry['signal_source'] = getattr(signal, 'source', None)
+            change_entry['source_contact_id'] = str(signal.source_contact.id) if getattr(signal, 'source_contact', None) else None
+            change_entry['source_department_id'] = str(signal.source_department.id) if getattr(signal, 'source_department', None) else None
+            change_entry['confirmation_count'] = getattr(signal, 'confirmation_count', None)
         
         # Add to changes list
         self.historical_data[field_name]['changes'].append(change_entry)
@@ -92,71 +97,61 @@ class HistoricalTrackingModel(models.Model):
             user=user
         )
     
-    def update_tracked_json_item(self, field_name, item_id, new_item, id_key='id', user=None):
+    def create_field_signal(self, field_name, value, category, user=None, source=None, 
+                           department=None, contact=None):
         """
-        Update a single item in a JSONField array
+        Create a signal for a field and track it in historical data.
         
         Args:
-            field_name (str): JSONField name
-            item_id: ID of the item to update
-            new_item: New value for the item
-            id_key (str): Key used as identifier in the JSON objects
-            user (User, optional): User making the change
+            field_name: Field name for the signal
+            value: Value for the signal
+            category: Signal category
+            user: User creating the signal
+            source: Source of the signal
+            department: Optional department for the signal
+            contact: Optional contact for the signal
             
         Returns:
-            bool: Whether the update was successful
+            Signal: Created signal
         """
-        from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
+        from apps.signals.models import Signal
         
-        return HistoricalTrackingService.update_json_item(
-            instance=self,
+        # Determine entity type
+        entity_type = Signal.EntityType.ACCOUNT
+        
+        # Get account from the entity
+        account = self if hasattr(self, 'company_name') else self.account
+        
+        # Create metadata based on entity type
+        metadata = {}
+        if hasattr(self, 'tech_name'):  # It's a TechStack
+            metadata['tech_stack_id'] = str(self.id)
+            metadata['tech_name'] = self.tech_name
+        
+        # Create the signal
+        signal = Signal.objects.create(
+            account=account,
+            entity_type=entity_type,
+            category=category,
             field_name=field_name,
-            item_id=item_id,
-            new_item=new_item,
-            id_key=id_key,
-            user=user
+            value=value,
+            status=Signal.Status.PENDING,
+            source=source or 'manual',
+            source_contact=contact,
+            source_department=department,
+            client_id=account.client_id,
+            created_by=user,
+            updated_by=user,
+            metadata=metadata
         )
-    
-    def add_tracked_json_item(self, field_name, new_item, user=None):
-        """
-        Add an item to a JSONField array
         
-        Args:
-            field_name (str): JSONField name
-            new_item: Item to add
-            user (User, optional): User making the change
-            
-        Returns:
-            bool: Whether the addition was successful
-        """
-        from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
-        
-        return HistoricalTrackingService.add_json_item(
-            instance=self,
+        # Track in historical data
+        self.track_field_change(
             field_name=field_name,
-            new_item=new_item,
-            user=user
+            old_value=None,
+            new_value=value,
+            user=user,
+            signal=signal
         )
-    
-    def remove_tracked_json_item(self, field_name, item_id, id_key='id', user=None):
-        """
-        Remove an item from a JSONField array
         
-        Args:
-            field_name (str): JSONField name
-            item_id: ID of the item to remove
-            id_key (str): Key used as identifier in the JSON objects
-            user (User, optional): User making the change
-            
-        Returns:
-            bool: Whether the removal was successful
-        """
-        from apps.core_apps.services.historical_tracking_service import HistoricalTrackingService
-        
-        return HistoricalTrackingService.remove_json_item(
-            instance=self,
-            field_name=field_name,
-            item_id=item_id,
-            id_key=id_key,
-            user=user
-        )
+        return signal

@@ -6,7 +6,7 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.serializers import AccountLinkedSerializerMixin
-from apps.accounts.models import Account, Contact, AccountProductRelationship
+from ..validators import FieldValidators
 from apps.products.models import Product
 from ..models import Signal
 
@@ -14,10 +14,11 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
     """
     Serializer for the Signal model with proper validation and client scoping.
     """
+
     
     source_contact_id = serializers.PrimaryKeyRelatedField(
         source='source_contact',
-        queryset=Contact.objects.all(),
+        queryset='apps.accounts.models.Contact.objects.all()',
         required=False,
         allow_null=True,
         write_only=True
@@ -25,7 +26,7 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
     
     account_product_relationship_id = serializers.PrimaryKeyRelatedField(
         source='account_product_relationship',
-        queryset=AccountProductRelationship.objects.all(),
+        queryset='apps.accounts.models.AccountProductRelationship.objects.all()',
         required=False,
         allow_null=True,
         write_only=True
@@ -207,8 +208,62 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
         
         return result
     
+    def _validate_field_category_match(self, field_name, category):
+        """Validate that field belongs to the expected category"""
+        if field_name in Signal.FIELD_CATEGORIES:
+            expected_category = Signal.FIELD_CATEGORIES[field_name]
+            if category != expected_category:
+                raise StandardizedValidationError({CoreErrorMessages.INVALID_DATA: {
+                    'detail': f"Field '{field_name}' should be in category '{expected_category}', not '{category}'"}
+                })
+        return True
+    
+    def _validate_field_value(self, field_name, value):
+        """Validate that the value matches the expected format for the field"""
+        if field_name is None or value is None:
+            return True
+        
+        try:
+            # Map fields to their validators
+            validators = {
+                Signal.Field.OBJECTIVES: FieldValidators.validate_objectives,
+                Signal.Field.PAIN_POINTS: FieldValidators.validate_pain_points,
+                Signal.Field.METRICS: FieldValidators.validate_metrics,
+                Signal.Field.ANNUAL_COSTS: FieldValidators.validate_annual_costs,
+                Signal.Field.START_YEAR_OF_USAGE: FieldValidators.validate_start_year
+            }
+            
+            # Run the appropriate validator if available
+            if field_name in validators:
+                validators[field_name](value)
+            
+            # For other list fields, just verify it's a list
+            list_fields = [
+                Signal.Field.MOTIVATIONS,
+                Signal.Field.IMPLICATIONS,
+                Signal.Field.PROS,
+                Signal.Field.CONS
+            ]
+            
+            if field_name in list_fields and not isinstance(value, list):
+                raise StandardizedValidationError({
+                    CoreErrorMessages.INVALID_DATA: {
+                        "detail": f"Field '{field_name}' requires a list value, got {type(value).__name__}"
+                    }
+                })
+                
+            return True
+        
+        except Exception as e:
+            # Wrap other errors
+            raise StandardizedValidationError({
+                CoreErrorMessages.INVALID_DATA: {
+                    "detail": f"Error validating field '{field_name}': {str(e)}"
+                }
+            })
+    
     def validate(self, data):
-        """Custom validation for signal data"""
+        """Enhanced validation for signal data"""
         data = super().validate(data)
         
         # Validate field_name and category match
@@ -217,13 +272,11 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
         value = data.get('value')
         
         if field_name and category:
-            # Use the static validation method
-            is_valid, error_message = Signal.validate_signal_data(field_name, value, category)
+            self._validate_field_category_match(field_name, category)
             
-            if not is_valid:
-                raise StandardizedValidationError({
-                    CoreErrorMessages.INVALID_DATA: {'detail': error_message}
-                })
+        # Validate field value format
+        if field_name and value:
+            self._validate_field_value(field_name, value)
         
         # Get client_id from context
         client_id = self._get_client_id_from_context()
@@ -247,7 +300,7 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
                 )
             )
             
-        # Update field name
+        # Validate account product relationship
         apr = data.get('account_product_relationship')
         if apr and apr.account.id != account.id:
             raise StandardizedValidationError(
@@ -289,6 +342,55 @@ class SignalSerializer(AccountLinkedSerializerMixin, ClientScopeManager.Serializ
             )
                 
         return data
+
+
+class SignalBulkSerializer(serializers.ModelSerializer):
+    """
+    Simplified serializer for bulk signal creation with validation but reduced overhead.
+    """
+    
+    class Meta:
+        model = Signal
+        fields = [
+            'account', 'category', 'entity_type', 'field_name', 'value',
+            'status', 'source', 'source_contact', 'source_department',
+            'account_product_relationship', 'product_alignment', 'metadata',
+            'client_id', 'created_by', 'updated_by'
+        ]
+    
+    def validate(self, data):
+        """Perform essential validations only"""
+        field_name = data.get('field_name')
+        category = data.get('category')
+        value = data.get('value')
+        
+        # Skip validation for explicitly trusted sources
+        trusted_sources = ['batch_import', 'ai_analysis', 'system_migration', 'manual_entry']
+        if data.get('source') in trusted_sources:
+            return data
+            
+        # Only validate field-category and value format for non-trusted sources
+        if field_name and category and field_name in Signal.FIELD_CATEGORIES:
+            expected_category = Signal.FIELD_CATEGORIES[field_name]
+            if category != expected_category:
+                raise serializers.ValidationError(
+                    f"Field '{field_name}' should be in category '{expected_category}', not '{category}'"
+                )
+        
+        # Minimal value format validation
+        if field_name and value:
+            list_fields = [
+                Signal.Field.MOTIVATIONS, Signal.Field.IMPLICATIONS,
+                Signal.Field.PROS, Signal.Field.CONS
+            ]
+            
+            if field_name in list_fields and not isinstance(value, list):
+                raise serializers.ValidationError(
+                    f"Field '{field_name}' requires a list value, got {type(value).__name__}"
+                )
+                
+        return data
+
 
 class SignalBulkActionSerializer(serializers.Serializer):
     """

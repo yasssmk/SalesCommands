@@ -5,14 +5,13 @@ from rest_framework.response import Response
 from core.apps_shared_methods import BaseAPIView
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-from apps.core_apps.views import SignalAwareViewMixin, TechStackHistoricalTrackingMixin
 from apps.core_apps.models import StandardDepartment
 from ..models import TechStack
 from ..serializers import TechStackSerializer
 from django.utils.translation import gettext_lazy as _
 
 
-class TechStackAPIView(BaseAPIView, TechStackHistoricalTrackingMixin, SignalAwareViewMixin):
+class TechStackAPIView(BaseAPIView):
     """
     API View for TechStack management with signal-based evaluation data.
     """
@@ -143,4 +142,6 @@ class TechStackAPIView(BaseAPIView, TechStackHistoricalTrackingMixin, SignalAwar
             
         except Exception as e:
             return self.handle_exception(e)
+    
+
                 

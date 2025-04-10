@@ -8,8 +8,8 @@ from core.exceptions import StandardizedValidationError, StandardizedAuthenticat
 from core.error_messages import CoreErrorMessages
 from ..services.new_prompt import get_full_insights
 from ..serializers.transript_serializer import TranscriptAnalysisSerializer
-from ..services.signal_parsing_service import SignalParsingService
-from ..serializers.signal_summary_serializer import SignalSummarySerializer
+from apps.signals.services import SignalParsingService
+from apps.signals.serializers import SignalSummarySerializer
 from core.apps_shared_methods import BaseAPIView
 
 class TranscriptAnalysisView(BaseAPIView):

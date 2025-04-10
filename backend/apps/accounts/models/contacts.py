@@ -3,7 +3,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from phonenumber_field.modelfields import PhoneNumberField
-from apps.core_apps.models import BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, SignalEnabledQualificationMixin, SignalAwareMixin
+from apps.core_apps.models import BaseModelApp, AccountLinkedModel, HistoricalTrackingModel
 from core.client_scope import ClientScopeManager
 from core.models import ContactDetailsMixin
 
@@ -16,8 +16,8 @@ class InfluenceLevel(models.TextChoices):
     BLOCKER = 'BLOCKER', _('Blocker')
     UNKNOWN = 'UNKNOWN', _('Unknown')
 
-class Contact(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, ContactDetailsMixin, 
-              SignalEnabledQualificationMixin, SignalAwareMixin, ClientScopeManager.ModelMixin):
+class Contact(BaseModelApp, AccountLinkedModel, ContactDetailsMixin, 
+               ClientScopeManager.ModelMixin):
     """
     Represents a contact person at an account.
     """

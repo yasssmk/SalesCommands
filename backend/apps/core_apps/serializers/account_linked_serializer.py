@@ -1,8 +1,7 @@
 
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError, AuthenticationFailed, StandardizedPermissionDenied
-# from apps.accounts_app.accounts.models import Account
-from apps.accounts.models import Account
+
 
 class AccountLinkedSerializerMixin:
     """
@@ -23,7 +22,7 @@ class AccountLinkedSerializerMixin:
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(field="Account")
             )
-            
+        from apps.accounts.models import Account
         try:
             # Get client_id from context (set by view)
             client_id = self.context.get('client_id')
@@ -35,6 +34,7 @@ class AccountLinkedSerializerMixin:
                 raise StandardizedPermissionDenied(CoreErrorMessages.CLIENT_MISMATCH)
             
             return value
+
 
         except Account.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)

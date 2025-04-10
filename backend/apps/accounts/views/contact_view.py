@@ -2,7 +2,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import transaction
 from core.apps_shared_methods import BaseAPIView
-from apps.core_apps.views import SignalAwareViewMixin, ContactHistoricalTrackingMixin
 from apps.core_apps.models import StandardDepartment
 from ..models import Contact
 from ..serializers import ContactSerializer
@@ -10,7 +9,7 @@ from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.exceptions import StandardizedValidationError
 
-class ContactAPIView(BaseAPIView, SignalAwareViewMixin, ContactHistoricalTrackingMixin):
+class ContactAPIView(BaseAPIView):
     """
     API View for Contact management with signal awareness.
     """

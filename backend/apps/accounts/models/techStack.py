@@ -62,3 +62,57 @@ class TechStack(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin,
     def get_qualification_by_department(self):
         """Get tech evaluation data organized by department."""
         return SignalDataService.get_tech_stack_by_department(self.account)
+    
+    def get_tech_evaluation_by_source(self, department=None, contact=None):
+        """
+        Get tech evaluation data organized by source.
+        
+        Args:
+            department: Optional department to filter by
+            contact: Optional contact to filter by
+            
+        Returns:
+            dict: Tech evaluation data by source
+        """
+        from apps.signals.models import Signal
+        from django.db.models import Count
+        
+        # Get all tech stack signals for this tech stack
+        signals = Signal.objects.filter(
+            account=self.account,
+            category=Signal.Category.TECH_STACK,
+            entity_type=Signal.EntityType.ACCOUNT,
+            status__in=[Signal.Status.APPROVED, Signal.Status.APPLIED],
+            metadata__contains={'tech_stack_id': str(self.id)}
+        )
+        
+        if department:
+            signals = signals.filter(source_department=department)
+        
+        if contact:
+            signals = signals.filter(source_contact=contact)
+        
+        # Group by source
+        results = {}
+        sources = signals.values('source').annotate(count=Count('id')).order_by('-count')
+        
+        for source_info in sources:
+            source = source_info['source'] or 'unknown'
+            source_signals = signals.filter(source=source)
+            
+            # Group by field
+            source_data = {}
+            for signal in source_signals:
+                field_name = signal.field_name
+                if field_name not in source_data:
+                    source_data[field_name] = []
+                
+                # Add value to field data
+                if isinstance(signal.value, list):
+                    source_data[field_name].extend(signal.value)
+                else:
+                    source_data[field_name].append(signal.value)
+            
+            results[source] = source_data
+        
+        return results

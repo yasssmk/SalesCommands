@@ -9,11 +9,12 @@ from ..serializers import AccountSerializer
 from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from datetime import datetime
-from apps.core_apps.views import SignalAwareViewMixin, AccountHistoricalTrackingMixin
+# from apps.core_apps.views import HistoricalTrackingViewMixin
+# from signals.views import QualificationViewMixin, SignalAwareViewMixin
 from apps.core_apps.models import StandardDepartment
 from rest_framework.decorators import action
 
-class AccountAPIView(BaseAPIView, SignalAwareViewMixin, AccountHistoricalTrackingMixin):
+class AccountAPIView(BaseAPIView):
     """
     API View for Account management with parent-child relationship handling.
     """
@@ -241,7 +242,6 @@ class AccountAPIView(BaseAPIView, SignalAwareViewMixin, AccountHistoricalTrackin
         except Exception as e:
             return self.handle_exception(e)
     
-        
 
 class AccountChoicesView(APIView):
     """

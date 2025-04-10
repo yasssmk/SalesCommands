@@ -14,6 +14,7 @@ from ..services.signal_status_service import SignalStatusService
 from ..services.signal_application_service import SignalApplicationService
 from ..services.signal_lifecycle_service import SignalLifecycleService
 from ..services.signal_data_service import SignalDataService
+from django.utils import timezone
 
 class SignalView(BaseAPIView):
     """
@@ -150,8 +151,62 @@ class SignalView(BaseAPIView):
         elif 'confirm' in request.path:
             return self.confirm(request, *args, **kwargs)
         else:
-            # Standard POST behavior
-            return super().post(request, *args, **kwargs)
+            # Standard POST for signal creation
+            client_id = self.get_client_id()
+            
+            # Get serializer to validate the data first
+            if isinstance(request.data, list):
+                data_list = request.data
+            else:
+                data_list = [request.data]
+                
+            created_signals = []
+            with transaction.atomic():
+                for data_item in data_list:
+                    serializer = self.serializer_class(
+                        data=data_item, 
+                        context={'request': request, 'client_id': client_id}
+                    )
+                    
+                    if serializer.is_valid():
+                        # Use SignalCreationService instead of direct save
+                        from ..services.signal_creation_service import SignalCreationService
+                        
+                        # Get validated data
+                        validated_data = serializer.validated_data
+                        source = validated_data.get('source')
+                        
+                        # Prepare the signal creation arguments
+                        instance = validated_data.get('account')
+                        field_name = validated_data.get('field_name')
+                        value = validated_data.get('value')
+                        
+                        # Create signal through service
+                        signal = SignalCreationService.create_signal_for_field(
+                            instance=instance,
+                            field_name=field_name,
+                            value=value,
+                            source=source,
+                            user=request.user,
+                            department=validated_data.get('source_department'),
+                            contact=validated_data.get('source_contact')
+                        )
+                        
+                        created_signals.append(signal)
+                    else:
+                        raise StandardizedValidationError(serializer.errors)
+                    
+            # Return appropriate response
+            serializer = self.serializer_class(
+                created_signals if len(created_signals) > 1 else created_signals[0],
+                many=len(created_signals) > 1
+            )
+            
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED
+            )
+                    
 
     def get(self, request, *args, **kwargs):
         """Handle GET requests for signal list, detail, by-entity, and summary"""

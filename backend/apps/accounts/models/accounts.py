@@ -6,13 +6,13 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from core.models import ContactDetailsMixin
-from apps.core_apps.models import BaseModelApp, SignalAwareMixin, SignalEnabledQualificationMixin
+from apps.core_apps.models import BaseModelApp,  HistoricalTrackingModel
 from core.client_scope import ClientScopeManager
 from core.error_messages import AccountErrorMessages, CoreErrorMessages
 from core.exceptions import StandardizedValidationError
-from apps.core_apps.models import HistoricalTrackingModel
 from end_users.models import User, Team
 from apps.signals.services import SignalDataService
+from apps.signals.models import SignalAwareMixin, SignalEnabledQualificationMixin
 
 # Personalization: Users could add new choices 
 class AccountType(models.TextChoices):
@@ -275,3 +275,56 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
     def get_qualification_by_department(self):
         """Get qualification data organized by department."""
         return SignalDataService.get_profile_by_department(self)
+    
+    def get_qualification_by_source(self, department=None, contact=None):
+        """
+        Get qualification data organized by source.
+        
+        Args:
+            department: Optional department to filter by
+            contact: Optional contact to filter by
+            
+        Returns:
+            dict: Qualification data by source
+        """
+        from apps.signals.models import Signal
+        from django.db.models import Count
+        
+        # Get all qualification signals for this account
+        signals = Signal.objects.filter(
+            account=self,
+            category=Signal.Category.QUALIFICATION,
+            entity_type=Signal.EntityType.ACCOUNT,
+            status__in=[Signal.Status.APPROVED, Signal.Status.APPLIED]
+        )
+        
+        if department:
+            signals = signals.filter(source_department=department)
+        
+        if contact:
+            signals = signals.filter(source_contact=contact)
+        
+        # Group by source
+        results = {}
+        sources = signals.values('source').annotate(count=Count('id')).order_by('-count')
+        
+        for source_info in sources:
+            source = source_info['source'] or 'unknown'
+            source_signals = signals.filter(source=source)
+            
+            # Group by field
+            source_data = {}
+            for signal in source_signals:
+                field_name = signal.field_name
+                if field_name not in source_data:
+                    source_data[field_name] = []
+                
+                # Add value to field data
+                if isinstance(signal.value, list):
+                    source_data[field_name].extend(signal.value)
+                else:
+                    source_data[field_name].append(signal.value)
+            
+            results[source] = source_data
+        
+        return results

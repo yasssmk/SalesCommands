@@ -9,9 +9,9 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from apps.accounts.models.buyingProcess import BuyingProcess, BuyingProcessStep, BuyingProcessStepContact
 from apps.accounts.serializers.buyingprocess_serializer import BuyingProcessSerializer, BuyingProcessStepSerializer
-from apps.core_apps.views import SignalAwareViewMixin, BuyingProcessTrackingMixin, BuyingProcessStepTrackingMixin
 
-class BuyingProcessView(BaseAPIView, SignalAwareViewMixin, BuyingProcessTrackingMixin):
+
+class BuyingProcessView(BaseAPIView):
     """
     API view for managing buying processes with lifecycle tracking.
     """
@@ -70,7 +70,7 @@ class BuyingProcessView(BaseAPIView, SignalAwareViewMixin, BuyingProcessTracking
         
         return Response(process_data)
 
-class BuyingProcessStepView(BaseAPIView, SignalAwareViewMixin, BuyingProcessStepTrackingMixin):
+class BuyingProcessStepView(BaseAPIView):
     """
     API view for managing buying process steps.
     """
