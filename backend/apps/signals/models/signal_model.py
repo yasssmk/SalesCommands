@@ -4,9 +4,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel
-from core.error_messages import CoreErrorMessages
-from core.exceptions import StandardizedValidationError
-from ..validators import FieldValidators
+
 
 class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     """
@@ -224,55 +222,41 @@ class Signal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
         if self.source_contact and not self.source_department and hasattr(self.source_contact, 'standard_department'):
             self.source_department = self.source_contact.standard_department
 
+    def save(self, force_insert=False, force_update=False, *args, **kwargs):
+        from core.exceptions import StandardizedValidationError
+        from core.error_messages import CoreErrorMessages
+        
+        user = kwargs.pop('user', None)
+        client_id = kwargs.pop('client_id', None)
+        
+        if not self.pk:  # New instance
+            if not client_id and not self.client_id:
+                raise StandardizedValidationError(CoreErrorMessages.CLIENT_ID_REQUIRED)
+        
+        if self.source == 'manual_entry' and self.status == self.Status.PENDING:
+            self.status = self.Status.APPROVED
+        
+        # Let the BaseModelApp handle timestamps and user tracking
+        super().save(*args, **kwargs)
+    
     @classmethod
-    def get_signals_for_field(cls, account, field_name, status=None, department=None, min_confirmations=None):
+    def get_signals_for_account(cls, account_id, **filters):
         """
-        Get signals for a specific field with filtering options.
+        Get signals for a specific account with optional filters.
         
         Args:
-            account: Account to get signals for
-            field_name: Field name to filter by
-            status: Optional status to filter by
-            department: Optional department to filter by
-            min_confirmations: Minimum number of confirmations
-            
-        Returns:
-            QuerySet of signals matching the criteria
+            account_id: Account ID to filter by
+            **filters: Additional filters like category, field_name, etc.
         """
-        # Base query for this account and field
-        query = cls.objects.filter(
-            account=account,
-            field_name=field_name
-        )
+        query = cls.objects.filter(account_id=account_id)
         
-        # Add status filter if provided
-        if status:
-            if isinstance(status, list):
-                query = query.filter(status__in=status)
-            else:
-                query = query.filter(status=status)
-        else:
-            # Default to approved/applied signals
-            query = query.filter(status__in=[cls.Status.APPROVED, cls.Status.APPLIED])
-        
-        # Add department filter if provided
-        if department:
-            query = query.filter(source_department=department)
-        
-        # Add confirmation count filter if provided
-        if min_confirmations:
-            query = query.filter(confirmation_count__gte=min_confirmations)
-        
+        # Apply additional filters if provided
+        for field, value in filters.items():
+            if value is not None:
+                query = query.filter(**{field: value})
+                
         return query
     
-    def get_effective_status(self):
-        """Calculate the effective status based on age and signal type"""
-        from ..services.signal_lifecycle_service import SignalLifecycleService
-        return SignalLifecycleService.get_effective_status(self)
-        
-    def is_effectively_expired(self):
-        """Check if the signal is effectively expired"""
-        return self.get_effective_status() == "EXPIRED"
 
     def __str__(self):
         return f"{self.get_category_display()}: {self.field_name} [{self.get_status_display()}]"

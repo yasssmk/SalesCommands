@@ -2,15 +2,13 @@
 
 from django.db import transaction
 from ..models import Signal
-from django.db.models import Q
+from django.utils import timezone
 from apps.core_apps.models import StandardDepartment
-from .signal_creation_service import SignalCreationService
 
 class SignalParsingService:
     """
     Service for parsing AI-generated insights into signals.
-    Transforms LLM JSON output into structured signals categorized for sales effectiveness.
-    Uses SignalCreationService for consistent validation and optimized performance.
+    Transforms LLM JSON output into structured signals for sales intelligence.
     """
     
     @classmethod
@@ -31,96 +29,127 @@ class SignalParsingService:
         created_signals = []
         client_id = account.client_id
         
-        # Process account info - PROFILE category
-        if insights.get('accountInfo'):
-            profile_data = cls._extract_profile_data(insights['accountInfo'])
-            if profile_data:
-                profile_signals = SignalCreationService.create_signals_from_dict(
+        # Process account info (profile category)
+        if 'accountInfo' in insights:
+            profile_signals = cls._process_profile_data(
+                insights['accountInfo'], 
+                account, 
+                source, 
+                user
+            )
+            created_signals.extend(profile_signals)
+        
+        # Process qualification insights
+        if 'insights' in insights and 'accountInsights' in insights['insights']:
+            qualification_signals = cls._process_qualification_data(
+                insights['insights']['accountInsights'], 
+                account, 
+                source, 
+                user
+            )
+            created_signals.extend(qualification_signals)
+          
+        # Process tech stack data
+        if 'insights' in insights and 'techStack' in insights['insights']:
+            tech_stack_signals = cls._process_tech_stack_data(
+                insights['insights']['techStack'],
+                account,
+                source,
+                user
+            )
+            created_signals.extend(tech_stack_signals)
+        
+        return created_signals
+    
+    @classmethod
+    def _create_signal(cls, instance, field_name, value, category=None, source=None, user=None, **kwargs):
+        """
+        Create a single signal with proper validation and defaults.
+        """
+        # Determine category from field_name if not provided
+        if category is None and field_name in Signal.FIELD_CATEGORIES:
+            category = Signal.FIELD_CATEGORIES[field_name]
+        
+        # Skip if we can't determine category
+        if not category:
+            return None
+            
+        # Skip empty values
+        if value is None or (isinstance(value, (list, dict)) and not value):
+            return None
+        
+        # Create signal with proper defaults
+        try:
+            # Determine entity type
+            from apps.accounts.models import Account, TechStack
+            if isinstance(instance, Account):
+                entity_type = Signal.EntityType.ACCOUNT
+            elif isinstance(instance, TechStack):
+                entity_type = Signal.EntityType.TECH_STACK
+            else:
+                return None
+                
+            signal = Signal(
+                account=kwargs.get('account', instance if entity_type == Signal.EntityType.ACCOUNT else instance.account),
+                category=category,
+                entity_type=entity_type,
+                field_name=field_name,
+                value=value,
+                source=source or 'ai_analysis',
+                status=Signal.Status.PENDING,
+                source_contact=kwargs.get('contact'),
+                source_department=kwargs.get('department'),
+                tech_stack=instance if entity_type == Signal.EntityType.TECH_STACK else None,
+                client_id=instance.client_id,
+                created_by=user,
+                updated_by=user,
+                confirmation_count=1,
+                last_confirmed_at=timezone.now()
+            )
+            
+            # Add additional metadata if provided
+            if kwargs.get('metadata'):
+                signal.metadata = kwargs.get('metadata')
+                
+            signal.save()
+            return signal
+            
+        except Exception as e:
+            print(f"Error creating signal for {field_name}: {str(e)}")
+            return None
+    
+    @classmethod
+    def _process_profile_data(cls, account_info, account, source, user):
+        """Process profile data into signals"""
+        created_signals = []
+        
+        # Map fields directly
+        field_mapping = {
+            'employeeCount': Signal.Field.COMPANY_SIZE,
+            'annualRevenue': Signal.Field.ANNUAL_REVENUE,
+        }
+        
+        for json_field, signal_field in field_mapping.items():
+            if json_field in account_info and account_info[json_field]:
+                signal = cls._create_signal(
                     instance=account,
-                    data_dict=profile_data,
+                    field_name=signal_field,
+                    value=account_info[json_field],
+                    category=Signal.Category.PROFILE,
                     source=source,
                     user=user
                 )
-                created_signals.extend(profile_signals)
+                if signal:
+                    created_signals.append(signal)
         
-        # Process insights data
-        if insights.get('insights'):
-            insights_data = insights['insights']
-            
-            # Account-level insights
-            if insights_data.get('accountInsights'):
-                qualification_data = cls._extract_qualification_data(insights_data['accountInsights'])
-                if qualification_data:
-                    account_signals = SignalCreationService.create_signals_from_dict(
-                        instance=account,
-                        data_dict=qualification_data,
-                        source=source,
-                        user=user
-                    )
-                    created_signals.extend(account_signals)
-            
-            # Contact insights
-            if insights_data.get('contactsInsights'):
-                contact_signals = cls._process_contact_insights(
-                    insights_data['contactsInsights'],
-                    account,
-                    source,
-                    user
-                )
-                created_signals.extend(contact_signals)
-        
-            # Tech stack data
-            if insights_data.get('techStack'):
-                tech_stack_signals = cls._process_tech_stack_data(
-                    insights_data['techStack'],
-                    account,
-                    source,
-                    user
-                )
-                created_signals.extend(tech_stack_signals)
-
-            # Buying process data
-            if insights_data.get('buyingProcess'):
-                buying_process_signals = cls._process_buying_process_data(
-                    insights_data['buyingProcess'],
-                    account,
-                    source,
-                    user
-                )
-                created_signals.extend(buying_process_signals)
-                
         return created_signals
-    
-    @staticmethod
-    def _safe_get(data, key):
-        """Safely get value and filter out empty values"""
-        value = data.get(key)
-        if value is None:
-            return None
-        if isinstance(value, list) and len(value) == 0:
-            return None
-        return value
-    
-    @classmethod
-    def _extract_profile_data(cls, account_info):
-        """Extract profile data into a field_name -> value dictionary"""
-        profile_data = {}
-        
-        # Map fields
-        if 'employeeCount' in account_info and account_info['employeeCount'] != 0:
-            profile_data[Signal.Field.COMPANY_SIZE] = account_info['employeeCount']
-            
-        if 'annualRevenue' in account_info and account_info['annualRevenue'] != 0:
-            profile_data[Signal.Field.ANNUAL_REVENUE] = account_info['annualRevenue']
-            
-        return profile_data
 
     @classmethod
-    def _extract_qualification_data(cls, account_insights):
-        """Extract qualification data into a field_name -> value dictionary"""
-        qualification_data = {}
+    def _process_qualification_data(cls, account_insights, account, source, user):
+        """Process qualification data into signals"""
+        created_signals = []
         
-        # Map fields
+        # Field mapping from JSON to signal fields
         field_mapping = {
             'objectives': Signal.Field.OBJECTIVES,
             'motivations': Signal.Field.MOTIVATIONS,
@@ -130,91 +159,40 @@ class SignalParsingService:
         }
         
         for json_field, signal_field in field_mapping.items():
-            value = cls._safe_get(account_insights, json_field)
-            if value is not None:
-                qualification_data[signal_field] = value
-                
-        return qualification_data
-    
-    @classmethod
-    def _process_contact_insights(cls, contacts_insights, account, source, user):
-        """Process contact insights using efficient lookups for contacts and departments"""
-        created_signals = []
-        
-        # Pre-fetch all contacts for this account
-        from apps.accounts.models import Contact
-        account_contacts = {}
-        for contact in Contact.objects.filter(account=account):
-            full_name = f"{contact.first_name.lower()} {contact.last_name.lower()}".strip()
-            account_contacts[full_name] = contact
-        
-        # Pre-fetch departments
-        department_cache = {}
-        for dept in StandardDepartment.objects.all():
-            department_cache[dept.name] = dept
-        
-        for contact_insight in contacts_insights:
-            contact_name = contact_insight.get('contactName')
-            if not contact_name:
-                continue
-                
-            # Try to find contact by name
-            name_parts = contact_name.split(' ', 1)
-            first_name = name_parts[0] if len(name_parts) > 0 else ''
-            last_name = name_parts[1] if len(name_parts) > 1 else ''
-            full_name = f"{first_name.lower()} {last_name.lower()}".strip()
-            
-            contact = account_contacts.get(full_name)
-            department = None
-            
-            # Get department from contact or try to find it by name
-            if contact:
-                department = contact.standard_department
-            
-            if not department:
-                department_name = contact_insight.get('department')
-                if department_name:
-                    for dept_choice in StandardDepartment.DepartmentChoices:
-                        if dept_choice.label.lower() in department_name.lower() and dept_choice in department_cache:
-                            department = department_cache[dept_choice]
-                            break
-            
-            # Extract qualification data
-            qualification_data = cls._extract_qualification_data(contact_insight)
-            
-            if qualification_data:
-                # Create signals with this contact/department as source
-                for field_name, value in qualification_data.items():
-                    try:
-                        signal = SignalCreationService.create_signal_for_field(
-                            instance=account,
-                            field_name=field_name,
-                            value=value,
-                            source=source,
-                            user=user,
-                            contact=contact,
-                            department=department
-                        )
-                        
-                        # Add contact metadata
-                        if signal:
-                            signal.metadata = {
-                                'name': contact_name,
-                                'job_title': contact_insight.get('jobTitle'),
-                                'department': contact_insight.get('department'),
-                                'contact_id': str(contact.id) if contact else None,
-                                'department_id': str(department.id) if department else None
-                            }
-                            signal.save(update_fields=['metadata'])
-                            created_signals.append(signal)
-                    except Exception as e:
-                        print(f"Error creating signal for contact {contact_name}, field {field_name}: {str(e)}")
+            if json_field in account_insights and account_insights[json_field]:
+                # For array fields, create separate signals for each item
+                values = account_insights[json_field]
+                if isinstance(values, list):
+                    for value in values:
+                        if value:  # Skip empty values
+                            signal = cls._create_signal(
+                                instance=account,
+                                field_name=signal_field,
+                                value=value,
+                                category=Signal.Category.QUALIFICATION,
+                                source=source,
+                                user=user
+                            )
+                            if signal:
+                                created_signals.append(signal)
+                else:
+                    # Handle single values
+                    signal = cls._create_signal(
+                        instance=account,
+                        field_name=signal_field,
+                        value=values,
+                        category=Signal.Category.QUALIFICATION,
+                        source=source,
+                        user=user
+                    )
+                    if signal:
+                        created_signals.append(signal)
         
         return created_signals
-        
+    
     @classmethod
     def _process_tech_stack_data(cls, tech_stack_data, account, source, user):
-        """Process tech stack data using SignalCreationService for each tech product"""
+        """Process tech stack data into signals"""
         created_signals = []
         
         # Pre-fetch existing tech stacks
@@ -244,105 +222,51 @@ class SignalParsingService:
                 )
                 existing_tech_stacks[tech_name_lower] = tech_stack
             
-            # Extract tech stack fields
-            tech_data = {}
-            
-            # Handle primary and alternative field names
-            if cls._safe_get(tech_item, 'purpose'):
-                tech_data[Signal.Field.PURPOSE] = tech_item['purpose']
-                
-            if cls._safe_get(tech_item, 'pros'):
-                tech_data[Signal.Field.PROS] = tech_item['pros']
-                
-            # Handle alternative field names for cons
-            if cls._safe_get(tech_item, 'improvementPoints'):
-                tech_data[Signal.Field.CONS] = tech_item['improvementPoints']
-            elif cls._safe_get(tech_item, 'cons'):
-                tech_data[Signal.Field.CONS] = tech_item['cons']
-                
-            # Handle alternative field names for costs
-            if cls._safe_get(tech_item, 'annualCosts'):
-                tech_data[Signal.Field.ANNUAL_COSTS] = tech_item['annualCosts']
-            elif cls._safe_get(tech_item, 'costs'):
-                tech_data[Signal.Field.ANNUAL_COSTS] = tech_item['costs']
-                
-            if cls._safe_get(tech_item, 'renewalDate'):
-                tech_data[Signal.Field.RENEWAL_DATE] = tech_item['renewalDate']
-                
-            # Handle alternative field names for start year
-            if cls._safe_get(tech_item, 'startYear'):
-                tech_data[Signal.Field.START_YEAR_OF_USAGE] = tech_item['startYear']
-            elif cls._safe_get(tech_item, 'yearsOfUsage'):
-                tech_data[Signal.Field.START_YEAR_OF_USAGE] = tech_item['yearsOfUsage']
-            
-            # Create signals for this tech stack
-            if tech_data:
-                tech_signals = SignalCreationService.create_signals_from_dict(
-                    instance=tech_stack,
-                    data_dict=tech_data,
-                    source=source,
-                    user=user
-                )
-                created_signals.extend(tech_signals)
-        
-        return created_signals
-    
-    @classmethod
-    def _process_buying_process_data(cls, buying_process_data, account, source, user):
-        """Process buying process data into signals"""
-        created_signals = []
-        
-        # Pre-fetch departments
-        department_cache = {}
-        for dept in StandardDepartment.objects.all():
-            department_cache[dept.name] = dept
-        
-        for idx, step_data in enumerate(buying_process_data):
-            # Find department if mentioned
-            department = None
-            department_name = step_data.get('department')
-            
-            if department_name:
-                for dept_choice in StandardDepartment.DepartmentChoices:
-                    if dept_choice.label.lower() in department_name.lower() and dept_choice in department_cache:
-                        department = department_cache[dept_choice]
-                        break
-            
-            # Format step data
-            formatted_step = {
-                'stakeholder': step_data.get('stakeholder', ''),
-                'department_name': department_name,
-                'step_description': step_data.get('stepDescription', ''),
-                'step_goal': step_data.get('stepGoal', ''),
-                'influenceScore': step_data.get('influenceScore', 0),
-                'criterias': step_data.get('criterias', []),
-                'metrics': step_data.get('metrics', []),
-                'averageTimeInDays': step_data.get('averageTimeInDays', 0),
-                'step_position': idx + 1  # Add position information
+            # Field mapping with alternative field names
+            field_mapping = {
+                'purpose': Signal.Field.PURPOSE,
+                'pros': Signal.Field.PROS,
+                'cons': Signal.Field.CONS,
+                'improvementPoints': Signal.Field.CONS,  # Alternative name
+                'annualCosts': Signal.Field.ANNUAL_COSTS,
+                'costs': Signal.Field.ANNUAL_COSTS,  # Alternative name
+                'renewalDate': Signal.Field.RENEWAL_DATE,
+                'startYear': Signal.Field.START_YEAR_OF_USAGE,
+                'yearsOfUsage': Signal.Field.START_YEAR_OF_USAGE  # Alternative name
             }
             
-            # Create signal with step data
-            try:
-                signal = SignalCreationService.create_signal_for_field(
-                    instance=account,
-                    field_name='buying_process_step',
-                    value=formatted_step,
-                    source=source,
-                    user=user,
-                    department=department
-                )
-                
-                if signal:
-                    # Add process metadata
-                    signal.metadata = {
-                        'needs_position_assignment': True,
-                        'needs_process_assignment': True,
-                        'step_data': formatted_step,
-                        'step_position': idx + 1
-                    }
-                    signal.save(update_fields=['metadata'])
-                    created_signals.append(signal)
-            except Exception as e:
-                print(f"Error creating buying process step signal: {str(e)}")
+            # Process each tech stack field
+            for json_field, signal_field in field_mapping.items():
+                if json_field in tech_item and tech_item[json_field]:
+                    values = tech_item[json_field]
+                    
+                    # Create separate signals for list items
+                    if isinstance(values, list):
+                        for value in values:
+                            if value:  # Skip empty values
+                                signal = cls._create_signal(
+                                    instance=tech_stack,
+                                    field_name=signal_field,
+                                    value=value,
+                                    category=Signal.Category.TECH_STACK,
+                                    source=source,
+                                    user=user,
+                                    account=account
+                                )
+                                if signal:
+                                    created_signals.append(signal)
+                    else:
+                        # Handle single values
+                        signal = cls._create_signal(
+                            instance=tech_stack,
+                            field_name=signal_field,
+                            value=values,
+                            category=Signal.Category.TECH_STACK,
+                            source=source,
+                            user=user,
+                            account=account
+                        )
+                        if signal:
+                            created_signals.append(signal)
         
         return created_signals
