@@ -1,3 +1,5 @@
+# apps/analysis/views/transcript_analysis_view.py
+
 from rest_framework import status
 from django.conf import settings
 from rest_framework.response import Response
@@ -8,9 +10,10 @@ from core.exceptions import StandardizedValidationError, StandardizedAuthenticat
 from core.error_messages import CoreErrorMessages
 from ..services.new_prompt import get_full_insights
 from ..serializers.transript_serializer import TranscriptAnalysisSerializer
-from apps.signals.services import SignalParsingService
-from apps.signals.serializers import SignalSummarySerializer
+from apps.signals.services.signal_parsing_service import SignalParsingService
+from apps.signals.serializers.signal_serializer_factory import SignalSerializerFactory
 from core.apps_shared_methods import BaseAPIView
+
 
 class TranscriptAnalysisView(BaseAPIView):
     """
@@ -45,46 +48,47 @@ class TranscriptAnalysisView(BaseAPIView):
             if not insights:
                 raise StandardizedValidationError(CoreErrorMessages.PROCESSING_FAILED)
                 
-            # Parse insights into signals
-            signals = SignalParsingService.parse_insights(
+            # Parse insights into signals using our refactored service
+            client_id = self.get_client_id()
+            created_signals = SignalParsingService.parse_insights(
                 insights=insights,
                 account=account,
                 source='transcript_analysis',
-                user=request.user
+                user=request.user,
             )
             
-            # Return signals for user validation
-            signal_serializer = SignalSummarySerializer(
-                signals, 
-                many=True,
-                context={'request': request, 'client_id': self.get_client_id()}
-            )
-            
-            # Group signals by category for better UX
-            signals_by_category = {}
-            for signal in signals:
-                category = signal.get_category_display()
-                if category not in signals_by_category:
-                    signals_by_category[category] = []
-                signals_by_category[category].append(
-                    SignalSummarySerializer(
-                        signal, 
-                        context={'request': request, 'client_id': self.get_client_id()}
-                    ).data
-                )
-            
-            
-            return Response({
+            # Format the response with signals by category
+            response_data = {
                 'success': True,
-                'signals_count': len(signals),
-                'signals': signal_serializer.data,
-                'signals_by_category': signals_by_category,
-                # Include raw insights for debugging during development
-                'raw_insights': insights if settings.DEBUG else None
-            }, status=status.HTTP_200_OK)
+                'total_signals_count': sum(len(signals) for signals in created_signals.values()),
+                'signals_by_category': {}
+            }
+            
+            # Process each signal type
+            for category, signals in created_signals.items():
+                if signals:
+                    # Serialize signals using the appropriate serializer for each type
+                    serialized_signals = []
+                    for signal in signals:
+                        serializer = SignalSerializerFactory.get_serializer_for_instance(signal)
+                        serialized_signals.append(
+                            serializer(signal, context={'request': request, 'client_id': client_id}).data
+                        )
+                    
+                    # Add to response
+                    response_data['signals_by_category'][category] = {
+                        'count': len(signals),
+                        'signals': serialized_signals
+                    }
+            
+            # Include raw insights for debugging during development
+            if settings.DEBUG:
+                response_data['raw_insights'] = insights
+            
+            return Response(response_data, status=status.HTTP_200_OK)
 
         except APIError as e:
-            raise StandardizedAuthenticationFailed(f"{CoreErrorMessages.SERVICE_AUTH_FAILED} :{str(e)}" )
+            raise StandardizedAuthenticationFailed(f"{CoreErrorMessages.SERVICE_AUTH_FAILED}: {str(e)}")
         except OpenAIError as e:
             raise StandardizedValidationError(f"{CoreErrorMessages.SERVICE_ERROR}: {str(e)}")
         except Exception as e:

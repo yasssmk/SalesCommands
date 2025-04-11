@@ -3,7 +3,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from phonenumber_field.modelfields import PhoneNumberField
-from apps.core_apps.models import BaseModelApp, AccountLinkedModel, HistoricalTrackingModel
+from apps.core_apps.models import BaseModelApp, AccountLinkedModel
 from core.client_scope import ClientScopeManager
 from core.models import ContactDetailsMixin
 

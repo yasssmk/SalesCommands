@@ -23,6 +23,7 @@ class TechStackSerializer(AccountLinkedSerializerMixin, HistoricalTrackingSerial
             'tech_name',
             'notes',
             'historical_data',
+            'evaluation_data', 
             'created_at',
             'updated_at'
         ]
@@ -31,13 +32,11 @@ class TechStackSerializer(AccountLinkedSerializerMixin, HistoricalTrackingSerial
     def get_evaluation_data(self, obj):
         """Get tech stack evaluation data from signals."""
         # Check if include_signal_info is in context
-        include_signal_info = self.context.get('include_signal_info', False)
-        department = self.context.get('department', None)
+        # include_signal_info = self.context.get('include_signal_info', False)
+        # department = self.context.get('department', None)
         
-        return obj.get_tech_evaluation_data(
-            include_signal_info=include_signal_info,
-            department=department
-        )
+        return True
+        
 
     def validate(self, data):
         """Validate tech stack data"""

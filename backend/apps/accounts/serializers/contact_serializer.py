@@ -47,7 +47,7 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
             'influence_level', 'influence_levels',
             'account', 'account_id',
             'linkedin', 'has_buying_authority', 'notes',
-            'created_at', 'updated_at', 'client_id', 'historical_data',
+            'created_at', 'updated_at', 'client_id',
             'provided_signals_count'
         ]
         read_only_fields = [

@@ -38,41 +38,44 @@ class SignalManager:
     
     @classmethod
     def create_signal(cls, data, user=None, client_id=None):
-        """
-        Create a new signal with the appropriate model based on category.
-        
-        Args:
-            data (dict): Signal data
-            user: User creating the signal
-            client_id: Client ID for the signal
-            
-        Returns:
-            Newly created signal instance
-        """
         try:
-            # Determine which model to use based on category
+            # Import needed models at the beginning of the method
+            from apps.accounts.models import Account, TechStack
+            
+            # Extract and validate category
             category = data.pop('category', None)
-            if not category:
-                raise StandardizedValidationError({
-                    'category': CoreErrorMessages.REQUIRED_FIELD.format(field='category')
-                })
-                
             signal_model = cls.get_signal_model_for_category(category)
-            if not signal_model:
-                raise StandardizedValidationError({
-                    'category': CoreErrorMessages.INVALID_FIELD.format(field='category')
-                })
+            
+            # Convert account ID to account instance if needed
+            if 'account' in data and not isinstance(data['account'], Account):
+                try:
+                    account_id = data['account']
+                    data['account'] = Account.objects.get(id=account_id)
+                except Account.DoesNotExist:
+                    raise StandardizedValidationError({
+                        'account': f"Account with ID {account_id} does not exist"
+                    })
+                    
+            # Same for tech_stack if this is a tech stack signal
+            if category == 'TECH_STACK' and 'tech_stack' in data and not isinstance(data['tech_stack'], TechStack):
+                try:
+                    tech_stack_id = data['tech_stack']
+                    data['tech_stack'] = TechStack.objects.get(id=tech_stack_id)
+                except TechStack.DoesNotExist:
+                    raise StandardizedValidationError({
+                        CoreErrorMessages.OBJECT_NOT_FOUND: f"TechStack with ID {tech_stack_id} does not exist"
+                    })
             
             # Auto-approve manual entries
             if data.get('source') == 'manual_entry':
                 data['status'] = BaseSignal.Status.APPROVED
             
             # Create signal with proper client ID and user tracking
-            
-                signal = signal_model(**data)
-                signal.save(user=user, client_id=client_id)
-                return signal
-                    # Auto-approve manual entries
+            signal = signal_model(**data)
+            signal.full_clean()  # Validate the model
+            signal.save(user=user, client_id=client_id)
+            return signal
+                
         except ValidationError as e:
             raise StandardizedValidationError(e.message_dict)
         except Exception as e:
@@ -182,6 +185,8 @@ class SignalManager:
         except Exception as e:
             raise StandardizedValidationError(str(e))
     
+    @classmethod
+    @transaction.atomic
     def merge_signals(cls, source_signal, target_signal, user):
         """
         Merge source signal into target signal, combining confirmation history.
@@ -195,75 +200,71 @@ class SignalManager:
             Updated target signal instance
         """
         try:
-            # Validate signals can be merged
-            if not source_signal.can_be_merged_with(target_signal):
-                field_name_check = ''
-                if hasattr(source_signal, 'field_name') and hasattr(target_signal, 'field_name'):
-                    if source_signal.field_name != target_signal.field_name:
-                        field_name_check = "Signals have different field names. "
-                        
+            
+            # Signals must have the same account
+            if source_signal.account_id != target_signal.account_id:
                 raise StandardizedValidationError({
-                    'error': f"Cannot merge these signals. {field_name_check}Ensure both signals are compatible."
+                    'error': "Cannot merge signals from different accounts"
+                })
+                
+            # Signals must be of the same type
+            if source_signal.__class__ != target_signal.__class__:
+                raise StandardizedValidationError({
+                    'error': "Cannot merge signals of different types"
+                })
+                
+            # Check field_name match if both have field_name
+            if hasattr(source_signal, 'field_name') and hasattr(target_signal, 'field_name'):
+                if source_signal.field_name != target_signal.field_name:
+                    raise StandardizedValidationError({
+                        'error': "Cannot merge signals with different field names"
+                    })
+                    
+            # Signals must have appropriate status
+            if source_signal.status == source_signal.Status.MERGED:
+                raise StandardizedValidationError({
+                    'error': "Cannot merge a signal that is already merged"
+                })
+                
+            if target_signal.status != target_signal.Status.APPROVED:
+                raise StandardizedValidationError({
+                    'error': "Target signal must be approved"
                 })
                 
             # Update confirmation count on target signal
             target_signal.confirmation_count += source_signal.confirmation_count
             target_signal.last_confirmed_at = timezone.now()
             
-            # Track merge history
-            target_signal.add_merge_history(source_signal, user)
-            
             # Mark source signal as merged
-            source_signal.mark_as_merged(target_signal, user)
+            source_signal.status = source_signal.Status.MERGED
+            source_signal.merged_into = target_signal
             
-            # Save target signal
+            # Track merge history
+            if not target_signal.metadata:
+                target_signal.metadata = {}
+                
+            if 'merge_history' not in target_signal.metadata:
+                target_signal.metadata['merge_history'] = []
+                
+            # Add merge record
+            target_signal.metadata['merge_history'].append({
+                'merged_signal_id': str(source_signal.id),
+                'field_name': getattr(source_signal, 'field_name', None),
+                'timestamp': timezone.now().isoformat(),
+                'merged_by': str(user.id) if user else None,
+                'confirmations_added': source_signal.confirmation_count
+            })
+            
+            # Save both signals
             target_signal.save(user=user)
+            source_signal.save(user=user)
             
             return target_signal
             
+        except StandardizedValidationError:
+            raise
         except Exception as e:
             raise StandardizedValidationError(str(e))
-    
-    @classmethod
-    def confirm_signal(cls, signal, user, source_contact=None):
-        """
-        Confirm a signal, incrementing its confirmation count.
-        
-        Args:
-            signal: Signal to confirm
-            user: User confirming the signal
-            source_contact: Optional contact who confirmed the information
-            
-        Returns:
-            Updated signal instance
-        """
-        if signal.status != BaseSignal.Status.APPROVED:
-            raise StandardizedValidationError({
-                CoreErrorMessages.INVALID_OPERATION: "Only approved signals can be confirmed"
-            })
-        
-        # Track confirmation history
-        if source_contact:
-            if not signal.metadata:
-                signal.metadata = {}
-                
-            if 'confirmation_history' not in signal.metadata:
-                signal.metadata['confirmation_history'] = []
-                
-            # Add confirmation record
-            signal.metadata['confirmation_history'].append({
-                'contact_id': str(source_contact.id),
-                'contact_name': f"{getattr(source_contact, 'first_name', '')} {getattr(source_contact, 'last_name', '')}".strip(),
-                'timestamp': timezone.now().isoformat(),
-                'confirmed_by': str(user.id)
-            })
-        
-        # Increment confirmation count
-        signal.confirmation_count += 1
-        signal.last_confirmed_at = timezone.now()
-        signal.save(user=user)
-        
-        return signal
     
     @classmethod
     def get_account_signals(cls, account_id, category=None, status='APPROVED', **filters):
@@ -305,5 +306,52 @@ class SignalManager:
                     
             return queryset
             
+        except Exception as e:
+            raise StandardizedValidationError(str(e))
+        
+    @classmethod
+    def confirm_signal(cls, signal, user, source_contact=None):
+        """
+        Confirm a signal, incrementing its confirmation count.
+        
+        Args:
+            signal: Signal to confirm
+            user: User confirming the signal
+            source_contact: Optional contact who confirmed the information
+            
+        Returns:
+            Updated signal instance
+        """
+        try:
+            if signal.status != signal.Status.APPROVED:
+                raise StandardizedValidationError({
+                    'error': "Only approved signals can be confirmed"
+                })
+            
+            # Track confirmation history
+            if source_contact:
+                if not signal.metadata:
+                    signal.metadata = {}
+                    
+                if 'confirmation_history' not in signal.metadata:
+                    signal.metadata['confirmation_history'] = []
+                    
+                # Add confirmation record
+                signal.metadata['confirmation_history'].append({
+                    'contact_id': str(source_contact.id),
+                    'contact_name': f"{getattr(source_contact, 'first_name', '')} {getattr(source_contact, 'last_name', '')}".strip(),
+                    'timestamp': timezone.now().isoformat(),
+                    'confirmed_by': str(user.id) if user else None
+                })
+            
+            # Increment confirmation count
+            signal.confirmation_count += 1
+            signal.last_confirmed_at = timezone.now()
+            signal.save(user=user)
+            
+            return signal
+        
+        except StandardizedValidationError:
+            raise
         except Exception as e:
             raise StandardizedValidationError(str(e))

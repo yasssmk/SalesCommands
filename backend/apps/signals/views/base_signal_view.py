@@ -64,6 +64,49 @@ class BaseSignalView(BaseAPIView):
             serializer = self.get_serializer(queryset, many=True)
             return Response(serializer.data)
     
+    def get_serializer(self, instance=None, many=False, **kwargs):
+        """
+        Get an appropriate serializer instance for the data or model instance.
+        
+        Args:
+            instance: Optional model instance or queryset to serialize
+            many: Whether to serialize multiple instances
+            **kwargs: Additional serializer arguments
+            
+        Returns:
+            Serializer instance
+        """
+        context = self.get_serializer_context()
+        
+        if instance is None:
+            return self.serializer_class(**kwargs, context=context)
+        
+        # For a queryset or list, use the first item to determine the serializer
+        if many and hasattr(instance, '__iter__') and len(instance) > 0:
+            first_item = instance[0] if isinstance(instance, list) else instance.first()
+            if first_item:
+                serializer_class = SignalSerializerFactory.get_serializer_for_instance(first_item)
+                return serializer_class(instance, many=True, context=context, **kwargs)
+        
+        # For a single instance, get the appropriate serializer
+        if not many and instance is not None:
+            serializer_class = SignalSerializerFactory.get_serializer_for_instance(instance)
+            return serializer_class(instance, context=context, **kwargs)
+        
+        # Fallback to the view's default serializer class
+        return self.serializer_class(instance, many=many, context=context, **kwargs)
+
+    def get_serializer_context(self):
+        """
+        Extra context provided to the serializer class.
+        """
+        return {
+            'request': self.request,
+            'client_id': self.get_client_id(),
+            'format': self.format_kwarg,
+            'view': self
+        }
+    
     def post(self, request, pk=None, *args, **kwargs):
         """Handle POST requests based on path"""
         # Check for specific action endpoints
@@ -323,6 +366,98 @@ class BaseSignalView(BaseAPIView):
                 serializer(updated_signal).data,
                 status=status.HTTP_200_OK
             )
+            
+        except StandardizedValidationError as e:
+            return self.handle_exception(e)
+        except Exception as e:
+            return self.handle_exception(e)
+
+    def merge(self, request, instance):
+        """
+        Merge a signal into another signal.
+        
+        Args:
+            request: HTTP request
+            instance: Source signal to merge from
+            
+        Returns:
+            Response with merged signal details
+        """
+        try:
+            # Get target signal ID from request
+            target_signal_id = request.data.get('target_signal_id')
+            if not target_signal_id:
+                raise StandardizedValidationError({
+                    'target_signal_id': 'Target signal ID is required'
+                })
+            
+            # Import helper
+            from apps.signals.utils.signal_helpers import SignalHelpers
+            
+            # Find the target signal
+            target_signal = SignalHelpers.get_signal_by_id(
+                signal_id=target_signal_id,
+                client_id=self.get_client_id()
+            )
+            
+            if not target_signal:
+                raise StandardizedValidationError({
+                    'target_signal_id': 'Target signal not found'
+                })
+            
+            # Use the SignalManager to merge signals
+            merged_signal = SignalManager.merge_signals(
+                source_signal=instance,
+                target_signal=target_signal,
+                user=request.user
+            )
+            
+            # Return serialized response
+            serializer = SignalSerializerFactory.get_serializer_for_instance(merged_signal)
+            return Response({
+                'success': True,
+                'message': 'Signal merged successfully',
+                'signal': serializer(merged_signal).data
+            })
+            
+        except StandardizedValidationError as e:
+            return self.handle_exception(e)
+        except Exception as e:
+            return self.handle_exception(e)
+        
+    def confirm(self, request, instance):
+        """Confirm a signal, incrementing its confirmation count"""
+        try:
+            # Get source contact if provided
+            source_contact = None
+            source_contact_id = request.data.get('source_contact_id')
+            
+            if source_contact_id:
+                from apps.accounts.models import Contact
+                try:
+                    source_contact = Contact.objects.get(
+                        id=source_contact_id,
+                        client_id=self.get_client_id()
+                    )
+                except Contact.DoesNotExist:
+                    raise StandardizedValidationError({
+                        'source_contact_id': CoreErrorMessages.OBJECT_NOT_FOUND
+                    })
+            
+            # Use SignalManager to confirm signal
+            updated_signal = SignalManager.confirm_signal(
+                signal=instance,
+                user=request.user,
+                source_contact=source_contact
+            )
+            
+            # Return serialized response
+            serializer = SignalSerializerFactory.get_serializer_for_instance(updated_signal)
+            return Response({
+                'success': True,
+                'message': f'Signal confirmed (count: {updated_signal.confirmation_count})',
+                'signal': serializer(updated_signal).data
+            })
             
         except StandardizedValidationError as e:
             return self.handle_exception(e)
