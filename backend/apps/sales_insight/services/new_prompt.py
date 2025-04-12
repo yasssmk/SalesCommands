@@ -6,23 +6,25 @@ COMMON_INSTRUCTIONS = """
     Think of your output as an expanded version of MEDPICC, converted into JSON with clear, actionable insights.
 
     We specifically categorize insights at different levels:
-       1) Account level
-       2) Contacts level
+       1) Account Qualification
        3) TechStack
        4) Buying Process
 
 
     Follow these rules:
-      1. If data is unclear or missing, use null/0/false/[] as appropriate. 
-      2. Do not invent data that is not explicitly stated or reasonably implied.
-      3. Provide measurable objectives whenever possible.
-      4. Focus on data relevant to sales qualification: pains, goals, budgets, processes, etc.
-      5. Return valid JSON matching the exact structures shown, with no extra commentary.
-
+      1. CRITICAL: If data is unclear or missing, use null/0/false/[] as appropriate.
+      2. CRITICAL: Do not invent data that is not explicitly stated or reasonably implied in the transcript.
+      3. CRITICAL: For buying process steps, only include steps that are EXPLICITLY mentioned in the transcript with clear evidence.
+      4. Provide measurable objectives whenever possible.
+      5. Focus on data relevant to sales qualification: pains, goals, budgets, processes, etc.
+      6. Return valid JSON matching the exact structures shown, with no extra commentary.
+      7. When in doubt about whether information is explicitly mentioned, err on the side of caution and do not include it.
 """
 
 
 ACCOUNT_INSIGHTS_DEFINITIONS = """
+    In this section you will get hold of all the sales qualification data from the transcript.
+    For some fields you can rephrase the text in the expected format, but you should not invent data that is not explicitly stated or reasonably implied.
     We have two main sections to fill in a single JSON:
       1) "accountInfo"
       2) "accountInsights"
@@ -48,52 +50,17 @@ ACCOUNT_INSIGHTS_DEFINITIONS = """
           "annualRevenue": 0,
           "buyingDecisions": "",
       },
-      "insights": {
-          "accountInsights": {
-              "objectives": [],
-              "motivations": [],
-              "metrics":[],
-              "painPoints": [],
-              "implications": [],
-              "partners": [],
+      "accountInsights": {
+          "objectives": [],
+          "motivations": [],
+          "metrics":[],
+          "painPoints": [],
+          "implications": [],
+          "partners": [],
           }
       }
-    }
 """
 
-CONTACTS_DEFINITIONS = """
-    Return ONLY "contactsInsights" array in valid JSON.
-    This array includes all stakeholders in the process, along with their objectives, motivations, KPIs, and personal impact.
-
-     CONTACT INSIGHTS FIELDS:
-      - For **ContactName**, Full name of the contact if stated.
-      - For **jobTitle**, Name of the contact position in the company if stated.
-      - For **department**, Name of the department contact works if stated, use one from the list: ["General Management", "Human Resources (HR)", "Finance & Accounting", "Information Technology (IT)", "Marketing & Communications", "Sales & Business Development", "Customer Support & Success", "Operations & Supply Chain", "Legal & Compliance", "Procurement & Vendor Management", "Engineering & R&D", "Product Management", "Data & Analytics", "Security & Risk Management", "Healthcare Administration", "Clinical & Medical Staff", "Retail & Store Operations", "Manufacturing & Production", "Logistics & Transportation", "Construction & Engineering", "Education & Training", "Government & Public Services", "Media & Content Creation"]
-      - For **objectives**, personal objectives for the contact or it´s team if stated. make them measurable and actionable (e.g., “Increase sales by 20% within 6 months”).
-      - For **motivations**, personal motivations for the contact or it´s team if stated. specify reasons driving interest (e.g., “Expand market share”).
-      - For **metrics** , personal Key performance indicators they follow to measure their success for the contact or it´s team (e.g., growth rate, operational efficiency, customer retention).
-      - For **painPoints**, Main problems or obstacles contact or it´s team face (e.g., manual data entry, inefficient workflow).
-      - For **implications**, quantify the impact for the contact or it´s team (e.g., “Risk increasing 10% of work load”).
-      - For **hasBudgetAuthority**, Does the contact has the Authority to make a purchase?
-
-SAMPLE JSON:
-
-{
-  "contactsInsights": [
-    {
-      "contactName": "",
-      "jobTitle": "",
-      "department":,
-      "objectives": [],
-      "motivations": [],
-      "metrics": [],
-      "painPoints": [],
-      "implications": [],
-      "hasBudgetAuthority": false,
-    }
-  ]
-}
-"""
 
 TECH_STACK_DEFINITION = """
     Return ONLY "TechStack" array in valid JSON.
@@ -127,38 +94,45 @@ TECH_STACK_DEFINITION = """
 
 BUYING_PROCESS_DEFINITION = """
   Return ONLY "buyingProcess" array in valid JSON.
-  This array includes all steps the company will go through to close a deal.
+  This array includes ONLY steps the company will go through to close a deal that are EXPLICITLY mentioned in the transcript.
+  
+  EXTREMELY IMPORTANT: Do not create or invent steps that are not directly mentioned in the transcript. If no steps are mentioned, return an empty array.
+  
+  For each step, you MUST include the exact transcript extract where this step is mentioned.
+  
   This is crucial for qualification, to understand each step, prepare for it, maximize value, and have a clear idea of how long the process will take for forecasting.
-  Only include steps that are explicitly mentioned in the transcript. If the step is not mentioned, do not include it.
 
   BUYING PROCESS FIELDS:
-    - For **stakeholder**, Role of the person responsible for this step (e.g., "CEO", "Project Manager", "CTO")
-    - For **department**, Name of the department contact works if stated, use one from the list: ["General Management", "Human Resources (HR)", "Finance & Accounting", "Information Technology (IT)", "Marketing & Communications", "Sales & Business Development", "Customer Support & Success", "Operations & Supply Chain", "Legal & Compliance", "Procurement & Vendor Management", "Engineering & R&D", "Product Management", "Data & Analytics", "Security & Risk Management", "Healthcare Administration", "Clinical & Medical Staff", "Retail & Store Operations", "Manufacturing & Production", "Logistics & Transportation", "Construction & Engineering", "Education & Training", "Government & Public Services", "Media & Content Creation"]
-    - For **stepDescription**, What will be done in this step (e.g., "Demo", "POC", "Legal revision of the contract")
-    - For **stepGoal**, What the step aims to achieve (e.g., "Technical validation", "Budget validation")
-    - For **influenceScore**, How important this step is for moving forward
-    - For **criterias**, What they will be looking for (e.g., "Is it within budget?", "Does it work in our ecosystem?", "Does it cover all our needs?")
-    - For **metrics**, Key performance indicators they follow to measure their success in this step (e.g., growth rate, operational efficiency, customer retention).
-    - For **averageTimeInDays**, How long this step might take before moving to the next one.
-    - For **trascriptExtract**, The part of the transcript where this step is mentioned.
+    - For **stakeholders**, Role of the person(s) responsible for this step (e.g., "CEO", "Project Manager", "CTO"). ONLY include if explicitly mentioned.
+    - For **department**, ONLY include if explicitly stated, use one from the list: ["General Management", "Human Resources (HR)", "Finance & Accounting", "Information Technology (IT)", "Marketing & Communications", "Sales & Business Development", "Customer Support & Success", "Operations & Supply Chain", "Legal & Compliance", "Procurement & Vendor Management", "Engineering & R&D", "Product Management", "Data & Analytics", "Security & Risk Management", "Healthcare Administration", "Clinical & Medical Staff", "Retail & Store Operations", "Manufacturing & Production", "Logistics & Transportation", "Construction & Engineering", "Education & Training", "Government & Public Services", "Media & Content Creation"]
+    - For **stepDescription**, What will be done in this step (e.g., "Demo", "POC", "Legal revision of the contract"). ONLY include if explicitly mentioned.
+    - For **stepGoal**, What the step aims to achieve (e.g., "Technical validation", "Budget validation"). ONLY include if explicitly mentioned.
+    - For **influenceScore**, How important this step is for moving forward. Set to 0 unless explicitly mentioned.
+    - For **criterias**, What they will be looking for (e.g., "Is it within budget?"). ONLY include if explicitly mentioned.
+    - For **metrics**, Key performance indicators they follow to measure their success in this step. ONLY include if explicitly mentioned.
+    - For **averageTimeInDays**, How long this step might take before moving to the next one. Set to 0 unless explicitly mentioned.
+    - For **trascriptExtract**, The part of the transcript where this step is mentioned. This MUST be included as direct evidence and should be a direct quote.
 
+  EXAMPLE:
+  If the transcript says "We usually need the CTO to review the technical specifications, which takes about a week", you would include:
   {
-    "buyingProcess": 
-      [
-        {
-          "stakeholder": "",
-          "department": "",
-          "stepDescription": "",
-          "stepGoal": "",
-          "influenceScore": 0,
-          "criterias": [],
-          "metrics": [],
-          "averageTimeInDays": 0, 
-          "trascriptExtract": ""
-        }
-      ]
+    "stakeholders": ["CTO"],
+    "department": "",  // Not specified
+    "stepDescription": "Review technical specifications",
+    "stepGoal": "",  // Not specified
+    "influenceScore": 0,  // Not specified
+    "criterias": [],  // Not specified
+    "metrics": [],  // Not specified
+    "averageTimeInDays": 7,  // 1 week = 7 days
+    "trascriptExtract": "We usually need the CTO to review the technical specifications, which takes about a week"
   }
 
+  If NO buying process steps are explicitly mentioned, return:
+  {
+    "buyingProcess": []
+  }
+
+  In the transcript for this analysis, be extremely cautious. ONLY extract buying process steps that are EXPLICITLY described as part of their purchasing process. Do not infer process steps from general discussion about roles or challenges.
 """
 
 LEADS_DEFINITION = """
@@ -247,15 +221,6 @@ Now, return only the 'accountInfo' and 'accountInsights' sections in valid JSON.
 TRANSCRIPT:
 \"\"\"{transcript}\"\"\""""
 
-def get_contacts_prompt(transcript):
-    """
-    Builds a prompt for "contactsInsights" only, using centralized definitions.
-    """
-    return f"""{COMMON_INSTRUCTIONS}
-        {CONTACTS_DEFINITIONS}
-        Return only the 'contactsInsights' array in valid JSON.
-        TRANSCRIPT:
-        \"\"\"{transcript}\"\"\""""
 
 def get_techstack_prompt(transcript):
     """
@@ -308,6 +273,7 @@ def parse_and_fallback_if_needed(llm_response, prompt):
     
     if data is None:
         fallback_prompt = FALLBACK_PROMPT_IF_ERROR.format(malformed_json=stripped_response)
+        
         new_response = llm_service.call_llm(user_prompt=fallback_prompt, system_message=system_message )
         stripped_new_response = strip_backticks_and_code_fences(new_response)
         data = parse_json_with_defaults(stripped_new_response)
@@ -333,10 +299,6 @@ def get_full_insights(transcript):
     prompt_1 = get_account_insights_prompt(transcript)
     data_1 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_1,system_message=system_message), prompt_1)
 
-    # 2) Extract Contacts Insights
-    prompt_2 = get_contacts_prompt(transcript)
-    data_2 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_2,system_message=system_message), prompt_2)
-
     # 3) Extract teckStack Insights
     prompt_3 = get_techstack_prompt(transcript)
     data_3 = parse_and_fallback_if_needed(llm_service.call_llm(user_prompt=prompt_3,system_message=system_message), prompt_3)
@@ -351,12 +313,8 @@ def get_full_insights(transcript):
         "accountInfo": data_1.get("accountInfo", {}),
         "insights": {
             "accountInsights": data_1.get("accountInsights", {}),
-            "contactsInsights": data_2.get("contactsInsights", []),
             "techStack": data_3.get("techStack", []),	
             "buyingProcess": data_4.get("buyingProcess", []),
         }
-    }
-    
-    print("Final JSON structure:", final_structure)
-    
+    }    
     return final_structure
