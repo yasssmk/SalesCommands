@@ -64,6 +64,8 @@ class QualificationSignalView(BaseSignalView):
     
     def by_account(self, request):
         """Get all qualification signals for an account grouped by field"""
+        from ..serializers.signal_summary_serializer import SignalSummarySerializer
+
         account_id = request.query_params.get('account_id')
         if not account_id:
             raise StandardizedValidationError({
@@ -83,7 +85,7 @@ class QualificationSignalView(BaseSignalView):
             field_signals = queryset.filter(field_name=field_code)
             
             if field_signals.exists():
-                serializer = self.serializer_class(field_signals, many=True)
+                serializer = SignalSummarySerializer(field_signals, many=True)
                 result[field_code] = serializer.data
         
         return Response(result)
