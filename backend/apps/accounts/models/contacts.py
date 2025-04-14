@@ -2,7 +2,6 @@
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from phonenumber_field.modelfields import PhoneNumberField
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel
 from core.client_scope import ClientScopeManager
 from core.models import ContactDetailsMixin
@@ -97,10 +96,10 @@ class Contact(BaseModelApp, AccountLinkedModel, ContactDetailsMixin,
         return self.standard_department.get_name_display() if self.standard_department else None
     
     
-    def get_profile_data(self, include_signal_info=False):
+    def get_profile_data(self):
         """Get profile data with signals if requested"""
         profile_fields = [
             'first_name', 'last_name', 'job_title', 'influence_level',
             'email', 'phone', 'linkedin', 'department', 'has_buying_authority'
         ]
-        return self._get_field_data_with_signals(profile_fields, include_signal_info, 'PROFILE')
+        return self._get_field_data_with_signals(profile_fields, 'PROFILE')

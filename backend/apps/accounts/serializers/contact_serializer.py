@@ -7,13 +7,11 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.models import StandardDepartment
-from apps.core_apps.serializers import AccountLinkedSerializerMixin, HistoricalTrackingSerializerMixin, StandardDepartmentSerializer
-from apps.signals.serializers import SignalAwareSerializerMixin
+from apps.core_apps.serializers import AccountLinkedSerializerMixin, StandardDepartmentSerializer
 
 from ..models import Contact, InfluenceLevel
 
 class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
-                       HistoricalTrackingSerializerMixin, SignalAwareSerializerMixin, 
                        ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Serializer for the Contact model with qualification fields and signal awareness.

@@ -33,8 +33,7 @@ class TechStack(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin)
         return f"{self.tech_name} ({self.account.company_name})"
     
     def get_evaluation_data(self, field_names=None, department=None, 
-                          source_contact=None, min_confirmations=None,
-                          include_signal_info=False):
+                          source_contact=None, min_confirmations=None):
         """
         Get tech stack evaluation data from signals.
         
@@ -43,7 +42,6 @@ class TechStack(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin)
             department: Optional department to filter by
             source_contact: Optional contact who provided the information
             min_confirmations: Minimum confirmation count
-            include_signal_info: Whether to include detailed signal information
             
         Returns:
             dict: Tech stack evaluation data organized by field
@@ -55,7 +53,6 @@ class TechStack(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin)
             department=department,
             source_contact=source_contact,
             min_confirmations=min_confirmations,
-            include_signal_info=include_signal_info
         )
     
     def get_evaluation_by_department(self):

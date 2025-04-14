@@ -46,24 +46,8 @@ class TechStackAPIView(BaseAPIView):
         return queryset
     
     def get_serializer_context(self):
-        """Add signal info and filter parameters to serializer context"""
+        """Add filter parameters to serializer context"""
         context = super().get_serializer_context()
-        
-        # Determine level of detail to include
-        context['include_signal_info'] = self.request.query_params.get('include_signal_info', 'false').lower() == 'true'
-        context['include_evaluation_data'] = self.request.query_params.get('include_evaluation_data', 'false').lower() == 'true'
-        context['include_department_breakdown'] = self.request.query_params.get('include_department_breakdown', 'false').lower() == 'true'
-        context['include_purpose'] = self.request.query_params.get('include_purpose', 'false').lower() == 'true'
-        context['include_pros_and_cons'] = self.request.query_params.get('include_pros_and_cons', 'false').lower() == 'true'
-        context['include_costs'] = self.request.query_params.get('include_costs', 'false').lower() == 'true'
-        
-        # For detail views, include evaluation data by default
-        pk = self.kwargs.get('pk')
-        if pk:
-            context['include_evaluation_data'] = True
-            context['include_purpose'] = True
-            context['include_pros_and_cons'] = True
-            context['include_costs'] = True
         
         # Get department filter if specified
         department_id = self.request.query_params.get('department_id')
@@ -111,7 +95,6 @@ class TechStackAPIView(BaseAPIView):
             field_name = request.query_params.get('field_name')
             min_confirmations = request.query_params.get('min_confirmations')
             source_contact_id = request.query_params.get('source_contact_id')
-            include_signal_info = request.query_params.get('include_signal_info', 'false').lower() == 'true'
             
             # Build filters
             filters = {}
@@ -141,8 +124,7 @@ class TechStackAPIView(BaseAPIView):
                     filters['source_contact'] = contact
                 except Contact.DoesNotExist:
                     pass
-            
-            filters['include_signal_info'] = include_signal_info
+
             
             # Get tech stack evaluation data with filters
             evaluation_data = tech_stack.get_evaluation_data(**filters)

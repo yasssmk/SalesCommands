@@ -261,24 +261,19 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
             else:
                 self.annual_revenue = signal_value
     
-    def get_profile_data(self, include_signal_info=False):
+    def get_profile_data(self):
         """
         Get profile data for this account from signals.
-        
-        Args:
-            include_signal_info: Whether to include detailed signal information
             
         Returns:
             dict: Profile data from signals
         """
         return SignalDataService.get_account_profile_data(
             account=self,
-            include_signal_info=include_signal_info
         )
     
     def get_qualification_data(self, field_names=None, department=None, 
-                           source_contact=None, min_confirmations=None,
-                           include_signal_info=False):
+                           source_contact=None, min_confirmations=None):
         """
         Get qualification data for this account from signals.
         
@@ -287,7 +282,6 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
             department: Optional department to filter by
             source_contact: Optional contact who provided the information
             min_confirmations: Minimum number of confirmations required
-            include_signal_info: Whether to include signal metadata
             
         Returns:
             dict: Qualification data from signals
@@ -298,7 +292,6 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
             department=department,
             source_contact=source_contact,
             min_confirmations=min_confirmations,
-            include_signal_info=include_signal_info
         )
     
     def get_qualification_by_department(self):
@@ -316,7 +309,7 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
         )
     
     def get_tech_stacks_data(self, department=None, source_contact=None,
-                         min_confirmations=None, include_signal_info=False):
+                         min_confirmations=None):
         """
         Get tech stack data for this account.
         
@@ -324,7 +317,6 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
             department: Optional department to filter by
             source_contact: Optional contact who provided the information
             min_confirmations: Minimum number of confirmations required
-            include_signal_info: Whether to include signal metadata
             
         Returns:
             dict: Tech stack data from signals
@@ -334,5 +326,4 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
             department=department,
             source_contact=source_contact,
             min_confirmations=min_confirmations,
-            include_signal_info=include_signal_info
         )

@@ -62,19 +62,8 @@ class AccountAPIView(BaseAPIView):
 
 
     def get_serializer_context(self):
-        """Add signal info and filter parameters to serializer context"""
+        """Add filter parameters to serializer context"""
         context = super().get_serializer_context()
-        
-        # Determine level of detail to include
-        context['include_signal_info'] = self.request.query_params.get('include_signal_info', 'false').lower() == 'true'
-        context['include_qualification_data'] = self.request.query_params.get('include_qualification_data', 'false').lower() == 'true'
-        context['include_department_breakdown'] = self.request.query_params.get('include_department_breakdown', 'false').lower() == 'true'
-        context['include_tech_stacks'] = self.request.query_params.get('include_tech_stacks', 'false').lower() == 'true'
-        
-        # For detail views, include qualification data by default
-        pk = self.kwargs.get('pk')
-        if pk:
-            context['include_qualification_data'] = True
         
         # Get department filter if specified
         department_id = self.request.query_params.get('department_id')
@@ -122,7 +111,6 @@ class AccountAPIView(BaseAPIView):
             field_name = request.query_params.get('field_name')
             min_confirmations = request.query_params.get('min_confirmations')
             source_contact_id = request.query_params.get('source_contact_id')
-            include_signal_info = request.query_params.get('include_signal_info', 'false').lower() == 'true'
             
             # Build filters
             filters = {}
@@ -153,7 +141,6 @@ class AccountAPIView(BaseAPIView):
                 except Contact.DoesNotExist:
                     pass
             
-            filters['include_signal_info'] = include_signal_info
             
             # Get qualification data with filters
             qualification_data = account.get_qualification_data(**filters)
@@ -177,7 +164,6 @@ class AccountAPIView(BaseAPIView):
             department_id = request.query_params.get('department_id')
             min_confirmations = request.query_params.get('min_confirmations')
             source_contact_id = request.query_params.get('source_contact_id')
-            include_signal_info = request.query_params.get('include_signal_info', 'false').lower() == 'true'
             
             # Build filters
             filters = {}
@@ -199,8 +185,6 @@ class AccountAPIView(BaseAPIView):
                     filters['source_contact'] = contact
                 except Contact.DoesNotExist:
                     pass
-            
-            filters['include_signal_info'] = include_signal_info
             
             # Get tech stack data with filters
             tech_stacks_data = account.get_tech_stacks_data(**filters)

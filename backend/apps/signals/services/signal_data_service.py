@@ -12,13 +12,12 @@ class SignalDataService:
     """
     
     @classmethod
-    def get_account_profile_data(cls, account, include_signal_info=False):
+    def get_account_profile_data(cls, account):
         """
         Get profile signals for an account.
         
         Args:
             account: Account object
-            include_signal_info: Whether to include detailed signal information
             
         Returns:
             dict: Profile data organized by field
@@ -49,14 +48,13 @@ class SignalDataService:
         
         # Convert to final format
         for field, data in field_values.items():
-            result[field] = cls._format_signal(data['signal'], include_signal_info)
+            result[field] = cls._format_signal(data['signal'])
             
         return result
     
     @classmethod
     def get_account_qualification_data(cls, account, field_names=None, department=None, 
-                                    source_contact=None, min_confirmations=None, 
-                                    include_signal_info=False):
+                                    source_contact=None, min_confirmations=None):
         """
         Get qualification signals for an account with filtering.
         
@@ -66,7 +64,6 @@ class SignalDataService:
             department: Optional department to filter by
             source_contact: Optional contact who provided the information
             min_confirmations: Minimum confirmation count
-            include_signal_info: Whether to include detailed signal information
             
         Returns:
             dict: Qualification data organized by field
@@ -110,13 +107,13 @@ class SignalDataService:
             if field not in result:
                 result[field] = []
                 
-            result[field].append(cls._format_signal(signal, include_signal_info))
+            result[field].append(cls._format_signal(signal))
             
         return result
     
     @classmethod
     def get_tech_stack_data(cls, account, tech_stack=None, field_names=None, department=None,
-                        source_contact=None, min_confirmations=None, include_signal_info=False):
+                        source_contact=None, min_confirmations=None):
         """
         Get tech stack signals for an account or specific tech stack.
         
@@ -127,7 +124,6 @@ class SignalDataService:
             department: Optional department to filter by
             source_contact: Optional contact who provided the information
             min_confirmations: Minimum confirmation count
-            include_signal_info: Whether to include detailed signal information
             
         Returns:
             dict: Tech stack data organized by tech stack and field
@@ -174,7 +170,7 @@ class SignalDataService:
                 if field not in result:
                     result[field] = []
                     
-                result[field].append(cls._format_signal(signal, include_signal_info))
+                result[field].append(cls._format_signal(signal))
                 
             return result
             
@@ -193,12 +189,12 @@ class SignalDataService:
             if field not in result[tech_id]['fields']:
                 result[tech_id]['fields'][field] = []
                 
-            result[tech_id]['fields'][field].append(cls._format_signal(signal, include_signal_info))
+            result[tech_id]['fields'][field].append(cls._format_signal(signal))
             
         return result
     
     @classmethod
-    def get_by_department(cls, account, signal_type, field_names=None, include_signal_info=False):
+    def get_by_department(cls, account, signal_type, field_names=None):
         """
         Get signals organized by department.
         
@@ -206,7 +202,6 @@ class SignalDataService:
             account: Account object
             signal_type: Signal type class (QualificationSignal, etc.)
             field_names: Optional list of field names to include
-            include_signal_info: Whether to include detailed signal information
             
         Returns:
             dict: Signals organized by department
@@ -234,7 +229,6 @@ class SignalDataService:
                 account=account,
                 field_names=field_names,
                 department=department,
-                include_signal_info=include_signal_info
             )
             
             if department_data:
@@ -247,45 +241,40 @@ class SignalDataService:
         return result
     
     @classmethod
-    def _format_signal(cls, signal, include_signal_info=False):
+    def _format_signal(cls, signal):
         """
         Format a signal for API response.
         
         Args:
             signal: Signal object
-            include_signal_info: Whether to include detailed signal information
             
         Returns:
             dict: Formatted signal data
         """
         # Basic data always included
         data = {
+            'id': signal.id,
+            'source': signal.source,
             'value': signal.value,
             'confirmation_count': signal.confirmation_count,
             'last_confirmed_at': signal.last_confirmed_at,
+            'created_at': signal.created_at,
+            'approved_at': signal.approved_at
         }
         
-        # Include additional info if requested
-        if include_signal_info:
-            data.update({
-                'id': signal.id,
-                'source': signal.source,
-                'created_at': signal.created_at,
-                'approved_at': signal.approved_at
-            })
-            
-            # Include source contact if available
-            if signal.source_contact:
-                data['source_contact'] = {
-                    'id': signal.source_contact.id,
-                    'name': f"{getattr(signal.source_contact, 'first_name', '')} {getattr(signal.source_contact, 'last_name', '')}".strip()
-                }
+
+        # Include source contact if available
+        if signal.source_contact:
+            data['source_contact'] = {
+                'id': signal.source_contact.id,
+                'name': f"{getattr(signal.source_contact, 'first_name', '')} {getattr(signal.source_contact, 'last_name', '')}".strip()
+            }
                 
-            # Include source department if available
-            if signal.source_department:
-                data['source_department'] = {
-                    'id': signal.source_department.id,
-                    'name': getattr(signal.source_department, 'name', '')
-                }
+        # Include source department if available
+        if signal.source_department:
+            data['source_department'] = {
+                'id': signal.source_department.id,
+                'name': getattr(signal.source_department, 'name', '')
+            }
                 
         return data

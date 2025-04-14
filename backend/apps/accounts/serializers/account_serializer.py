@@ -148,11 +148,9 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
     
     def get_profile_data(self, obj):
         """Get profile data from signals."""
-        # Check if include_signal_info is in context
-        include_signal_info = self.context.get('include_signal_info', False)
         
         # Get profile data using new model method
-        return obj.get_profile_data(include_signal_info=include_signal_info)
+        return obj.get_profile_data()
     
     def get_qualification_data(self, obj):
         """Get qualification data from signals."""
@@ -163,7 +161,6 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
         #     return None
         
         # Check for filters
-        include_signal_info = self.context.get('include_signal_info', True)
         department = self.context.get('department', None)
         source_contact = self.context.get('source_contact', None)
         min_confirmations = self.context.get('min_confirmations', None)
@@ -172,7 +169,6 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             department=department,
             source_contact=source_contact,
             min_confirmations=min_confirmations,
-            include_signal_info=include_signal_info
         )
         
         # Get qualification data using new model method
@@ -180,9 +176,6 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
     
     def get_qualification_by_department(self, obj):
         """Get qualification data organized by department."""
-        # Only include if explicitly requested
-        if not self.context.get('include_department_breakdown', False):
-            return None
             
         # Get data organized by department using new model method
         return obj.get_qualification_by_department()
@@ -194,7 +187,6 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             return None
             
         # Check for filters
-        include_signal_info = self.context.get('include_signal_info', False)
         department = self.context.get('department', None)
         source_contact = self.context.get('source_contact', None)
         min_confirmations = self.context.get('min_confirmations', None)
@@ -204,7 +196,6 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             department=department,
             source_contact=source_contact,
             min_confirmations=min_confirmations,
-            include_signal_info=include_signal_info
         )
     
     def validate_type(self, value):

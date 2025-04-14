@@ -55,8 +55,6 @@ class TechStackSerializer(AccountLinkedSerializerMixin,
         if not self.context.get('include_evaluation_data', False) and self.context.get('many', True):
             return None
         
-        # Check if include_signal_info is in context
-        include_signal_info = self.context.get('include_signal_info', False)
         department = self.context.get('department', None)
         source_contact = self.context.get('source_contact', None)
         min_confirmations = self.context.get('min_confirmations', None)
@@ -66,7 +64,6 @@ class TechStackSerializer(AccountLinkedSerializerMixin,
             department=department,
             source_contact=source_contact,
             min_confirmations=min_confirmations,
-            include_signal_info=include_signal_info
         )
         
     def get_evaluation_by_department(self, obj):
