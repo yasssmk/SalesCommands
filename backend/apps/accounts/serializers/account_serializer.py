@@ -6,7 +6,6 @@ from core.serializers import ContactDetailsSerializer
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.exceptions import StandardizedValidationError, StandardizedPermissionDenied
-from apps.core_apps.serializers import SignalAwareSerializerMixin, HistoricalTrackingSerializerMixin
 from end_users.models import User, Team
 from ..models import Account, AccountType, AccountClassification
 
@@ -109,14 +108,14 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             'company_size', 'annual_revenue', 'classification',
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
-            'team_owner', 'team_owner_id', 'client_id', 'historical_data',
+            'team_owner', 'team_owner_id', 'client_id',
             'profile_data', 'qualification_data', 'qualification_by_department',
-            'tech_stacks_data', 'has_buying_decision',
+             'has_buying_decision',
             'partners', 'partner_ids',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'created_at', 'updated_at', 'client_id', 'historical_data', 
+            'created_at', 'updated_at', 'client_id',
             'profile_data', 'qualification_data', 'qualification_by_department',
             'tech_stacks_data'
         ]
@@ -139,6 +138,14 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             'classification': child.classification
         } for child in obj.direct_child_companies.all()]
     
+    def get_partners(self, obj):
+        """Get partner accounts for this account."""
+        return [{
+            'id': partner.id,
+            'company_name': partner.company_name,
+            'type': partner.type
+        } for partner in obj.partners.all()]
+    
     def get_profile_data(self, obj):
         """Get profile data from signals."""
         # Check if include_signal_info is in context
@@ -149,23 +156,27 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
     
     def get_qualification_data(self, obj):
         """Get qualification data from signals."""
-        # Only include if requested
-        if not self.context.get('include_qualification_data', False):
-            return None
-            
+
+        # # Only include if requested
+        # if not self.context.get('include_qualification_data', False):
+
+        #     return None
+        
         # Check for filters
-        include_signal_info = self.context.get('include_signal_info', False)
+        include_signal_info = self.context.get('include_signal_info', True)
         department = self.context.get('department', None)
         source_contact = self.context.get('source_contact', None)
         min_confirmations = self.context.get('min_confirmations', None)
-        
-        # Get qualification data using new model method
-        return obj.get_qualification_data(
+
+        response = obj.get_qualification_data(
             department=department,
             source_contact=source_contact,
             min_confirmations=min_confirmations,
             include_signal_info=include_signal_info
         )
+        
+        # Get qualification data using new model method
+        return response
     
     def get_qualification_by_department(self, obj):
         """Get qualification data organized by department."""

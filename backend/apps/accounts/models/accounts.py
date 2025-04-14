@@ -6,13 +6,13 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from core.models import ContactDetailsMixin
-from apps.core_apps.models import BaseModelApp,  HistoricalTrackingModel
+from apps.core_apps.models import BaseModelApp
 from core.client_scope import ClientScopeManager
 from core.error_messages import AccountErrorMessages, CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from end_users.models import User, Team
 from apps.signals.services import SignalDataService
-from apps.signals.models import SignalAwareMixin, SignalEnabledQualificationMixin
+
 
 # Personalization: Users could add new choices 
 class AccountType(models.TextChoices):

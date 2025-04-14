@@ -70,7 +70,9 @@ class SignalDataService:
             
         Returns:
             dict: Qualification data organized by field
+
         """
+
         # Default field names if not provided
         if not field_names:
             field_names = [choice[0] for choice in QualificationSignal.Field.choices]
