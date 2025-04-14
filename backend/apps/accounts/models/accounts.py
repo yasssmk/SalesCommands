@@ -29,7 +29,7 @@ class AccountClassification(models.TextChoices):
     STARTUP = 'STARTUP', _('Startup')
     NONPROFIT = 'NONPROFIT', _('Non-Profit')
 
-class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, SignalAwareMixin, SignalEnabledQualificationMixin, HistoricalTrackingModel):
+class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
     """
     Represents a company account in the system.
     """
@@ -231,100 +231,108 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin, 
             
         return True
     
-    def get_qualification_signals(self, field_name=None, department=None, 
-                                min_confirmations=None, include_expired=False):
-        """Get qualification signals for this account."""
-        from apps.signals.models import Signal
+    def update_profile_fields_from_signals(self):
+        """
+        Update the company_size and annual_revenue fields from profile signals.
+        Called during save to ensure the fields are always up-to-date.
+        """
+        # Only proceed if we have an ID (not a new account)
+        if not self.pk:
+            return
+            
+        # Get profile data from signals
+        profile_data = SignalDataService.get_account_profile_data(self)
         
-        # Base query for qualification signals
-        query = Signal.objects.filter(
-            account=self,
-            category=Signal.Category.QUALIFICATION,
-            entity_type=Signal.EntityType.ACCOUNT
-        )
-        
-        # Add field filter if provided
-        if field_name:
-            if isinstance(field_name, list):
-                query = query.filter(field_name__in=field_name)
+        # Update company_size if it exists in signals
+        if 'company_size' in profile_data:
+            signal_value = profile_data['company_size']['value']
+            # If value is a number, convert it to string
+            if isinstance(signal_value, (int, float)):
+                self.company_size = str(signal_value)
             else:
-                query = query.filter(field_name=field_name)
+                self.company_size = signal_value
+                
+        # Update annual_revenue if it exists in signals
+        if 'annual_revenue' in profile_data:
+            signal_value = profile_data['annual_revenue']['value']
+            # If value is a number, convert it to string
+            if isinstance(signal_value, (int, float)):
+                self.annual_revenue = str(signal_value)
+            else:
+                self.annual_revenue = signal_value
+    
+    def get_profile_data(self, include_signal_info=False):
+        """
+        Get profile data for this account from signals.
         
-        # Get filtered signals
-        return SignalDataService.get_field_signals(
+        Args:
+            include_signal_info: Whether to include detailed signal information
+            
+        Returns:
+            dict: Profile data from signals
+        """
+        return SignalDataService.get_account_profile_data(
             account=self,
-            field_name=field_name,
-            entity_type=Signal.EntityType.ACCOUNT,
-            department=department,
-            min_confirmations=min_confirmations,
-            include_expired=include_expired,
-            status=[Signal.Status.APPROVED, Signal.Status.APPLIED]
+            include_signal_info=include_signal_info
         )
     
-    def get_qualification_data(self, include_signal_info=False, department=None, 
-                             min_confirmations=None, field_names=None):
-        """Get qualification data from signals."""
+    def get_qualification_data(self, field_names=None, department=None, 
+                           source_contact=None, min_confirmations=None,
+                           include_signal_info=False):
+        """
+        Get qualification data for this account from signals.
+        
+        Args:
+            field_names: Optional list of specific fields to retrieve
+            department: Optional department to filter by
+            source_contact: Optional contact who provided the information
+            min_confirmations: Minimum number of confirmations required
+            include_signal_info: Whether to include signal metadata
+            
+        Returns:
+            dict: Qualification data from signals
+        """
         return SignalDataService.get_account_qualification_data(
             account=self,
             field_names=field_names,
             department=department,
+            source_contact=source_contact,
             min_confirmations=min_confirmations,
             include_signal_info=include_signal_info
         )
     
     def get_qualification_by_department(self):
-        """Get qualification data organized by department."""
-        return SignalDataService.get_profile_by_department(self)
-    
-    def get_qualification_by_source(self, department=None, contact=None):
         """
-        Get qualification data organized by source.
+        Get qualification data organized by department.
+        
+        Returns:
+            dict: Qualification data organized by department
+        """
+        from apps.signals.models.qualification_signal_model import QualificationSignal
+        
+        return SignalDataService.get_by_department(
+            account=self,
+            signal_type=QualificationSignal
+        )
+    
+    def get_tech_stacks_data(self, department=None, source_contact=None,
+                         min_confirmations=None, include_signal_info=False):
+        """
+        Get tech stack data for this account.
         
         Args:
             department: Optional department to filter by
-            contact: Optional contact to filter by
+            source_contact: Optional contact who provided the information
+            min_confirmations: Minimum number of confirmations required
+            include_signal_info: Whether to include signal metadata
             
         Returns:
-            dict: Qualification data by source
+            dict: Tech stack data from signals
         """
-        from apps.signals.models import Signal
-        from django.db.models import Count
-        
-        # Get all qualification signals for this account
-        signals = Signal.objects.filter(
+        return SignalDataService.get_tech_stack_data(
             account=self,
-            category=Signal.Category.QUALIFICATION,
-            entity_type=Signal.EntityType.ACCOUNT,
-            status__in=[Signal.Status.APPROVED, Signal.Status.APPLIED]
+            department=department,
+            source_contact=source_contact,
+            min_confirmations=min_confirmations,
+            include_signal_info=include_signal_info
         )
-        
-        if department:
-            signals = signals.filter(source_department=department)
-        
-        if contact:
-            signals = signals.filter(source_contact=contact)
-        
-        # Group by source
-        results = {}
-        sources = signals.values('source').annotate(count=Count('id')).order_by('-count')
-        
-        for source_info in sources:
-            source = source_info['source'] or 'unknown'
-            source_signals = signals.filter(source=source)
-            
-            # Group by field
-            source_data = {}
-            for signal in source_signals:
-                field_name = signal.field_name
-                if field_name not in source_data:
-                    source_data[field_name] = []
-                
-                # Add value to field data
-                if isinstance(signal.value, list):
-                    source_data[field_name].extend(signal.value)
-                else:
-                    source_data[field_name].append(signal.value)
-            
-            results[source] = source_data
-        
-        return results

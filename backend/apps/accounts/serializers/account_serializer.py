@@ -24,9 +24,8 @@ class AccountManagerSerializer(serializers.ModelSerializer):
         fields = ['id', 'email', 'first_name', 'last_name', 'role_name', 'team']
         read_only_fields = fields
 
-class AccountSerializer(ContactDetailsSerializer,
-                        HistoricalTrackingSerializerMixin, ClientScopeManager.SerializerMixin, 
-                        SignalAwareSerializerMixin, serializers.ModelSerializer):
+class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+
     # Field for write operations
     company_name = serializers.CharField(
         error_messages={
@@ -95,6 +94,7 @@ class AccountSerializer(ContactDetailsSerializer,
     )
 
     # Fields for read operations
+    profile_data = serializers.SerializerMethodField(read_only=True)
     parent_company = serializers.SerializerMethodField(read_only=True)
     direct_child_companies = serializers.SerializerMethodField(read_only=True)
     account_owner = AccountManagerSerializer(read_only=True)
@@ -110,14 +110,15 @@ class AccountSerializer(ContactDetailsSerializer,
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
             'team_owner', 'team_owner_id', 'client_id', 'historical_data',
-            'qualification_data', 'qualification_by_department', 'has_buying_decision',
+            'profile_data', 'qualification_data', 'qualification_by_department',
+            'tech_stacks_data', 'has_buying_decision',
             'partners', 'partner_ids',
-            'signal_metadata', 
+            'created_at', 'updated_at'
         ]
         read_only_fields = [
             'created_at', 'updated_at', 'client_id', 'historical_data', 
-            'qualification_data', 'qualification_by_department',
-            'signal_metadata'
+            'profile_data', 'qualification_data', 'qualification_by_department',
+            'tech_stacks_data'
         ]
     
     def get_parent_company(self, obj):
@@ -138,31 +139,62 @@ class AccountSerializer(ContactDetailsSerializer,
             'classification': child.classification
         } for child in obj.direct_child_companies.all()]
     
-    def get_partners(self, obj):
-        """Get partner accounts for this account."""
-        return [{
-            'id': partner.id,
-            'company_name': partner.company_name,
-            'type': partner.type
-        } for partner in obj.partners.all()]
+    def get_profile_data(self, obj):
+        """Get profile data from signals."""
+        # Check if include_signal_info is in context
+        include_signal_info = self.context.get('include_signal_info', False)
+        
+        # Get profile data using new model method
+        return obj.get_profile_data(include_signal_info=include_signal_info)
     
     def get_qualification_data(self, obj):
         """Get qualification data from signals."""
-        # Check if include_signal_info is in context
+        # Only include if requested
+        if not self.context.get('include_qualification_data', False):
+            return None
+            
+        # Check for filters
         include_signal_info = self.context.get('include_signal_info', False)
         department = self.context.get('department', None)
+        source_contact = self.context.get('source_contact', None)
+        min_confirmations = self.context.get('min_confirmations', None)
         
+        # Get qualification data using new model method
         return obj.get_qualification_data(
-            include_signal_info=include_signal_info,
-            department=department
+            department=department,
+            source_contact=source_contact,
+            min_confirmations=min_confirmations,
+            include_signal_info=include_signal_info
         )
     
     def get_qualification_by_department(self, obj):
         """Get qualification data organized by department."""
         # Only include if explicitly requested
-        if self.context.get('include_department_breakdown', False):
-            return obj.get_qualification_by_department()
-        return None
+        if not self.context.get('include_department_breakdown', False):
+            return None
+            
+        # Get data organized by department using new model method
+        return obj.get_qualification_by_department()
+    
+    def get_tech_stacks_data(self, obj):
+        """Get tech stack data for this account."""
+        # Only include if requested
+        if not self.context.get('include_tech_stacks', False):
+            return None
+            
+        # Check for filters
+        include_signal_info = self.context.get('include_signal_info', False)
+        department = self.context.get('department', None)
+        source_contact = self.context.get('source_contact', None)
+        min_confirmations = self.context.get('min_confirmations', None)
+        
+        # Get tech stack data using new model method
+        return obj.get_tech_stacks_data(
+            department=department,
+            source_contact=source_contact,
+            min_confirmations=min_confirmations,
+            include_signal_info=include_signal_info
+        )
     
     def validate_type(self, value):
         """Validate type field"""
@@ -173,7 +205,6 @@ class AccountSerializer(ContactDetailsSerializer,
         if value not in valid_types:
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Type"))
         return value
-
 
     def validate_classification(self, value):
         """Validate classification field"""

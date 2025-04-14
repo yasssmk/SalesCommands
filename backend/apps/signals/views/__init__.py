@@ -1,10 +1,12 @@
-from .qualification_view_mixin import QualificationViewMixin
-from .signal_view_mixins import SignalAwareViewMixin
-from .signal_view import SignalView
+from .base_signal_view import BaseSignalView
+from .profile_signal_view import ProfileSignalView
+from .qualification_signal_view import QualificationSignalView
+from .tech_stack_signal_view import TechStackSignalView
 
 __all__ = [
-    'QualificationViewMixin',
-    'SignalAwareViewMixin',
-    'SignalView'
+    'BaseSignalView',
+    'ProfileSignalView',
+    'QualificationSignalView',
+    'TechStackSignalView'	
 ]
 

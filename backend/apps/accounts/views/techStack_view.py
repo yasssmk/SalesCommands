@@ -3,8 +3,6 @@ from django.db.models import Q
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from core.apps_shared_methods import BaseAPIView
-from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
 from apps.core_apps.models import StandardDepartment
 from ..models import TechStack
 from ..serializers import TechStackSerializer
@@ -29,6 +27,7 @@ class TechStackAPIView(BaseAPIView):
         filter_mappings = {
             'account_id': 'account_id',
             'tech_name': 'tech_name__icontains',
+            'category': 'category',
             'search': None  # Special handling for search
         }
             
@@ -40,20 +39,33 @@ class TechStackAPIView(BaseAPIView):
                 search_term = values.strip()
                 queryset = queryset.filter(
                     Q(tech_name__icontains=search_term) | 
-                    Q(notes__icontains=search_term)
+                    Q(notes__icontains=search_term) |
+                    Q(category__icontains=search_term)
                 )
                     
         return queryset
     
     def get_serializer_context(self):
-        """Add signal info and department filter to serializer context"""
+        """Add signal info and filter parameters to serializer context"""
         context = super().get_serializer_context()
         
-        # Check if signal info was requested via query param
-        include_signal_info = self.request.query_params.get('include_signal_info', 'false').lower() == 'true'
-        context['include_signal_info'] = include_signal_info
+        # Determine level of detail to include
+        context['include_signal_info'] = self.request.query_params.get('include_signal_info', 'false').lower() == 'true'
+        context['include_evaluation_data'] = self.request.query_params.get('include_evaluation_data', 'false').lower() == 'true'
+        context['include_department_breakdown'] = self.request.query_params.get('include_department_breakdown', 'false').lower() == 'true'
+        context['include_purpose'] = self.request.query_params.get('include_purpose', 'false').lower() == 'true'
+        context['include_pros_and_cons'] = self.request.query_params.get('include_pros_and_cons', 'false').lower() == 'true'
+        context['include_costs'] = self.request.query_params.get('include_costs', 'false').lower() == 'true'
         
-        # Check if department filter was specified
+        # For detail views, include evaluation data by default
+        pk = self.kwargs.get('pk')
+        if pk:
+            context['include_evaluation_data'] = True
+            context['include_purpose'] = True
+            context['include_pros_and_cons'] = True
+            context['include_costs'] = True
+        
+        # Get department filter if specified
         department_id = self.request.query_params.get('department_id')
         if department_id:
             try:
@@ -63,7 +75,82 @@ class TechStackAPIView(BaseAPIView):
                 # Just ignore invalid department
                 pass
         
+        # Get source contact filter if specified
+        source_contact_id = self.request.query_params.get('source_contact_id')
+        if source_contact_id:
+            from ..models import Contact
+            try:
+                contact = Contact.objects.get(id=source_contact_id)
+                context['source_contact'] = contact
+            except Contact.DoesNotExist:
+                # Just ignore invalid contact
+                pass
+        
+        # Get min confirmations filter if specified
+        min_confirmations = self.request.query_params.get('min_confirmations')
+        if min_confirmations and min_confirmations.isdigit():
+            context['min_confirmations'] = int(min_confirmations)
+            
+        # Set 'many' flag for serializer context
+        context['many'] = self.action == 'list'
+        
         return context
+    
+    @action(detail=True, methods=['get'])
+    def evaluation(self, request, pk=None):
+        """
+        Get tech stack evaluation data with filtering options.
+        
+        GET /api/techstacks/{id}/evaluation/
+        """
+        try:
+            tech_stack = self.get_object()
+            
+            # Parse filter parameters
+            department_id = request.query_params.get('department_id')
+            field_name = request.query_params.get('field_name')
+            min_confirmations = request.query_params.get('min_confirmations')
+            source_contact_id = request.query_params.get('source_contact_id')
+            include_signal_info = request.query_params.get('include_signal_info', 'false').lower() == 'true'
+            
+            # Build filters
+            filters = {}
+            
+            if department_id:
+                try:
+                    department = StandardDepartment.objects.get(id=department_id)
+                    filters['department'] = department
+                except StandardDepartment.DoesNotExist:
+                    pass
+            
+            if field_name:
+                # Convert from comma-separated string to list if needed
+                if ',' in field_name:
+                    field_names = [name.strip() for name in field_name.split(',')]
+                    filters['field_names'] = field_names
+                else:
+                    filters['field_names'] = [field_name]
+            
+            if min_confirmations and min_confirmations.isdigit():
+                filters['min_confirmations'] = int(min_confirmations)
+            
+            if source_contact_id:
+                from ..models import Contact
+                try:
+                    contact = Contact.objects.get(id=source_contact_id)
+                    filters['source_contact'] = contact
+                except Contact.DoesNotExist:
+                    pass
+            
+            filters['include_signal_info'] = include_signal_info
+            
+            # Get tech stack evaluation data with filters
+            evaluation_data = tech_stack.get_evaluation_data(**filters)
+            
+            return Response(evaluation_data)
+            
+        except Exception as e:
+            return self.handle_exception(e)
     
     def dispatch(self, request, *args, **kwargs):
         """Custom dispatch to handle different endpoints"""
@@ -79,69 +166,6 @@ class TechStackAPIView(BaseAPIView):
         
         # Default to standard dispatch
         return super().dispatch(request, *args, **kwargs)
-    
-    # @action(detail=True, methods=['get'])
-    # def get_evaluation(self, request, *args, **kwargs):
-    #     """
-    #     Get tech stack evaluation data with filtering options.
-        
-    #     GET /api/techstacks/{id}/evaluation/
-    #     """
-    #     try:
-    #         tech_stack = self.get_objects([kwargs.get('pk')]).first()
-    #         if not tech_stack:
-    #             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-            
-    #         # Parse filter parameters
-    #         department_id = request.query_params.get('department_id')
-    #         field_name = request.query_params.get('field_name')
-    #         min_confirmations = request.query_params.get('min_confirmations')
-    #         source_contact_id = request.query_params.get('source_contact_id')
-    #         include_signal_info = request.query_params.get('include_signal_info', 'false').lower() == 'true'
-            
-    #         # Build filters
-    #         filters = {}
-            
-    #         if department_id:
-    #             try:
-    #                 department = StandardDepartment.objects.get(id=department_id)
-    #                 filters['department'] = department
-    #             except StandardDepartment.DoesNotExist:
-    #                 pass
-            
-    #         if field_name:
-    #             # Convert from comma-separated string to list if needed
-    #             if ',' in field_name:
-    #                 field_names = [name.strip() for name in field_name.split(',')]
-    #                 filters['field_names'] = field_names
-    #             else:
-    #                 filters['field_names'] = [field_name]
-            
-    #         if min_confirmations and min_confirmations.isdigit():
-    #             filters['min_confirmations'] = int(min_confirmations)
-            
-    #         if source_contact_id:
-    #             from ..models import Contact
-    #             try:
-    #                 contact = Contact.objects.get(id=source_contact_id)
-    #                 filters['source_contact'] = contact
-    #             except Contact.DoesNotExist:
-    #                 pass
-            
-    #         filters['include_signal_info'] = include_signal_info
-            
-    #         # Get tech stack evaluation data with filters
-    #         from apps.signals.services.signal_data_service import SignalDataService
-    #         evaluation_data = SignalDataService.get_tech_stack_data(
-    #             account=tech_stack.account,
-    #             tech_stack=tech_stack,
-    #             **filters
-    #         )
-            
-    #         return Response(evaluation_data)
-            
-    #     except Exception as e:
-    #         return self.handle_exception(e)
     
 
                 

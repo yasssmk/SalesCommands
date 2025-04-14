@@ -5,10 +5,11 @@ from django.utils.translation import gettext_lazy as _
 from apps.core_apps.models import BaseModelApp
 from core.client_scope import ClientScopeManager
 from .accounts import Account
-from apps.core_apps.models import AccountLinkedModel, HistoricalTrackingModel
+from apps.core_apps.models import AccountLinkedModel
 from apps.signals.services import SignalDataService
+from apps.signals.models.tech_stack_signal_model import TechStackSignal
 
-class TechStack(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin, HistoricalTrackingModel):
+class TechStack(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin):
     """
     Model to track technologies used by an account.
     """
@@ -31,88 +32,97 @@ class TechStack(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin,
     def __str__(self):
         return f"{self.tech_name} ({self.account.company_name})"
     
-    def get_qualification_signals(self, field_name=None, department=None, 
-                                min_confirmations=None, include_expired=False):
-        """Get tech evaluation signals for this tech stack."""
-        from apps.signals.models import Signal
+    def get_evaluation_data(self, field_names=None, department=None, 
+                          source_contact=None, min_confirmations=None,
+                          include_signal_info=False):
+        """
+        Get tech stack evaluation data from signals.
         
-        # Base query for tech stack signals
-        return SignalDataService.get_field_signals(
-            account=self.account,
-            field_name=field_name,
-            entity_type=Signal.EntityType.ACCOUNT,
-            department=department,
-            min_confirmations=min_confirmations,
-            include_expired=include_expired,
-            status=[Signal.Status.APPROVED, Signal.Status.APPLIED]
-        )
-    
-    def get_qualification_data(self, include_signal_info=False, department=None, 
-                             min_confirmations=None, field_names=None):
-        """Get tech evaluation data from signals."""
+        Args:
+            field_names: Optional list of specific fields to retrieve
+            department: Optional department to filter by
+            source_contact: Optional contact who provided the information
+            min_confirmations: Minimum confirmation count
+            include_signal_info: Whether to include detailed signal information
+            
+        Returns:
+            dict: Tech stack evaluation data organized by field
+        """
         return SignalDataService.get_tech_stack_data(
             account=self.account,
             tech_stack=self,
             field_names=field_names,
             department=department,
+            source_contact=source_contact,
             min_confirmations=min_confirmations,
             include_signal_info=include_signal_info
         )
     
-    def get_qualification_by_department(self):
-        """Get tech evaluation data organized by department."""
-        return SignalDataService.get_tech_stack_by_department(self.account)
-    
-    def get_tech_evaluation_by_source(self, department=None, contact=None):
+    def get_evaluation_by_department(self):
         """
-        Get tech evaluation data organized by source.
+        Get tech stack evaluation data organized by department.
         
-        Args:
-            department: Optional department to filter by
-            contact: Optional contact to filter by
-            
         Returns:
-            dict: Tech evaluation data by source
+            dict: Tech stack evaluation data organized by department
         """
-        from apps.signals.models import Signal
-        from django.db.models import Count
-        
-        # Get all tech stack signals for this tech stack
-        signals = Signal.objects.filter(
+        # First get all tech stack data by department
+        department_data = SignalDataService.get_by_department(
             account=self.account,
-            category=Signal.Category.TECH_STACK,
-            entity_type=Signal.EntityType.ACCOUNT,
-            status__in=[Signal.Status.APPROVED, Signal.Status.APPLIED],
-            metadata__contains={'tech_stack_id': str(self.id)}
+            signal_type=TechStackSignal
         )
         
-        if department:
-            signals = signals.filter(source_department=department)
-        
-        if contact:
-            signals = signals.filter(source_contact=contact)
-        
-        # Group by source
-        results = {}
-        sources = signals.values('source').annotate(count=Count('id')).order_by('-count')
-        
-        for source_info in sources:
-            source = source_info['source'] or 'unknown'
-            source_signals = signals.filter(source=source)
+        # Then filter to only include data for this tech stack
+        result = {}
+        for dept_name, dept_info in department_data.items():
+            # Check if there's data for this tech stack
+            tech_data = {}
+            has_data = False
             
-            # Group by field
-            source_data = {}
-            for signal in source_signals:
-                field_name = signal.field_name
-                if field_name not in source_data:
-                    source_data[field_name] = []
-                
-                # Add value to field data
-                if isinstance(signal.value, list):
-                    source_data[field_name].extend(signal.value)
-                else:
-                    source_data[field_name].append(signal.value)
+            # Get the actual data
+            for field_name, field_values in dept_info['data'].items():
+                # For each field, check if there's data for this tech stack
+                if field_name in field_values and str(self.id) in field_values:
+                    tech_data[field_name] = field_values[str(self.id)]
+                    has_data = True
             
-            results[source] = source_data
+            if has_data:
+                result[dept_name] = {
+                    'department_id': dept_info['department_id'],
+                    'department_name': dept_info['department_name'],
+                    'data': tech_data
+                }
         
-        return results
+        return result
+    
+    def get_purpose(self):
+        """
+        Get the purpose of this tech stack from signals.
+        
+        Returns:
+            str: Purpose of the tech stack
+        """
+        data = self.get_evaluation_data(field_names=['purpose'])
+        return data.get('purpose', [])
+    
+    def get_pros_and_cons(self):
+        """
+        Get pros and cons for this tech stack from signals.
+        
+        Returns:
+            dict: Pros and cons for the tech stack
+        """
+        data = self.get_evaluation_data(field_names=['pros', 'cons'])
+        return {
+            'pros': data.get('pros', []),
+            'cons': data.get('cons', [])
+        }
+    
+    def get_costs(self):
+        """
+        Get cost information for this tech stack from signals.
+        
+        Returns:
+            list: Cost information
+        """
+        data = self.get_evaluation_data(field_names=['costs'])
+        return data.get('costs', [])

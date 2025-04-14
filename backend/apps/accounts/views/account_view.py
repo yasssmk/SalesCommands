@@ -9,8 +9,6 @@ from ..serializers import AccountSerializer
 from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from datetime import datetime
-# from apps.core_apps.views import HistoricalTrackingViewMixin
-# from signals.views import QualificationViewMixin, SignalAwareViewMixin
 from apps.core_apps.models import StandardDepartment
 from rest_framework.decorators import action
 
@@ -34,6 +32,7 @@ class AccountAPIView(BaseAPIView):
         """Extend base queryset with account-specific filtering"""
         queryset = super().get_queryset()
         
+        # Basic filtering
         filter_mappings = {
             'parent_ids': 'parent_company_id__in',
             'types': 'type__in',
@@ -46,25 +45,38 @@ class AccountAPIView(BaseAPIView):
                 if values:
                     filter_list = [v.strip() for v in values.split(',')]
                     queryset = queryset.filter(**{field: filter_list})
+            
+            # Add filtering by company_size and annual_revenue
+            company_size = self.request.query_params.get('company_size')
+            if company_size:
+                queryset = queryset.filter(company_size=company_size)
+                
+            annual_revenue = self.request.query_params.get('annual_revenue')
+            if annual_revenue:
+                queryset = queryset.filter(annual_revenue=annual_revenue)
                     
         except ValueError:
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FILTER)
             
         return queryset
 
+
     def get_serializer_context(self):
-        """Add signal info and department filter to serializer context"""
+        """Add signal info and filter parameters to serializer context"""
         context = super().get_serializer_context()
         
-        # Check if signal info was requested via query param
-        include_signal_info = self.request.query_params.get('include_signal_info', 'false').lower() == 'true'
-        context['include_signal_info'] = include_signal_info
+        # Determine level of detail to include
+        context['include_signal_info'] = self.request.query_params.get('include_signal_info', 'false').lower() == 'true'
+        context['include_qualification_data'] = self.request.query_params.get('include_qualification_data', 'false').lower() == 'true'
+        context['include_department_breakdown'] = self.request.query_params.get('include_department_breakdown', 'false').lower() == 'true'
+        context['include_tech_stacks'] = self.request.query_params.get('include_tech_stacks', 'false').lower() == 'true'
         
-        # Check if department breakdown was requested
-        include_department_breakdown = self.request.query_params.get('include_department_breakdown', 'false').lower() == 'true'
-        context['include_department_breakdown'] = include_department_breakdown
+        # For detail views, include qualification data by default
+        pk = self.kwargs.get('pk')
+        if pk:
+            context['include_qualification_data'] = True
         
-        # Check if department filter was specified
+        # Get department filter if specified
         department_id = self.request.query_params.get('department_id')
         if department_id:
             try:
@@ -74,7 +86,129 @@ class AccountAPIView(BaseAPIView):
                 # Just ignore invalid department
                 pass
         
+        # Get source contact filter if specified
+        source_contact_id = self.request.query_params.get('source_contact_id')
+        if source_contact_id:
+            from ..models import Contact
+            try:
+                contact = Contact.objects.get(id=source_contact_id)
+                context['source_contact'] = contact
+            except Contact.DoesNotExist:
+                # Just ignore invalid contact
+                pass
+        
+        # Get min confirmations filter if specified
+        min_confirmations = self.request.query_params.get('min_confirmations')
+        if min_confirmations and min_confirmations.isdigit():
+            context['min_confirmations'] = int(min_confirmations)
+            
+        # Set 'many' flag for serializer context
+        context['many'] = self.action == 'list'
+        
         return context
+
+    @action(detail=True, methods=['get'])
+    def qualification(self, request, pk=None):
+        """
+        Get qualification data for an account with filtering options.
+        
+        GET /api/accounts/{id}/qualification/
+        """
+        try:
+            account = self.get_object()
+            
+            # Parse filter parameters
+            department_id = request.query_params.get('department_id')
+            field_name = request.query_params.get('field_name')
+            min_confirmations = request.query_params.get('min_confirmations')
+            source_contact_id = request.query_params.get('source_contact_id')
+            include_signal_info = request.query_params.get('include_signal_info', 'false').lower() == 'true'
+            
+            # Build filters
+            filters = {}
+            
+            if department_id:
+                try:
+                    department = StandardDepartment.objects.get(id=department_id)
+                    filters['department'] = department
+                except StandardDepartment.DoesNotExist:
+                    pass
+            
+            if field_name:
+                # Convert from comma-separated string to list if needed
+                if ',' in field_name:
+                    field_names = [name.strip() for name in field_name.split(',')]
+                    filters['field_names'] = field_names
+                else:
+                    filters['field_names'] = [field_name]
+            
+            if min_confirmations and min_confirmations.isdigit():
+                filters['min_confirmations'] = int(min_confirmations)
+            
+            if source_contact_id:
+                from ..models import Contact
+                try:
+                    contact = Contact.objects.get(id=source_contact_id)
+                    filters['source_contact'] = contact
+                except Contact.DoesNotExist:
+                    pass
+            
+            filters['include_signal_info'] = include_signal_info
+            
+            # Get qualification data with filters
+            qualification_data = account.get_qualification_data(**filters)
+            
+            return Response(qualification_data)
+            
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    @action(detail=True, methods=['get'])
+    def tech_stacks(self, request, pk=None):
+        """
+        Get tech stack data for an account with filtering options.
+        
+        GET /api/accounts/{id}/tech_stacks/
+        """
+        try:
+            account = self.get_object()
+            
+            # Parse filter parameters
+            department_id = request.query_params.get('department_id')
+            min_confirmations = request.query_params.get('min_confirmations')
+            source_contact_id = request.query_params.get('source_contact_id')
+            include_signal_info = request.query_params.get('include_signal_info', 'false').lower() == 'true'
+            
+            # Build filters
+            filters = {}
+            
+            if department_id:
+                try:
+                    department = StandardDepartment.objects.get(id=department_id)
+                    filters['department'] = department
+                except StandardDepartment.DoesNotExist:
+                    pass
+            
+            if min_confirmations and min_confirmations.isdigit():
+                filters['min_confirmations'] = int(min_confirmations)
+            
+            if source_contact_id:
+                from ..models import Contact
+                try:
+                    contact = Contact.objects.get(id=source_contact_id)
+                    filters['source_contact'] = contact
+                except Contact.DoesNotExist:
+                    pass
+            
+            filters['include_signal_info'] = include_signal_info
+            
+            # Get tech stack data with filters
+            tech_stacks_data = account.get_tech_stacks_data(**filters)
+            
+            return Response(tech_stacks_data)
+            
+        except Exception as e:
+            return self.handle_exception(e)
 
     def _validate_parent_company(self, parent_id, client_id):
         """Validate parent company exists and belongs to same client"""
@@ -180,67 +314,6 @@ class AccountAPIView(BaseAPIView):
         # Default to standard dispatch
         return super().dispatch(request, *args, **kwargs)
     
-    @action(detail=True, methods=['get'])
-    def get_qualification(self, request, *args, **kwargs):
-        """
-        Get qualification data for an account with filtering options.
-        
-        GET /api/accounts/{id}/qualification/
-        """
-        try:
-            account = self.get_objects([kwargs.get('pk')]).first()
-            if not account:
-                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-            
-            # Parse filter parameters
-            department_id = request.query_params.get('department_id')
-            field_name = request.query_params.get('field_name')
-            min_confirmations = request.query_params.get('min_confirmations')
-            source_contact_id = request.query_params.get('source_contact_id')
-            include_signal_info = request.query_params.get('include_signal_info', 'false').lower() == 'true'
-            
-            # Build filters
-            filters = {}
-            
-            if department_id:
-                try:
-                    department = StandardDepartment.objects.get(id=department_id)
-                    filters['department'] = department
-                except StandardDepartment.DoesNotExist:
-                    pass
-            
-            if field_name:
-                # Convert from comma-separated string to list if needed
-                if ',' in field_name:
-                    field_names = [name.strip() for name in field_name.split(',')]
-                    filters['field_names'] = field_names
-                else:
-                    filters['field_names'] = [field_name]
-            
-            if min_confirmations and min_confirmations.isdigit():
-                filters['min_confirmations'] = int(min_confirmations)
-            
-            if source_contact_id:
-                from ..models import Contact
-                try:
-                    contact = Contact.objects.get(id=source_contact_id)
-                    filters['source_contact'] = contact
-                except Contact.DoesNotExist:
-                    pass
-            
-            filters['include_signal_info'] = include_signal_info
-            
-            # Get qualification data with filters
-            from apps.signals.services.signal_data_service import SignalDataService
-            qualification_data = SignalDataService.get_account_qualification_data(
-                account=account,
-                **filters
-            )
-            
-            return Response(qualification_data)
-            
-        except Exception as e:
-            return self.handle_exception(e)
     
 
 class AccountChoicesView(APIView):
