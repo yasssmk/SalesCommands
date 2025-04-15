@@ -183,8 +183,6 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
     def get_tech_stacks_data(self, obj):
         """Get tech stack data for this account."""
         # Only include if requested
-        if not self.context.get('include_tech_stacks', False):
-            return None
             
         # Check for filters
         department = self.context.get('department', None)

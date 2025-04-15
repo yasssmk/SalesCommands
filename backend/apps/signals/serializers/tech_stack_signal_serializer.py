@@ -100,12 +100,5 @@ class TechStackSignalSerializer(BaseSignalSerializer):
                         'value': "Start year must be a valid year"
                     })
                     
-            # Ensure list format for pros and cons
-            if field_name in [TechStackSignal.Field.PROS, TechStackSignal.Field.CONS]:
-                if value and not isinstance(value, list):
-                    if isinstance(value, str):
-                        data['value'] = [value]
-                    else:
-                        data['value'] = [str(value)]
         
         return data

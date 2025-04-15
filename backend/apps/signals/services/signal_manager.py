@@ -74,6 +74,7 @@ class SignalManager:
             signal = signal_model(**data)
             signal.full_clean()  # Validate the model
             signal.save(user=user, client_id=client_id)
+
             return signal
                 
         except ValidationError as e:

@@ -33,11 +33,6 @@ class QualificationSignal(BaseSignal):
             models.Index(fields=['status']),
         ]
     
-    def save(self, *args, **kwargs):
-        # Ensure value is always a list for qualification fields
-        if self.value and not isinstance(self.value, list):
-            self.value = [self.value]
-        super().save(*args, **kwargs)
     
     def __str__(self):
         return f"Qualification: {self.get_field_name_display()} [{self.get_status_display()}]"

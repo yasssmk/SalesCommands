@@ -16,7 +16,7 @@ class SignalParsingService:
     
     @classmethod
     @transaction.atomic
-    def parse_insights(cls, insights, account, source='ai_analysis', user=None):
+    def parse_insights(cls, insights, account, source='ai_analysis', user=None, client_id=None):
         """
         Parse structured insights from LLM into appropriate Signal objects.
         
@@ -25,6 +25,7 @@ class SignalParsingService:
             account (Account): Account object
             source (str, optional): Source of insights
             user (User, optional): User who initiated the analysis
+            client_id (str, optional): Client ID
             
         Returns:
             dict: Dictionary of created signals by type
@@ -35,7 +36,9 @@ class SignalParsingService:
             'tech_stack': []
         }
         
-        client_id = account.client_id
+        # Use client_id from account if not provided
+        if client_id is None:
+            client_id = account.client_id
         
         # Process each type of insight
         # 1. Process account info (profile signals)
@@ -62,14 +65,20 @@ class SignalParsingService:
         
         # 3. Process tech stack data
         if 'insights' in insights and 'techStack' in insights['insights']:
-            tech_stack_signals = cls._process_tech_stack_data(
+            tech_stack_signals_by_tech = cls._process_tech_stack_data(
                 insights['insights']['techStack'],
                 account,
                 source,
                 user,
                 client_id
             )
-            created_signals['tech_stack'].extend(tech_stack_signals)
+            
+            # Flatten the dictionary of tech stack signals into a list for compatibility with view
+            tech_stack_signals = []
+            for tech_name, signals in tech_stack_signals_by_tech.items():
+                tech_stack_signals.extend(signals)
+                
+            created_signals['tech_stack'] = tech_stack_signals
         
         return created_signals
     
@@ -163,7 +172,7 @@ class SignalParsingService:
                             signal_data = {
                                 'account': account,
                                 'field_name': signal_field,
-                                'value': value,
+                                'value': str(value),
                                 'source': source,
                                 'status': 'PENDING',
                                 'category': 'QUALIFICATION',  # For SignalManager
@@ -196,9 +205,9 @@ class SignalParsingService:
             client_id: Client ID
             
         Returns:
-            list: Created TechStackSignal objects
+            dict: Created TechStackSignal objects grouped by tech name
         """
-        created_signals = []
+        created_signals_by_tech = {}  # Changed to dictionary to group by tech name
         
         # Pre-fetch existing tech stacks to avoid duplicates
         from apps.accounts.models import TechStack
@@ -212,21 +221,17 @@ class SignalParsingService:
             tech_name = tech_item.get('techName')
             if not tech_name:
                 continue
-                
+            
+            # Initialize empty list for this tech if not already in dictionary
+            if tech_name not in created_signals_by_tech:
+                created_signals_by_tech[tech_name] = []
+            
             # Get or create tech stack object
             tech_name_lower = tech_name.lower()
             if tech_name_lower in existing_tech_stacks:
                 tech_stack = existing_tech_stacks[tech_name_lower]
             else:
-                # Create new tech stack
-                tech_stack = TechStack.objects.create(
-                    account=account,
-                    tech_name=tech_name,
-                    client_id=client_id,
-                    created_by=user,
-                    updated_by=user
-                )
-                existing_tech_stacks[tech_name_lower] = tech_stack
+                tech_stack = None
             
             # Field mapping with alternative field names
             field_mapping = {
@@ -246,58 +251,33 @@ class SignalParsingService:
                 if json_field in tech_item and tech_item[json_field]:
                     values = tech_item[json_field]
                     
-                    # Handle both list and single value formats
-                    if signal_field in [TechStackSignal.Field.PROS, TechStackSignal.Field.CONS]:
-                        if not isinstance(values, list):
-                            values = [values]
-                        
-                        for value in values:
-                            if value:  # Skip empty values
-                                try:
-                                    signal_data = {
-                                        'account': account,
-                                        'tech_stack': tech_stack,
-                                        'field_name': signal_field,
-                                        'value': value,
-                                        'source': source,
-                                        'status': 'PENDING',
-                                        'category': 'TECH_STACK',  # For SignalManager
-                                    }
-                                    
-                                    signal = SignalManager.create_signal(
-                                        data=signal_data,
-                                        user=user,
-                                        client_id=client_id
-                                    )
-                                    
-                                    if signal:
-                                        created_signals.append(signal)
-                                        
-                                except Exception as e:
-                                    print(f"Error creating tech stack signal for {json_field}: {str(e)}")
-                    else:
-                        # Handle single value fields
-                        try:
-                            signal_data = {
-                                'account': account,
-                                'tech_stack': tech_stack,
-                                'field_name': signal_field,
-                                'value': values,
-                                'source': source,
-                                'status': 'PENDING',
-                                'category': 'TECH_STACK',  # For SignalManager
-                            }
-                            
-                            signal = SignalManager.create_signal(
-                                data=signal_data,
-                                user=user,
-                                client_id=client_id
-                            )
-                            
-                            if signal:
-                                created_signals.append(signal)
+                    if not isinstance(values, list):
+                        values = [values]
+                    
+                    for value in values:
+                        if value:  # Skip empty values
+                            try:
+                                signal_data = {
+                                    'account': account,
+                                    'tech_stack': tech_stack,
+                                    'field_name': signal_field,
+                                    'value': value,
+                                    'source': source,
+                                    'status': 'PENDING',
+                                    'category': 'TECH_STACK',
+                                }
                                 
-                        except Exception as e:
-                            print(f"Error creating tech stack signal for {json_field}: {str(e)}")
+                                signal = SignalManager.create_signal(
+                                    data=signal_data,
+                                    user=user,
+                                    client_id=client_id
+                                )
+                                
+                                if signal:
+                                    # Add to the appropriate tech name key in the dictionary
+                                    created_signals_by_tech[tech_name].append(signal)
+                                
+                            except Exception as e:
+                                print(f"Error creating tech stack signal for {json_field}: {str(e)}")
         
-        return created_signals
+        return created_signals_by_tech

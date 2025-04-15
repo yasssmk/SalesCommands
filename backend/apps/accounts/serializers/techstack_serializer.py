@@ -25,9 +25,7 @@ class TechStackSerializer(AccountLinkedSerializerMixin,
             'id',
             'account',
             'tech_name',
-            'category',
             'notes',
-            'historical_data',
             'evaluation_data',
             'evaluation_by_department',
             'purpose',
@@ -52,8 +50,6 @@ class TechStackSerializer(AccountLinkedSerializerMixin,
     def get_evaluation_data(self, obj):
         """Get tech stack evaluation data from signals."""
         # Only include evaluation data if specifically requested or if this is a detail view
-        if not self.context.get('include_evaluation_data', False) and self.context.get('many', True):
-            return None
         
         department = self.context.get('department', None)
         source_contact = self.context.get('source_contact', None)
@@ -69,33 +65,24 @@ class TechStackSerializer(AccountLinkedSerializerMixin,
     def get_evaluation_by_department(self, obj):
         """Get tech stack evaluation data organized by department."""
         # Only include if explicitly requested
-        if not self.context.get('include_department_breakdown', False):
-            return None
-            
         # Use model method to get evaluation data by department
         return obj.get_evaluation_by_department()
     
     def get_purpose(self, obj):
         """Get the purpose of this tech stack."""
         # Only include in detail view or if specifically requested
-        if not self.context.get('include_purpose', False) and self.context.get('many', True):
-            return None
             
         return obj.get_purpose()
     
     def get_pros_and_cons(self, obj):
         """Get pros and cons for this tech stack."""
         # Only include in detail view or if specifically requested
-        if not self.context.get('include_pros_and_cons', False) and self.context.get('many', True):
-            return None
             
         return obj.get_pros_and_cons()
     
     def get_costs(self, obj):
         """Get cost information for this tech stack."""
         # Only include in detail view or if specifically requested
-        if not self.context.get('include_costs', False) and self.context.get('many', True):
-            return None
             
         return obj.get_costs()
 

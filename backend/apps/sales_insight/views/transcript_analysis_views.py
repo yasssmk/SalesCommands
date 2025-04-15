@@ -55,31 +55,73 @@ class TranscriptAnalysisView(BaseAPIView):
                 account=account,
                 source='transcript_analysis',
                 user=request.user,
+                client_id=client_id,  # Pass client_id to the service
             )
             
             # Format the response with signals by category
             response_data = {
                 'success': True,
-                'total_signals_count': sum(len(signals) for signals in created_signals.values()),
+                'total_signals_count': sum(len(signals) for signals in created_signals.values() if isinstance(signals, list)),
                 'signals_by_category': {}
             }
             
             # Process each signal type
             for category, signals in created_signals.items():
-                if signals:
-                    # Serialize signals using the appropriate serializer for each type
-                    serialized_signals = []
-                    for signal in signals:
-                        serializer = SignalSerializerFactory.get_serializer_for_instance(signal)
-                        serialized_signals.append(
-                            serializer(signal, context={'request': request, 'client_id': client_id}).data
-                        )
-                    
-                    # Add to response
-                    response_data['signals_by_category'][category] = {
-                        'count': len(signals),
-                        'signals': serialized_signals
-                    }
+                if category != 'tech_stack':
+                    # Handle qualification and profile signals as before
+                    if signals:
+                        # Serialize signals using the appropriate serializer for each type
+                        serialized_signals = []
+                        for signal in signals:
+                            serializer = SignalSerializerFactory.get_serializer_for_instance(signal)
+                            serialized_signals.append(
+                                serializer(signal, context={'request': request, 'client_id': client_id}).data
+                            )
+                        
+                        # Add to response
+                        response_data['signals_by_category'][category] = {
+                            'count': len(signals),
+                            'signals': serialized_signals
+                        }
+                else:
+                    # Special handling for tech_stack signals - organize by tech name
+                    # Check if signals is a dictionary (grouped by tech name) or a list
+                    if signals:
+                        tech_stack_signals = {}
+                        total_count = 0
+                        
+                        # Group signals by tech_stack_summary.name
+                        for signal in signals:
+                            serializer = SignalSerializerFactory.get_serializer_for_instance(signal)
+                            serialized_signal = serializer(signal, context={'request': request, 'client_id': client_id}).data
+                            
+                            # Get tech name from the tech_stack_summary
+                            tech_name = None
+                            if serialized_signal.get('tech_stack_summary') and serialized_signal['tech_stack_summary'].get('name'):
+                                tech_name = serialized_signal['tech_stack_summary']['name']
+                            else:
+                                tech_name = "Unknown"
+                            
+                            # Initialize tech stack entry if not exists
+                            if tech_name not in tech_stack_signals:
+                                tech_stack_signals[tech_name] = {
+                                    'tech_name': tech_name,
+                                    'tech_stack': serialized_signal.get('tech_stack'),
+                                    'signals': []
+                                }
+                            
+                            # Add signal to the tech stack group
+                            tech_stack_signals[tech_name]['signals'].append(serialized_signal)
+                            total_count += 1
+                        
+                        # Convert dictionary to list of tech stacks
+                        tech_stacks_list = list(tech_stack_signals.values())
+                        
+                        # Add to response
+                        response_data['signals_by_category']['tech_stack'] = {
+                            'count': total_count,
+                            'tech_stacks_signals': tech_stacks_list
+                        }
             
             # Include raw insights for debugging during development
             if settings.DEBUG:

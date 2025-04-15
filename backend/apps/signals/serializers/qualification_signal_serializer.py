@@ -23,15 +23,6 @@ class QualificationSignalSerializer(BaseSignalSerializer):
         """Get human-readable field name"""
         return obj.get_field_name_display()
     
-    def validate_value(self, value):
-        """Ensure value is in the correct format"""
-        # For qualification fields, values should always be a list
-        if value and not isinstance(value, list):
-            if isinstance(value, str):
-                return [value]
-            return [str(value)]
-        return value
-    
     def validate(self, data):
         """Validate field-specific requirements"""
         data = super().validate(data)

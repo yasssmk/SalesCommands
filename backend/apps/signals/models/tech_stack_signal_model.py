@@ -68,11 +68,6 @@ class TechStackSignal(BaseSignal):
                     'value': _('Start year must be a valid year')
                 })
                 
-        if self.field_name in [self.Field.PROS, self.Field.CONS]:
-            # Ensure these are lists
-            if self.value and not isinstance(self.value, list):
-                self.value = [self.value]
-                
         if self.field_name == self.Field.COSTS:
             # For costs, we allow more flexible structure to capture different cost models
             # The value can be a list of cost objects or a single cost object

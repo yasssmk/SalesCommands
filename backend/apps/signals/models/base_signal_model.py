@@ -113,6 +113,7 @@ class BaseSignal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin
         # Set source department from contact if available and not set
         if self.source_contact and not self.source_department and hasattr(self.source_contact, 'standard_department'):
             self.source_department = self.source_contact.standard_department
+            
     
     def save(self, force_insert=False, force_update=False, *args, **kwargs):
         user = kwargs.pop('user', None)
