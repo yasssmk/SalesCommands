@@ -127,6 +127,26 @@ class BaseSignal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin
         super().save(force_insert=force_insert, force_update=force_update, 
                     user=user, client_id=client_id, *args, **kwargs)
     
+    def validate_for_approval(self):
+        """
+        Base validation method that subclasses can override.
+        By default, all signals can be approved.
+        
+        Returns:
+            tuple: (is_valid, error_message)
+        """
+        return (True, None)
+    
+    def validate_for_approval(self):
+        """
+        Base validation method that subclasses can override.
+        By default, all signals can be approved.
+        
+        Returns:
+            tuple: (is_valid, error_message)
+        """
+        return (True, None)
+
     def __str__(self):
         """String representation of the signal"""
         return f"Signal: {self.get_status_display()}"

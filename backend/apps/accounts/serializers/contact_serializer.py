@@ -33,8 +33,6 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
         allow_null=True,
         write_only=True
     )
-
-    provided_signals_count = serializers.SerializerMethodField(read_only=True)
     
     
     class Meta:
@@ -45,12 +43,11 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
             'influence_level', 'influence_levels',
             'account', 'account_id',
             'linkedin', 'has_buying_authority', 'notes',
-            'created_at', 'updated_at', 'client_id',
-            'provided_signals_count'
+            'created_at', 'updated_at', 'client_id'
         ]
         read_only_fields = [
             'created_at', 'updated_at', 'client_id', 'historical_data', 'full_name',
-            'department_name', 'provided_signals_count'
+            'department_name'
         ]
     
     def get_full_name(self, obj):
@@ -72,10 +69,6 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
         """Get available influence levels"""
         return [{'value': choice[0], 'label': choice[1]} for choice in InfluenceLevel.choices]
     
-    def get_provided_signals_count(self, obj):
-        """Get count of signals provided by this contact"""
-        from apps.signals.models import Signal
-        return Signal.objects.filter(source_contact=obj).count()
     
     def validate(self, data):
         """Validate contact data"""

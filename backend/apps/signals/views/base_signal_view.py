@@ -361,40 +361,32 @@ class BaseSignalView(BaseAPIView):
         raise NotImplementedError("Subclasses must implement account_profile()")
             
     def approve(self, request, instance):
-        """Approve a signal"""
+        """Approve a signal with enhanced validation"""
         try:
-            from ..utils.signal_helpers import SignalHelpers
-            from ..models.tech_stack_signal_model import TechStackSignal
-            # First, check if the signal can be approved
-            validation_result = SignalHelpers.validate_for_approval(instance)
-            
-            # If we have missing critical fields, add tech_stack or source_contact from request
+            # Extract data from request to set or update fields
+            updated_value = request.data.get('value')
             tech_stack = None
             source_contact = None
             source_department = None
-            updated_value = request.data.get('value')
             
-            # Extract tech_stack if provided
-            tech_stack_id = request.data.get('tech_stack_id')
-            if tech_stack_id:
-                from apps.accounts.models import TechStack
-                try:
-                    tech_stack = TechStack.objects.get(
-                        id=tech_stack_id,
-                        client_id=self.get_client_id()
-                    )
-                except TechStack.DoesNotExist:
-                    raise StandardizedValidationError({
-                        'tech_stack_id': CoreErrorMessages.OBJECT_NOT_FOUND
-                    })
-            # If tech_name is provided but no tech_stack_id, prepare for creation
-            elif isinstance(instance, TechStackSignal) and request.data.get('tech_name'):
-                if not instance.metadata:
-                    instance.metadata = {}
-                instance.metadata['pending_tech_name'] = request.data.get('tech_name')
-                    
-            # Extract source contact if provided
-            source_contact_id = request.data.get('source_contact_id')
+            # Extract tech_stack if provided (for TechStackSignal)
+            from ..models.tech_stack_signal_model import TechStackSignal
+            if isinstance(instance, TechStackSignal):
+                tech_stack_id = request.data.get('tech_stack_id') or request.data.get('tech_stack')
+                if tech_stack_id:
+                    from apps.accounts.models import TechStack
+                    try:
+                        tech_stack = TechStack.objects.get(
+                            id=tech_stack_id,
+                            client_id=self.get_client_id()
+                        )
+                    except TechStack.DoesNotExist:
+                        raise StandardizedValidationError({
+                            'tech_stack': f"TechStack with ID {tech_stack_id} does not exist"
+                        })
+            
+            # Extract source_contact if provided
+            source_contact_id = request.data.get('source_contact_id') or request.data.get('source_contact')
             if source_contact_id:
                 from apps.accounts.models import Contact
                 try:
@@ -404,11 +396,11 @@ class BaseSignalView(BaseAPIView):
                     )
                 except Contact.DoesNotExist:
                     raise StandardizedValidationError({
-                        'source_contact_id': CoreErrorMessages.OBJECT_NOT_FOUND
+                        'source_contact': f"Contact with ID {source_contact_id} does not exist"
                     })
             
-            # Extract source department if provided
-            source_department_id = request.data.get('source_department_id')
+            # Extract source_department if provided
+            source_department_id = request.data.get('source_department_id') or request.data.get('source_department')
             if source_department_id:
                 from apps.core_apps.models import StandardDepartment
                 try:
@@ -417,20 +409,11 @@ class BaseSignalView(BaseAPIView):
                     )
                 except StandardDepartment.DoesNotExist:
                     raise StandardizedValidationError({
-                        'source_department_id': CoreErrorMessages.OBJECT_NOT_FOUND
+                        'source_department': f"Department with ID {source_department_id} does not exist"
                     })
             
-            # After handling request data, validate again for any remaining issues
-            if not validation_result['is_valid'] and not (tech_stack or source_contact):
-                # Return validation errors with clear messages
-                return Response({
-                    'success': False,
-                    'validation': validation_result,
-                    'message': "Signal cannot be approved without required fields",
-                    'signal': SignalSerializerFactory.get_serializer_for_instance(instance)(instance).data
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
             # Use SignalManager to approve signal
+            from ..services.signal_manager import SignalManager
             updated_signal = SignalManager.approve_signal(
                 signal=instance,
                 user=request.user,
@@ -441,6 +424,7 @@ class BaseSignalView(BaseAPIView):
             )
             
             # Return serialized response
+            from ..serializers.signal_serializer_factory import SignalSerializerFactory
             serializer = SignalSerializerFactory.get_serializer_for_instance(updated_signal)
             return Response({
                 'success': True,
@@ -449,7 +433,26 @@ class BaseSignalView(BaseAPIView):
             }, status=status.HTTP_200_OK)
             
         except StandardizedValidationError as e:
-            return self.handle_exception(e)
+            # Enhance error response with the signal data
+            from ..serializers.signal_serializer_factory import SignalSerializerFactory
+            from ..models.qualification_signal_model import QualificationSignal
+            
+            error_response = {
+                'success': False,
+                'errors': e.detail,
+                'signal': SignalSerializerFactory.get_serializer_for_instance(instance)(instance).data
+            }
+            
+            # Add helpful message based on the error
+            if isinstance(instance, TechStackSignal) and 'tech_stack' in e.detail:
+                error_response['message'] = "Cannot approve tech stack signal without assigning a technology"
+            elif isinstance(instance, QualificationSignal) and 'source_contact' in e.detail:
+                error_response['message'] = "Cannot approve qualification signal without a source contact"
+            else:
+                error_response['message'] = "Cannot approve signal due to validation errors"
+                
+            return Response(error_response, status=status.HTTP_400_BAD_REQUEST)
+            
         except Exception as e:
             return self.handle_exception(e)
             

@@ -33,6 +33,17 @@ class QualificationSignal(BaseSignal):
             models.Index(fields=['status']),
         ]
     
+    def validate_for_approval(self):
+        """
+        Validate if this qualification signal can be approved.
+        
+        Returns:
+            tuple: (is_valid, error_message)
+        """
+        if not self.source_contact:
+            return (False, "Source contact is required for qualification signals")
+        
+        return (True, None)
     
     def __str__(self):
         return f"Qualification: {self.get_field_name_display()} [{self.get_status_display()}]"

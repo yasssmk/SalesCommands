@@ -99,6 +99,19 @@ class TechStackSignal(BaseSignal):
         if 'recurrence' not in cost_obj:
             cost_obj['recurrence'] = 'Unknown'
     
+    def validate_for_approval(self):
+        """
+        Validate if this tech stack signal can be approved.
+        
+        Returns:
+            tuple: (is_valid, error_message)
+        """
+        if not self.tech_stack:
+            tech_name = self.get_pending_tech_name() or "Unknown"
+            return (False, f"Tech stack is required for approval (for: {tech_name})")
+        
+        return (True, None)
+    
     def __str__(self):
         tech_name = self.tech_stack.tech_name if self.tech_stack else "Unknown"
         return f"Tech: {tech_name} - {self.get_field_name_display()} [{self.get_status_display()}]"

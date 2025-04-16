@@ -117,7 +117,7 @@ class SignalManager:
     @transaction.atomic
     def approve_signal(cls, signal, user, updated_value=None, source_contact=None, source_department=None, tech_stack=None):
         """
-        Approve a pending signal.
+        Approve a pending signal, ensuring all required fields are present.
         
         Args:
             signal: Signal instance to approve
@@ -125,6 +125,7 @@ class SignalManager:
             updated_value: Optional new value for the signal
             source_contact: Optional source contact to assign
             source_department: Optional source department to assign
+            tech_stack: Optional tech_stack to assign (for TechStackSignal)
             
         Returns:
             Updated signal instance
@@ -159,48 +160,23 @@ class SignalManager:
             if source_department:
                 signal.source_department = source_department
             
-            # Handle specific validation by signal type
-            if isinstance(signal, QualificationSignal):
-                # Qualification signals require a source contact
-                if not signal.source_contact and not source_contact:
+            # For TechStackSignal, set tech_stack if provided
+            if isinstance(signal, TechStackSignal) and tech_stack:
+                # Verify tech_stack belongs to the signal's account
+                if hasattr(tech_stack, 'account_id') and signal.account_id != tech_stack.account_id:
                     raise StandardizedValidationError({
-                        'source_contact': "Source contact is required for qualification signals"
+                        'tech_stack': "Tech stack must belong to the signal's account"
                     })
+                
+                signal.tech_stack = tech_stack
             
-            # Handle tech stack specific validation
-            elif isinstance(signal, TechStackSignal):
-                from apps.accounts.models import TechStack
-                
-                # If tech_stack is provided in the approval request, use it
-                if tech_stack:
-                    # Verify tech_stack belongs to the signal's account
-                    if hasattr(tech_stack, 'account_id') and signal.account_id != tech_stack.account_id:
-                        raise StandardizedValidationError({
-                            'tech_stack': "Tech stack must belong to the signal's account"
-                        })
-                    
-                    signal.tech_stack = tech_stack
-                
-                # If tech_stack is not provided and we don't have one, check metadata for pending_tech_name
-                elif not signal.tech_stack:
-                    # Get tech_name from metadata
-                    tech_name = None
-                    if signal.metadata and 'pending_tech_name' in signal.metadata:
-                        tech_name = signal.metadata.pop('pending_tech_name')
-                    
-                    if not tech_name:
-                        raise StandardizedValidationError({
-                            'tech_stack': "Tech stack is required for tech stack signals"
-                        })
-                    
-                    # Try to find existing tech stack by name
-                    existing_tech_stack = TechStack.objects.filter(
-                        account_id=signal.account_id,
-                        tech_name__iexact=tech_name
-                    ).first()
-                    
-                    if existing_tech_stack:
-                        signal.tech_stack = existing_tech_stack
+            # Use the model's validate_for_approval method to check validation
+            is_valid, error_message = signal.validate_for_approval()
+            if not is_valid:
+                field_name = 'tech_stack' if isinstance(signal, TechStackSignal) else 'source_contact'
+                raise StandardizedValidationError({
+                    field_name: error_message
+                })
             
             # Set approval information
             signal.status = BaseSignal.Status.APPROVED
