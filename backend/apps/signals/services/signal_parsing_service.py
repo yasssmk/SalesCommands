@@ -226,12 +226,9 @@ class SignalParsingService:
             if tech_name not in created_signals_by_tech:
                 created_signals_by_tech[tech_name] = []
             
-            # Get or create tech stack object
+            # Check if tech stack exists in our database
             tech_name_lower = tech_name.lower()
-            if tech_name_lower in existing_tech_stacks:
-                tech_stack = existing_tech_stacks[tech_name_lower]
-            else:
-                tech_stack = None
+            tech_stack = existing_tech_stacks.get(tech_name_lower)
             
             # Field mapping with alternative field names
             field_mapping = {
@@ -257,9 +254,9 @@ class SignalParsingService:
                     for value in values:
                         if value:  # Skip empty values
                             try:
+                                # Prepare signal data
                                 signal_data = {
                                     'account': account,
-                                    'tech_stack': tech_stack,
                                     'field_name': signal_field,
                                     'value': value,
                                     'source': source,
@@ -267,6 +264,13 @@ class SignalParsingService:
                                     'category': 'TECH_STACK',
                                 }
                                 
+                                # If tech_stack exists, add it directly
+                                if tech_stack:
+                                    signal_data['tech_stack'] = tech_stack
+                                else:
+                                    # Otherwise, add tech_name to be stored in metadata
+                                    signal_data['tech_name'] = tech_name
+                                # Create the signal
                                 signal = SignalManager.create_signal(
                                     data=signal_data,
                                     user=user,

@@ -32,7 +32,9 @@ class TechStackSignal(BaseSignal):
         'accounts.TechStack',
         on_delete=models.CASCADE,
         related_name='signals',
-        verbose_name=_('Technology')
+        verbose_name=_('Technology'),
+        null=True, 
+        blank=True
     )
     
     class Meta:
@@ -100,3 +102,9 @@ class TechStackSignal(BaseSignal):
     def __str__(self):
         tech_name = self.tech_stack.tech_name if self.tech_stack else "Unknown"
         return f"Tech: {tech_name} - {self.get_field_name_display()} [{self.get_status_display()}]"
+    
+    def get_pending_tech_name(self):
+        """Get the pending tech name from metadata if available"""
+        if self.metadata and 'pending_tech_name' in self.metadata:
+            return self.metadata['pending_tech_name']
+        return None

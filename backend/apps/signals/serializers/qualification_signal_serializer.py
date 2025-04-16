@@ -42,4 +42,24 @@ class QualificationSignalSerializer(BaseSignalSerializer):
                 detail= f"Invalid field name. Must be one of: {', '.join(valid_choices)}"
             )
         
+        # For manual entries, require source_contact
+        is_manual_entry = data.get('source') == 'manual_entry'
+        if is_manual_entry and 'source_contact' not in data:
+            raise StandardizedValidationError({
+                'source_contact': "Source contact is required for qualification signals"
+            })
+        
         return data
+    
+    def to_representation(self, instance):
+        """Add approval requirements information for pending signals"""
+        representation = super().to_representation(instance)
+        
+        # For pending signals, add information about what's required for approval
+        if instance.status == QualificationSignal.Status.PENDING:
+            requires_approval = {
+                'requires_source_contact': instance.source_contact is None
+            }
+            representation['approval_requirements'] = requires_approval
+        
+        return representation

@@ -90,17 +90,28 @@ class TranscriptAnalysisView(BaseAPIView):
                         tech_stack_signals = {}
                         total_count = 0
                         
-                        # Group signals by tech_stack_summary.name
+                        # First, serialize all signals
+                        serialized_signals = []
                         for signal in signals:
                             serializer = SignalSerializerFactory.get_serializer_for_instance(signal)
-                            serialized_signal = serializer(signal, context={'request': request, 'client_id': client_id}).data
-                            
-                            # Get tech name from the tech_stack_summary
+                            serialized_signals.append(
+                                serializer(signal, context={'request': request, 'client_id': client_id}).data
+                            )
+                        
+                        # Group signals by pending_tech_name or tech_stack_summary.name
+                        for serialized_signal in serialized_signals:
+                            # Get tech name from pending_tech_name or tech_stack_summary
                             tech_name = None
-                            if serialized_signal.get('tech_stack_summary') and serialized_signal['tech_stack_summary'].get('name'):
+                            
+                            # First try to get from pending_tech_name (for LLM-generated signals)
+                            if 'pending_tech_name' in serialized_signal and serialized_signal['pending_tech_name']:
+                                tech_name = serialized_signal['pending_tech_name']
+                            # Then try from tech_stack_summary (for signals with existing tech_stack)
+                            elif serialized_signal.get('tech_stack_summary') and serialized_signal['tech_stack_summary'].get('name'):
                                 tech_name = serialized_signal['tech_stack_summary']['name']
+                            # Fallback
                             else:
-                                tech_name = "Unknown"
+                                tech_name = "Unknown Technology"
                             
                             # Initialize tech stack entry if not exists
                             if tech_name not in tech_stack_signals:

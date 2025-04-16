@@ -55,16 +55,47 @@ class SignalManager:
                     raise StandardizedValidationError({
                         'account': f"Account with ID {account_id} does not exist"
                     })
-                    
-            # Same for tech_stack if this is a tech stack signal
-            if category == 'TECH_STACK' and 'tech_stack' in data and not isinstance(data['tech_stack'], TechStack):
-                try:
-                    tech_stack_id = data['tech_stack']
-                    data['tech_stack'] = TechStack.objects.get(id=tech_stack_id)
-                except TechStack.DoesNotExist:
-                    raise StandardizedValidationError({
-                        CoreErrorMessages.OBJECT_NOT_FOUND: f"TechStack with ID {tech_stack_id} does not exist"
-                    })
+            
+            # Handle TechStack signals differently for LLM-generated vs manual entry
+            if category == 'TECH_STACK':
+                is_manual_entry = data.get('source') == 'manual_entry'
+                
+                # For manual entries, require tech_stack
+                if is_manual_entry:
+                    if 'tech_stack' in data and not isinstance(data['tech_stack'], TechStack):
+                        try:
+                            tech_stack_id = data['tech_stack']
+                            data['tech_stack'] = TechStack.objects.get(id=tech_stack_id)
+                        except TechStack.DoesNotExist:
+                            raise StandardizedValidationError({
+                                CoreErrorMessages.OBJECT_NOT_FOUND: f"TechStack with ID {tech_stack_id} does not exist"
+                            })
+                # For LLM or transcript analysis, store tech_name in metadata if tech_stack isn't provided
+                else:
+                    # If tech_stack is not provided but tech_name is available
+                    if ('tech_stack' not in data or data['tech_stack'] is None) and 'tech_name' in data:
+
+                        # Initialize metadata if needed
+                        if 'metadata' not in data or data['metadata'] is None:
+                            data['metadata'] = {}
+                        
+                        # Store tech_name in metadata for later use during approval
+                        data['metadata']['pending_tech_name'] = data.pop('tech_name')
+                        
+                        # Set tech_stack to None for now
+                        data['tech_stack'] = None
+                    # If tech_stack is provided as an ID, process normally
+                    elif 'tech_stack' in data and not isinstance(data['tech_stack'], TechStack):
+                        try:
+                            tech_stack_id = data['tech_stack']
+                            if tech_stack_id is not None:  # Only attempt lookup if not None
+                                data['tech_stack'] = TechStack.objects.get(id=tech_stack_id)
+                        except TechStack.DoesNotExist:
+                            # For non-manual entry, store ID in metadata but set to None
+                            if 'metadata' not in data or data['metadata'] is None:
+                                data['metadata'] = {}
+                            data['metadata']['pending_tech_stack_id'] = tech_stack_id
+                            data['tech_stack'] = None
             
             # Auto-approve manual entries
             if data.get('source') == 'manual_entry':
@@ -84,7 +115,7 @@ class SignalManager:
     
     @classmethod
     @transaction.atomic
-    def approve_signal(cls, signal, user, updated_value=None, source_contact=None, source_department=None):
+    def approve_signal(cls, signal, user, updated_value=None, source_contact=None, source_department=None, tech_stack=None):
         """
         Approve a pending signal.
         
@@ -122,11 +153,54 @@ class SignalManager:
                 signal.source_contact = source_contact
                 
                 # Auto-assign department if not set
-                if not signal.source_department and hasattr(source_contact, 'standard_department'):
+                if not source_department and not signal.source_department and hasattr(source_contact, 'standard_department'):
                     signal.source_department = source_contact.standard_department
                     
             if source_department:
                 signal.source_department = source_department
+            
+            # Handle specific validation by signal type
+            if isinstance(signal, QualificationSignal):
+                # Qualification signals require a source contact
+                if not signal.source_contact and not source_contact:
+                    raise StandardizedValidationError({
+                        'source_contact': "Source contact is required for qualification signals"
+                    })
+            
+            # Handle tech stack specific validation
+            elif isinstance(signal, TechStackSignal):
+                from apps.accounts.models import TechStack
+                
+                # If tech_stack is provided in the approval request, use it
+                if tech_stack:
+                    # Verify tech_stack belongs to the signal's account
+                    if hasattr(tech_stack, 'account_id') and signal.account_id != tech_stack.account_id:
+                        raise StandardizedValidationError({
+                            'tech_stack': "Tech stack must belong to the signal's account"
+                        })
+                    
+                    signal.tech_stack = tech_stack
+                
+                # If tech_stack is not provided and we don't have one, check metadata for pending_tech_name
+                elif not signal.tech_stack:
+                    # Get tech_name from metadata
+                    tech_name = None
+                    if signal.metadata and 'pending_tech_name' in signal.metadata:
+                        tech_name = signal.metadata.pop('pending_tech_name')
+                    
+                    if not tech_name:
+                        raise StandardizedValidationError({
+                            'tech_stack': "Tech stack is required for tech stack signals"
+                        })
+                    
+                    # Try to find existing tech stack by name
+                    existing_tech_stack = TechStack.objects.filter(
+                        account_id=signal.account_id,
+                        tech_name__iexact=tech_name
+                    ).first()
+                    
+                    if existing_tech_stack:
+                        signal.tech_stack = existing_tech_stack
             
             # Set approval information
             signal.status = BaseSignal.Status.APPROVED
@@ -181,8 +255,6 @@ class SignalManager:
             
         except ValidationError as e:
             raise StandardizedValidationError(e.message_dict)
-        except StandardizedValidationError:
-            raise
         except Exception as e:
             raise StandardizedValidationError(str(e))
     
@@ -262,8 +334,6 @@ class SignalManager:
             
             return target_signal
             
-        except StandardizedValidationError:
-            raise
         except Exception as e:
             raise StandardizedValidationError(str(e))
     
@@ -351,8 +421,6 @@ class SignalManager:
             signal.save(user=user)
             
             return signal
-        
-        except StandardizedValidationError:
-            raise
+
         except Exception as e:
             raise StandardizedValidationError(str(e))

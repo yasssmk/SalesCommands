@@ -152,7 +152,7 @@ class BaseSignalView(BaseAPIView):
         
     @transaction.atomic
     def bulk_action(self, request):
-        """Handle bulk actions for multiple signals"""
+        """Handle bulk actions for multiple signals with enhanced validation"""
         try:
             # Validate the request
             action = request.data.get('action')
@@ -171,11 +171,12 @@ class BaseSignalView(BaseAPIView):
             signals = []
             for signal_id in signal_ids:
                 try:
-                    # Use the get_object method from the appropriate view
-                    # This is a simplification - in practice, you'd need to determine
-                    # the correct signal type and query it
-                    queryset = self.get_queryset()
-                    signal = queryset.filter(id=signal_id).first()
+                    # Use the helper to get the correct signal regardless of type
+                    from ..utils.signal_helpers import SignalHelpers
+                    signal = SignalHelpers.get_signal_by_id(
+                        signal_id=signal_id, 
+                        client_id=self.get_client_id()
+                    )
                     
                     if not signal:
                         raise StandardizedValidationError({
@@ -194,17 +195,77 @@ class BaseSignalView(BaseAPIView):
             results = {
                 'processed': 0,
                 'skipped': 0,
-                'errors': []
+                'errors': [],
+                'validation_issues': []
             }
             
             if action == 'approve':
+                # Get extra data for approval
+                tech_stack_id = request.data.get('tech_stack_id')
+                source_contact_id = request.data.get('source_contact_id')
+                source_department_id = request.data.get('source_department_id')
+                
+                # Resolve objects if IDs are provided
+                tech_stack = None
+                if tech_stack_id:
+                    from apps.accounts.models import TechStack
+                    try:
+                        tech_stack = TechStack.objects.get(
+                            id=tech_stack_id, 
+                            client_id=self.get_client_id()
+                        )
+                    except TechStack.DoesNotExist:
+                        raise StandardizedValidationError({
+                            'tech_stack_id': CoreErrorMessages.OBJECT_NOT_FOUND
+                        })
+                
+                source_contact = None
+                if source_contact_id:
+                    from apps.accounts.models import Contact
+                    try:
+                        source_contact = Contact.objects.get(
+                            id=source_contact_id,
+                            client_id=self.get_client_id()
+                        )
+                    except Contact.DoesNotExist:
+                        raise StandardizedValidationError({
+                            'source_contact_id': CoreErrorMessages.OBJECT_NOT_FOUND
+                        })
+                
+                source_department = None
+                if source_department_id:
+                    from apps.core_apps.models import StandardDepartment
+                    try:
+                        source_department = StandardDepartment.objects.get(
+                            id=source_department_id
+                        )
+                    except StandardDepartment.DoesNotExist:
+                        raise StandardizedValidationError({
+                            'source_department_id': CoreErrorMessages.OBJECT_NOT_FOUND
+                        })
+                
                 for signal in signals:
                     try:
+                        # First validate the signal can be approved
+                        validation_result = SignalManager.validate_for_approval(signal)
+                        
+                        if not validation_result['is_valid']:
+                            # Skip signals that can't be approved without required fields
+                            results['validation_issues'].append({
+                                'signal_id': str(signal.id),
+                                'validation': validation_result
+                            })
+                            results['skipped'] += 1
+                            continue
+                        
                         if signal.status == signal.Status.PENDING:
-                            # Use the service layer
+                            # Use the service layer to approve
                             SignalManager.approve_signal(
                                 signal=signal,
-                                user=request.user
+                                user=request.user,
+                                source_contact=source_contact,
+                                source_department=source_department,
+                                tech_stack=tech_stack
                             )
                             results['processed'] += 1
                         else:
@@ -239,8 +300,11 @@ class BaseSignalView(BaseAPIView):
                     })
                 
                 # Get the target signal
-                queryset = self.get_queryset()
-                target_signal = queryset.filter(id=target_signal_id).first()
+                from ..utils.signal_helpers import SignalHelpers
+                target_signal = SignalHelpers.get_signal_by_id(
+                    signal_id=target_signal_id,
+                    client_id=self.get_client_id()
+                )
                 
                 if not target_signal:
                     raise StandardizedValidationError({
@@ -299,13 +363,38 @@ class BaseSignalView(BaseAPIView):
     def approve(self, request, instance):
         """Approve a signal"""
         try:
-            # Extract additional data
-            updated_value = request.data.get('value')
-            source_contact_id = request.data.get('source_contact_id')
-            source_department_id = request.data.get('source_department_id')
+            from ..utils.signal_helpers import SignalHelpers
+            from ..models.tech_stack_signal_model import TechStackSignal
+            # First, check if the signal can be approved
+            validation_result = SignalHelpers.validate_for_approval(instance)
             
-            # Get related objects if IDs provided
+            # If we have missing critical fields, add tech_stack or source_contact from request
+            tech_stack = None
             source_contact = None
+            source_department = None
+            updated_value = request.data.get('value')
+            
+            # Extract tech_stack if provided
+            tech_stack_id = request.data.get('tech_stack_id')
+            if tech_stack_id:
+                from apps.accounts.models import TechStack
+                try:
+                    tech_stack = TechStack.objects.get(
+                        id=tech_stack_id,
+                        client_id=self.get_client_id()
+                    )
+                except TechStack.DoesNotExist:
+                    raise StandardizedValidationError({
+                        'tech_stack_id': CoreErrorMessages.OBJECT_NOT_FOUND
+                    })
+            # If tech_name is provided but no tech_stack_id, prepare for creation
+            elif isinstance(instance, TechStackSignal) and request.data.get('tech_name'):
+                if not instance.metadata:
+                    instance.metadata = {}
+                instance.metadata['pending_tech_name'] = request.data.get('tech_name')
+                    
+            # Extract source contact if provided
+            source_contact_id = request.data.get('source_contact_id')
             if source_contact_id:
                 from apps.accounts.models import Contact
                 try:
@@ -318,7 +407,8 @@ class BaseSignalView(BaseAPIView):
                         'source_contact_id': CoreErrorMessages.OBJECT_NOT_FOUND
                     })
             
-            source_department = None
+            # Extract source department if provided
+            source_department_id = request.data.get('source_department_id')
             if source_department_id:
                 from apps.core_apps.models import StandardDepartment
                 try:
@@ -330,21 +420,33 @@ class BaseSignalView(BaseAPIView):
                         'source_department_id': CoreErrorMessages.OBJECT_NOT_FOUND
                     })
             
+            # After handling request data, validate again for any remaining issues
+            if not validation_result['is_valid'] and not (tech_stack or source_contact):
+                # Return validation errors with clear messages
+                return Response({
+                    'success': False,
+                    'validation': validation_result,
+                    'message': "Signal cannot be approved without required fields",
+                    'signal': SignalSerializerFactory.get_serializer_for_instance(instance)(instance).data
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
             # Use SignalManager to approve signal
             updated_signal = SignalManager.approve_signal(
                 signal=instance,
                 user=request.user,
                 updated_value=updated_value,
                 source_contact=source_contact,
-                source_department=source_department
+                source_department=source_department,
+                tech_stack=tech_stack
             )
             
             # Return serialized response
             serializer = SignalSerializerFactory.get_serializer_for_instance(updated_signal)
-            return Response(
-                serializer(updated_signal).data,
-                status=status.HTTP_200_OK
-            )
+            return Response({
+                'success': True,
+                'message': "Signal approved successfully",
+                'signal': serializer(updated_signal).data
+            }, status=status.HTTP_200_OK)
             
         except StandardizedValidationError as e:
             return self.handle_exception(e)
