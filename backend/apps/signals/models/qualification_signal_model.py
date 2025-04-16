@@ -38,12 +38,15 @@ class QualificationSignal(BaseSignal):
         Validate if this qualification signal can be approved.
         
         Returns:
-            tuple: (is_valid, error_message)
+            dict: Dictionary of field errors or empty dict if valid
         """
-        if not self.source_contact:
-            return (False, "Source contact is required for qualification signals")
+        errors = {}
         
-        return (True, None)
+        # Validate source_contact requirement
+        if not self.source_contact:
+            errors['source_contact'] = "Source contact is required for qualification signals"
+        
+        return errors
     
     def __str__(self):
         return f"Qualification: {self.get_field_name_display()} [{self.get_status_display()}]"

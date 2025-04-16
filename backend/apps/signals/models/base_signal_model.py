@@ -129,23 +129,13 @@ class BaseSignal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin
     
     def validate_for_approval(self):
         """
-        Base validation method that subclasses can override.
-        By default, all signals can be approved.
+        Base validation method that subclasses should override.
+        By default, all signals can be approved with no additional requirements.
         
         Returns:
-            tuple: (is_valid, error_message)
+            dict: Dictionary of field errors or empty dict if valid
         """
-        return (True, None)
-    
-    def validate_for_approval(self):
-        """
-        Base validation method that subclasses can override.
-        By default, all signals can be approved.
-        
-        Returns:
-            tuple: (is_valid, error_message)
-        """
-        return (True, None)
+        return {}
 
     def __str__(self):
         """String representation of the signal"""

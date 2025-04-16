@@ -161,6 +161,7 @@ class SignalManager:
                 signal.source_department = source_department
             
             # For TechStackSignal, set tech_stack if provided
+            from ..models.tech_stack_signal_model import TechStackSignal
             if isinstance(signal, TechStackSignal) and tech_stack:
                 # Verify tech_stack belongs to the signal's account
                 if hasattr(tech_stack, 'account_id') and signal.account_id != tech_stack.account_id:
@@ -171,17 +172,29 @@ class SignalManager:
                 signal.tech_stack = tech_stack
             
             # Use the model's validate_for_approval method to check validation
-            is_valid, error_message = signal.validate_for_approval()
-            if not is_valid:
-                field_name = 'tech_stack' if isinstance(signal, TechStackSignal) else 'source_contact'
-                raise StandardizedValidationError({
-                    field_name: error_message
-                })
+            validation_errors = signal.validate_for_approval()
+            if validation_errors:
+                # If there are validation errors, raise them directly
+                raise StandardizedValidationError(validation_errors)
             
             # Set approval information
             signal.status = BaseSignal.Status.APPROVED
             signal.approved_by = user
             signal.approved_at = timezone.now()
+            
+            # Clean up any pending metadata entries
+            if signal.metadata:
+                # Create a copy to avoid modifying while iterating
+                updated_metadata = signal.metadata.copy()
+                
+                # Remove pending prefixed keys
+                pending_keys = [key for key in updated_metadata if key.startswith('pending_')]
+                for key in pending_keys:
+                    updated_metadata.pop(key)
+                    
+                # Only update if something changed
+                if updated_metadata != signal.metadata:
+                    signal.metadata = updated_metadata
             
             signal.full_clean()  # Validate before saving
             signal.save(user=user)

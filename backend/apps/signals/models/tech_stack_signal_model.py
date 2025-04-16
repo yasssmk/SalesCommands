@@ -104,13 +104,21 @@ class TechStackSignal(BaseSignal):
         Validate if this tech stack signal can be approved.
         
         Returns:
-            tuple: (is_valid, error_message)
+            dict: Dictionary of field errors or empty dict if valid
         """
+        errors = {}
+        
+        # Validate tech_stack requirement
         if not self.tech_stack:
             tech_name = self.get_pending_tech_name() or "Unknown"
-            return (False, f"Tech stack is required for approval (for: {tech_name})")
+            errors['tech_stack'] = f"Tech stack is required for approval (for: {tech_name})"
         
-        return (True, None)
+        # Validate source_contact requirement
+        if not self.source_contact:
+            errors['source_contact'] = "Source contact is required for approval"
+        
+        return errors
+        
     
     def __str__(self):
         tech_name = self.tech_stack.tech_name if self.tech_stack else "Unknown"
