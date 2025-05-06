@@ -46,6 +46,8 @@ class CoreErrorMessages:
     PROCESSING_FAILED = _("Failed to process transcript")
     INVALID_OPERATION = _("{operation}")
 
+    INVALID_DATE_RANGE= _("Invalid date range: {start_date} must be before {end_date}")
+
 class AccountErrorMessages:
     """Account specific error messages"""
     INVALID_PARENT = _("Invalid parent assignment")
@@ -74,3 +76,5 @@ class ValidationErrorMessages:
     DATE_RANGE_INVALID = _("End date must be after start date")
     MAX_LENGTH = _("{field} exceeds maximum length of {max_length} characters")
     MIN_LENGTH = _("{field} must be at least {min_length} characters")
+
+
