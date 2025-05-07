@@ -52,6 +52,8 @@ INSTALLED_APPS = [
     'apps.core_apps',
     'apps.accounts',
     'apps.signals',
+    'apps.campaign',
+    'apps.opportunities',
     # 'apps.accounts_app.accounts',
     # 'apps.accounts_app.org_units',
     # 'apps.accounts_app.account_product_detail',
