@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'apps.signals',
     'apps.campaign',
     'apps.opportunities',
+    'apps.sequence',	
     # 'apps.accounts_app.accounts',
     # 'apps.accounts_app.org_units',
     # 'apps.accounts_app.account_product_detail',
