@@ -1,4 +1,4 @@
-from core_apps.models import BaseModelApp
+from apps.core_apps.models import BaseModelApp
 from core.client_scope import ClientScopeManager
 from django.db import models
 from django.utils.translation import gettext_lazy as _

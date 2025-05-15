@@ -107,6 +107,25 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Related Opportunity')
     )
     
+    # Linked list fields for sequence navigation
+    previous_activity = models.OneToOneField(
+        'self',
+        on_delete=models.SET_NULL,
+        related_name='next_activity_rel',
+        null=True,
+        blank=True,
+        verbose_name=_('Previous Activity')
+    )
+    
+    next_activity = models.OneToOneField(
+        'self',
+        on_delete=models.SET_NULL,
+        related_name='previous_activity_rel',
+        null=True,
+        blank=True,
+        verbose_name=_('Next Activity')
+    )
+    
     class Meta:
         verbose_name = _('Activity')
         verbose_name_plural = _('Activities')
@@ -115,6 +134,8 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
             models.Index(fields=['owner', 'scheduled_start']),
             models.Index(fields=['account', 'status']),
             models.Index(fields=['activity_type']),
+            models.Index(fields=['previous_activity']),
+            models.Index(fields=['next_activity']),
         ]
 
     def __str__(self):
