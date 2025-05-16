@@ -1,7 +1,5 @@
-# apps/campaign/services/campaign_activity_service.py
+# apps/campaign/services/campaign_activity_service.py (revised)
 from typing import List, Dict
-from datetime import timedelta
-from django.utils import timezone
 from django.db import transaction
 from apps.activities.models import Activity, ActivityCampaign, ActivitySequence
 from apps.campaign.models import Campaign, CampaignTarget
@@ -66,7 +64,7 @@ class CampaignActivityService:
                                      contact: Contact, has_phone: bool, has_email: bool, 
                                      has_linkedin: bool) -> List[Activity]:
         """
-        Create sequence activities for a specific contact
+        Create sequence activities for a specific contact (no scheduled dates)
         """
         # Get the appropriate sequence based on available channels
         if has_phone and has_email:
@@ -83,7 +81,6 @@ class CampaignActivityService:
         
         activities = []
         previous_activity = None
-        current_date = timezone.now()
         
         # Create activities for each step in the sequence
         for step_number, step_config in sequence_dict.items():
@@ -93,33 +90,29 @@ class CampaignActivityService:
                 contact=contact,
                 step_number=step_number,
                 step_config=step_config,
-                scheduled_date=current_date,
                 previous_activity=previous_activity
             )
             
             activities.append(activity)
             previous_activity = activity
-            
-            # Calculate next activity date based on min_delay
-            current_date += timedelta(days=step_config['min_delay'])
         
         return activities
     
     @classmethod
     def _create_single_activity(cls, campaign: Campaign, campaign_target: CampaignTarget,
                                contact: Contact, step_number: int, step_config: Dict,
-                               scheduled_date, previous_activity: Activity = None) -> Activity:
+                               previous_activity: Activity = None) -> Activity:
         """
-        Create a single activity with all necessary relationships
+        Create a single activity with all necessary relationships (no scheduled date)
         """
-        # Create the base activity
+        # Create the base activity - NO SCHEDULED DATE
         activity = Activity.objects.create(
             title=f"Step {step_number}: {step_config['description']}",
             activity_type=step_config['type'],
             description=step_config['description'],
             account=campaign_target.account,
             owner=campaign.owner,
-            scheduled_start=scheduled_date,
+            # NO scheduled_start - will be set when campaign is activated
             status=Activity.Status.PLANNED
         )
         
@@ -133,16 +126,20 @@ class CampaignActivityService:
             campaign_target=campaign_target
         )
         
-        # Create sequence relationship
-        # Determine max attempts based on account tier
-        tier_max_attempts = cls._get_max_attempts_for_tier(campaign_target.account)
-        
-        ActivitySequence.objects.create(
+        # Create sequence relationship with day-counting
+        sequence_info = ActivitySequence.objects.create(
             activity=activity,
             source_type=ActivitySequence.SourceType.CAMPAIGN,
             sequence_position=step_number,
-            call_attempts=0
+            call_attempts=0,
+            # Store the minimum delay from sequence config
+            min_delay_days=step_config['min_delay']
         )
+        
+        # Set next sequence activity link (for easier navigation)
+        if previous_activity and hasattr(previous_activity, 'sequence_info'):
+            previous_activity.sequence_info.next_sequence_activity = activity
+            previous_activity.sequence_info.save()
         
         # Link to previous activity in sequence
         if previous_activity:
@@ -152,18 +149,3 @@ class CampaignActivityService:
             previous_activity.save()
         
         return activity
-    
-    @classmethod
-    def _get_max_attempts_for_tier(cls, account) -> int:
-        """
-        Get maximum attempts based on account tier
-        """
-        # Assuming account has a tier field ('A', 'B', 'C')
-        tier_mapping = {
-            'A': 3,
-            'B': 2, 
-            'C': 1
-        }
-        
-        account_tier = getattr(account, 'tier', 'C')
-        return tier_mapping.get(account_tier, 2)  # Default to 2 attempts

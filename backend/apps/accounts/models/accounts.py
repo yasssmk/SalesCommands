@@ -29,6 +29,11 @@ class AccountClassification(models.TextChoices):
     STARTUP = 'STARTUP', _('Startup')
     NONPROFIT = 'NONPROFIT', _('Non-Profit')
 
+class AccountTier(models.TextChoices):
+    A = 'A', _('Tier A - High Priority')
+    B = 'B', _('Tier B - Medium Priority')
+    C = 'C', _('Tier C - Low Priority')
+
 class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
     """
     Represents a company account in the system.
@@ -59,6 +64,14 @@ class Account(BaseModelApp, ClientScopeManager.ModelMixin, ContactDetailsMixin):
         blank=True, 
         null=True, 
         verbose_name=_('Account Classification')
+    )
+
+    tier = models.CharField(
+        max_length=1,
+        choices=AccountTier.choices,
+        default=AccountTier.C,
+        verbose_name=_('Account Tier'),
+        help_text=_('Account priority for campaign management')
     )
     
     company_size = models.CharField(

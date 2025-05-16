@@ -107,5 +107,23 @@ class ContactDetailsMixin(models.Model):
         }
     )
 
+    # ADD THESE NEW FIELDS
+    email_is_valid = models.BooleanField(
+        default=True,
+        verbose_name=_('Email is Valid'),
+        help_text=_('Whether the email address is valid and not bouncing')
+    )
+    
+    phone_is_valid = models.BooleanField(
+        default=True,
+        verbose_name=_('Phone is Valid'),
+        help_text=_('Whether the phone number is valid and reachable')
+    )
+
     class Meta:
         abstract = True
+    
+    @property
+    def phone(self):
+        """Get phone number as string for campaign compatibility"""
+        return str(self.phone_number) if self.phone_number else None

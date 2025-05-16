@@ -39,6 +39,7 @@ class ContactSerializer(ContactDetailsSerializer, AccountLinkedSerializerMixin,
         model = Contact
         fields = [
             'id', 'first_name', 'last_name', 'full_name', 'email', 'phone_number',
+            'email_is_valid', 'phone_is_valid', 'opted_out',
             'job_title', 'department_name', 'standard_department', 'standard_department_id',
             'influence_level', 'influence_levels',
             'account', 'account_id',

@@ -30,6 +30,12 @@ class Contact(BaseModelApp, AccountLinkedModel, ContactDetailsMixin,
         max_length=100,
         verbose_name=_('Last Name')
     )
+
+    opted_out = models.BooleanField(
+        default=False,
+        verbose_name=_('Opted Out'),
+        help_text=_('Whether the contact has opted out of communications')
+    )
     
     job_title = models.CharField(
         max_length=200,

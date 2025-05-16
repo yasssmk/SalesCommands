@@ -98,14 +98,15 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
     direct_child_companies = serializers.SerializerMethodField(read_only=True)
     account_owner = AccountManagerSerializer(read_only=True)
     team_owner = AssignedTeamSerializer(read_only=True)
+    tier_display = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Account
         fields = [
             'id', 'company_name', 'industry', 'address', 
             'city', 'post_code', 'state', 'country', 'website', 
-            'type', 'phone_number',
-            'company_size', 'annual_revenue', 'classification',
+            'type', 'phone_number',  'email_is_valid', 'phone_is_valid',
+            'company_size', 'annual_revenue', 'classification', 'tier',
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
             'team_owner', 'team_owner_id', 'client_id',
@@ -196,6 +197,11 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             min_confirmations=min_confirmations,
         )
     
+    
+    def get_tier_display(self, obj):
+        """Get the display name for tier"""
+        return obj.get_tier_display() if obj.tier else None
+
     def validate_type(self, value):
         """Validate type field"""
         if value is None or value == '':
@@ -436,3 +442,16 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
                 instance.add_partner(partner, user)
             except Account.DoesNotExist:
                 pass
+
+class AccountSummarySerializer(serializers.ModelSerializer):
+    """Serializer for the account summary in campaign targets"""
+    tier_display = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = Account
+        fields = ['id', 'company_name', 'industry', 'company_size', 'tier', 'tier_display']
+        read_only_fields = fields
+    
+    def get_tier_display(self, obj):
+        """Get the display name for tier"""
+        return obj.get_tier_display() if obj.tier else None

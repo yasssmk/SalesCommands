@@ -93,6 +93,14 @@ class ContactDetailsSerializer(serializers.Serializer):
         }
     )
 
+    email_is_valid = serializers.BooleanField(default=True)
+    phone_is_valid = serializers.BooleanField(default=True)
+    phone = serializers.SerializerMethodField(read_only=True)
+
+    def get_phone(self, obj):
+        """Get phone as string for campaign compatibility"""
+        return str(obj.phone_number) if obj.phone_number else None
+
     def validate_phone_number(self, value):
         """Validate phone number format"""
         if value:
