@@ -51,15 +51,16 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
     )
     
     
-    # Sequence template
-    # sequence_template = models.ForeignKey(
-    #     'sales_assistant.SequenceTemplate',
-    #     on_delete=models.SET_NULL,
-    #     null=True,
-    #     blank=True,
-    #     related_name='campaigns',
-    #     verbose_name=_('Sequence Template')
-    # )
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('DRAFT', 'Draft'),
+            ('ACTIVE', 'Active'),
+            ('PAUSED', 'Paused'),
+            ('COMPLETED', 'Completed'),
+        ],
+        default='DRAFT'
+    )
     
     class Meta:
         verbose_name = _('Campaign')

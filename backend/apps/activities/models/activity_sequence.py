@@ -80,6 +80,13 @@ class ActivitySequence(BaseModelApp, ClientScopeManager.ModelMixin):
         blank=True,
         verbose_name=_('Days Since Last Sequence Activity')
     )
+
+    # Minimum delay before this activity can be worked on
+    min_delay_days = models.IntegerField(
+        default=0,
+        verbose_name=_('Minimum Delay Days'),
+        help_text=_('Days to wait since previous activity before this becomes available')
+    )
     
     # Next sequence activity link (for better sequence management)
     next_sequence_activity = models.ForeignKey(
