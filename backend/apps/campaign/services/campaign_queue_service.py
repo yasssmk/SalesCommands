@@ -54,19 +54,21 @@ class CampaignQueueService:
         
         # Sort by priority score (highest first), then by sequence position
         ready_activities.sort(
-            key=lambda x: (-x['priority_score'], x['activity'].sequence_info.sequence_position)
+            key=lambda x: (-x['priority_score'], x['activity'].sequence_info.sequence_position if hasattr(x['activity'], 'sequence_info') else 0)
         )
         
-        # Format response
+        # Format response - only include Activity objects, not nested dicts with activity inside
+        activities_list = [item['activity'] for item in ready_activities[:limit]]
+        
         return {
             'campaign_id': campaign.id,
             'campaign_name': campaign.name,
-            'ready_activities': [item['activity'] for item in ready_activities[:limit]],
+            'ready_activities': activities_list,
             'total_ready': len(ready_activities),
             'total_pending': campaign_activities.count(),
             'queue_info': cls._get_queue_info(campaign, ready_activities)
         }
-    
+        
     @classmethod
     def _calculate_working_days_between(cls, start_date: date, end_date: date) -> int:
         """

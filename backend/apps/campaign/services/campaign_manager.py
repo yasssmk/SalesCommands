@@ -81,7 +81,35 @@ class CampaignManager:
         campaign.save()
         
         # Get the initial active activities
-        return CampaignQueueService.get_active_activities_for_campaign(campaign, limit=20)
+        playlist_data = CampaignQueueService.get_active_activities_for_campaign(campaign, limit=20)
+        
+        # Make sure activities are serialized to dictionaries, not model instances
+        if 'ready_activities' in playlist_data:
+            # Replace activity instances with simple dictionary representations
+            ready_activities = []
+            for activity in playlist_data['ready_activities']:
+                ready_activities.append({
+                    'id': activity.id,
+                    'title': activity.title,
+                    'activity_type': activity.activity_type,
+                    'activity_type_display': activity.get_activity_type_display(),
+                    'account_id': activity.account_id,
+                    'account_name': activity.account.company_name if hasattr(activity, 'account') else None,
+                    'scheduled_start': activity.scheduled_start,
+                    'status': activity.status,
+                    'contacts': [
+                        {'id': c.id, 'name': c.full_name} 
+                        for c in activity.contacts.all()
+                    ] if hasattr(activity, 'contacts') else []
+                })
+            playlist_data['ready_activities'] = ready_activities
+        
+        return {
+            'success': True,
+            'campaign_id': campaign.id,
+            'campaign_status': campaign.status,
+            'playlist': playlist_data
+        }
     
     @classmethod
     def get_campaign_playlist(cls, campaign: Campaign, limit: int = None) -> Dict:
@@ -91,7 +119,46 @@ class CampaignManager:
         if limit is None:
             limit = DEFAULT_PLAYLIST_LIMIT
             
-        return CampaignQueueService.get_active_activities_for_campaign(campaign, limit)
+        # Get the playlist data from queue service
+        playlist_data = CampaignQueueService.get_active_activities_for_campaign(campaign, limit)
+        
+        # Serialize activity objects for JSON response
+        if 'ready_activities' in playlist_data:
+            # Transform Activity objects into dictionaries
+            serialized_activities = []
+            for activity in playlist_data['ready_activities']:
+                # Basic activity data
+                activity_data = {
+                    'id': activity.id,
+                    'title': activity.title,
+                    'activity_type': activity.activity_type,
+                    'activity_type_display': activity.get_activity_type_display(),
+                    'account_id': activity.account_id,
+                    'account_name': activity.account.company_name if hasattr(activity, 'account') else None,
+                    'scheduled_start': activity.scheduled_start,
+                    'status': activity.status,
+                }
+                
+                # Add contacts
+                activity_data['contacts'] = [
+                    {'id': c.id, 'name': c.full_name} 
+                    for c in activity.contacts.all()
+                ] if hasattr(activity, 'contacts') else []
+                
+                # Add sequence info if available
+                if hasattr(activity, 'sequence_info') and activity.sequence_info:
+                    activity_data['sequence_info'] = {
+                        'position': activity.sequence_info.sequence_position,
+                        'source_type': activity.sequence_info.source_type,
+                        'call_attempts': activity.sequence_info.call_attempts,
+                    }
+                
+                serialized_activities.append(activity_data)
+            
+            # Replace activities with serialized version
+            playlist_data['ready_activities'] = serialized_activities
+        
+        return playlist_data
     
     @classmethod
     def complete_activity(cls, activity: Activity, result: str, 
