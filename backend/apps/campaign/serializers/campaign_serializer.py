@@ -98,9 +98,16 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             raise StandardizedValidationError(e.detail)
     
     def create(self, validated_data):
-        """Create a new Campaign instance"""
-        # Set owner to current user if not provided
-        if 'owner' not in validated_data and self.context.get('request'):
-            validated_data['owner'] = self.context['request'].user
+        """Create a new Campaign instance with client_id properly passed to save()"""
+        client_id = self.context.get('client_id')
+        if not client_id and self.context.get('request'):
+            client_id = self.context['request'].auth.get('client_account')
         
-        return super().create(validated_data)
+        if not client_id:
+            raise StandardizedValidationError(CoreErrorMessages.CLIENT_ID_REQUIRED)
+        
+        # Pass client_id as keyword arg to save()
+        instance = Campaign(**validated_data)
+        instance.save(client_id=client_id, user=self.context.get('request').user if self.context.get('request') else None)
+        
+        return instance

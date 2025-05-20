@@ -106,7 +106,7 @@ class AccountSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
             'id', 'company_name', 'industry', 'address', 
             'city', 'post_code', 'state', 'country', 'website', 
             'type', 'phone_number',  'email_is_valid', 'phone_is_valid',
-            'company_size', 'annual_revenue', 'classification', 'tier',
+            'company_size', 'annual_revenue', 'classification', 'tier','tier_display',
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
             'team_owner', 'team_owner_id', 'client_id',

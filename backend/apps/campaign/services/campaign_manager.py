@@ -19,9 +19,9 @@ class CampaignManager:
     
     @classmethod
     def create_campaign_with_activities(cls, campaign_data: Dict, target_accounts: List[int],
-                                       target_contacts: List[int] = None) -> Dict:
+                                    target_contacts: List[int] = None) -> Dict:
         """
-        Create a new campaign and generate all activities
+        Create a new campaign and generate all activities with optimized queries
         
         Args:
             campaign_data: Dictionary with campaign fields (name, description, etc.)
@@ -32,16 +32,27 @@ class CampaignManager:
             Dictionary with campaign creation results
         """
         with transaction.atomic():
+            # Ensure client_id is preserved if provided in campaign_data
+            client_id = campaign_data.get('client_id')
+            print(f"Creating campaign with client_id: {client_id}")
+
+            if not client_id:
+                raise ValueError("client_id is required when creating a new record")
+            
             # Create the campaign
             campaign = Campaign.objects.create(**campaign_data)
             
+            print('troue ba dour')
             # Create campaign targets
             targets_created = cls._create_campaign_targets(
                 campaign, target_accounts, target_contacts
             )
-            
+            print('troue ba dour2')
             # Generate activities for all targets
-            activity_result = CampaignActivityService.create_activities_for_campaign(campaign)
+            activity_result = CampaignActivityService.create_activities_for_campaign(
+                campaign, target_contacts=target_contacts
+            )
+            print('troue ba dour3')
             
             return {
                 'success': True,
@@ -50,7 +61,6 @@ class CampaignManager:
                 'targets_created': targets_created,
                 'activities_created': activity_result['total_activities_created'],
                 'skipped_contacts': activity_result['skipped_contacts'],
-                'campaign': campaign
             }
     
     @classmethod
@@ -108,6 +118,7 @@ class CampaignManager:
         if campaign:
             updated_playlist = cls.get_campaign_playlist(campaign, limit=10)
             result_info['updated_playlist'] = updated_playlist['ready_activities']
+        
         
         return result_info
     
@@ -253,21 +264,16 @@ class CampaignManager:
     
     @classmethod
     def _create_campaign_targets(cls, campaign: Campaign, target_accounts: List[int],
-                                target_contacts: List[int] = None) -> int:
+                            target_contacts: List[int] = None) -> int:
         """
         Create campaign targets for the specified accounts/contacts
-        
-        Args:
-            campaign: The campaign to create targets for
-            target_accounts: List of account IDs
-            target_contacts: Optional specific contact IDs
-            
-        Returns:
-            Number of targets created
         """
         from apps.accounts.models import Account
         
         targets_created = 0
+        
+        # Get client_id from the campaign
+        client_id = campaign.client_id
         
         for account_id in target_accounts:
             try:
@@ -275,17 +281,19 @@ class CampaignManager:
                 
                 # Check if target already exists
                 if not CampaignTarget.objects.filter(campaign=campaign, account=account).exists():
+                    # Create new target with client_id
                     CampaignTarget.objects.create(
                         campaign=campaign,
-                        account=account
+                        account=account,
+                        client_id=client_id  
                     )
                     targets_created += 1
-                    
+                        
             except Account.DoesNotExist:
                 continue
         
         return targets_created
-    
+            
     @classmethod
     def get_campaign_contacts_with_responses(cls, campaign: Campaign) -> List[Dict]:
         """

@@ -35,7 +35,7 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
     class Meta:
         model = CampaignObjective
         fields = [
-            'id', 'campaign', 'campaign_id', 'name', 'description',
+            'id', 'campaign_id', 'name', 'description',
             'objective_type', 'objective_type_display', 'target_value',
             'current_value', 'unit', 'is_primary', 'progress_percentage',
             'last_updated', 'created_at', 'updated_at'
@@ -70,15 +70,12 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
                     
                     # Check if user is the campaign owner
                     if campaign.owner.id != current_user.id:
-                        # If you have roles/permissions, you could check those here
-                        # For example, check if the user is an admin or belongs to the same team
-                        
-                        # For now, we'll restrict to owner only
+                        # Check permissions logic here
                         raise StandardizedValidationError(
                             CoreErrorMessages.PERMISSION_DENIED
                         )
             
-            # Rest of validation logic remains the same
+            # Validate target_value is positive
             if 'target_value' in data and data['target_value'] <= 0:
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(field="Target Value")
@@ -104,9 +101,9 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
             raise StandardizedValidationError(e.detail)
     
     def create(self, validated_data):
-        """Create a new CampaignObjective instance"""
+        """Create a new CampaignObjective instance with client_id"""
+        # Ensure client_id is included
+        if 'client_id' not in validated_data and self.context.get('request'):
+            validated_data['client_id'] = self.context['request'].auth.get('client_account')
+        
         return super().create(validated_data)
-    
-    def update(self, instance, validated_data):
-        """Update an existing CampaignObjective instance"""
-        return super().update(instance, validated_data)

@@ -36,7 +36,9 @@ class CampaignObjectiveViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewse
         if campaign.owner != self.request.user:
             raise StandardizedValidationError("You can only add objectives to your own campaigns")
             
-        return serializer.save()
+        client_id = self.get_client_id()
+
+        return serializer.save(client_id=client_id)
     
     def perform_update(self, serializer):
         """Update an objective with validation"""

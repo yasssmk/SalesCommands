@@ -60,7 +60,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Nested serializers for related models
     campaign_info = ActivityCampaignSerializer(read_only=True)
     sequence_info = ActivitySequenceSerializer(read_only=True)
-    
+
     # Display fields
     activity_type_display = serializers.SerializerMethodField(read_only=True)
     status_display = serializers.SerializerMethodField(read_only=True)
@@ -77,6 +77,8 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         required=False,
         help_text="List of contact IDs to associate with this activity"
     )
+
+    contact_validation_info = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Activity
@@ -101,6 +103,21 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     def get_contact_names(self, obj):
         """Get names of associated contacts"""
         return [f"{c.first_name} {c.last_name}" for c in obj.contacts.all()]
+    
+    def get_contact_validation_info(self, obj):
+        """Get validation info for contacts in this activity"""
+        if not obj.contacts.exists():
+            return None
+        
+        contact = obj.contacts.first()
+        return {
+            'email_is_valid': contact.email_is_valid,
+            'phone_is_valid': contact.phone_is_valid,
+            'opted_out': contact.opted_out,
+            'has_email': bool(contact.email),
+            'has_phone': bool(contact.phone_number),
+            'has_linkedin': bool(contact.linkedin),
+        }
     
     def validate(self, data):
         """Validate the activity data"""
@@ -278,6 +295,8 @@ class ActivityCompletionSerializer(serializers.Serializer):
         required=False,
         help_text="Date when contact requested to be called back"
     )
+
+    
     
     def validate(self, data):
         """Validate completion data"""

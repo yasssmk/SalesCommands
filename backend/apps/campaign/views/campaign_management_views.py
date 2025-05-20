@@ -12,6 +12,9 @@ from apps.campaign.models import Campaign
 from apps.campaign.serializers import CampaignSerializer
 from apps.campaign.services.campaign_manager import CampaignManager
 from apps.campaign.services.campaign_result_service import CampaignResultService
+from apps.campaign.models.campaign_target import CampaignTarget
+from apps.campaign.services.campaign_activity_service import CampaignActivityService
+from apps.campaign.services.campaign_target_service import CampaignTargetService
 from apps.activities.models import Activity
 from apps.campaign.config.variables import DEFAULT_PLAYLIST_LIMIT
 
@@ -58,41 +61,61 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
                 "end_date": "2025-03-31",
                 "campaign_type": "CHASING"
             },
-            "target_accounts": [1, 2, 3],
-            "target_contacts": [1, 2, 3]  # Optional
+            "target_account_ids": [1, 2, 3],     # Accounts to target (all contacts)
+            "target_contact_ids": [4, 5, 6]      # Specific contacts to target
         }
         """
         try:
             campaign_data = request.data.get('campaign', {})
-            target_accounts = request.data.get('target_accounts', [])
-            target_contacts = request.data.get('target_contacts', None)
+            target_account_ids = request.data.get('target_account_ids', [])
+            target_contact_ids = request.data.get('target_contact_ids', [])
             
             # Validation
             if not campaign_data.get('name'):
                 raise StandardizedValidationError("Campaign name is required")
             
-            if not target_accounts:
-                raise StandardizedValidationError("At least one target account is required")
+            if not target_account_ids and not target_contact_ids:
+                raise StandardizedValidationError("At least one target account or contact is required")
             
-            # Set owner
-            campaign_data['owner'] = request.user
-            campaign_data['client_id'] = self.get_client_id()
-            
-            # Create campaign with activities
-            result = CampaignManager.create_campaign_with_activities(
-                campaign_data=campaign_data,
-                target_accounts=target_accounts,
-                target_contacts=target_contacts
+            # Prepare campaign targets using our new service
+            target_result = CampaignTargetService.prepare_campaign_targets(
+                target_account_ids=target_account_ids,
+                target_contact_ids=target_contact_ids
             )
             
-            return Response(result, status=status.HTTP_201_CREATED)
+            # Get client_id from auth
+            client_id = self.get_client_id()
+            campaign_data['client_id'] = client_id
+            print(f"Client ID: {client_id}")
             
+            # Set owner in campaign_data
+            campaign_data['owner_id'] = request.user.id
+
+            print(f"Campaign data: {campaign_data}")
+            
+            # Use CampaignManager to create the campaign and activities in one step
+            result = CampaignManager.create_campaign_with_activities(
+                campaign_data=campaign_data,
+                target_accounts=target_result['target_accounts'],
+                target_contacts=target_result['target_contacts']
+            )
+
+            print(f"Campaign creation result: {result}") #Not printed
+            
+            # Add target preparation stats to the result
+            result.update({
+                'targeting_stats': target_result['stats'],
+                'invalid_ids': target_result['stats']['invalid_ids']
+            })
+            
+            return Response(result, status=status.HTTP_201_CREATED)
+                
         except Exception as e:
             return Response(
                 {'success': False, 'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
-    
+ 
     @action(detail=True, methods=['post'])
     def start_campaign(self, request, pk=None):
         """

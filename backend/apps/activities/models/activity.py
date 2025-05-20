@@ -67,6 +67,8 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
     
     # Scheduling information
     scheduled_start = models.DateTimeField(
+        null=True,
+        blank=True,
         verbose_name=_('Scheduled Start')
     )
     
