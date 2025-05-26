@@ -12,7 +12,8 @@ from apps.campaign.config.variables import (
     OVERDUE_PENALTY_PER_DAY,
     CALLBACK_PRIORITY_BOOST,
     SEQUENCE_STEP_PRIORITY_BONUS,
-    WORKING_DAYS
+    WORKING_DAYS,
+    BUYING_AUTHORITY_PRIORITY_BOOST
 )
 
 
@@ -195,6 +196,16 @@ class CampaignQueueService:
         # Account tier priority (A=100, B=50, C=10)
         account_tier = getattr(activity.account, 'tier', 'C')
         score += TIER_PRIORITY_SCORES.get(account_tier, 10)
+
+        contact_buying_authority_bonus = 0
+        contacts = list(activity.contacts.all())
+        if contacts:
+            for contact in contacts:
+                if getattr(contact, 'has_buying_authority', False):
+                    contact_buying_authority_bonus = BUYING_AUTHORITY_PRIORITY_BOOST
+                    break
+        
+        score += contact_buying_authority_bonus
         
         # Sequence position bonus (earlier steps get priority)
         if hasattr(activity, 'sequence_info'):

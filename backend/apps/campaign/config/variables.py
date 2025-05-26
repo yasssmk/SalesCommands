@@ -32,6 +32,7 @@ ACTIVITY_TYPE_PRIORITIES = {
 # SEQUENCE SETTINGS
 SEQUENCE_STEP_PRIORITY_BONUS = 5  # Points per step (11 - step_number) * 5
 CALLBACK_PRIORITY_BOOST = 50
+BUYING_AUTHORITY_PRIORITY_BOOST = 30  # Points for buying authority
 OVERDUE_PENALTY_PER_DAY = 15  # Points per working day overdue
 
 # WORKING DAYS
