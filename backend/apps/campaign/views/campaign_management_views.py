@@ -269,7 +269,311 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
                 {'success': False, 'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+    
+    @action(detail=False, methods=['get'])
+    def account_campaigns(self, request):
+        """
+        Get all campaigns that the specified account is a target of
+        
+        Query params:
+        - account_id: ID of the account to get campaigns for
+        """
+        account_id = request.query_params.get('account_id')
+        
+        if not account_id:
+            return Response(
+                {'success': False, 'error': 'Account ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            from apps.accounts.models import Account
+            account = Account.objects.get(id=account_id)
+            
+            # Check client scope
+            self.validate_client_id(account)
+            
+            # Get campaign targets for this account
+            targets = CampaignTarget.objects.filter(
+                account=account
+            ).select_related('campaign', 'campaign__owner')
+            
+            # Format response
+            campaigns_data = []
+            for target in targets:
+                campaign = target.campaign
+                campaigns_data.append({
+                    'campaign_id': campaign.id,
+                    'campaign_name': campaign.name,
+                    'campaign_type': campaign.campaign_type,
+                    'campaign_type_display': campaign.get_campaign_type_display(),
+                    'start_date': campaign.start_date,
+                    'end_date': campaign.end_date,
+                    'owner_name': f"{campaign.owner.first_name} {campaign.owner.last_name}",
+                    'status': target.status,
+                    'status_display': target.get_status_display()
+                })
+            
+            return Response({
+                'success': True,
+                'account_id': account.id,
+                'account_name': account.company_name,
+                'campaigns': campaigns_data
+            })
+        except Account.DoesNotExist:
+            return Response(
+                {'success': False, 'error': 'Account not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
 
+    @action(detail=True, methods=['post'])
+    def remove_account(self, request, pk=None):
+        """
+        Remove an account from the campaign
+        
+        Payload:
+        {
+            "account_id": 1,
+            "notes": "Optional notes about removal reason"
+        }
+        """
+        campaign = self.get_object()
+        
+        # Validate ownership or permissions
+        if campaign.owner != request.user and not request.user.has_perm('campaign.change_campaign'):
+            raise StandardizedValidationError("You don't have permission to modify this campaign")
+        
+        account_id = request.data.get('account_id')
+        notes = request.data.get('notes')
+        
+        if not account_id:
+            return Response(
+                {'success': False, 'error': 'Account ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            from apps.accounts.models import Account
+            account = Account.objects.get(id=account_id)
+            
+            # Validate client scope
+            self.validate_client_id(account)
+            
+            result = CampaignManager.remove_account_from_campaign(
+                campaign=campaign,
+                account=account,
+                notes=notes
+            )
+            
+            return Response(result)
+        except Account.DoesNotExist:
+            return Response(
+                {'success': False, 'error': 'Account not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['post'])
+    def remove_contact(self, request, pk=None):
+        """
+        Remove a contact from the campaign
+        
+        Payload:
+        {
+            "contact_id": 1,
+            "notes": "Optional notes about removal reason"
+        }
+        """
+        campaign = self.get_object()
+        
+        # Validate ownership or permissions
+        if campaign.owner != request.user and not request.user.has_perm('campaign.change_campaign'):
+            raise StandardizedValidationError("You don't have permission to modify this campaign")
+        
+        contact_id = request.data.get('contact_id')
+        notes = request.data.get('notes')
+        
+        if not contact_id:
+            return Response(
+                {'success': False, 'error': 'Contact ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            from apps.accounts.models import Contact
+            contact = Contact.objects.get(id=contact_id)
+            
+            # Validate client scope
+            self.validate_client_id(contact)
+            
+            result = CampaignManager.remove_contact_from_campaign(
+                campaign=campaign,
+                contact=contact,
+                notes=notes
+            )
+            
+            return Response(result)
+        except Contact.DoesNotExist:
+            return Response(
+                {'success': False, 'error': 'Contact not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['get'])
+    def activities(self, request, pk=None):
+        """
+        Get all activities for a campaign with optional status filtering
+        
+        Query params:
+        - status: Comma-separated list of activity statuses to filter by
+        """
+        campaign = self.get_object()
+        
+        # Validate ownership or permissions
+        if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
+            raise StandardizedValidationError("You don't have permission to view this campaign")
+        
+        # Parse status filter
+        status_filter = None
+        status_param = request.query_params.get('status')
+        if status_param:
+            status_filter = status_param.split(',')
+        
+        try:
+            result = CampaignManager.get_campaign_activities(
+                campaign=campaign,
+                status_filter=status_filter
+            )
+            
+            return Response(result)
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['get'])
+    def account_activities(self, request, pk=None):
+        """
+        Get all activities for a specific account in a campaign
+        
+        Query params:
+        - account_id: ID of the account to get activities for
+        - status: Comma-separated list of activity statuses to filter by
+        """
+        campaign = self.get_object()
+        
+        # Validate ownership or permissions
+        if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
+            raise StandardizedValidationError("You don't have permission to view this campaign")
+        
+        # Get account ID
+        account_id = request.query_params.get('account_id')
+        if not account_id:
+            return Response(
+                {'success': False, 'error': 'Account ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Parse status filter
+        status_filter = None
+        status_param = request.query_params.get('status')
+        if status_param:
+            status_filter = status_param.split(',')
+        
+        try:
+            from apps.accounts.models import Account
+            account = Account.objects.get(id=account_id)
+            
+            # Validate client scope
+            self.validate_client_id(account)
+            
+            result = CampaignManager.get_account_activities_in_campaign(
+                campaign=campaign,
+                account=account,
+                status_filter=status_filter
+            )
+            
+            return Response(result)
+        except Account.DoesNotExist:
+            return Response(
+                {'success': False, 'error': 'Account not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['get'])
+    def contact_activities(self, request, pk=None):
+        """
+        Get all activities for a specific contact in a campaign
+        
+        Query params:
+        - contact_id: ID of the contact to get activities for
+        - status: Comma-separated list of activity statuses to filter by
+        """
+        campaign = self.get_object()
+        
+        # Validate ownership or permissions
+        if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
+            raise StandardizedValidationError("You don't have permission to view this campaign")
+        
+        # Get contact ID
+        contact_id = request.query_params.get('contact_id')
+        if not contact_id:
+            return Response(
+                {'success': False, 'error': 'Contact ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Parse status filter
+        status_filter = None
+        status_param = request.query_params.get('status')
+        if status_param:
+            status_filter = status_param.split(',')
+        
+        try:
+            from apps.accounts.models import Contact
+            contact = Contact.objects.get(id=contact_id)
+            
+            # Validate client scope
+            self.validate_client_id(contact)
+            
+            result = CampaignManager.get_contact_activities_in_campaign(
+                campaign=campaign,
+                contact=contact,
+                status_filter=status_filter
+            )
+            
+            return Response(result)
+        except Contact.DoesNotExist:
+            return Response(
+                {'success': False, 'error': 'Contact not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class ActivityResultViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ViewSet):
     """
