@@ -7,6 +7,7 @@ from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from end_users.models import User
 from apps.campaign.models.campaign import Campaign
+from apps.sequence.sequences.sequence_dispatcher import SequenceDisptacher
 
 class CampaignOwnerSerializer(serializers.ModelSerializer):
     """Serializer for the campaign owner summary"""
@@ -25,22 +26,36 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Campaign Name')
         }
     )
+
+    sequence_type = serializers.ChoiceField(
+        choices=SequenceDisptacher.SEQUENCE_CHOICES,
+        default=SequenceDisptacher.CHASING,
+        error_messages={
+            'invalid_choice': CoreErrorMessages.INVALID_FIELD.format(field='Sequence Type')
+        }
+    )
     
     # Fields for read operations
     owner = CampaignOwnerSerializer(read_only=True)
     owner_id = serializers.SerializerMethodField(read_only=True)
     campaign_type_display = serializers.SerializerMethodField(read_only=True)
     progress_summary = serializers.SerializerMethodField(read_only=True)
+    sequence_type_display = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Campaign
         fields = [
             'id', 'name', 'description', 'campaign_type', 'campaign_type_display',
+            'sequence_type', 'sequence_type_display', 
             'owner', 'owner_id', 'start_date', 'end_date', 
             'progress_summary', 'client_id', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'client_id', 'created_at', 'updated_at', 'progress_summary', 'owner_id']
-    
+        read_only_fields = ['id', 'client_id', 'created_at', 'updated_at', 'progress_summary', 'owner_id', 'sequence_type_display']
+
+    def get_sequence_type_display(self, obj):
+        """Get the display name for sequence type"""
+        return dict(SequenceDisptacher.SEQUENCE_CHOICES).get(obj.sequence_type, '')
+        
     def get_owner_id(self, obj):
         """Get the owner ID, defaulting to current user if needed"""
         # If owner exists, return its ID

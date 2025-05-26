@@ -5,6 +5,7 @@ from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
 from core.exceptions import ValidationError
 from core.error_messages import CoreErrorMessages
+from apps.sequence.sequences.sequence_dispatcher import SequenceDisptacher
 
 class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
     """
@@ -34,7 +35,14 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         choices=CampaignType.choices,
         verbose_name=_('Campaign Type')
     )
-    
+
+
+    sequence_type = models.CharField(
+        max_length=30,
+        choices=SequenceDisptacher.SEQUENCE_CHOICES,
+        default=SequenceDisptacher.CHASING,
+        verbose_name=_('Sequence Type')
+    )
     owner = models.ForeignKey(
         'end_users.User',
         on_delete=models.CASCADE,
