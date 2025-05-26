@@ -8,6 +8,7 @@ from ..serializers import ContactSerializer
 from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.exceptions import StandardizedValidationError
+from ..services.contact_service import ContactService
 
 class ContactAPIView(BaseAPIView):
     """
@@ -22,6 +23,24 @@ class ContactAPIView(BaseAPIView):
     entity_name = 'contact'
 
     mass_update_allowed_fields = {'job_title', 'influence_level', 'department', 'standard_department_id'}
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Route requests to appropriate handler methods based on URL path
+        """
+        # Extract the last part of the URL path to determine the action
+        path = request.path_info.strip('/').split('/')
+        action = path[-1] if path else None
+        
+        # Map actions to methods
+        if action == 'toggle-email-validity':
+            return self.toggle_email_validity(request, *args, **kwargs)
+        elif action == 'toggle-phone-validity':
+            return self.toggle_phone_validity(request, *args, **kwargs)
+            
+        # Otherwise fall back to standard REST methods
+        return super().dispatch(request, *args, **kwargs)
+
 
     def get_queryset(self):
         """Extend base queryset with contact-specific filtering"""
@@ -95,6 +114,32 @@ class ContactAPIView(BaseAPIView):
                     return serializer
                     
             raise StandardizedValidationError(serializer.errors)
+        except Exception as exc:
+            return self.handle_exception(exc)
+        
+    def toggle_email_validity(self, request, pk=None, *args, **kwargs):
+        """Toggle the email_is_valid field for a contact"""
+        try:
+            contact = self.get_object()
+            self.validate_client_id(contact)
+            
+            user = request.user if hasattr(request, 'user') else None
+            result = ContactService.toggle_email_validity(contact, user)
+            
+            return Response(result)
+        except Exception as exc:
+            return self.handle_exception(exc)
+            
+    def toggle_phone_validity(self, request, pk=None, *args, **kwargs):
+        """Toggle the phone_is_valid field for a contact"""
+        try:
+            contact = self.get_object()
+            self.validate_client_id(contact)
+            
+            user = request.user if hasattr(request, 'user') else None
+            result = ContactService.toggle_phone_validity(contact, user)
+            
+            return Response(result)
         except Exception as exc:
             return self.handle_exception(exc)
 

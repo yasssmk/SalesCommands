@@ -22,7 +22,11 @@ urlpatterns = [
     # Signal-related endpoints
     path('contacts/<int:pk>/signals/', ContactAPIView.as_view(), name='contact-signals'),
     path('contacts/<int:pk>/field-signals/', ContactAPIView.as_view(), name='contact-field-signals'),
-    
+
+    # Contact validity endpoints
+    path('contacts/<int:pk>/toggle-email-validity/', ContactAPIView.as_view(), name='contact-toggle-email-validity'),
+    path('contacts/<int:pk>/toggle-phone-validity/', ContactAPIView.as_view(), name='contact-toggle-phone-validity'),
+ 
     # TechStack endpoints
     path('techstack/', TechStackAPIView.as_view(), name='techstack-list'),
     path('techstack/<int:pk>/', TechStackAPIView.as_view(), name='techstack-detail'),

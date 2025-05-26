@@ -109,3 +109,13 @@ class Contact(BaseModelApp, AccountLinkedModel, ContactDetailsMixin,
             'email', 'phone', 'linkedin', 'department', 'has_buying_authority'
         ]
         return self._get_field_data_with_signals(profile_fields, 'PROFILE')
+    
+    def mark_email_invalid(self, user=None):
+        """Mark contact email as invalid"""
+        from apps.accounts.services.contact_service import ContactService
+        return ContactService.toggle_email_validity(self, user)
+    
+    def mark_phone_invalid(self, user=None):
+        """Mark contact phone as invalid"""
+        from apps.accounts.services.contact_service import ContactService
+        return ContactService.toggle_phone_validity(self, user)
