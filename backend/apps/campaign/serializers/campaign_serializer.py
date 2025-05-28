@@ -2,6 +2,7 @@
 
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
@@ -98,6 +99,15 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                             end_date=data['end_date']
                         )
                     )
+            
+            today = timezone.now().date()
+            if data['end_date'] < today:
+                raise StandardizedValidationError(
+                    _("Campaign end date must be in the future. Current date: {today}, End date: {end_date}").format(
+                        today=today,
+                        end_date=data['end_date']
+                    )
+                )
             
             # Validate campaign type
             if 'campaign_type' in data:
