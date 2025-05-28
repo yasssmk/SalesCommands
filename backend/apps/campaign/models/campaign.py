@@ -91,5 +91,15 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
                     end_date=self.end_date
                 )
             )
-            
+
+        from django.utils import timezone
+        today = timezone.now().date()
+        if self.end_date and self.end_date < today:
+            raise ValidationError(
+                _("Campaign end date must be in the future. Current date: {today}, End date: {end_date}").format(
+                    today=today,
+                    end_date=self.end_date
+                )
+            )
+                
         super().save(*args, **kwargs)
