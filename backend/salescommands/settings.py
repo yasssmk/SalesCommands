@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'apps.opportunities',
     'apps.sequence',
     'apps.activities',
+    'apps.leads',	
     # 'apps.accounts_app.accounts',
     # 'apps.accounts_app.org_units',
     # 'apps.accounts_app.account_product_detail',

@@ -43,6 +43,7 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         default=SequenceDisptacher.CHASING,
         verbose_name=_('Sequence Type')
     )
+    
     owner = models.ForeignKey(
         'end_users.User',
         on_delete=models.CASCADE,
