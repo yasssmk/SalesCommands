@@ -1,8 +1,8 @@
-from .campaign_serializer import CampaignSerializer, CampaignOwnerSerializer
+from .campaign_serializer import CampaignSerializer, CampaignListSerializer
 from .campaign_objective_serializer import CampaignObjectiveSerializer
 
 _all__ = [
     'CampaignSerializer',
-    'CampaignOwnerSerializer',
+    'CampaignListSerializer',
     'CampaignObjectiveSerializer'
 ]

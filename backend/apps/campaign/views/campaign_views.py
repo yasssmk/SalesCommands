@@ -8,18 +8,29 @@ from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.apps_shared_methods import BaseAPIView
 from apps.campaign.models.campaign import Campaign
-from apps.campaign.serializers.campaign_serializer import CampaignSerializer
+from apps.campaign.serializers.campaign_serializer import (
+    CampaignSerializer,
+    CampaignListSerializer
+)
+
 
 class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
     """
     API endpoints for managing campaigns
     """
-    serializer_class = CampaignSerializer
+    queryset = Campaign.objects.all()
+    entity_name = 'campaign'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['campaign_type', 'owner']
+    filterset_fields = ['campaign_type', 'owner', 'status', 'sequence_type']
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'start_date', 'end_date', 'created_at']
     ordering = ['-created_at']
+    
+    def get_serializer_class(self):
+        """Use different serializers for list vs detail views"""
+        if self.action == 'list':
+            return CampaignListSerializer
+        return CampaignSerializer
     
     def get_queryset(self):
         """Get campaigns for the current client with filters"""
@@ -27,6 +38,9 @@ class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
         
         # Apply client scoping
         queryset = self.filter_queryset_by_client(queryset)
+        
+        # Prefetch related data
+        queryset = queryset.select_related('owner').prefetch_related('targets')
         
         # Filter by owner (current user) if requested
         owner_filter = self.request.query_params.get('my_campaigns', None)
@@ -49,6 +63,14 @@ class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
             from django.utils import timezone
             today = timezone.now().date()
             queryset = queryset.filter(start_date__lte=today, end_date__gte=today)
+        
+        # Filter by has_sequence
+        has_sequence = self.request.query_params.get('has_sequence', None)
+        if has_sequence:
+            if has_sequence.lower() == 'true':
+                queryset = queryset.exclude(sequence_type__isnull=True)
+            else:
+                queryset = queryset.filter(sequence_type__isnull=True)
         
         return queryset
     
@@ -108,12 +130,18 @@ class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
                 'count': count
             }
         
+        # Get target type breakdown
+        target_summary = campaign.get_target_summary()
+        
         # Prepare summary data
         data = {
             'id': campaign.id,
             'name': campaign.name,
             'start_date': campaign.start_date,
             'end_date': campaign.end_date,
+            'has_sequence': campaign.has_sequence(),
+            'is_call_list': campaign.is_call_list(),
+            'target_summary': target_summary,
             'objectives': [
                 {
                     'id': obj.id,

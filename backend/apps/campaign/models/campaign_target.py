@@ -7,9 +7,11 @@ from apps.core_apps.models import BaseModelApp
 from core.exceptions import ValidationError
 from core.error_messages import CoreErrorMessages
 
+
 class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
     """
-    Links accounts to campaigns as targets for outreach
+    Links ONE target (account OR contact OR lead) to a campaign
+    A campaign can have many targets of different types
     """
     class Status(models.TextChoices):
         PENDING = 'PENDING', _('Pending')
@@ -30,7 +32,27 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         'accounts.Account',
         on_delete=models.CASCADE,
         related_name='campaign_targets',
-        verbose_name=_('Target Account')
+        verbose_name=_('Target Account'),
+        blank=True,
+        null=True
+    )
+    
+    contact = models.ForeignKey(
+        'accounts.Contact',
+        on_delete=models.CASCADE,
+        related_name='campaign_targets',
+        verbose_name=_('Target Contact'),
+        blank=True,
+        null=True
+    )
+    
+    lead = models.ForeignKey(
+        'leads.Lead',
+        on_delete=models.CASCADE,
+        related_name='campaign_targets',
+        verbose_name=_('Target Lead'),
+        blank=True,
+        null=True
     )
     
     # Status tracking
@@ -74,18 +96,97 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
     class Meta:
         verbose_name = _('Campaign Target')
         verbose_name_plural = _('Campaign Targets')
-        unique_together = ('campaign', 'account')
         indexes = [
             models.Index(fields=['campaign', 'status']),
             models.Index(fields=['account', 'status']),
+            models.Index(fields=['contact', 'status']),
+            models.Index(fields=['lead', 'status']),
             models.Index(fields=['sequence_created']),
+        ]
+        constraints = [
+            # Ensure unique account per campaign
+            models.UniqueConstraint(
+                fields=['campaign', 'account'],
+                condition=models.Q(contact__isnull=True, lead__isnull=True),
+                name='unique_campaign_account_only'
+            ),
+            # Ensure unique contact per campaign
+            models.UniqueConstraint(
+                fields=['campaign', 'contact'],
+                condition=models.Q(contact__isnull=False),
+                name='unique_campaign_contact'
+            ),
+            # Ensure unique lead per campaign
+            models.UniqueConstraint(
+                fields=['campaign', 'lead'],
+                condition=models.Q(lead__isnull=False),
+                name='unique_campaign_lead'
+            )
         ]
 
     def __str__(self):
-        return f"{self.campaign.name} - {self.account.company_name} ({self.get_status_display()})"
+        if self.contact:
+            return f"{self.campaign.name} - Contact: {self.contact.first_name} {self.contact.last_name} ({self.get_status_display()})"
+        elif self.lead:
+            return f"{self.campaign.name} - Lead: {self.lead.title} ({self.get_status_display()})"
+        elif self.account:
+            return f"{self.campaign.name} - Account: {self.account.company_name} ({self.get_status_display()})"
+        return f"{self.campaign.name} - No Target ({self.get_status_display()})"
+    
+    def clean(self):
+        """Validate that exactly one target type is set"""
+        super().clean()
+        
+        target_count = sum([
+            bool(self.account),
+            bool(self.contact),
+            bool(self.lead)
+        ])
+        
+        if target_count == 0:
+            raise ValidationError(
+                "One target (account, contact, or lead) must be specified"
+            )
+        
+        if target_count > 1:
+            raise ValidationError(
+                "Only one target type can be specified per campaign target"
+            )
     
     def save(self, *args, **kwargs):
+        # Run clean validation
+        self.full_clean()
         super().save(*args, **kwargs)
+    
+    def get_target_type(self):
+        """Return the type of target"""
+        if self.contact:
+            return 'contact'
+        elif self.lead:
+            return 'lead'
+        elif self.account:
+            return 'account'
+        return None
+    
+    def get_target(self):
+        """Return the actual target object"""
+        if self.contact:
+            return self.contact
+        elif self.lead:
+            return self.lead
+        elif self.account:
+            return self.account
+        return None
+    
+    def get_target_account(self):
+        """Get the account associated with this target"""
+        if self.account:
+            return self.account
+        elif self.contact:
+            return self.contact.account
+        elif self.lead:
+            return self.lead.account
+        return None
     
     def mark_sequence_created(self, save=True):
         """Mark that a sequence has been created for this target"""
