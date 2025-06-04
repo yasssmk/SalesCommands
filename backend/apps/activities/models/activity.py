@@ -138,6 +138,11 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
             models.Index(fields=['activity_type']),
             models.Index(fields=['previous_activity']),
             models.Index(fields=['next_activity']),
+            # New indexes for campaign-related queries
+            models.Index(fields=['status', 'scheduled_start'], name='activity_status_date_idx'),
+            models.Index(fields=['completed_at'], name='activity_completed_idx'),
+            # Composite index for filtering activities by multiple criteria
+            models.Index(fields=['status', 'activity_type', 'owner'], name='activity_filter_idx'),
         ]
 
     def __str__(self):
