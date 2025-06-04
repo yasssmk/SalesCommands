@@ -23,7 +23,7 @@ class CampaignQueueService:
     """
     
     @classmethod
-    def get_active_activities_for_campaign(cls, campaign: Campaign, limit: int = 50) -> Dict:
+    def get_active_activities_for_campaign(cls, campaign: Campaign, limit: int = 50, prefetch_relations: bool = False) -> Dict:
         """
         Get activities that are ready to be worked on for a campaign
         
@@ -34,13 +34,24 @@ class CampaignQueueService:
         Returns:
             Dictionary with ready activities and queue information
         """
-        # Get all activities for this campaign that aren't completed/cancelled
-        campaign_activities = Activity.objects.filter(
+        # Build base queryset
+        query = Activity.objects.filter(
             campaign_info__campaign=campaign,
             status__in=[Activity.Status.PLANNED]
-        ).select_related(
-            'account', 'sequence_info', 'campaign_info__campaign_target'
-        ).prefetch_related('contacts')
+        )
+        
+        # Add select_related for commonly accessed foreign keys
+        query = query.select_related('account', 'campaign_info__campaign_target')
+        
+        # Add prefetch_related for collection relationships if needed for serialization
+        if prefetch_relations:
+            query = query.prefetch_related(
+                'contacts',
+                'sequence_info'
+            )
+        
+        # Execute the query
+        campaign_activities = query.all()
         
         ready_activities = []
         

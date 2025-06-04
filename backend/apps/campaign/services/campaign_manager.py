@@ -117,13 +117,17 @@ class CampaignManager:
         """
         if limit is None:
             limit = DEFAULT_PLAYLIST_LIMIT
-            
-        # Get the playlist data from queue service
-        playlist_data = CampaignQueueService.get_active_activities_for_campaign(campaign, limit)
+        
+        # Modify queue service to support optimized prefetching
+        playlist_data = CampaignQueueService.get_active_activities_for_campaign(
+            campaign, 
+            limit,
+            prefetch_relations=True  # Signal to use optimized prefetching
+        )
         
         # Serialize activity objects for JSON response
         if 'ready_activities' in playlist_data:
-            # Transform Activity objects into dictionaries
+            # Transform Activity objects into dictionaries - contacts and sequence_info are now prefetched
             serialized_activities = []
             for activity in playlist_data['ready_activities']:
                 # Basic activity data
@@ -133,18 +137,18 @@ class CampaignManager:
                     'activity_type': activity.activity_type,
                     'activity_type_display': activity.get_activity_type_display(),
                     'account_id': activity.account_id,
-                    'account_name': activity.account.company_name if hasattr(activity, 'account') else None,
+                    'account_name': activity.account.company_name,  # Now safely accessed due to select_related
                     'scheduled_start': activity.scheduled_start,
                     'status': activity.status,
                 }
                 
-                # Add contacts
+                # Add contacts - now efficiently prefetched
                 activity_data['contacts'] = [
                     {'id': c.id, 'name': c.full_name} 
-                    for c in activity.contacts.all()
-                ] if hasattr(activity, 'contacts') else []
+                    for c in activity.contacts.all()  # No additional queries due to prefetch
+                ]
                 
-                # Add sequence info if available
+                # Add sequence info if available - also prefetched
                 if hasattr(activity, 'sequence_info') and activity.sequence_info:
                     activity_data['sequence_info'] = {
                         'position': activity.sequence_info.sequence_position,
