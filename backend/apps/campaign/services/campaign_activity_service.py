@@ -26,7 +26,15 @@ class CampaignActivityService:
         """
         created_count = 0
         skipped_contacts = []
-        
+
+        if not campaign.sequence_type:
+            return {
+                'total_activities_created': 0,
+                'skipped_contacts': [],
+                'success': True,
+                'message': 'Campaign has no sequence - no activities pre-generated'
+            }
+            
         with transaction.atomic():
             # Get all campaign targets in a single query with account prefetched
             campaign_targets = CampaignTarget.objects.filter(
@@ -115,15 +123,17 @@ class CampaignActivityService:
     
     @classmethod
     def _create_activities_for_contact(cls, campaign: Campaign, campaign_target: CampaignTarget, 
-                             contact: Contact, has_phone: bool, has_email: bool, 
-                             has_linkedin: bool) -> List[Activity]:
+                                contact: Contact, has_phone: bool, has_email: bool, 
+                                has_linkedin: bool) -> List[Activity]:
         """
-        Create sequence activities for a specific contact (no scheduled dates)
+        Create sequence activities for a specific contact with stakeholder-based assignment
         """
-        # Get the appropriate sequence using SequenceDisptacher
-        from apps.sequence.sequences.sequence_dispatcher import SequenceDisptacher
+
+        if not campaign.sequence_type:
+            return []
         
         # Get sequence type from campaign, default to CHASING if not set
+        from apps.sequence.sequences.sequence_dispatcher import SequenceDisptacher
         sequence_type = getattr(campaign, 'sequence_type', SequenceDisptacher.CHASING)
         
         # Get the sequence dictionary from the dispatcher
@@ -134,13 +144,26 @@ class CampaignActivityService:
             has_linkedin=has_linkedin
         )
         
+        # Determine activity owner based on stakeholder roles
+        from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
+        
+        # First try to find EXECUTOR stakeholders
+        executors = campaign.get_executors()
+        
+        if executors.exists():
+            # For simplicity in MVP, assign to first executor
+            # More advanced implementation could rotate or balance load
+            activity_owner = executors.first()
+        else:
+            # Fall back to campaign owner
+            activity_owner = campaign.owner
+        
         activities = []
         previous_activity = None
         
         # Bulk prepare activity instances
         activity_instances = []
         campaign_info_instances = []
-        sequence_info_instances = []
         
         # Create activities for each step in the sequence
         for step_number, step_config in sequence_dict.items():
@@ -150,7 +173,7 @@ class CampaignActivityService:
                 activity_type=step_config['type'],
                 description=step_config['description'],
                 account=campaign_target.account,
-                owner=campaign.owner,
+                owner=activity_owner,  # Use stakeholder-based owner
                 status=Activity.Status.PLANNED,
                 client_id=campaign.client_id  # Set client_id from campaign
             )

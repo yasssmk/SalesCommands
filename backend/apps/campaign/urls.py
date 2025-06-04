@@ -4,6 +4,7 @@ from .views.campaign_management_views import CampaignManagementViewSet, Activity
 from .views.campaign_views import CampaignViewSet
 from .views.campaign_target_views import CampaignTargetViewSet
 from .views.campaign_objective_views import CampaignObjectiveViewSet
+from .views.campaign_stakeholder_views import CampaignStakeholderViewSet
 
 urlpatterns = [
     
@@ -53,4 +54,11 @@ urlpatterns = [
     # Activity Results
     path('activities/<int:pk>/complete/', ActivityResultViewSet.as_view({'post': 'complete_activity'}), name='activity-complete'),
     path('activities/<int:pk>/add-response/', ActivityResultViewSet.as_view({'post': 'add_email_response'}), name='activity-add-response'),
+
+        # Campaign Stakeholders
+    path('stakeholders/', CampaignStakeholderViewSet.as_view({'get': 'list', 'post': 'create'}), name='campaign-stakeholder-list'),
+    path('stakeholders/<int:pk>/', CampaignStakeholderViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='campaign-stakeholder-detail'),
+    path('stakeholders/bulk-add/', CampaignStakeholderViewSet.as_view({'post': 'bulk_add'}), name='campaign-stakeholder-bulk-add'),
+    path('stakeholders/bulk-remove/', CampaignStakeholderViewSet.as_view({'post': 'bulk_remove'}), name='campaign-stakeholder-bulk-remove'),
+    path('stakeholders/campaign/<int:campaign_id>/', CampaignStakeholderViewSet.as_view({'get': 'list'}), name='campaign-stakeholder-by-campaign'),
 ]

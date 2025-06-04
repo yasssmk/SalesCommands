@@ -8,6 +8,7 @@ from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.apps_shared_methods import BaseAPIView
 from apps.campaign.models.campaign import Campaign
+from django.db.models import Q
 from apps.campaign.serializers.campaign_serializer import (
     CampaignSerializer,
     CampaignListSerializer
@@ -39,38 +40,58 @@ class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
         # Apply client scoping
         queryset = self.filter_queryset_by_client(queryset)
         
-        # Prefetch related data
-        queryset = queryset.select_related('owner').prefetch_related('targets')
+        # Prefetch related objects for performance
+        queryset = queryset.select_related('owner')
         
-        # Filter by owner (current user) if requested
-        owner_filter = self.request.query_params.get('my_campaigns', None)
-        if owner_filter and owner_filter.lower() == 'true':
-            queryset = queryset.filter(owner=self.request.user)
+        # Filter by owner
+        owner_id = self.request.query_params.get('owner')
+        if owner_id:
+            queryset = queryset.filter(owner_id=owner_id)
         
-        # Filter by date range if provided
-        start_date = self.request.query_params.get('start_date', None)
-        end_date = self.request.query_params.get('end_date', None)
+        # Filter by stakeholder role
+        stakeholder_role = self.request.query_params.get('stakeholder_role')
+        if stakeholder_role:
+            # Find campaigns where the current user has this role
+            queryset = queryset.filter(
+                stakeholder_links__user=self.request.user,
+                stakeholder_links__role=stakeholder_role
+            ).distinct()
         
-        if start_date:
-            queryset = queryset.filter(start_date__gte=start_date)
+        # My campaigns (either owner or any stakeholder)
+        my_campaigns = self.request.query_params.get('my_campaigns', None)
+        if my_campaigns and my_campaigns.lower() == 'true':
+            queryset = queryset.filter(
+                Q(owner=self.request.user) | 
+                Q(stakeholder_links__user=self.request.user)
+            ).distinct()
         
-        if end_date:
-            queryset = queryset.filter(end_date__lte=end_date)
-            
-        # Filter by active status (campaigns with current date between start and end)
-        active_filter = self.request.query_params.get('active', None)
-        if active_filter and active_filter.lower() == 'true':
-            from django.utils import timezone
-            today = timezone.now().date()
-            queryset = queryset.filter(start_date__lte=today, end_date__gte=today)
+        # Filter by campaign type
+        campaign_type = self.request.query_params.get('campaign_type')
+        if campaign_type:
+            queryset = queryset.filter(campaign_type=campaign_type)
         
-        # Filter by has_sequence
-        has_sequence = self.request.query_params.get('has_sequence', None)
-        if has_sequence:
-            if has_sequence.lower() == 'true':
-                queryset = queryset.exclude(sequence_type__isnull=True)
-            else:
+        # Filter by status
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        # Filter by sequence type
+        sequence_type = self.request.query_params.get('sequence_type')
+        if sequence_type:
+            if sequence_type.lower() == 'none':
                 queryset = queryset.filter(sequence_type__isnull=True)
+            else:
+                queryset = queryset.filter(sequence_type=sequence_type)
+        
+        # Filter by date range
+        start_after = self.request.query_params.get('start_after')
+        start_before = self.request.query_params.get('start_before')
+        
+        if start_after:
+            queryset = queryset.filter(start_date__gte=start_after)
+        
+        if start_before:
+            queryset = queryset.filter(start_date__lte=start_before)
         
         return queryset
     

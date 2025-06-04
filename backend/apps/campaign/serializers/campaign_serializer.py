@@ -2,9 +2,11 @@
 
 from rest_framework import serializers
 from apps.campaign.models.campaign import Campaign
+from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
+from apps.campaign.serializers.campaign_stakeholders_serializer import CampaignStakeholderSerializer
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-
+from end_users.models import User
 
 class CampaignSerializer(serializers.ModelSerializer):
     """Serializer for Campaign model"""
@@ -14,12 +16,39 @@ class CampaignSerializer(serializers.ModelSerializer):
     campaign_type_display = serializers.CharField(source='get_campaign_type_display', read_only=True)
     sequence_type_display = serializers.SerializerMethodField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    stakeholders = CampaignStakeholderSerializer(source='stakeholders.through.objects', many=True, read_only=True)
     
     # Computed fields
     has_sequence = serializers.SerializerMethodField(read_only=True)
     is_call_list = serializers.SerializerMethodField(read_only=True)
     target_summary = serializers.SerializerMethodField(read_only=True)
     has_mixed_targets = serializers.SerializerMethodField(read_only=True)
+
+    owner_ids = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        write_only=True, 
+        queryset=User.objects.all(),
+        required=False
+    )
+    
+    executor_ids = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        write_only=True, 
+        queryset=User.objects.all(),
+        required=False
+    )
+    
+    receiver_ids = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        write_only=True, 
+        queryset=User.objects.all(),
+        required=False
+    )
+    
+    # Computed stakeholder summaries
+    owner_count = serializers.SerializerMethodField(read_only=True)
+    executor_count = serializers.SerializerMethodField(read_only=True)
+    receiver_count = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Campaign
@@ -39,6 +68,15 @@ class CampaignSerializer(serializers.ModelSerializer):
             # Ownership
             'owner',
             'owner_name',
+            
+            # Stakeholders
+            'stakeholders',
+            'owner_ids',
+            'executor_ids',
+            'receiver_ids',
+            'owner_count',
+            'executor_count',
+            'receiver_count',
             
             # Dates
             'start_date',
@@ -67,6 +105,9 @@ class CampaignSerializer(serializers.ModelSerializer):
             'is_call_list',
             'target_summary',
             'has_mixed_targets',
+            'owner_count',
+            'executor_count',
+            'receiver_count',
             'created_at',
             'updated_at',
             'created_by',
@@ -132,30 +173,110 @@ class CampaignSerializer(serializers.ModelSerializer):
         
         return data
     
+    def get_owner_count(self, obj):
+        """Get count of owners"""
+        return obj.get_owners().count()
+    
+    def get_executor_count(self, obj):
+        """Get count of executors"""
+        return obj.get_executors().count()
+    
+    def get_receiver_count(self, obj):
+        """Get count of receivers"""
+        return obj.get_receivers().count()
+    
     def create(self, validated_data):
-        """Create a new campaign"""
-        # Pop the user from context if available
-        request = self.context.get('request')
-        if request and hasattr(request, 'user'):
-            validated_data['created_by'] = request.user
-            validated_data['updated_by'] = request.user
-            if 'owner' not in validated_data:
-                validated_data['owner'] = request.user
+        """Create a new campaign with stakeholders"""
+        # Extract stakeholder data
+        owner_ids = validated_data.pop('owner_ids', [])
+        executor_ids = validated_data.pop('executor_ids', [])
+        receiver_ids = validated_data.pop('receiver_ids', [])
         
-        return Campaign.objects.create(**validated_data)
+        # Get the current user
+        request = self.context.get('request')
+        user = request.user if request and hasattr(request, 'user') else None
+        
+        # Set created_by and updated_by
+        if user:
+            validated_data['created_by'] = user
+            validated_data['updated_by'] = user
+            if 'owner' not in validated_data:
+                validated_data['owner'] = user
+        
+        # Create the campaign
+        campaign = Campaign.objects.create(**validated_data)
+        
+        # Add stakeholders
+        # The owner will already be added as a stakeholder via the save method
+        
+        # Add additional owners
+        for owner in owner_ids:
+            if owner != campaign.owner:  # Avoid duplicate if owner is already set
+                campaign.add_stakeholder(owner, CampaignStakeholder.StakeholderRole.OWNER, added_by=user)
+        
+        # Add executors
+        for executor in executor_ids:
+            campaign.add_stakeholder(executor, CampaignStakeholder.StakeholderRole.EXECUTOR, added_by=user)
+        
+        # Add receivers
+        for receiver in receiver_ids:
+            campaign.add_stakeholder(receiver, CampaignStakeholder.StakeholderRole.RECEIVER, added_by=user)
+        
+        return campaign
     
     def update(self, instance, validated_data):
-        """Update a campaign"""
-        # Pop the user from context if available
+        """Update a campaign with stakeholders"""
+        # Extract stakeholder data
+        owner_ids = validated_data.pop('owner_ids', None)
+        executor_ids = validated_data.pop('executor_ids', None)
+        receiver_ids = validated_data.pop('receiver_ids', None)
+        
+        # Get the current user
         request = self.context.get('request')
-        if request and hasattr(request, 'user'):
-            validated_data['updated_by'] = request.user
+        user = request.user if request and hasattr(request, 'user') else None
+        
+        # Set updated_by
+        if user:
+            validated_data['updated_by'] = user
         
         # Update the instance
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         
         instance.save()
+        
+        # Update stakeholders if provided
+        if owner_ids is not None:
+            # Remove existing owners (except for the campaign.owner which is added automatically)
+            instance.stakeholders.through.objects.filter(
+                role=CampaignStakeholder.StakeholderRole.OWNER
+            ).exclude(user=instance.owner).delete()
+            
+            # Add new owners
+            for owner in owner_ids:
+                if owner != instance.owner:  # Avoid duplicate with campaign.owner
+                    instance.add_stakeholder(owner, CampaignStakeholder.StakeholderRole.OWNER, added_by=user)
+        
+        if executor_ids is not None:
+            # Remove existing executors
+            instance.stakeholders.through.objects.filter(
+                role=CampaignStakeholder.StakeholderRole.EXECUTOR
+            ).delete()
+            
+            # Add new executors
+            for executor in executor_ids:
+                instance.add_stakeholder(executor, CampaignStakeholder.StakeholderRole.EXECUTOR, added_by=user)
+        
+        if receiver_ids is not None:
+            # Remove existing receivers
+            instance.stakeholders.through.objects.filter(
+                role=CampaignStakeholder.StakeholderRole.RECEIVER
+            ).delete()
+            
+            # Add new receivers
+            for receiver in receiver_ids:
+                instance.add_stakeholder(receiver, CampaignStakeholder.StakeholderRole.RECEIVER, added_by=user)
+        
         return instance
 
 
@@ -167,6 +288,9 @@ class CampaignListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     has_sequence = serializers.SerializerMethodField(read_only=True)
     target_counts = serializers.SerializerMethodField(read_only=True)
+    owner_count = serializers.SerializerMethodField(read_only=True)
+    executor_count = serializers.SerializerMethodField(read_only=True)
+    receiver_count = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Campaign
@@ -178,6 +302,9 @@ class CampaignListSerializer(serializers.ModelSerializer):
             'has_sequence',
             'owner',
             'owner_name',
+            'owner_count',
+            'executor_count',
+            'receiver_count',
             'start_date',
             'end_date',
             'status',
@@ -205,6 +332,18 @@ class CampaignListSerializer(serializers.ModelSerializer):
             'contacts': summary['contacts'],
             'leads': summary['leads']
         }
+    
+    def get_owner_count(self, obj):
+        """Get count of owners"""
+        return obj.get_owners().count()
+    
+    def get_executor_count(self, obj):
+        """Get count of executors"""
+        return obj.get_executors().count()
+    
+    def get_receiver_count(self, obj):
+        """Get count of receivers"""
+        return obj.get_receivers().count()
 
 
 # Export serializers

@@ -406,14 +406,23 @@ class CampaignResultService:
     
     @classmethod
     def _handle_successful_call(cls, activity: Activity, sequence_info: ActivitySequence,
-                               notes: str, **kwargs) -> Dict:
+                           notes: str, **kwargs) -> Dict:
         """
         Handle successful call - create meeting and end sequence
+        Consider stakeholder roles for AE assignment
         """
         meeting_date = kwargs.get('meeting_date')
         
         # Complete current activity
         activity.complete(outcome_notes=f"Successfully scheduled meeting. {notes}" if notes else "Successfully scheduled meeting")
+        
+        # Get campaign information
+        campaign = None
+        campaign_target = None
+        if hasattr(activity, 'campaign_info'):
+            campaign_info = activity.campaign_info
+            campaign = campaign_info.campaign
+            campaign_target = campaign_info.campaign_target
         
         # Update campaign info
         if hasattr(activity, 'campaign_info'):
@@ -422,8 +431,8 @@ class CampaignResultService:
             campaign_info.save()
             
             # Update campaign target status
-            campaign_target = campaign_info.campaign_target
-            campaign_target.update_status(CampaignTarget.Status.MEETING_SECURED)
+            if campaign_target:
+                campaign_target.update_status(CampaignTarget.Status.MEETING_SECURED)
         
         # Create meeting activity if date provided
         if meeting_date:
@@ -435,11 +444,23 @@ class CampaignResultService:
         # Update campaign objectives
         cls._update_campaign_objectives(activity, 'meeting_scheduled')
         
+        # Determine which AE should receive this opportunity if it's converted later
+        assigned_ae = None
+        if campaign:
+            from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
+            receivers = campaign.get_receivers()
+            
+            if receivers.exists():
+                # For simplicity in MVP, use the first receiver
+                # More sophisticated assignment could be implemented later
+                assigned_ae = receivers.first()
+        
         return {
             'success': True,
             'action': 'meeting_scheduled',
             'message': 'Meeting scheduled successfully',
-            'meeting_date': meeting_date
+            'meeting_date': meeting_date,
+            'assigned_ae': assigned_ae.id if assigned_ae else None
         }
     
     @classmethod
