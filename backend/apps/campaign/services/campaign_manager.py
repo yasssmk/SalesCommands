@@ -111,7 +111,7 @@ class CampaignManager:
         }
     
     @classmethod
-    def get_campaign_playlist(cls, campaign: Campaign, limit: int = None) -> Dict:
+    def get_campaign_playlist(cls, campaign: Campaign, limit: int = None, current_activity_type: str = None) -> Dict:
         """
         Get current playlist with configurable limit
         """
@@ -122,7 +122,8 @@ class CampaignManager:
         playlist_data = CampaignQueueService.get_active_activities_for_campaign(
             campaign, 
             limit,
-            prefetch_relations=True  # Signal to use optimized prefetching
+            prefetch_relations=True,  # Signal to use optimized prefetching
+            current_activity_type=current_activity_type
         )
         
         # Serialize activity objects for JSON response
@@ -160,6 +161,7 @@ class CampaignManager:
             
             # Replace activities with serialized version
             playlist_data['ready_activities'] = serialized_activities
+        
         
         return playlist_data
     

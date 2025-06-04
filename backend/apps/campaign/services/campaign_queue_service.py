@@ -23,64 +23,149 @@ class CampaignQueueService:
     """
     
     @classmethod
-    def get_active_activities_for_campaign(cls, campaign: Campaign, limit: int = 50, prefetch_relations: bool = False) -> Dict:
+    def get_active_activities_for_campaign(cls, campaign: Campaign, limit: int = 50, 
+                                            prefetch_relations: bool = False,
+                                            current_activity_type: str = None) -> Dict:
+            """
+            Get activities that are ready to be worked on for a campaign
+            
+            Args:
+                campaign: The campaign to get activities for
+                limit: Maximum number of activities to return
+                prefetch_relations: Whether to prefetch related objects for serialization
+                current_activity_type: The type of activity the user is currently working on
+                                    (used for batching similar activities)
+                
+            Returns:
+                Dictionary with ready activities and queue information
+            """
+            # Build base queryset (same as before)
+            query = Activity.objects.filter(
+                campaign_info__campaign=campaign,
+                status__in=[Activity.Status.PLANNED]
+            )
+            
+            # Add select_related and prefetch_related (same as before)
+            query = query.select_related('account', 'campaign_info__campaign_target')
+            if prefetch_relations:
+                query = query.prefetch_related(
+                    'contacts',
+                    'sequence_info'
+                )
+            
+            # Execute the query
+            campaign_activities = query.all()
+            
+            ready_activities = []
+            
+            for activity in campaign_activities:
+                if cls._is_activity_ready(activity):
+                    # Calculate standard priority score
+                    priority_score = cls._calculate_priority_score(activity)
+                    
+                    # Add batching information
+                    activity_data = {
+                        'activity': activity,
+                        'priority_score': priority_score,
+                        'delay_status': cls._get_delay_status(activity),
+                        'activity_type': activity.activity_type
+                    }
+                    
+                    ready_activities.append(activity_data)
+            
+            # First sort by priority score (descending)
+            ready_activities.sort(key=lambda x: -x['priority_score'])
+            
+            # Then apply activity type batching if a current type is specified
+            if current_activity_type:
+                # First re-order to prioritize the current activity type
+                batched_activities = cls._apply_activity_batching(ready_activities, current_activity_type)
+                ready_activities = batched_activities
+            
+            # Format response - only include Activity objects, not nested dicts with activity inside
+            activities_list = [item['activity'] for item in ready_activities[:limit]]
+            
+            return {
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'ready_activities': activities_list,
+                'total_ready': len(ready_activities),
+                'total_pending': campaign_activities.count(),
+                'queue_info': cls._get_queue_info(campaign, ready_activities),
+                'activity_types_breakdown': cls._get_activity_type_breakdown(ready_activities)
+            }
+
+    @classmethod
+    def _apply_activity_batching(cls, activities: List[Dict], current_type: str) -> List[Dict]:
         """
-        Get activities that are ready to be worked on for a campaign
+        Apply activity type batching to improve user productivity
         
         Args:
-            campaign: The campaign to get activities for
-            limit: Maximum number of activities to return
+            activities: List of activity data dictionaries
+            current_type: The activity type currently being worked on
             
         Returns:
-            Dictionary with ready activities and queue information
+            Reordered list with activity batching applied
         """
-        # Build base queryset
-        query = Activity.objects.filter(
-            campaign_info__campaign=campaign,
-            status__in=[Activity.Status.PLANNED]
-        )
+        # Group activities by type
+        activity_groups = {}
+        for activity_data in activities:
+            activity_type = activity_data['activity_type']
+            if activity_type not in activity_groups:
+                activity_groups[activity_type] = []
+            activity_groups[activity_type].append(activity_data)
         
-        # Add select_related for commonly accessed foreign keys
-        query = query.select_related('account', 'campaign_info__campaign_target')
+        # Start with current activity type
+        result = []
+        if current_type in activity_groups:
+            result.extend(activity_groups[current_type])
+            del activity_groups[current_type]
         
-        # Add prefetch_related for collection relationships if needed for serialization
-        if prefetch_relations:
-            query = query.prefetch_related(
-                'contacts',
-                'sequence_info'
-            )
+        # Then add groups in a productive order:
+        # 1. Calls (require focus and are synchronous)
+        # 2. Emails (can be batched efficiently)
+        # 3. LinkedIn messages (similar to emails)
+        # 4. Meetings (usually scheduled, not immediate)
+        # 5. Other tasks
         
-        # Execute the query
-        campaign_activities = query.all()
+        activity_type_order = [
+            Activity.ActivityType.CALL,
+            Activity.ActivityType.EMAIL,
+            Activity.ActivityType.LINKEDIN,
+            Activity.ActivityType.MEETING,
+            Activity.ActivityType.TASK,
+            Activity.ActivityType.CUSTOM
+        ]
         
-        ready_activities = []
+        for activity_type in activity_type_order:
+            if activity_type in activity_groups:
+                result.extend(activity_groups[activity_type])
+                del activity_groups[activity_type]
         
-        for activity in campaign_activities:
-            if cls._is_activity_ready(activity):
-                priority_score = cls._calculate_priority_score(activity)
-                ready_activities.append({
-                    'activity': activity,
-                    'priority_score': priority_score,
-                    'delay_status': cls._get_delay_status(activity)
-                })
+        # Add any remaining activity types
+        for remaining_activities in activity_groups.values():
+            result.extend(remaining_activities)
         
-        # Sort by priority score (highest first), then by sequence position
-        ready_activities.sort(
-            key=lambda x: (-x['priority_score'], x['activity'].sequence_info.sequence_position if hasattr(x['activity'], 'sequence_info') else 0)
-        )
+        return result
+
+    @classmethod
+    def _get_activity_type_breakdown(cls, activities: List[Dict]) -> Dict:
+        """
+        Get a breakdown of activity counts by type
         
-        # Format response - only include Activity objects, not nested dicts with activity inside
-        activities_list = [item['activity'] for item in ready_activities[:limit]]
+        Args:
+            activities: List of activity data dictionaries
+            
+        Returns:
+            Dictionary with counts by activity type
+        """
+        counts = {}
+        for activity_data in activities:
+            activity_type = activity_data['activity_type']
+            counts[activity_type] = counts.get(activity_type, 0) + 1
         
-        return {
-            'campaign_id': campaign.id,
-            'campaign_name': campaign.name,
-            'ready_activities': activities_list,
-            'total_ready': len(ready_activities),
-            'total_pending': campaign_activities.count(),
-            'queue_info': cls._get_queue_info(campaign, ready_activities)
-        }
-        
+        return counts
+            
     @classmethod
     def _calculate_working_days_between(cls, start_date: date, end_date: date) -> int:
         """
@@ -101,27 +186,64 @@ class CampaignQueueService:
         
         return working_days
     
-    @classmethod
-    def _add_working_days(cls, start_date: date, working_days: int) -> date:
-        """
-        Add working days to a date (skipping weekends)
-        """
-        current_date = start_date
-        days_added = 0
+    # @classmethod
+    # def _add_working_days(cls, start_date: date, working_days: int) -> date:
+    #     """
+    #     Add working days to a date (skipping weekends)
+    #     """
+    #     current_date = start_date
+    #     days_added = 0
         
-        while days_added < working_days:
-            current_date += timedelta(days=1)
-            # If it's a working day (Mon-Fri), count it
-            if current_date.weekday() < 5:
-                days_added += 1
+    #     while days_added < working_days:
+    #         current_date += timedelta(days=1)
+    #         # If it's a working day (Mon-Fri), count it
+    #         if current_date.weekday() < 5:
+    #             days_added += 1
         
-        return current_date
+    #     return current_date
     
+    # @classmethod
+    # def _is_activity_ready(cls, activity: Activity) -> bool:
+    #     """
+    #     Check if an activity is ready to be worked on based on working day-counting logic
+    #     """
+    #     if not hasattr(activity, 'sequence_info'):
+    #         return True  # Non-sequence activities are always ready
+        
+    #     sequence_info = activity.sequence_info
+        
+    #     # Check if sequence is paused
+    #     if sequence_info.sequence_paused_until and sequence_info.sequence_paused_until > date.today():
+    #         return False
+        
+    #     # First activity in sequence is always ready
+    #     if sequence_info.sequence_position == 1:
+    #         return True
+        
+    #     # Find the previous completed activity in the sequence
+    #     previous_activity = activity.previous_activity
+    #     if not previous_activity:
+    #         return True
+        
+    #     # Check if previous activity is completed
+    #     if previous_activity.status != Activity.Status.COMPLETED:
+    #         return False
+        
+    #     # Calculate working days since last completed activity
+    #     if previous_activity.completed_at:
+    #         completed_date = previous_activity.completed_at.date()
+    #         working_days_passed = cls._calculate_working_days_between(completed_date, date.today())
+    #         return working_days_passed >= sequence_info.min_delay_days
+        
+    #     return False
+
     @classmethod
     def _is_activity_ready(cls, activity: Activity) -> bool:
         """
         Check if an activity is ready to be worked on based on working day-counting logic
         """
+        from core.utils.business_days import BusinessDayCalculator
+        
         if not hasattr(activity, 'sequence_info'):
             return True  # Non-sequence activities are always ready
         
@@ -144,11 +266,12 @@ class CampaignQueueService:
         if previous_activity.status != Activity.Status.COMPLETED:
             return False
         
-        # Calculate working days since last completed activity
+        # Calculate business days since last completed activity
         if previous_activity.completed_at:
             completed_date = previous_activity.completed_at.date()
-            working_days_passed = cls._calculate_working_days_between(completed_date, date.today())
-            return working_days_passed >= sequence_info.min_delay_days
+            business_days_passed = BusinessDayCalculator.get_business_days_between(
+                completed_date, date.today())
+            return business_days_passed >= sequence_info.min_delay_days
         
         return False
     
@@ -198,10 +321,76 @@ class CampaignQueueService:
         return {'status': 'pending_previous', 'working_days_waiting': 0}
     
     @classmethod
+    def _get_delay_status(cls, activity: Activity) -> Dict:
+        """
+        Get delay status information for an activity (using business days)
+        
+        Args:
+            activity: The activity to check
+            
+        Returns:
+            Dict with status information about business day delays
+        """
+        from core.utils.business_days import BusinessDayCalculator
+        
+        if not hasattr(activity, 'sequence_info') or not activity.previous_activity:
+            return {'status': 'ready', 'days_waiting': 0}
+        
+        sequence_info = activity.sequence_info
+        
+        if activity.previous_activity.completed_at:
+            completed_date = activity.previous_activity.completed_at.date()
+            today = date.today()
+            
+            # Calculate business days passed since completion
+            business_days_passed = BusinessDayCalculator.get_business_days_between(
+                completed_date, today)
+            
+            # Calculate how many business days we're ahead/behind the minimum
+            business_days_waiting = business_days_passed - sequence_info.min_delay_days
+            
+            if business_days_waiting < 0:
+                # Still waiting - calculate when it will be ready
+                target_date = BusinessDayCalculator.add_business_days(
+                    completed_date, sequence_info.min_delay_days)
+                
+                ready_in_days = BusinessDayCalculator.get_business_days_between(
+                    today, target_date)
+                
+                return {
+                    'status': 'waiting',
+                    'business_days_waiting': business_days_waiting,
+                    'ready_in_business_days': ready_in_days,
+                    'ready_date': target_date
+                }
+            elif business_days_waiting == 0:
+                return {
+                    'status': 'ready', 
+                    'business_days_waiting': 0,
+                    'ready_date': today
+                }
+            else:
+                return {
+                    'status': 'overdue',
+                    'business_days_waiting': business_days_waiting,
+                    'business_days_overdue': business_days_waiting
+                }
+        
+        return {'status': 'pending_previous', 'business_days_waiting': 0}
+
+    @classmethod
     def _calculate_priority_score(cls, activity: Activity) -> float:
         """
-        Calculate priority score for an activity based on various factors (updated for working days)
+        Calculate priority score for an activity based on various factors
+        
+        Args:
+            activity: The activity to score
+            
+        Returns:
+            float: Priority score (higher = higher priority)
         """
+        from core.utils.business_days import BusinessDayCalculator
+        
         score = 0.0
         
         # Account tier priority (A=100, B=50, C=10)
@@ -226,25 +415,76 @@ class CampaignQueueService:
             step_bonus = max(0, 11 - sequence_info.sequence_position) * SEQUENCE_STEP_PRIORITY_BONUS
             score += step_bonus
             
-            # Calculate delay bonus using working days
+            # Calculate delay bonus using business days
             if activity.previous_activity and activity.previous_activity.completed_at:
                 completed_date = activity.previous_activity.completed_at.date()
-                working_days_passed = cls._calculate_working_days_between(completed_date, date.today())
-                working_days_overdue = working_days_passed - sequence_info.min_delay_days
                 
-                # Add bonus for overdue activities (working days)
-                if working_days_overdue > 0:
-                    score += working_days_overdue * OVERDUE_PENALTY_PER_DAY
+                business_days_passed = BusinessDayCalculator.get_business_days_between(
+                    completed_date, date.today())
+                    
+                business_days_overdue = business_days_passed - sequence_info.min_delay_days
+                
+                # Add bonus for overdue activities (business days)
+                if business_days_overdue > 0:
+                    score += business_days_overdue * OVERDUE_PENALTY_PER_DAY
             
             # Callback requested priority boost
             if sequence_info.callback_requested_date:
                 if sequence_info.callback_requested_date <= date.today():
                     score += CALLBACK_PRIORITY_BOOST
-        
 
-        score += ACTIVITY_TYPE_PRIORITIES.get(activity.activity_type,  0)
+        score += ACTIVITY_TYPE_PRIORITIES.get(activity.activity_type, 0)
         
         return score
+    
+    # @classmethod
+    # def _calculate_priority_score(cls, activity: Activity) -> float:
+    #     """
+    #     Calculate priority score for an activity based on various factors (updated for working days)
+    #     """
+    #     score = 0.0
+        
+    #     # Account tier priority (A=100, B=50, C=10)
+    #     account_tier = getattr(activity.account, 'tier', 'C')
+    #     score += TIER_PRIORITY_SCORES.get(account_tier, 10)
+
+    #     contact_buying_authority_bonus = 0
+    #     contacts = list(activity.contacts.all())
+    #     if contacts:
+    #         for contact in contacts:
+    #             if getattr(contact, 'has_buying_authority', False):
+    #                 contact_buying_authority_bonus = BUYING_AUTHORITY_PRIORITY_BOOST
+    #                 break
+        
+    #     score += contact_buying_authority_bonus
+        
+    #     # Sequence position bonus (earlier steps get priority)
+    #     if hasattr(activity, 'sequence_info'):
+    #         sequence_info = activity.sequence_info
+            
+    #         # Higher bonus for earlier steps
+    #         step_bonus = max(0, 11 - sequence_info.sequence_position) * SEQUENCE_STEP_PRIORITY_BONUS
+    #         score += step_bonus
+            
+    #         # Calculate delay bonus using working days
+    #         if activity.previous_activity and activity.previous_activity.completed_at:
+    #             completed_date = activity.previous_activity.completed_at.date()
+    #             working_days_passed = cls._calculate_working_days_between(completed_date, date.today())
+    #             working_days_overdue = working_days_passed - sequence_info.min_delay_days
+                
+    #             # Add bonus for overdue activities (working days)
+    #             if working_days_overdue > 0:
+    #                 score += working_days_overdue * OVERDUE_PENALTY_PER_DAY
+            
+    #         # Callback requested priority boost
+    #         if sequence_info.callback_requested_date:
+    #             if sequence_info.callback_requested_date <= date.today():
+    #                 score += CALLBACK_PRIORITY_BOOST
+        
+
+    #     score += ACTIVITY_TYPE_PRIORITIES.get(activity.activity_type,  0)
+        
+    #     return score
     
     @classmethod
     def _get_queue_info(cls, campaign: Campaign, ready_activities: List) -> Dict:
