@@ -36,40 +36,82 @@ class CampaignActivityService:
             }
             
         with transaction.atomic():
-            # Get all campaign targets in a single query with account prefetched
+            # Get all campaign targets in a single query with related entities prefetched
             campaign_targets = CampaignTarget.objects.filter(
                 campaign=campaign
-            ).select_related('account')
+            ).select_related(
+                'account', 
+                'contact',
+                'lead',
+                'target_opportunity'
+            )
             
-            # If we have specific contact IDs, get them all at once with prefetched data
+            # Collect all relevant accounts for further processing
+            # Accounts can come from different sources: direct account targets, 
+            # contact targets, lead targets, or opportunity targets
+            account_ids = set()
+            direct_contact_ids = set()
+            
+            for target in campaign_targets:
+                # For direct account targets
+                if target.account:
+                    account_ids.add(target.account.id)
+                
+                # For direct contact targets
+                if target.contact:
+                    direct_contact_ids.add(target.contact.id)
+                    if target.contact.account_id:
+                        account_ids.add(target.contact.account_id)
+                
+                # For lead targets (get associated account)
+                if target.lead and target.lead.account_id:
+                    account_ids.add(target.lead.account_id)
+                
+                # For opportunity targets (get associated account)
+                if target.target_opportunity and target.target_opportunity.account_id:
+                    account_ids.add(target.target_opportunity.account_id)
+            
+            # If we have specific contact IDs provided, filter by them
             if target_contacts:
-                # Get only contacts that belong to the accounts in our campaign targets
-                account_ids = [target.account_id for target in campaign_targets]
                 all_contacts = Contact.objects.filter(
                     id__in=target_contacts,
                     account_id__in=account_ids
                 ).select_related('standard_department')
+            else:
+                # Get all contacts for the collected accounts
+                all_contacts = Contact.objects.filter(
+                    account_id__in=account_ids
+                ).select_related('standard_department')
                 
-                # Create a lookup dict for faster access
-                contacts_by_account = {}
-                for contact in all_contacts:
-                    if contact.account_id not in contacts_by_account:
-                        contacts_by_account[contact.account_id] = []
-                    contacts_by_account[contact.account_id].append(contact)
+                # Add directly targeted contacts even if their account was not included
+                if direct_contact_ids:
+                    direct_contacts = Contact.objects.filter(
+                        id__in=direct_contact_ids
+                    ).exclude(account_id__in=account_ids).select_related('standard_department')
+                    
+                    # Combine QuerySets
+                    all_contacts = (all_contacts | direct_contacts).distinct()
+            
+            # Organize contacts by account for easier access
+            contacts_by_account = {}
+            for contact in all_contacts:
+                if contact.account_id not in contacts_by_account:
+                    contacts_by_account[contact.account_id] = []
+                contacts_by_account[contact.account_id].append(contact)
             
             # Process each campaign target
             for campaign_target in campaign_targets:
-                account = campaign_target.account
+                account = campaign_target.get_target_account()
+                
+                if not account:
+                    continue  # Skip targets without an associated account
                 
                 # Get the appropriate contacts for this target
-                if target_contacts:
-                    # Use our pre-fetched contacts
-                    contacts = contacts_by_account.get(account.id, [])
-                else:
-                    # Query all contacts for this account - removed is_active filter
-                    contacts = Contact.objects.filter(
-                        account=account
-                    ).select_related('standard_department')
+                contacts = contacts_by_account.get(account.id, [])
+                
+                # For direct contact targets, ensure we're only targeting that specific contact
+                if campaign_target.contact:
+                    contacts = [c for c in contacts if c.id == campaign_target.contact.id]
                 
                 # Process each contact
                 for contact in contacts:
@@ -110,7 +152,7 @@ class CampaignActivityService:
                     
                     created_count += len(activities_created)
                     
-                    # Mark the target as having sequences created
+                    # Mark the target as having activities generated
                     if not campaign_target.sequence_created and activities_created:
                         campaign_target.mark_sequence_created()
         

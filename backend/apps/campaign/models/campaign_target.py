@@ -10,7 +10,7 @@ from core.error_messages import CoreErrorMessages
 
 class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
     """
-    Links ONE target (account OR contact OR lead) to a campaign
+    Links ONE target (account OR contact OR lead OR opportunity) to a campaign
     A campaign can have many targets of different types
     """
     class Status(models.TextChoices):
@@ -55,6 +55,16 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         null=True
     )
     
+    # New field for opportunity as a target
+    target_opportunity = models.ForeignKey(
+        'opportunities.Opportunity',
+        on_delete=models.CASCADE,
+        related_name='targeted_by_campaigns',
+        verbose_name=_('Target Opportunity'),
+        blank=True,
+        null=True
+    )
+    
     # Status tracking
     status = models.CharField(
         max_length=30,
@@ -63,19 +73,11 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Status')
     )
     
-    sequence_created = models.BooleanField(
+    activities_generated = models.BooleanField(
         default=False,
-        verbose_name=_('Sequence Created')
+        verbose_name=_('Activities Generated')
     )
     
-    # Basic expected value
-    expected_value = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        blank=True,
-        null=True,
-        verbose_name=_('Expected Value')
-    )
     
     notes = models.TextField(
         blank=True,
@@ -83,11 +85,11 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Notes')
     )
     
-    # Opportunity connection
-    opportunity = models.ForeignKey(
+    # 'linked_opportunity' is used to track if this target is linked to an opportunity
+    linked_opportunity = models.ForeignKey(
         'opportunities.Opportunity',
         on_delete=models.SET_NULL,
-        related_name='campaign_targets',
+        related_name='linked_campaign_targets',
         null=True,
         blank=True,
         verbose_name=_('Linked Opportunity')
@@ -101,13 +103,14 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             models.Index(fields=['account', 'status']),
             models.Index(fields=['contact', 'status']),
             models.Index(fields=['lead', 'status']),
-            models.Index(fields=['sequence_created']),
+            models.Index(fields=['target_opportunity', 'status']),
+            models.Index(fields=['activities_generated']),
         ]
         constraints = [
             # Ensure unique account per campaign
             models.UniqueConstraint(
                 fields=['campaign', 'account'],
-                condition=models.Q(contact__isnull=True, lead__isnull=True),
+                condition=models.Q(contact__isnull=True, lead__isnull=True, target_opportunity__isnull=True),
                 name='unique_campaign_account_only'
             ),
             # Ensure unique contact per campaign
@@ -121,6 +124,12 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                 fields=['campaign', 'lead'],
                 condition=models.Q(lead__isnull=False),
                 name='unique_campaign_lead'
+            ),
+            # Ensure unique opportunity per campaign
+            models.UniqueConstraint(
+                fields=['campaign', 'target_opportunity'],
+                condition=models.Q(target_opportunity__isnull=False),
+                name='unique_campaign_opportunity'
             )
         ]
 
@@ -129,6 +138,8 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             return f"{self.campaign.name} - Contact: {self.contact.first_name} {self.contact.last_name} ({self.get_status_display()})"
         elif self.lead:
             return f"{self.campaign.name} - Lead: {self.lead.title} ({self.get_status_display()})"
+        elif self.target_opportunity:
+            return f"{self.campaign.name} - Opportunity: {self.target_opportunity.name} ({self.get_status_display()})"
         elif self.account:
             return f"{self.campaign.name} - Account: {self.account.company_name} ({self.get_status_display()})"
         return f"{self.campaign.name} - No Target ({self.get_status_display()})"
@@ -140,12 +151,13 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         target_count = sum([
             bool(self.account),
             bool(self.contact),
-            bool(self.lead)
+            bool(self.lead),
+            bool(self.target_opportunity)
         ])
         
         if target_count == 0:
             raise ValidationError(
-                "One target (account, contact, or lead) must be specified"
+                "One target (account, contact, lead, or opportunity) must be specified"
             )
         
         if target_count > 1:
@@ -164,6 +176,8 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             return 'contact'
         elif self.lead:
             return 'lead'
+        elif self.target_opportunity:
+            return 'opportunity'
         elif self.account:
             return 'account'
         return None
@@ -174,6 +188,8 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             return self.contact
         elif self.lead:
             return self.lead
+        elif self.target_opportunity:
+            return self.target_opportunity
         elif self.account:
             return self.account
         return None
@@ -186,11 +202,13 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             return self.contact.account
         elif self.lead:
             return self.lead.account
+        elif self.target_opportunity:
+            return self.target_opportunity.account
         return None
     
-    def mark_sequence_created(self, save=True):
-        """Mark that a sequence has been created for this target"""
-        self.sequence_created = True
+    def mark_activities_generated(self, save=True):
+        """Mark that activities have been generated for this target"""
+        self.activities_generated = True
         
         if save:
             self.save()
@@ -210,7 +228,7 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
     
     def link_opportunity(self, opportunity, save=True):
         """Link an opportunity to this target"""
-        self.opportunity = opportunity
+        self.linked_opportunity = opportunity
         self.update_status(self.Status.OPPORTUNITY_CREATED, save=False)
         
         if save:

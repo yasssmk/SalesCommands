@@ -110,20 +110,22 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
     def get_target_summary(self):
         """Get a summary of target types in this campaign"""
         summary = {
-            'accounts': self.targets.filter(account__isnull=False, contact__isnull=True, lead__isnull=True).count(),
+            'accounts': self.targets.filter(account__isnull=False, contact__isnull=True, lead__isnull=True, target_opportunity__isnull=True).count(),
             'contacts': self.targets.filter(contact__isnull=False).count(),
             'leads': self.targets.filter(lead__isnull=False).count(),
+            'opportunities': self.targets.filter(target_opportunity__isnull=False).count(),
             'total': self.targets.count()
         }
         return summary
-    
+
     def has_mixed_targets(self):
         """Check if campaign has multiple target types"""
         summary = self.get_target_summary()
         target_types = sum([
             1 if summary['accounts'] > 0 else 0,
             1 if summary['contacts'] > 0 else 0,
-            1 if summary['leads'] > 0 else 0
+            1 if summary['leads'] > 0 else 0,
+            1 if summary['opportunities'] > 0 else 0
         ])
         return target_types > 1
     

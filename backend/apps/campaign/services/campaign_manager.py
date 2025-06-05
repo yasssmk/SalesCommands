@@ -19,8 +19,11 @@ class CampaignManager:
     """
     
     @classmethod
-    def create_campaign_with_activities(cls, campaign_data: Dict, target_accounts: List[int],
-                                    target_contacts: List[int] = None) -> Dict:
+    def create_campaign_with_activities(cls, campaign_data: Dict, 
+                                    target_accounts: List[int] = None,
+                                    target_contacts: List[int] = None,
+                                    target_leads: List[int] = None,
+                                    target_opportunities: List[int] = None) -> Dict:
         """
         Create a new campaign and generate all activities with optimized queries
         
@@ -28,6 +31,8 @@ class CampaignManager:
             campaign_data: Dictionary with campaign fields (name, description, etc.)
             target_accounts: List of account IDs to target
             target_contacts: Optional list of specific contact IDs
+            target_leads: Optional list of specific lead IDs
+            target_opportunities: Optional list of specific opportunity IDs
             
         Returns:
             Dictionary with campaign creation results
@@ -35,17 +40,20 @@ class CampaignManager:
         with transaction.atomic():
             # Ensure client_id is preserved if provided in campaign_data
             client_id = campaign_data.get('client_id')
-            print(f"Creating campaign with client_id: {client_id}")
 
             if not client_id:
-                raise ValueError("client_id is required when creating a new record")
+                raise ValueError("campaign_manager.py: client_id is required when creating a new record")
             
             # Create the campaign
             campaign = Campaign.objects.create(**campaign_data)
             
             # Create campaign targets
             targets_created = cls._create_campaign_targets(
-                campaign, target_accounts, target_contacts
+                campaign, 
+                target_accounts, 
+                target_contacts,
+                target_leads,
+                target_opportunities
             )
 
             # Generate activities for all targets
@@ -335,34 +343,109 @@ class CampaignManager:
         }
     
     @classmethod
-    def _create_campaign_targets(cls, campaign: Campaign, target_accounts: List[int],
-                            target_contacts: List[int] = None) -> int:
+    def _create_campaign_targets(cls, campaign: Campaign, 
+                                target_accounts: List[int] = None,
+                                target_contacts: List[int] = None,
+                                target_leads: List[int] = None,
+                                target_opportunities: List[int] = None) -> int:
         """
-        Create campaign targets for the specified accounts/contacts
+        Create campaign targets for the specified accounts/contacts/leads/opportunities
+        All targets will eventually generate activities for their associated contacts
+        
+        Args:
+            campaign: Campaign to create targets for
+            target_accounts: List of account IDs
+            target_contacts: List of contact IDs
+            target_leads: List of lead IDs
+            target_opportunities: List of opportunity IDs
+            
+        Returns:
+            int: Number of targets created
         """
-        from apps.accounts.models import Account
+        from apps.accounts.models import Account, Contact
+        from apps.leads.models import Lead
+        from apps.opportunities.models import Opportunity
         
         targets_created = 0
         
         # Get client_id from the campaign
         client_id = campaign.client_id
         
-        for account_id in target_accounts:
-            try:
-                account = Account.objects.get(id=account_id)
-                
-                # Check if target already exists
-                if not CampaignTarget.objects.filter(campaign=campaign, account=account).exists():
-                    # Create new target with client_id
-                    CampaignTarget.objects.create(
-                        campaign=campaign,
-                        account=account,
-                        client_id=client_id  
-                    )
-                    targets_created += 1
-                        
-            except Account.DoesNotExist:
-                continue
+        # Create account targets
+        if target_accounts:
+            for account_id in target_accounts:
+                try:
+                    account = Account.objects.get(id=account_id)
+                    
+                    # Check if target already exists
+                    if not CampaignTarget.objects.filter(campaign=campaign, account=account).exists():
+                        # Create new target with client_id
+                        CampaignTarget.objects.create(
+                            campaign=campaign,
+                            account=account,
+                            client_id=client_id  
+                        )
+                        targets_created += 1
+                            
+                except Account.DoesNotExist:
+                    continue
+        
+        # Create contact targets
+        if target_contacts:
+            for contact_id in target_contacts:
+                try:
+                    contact = Contact.objects.get(id=contact_id)
+                    
+                    # Check if target already exists
+                    if not CampaignTarget.objects.filter(campaign=campaign, contact=contact).exists():
+                        # Create new target with client_id
+                        CampaignTarget.objects.create(
+                            campaign=campaign,
+                            contact=contact,
+                            client_id=client_id  
+                        )
+                        targets_created += 1
+                            
+                except Contact.DoesNotExist:
+                    continue
+        
+        # Create lead targets
+        if target_leads:
+            for lead_id in target_leads:
+                try:
+                    lead = Lead.objects.get(id=lead_id)
+                    
+                    # Check if target already exists
+                    if not CampaignTarget.objects.filter(campaign=campaign, lead=lead).exists():
+                        # Create new target with client_id
+                        CampaignTarget.objects.create(
+                            campaign=campaign,
+                            lead=lead,
+                            client_id=client_id  
+                        )
+                        targets_created += 1
+                            
+                except Lead.DoesNotExist:
+                    continue
+        
+        # Create opportunity targets
+        if target_opportunities:
+            for opportunity_id in target_opportunities:
+                try:
+                    opportunity = Opportunity.objects.get(id=opportunity_id)
+                    
+                    # Check if target already exists
+                    if not CampaignTarget.objects.filter(campaign=campaign, target_opportunity=opportunity).exists():
+                        # Create new target with client_id
+                        CampaignTarget.objects.create(
+                            campaign=campaign,
+                            target_opportunity=opportunity,
+                            client_id=client_id  
+                        )
+                        targets_created += 1
+                            
+                except Opportunity.DoesNotExist:
+                    continue
         
         return targets_created
             

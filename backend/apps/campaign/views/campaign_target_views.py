@@ -16,7 +16,7 @@ class CampaignTargetViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.
     """
     serializer_class = CampaignTargetSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['campaign', 'status', 'sequence_created']
+    filterset_fields = ['campaign', 'status', 'activities_generated']
     search_fields = ['account__company_name', 'notes']
     ordering_fields = ['created_at', 'updated_at']
     ordering = ['campaign', 'created_at']
@@ -95,19 +95,35 @@ class CampaignTargetViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.
     
     @action(detail=False, methods=['post'])
     def bulk_create(self, request):
-        """Create multiple campaign targets at once"""
+        """Create multiple campaign targets at once
+        
+        Expected payload:
+        {
+            "campaign_id": 1,
+            "account_ids": [1, 2, 3],     # Optional list of account IDs
+            "contact_ids": [4, 5, 6],     # Optional list of contact IDs
+            "lead_ids": [7, 8, 9],        # Optional list of lead IDs
+            "opportunity_ids": [10, 11],  # Optional list of opportunity IDs
+            "expected_value": 5000,       # Optional expected value
+            "notes": "Optional notes"     # Optional notes
+        }
+        """
         # Get campaign ID
         campaign_id = request.data.get('campaign_id', None)
         if not campaign_id:
             raise StandardizedValidationError("Campaign ID is required")
             
-        # Get account IDs
+        # Get target IDs for each type
         account_ids = request.data.get('account_ids', [])
-        if not account_ids or not isinstance(account_ids, list):
-            raise StandardizedValidationError("Account IDs list is required")
-            
+        contact_ids = request.data.get('contact_ids', [])
+        lead_ids = request.data.get('lead_ids', [])
+        opportunity_ids = request.data.get('opportunity_ids', [])
+        
+        # Ensure at least one target type is provided
+        if not any([account_ids, contact_ids, lead_ids, opportunity_ids]):
+            raise StandardizedValidationError("At least one target type (accounts, contacts, leads, or opportunities) is required")
+        
         # Get optional fields
-        expected_value = request.data.get('expected_value', None)
         notes = request.data.get('notes', None)
         
         # Validate campaign
@@ -122,43 +138,141 @@ class CampaignTargetViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.
         except Campaign.DoesNotExist:
             raise StandardizedValidationError("Campaign not found")
             
-        # Get accounts
-        from apps.accounts.models import Account
-        accounts = Account.objects.filter(
-            id__in=account_ids,
-            client_id=self.get_client_id()
-        )
-        
-        if len(accounts) != len(account_ids):
-            raise StandardizedValidationError("One or more accounts not found")
-            
-        # Check for existing targets
-        existing_targets = CampaignTarget.objects.filter(
-            campaign=campaign,
-            account__in=accounts
-        ).values_list('account_id', flat=True)
-        
-        # Create targets
+        # Created and skipped targets tracking
         created_targets = []
         skipped_targets = []
         
-        for account in accounts:
-            if account.id in existing_targets:
-                skipped_targets.append({
-                    'account_id': account.id,
-                    'company_name': account.company_name,
-                    'reason': 'Already a target for this campaign'
-                })
-                continue
-                
-            target = CampaignTarget.objects.create(
-                campaign=campaign,
-                account=account,
-                expected_value=expected_value,
-                notes=notes
+        # Process account targets
+        if account_ids:
+            from apps.accounts.models import Account
+            accounts = Account.objects.filter(
+                id__in=account_ids,
+                client_id=self.get_client_id()
             )
             
-            created_targets.append(CampaignTargetSerializer(target).data)
+            # Check for existing targets
+            existing_account_targets = CampaignTarget.objects.filter(
+                campaign=campaign,
+                account__in=accounts
+            ).values_list('account_id', flat=True)
+            
+            for account in accounts:
+                if account.id in existing_account_targets:
+                    skipped_targets.append({
+                        'target_type': 'account',
+                        'id': account.id,
+                        'name': account.company_name,
+                        'reason': 'Already a target for this campaign'
+                    })
+                    continue
+                    
+                target = CampaignTarget.objects.create(
+                    campaign=campaign,
+                    account=account,
+                    notes=notes,
+                    client_id=self.get_client_id()
+                )
+                
+                created_targets.append(CampaignTargetSerializer(target).data)
+        
+        # Process contact targets
+        if contact_ids:
+            from apps.accounts.models import Contact
+            contacts = Contact.objects.filter(
+                id__in=contact_ids,
+                account__client_id=self.get_client_id()
+            )
+            
+            # Check for existing targets
+            existing_contact_targets = CampaignTarget.objects.filter(
+                campaign=campaign,
+                contact__in=contacts
+            ).values_list('contact_id', flat=True)
+            
+            for contact in contacts:
+                if contact.id in existing_contact_targets:
+                    skipped_targets.append({
+                        'target_type': 'contact',
+                        'id': contact.id,
+                        'name': f"{contact.first_name} {contact.last_name}",
+                        'reason': 'Already a target for this campaign'
+                    })
+                    continue
+                    
+                target = CampaignTarget.objects.create(
+                    campaign=campaign,
+                    contact=contact,
+                    notes=notes,
+                    client_id=self.get_client_id()
+                )
+                
+                created_targets.append(CampaignTargetSerializer(target).data)
+        
+        # Process lead targets
+        if lead_ids:
+            from apps.leads.models import Lead
+            leads = Lead.objects.filter(
+                id__in=lead_ids,
+                client_id=self.get_client_id()
+            )
+            
+            # Check for existing targets
+            existing_lead_targets = CampaignTarget.objects.filter(
+                campaign=campaign,
+                lead__in=leads
+            ).values_list('lead_id', flat=True)
+            
+            for lead in leads:
+                if lead.id in existing_lead_targets:
+                    skipped_targets.append({
+                        'target_type': 'lead',
+                        'id': lead.id,
+                        'name': lead.title,
+                        'reason': 'Already a target for this campaign'
+                    })
+                    continue
+                    
+                target = CampaignTarget.objects.create(
+                    campaign=campaign,
+                    lead=lead,
+                    notes=notes,
+                    client_id=self.get_client_id()
+                )
+                
+                created_targets.append(CampaignTargetSerializer(target).data)
+        
+        # Process opportunity targets
+        if opportunity_ids:
+            from apps.opportunities.models import Opportunity
+            opportunities = Opportunity.objects.filter(
+                id__in=opportunity_ids,
+                client_id=self.get_client_id()
+            )
+            
+            # Check for existing targets
+            existing_opportunity_targets = CampaignTarget.objects.filter(
+                campaign=campaign,
+                target_opportunity__in=opportunities
+            ).values_list('target_opportunity_id', flat=True)
+            
+            for opportunity in opportunities:
+                if opportunity.id in existing_opportunity_targets:
+                    skipped_targets.append({
+                        'target_type': 'opportunity',
+                        'id': opportunity.id,
+                        'name': opportunity.name,
+                        'reason': 'Already a target for this campaign'
+                    })
+                    continue
+                    
+                target = CampaignTarget.objects.create(
+                    campaign=campaign,
+                    target_opportunity=opportunity,
+                    notes=notes,
+                    client_id=self.get_client_id()
+                )
+                
+                created_targets.append(CampaignTargetSerializer(target).data)
             
         return Response({
             'created': created_targets,

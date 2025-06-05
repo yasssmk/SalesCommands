@@ -69,38 +69,41 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             campaign_data = request.data.get('campaign', {})
             target_account_ids = request.data.get('target_account_ids', [])
             target_contact_ids = request.data.get('target_contact_ids', [])
+            target_lead_ids = request.data.get('target_lead_ids', [])
+            target_opportunity_ids = request.data.get('target_opportunity_ids', [])
             
             # Validation
             if not campaign_data.get('name'):
                 raise StandardizedValidationError("Campaign name is required")
             
-            if not target_account_ids and not target_contact_ids:
-                raise StandardizedValidationError("At least one target account or contact is required")
+            if not any([target_account_ids, target_contact_ids, target_lead_ids, target_opportunity_ids]):
+                raise StandardizedValidationError("campaign_management_views.py : At least one target leads, opportunity, account or contact is required")
             
             # Prepare campaign targets using our new service
             target_result = CampaignTargetService.prepare_campaign_targets(
                 target_account_ids=target_account_ids,
-                target_contact_ids=target_contact_ids
+                target_contact_ids=target_contact_ids,
+                target_lead_ids=target_lead_ids,
+                target_opportunity_ids=target_opportunity_ids
             )
             
             # Get client_id from auth
             client_id = self.get_client_id()
             campaign_data['client_id'] = client_id
-            print(f"Client ID: {client_id}")
-            
+
             # Set owner in campaign_data
             campaign_data['owner_id'] = request.user.id
 
-            print(f"Campaign data: {campaign_data}")
             
             # Use CampaignManager to create the campaign and activities in one step
             result = CampaignManager.create_campaign_with_activities(
                 campaign_data=campaign_data,
                 target_accounts=target_result['target_accounts'],
-                target_contacts=target_result['target_contacts']
+                target_contacts=target_result['target_contacts'],
+                target_leads=target_result['target_leads'],
+                target_opportunities=target_result['target_opportunities']
             )
 
-            print(f"Campaign creation result: {result}") #Not printed
             
             # Add target preparation stats to the result
             result.update({
