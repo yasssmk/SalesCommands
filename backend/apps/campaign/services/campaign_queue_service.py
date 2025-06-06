@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.db.models import Q, F, Subquery, OuterRef
 from django.core.exceptions import ObjectDoesNotExist
 from apps.activities.models import Activity, ActivitySequence
-from apps.campaign.models import Campaign
+from apps.campaign.models import Campaign, CampaignTarget
 from apps.campaign.config.variables import (
     TIER_PRIORITY_SCORES, 
     ACTIVITY_TYPE_PRIORITIES,
@@ -485,6 +485,127 @@ class CampaignQueueService:
     #     score += ACTIVITY_TYPE_PRIORITIES.get(activity.activity_type,  0)
         
     #     return score
+
+    @classmethod
+    def get_prioritized_contacts_for_campaign(cls, campaign: Campaign, limit: int = 50) -> Dict:
+        """
+        Get a prioritized list of contacts for a non-sequence campaign
+        
+        Args:
+            campaign: The campaign to get contacts for
+            limit: Maximum number of contacts to return
+            
+        Returns:
+            Dictionary with prioritized contacts and queue information
+        """
+        # Verify this is a non-sequence campaign
+        if campaign.sequence_type:
+            return {
+                'success': False,
+                'error': 'This method is only for campaigns without sequences',
+                'is_sequence': True
+            }
+        
+        # Use the activity service to extract contacts
+        from apps.campaign.services.campaign_activity_service import CampaignActivityService
+        extraction_result = CampaignActivityService._extract_contacts_from_targets(campaign)
+        valid_contacts = extraction_result['valid_contacts']
+        skipped_contacts = extraction_result['skipped_contacts']
+        contact_to_target_map = extraction_result['contact_to_target_map']
+        
+        # Calculate priority score for each contact
+        contacts_with_score = []
+        
+        for contact_info in valid_contacts:
+            contact = contact_info['contact']
+            
+            # Get associated target and account
+            campaign_target = contact_to_target_map.get(contact.id)
+            account = contact.account
+            
+            if not account or not campaign_target:
+                continue
+            
+            # Calculate base priority score
+            score = 0.0
+            
+            # Account tier priority (A=100, B=50, C=10)
+            account_tier = getattr(account, 'tier', 'C')
+            score += TIER_PRIORITY_SCORES.get(account_tier, 10)
+            
+            # Buying authority bonus
+            if getattr(contact, 'has_buying_authority', False):
+                score += BUYING_AUTHORITY_PRIORITY_BOOST
+            
+            # Job level priority (if available)
+            job_level = getattr(contact, 'job_level', 0)
+            score += job_level * 5  # 5 points per job level
+            
+            # Decision maker bonus
+            if getattr(contact, 'is_decision_maker', False):
+                score += 25
+            
+            # Communication channels bonus - more channels = higher priority
+            channels_count = sum([
+                contact_info['has_phone'],
+                contact_info['has_email'],
+                contact_info['has_linkedin']
+            ])
+            score += channels_count * 5
+            
+            # Target type priority adjustment
+            target_type = campaign_target.get_target_type()
+            type_priorities = {
+                'opportunity': 30,  # Highest priority for opportunity targets
+                'lead': 20,         # High priority for leads
+                'contact': 15,      # Medium priority for direct contacts
+                'account': 10       # Base priority for account targets
+            }
+            score += type_priorities.get(target_type, 0)
+            
+            # Status adjustment
+            if campaign_target.status == CampaignTarget.Status.IN_PROGRESS:
+                score += 15  # Bonus for targets already in progress
+            
+            # Add the contact with its score to the list
+            contacts_with_score.append({
+                'contact': contact,
+                'contact_id': contact.id,
+                'contact_name': f"{contact.first_name} {contact.last_name}",
+                'email': contact.email,
+                'phone': contact.phone,
+                'account': account,
+                'account_name': account.company_name,
+                'target_type': target_type,
+                'target_id': campaign_target.id,
+                'has_phone': contact_info['has_phone'],
+                'has_email': contact_info['has_email'],
+                'has_linkedin': contact_info['has_linkedin'],
+                'priority_score': score
+            })
+        
+        # Sort by priority score (descending)
+        contacts_with_score.sort(key=lambda x: -x['priority_score'])
+        
+        # Apply limit
+        contacts_with_score = contacts_with_score[:limit]
+        
+        # Calculate totals and stats
+        contact_counts = {
+            'total': len(valid_contacts),
+            'skipped': len(skipped_contacts),
+            'prioritized': len(contacts_with_score)
+        }
+        
+        return {
+            'campaign_id': campaign.id,
+            'campaign_name': campaign.name,
+            'contacts': contacts_with_score,
+            'counts': contact_counts,
+            'skipped_contacts': skipped_contacts,
+            'is_sequence': False,
+            'success': True
+        }
     
     @classmethod
     def _get_queue_info(cls, campaign: Campaign, ready_activities: List) -> Dict:

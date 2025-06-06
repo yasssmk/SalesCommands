@@ -70,6 +70,7 @@ class CampaignManager:
                 'skipped_contacts': activity_result['skipped_contacts'],
             }
     
+        
     @classmethod
     def start_campaign(cls, campaign: Campaign) -> Dict:
         """
@@ -118,60 +119,96 @@ class CampaignManager:
             'playlist': playlist_data
         }
     
-    @classmethod
     def get_campaign_playlist(cls, campaign: Campaign, limit: int = None, current_activity_type: str = None) -> Dict:
         """
         Get current playlist with configurable limit
+        Works for both sequence and non-sequence campaigns
+        
+        Args:
+            campaign: The campaign to get queue for
+            limit: Number of items to return (default: campaign config or 20)
+            current_activity_type: Optional current activity type for batching similar activities
+            
+        Returns:
+            Dictionary with queue data (activities or contacts) and queue information
         """
         if limit is None:
             limit = DEFAULT_PLAYLIST_LIMIT
         
-        # Modify queue service to support optimized prefetching
-        playlist_data = CampaignQueueService.get_active_activities_for_campaign(
-            campaign, 
-            limit,
-            prefetch_relations=True,  # Signal to use optimized prefetching
-            current_activity_type=current_activity_type
-        )
-        
-        # Serialize activity objects for JSON response
-        if 'ready_activities' in playlist_data:
-            # Transform Activity objects into dictionaries - contacts and sequence_info are now prefetched
-            serialized_activities = []
-            for activity in playlist_data['ready_activities']:
-                # Basic activity data
-                activity_data = {
-                    'id': activity.id,
-                    'title': activity.title,
-                    'activity_type': activity.activity_type,
-                    'activity_type_display': activity.get_activity_type_display(),
-                    'account_id': activity.account_id,
-                    'account_name': activity.account.company_name,  # Now safely accessed due to select_related
-                    'scheduled_start': activity.scheduled_start,
-                    'status': activity.status,
-                }
-                
-                # Add contacts - now efficiently prefetched
-                activity_data['contacts'] = [
-                    {'id': c.id, 'name': c.full_name} 
-                    for c in activity.contacts.all()  # No additional queries due to prefetch
-                ]
-                
-                # Add sequence info if available - also prefetched
-                if hasattr(activity, 'sequence_info') and activity.sequence_info:
-                    activity_data['sequence_info'] = {
-                        'position': activity.sequence_info.sequence_position,
-                        'source_type': activity.sequence_info.source_type,
-                        'call_attempts': activity.sequence_info.call_attempts,
-                    }
-                
-                serialized_activities.append(activity_data)
+        # Check if this is a campaign with or without sequence
+        if campaign.sequence_type:
+            # For sequence campaigns, get activity queue
+            playlist_data = CampaignQueueService.get_active_activities_for_campaign(
+                campaign, 
+                limit,
+                prefetch_relations=True,
+                current_activity_type=current_activity_type
+            )
             
-            # Replace activities with serialized version
-            playlist_data['ready_activities'] = serialized_activities
-        
-        
-        return playlist_data
+            # Serialize activity objects for JSON response
+            if 'ready_activities' in playlist_data:
+                # Transform Activity objects into dictionaries - contacts and sequence_info are now prefetched
+                serialized_activities = []
+                for activity in playlist_data['ready_activities']:
+                    # Basic activity data
+                    activity_data = {
+                        'id': activity.id,
+                        'title': activity.title,
+                        'activity_type': activity.activity_type,
+                        'activity_type_display': activity.get_activity_type_display(),
+                        'account_id': activity.account_id,
+                        'account_name': activity.account.company_name,  # Now safely accessed due to select_related
+                        'scheduled_start': activity.scheduled_start,
+                        'status': activity.status,
+                    }
+                    
+                    # Add contacts - now efficiently prefetched
+                    activity_data['contacts'] = [
+                        {'id': c.id, 'name': c.full_name} 
+                        for c in activity.contacts.all()  # No additional queries due to prefetch
+                    ]
+                    
+                    # Add sequence info if available - also prefetched
+                    if hasattr(activity, 'sequence_info') and activity.sequence_info:
+                        activity_data['sequence_info'] = {
+                            'position': activity.sequence_info.sequence_position,
+                            'source_type': activity.sequence_info.source_type,
+                            'call_attempts': activity.sequence_info.call_attempts,
+                        }
+                    
+                    serialized_activities.append(activity_data)
+                
+                # Replace activities with serialized version
+                playlist_data['ready_activities'] = serialized_activities
+                
+            return {
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'is_sequence': True,
+                'queue_type': 'activity',
+                'items': playlist_data.get('ready_activities', []),
+                'total_items': playlist_data.get('total_ready', 0),
+                'total_pending': playlist_data.get('total_pending', 0),
+                'queue_info': playlist_data.get('queue_info', {}),
+                'activity_types_breakdown': playlist_data.get('activity_types_breakdown', {})
+            }
+        else:
+            # For non-sequence campaigns, get contact queue
+            contact_data = CampaignQueueService.get_prioritized_contacts_for_campaign(
+                campaign,
+                limit
+            )
+            
+            return {
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'is_sequence': False,
+                'queue_type': 'contact',
+                'items': contact_data.get('contacts', []),
+                'total_items': contact_data.get('counts', {}).get('prioritized', 0),
+                'total_pending': contact_data.get('counts', {}).get('total', 0),
+                'skipped_contacts': contact_data.get('skipped_contacts', [])
+            }
     
     @classmethod
     def complete_activity(cls, activity: Activity, result: str, 
