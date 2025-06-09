@@ -513,17 +513,38 @@ class CampaignQueueService:
         skipped_contacts = extraction_result['skipped_contacts']
         contact_to_target_map = extraction_result['contact_to_target_map']
         
+        # Get all campaign targets for this campaign
+        campaign_targets = CampaignTarget.objects.filter(
+            campaign=campaign
+        ).select_related(
+            'account', 
+            'contact',
+            'lead',
+            'target_opportunity'
+        )
+        
+        # Create a map of contact_id to campaign_target for efficient lookup
+        target_by_contact_id = {}
+        for target in campaign_targets:
+            if target.contact_id:
+                target_by_contact_id[target.contact_id] = target
+        
         # Calculate priority score for each contact
         contacts_with_score = []
+        today = date.today()
         
         for contact_info in valid_contacts:
             contact = contact_info['contact']
             
+            # Skip contacts that have already been processed (completed or stopped)
+            target = target_by_contact_id.get(contact.id) or contact_to_target_map.get(contact.id)
+            if not target or target.status in [CampaignTarget.Status.COMPLETED, CampaignTarget.Status.STOPPED]:
+                continue
+            
             # Get associated target and account
-            campaign_target = contact_to_target_map.get(contact.id)
             account = contact.account
             
-            if not account or not campaign_target:
+            if not account:
                 continue
             
             # Calculate base priority score
@@ -554,7 +575,7 @@ class CampaignQueueService:
             score += channels_count * 5
             
             # Target type priority adjustment
-            target_type = campaign_target.get_target_type()
+            target_type = target.get_target_type()
             type_priorities = {
                 'opportunity': 30,  # Highest priority for opportunity targets
                 'lead': 20,         # High priority for leads
@@ -564,8 +585,23 @@ class CampaignQueueService:
             score += type_priorities.get(target_type, 0)
             
             # Status adjustment
-            if campaign_target.status == CampaignTarget.Status.IN_PROGRESS:
+            if target.status == CampaignTarget.Status.IN_PROGRESS:
                 score += 15  # Bonus for targets already in progress
+            
+            # Callback priority - massive boost for callbacks due today or in the past
+            if hasattr(target, 'callback_date') and target.callback_date:
+                # If callback is due today or in the past
+                if target.callback_date <= today:
+                    score += CALLBACK_PRIORITY_BOOST  # Very high boost
+                else:
+                    # Calculate days until callback
+                    days_until_callback = (target.callback_date - today).days
+                    # Reduce priority more for further dates
+                    score -= days_until_callback * 10
+            
+            # Special status for CALLBACK_PENDING
+            if target.status == CampaignTarget.Status.CALLBACK_PENDING:
+                score += CALLBACK_PRIORITY_BOOST // 2  # Half the boost of an actual callback date
             
             # Add the contact with its score to the list
             contacts_with_score.append({
@@ -577,7 +613,7 @@ class CampaignQueueService:
                 'account': account,
                 'account_name': account.company_name,
                 'target_type': target_type,
-                'target_id': campaign_target.id,
+                'target_id': target.id,
                 'has_phone': contact_info['has_phone'],
                 'has_email': contact_info['has_email'],
                 'has_linkedin': contact_info['has_linkedin'],

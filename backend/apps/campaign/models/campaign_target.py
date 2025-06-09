@@ -16,6 +16,7 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
     class Status(models.TextChoices):
         PENDING = 'PENDING', _('Pending')
         IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
+        CALLBACK_PENDING = 'CALLBACK_PENDING', _('Callback Pending') 
         MEETING_SECURED = 'MEETING_SECURED', _('Meeting Secured')
         OPPORTUNITY_CREATED = 'OPPORTUNITY_CREATED', _('Opportunity Created')
         COMPLETED = 'COMPLETED', _('Completed')
@@ -77,8 +78,20 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         default=False,
         verbose_name=_('Activities Generated')
     )
-    
-    
+
+    callback_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_('Callback Date'),
+        help_text=_('Date when contact requested to be called back')
+    )
+
+    no_answer_count = models.IntegerField(
+        default=0,
+        verbose_name=_('No Answer Count'),
+        help_text=_('Number of times contact did not answer')
+    )
+        
     notes = models.TextField(
         blank=True,
         null=True,

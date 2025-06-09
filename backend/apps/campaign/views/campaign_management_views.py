@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 from datetime import datetime
+from django.utils import timezone
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.apps_shared_methods import BaseAPIView
@@ -15,7 +16,8 @@ from apps.campaign.services.campaign_result_service import CampaignResultService
 from apps.campaign.models.campaign_target import CampaignTarget
 from apps.campaign.services.campaign_activity_service import CampaignActivityService
 from apps.campaign.services.campaign_target_service import CampaignTargetService
-from apps.activities.models import Activity
+from apps.activities.models import Activity, ActivityCampaign, ActivitySequence
+from django.db import transaction
 from apps.campaign.config.variables import DEFAULT_PLAYLIST_LIMIT
 
 
@@ -701,3 +703,147 @@ class ActivityResultViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.
                 {'success': False, 'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+    
+    @action(detail=True, methods=['post'], url_path='add-manual-activity')
+    def add_manual_activity(self, request, pk=None):
+        """
+        Add a manual activity for a contact in a non-sequence campaign
+        
+        Expected payload:
+        {
+            "contact_id": 123,
+            "activity_type": "CALL",
+            "result": "SUCCESSFUL",  # Activity result
+            "notes": "Optional notes",
+            "meeting_date": "2025-01-15",  # Optional, for successful calls
+            "callback_date": "2025-01-10",  # Optional, for callbacks
+        }
+        """
+        campaign = self.get_object()
+        
+        # Verify this is a non-sequence campaign
+        if campaign.sequence_type:
+            return Response({
+                'success': False,
+                'error': 'This endpoint is only for campaigns without sequences'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate required fields
+        contact_id = request.data.get('contact_id')
+        activity_type = request.data.get('activity_type')
+        result = request.data.get('result')
+        
+        if not all([contact_id, activity_type, result]):
+            return Response({
+                'success': False,
+                'error': 'contact_id, activity_type, and result are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Get the contact
+            from apps.accounts.models import Contact
+            contact = Contact.objects.get(id=contact_id)
+            
+            # Get the campaign target for this contact
+            target = None
+            for t in campaign.targets.all():
+                if t.contact_id == contact_id:
+                    target = t
+                    break
+                
+                # Check if contact belongs to this target's account
+                if (t.account_id == contact.account_id or 
+                    (t.lead and t.lead.account_id == contact.account_id) or
+                    (t.target_opportunity and t.target_opportunity.account_id == contact.account_id)):
+                    target = t
+                    break
+            
+            if not target:
+                return Response({
+                    'success': False,
+                    'error': 'Contact not found in campaign targets'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Use current datetime for the activity
+            now = timezone.now()
+            
+            # Transaction to ensure consistency
+            with transaction.atomic():
+                # Create activity
+                activity = Activity.objects.create(
+                    title=f"{Activity.ActivityType(activity_type).label} with {contact.first_name} {contact.last_name}",
+                    activity_type=activity_type,
+                    description=request.data.get('notes', ''),
+                    account=contact.account,
+                    owner=request.user,
+                    status=Activity.Status.COMPLETED,
+                    scheduled_start=now,
+                    completed_at=now,
+                    outcome_notes=request.data.get('notes', ''),
+                    client_id=campaign.client_id
+                )
+                
+                # Add contact relationship
+                activity.contacts.add(contact)
+                
+                # Create campaign relationship
+                ActivityCampaign.objects.create(
+                    activity=activity,
+                    campaign=campaign,
+                    campaign_target=target,
+                    client_id=campaign.client_id
+                )
+                
+                # Add sequence info for consistent tracking (with manual source type)
+                ActivitySequence.objects.create(
+                    activity=activity,
+                    source_type=ActivitySequence.SourceType.MANUAL,
+                    sequence_position=1,  # Always position 1 for manual activities
+                    min_delay_days=0,
+                    client_id=campaign.client_id
+                )
+                
+                # Process the result
+                # Prepare additional data
+                kwargs = {}
+                if request.data.get('meeting_date'):
+                    from datetime import datetime
+                    kwargs['meeting_date'] = datetime.strptime(
+                        request.data.get('meeting_date'), '%Y-%m-%d'
+                    ).date()
+                
+                if request.data.get('callback_date'):
+                    from datetime import datetime
+                    kwargs['callback_date'] = datetime.strptime(
+                        request.data.get('callback_date'), '%Y-%m-%d'
+                    ).date()
+                
+                # Process the result
+                from apps.campaign.services.campaign_result_service import CampaignResultService
+                result_info = CampaignResultService.process_activity_result(
+                    activity=activity,
+                    result=result,
+                    notes=request.data.get('notes', ''),
+                    **kwargs
+                )
+            
+            # Get updated playlist
+            updated_playlist = self.get_campaign_playlist(campaign, limit=10)
+            
+            return Response({
+                'success': True,
+                'activity_id': activity.id,
+                'result': result_info,
+                'updated_playlist': updated_playlist
+            })
+            
+        except Contact.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Contact not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
