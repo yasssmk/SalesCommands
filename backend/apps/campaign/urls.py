@@ -34,6 +34,7 @@ urlpatterns = [
     path('<int:pk>/activities/', CampaignManagementViewSet.as_view({'get': 'activities'}), name='campaign-activities'),
     path('<int:pk>/account-activities/', CampaignManagementViewSet.as_view({'get': 'account_activities'}), name='campaign-account-activities'),
     path('<int:pk>/contact-activities/', CampaignManagementViewSet.as_view({'get': 'contact_activities'}), name='campaign-contact-activities'),
+     path('<int:pk>/add-manual-activity/', CampaignManagementViewSet.as_view({'post': 'add_manual_activity'}), name='campaign-add-manual-activity'),
     
     # Basic Campaign CRUD
     path('basic/', CampaignViewSet.as_view({'get': 'list', 'post': 'create'}), name='basic-campaign-list'),

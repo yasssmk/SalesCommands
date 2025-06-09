@@ -506,6 +506,15 @@ class CampaignQueueService:
                 'is_sequence': True
             }
         
+        # First, update any expired callbacks to IN_PROGRESS
+        today = date.today()
+        callback_targets = CampaignTarget.objects.filter(
+            campaign=campaign,
+            status=CampaignTarget.Status.CALLBACK_PENDING,
+            callback_date__lte=today  # Callback date is today or in the past
+        )
+        updated_count = callback_targets.update(status=CampaignTarget.Status.IN_PROGRESS)
+        
         # Use the activity service to extract contacts
         from apps.campaign.services.campaign_activity_service import CampaignActivityService
         extraction_result = CampaignActivityService._extract_contacts_from_targets(campaign)
@@ -531,7 +540,6 @@ class CampaignQueueService:
         
         # Calculate priority score for each contact
         contacts_with_score = []
-        today = date.today()
         
         for contact_info in valid_contacts:
             contact = contact_info['contact']
@@ -617,7 +625,9 @@ class CampaignQueueService:
                 'has_phone': contact_info['has_phone'],
                 'has_email': contact_info['has_email'],
                 'has_linkedin': contact_info['has_linkedin'],
-                'priority_score': score
+                'priority_score': score,
+                'callback_date': target.callback_date if hasattr(target, 'callback_date') else None,
+                'status': target.status
             })
         
         # Sort by priority score (descending)
@@ -630,7 +640,8 @@ class CampaignQueueService:
         contact_counts = {
             'total': len(valid_contacts),
             'skipped': len(skipped_contacts),
-            'prioritized': len(contacts_with_score)
+            'prioritized': len(contacts_with_score),
+            'callbacks_updated': updated_count
         }
         
         return {
