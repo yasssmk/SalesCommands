@@ -259,7 +259,7 @@ class CampaignActivityService:
     @classmethod
     def _extract_contacts_from_targets(cls, campaign: Campaign, target_contacts: List[int] = None):
         """
-        Extract all relevant contacts from campaign targets
+        Extract all relevant contacts from campaign targets - OPTIMIZED VERSION
         
         Args:
             campaign: The campaign to extract contacts for
@@ -275,37 +275,42 @@ class CampaignActivityService:
             'target_opportunity'
         )
 
-        # Collect all relevant accounts for further processing
-        # Accounts can come from different sources: direct account targets, 
-        # contact targets, lead targets, or opportunity targets
+        # OPTIMIZATION: Create index dictionaries for O(1) lookups instead of O(n*m) nested loops
         account_ids = set()
         direct_contact_ids = set()
-        all_targets = {}  # Map contacts to their source targets
+        
+        # Build lookup dictionaries - O(m) where m = number of targets
+        target_by_contact_id = {}          # contact_id -> target
+        target_by_account_id = {}          # account_id -> target
+        lead_account_to_target = {}        # lead.account_id -> target
+        opportunity_account_to_target = {} # opportunity.account_id -> target
 
         for target in campaign_targets:
             # For direct account targets
             if target.account:
                 account_ids.add(target.account.id)
-                all_targets[target.account.id] = target
+                # Only set if not already set (first target wins for account)
+                if target.account.id not in target_by_account_id:
+                    target_by_account_id[target.account.id] = target
             
-             # For direct contact targets
+            # For direct contact targets
             if target.contact:
                 direct_contact_ids.add(target.contact.id)
+                target_by_contact_id[target.contact.id] = target
                 if target.contact.account_id:
                     account_ids.add(target.contact.account_id)
-                all_targets[target.id] = target
             
             # For lead targets (get associated account)
             if target.lead and target.lead.account_id:
                 account_ids.add(target.lead.account_id)
-                all_targets[target.id] = target
+                lead_account_to_target[target.lead.account_id] = target
             
             # For opportunity targets (get associated account)
             if target.target_opportunity and target.target_opportunity.account_id:
                 account_ids.add(target.target_opportunity.account_id)
-                all_targets[target.id] = target
+                opportunity_account_to_target[target.target_opportunity.account_id] = target
         
-        # If we have specific contact IDs provided, filter by them
+        # Get contacts with single optimized query
         if target_contacts:
             all_contacts = Contact.objects.filter(
                 id__in=target_contacts,
@@ -326,11 +331,11 @@ class CampaignActivityService:
                 # Combine QuerySets
                 all_contacts = (all_contacts | direct_contacts).distinct()
         
-        # Organize contacts by account for easier access
+        # Process contacts with O(1) lookups instead of O(n*m)
         contacts_by_account = {}
         skipped_contacts = []
         valid_contacts = []
-        contact_to_target_map = {}  # Map each contact to its original target
+        contact_to_target_map = {}
         
         for contact in all_contacts:
             if contact.account_id not in contacts_by_account:
@@ -370,32 +375,61 @@ class CampaignActivityService:
                 'has_linkedin': has_linkedin
             })
             
-            # Find the appropriate target for this contact
-            for target in campaign_targets:
-                # Direct contact target
-                if target.contact_id == contact.id:
-                    contact_to_target_map[contact.id] = target
-                    break
-                
-                # Contact from account
-                if target.account_id == contact.account_id:
-                    contact_to_target_map[contact.id] = target
-                    break
-                
-                # Contact from lead's account
-                if target.lead and target.lead.account_id == contact.account_id:
-                    contact_to_target_map[contact.id] = target
-                    break
-                
-                # Contact from opportunity's account
-                if target.target_opportunity and target.target_opportunity.account_id == contact.account_id:
-                    contact_to_target_map[contact.id] = target
-                    break
+            # OPTIMIZED: Find target using O(1) lookups instead of nested loops
+            target = cls._find_target_for_contact(
+                contact, 
+                target_by_contact_id,
+                target_by_account_id,
+                lead_account_to_target,
+                opportunity_account_to_target
+            )
+            
+            if target:
+                contact_to_target_map[contact.id] = target
         
         return {
             'valid_contacts': valid_contacts,
             'contacts_by_account': contacts_by_account,
             'skipped_contacts': skipped_contacts,
             'contact_to_target_map': contact_to_target_map,
-            'all_targets': all_targets
+            'all_targets': dict(target_by_account_id)  # Simplified for compatibility
         }
+
+    @classmethod
+    def _find_target_for_contact(cls, contact: Contact, 
+                            target_by_contact_id: dict,
+                            target_by_account_id: dict,
+                            lead_account_to_target: dict,
+                            opportunity_account_to_target: dict) -> CampaignTarget:
+        """
+        Find the appropriate target for a contact using O(1) dictionary lookups
+        
+        Args:
+            contact: The contact to find target for
+            target_by_contact_id: Direct contact ID -> target mapping
+            target_by_account_id: Account ID -> target mapping  
+            lead_account_to_target: Lead account ID -> target mapping
+            opportunity_account_to_target: Opportunity account ID -> target mapping
+            
+        Returns:
+            CampaignTarget or None
+        """
+        # Priority order: direct contact > lead account > opportunity account > general account
+        
+        # 1. Direct contact target (highest priority)
+        if contact.id in target_by_contact_id:
+            return target_by_contact_id[contact.id]
+        
+        # 2. Contact from lead's account
+        if contact.account_id in lead_account_to_target:
+            return lead_account_to_target[contact.account_id]
+        
+        # 3. Contact from opportunity's account  
+        if contact.account_id in opportunity_account_to_target:
+            return opportunity_account_to_target[contact.account_id]
+        
+        # 4. Contact from general account target (lowest priority)
+        if contact.account_id in target_by_account_id:
+            return target_by_account_id[contact.account_id]
+        
+        return None

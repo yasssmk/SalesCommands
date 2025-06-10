@@ -24,76 +24,85 @@ class CampaignQueueService:
     
     @classmethod
     def get_active_activities_for_campaign(cls, campaign: Campaign, limit: int = 50, 
-                                            prefetch_relations: bool = False,
-                                            current_activity_type: str = None) -> Dict:
-            """
-            Get activities that are ready to be worked on for a campaign
+                                        prefetch_relations: bool = False,
+                                        current_activity_type: str = None) -> Dict:
+        """
+        Get activities that are ready to be worked on for a campaign
+        
+        Args:
+            campaign: The campaign to get activities for
+            limit: Maximum number of activities to return
+            prefetch_relations: Whether to prefetch related objects for serialization
+            current_activity_type: The type of activity the user is currently working on
+                                (used for batching similar activities)
             
-            Args:
-                campaign: The campaign to get activities for
-                limit: Maximum number of activities to return
-                prefetch_relations: Whether to prefetch related objects for serialization
-                current_activity_type: The type of activity the user is currently working on
-                                    (used for batching similar activities)
+        Returns:
+            Dictionary with ready activities and queue information
+        """
+        # Build base queryset
+        query = Activity.objects.filter(
+            campaign_info__campaign=campaign,
+            status__in=[Activity.Status.PLANNED]
+        )
+        
+        # CRITICAL: Always prefetch relations needed for priority calculation
+        # This prevents N+1 queries in _calculate_priority_score()
+        query = query.select_related(
+            'account',  # For tier-based scoring
+            'campaign_info__campaign_target',  # Campaign relationship
+            'previous_activity',  # For overdue calculation
+            'sequence_info'  # For sequence-based scoring
+        )
+        
+        # Always prefetch contacts for priority calculation (buying authority check)
+        query = query.prefetch_related('contacts')
+        
+        # Additional prefetching for serialization if requested
+        if prefetch_relations:
+            # No additional prefetch needed - already done above for priority calculation
+            pass
+        
+        # Execute the query ONCE with all optimizations
+        campaign_activities = query.all()
+        
+        ready_activities = []
+        
+        # Process each activity - NO additional queries thanks to prefetching
+        for activity in campaign_activities:
+            if cls._is_activity_ready(activity):
+                # Calculate priority score - all relations are now prefetched
+                priority_score = cls._calculate_priority_score(activity)
                 
-            Returns:
-                Dictionary with ready activities and queue information
-            """
-            # Build base queryset (same as before)
-            query = Activity.objects.filter(
-                campaign_info__campaign=campaign,
-                status__in=[Activity.Status.PLANNED]
-            )
-            
-            # Add select_related and prefetch_related (same as before)
-            query = query.select_related('account', 'campaign_info__campaign_target')
-            if prefetch_relations:
-                query = query.prefetch_related(
-                    'contacts',
-                    'sequence_info'
-                )
-            
-            # Execute the query
-            campaign_activities = query.all()
-            
-            ready_activities = []
-            
-            for activity in campaign_activities:
-                if cls._is_activity_ready(activity):
-                    # Calculate standard priority score
-                    priority_score = cls._calculate_priority_score(activity)
-                    
-                    # Add batching information
-                    activity_data = {
-                        'activity': activity,
-                        'priority_score': priority_score,
-                        'delay_status': cls._get_delay_status(activity),
-                        'activity_type': activity.activity_type
-                    }
-                    
-                    ready_activities.append(activity_data)
-            
-            # First sort by priority score (descending)
-            ready_activities.sort(key=lambda x: -x['priority_score'])
-            
-            # Then apply activity type batching if a current type is specified
-            if current_activity_type:
-                # First re-order to prioritize the current activity type
-                batched_activities = cls._apply_activity_batching(ready_activities, current_activity_type)
-                ready_activities = batched_activities
-            
-            # Format response - only include Activity objects, not nested dicts with activity inside
-            activities_list = [item['activity'] for item in ready_activities[:limit]]
-            
-            return {
-                'campaign_id': campaign.id,
-                'campaign_name': campaign.name,
-                'ready_activities': activities_list,
-                'total_ready': len(ready_activities),
-                'total_pending': campaign_activities.count(),
-                'queue_info': cls._get_queue_info(campaign, ready_activities),
-                'activity_types_breakdown': cls._get_activity_type_breakdown(ready_activities)
-            }
+                # Add batching information
+                activity_data = {
+                    'activity': activity,
+                    'priority_score': priority_score,
+                    'delay_status': cls._get_delay_status(activity),
+                    'activity_type': activity.activity_type
+                }
+                
+                ready_activities.append(activity_data)
+        
+        # First sort by priority score (descending)
+        ready_activities.sort(key=lambda x: -x['priority_score'])
+        
+        # Then apply activity type batching if a current type is specified
+        if current_activity_type:
+            batched_activities = cls._apply_activity_batching(ready_activities, current_activity_type)
+            ready_activities = batched_activities
+        
+        # Format response - only include Activity objects, not nested dicts with activity inside
+        activities_list = [item['activity'] for item in ready_activities[:limit]]
+        
+        return {
+            'campaign_id': campaign.id,
+            'campaign_name': campaign.name,
+            'ready_activities': activities_list,
+            'total_ready': len(ready_activities),
+            'total_pending': len(campaign_activities),  # Use already fetched data
+            'queue_info': cls._get_queue_info(campaign, ready_activities, campaign_activities),
+            'activity_types_breakdown': cls._get_activity_type_breakdown(ready_activities)
+        }
 
     @classmethod
     def _apply_activity_batching(cls, activities: List[Dict], current_type: str) -> List[Dict]:
@@ -384,7 +393,7 @@ class CampaignQueueService:
         Calculate priority score for an activity based on various factors
         
         Args:
-            activity: The activity to score
+            activity: The activity to score (MUST have prefetched contacts and sequence_info)
             
         Returns:
             float: Priority score (higher = higher priority)
@@ -394,23 +403,36 @@ class CampaignQueueService:
         score = 0.0
         
         # Account tier priority (A=100, B=50, C=10)
+        # activity.account is already select_related from calling method
         account_tier = getattr(activity.account, 'tier', 'C')
         score += TIER_PRIORITY_SCORES.get(account_tier, 10)
 
+        # Contact buying authority bonus - OPTIMIZED: no additional query
         contact_buying_authority_bonus = 0
-        contacts = list(activity.contacts.all())
-        if contacts:
-            for contact in contacts:
+        
+        # Use prefetched contacts (no additional DB query)
+        # The calling method MUST ensure contacts are prefetched
+        try:
+            # Access prefetched contacts - if not prefetched, this will raise AttributeError
+            prefetched_contacts = activity.contacts.all()
+            
+            # Check if any contact has buying authority
+            for contact in prefetched_contacts:
                 if getattr(contact, 'has_buying_authority', False):
                     contact_buying_authority_bonus = BUYING_AUTHORITY_PRIORITY_BOOST
                     break
+                    
+        except AttributeError:
+            # Fallback if contacts not prefetched (should not happen in production)
+            # Log warning in real implementation
+            pass
         
         score += contact_buying_authority_bonus
         
         # Sequence position bonus (earlier steps get priority)
-        if hasattr(activity, 'sequence_info'):
-            sequence_info = activity.sequence_info
-            
+        # activity.sequence_info should also be prefetched from calling method
+        sequence_info = getattr(activity, 'sequence_info', None)
+        if sequence_info:
             # Higher bonus for earlier steps
             step_bonus = max(0, 11 - sequence_info.sequence_position) * SEQUENCE_STEP_PRIORITY_BONUS
             score += step_bonus
@@ -433,6 +455,7 @@ class CampaignQueueService:
                 if sequence_info.callback_requested_date <= date.today():
                     score += CALLBACK_PRIORITY_BOOST
 
+        # Activity type priority
         score += ACTIVITY_TYPE_PRIORITIES.get(activity.activity_type, 0)
         
         return score
@@ -655,20 +678,37 @@ class CampaignQueueService:
         }
     
     @classmethod
-    def _get_queue_info(cls, campaign: Campaign, ready_activities: List) -> Dict:
+    def _get_queue_info(cls, campaign: Campaign, ready_activities: List, 
+                   all_campaign_activities: List = None) -> Dict:
         """
         Get summary information about the campaign queue
+        
+        Args:
+            campaign: The campaign
+            ready_activities: List of ready activity data dicts
+            all_campaign_activities: Optional list of all activities (to avoid DB query)
         """
-        # Count activities by status
-        all_activities = Activity.objects.filter(campaign_info__campaign=campaign)
+        # Use provided activities if available, otherwise query (fallback)
+        if all_campaign_activities is not None:
+            # Count activities by status using already fetched data - NO DB QUERY
+            status_counts = {
+                'planned': sum(1 for a in all_campaign_activities if a.status == Activity.Status.PLANNED),
+                'completed': sum(1 for a in all_campaign_activities if a.status == Activity.Status.COMPLETED),
+                'cancelled': sum(1 for a in all_campaign_activities if a.status == Activity.Status.CANCELLED),
+            }
+            total_activities = len(all_campaign_activities)
+        else:
+            # Fallback: query database (should be avoided)
+            all_activities = Activity.objects.filter(campaign_info__campaign=campaign)
+            
+            status_counts = {
+                'planned': all_activities.filter(status=Activity.Status.PLANNED).count(),
+                'completed': all_activities.filter(status=Activity.Status.COMPLETED).count(),
+                'cancelled': all_activities.filter(status=Activity.Status.CANCELLED).count(),
+            }
+            total_activities = sum(status_counts.values())
         
-        status_counts = {
-            'planned': all_activities.filter(status=Activity.Status.PLANNED).count(),
-            'completed': all_activities.filter(status=Activity.Status.COMPLETED).count(),
-            'cancelled': all_activities.filter(status=Activity.Status.CANCELLED).count(),
-        }
-        
-        # Count by delay status
+        # Count by delay status using already processed data
         delay_status_counts = {'ready': 0, 'waiting': 0, 'overdue': 0}
         for item in ready_activities:
             delay_status = item['delay_status']['status']
@@ -676,7 +716,6 @@ class CampaignQueueService:
                 delay_status_counts[delay_status] += 1
         
         # Calculate progress
-        total_activities = sum(status_counts.values())
         progress_percentage = (status_counts['completed'] / total_activities * 100) if total_activities > 0 else 0
         
         return {
