@@ -7,7 +7,9 @@ from rest_framework import filters
 from datetime import datetime
 from django.utils import timezone
 from core.client_scope import ClientScopeManager
-from core.exceptions import StandardizedValidationError
+from core.exceptions import StandardizedValidationError, StandardizedAuthenticationFailed, StandardizedPermissionDenied
+from core.error_messages import CampaignErrorMessages
+from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from apps.campaign.models import Campaign
 from apps.campaign.serializers import CampaignSerializer
@@ -68,20 +70,48 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         }
         """
         try:
+            # Extract input data
             campaign_data = request.data.get('campaign', {})
             target_account_ids = request.data.get('target_account_ids', [])
             target_contact_ids = request.data.get('target_contact_ids', [])
             target_lead_ids = request.data.get('target_lead_ids', [])
             target_opportunity_ids = request.data.get('target_opportunity_ids', [])
             
-            # Validation
+            # Validate required fields
             if not campaign_data.get('name'):
-                raise StandardizedValidationError("Campaign name is required")
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="Campaign name")
+                )
             
             if not any([target_account_ids, target_contact_ids, target_lead_ids, target_opportunity_ids]):
-                raise StandardizedValidationError("campaign_management_views.py : At least one target leads, opportunity, account or contact is required")
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_TARGETS_REQUIRED)
             
-            # Prepare campaign targets using our new service
+            # Validate campaign dates
+            start_date = campaign_data.get('start_date')
+            end_date = campaign_data.get('end_date')
+            if start_date and end_date:
+                from datetime import datetime, date
+                try:
+                    start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+                    end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+                    
+                    if end_dt < start_dt:
+                        raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_DATE_INVALID)
+                    if end_dt < date.today():
+                        raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_DATE_PAST)
+                        
+                except ValueError:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(field="Date format (YYYY-MM-DD expected)")
+                    )
+            
+            # Validate sequence type for call lists
+            campaign_type = campaign_data.get('campaign_type')
+            sequence_type = campaign_data.get('sequence_type')
+            if campaign_type == Campaign.CampaignType.CALL_LIST and sequence_type is not None:
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_NO_SEQUENCE_TYPE)
+            
+            # Prepare campaign targets
             target_result = CampaignTargetService.prepare_campaign_targets(
                 target_account_ids=target_account_ids,
                 target_contact_ids=target_contact_ids,
@@ -89,15 +119,20 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
                 target_opportunity_ids=target_opportunity_ids
             )
             
-            # Get client_id from auth
+            # Validate that we have valid targets
+            stats = target_result['stats']
+            if (stats['total_accounts'] == 0 and stats['total_contacts'] == 0 and 
+                stats['total_leads'] == 0 and stats['total_opportunities'] == 0):
+                raise StandardizedValidationError(
+                    "No valid targets found. Check the provided IDs and ensure they exist."
+                )
+            
+            # Set client and ownership
             client_id = self.get_client_id()
             campaign_data['client_id'] = client_id
-
-            # Set owner in campaign_data
             campaign_data['owner_id'] = request.user.id
-
             
-            # Use CampaignManager to create the campaign and activities in one step
+            # Create campaign and activities
             result = CampaignManager.create_campaign_with_activities(
                 campaign_data=campaign_data,
                 target_accounts=target_result['target_accounts'],
@@ -105,20 +140,25 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
                 target_leads=target_result['target_leads'],
                 target_opportunities=target_result['target_opportunities']
             )
-
             
-            # Add target preparation stats to the result
+            # Add targeting stats to response
             result.update({
                 'targeting_stats': target_result['stats'],
                 'invalid_ids': target_result['stats']['invalid_ids']
             })
             
             return Response(result, status=status.HTTP_201_CREATED)
-                
+            
+        except (StandardizedValidationError, StandardizedAuthenticationFailed, StandardizedPermissionDenied):
+            # Re-raise our standardized exceptions
+            raise
+        except ValueError as e:
+            if "client_id is required" in str(e):
+                raise StandardizedValidationError(CoreErrorMessages.CLIENT_ID_REQUIRED)
+            raise StandardizedValidationError(f"Campaign creation failed: {str(e)}")
         except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign creation failed")
             )
  
     @action(detail=True, methods=['post'])
@@ -348,28 +388,44 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             "notes": "Optional notes about removal reason"
         }
         """
-        campaign = self.get_object()
-        
-        # Validate ownership or permissions
-        if campaign.owner != request.user and not request.user.has_perm('campaign.change_campaign'):
-            raise StandardizedValidationError("You don't have permission to modify this campaign")
-        
-        account_id = request.data.get('account_id')
-        notes = request.data.get('notes')
-        
-        if not account_id:
-            return Response(
-                {'success': False, 'error': 'Account ID is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
         try:
-            from apps.accounts.models import Account
-            account = Account.objects.get(id=account_id)
+            campaign = self.get_object()
+            
+            # Validate ownership or permissions
+            if campaign.owner != request.user and not request.user.has_perm('campaign.change_campaign'):
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+            
+            # Validate campaign state - cannot modify completed campaigns
+            if campaign.status in ['COMPLETED', 'CANCELLED']:
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=campaign.status)
+                )
+            
+            # Extract and validate required data
+            account_id = request.data.get('account_id')
+            notes = request.data.get('notes')
+            
+            if not account_id:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="Account ID")
+                )
+            
+            # Validate account exists and is accessible
+            try:
+                from apps.accounts.models import Account
+                account = Account.objects.get(id=account_id)
+            except Account.DoesNotExist:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
             
             # Validate client scope
             self.validate_client_id(account)
             
+            # Validate account is actually targeted by this campaign
+            campaign_target = campaign.targets.filter(account=account).first()
+            if not campaign_target:
+                raise StandardizedValidationError(CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN)
+            
+            # Remove account from campaign
             result = CampaignManager.remove_account_from_campaign(
                 campaign=campaign,
                 account=account,
@@ -377,15 +433,17 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             )
             
             return Response(result)
-        except Account.DoesNotExist:
-            return Response(
-                {'success': False, 'error': 'Account not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except StandardizedPermissionDenied:
+            # Re-raise permission errors
+            raise
         except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
+            # Convert unexpected errors
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to remove account from campaign")
             )
     
     @action(detail=True, methods=['post'])

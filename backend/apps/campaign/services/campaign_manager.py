@@ -9,6 +9,11 @@ from apps.accounts.models import Contact, Account
 from .campaign_activity_service import CampaignActivityService
 from .campaign_queue_service import CampaignQueueService
 from .campaign_result_service import CampaignResultService
+from core.error_messages import CoreErrorMessages
+from core.error_messages import CampaignErrorMessages
+from core.exceptions import StandardizedValidationError
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from apps.campaign.config.variables import DEFAULT_PLAYLIST_LIMIT, DEFAULT_SUMMARY_ACTIVITIES
 
 
@@ -71,53 +76,51 @@ class CampaignManager:
             }
     
         
-    @classmethod
-    def start_campaign(cls, campaign: Campaign) -> Dict:
+    @action(detail=True, methods=['post'])
+    def start_campaign(self, request, pk=None):
         """
-        Start/activate a campaign - ONE TIME ACTION
-        - Mark campaign as active
-        - Initialize campaign state
-        - Return initial playlist
+        Start/activate a campaign and get initial playlist
         """
-        # Check if already started
-        if campaign.status == 'ACTIVE':
-            return {'error': 'Campaign already started'}
-        
-        # Mark campaign as started
-        campaign.status = 'ACTIVE'
-        campaign.started_at = timezone.now()
-        campaign.save()
-        
-        # Get the initial active activities
-        playlist_data = CampaignQueueService.get_active_activities_for_campaign(campaign, limit=20)
-        
-        # Make sure activities are serialized to dictionaries, not model instances
-        if 'ready_activities' in playlist_data:
-            # Replace activity instances with simple dictionary representations
-            ready_activities = []
-            for activity in playlist_data['ready_activities']:
-                ready_activities.append({
-                    'id': activity.id,
-                    'title': activity.title,
-                    'activity_type': activity.activity_type,
-                    'activity_type_display': activity.get_activity_type_display(),
-                    'account_id': activity.account_id,
-                    'account_name': activity.account.company_name if hasattr(activity, 'account') else None,
-                    'scheduled_start': activity.scheduled_start,
-                    'status': activity.status,
-                    'contacts': [
-                        {'id': c.id, 'name': c.full_name} 
-                        for c in activity.contacts.all()
-                    ] if hasattr(activity, 'contacts') else []
-                })
-            playlist_data['ready_activities'] = ready_activities
-        
-        return {
-            'success': True,
-            'campaign_id': campaign.id,
-            'campaign_status': campaign.status,
-            'playlist': playlist_data
-        }
+        try:
+            campaign = self.get_object()
+            
+            # Validate ownership permissions
+            if campaign.owner != request.user:
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+            
+            # Validate campaign state - cannot start if already active
+            if campaign.status == 'ACTIVE':
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_ALREADY_STARTED)
+            
+            # Validate campaign state - cannot start if completed or cancelled
+            if campaign.status in ['COMPLETED', 'CANCELLED']:
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=campaign.status)
+                )
+            
+            # Validate campaign has targets
+            if not campaign.targets.exists():
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_TARGETS_REQUIRED)
+            
+            # Validate campaign dates
+            from datetime import date
+            if campaign.end_date < date.today():
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_DATE_PAST)
+            
+            # Start the campaign
+            result = CampaignManager.start_campaign(campaign)
+            return Response(result)
+            
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            # Convert unexpected errors
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(
+                    current_state=f"Failed to start: {str(e)}"
+                )
+            )
     
     def get_campaign_playlist(cls, campaign: Campaign, limit: int = None, current_activity_type: str = None) -> Dict:
         """
@@ -212,7 +215,7 @@ class CampaignManager:
     
     @classmethod
     def complete_activity(cls, activity: Activity, result: str, 
-                         notes: str = None, **kwargs) -> Dict:
+                        notes: str = None, **kwargs) -> Dict:
         """
         Complete an activity and process the result
         
@@ -225,20 +228,53 @@ class CampaignManager:
         Returns:
             Dictionary with result processing information
         """
-        # Process the result
-        result_info = CampaignResultService.process_activity_result(
-            activity, result, notes, **kwargs
-        )
+        try:
+            # Validate required parameters
+            if not activity:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+            if not result:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="Activity result")
+                )
+            
+            # Validate activity belongs to a campaign
+            if not hasattr(activity, 'campaign_info') or not activity.campaign_info:
+                raise StandardizedValidationError(CampaignErrorMessages.ACTIVITY_NOT_IN_CAMPAIGN)
+            
+            campaign = activity.campaign_info.campaign
+            if not campaign:
+                raise StandardizedValidationError(CampaignErrorMessages.ACTIVITY_NOT_IN_CAMPAIGN)
+            
+            # Process the result using the result service
+            result_info = CampaignResultService.process_activity_result(
+                activity, result, notes, **kwargs
+            )
+            
+            # Get updated campaign playlist
+            try:
+                updated_playlist = cls.get_campaign_playlist(campaign, limit=10)
+                result_info['updated_playlist'] = updated_playlist.get('items', [])
+            except StandardizedValidationError:
+                # Re-raise validation errors from playlist generation
+                raise
+            except Exception as e:
+                # If playlist generation fails, continue without it (non-critical)
+                # Don't fail the entire operation for this
+                result_info['updated_playlist'] = []
+                result_info['playlist_error'] = 'Failed to update playlist'
+            
+            return result_info
+            
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            # Convert unexpected errors to validation errors
+            raise StandardizedValidationError(
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+            )
         
-        # Get updated campaign playlist
-        campaign = activity.campaign_info.campaign if hasattr(activity, 'campaign_info') else None
-        if campaign:
-            updated_playlist = cls.get_campaign_playlist(campaign, limit=10)
-            result_info['updated_playlist'] = updated_playlist['ready_activities']
-        
-        
-        return result_info
-    
     @classmethod
     def get_campaign_summary(cls, campaign: Campaign) -> Dict:
         """

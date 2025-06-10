@@ -7,6 +7,8 @@ from apps.activities.models import Activity, ActivitySequence
 from apps.campaign.models import Campaign, CampaignTarget
 from apps.accounts.models import Contact
 from apps.sequence.sequences.chasing_sequence import ChasingSequence
+from core.error_messages import CampaignErrorMessages, CoreErrorMessages
+from core.exceptions import StandardizedValidationError
 from apps.campaign.config.variables import TIER_MAX_ATTEMPTS, TIER_PRIORITY_SCORES
 
 
@@ -15,33 +17,49 @@ class CampaignResultService:
     Service for handling campaign activity results and managing sequence progression
     """
     
-    @classmethod
     def process_activity_result(cls, activity: Activity, result: str, 
-                               notes: str = None, **kwargs) -> Dict:
+                           notes: str = None, **kwargs) -> Dict:
         """
         Process the result of an activity and handle appropriate actions
         Works for both sequence and non-sequence campaigns
-        
-        Args:
-            activity: The completed activity
-            result: The outcome ('NO_ANSWER', 'NOT_INTERESTED', 'CALLBACK_REQUESTED', 'SUCCESSFUL', etc.)
-            notes: Optional notes about the result
-            **kwargs: Additional data like callback_date, meeting_date
-            
-        Returns:
-            Dictionary with the result processing information
         """
-        with transaction.atomic():
+        try:
+            # Validate activity exists and is accessible
+            if not activity:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+            # Validate result is provided
+            if not result:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="Activity result")
+                )
+            
             # Check if this is a sequence or non-sequence activity
             is_sequence_campaign = False
             if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign.sequence_type:
                 is_sequence_campaign = True
             
-            # For call activities
+            # Route to appropriate handler based on activity type
             if activity.activity_type == Activity.ActivityType.CALL:
                 return cls._handle_call_result(activity, result, notes, is_sequence_campaign, **kwargs)
-            else:
+            elif activity.activity_type in [Activity.ActivityType.EMAIL, Activity.ActivityType.LINKEDIN]:
                 return cls._handle_email_linkedin_result(activity, result, notes, is_sequence_campaign, **kwargs)
+            else:
+                # Unsupported activity type
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.ACTIVITY_INVALID_STATE.format(
+                        current_state=f"Unsupported activity type: {activity.activity_type}"
+                    )
+                )
+                
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            # Convert unexpected errors to validation errors
+            raise StandardizedValidationError(
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+            )
 
     
     @classmethod
@@ -75,7 +93,9 @@ class CampaignResultService:
             return cls._handle_successful_call(activity, sequence_info, notes, is_sequence_campaign, **kwargs)
         
         else:
-            return {'success': False, 'error': f'Unknown result: {result}'}
+            raise StandardizedValidationError(
+            CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=result)
+        )
         
     @classmethod
     def _handle_invalid_phone_number(cls, activity: Activity, sequence_info: ActivitySequence,
@@ -541,8 +561,8 @@ class CampaignResultService:
                 'message': 'Contact removed from sequence (unsubscribed)'
             }
         
-        else:
-            # Default: complete and move to next
+        elif result in ['SENT', 'DELIVERED', 'OPENED', 'CLICKED']:
+            # Standard email/LinkedIn metrics - complete and move to next
             activity.complete(outcome_notes=notes)
             cls._activate_next_activity(activity)
             
@@ -551,6 +571,13 @@ class CampaignResultService:
                 'action': 'completed',
                 'message': 'Activity completed'
             }
+        
+        else:
+            # Invalid result for email/LinkedIn
+            raise StandardizedValidationError(
+                CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=result)
+            )
+
     
     @classmethod
     def _activate_next_activity(cls, current_activity: Activity):
