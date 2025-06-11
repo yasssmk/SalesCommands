@@ -21,11 +21,13 @@ from apps.campaign.services.campaign_target_service import CampaignTargetService
 from apps.activities.models import Activity, ActivityCampaign, ActivitySequence
 from django.db import transaction
 from apps.campaign.config.variables import DEFAULT_PLAYLIST_LIMIT
+from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse, CampaignSuccessMessages
 
 
 class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
     """
     ViewSet for managing campaigns with sequence and activity management
+    Now returns standardized responses consistently
     """
     serializer_class = CampaignSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -132,22 +134,15 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             campaign_data['client_id'] = client_id
             campaign_data['owner_id'] = request.user.id
             
-            # Create campaign and activities
-            result = CampaignManager.create_campaign_with_activities(
+            # Create campaign and activities - CampaignManager now returns Response directly
+            return CampaignManager.create_campaign_with_activities(
                 campaign_data=campaign_data,
                 target_accounts=target_result['target_accounts'],
                 target_contacts=target_result['target_contacts'],
                 target_leads=target_result['target_leads'],
-                target_opportunities=target_result['target_opportunities']
+                target_opportunities=target_result['target_opportunities'],
+                targeting_stats=target_result['stats']
             )
-            
-            # Add targeting stats to response
-            result.update({
-                'targeting_stats': target_result['stats'],
-                'invalid_ids': target_result['stats']['invalid_ids']
-            })
-            
-            return Response(result, status=status.HTTP_201_CREATED)
             
         except (StandardizedValidationError, StandardizedAuthenticationFailed, StandardizedPermissionDenied):
             # Re-raise our standardized exceptions
@@ -170,16 +165,10 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         
         # Validate ownership
         if campaign.owner != request.user:
-            raise StandardizedValidationError("You can only start your own campaigns")
+            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
         
-        try:
-            result = CampaignManager.start_campaign(campaign)
-            return Response(result)
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # CampaignManager.start_campaign now returns Response directly
+        return CampaignManager.start_campaign(campaign)
     
     @action(detail=True, methods=['get'])
     def playlist(self, request, pk=None):
@@ -193,18 +182,12 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         
         # Validate ownership
         if campaign.owner != request.user:
-            raise StandardizedValidationError("You can only view your own campaigns")
+            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
         
         limit = int(request.query_params.get('limit', DEFAULT_PLAYLIST_LIMIT))
         
-        try:
-            result = CampaignManager.get_campaign_playlist(campaign, limit=limit)
-            return Response(result)
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # CampaignManager.get_campaign_playlist now returns Response directly
+        return CampaignManager.get_campaign_playlist(campaign, limit=limit)
     
     @action(detail=True, methods=['get'])
     def summary(self, request, pk=None):
@@ -215,16 +198,10 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         
         # Validate ownership
         if campaign.owner != request.user:
-            raise StandardizedValidationError("You can only view your own campaigns")
+            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
         
-        try:
-            result = CampaignManager.get_campaign_summary(campaign)
-            return Response(result)
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # CampaignManager.get_campaign_summary now returns Response directly
+        return CampaignManager.get_campaign_summary(campaign)
     
     @action(detail=True, methods=['post'])
     def pause_campaign(self, request, pk=None):
@@ -240,21 +217,15 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         
         # Validate ownership
         if campaign.owner != request.user:
-            raise StandardizedValidationError("You can only pause your own campaigns")
+            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
         
         pause_until = request.data.get('pause_until', None)
         if pause_until:
             from datetime import datetime
             pause_until = datetime.strptime(pause_until, '%Y-%m-%d').date()
         
-        try:
-            result = CampaignManager.pause_campaign(campaign, pause_until=pause_until)
-            return Response(result)
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # CampaignManager.pause_campaign now returns Response directly
+        return CampaignManager.pause_campaign(campaign, pause_until=pause_until)
     
     @action(detail=True, methods=['post'])
     def resume_campaign(self, request, pk=None):
@@ -265,16 +236,10 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         
         # Validate ownership
         if campaign.owner != request.user:
-            raise StandardizedValidationError("You can only resume your own campaigns")
+            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
         
-        try:
-            result = CampaignManager.resume_campaign(campaign)
-            return Response(result)
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # CampaignManager.resume_campaign now returns Response directly
+        return CampaignManager.resume_campaign(campaign)
     
     @action(detail=True, methods=['get'])
     def contacts_with_responses(self, request, pk=None):
@@ -285,35 +250,10 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         
         # Validate ownership
         if campaign.owner != request.user:
-            raise StandardizedValidationError("You can only view your own campaigns")
+            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
         
-        try:
-            result = CampaignManager.get_campaign_contacts_with_responses(campaign)
-            
-            # Format the response for frontend
-            formatted_result = []
-            for item in result:
-                contact = item['contact']
-                account = item['account']
-                
-                formatted_result.append({
-                    'contact_id': contact.id,
-                    'contact_name': f"{contact.first_name} {contact.last_name}",
-                    'contact_email': contact.email,
-                    'account_id': account.id,
-                    'account_name': account.company_name,
-                    'activities': item['activities']
-                })
-            
-            return Response({
-                'success': True,
-                'contacts': formatted_result
-            })
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # CampaignManager.get_campaign_contacts_with_responses now returns Response directly
+        return CampaignManager.get_campaign_contacts_with_responses(campaign)
     
     @action(detail=False, methods=['get'])
     def account_campaigns(self, request):
@@ -326,9 +266,8 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         account_id = request.query_params.get('account_id')
         
         if not account_id:
-            return Response(
-                {'success': False, 'error': 'Account ID is required'},
-                status=status.HTTP_400_BAD_REQUEST
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field="account_id")
             )
         
         try:
@@ -359,24 +298,27 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
                     'status_display': target.get_status_display()
                 })
             
-            return Response({
-                'success': True,
+            # Return standardized response
+            data = {
                 'account_id': account.id,
                 'account_name': account.company_name,
                 'campaigns': campaigns_data
-            })
+            }
+            
+            meta = {
+                'operation': 'account_campaigns_retrieval',
+                'campaigns_count': len(campaigns_data)
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Retrieved {len(campaigns_data)} campaigns for account {account.company_name}",
+                data=data,
+                meta=meta
+            )
+            
         except Account.DoesNotExist:
-            return Response(
-                {'success': False, 'error': 'Account not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
     
-
     @action(detail=True, methods=['post'])
     def remove_account(self, request, pk=None):
         """
@@ -425,20 +367,15 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             if not campaign_target:
                 raise StandardizedValidationError(CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN)
             
-            # Remove account from campaign
-            result = CampaignManager.remove_account_from_campaign(
+            # Remove account from campaign - CampaignManager now returns Response directly
+            return CampaignManager.remove_account_from_campaign(
                 campaign=campaign,
                 account=account,
                 notes=notes
             )
             
-            return Response(result)
-            
-        except StandardizedValidationError:
-            # Re-raise validation errors
-            raise
-        except StandardizedPermissionDenied:
-            # Re-raise permission errors
+        except (StandardizedValidationError, StandardizedPermissionDenied):
+            # Re-raise standardized exceptions
             raise
         except Exception as e:
             # Convert unexpected errors
@@ -461,15 +398,14 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         
         # Validate ownership or permissions
         if campaign.owner != request.user and not request.user.has_perm('campaign.change_campaign'):
-            raise StandardizedValidationError("You don't have permission to modify this campaign")
+            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
         
         contact_id = request.data.get('contact_id')
         notes = request.data.get('notes')
         
         if not contact_id:
-            return Response(
-                {'success': False, 'error': 'Contact ID is required'},
-                status=status.HTTP_400_BAD_REQUEST
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field="Contact ID")
             )
         
         try:
@@ -479,23 +415,15 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             # Validate client scope
             self.validate_client_id(contact)
             
-            result = CampaignManager.remove_contact_from_campaign(
+            # Remove contact from campaign - CampaignManager now returns Response directly
+            return CampaignManager.remove_contact_from_campaign(
                 campaign=campaign,
                 contact=contact,
                 notes=notes
             )
             
-            return Response(result)
         except Contact.DoesNotExist:
-            return Response(
-                {'success': False, 'error': 'Contact not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
     
     @action(detail=True, methods=['get'])
     def activities(self, request, pk=None):
@@ -509,7 +437,7 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         
         # Validate ownership or permissions
         if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
-            raise StandardizedValidationError("You don't have permission to view this campaign")
+            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
         
         # Parse status filter
         status_filter = None
@@ -517,18 +445,11 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         if status_param:
             status_filter = status_param.split(',')
         
-        try:
-            result = CampaignManager.get_campaign_activities(
-                campaign=campaign,
-                status_filter=status_filter
-            )
-            
-            return Response(result)
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # CampaignManager.get_campaign_activities now returns Response directly
+        return CampaignManager.get_campaign_activities(
+            campaign=campaign,
+            status_filter=status_filter
+        )
 
     @action(detail=True, methods=['get'])
     def account_activities(self, request, pk=None):
@@ -543,14 +464,13 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         
         # Validate ownership or permissions
         if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
-            raise StandardizedValidationError("You don't have permission to view this campaign")
+            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
         
         # Get account ID
         account_id = request.query_params.get('account_id')
         if not account_id:
-            return Response(
-                {'success': False, 'error': 'Account ID is required'},
-                status=status.HTTP_400_BAD_REQUEST
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field="account_id")
             )
         
         # Parse status filter
@@ -566,23 +486,15 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             # Validate client scope
             self.validate_client_id(account)
             
-            result = CampaignManager.get_account_activities_in_campaign(
+            # CampaignManager.get_account_activities_in_campaign now returns Response directly
+            return CampaignManager.get_account_activities_in_campaign(
                 campaign=campaign,
                 account=account,
                 status_filter=status_filter
             )
             
-            return Response(result)
         except Account.DoesNotExist:
-            return Response(
-                {'success': False, 'error': 'Account not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
     @action(detail=True, methods=['get'])
     def contact_activities(self, request, pk=None):
@@ -597,14 +509,13 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         
         # Validate ownership or permissions
         if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
-            raise StandardizedValidationError("You don't have permission to view this campaign")
+            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
         
         # Get contact ID
         contact_id = request.query_params.get('contact_id')
         if not contact_id:
-            return Response(
-                {'success': False, 'error': 'Contact ID is required'},
-                status=status.HTTP_400_BAD_REQUEST
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field="contact_id")
             )
         
         # Parse status filter
@@ -620,27 +531,107 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             # Validate client scope
             self.validate_client_id(contact)
             
-            result = CampaignManager.get_contact_activities_in_campaign(
+            # CampaignManager.get_contact_activities_in_campaign now returns Response directly
+            return CampaignManager.get_contact_activities_in_campaign(
                 campaign=campaign,
                 contact=contact,
                 status_filter=status_filter
             )
             
-            return Response(result)
         except Contact.DoesNotExist:
-            return Response(
-                {'success': False, 'error': 'Contact not found'},
-                status=status.HTTP_404_NOT_FOUND
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+    @action(detail=True, methods=['post'], url_path='add-manual-activity')
+    def add_manual_activity(self, request, pk=None):
+        """
+        Add a manual activity for a contact in a non-sequence campaign
+        
+        Expected payload:
+        {
+            "contact_id": 123,
+            "activity_type": "CALL",
+            "result": "SUCCESSFUL",  # Activity result
+            "notes": "Optional notes",
+            "meeting_date": "2025-01-15",  # Optional, for successful calls
+            "callback_date": "2025-01-10",  # Optional, for callbacks
+        }
+        """
+        campaign = self.get_object()
+        
+        # Verify this is a non-sequence campaign
+        if campaign.sequence_type:
+            raise StandardizedValidationError(
+                "This operation is only for campaigns without sequences"
             )
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
+        
+        # Validate required fields
+        contact_id = request.data.get('contact_id')
+        activity_type = request.data.get('activity_type')
+        result = request.data.get('result')
+        
+        if not all([contact_id, activity_type, result]):
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field="contact_id, activity_type, and result")
             )
+        
+        try:
+            # Get the contact
+            from apps.accounts.models import Contact
+            contact = Contact.objects.get(id=contact_id)
+            
+            # Validate client scope
+            self.validate_client_id(contact)
+            
+            # Get the campaign target for this contact
+            target = None
+            for t in campaign.targets.all():
+                if t.contact_id == contact_id:
+                    target = t
+                    break
+                    
+                # Check if contact belongs to this target's account
+                if (t.account_id == contact.account_id or 
+                    (t.lead and t.lead.account_id == contact.account_id) or
+                    (t.target_opportunity and t.target_opportunity.account_id == contact.account_id)):
+                    target = t
+                    break
+            
+            if not target:
+                raise StandardizedValidationError(CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN)
+            
+            # Prepare additional data
+            kwargs = {}
+            if request.data.get('meeting_date'):
+                from datetime import datetime
+                kwargs['meeting_date'] = datetime.strptime(
+                    request.data.get('meeting_date'), '%Y-%m-%d'
+                ).date()
+            
+            if request.data.get('callback_date'):
+                from datetime import datetime
+                kwargs['callback_date'] = datetime.strptime(
+                    request.data.get('callback_date'), '%Y-%m-%d'
+                ).date()
+            
+            # CampaignManager.add_manual_activity_to_campaign now returns Response directly
+            return CampaignManager.add_manual_activity_to_campaign(
+                campaign=campaign,
+                contact=contact,
+                activity_type=activity_type,
+                result=result,
+                notes=request.data.get('notes', ''),
+                user=request.user,
+                **kwargs
+            )
+            
+        except Contact.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
 
 class ActivityResultViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ViewSet):
     """
     ViewSet for handling activity results and completion
+    Now returns standardized responses consistently
     """
     
     @action(detail=True, methods=['post'])
@@ -662,14 +653,16 @@ class ActivityResultViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.
             
             # Validate ownership
             if activity.owner != request.user:
-                raise StandardizedValidationError("You can only complete your own activities")
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
             
             # Get result data
             result = request.data.get('result')
             notes = request.data.get('notes', '')
             
             if not result:
-                raise StandardizedValidationError("Result is required")
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="result")
+                )
             
             # Prepare kwargs for additional data
             kwargs = {}
@@ -686,26 +679,16 @@ class ActivityResultViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.
             if 'disqualify_account' in request.data:
                 kwargs['disqualify_account'] = request.data.get('disqualify_account')
             
-            # Process the result
-            result_info = CampaignManager.complete_activity(
+            # Process the result - CampaignManager.complete_activity now returns Response directly
+            return CampaignManager.complete_activity(
                 activity=activity,
                 result=result,
                 notes=notes,
                 **kwargs
             )
             
-            return Response(result_info)
-            
         except Activity.DoesNotExist:
-            return Response(
-                {'success': False, 'error': 'Activity not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
     
     @action(detail=True, methods=['post'])
     def add_email_response(self, request, pk=None):
@@ -724,15 +707,22 @@ class ActivityResultViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.
             
             # Validate ownership
             if activity.owner != request.user:
-                raise StandardizedValidationError("You can only add responses to your own activities")
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
             
             # Validate activity type
             if activity.activity_type not in [Activity.ActivityType.EMAIL, Activity.ActivityType.LINKEDIN]:
-                raise StandardizedValidationError("Can only add responses to email/LinkedIn activities")
+                raise StandardizedValidationError(
+                    "Can only add responses to email/LinkedIn activities"
+                )
             
             # Get result data
             result = request.data.get('result')
             notes = request.data.get('notes', '')
+            
+            if not result:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="result")
+                )
             
             # Prepare kwargs
             kwargs = {}
@@ -741,167 +731,13 @@ class ActivityResultViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.
                     request.data.get('meeting_date'), '%Y-%m-%d'
                 ).date()
             
-            # Process the response
-            result_info = CampaignResultService.process_activity_result(
+            # Process the response using the result service directly - returns Response directly
+            return CampaignResultService.process_activity_result(
                 activity=activity,
                 result=result,
                 notes=notes,
                 **kwargs
             )
             
-            return Response(result_info)
-            
         except Activity.DoesNotExist:
-            return Response(
-                {'success': False, 'error': 'Activity not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-    
-    @action(detail=True, methods=['post'], url_path='add-manual-activity')
-    def add_manual_activity(self, request, pk=None):
-        """
-        Add a manual activity for a contact in a non-sequence campaign
-        
-        Expected payload:
-        {
-            "contact_id": 123,
-            "activity_type": "CALL",
-            "result": "SUCCESSFUL",  # Activity result
-            "notes": "Optional notes",
-            "meeting_date": "2025-01-15",  # Optional, for successful calls
-            "callback_date": "2025-01-10",  # Optional, for callbacks
-        }
-        """
-        campaign = self.get_object()
-        
-        # Verify this is a non-sequence campaign
-        if campaign.sequence_type:
-            return Response({
-                'success': False,
-                'error': 'This endpoint is only for campaigns without sequences'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Validate required fields
-        contact_id = request.data.get('contact_id')
-        activity_type = request.data.get('activity_type')
-        result = request.data.get('result')
-        
-        if not all([contact_id, activity_type, result]):
-            return Response({
-                'success': False,
-                'error': 'contact_id, activity_type, and result are required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            # Get the contact
-            from apps.accounts.models import Contact
-            contact = Contact.objects.get(id=contact_id)
-            
-            # Get the campaign target for this contact
-            target = None
-            for t in campaign.targets.all():
-                if t.contact_id == contact_id:
-                    target = t
-                    break
-                
-                # Check if contact belongs to this target's account
-                if (t.account_id == contact.account_id or 
-                    (t.lead and t.lead.account_id == contact.account_id) or
-                    (t.target_opportunity and t.target_opportunity.account_id == contact.account_id)):
-                    target = t
-                    break
-            
-            if not target:
-                return Response({
-                    'success': False,
-                    'error': 'Contact not found in campaign targets'
-                }, status=status.HTTP_404_NOT_FOUND)
-            
-            # Use current datetime for the activity
-            now = timezone.now()
-            
-            # Transaction to ensure consistency
-            with transaction.atomic():
-                # Create activity
-                activity = Activity.objects.create(
-                    title=f"{Activity.ActivityType(activity_type).label} with {contact.first_name} {contact.last_name}",
-                    activity_type=activity_type,
-                    description=request.data.get('notes', ''),
-                    account=contact.account,
-                    owner=request.user,
-                    status=Activity.Status.COMPLETED,
-                    scheduled_start=now,
-                    completed_at=now,
-                    outcome_notes=request.data.get('notes', ''),
-                    client_id=campaign.client_id
-                )
-                
-                # Add contact relationship
-                activity.contacts.add(contact)
-                
-                # Create campaign relationship
-                ActivityCampaign.objects.create(
-                    activity=activity,
-                    campaign=campaign,
-                    campaign_target=target,
-                    client_id=campaign.client_id
-                )
-                
-                # Add sequence info for consistent tracking (with manual source type)
-                ActivitySequence.objects.create(
-                    activity=activity,
-                    source_type=ActivitySequence.SourceType.MANUAL,
-                    sequence_position=1,  # Always position 1 for manual activities
-                    min_delay_days=0,
-                    client_id=campaign.client_id
-                )
-                
-                # Process the result
-                # Prepare additional data
-                kwargs = {}
-                if request.data.get('meeting_date'):
-                    from datetime import datetime
-                    kwargs['meeting_date'] = datetime.strptime(
-                        request.data.get('meeting_date'), '%Y-%m-%d'
-                    ).date()
-                
-                if request.data.get('callback_date'):
-                    from datetime import datetime
-                    kwargs['callback_date'] = datetime.strptime(
-                        request.data.get('callback_date'), '%Y-%m-%d'
-                    ).date()
-                
-                # Process the result
-                from apps.campaign.services.campaign_result_service import CampaignResultService
-                result_info = CampaignResultService.process_activity_result(
-                    activity=activity,
-                    result=result,
-                    notes=request.data.get('notes', ''),
-                    **kwargs
-                )
-            
-            # Get updated playlist
-            updated_playlist = self.get_campaign_playlist(campaign, limit=10)
-            
-            return Response({
-                'success': True,
-                'activity_id': activity.id,
-                'result': result_info,
-                'updated_playlist': updated_playlist
-            })
-            
-        except Contact.DoesNotExist:
-            return Response({
-                'success': False,
-                'error': 'Contact not found'
-            }, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({
-                'success': False,
-                'error': str(e)
-            }, status=status.HTTP_400_BAD_REQUEST)
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)

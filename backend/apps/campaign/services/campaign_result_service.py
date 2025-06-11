@@ -3,25 +3,42 @@ from typing import List, Dict, Optional
 from datetime import date, timedelta
 from django.utils import timezone
 from django.db import transaction
+from rest_framework.response import Response
 from apps.activities.models import Activity, ActivitySequence
 from apps.campaign.models import Campaign, CampaignTarget
 from apps.accounts.models import Contact
 from apps.sequence.sequences.chasing_sequence import ChasingSequence
-from core.error_messages import CampaignErrorMessages, CoreErrorMessages
+from apps.campaign.utils.standardized_responses import (
+    StandardizedSuccessResponse, 
+    CampaignResponseBuilder, 
+    CampaignSuccessMessages
+)
 from core.exceptions import StandardizedValidationError
+from core.error_messages import CampaignErrorMessages, CoreErrorMessages
 from apps.campaign.config.variables import TIER_MAX_ATTEMPTS, TIER_PRIORITY_SCORES
 
 
 class CampaignResultService:
     """
     Service for handling campaign activity results and managing sequence progression
+    Now returns standardized Response objects
     """
     
+    @classmethod
     def process_activity_result(cls, activity: Activity, result: str, 
-                           notes: str = None, **kwargs) -> Dict:
+                           notes: str = None, **kwargs) -> Response:
         """
         Process the result of an activity and handle appropriate actions
         Works for both sequence and non-sequence campaigns
+        
+        Args:
+            activity: The activity to process
+            result: The result code (e.g., 'NO_ANSWER', 'SUCCESSFUL', etc.)
+            notes: Optional notes about the result
+            **kwargs: Additional data like callback_date, meeting_date, etc.
+            
+        Returns:
+            Response: Standardized response with result processing information
         """
         try:
             # Validate activity exists and is accessible
@@ -64,9 +81,19 @@ class CampaignResultService:
     
     @classmethod
     def _handle_call_result(cls, activity: Activity, result: str, 
-                       notes: str = None, is_sequence_campaign: bool = True, **kwargs) -> Dict:
+                       notes: str = None, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle call activity results with unified logic for sequence and non-sequence campaigns
+        
+        Args:
+            activity: The call activity
+            result: The result code
+            notes: Optional notes
+            is_sequence_campaign: Whether this is part of a sequence campaign
+            **kwargs: Additional data
+            
+        Returns:
+            Response: Standardized response with call result processing
         """
         sequence_info = getattr(activity, 'sequence_info', None)
         campaign_info = getattr(activity, 'campaign_info', None)
@@ -94,101 +121,160 @@ class CampaignResultService:
         
         else:
             raise StandardizedValidationError(
-            CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=result)
-        )
+                CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=result)
+            )
         
     @classmethod
     def _handle_invalid_phone_number(cls, activity: Activity, sequence_info: ActivitySequence,
-                                    notes: str, is_sequence_campaign: bool = True, **kwargs) -> Dict:
+                                    notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle invalid phone number - regenerate sequence without phone
+        
+        Returns:
+            Response: Standardized response with sequence regeneration info
         """
-        contact = activity.contacts.first()
-        campaign = activity.campaign_info.campaign if hasattr(activity, 'campaign_info') else None
-        campaign_target = activity.campaign_info.campaign_target if hasattr(activity, 'campaign_info') else None
-        
-        # Complete current activity
-        activity.complete(outcome_notes=f"Invalid phone number. {notes}" if notes else "Invalid phone number")
-        
-        # Mark contact as having no valid phone
-        if contact:
-            contact.phone_is_valid = False
-            contact.save()
-        
-        # Cancel all remaining activities for this contact in this campaign
-        if is_sequence_campaign: 
-            remaining_activities = Activity.objects.filter(
-                campaign_info__campaign=campaign,
-                contacts=contact,
-                status=Activity.Status.PLANNED
-            )
-            remaining_activities.update(status=Activity.Status.CANCELLED, outcome_notes="Cancelled due to invalid phone - sequence regenerated")
-        
-            # Regenerate sequence without phone
-            new_activities = cls._regenerate_sequence_without_phone(
-                campaign, campaign_target, contact, sequence_info.sequence_position
-            )
-        
-            return {
-                'success': True,
-                'action': 'sequence_regenerated',
-                'message': f'Invalid phone number. Regenerated sequence without phone calls',
-                'new_activities_count': len(new_activities)
+        try:
+            contact = activity.contacts.first()
+            campaign = activity.campaign_info.campaign if hasattr(activity, 'campaign_info') else None
+            campaign_target = activity.campaign_info.campaign_target if hasattr(activity, 'campaign_info') else None
+            
+            # Complete current activity
+            activity.complete(outcome_notes=f"Invalid phone number. {notes}" if notes else "Invalid phone number")
+            
+            # Mark contact as having no valid phone
+            if contact:
+                contact.phone_is_valid = False
+                contact.save()
+            
+            new_activities_count = 0
+            
+            # Cancel all remaining activities for this contact in this campaign
+            if is_sequence_campaign and campaign: 
+                remaining_activities = Activity.objects.filter(
+                    campaign_info__campaign=campaign,
+                    contacts=contact,
+                    status=Activity.Status.PLANNED
+                )
+                cancelled_count = remaining_activities.count()
+                remaining_activities.update(
+                    status=Activity.Status.CANCELLED, 
+                    outcome_notes="Cancelled due to invalid phone - sequence regenerated"
+                )
+            
+                # Regenerate sequence without phone
+                new_activities = cls._regenerate_sequence_without_phone(
+                    campaign, campaign_target, contact, sequence_info.sequence_position
+                )
+                new_activities_count = len(new_activities)
+            
+            # Prepare response data
+            data = {
+                'activity_id': activity.id,
+                'action': 'sequence_regenerated' if is_sequence_campaign else 'completed',
+                'contact_id': contact.id if contact else None,
+                'phone_marked_invalid': True,
+                'new_activities_count': new_activities_count
             }
-        
-        return {
-                'success': True,
-                'message': f'Invalid phone number.',
+            
+            if is_sequence_campaign:
+                message = f'Invalid phone number. Regenerated sequence without phone calls ({new_activities_count} new activities)'
+            else:
+                message = 'Invalid phone number recorded'
+            
+            meta = {
+                'operation': 'invalid_phone_handling',
+                'sequence_regenerated': is_sequence_campaign,
+                'activities_created': new_activities_count
             }
+            
+            return StandardizedSuccessResponse.success(
+                message=message,
+                data=data,
+                meta=meta
+            )
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_SEQUENCE_GENERATION_FAILED.format(reason=str(e))
+            )
 
     
     @classmethod
     def _handle_email_bounced(cls, activity: Activity, sequence_info: ActivitySequence,
-                             notes: str, is_sequence_campaign: bool = True, **kwargs) -> Dict:
+                             notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle bounced email - regenerate sequence without email
+        
+        Returns:
+            Response: Standardized response with sequence regeneration info
         """
-        contact = activity.contacts.first()
-        campaign = activity.campaign_info.campaign if hasattr(activity, 'campaign_info') else None
-        campaign_target = activity.campaign_info.campaign_target if hasattr(activity, 'campaign_info') else None
-        
-        # Complete current activity
-        activity.complete(outcome_notes=f"Email bounced. {notes}" if notes else "Email bounced")
-        
-        # Mark contact as having invalid email
-        if contact:
-            contact.email_is_valid = False
-            contact.save()
-        
-        if is_sequence_campaign:
-            # Cancel all remaining activities for this contact in this campaign
-            remaining_activities = Activity.objects.filter(
-                campaign_info__campaign=campaign,
-                contacts=contact,
-                status=Activity.Status.PLANNED
-            )
-            remaining_activities.update(status=Activity.Status.CANCELLED, outcome_notes="Cancelled due to bounced email - sequence regenerated")
+        try:
+            contact = activity.contacts.first()
+            campaign = activity.campaign_info.campaign if hasattr(activity, 'campaign_info') else None
+            campaign_target = activity.campaign_info.campaign_target if hasattr(activity, 'campaign_info') else None
             
-            # Regenerate sequence without email
-            has_phone = bool(contact.phone and getattr(contact, 'phone_is_valid', True))
-            has_linkedin = bool(contact.linkedin)
+            # Complete current activity
+            activity.complete(outcome_notes=f"Email bounced. {notes}" if notes else "Email bounced")
             
-            new_activities = cls._regenerate_sequence_for_contact(
-                campaign, campaign_target, contact, sequence_info.sequence_position,
-                has_phone=has_phone, has_email=False, has_linkedin=has_linkedin
-            )
+            # Mark contact as having invalid email
+            if contact:
+                contact.email_is_valid = False
+                contact.save()
             
-            return {
-                'success': True,
-                'action': 'sequence_regenerated',
-                'message': f'Email bounced. Regenerated sequence without emails',
-                'new_activities_count': len(new_activities)
+            new_activities_count = 0
+            
+            if is_sequence_campaign and campaign:
+                # Cancel all remaining activities for this contact in this campaign
+                remaining_activities = Activity.objects.filter(
+                    campaign_info__campaign=campaign,
+                    contacts=contact,
+                    status=Activity.Status.PLANNED
+                )
+                remaining_activities.update(
+                    status=Activity.Status.CANCELLED, 
+                    outcome_notes="Cancelled due to bounced email - sequence regenerated"
+                )
+                
+                # Regenerate sequence without email
+                has_phone = bool(contact.phone and getattr(contact, 'phone_is_valid', True))
+                has_linkedin = bool(contact.linkedin)
+                
+                new_activities = cls._regenerate_sequence_for_contact(
+                    campaign, campaign_target, contact, sequence_info.sequence_position,
+                    has_phone=has_phone, has_email=False, has_linkedin=has_linkedin
+                )
+                new_activities_count = len(new_activities)
+            
+            # Prepare response data
+            data = {
+                'activity_id': activity.id,
+                'action': 'sequence_regenerated' if is_sequence_campaign else 'completed',
+                'contact_id': contact.id if contact else None,
+                'email_marked_invalid': True,
+                'new_activities_count': new_activities_count
             }
-    
-        return {
-            'success': True,
-            'message': f'Email bounced.',
-        }
+            
+            if is_sequence_campaign:
+                message = f'Email bounced. Regenerated sequence without emails ({new_activities_count} new activities)'
+            else:
+                message = 'Email bounce recorded'
+            
+            meta = {
+                'operation': 'email_bounce_handling',
+                'sequence_regenerated': is_sequence_campaign,
+                'activities_created': new_activities_count
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message=message,
+                data=data,
+                meta=meta
+            )
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_SEQUENCE_GENERATION_FAILED.format(reason=str(e))
+            )
     
     @classmethod
     def _regenerate_sequence_without_phone(cls, campaign: Campaign, campaign_target: CampaignTarget,
@@ -293,289 +379,460 @@ class CampaignResultService:
     
     @classmethod
     def _handle_no_answer_call(cls, activity: Activity, sequence_info: ActivitySequence,
-                              notes: str = None, is_sequence_campaign: bool = True, **kwargs) -> Dict:
+                              notes: str = None, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle no answer for calls - increment attempts based on tier
+        
+        Returns:
+            Response: Standardized response with attempt tracking
         """
-        if is_sequence_campaign:
-            # Get tier-based max attempts
-            account_tier = getattr(activity.account, 'tier', 'C')
-            tier_max_attempts = TIER_MAX_ATTEMPTS.get(account_tier, 2)
-            
-            # Increment call attempts
-            if sequence_info:
+        try:
+            if is_sequence_campaign and sequence_info:
+                # Get tier-based max attempts
+                account_tier = getattr(activity.account, 'tier', 'C')
+                tier_max_attempts = TIER_MAX_ATTEMPTS.get(account_tier, 2)
+                
+                # Increment call attempts
                 sequence_info.call_attempts += 1
                 sequence_info.save()
-            
-            # Check if we've reached max attempts for this tier
-            if sequence_info and sequence_info.call_attempts >= tier_max_attempts:
-                # Mark activity as completed and move to next step
-                activity.complete(outcome_notes=f"No answer after {sequence_info.call_attempts} attempts")
                 
-                # Make next activity ready if it exists
-                cls._activate_next_activity(activity)
+                # Check if we've reached max attempts for this tier
+                if sequence_info.call_attempts >= tier_max_attempts:
+                    # Mark activity as completed and move to next step
+                    activity.complete(outcome_notes=f"No answer after {sequence_info.call_attempts} attempts")
+                    
+                    # Make next activity ready if it exists
+                    cls._activate_next_activity(activity)
+                    
+                    data = {
+                        'activity_id': activity.id,
+                        'action': 'activity_completed',
+                        'attempts_made': sequence_info.call_attempts,
+                        'max_attempts': tier_max_attempts,
+                        'sequence_progressed': True
+                    }
+                    
+                    message = f'Call completed after {sequence_info.call_attempts} attempts'
+                    
+                else:
+                    # Activity stays active for another attempt
+                    activity.outcome_notes = f"No answer - attempt {sequence_info.call_attempts}/{tier_max_attempts}"
+                    if notes:
+                        activity.outcome_notes += f". {notes}"
+                    activity.save()
+                    
+                    data = {
+                        'activity_id': activity.id,
+                        'action': 'retry_needed',
+                        'attempts_made': sequence_info.call_attempts,
+                        'max_attempts': tier_max_attempts,
+                        'sequence_progressed': False
+                    }
+                    
+                    message = f'Attempt {sequence_info.call_attempts}/{tier_max_attempts} - try again'
                 
-                return {
-                    'success': True,
-                    'action': 'activity_completed',
-                    'message': f'Call completed after {sequence_info.call_attempts} attempts',
-                    'attempts_made': sequence_info.call_attempts,
-                    'max_attempts': tier_max_attempts
+                meta = {
+                    'operation': 'no_answer_handling',
+                    'tier': account_tier,
+                    'max_attempts_for_tier': tier_max_attempts
                 }
+                
             else:
-                # Activity stays active for another attempt
-                activity.outcome_notes = f"No answer - attempt {sequence_info.call_attempts}/{tier_max_attempts}"
-                if notes:
-                    activity.outcome_notes += f". {notes}"
-                activity.save()
+                # Non-sequence campaign handling
+                activity.complete(outcome_notes=f"No answer. {notes}" if notes else "No answer")
                 
-                return {
-                    'success': True,
-                    'action': 'retry_needed',
-                    'message': f'Attempt {sequence_info.call_attempts}/{tier_max_attempts} - try again',
-                    'attempts_made': sequence_info.call_attempts,
-                    'max_attempts': tier_max_attempts
+                data = {
+                    'activity_id': activity.id,
+                    'action': 'completed_no_change',
+                    'is_sequence_campaign': False
                 }
-        else:
-            """
-            Handle no answer for calls in non-sequence campaigns
-            """
-            # Complete the activity but leave contact in the queue
-            activity.complete(outcome_notes=f"No answer. {notes}" if notes else "No answer")
+                
+                message = 'Activity completed but contact remains in queue'
+                meta = {
+                    'operation': 'no_answer_handling',
+                    'sequence_campaign': False
+                }
             
-            # We could increment a counter in the campaign target if needed
-            # campaign_target.no_answer_count = (campaign_target.no_answer_count or 0) + 1
-            # campaign_target.save()
+            return StandardizedSuccessResponse.success(
+                message=message,
+                data=data,
+                meta=meta
+            )
             
-            return {
-                'success': True,
-                'action': 'completed_no_change',
-                'message': 'Activity completed but contact remains in queue',
-                'is_sequence_campaign': False
-            }
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+            )
 
     
     @classmethod
     def _handle_wrong_contact(cls, activity: Activity, sequence_info: ActivitySequence,
-                             notes: str, is_sequence_campaign: bool = True, **kwargs) -> Dict:
+                             notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle wrong contact - remove this contact from sequence
-        """
-        # Complete current activity
-        activity.complete(outcome_notes=f"Wrong contact. {notes}" if notes else "Wrong contact")
-
-
-        # Cancel remaining activities for this contact in this campaign
-        cls._cancel_contact_sequence(activity)
         
-        return {
-            'success': True,
-            'action': 'contact_removed',
-            'message': 'Contact removed from sequence (wrong contact)'
-        }
+        Returns:
+            Response: Standardized response with contact removal info
+        """
+        try:
+            # Complete current activity
+            activity.complete(outcome_notes=f"Wrong contact. {notes}" if notes else "Wrong contact")
+
+            # Cancel remaining activities for this contact in this campaign
+            cancelled_count = cls._cancel_contact_sequence(activity)
+            
+            data = {
+                'activity_id': activity.id,
+                'action': 'contact_removed',
+                'activities_cancelled': cancelled_count
+            }
+            
+            meta = {
+                'operation': 'wrong_contact_handling',
+                'activities_cancelled': cancelled_count
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message='Contact removed from sequence (wrong contact)',
+                data=data,
+                meta=meta
+            )
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+            )
     
     @classmethod
     def _handle_callback_requested(cls, activity: Activity, sequence_info: ActivitySequence,
-                              notes: str, is_sequence_campaign: bool = True, **kwargs) -> Dict:
+                              notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle callback request - pause sequence or prioritize contact for non-sequence campaigns
+        
+        Returns:
+            Response: Standardized response with callback scheduling info
         """
-        callback_date = kwargs.get('callback_date')
-        callback_type = kwargs.get('callback_type', activity.activity_type)
-        
-        if not callback_date:
-            return {'success': False, 'error': 'Callback date is required'}
-        
-        # Complete current activity
-        activity.complete(outcome_notes=f"Callback requested for {callback_date}. {notes}" if notes else f"Callback requested for {callback_date}")
-        
-        # Common behavior: update campaign target status
-        if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
-            campaign_target = activity.campaign_info.campaign_target
-            # Mark campaign target with a special status or field for callback tracking
-            campaign_target.callback_date = callback_date  # This field would need to be added to the CampaignTarget model
-            campaign_target.save()
-        
-        # Sequence-specific behavior
-        if is_sequence_campaign and sequence_info:
-            sequence_info.callback_requested_date = callback_date
-            sequence_info.sequence_paused_until = callback_date
-            sequence_info.save()
+        try:
+            callback_date = kwargs.get('callback_date')
+            callback_type = kwargs.get('callback_type', activity.activity_type)
             
-            # Update next activity if it exists
-            next_activity = activity.next_activity
-            if next_activity:
-                # Update next activity type if specified
-                if callback_type != next_activity.activity_type:
-                    next_activity.activity_type = callback_type
-                    next_activity.title = f"Callback: {next_activity.title}"
-                    next_activity.save()
+            if not callback_date:
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.ACTIVITY_CALLBACK_DATE_REQUIRED
+                )
+            
+            # Complete current activity
+            activity.complete(outcome_notes=f"Callback requested for {callback_date}. {notes}" if notes else f"Callback requested for {callback_date}")
+            
+            # Common behavior: update campaign target status
+            if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
+                campaign_target = activity.campaign_info.campaign_target
+                # Mark campaign target with a special status or field for callback tracking
+                campaign_target.callback_date = callback_date  # This field would need to be added to the CampaignTarget model
+                campaign_target.save()
+            
+            # Sequence-specific behavior
+            if is_sequence_campaign and sequence_info:
+                sequence_info.callback_requested_date = callback_date
+                sequence_info.sequence_paused_until = callback_date
+                sequence_info.save()
+                
+                # Update next activity if it exists
+                next_activity = activity.next_activity
+                if next_activity:
+                    # Update next activity type if specified
+                    if callback_type != next_activity.activity_type:
+                        next_activity.activity_type = callback_type
+                        next_activity.title = f"Callback: {next_activity.title}"
+                        next_activity.save()
+            
+            # Non-sequence specific behavior
+            else:
+                # For non-sequence campaigns, we need to ensure this contact is prioritized when the callback date comes
+                contact = activity.contacts.first()
+                if contact:
+                    # We could add a special field to track callbacks for non-sequence campaigns
+                    # For example, by adding a contact_status field to CampaignTarget
+                    if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
+                        campaign_target = activity.campaign_info.campaign_target
+                        campaign_target.status = 'CALLBACK_PENDING'  # Custom status for non-sequence targets
+                        campaign_target.save()
+            
+            data = {
+                'activity_id': activity.id,
+                'action': 'callback_scheduled',
+                'callback_date': callback_date,
+                'callback_type': callback_type,
+                'is_sequence_campaign': is_sequence_campaign
+            }
+            
+            meta = {
+                'operation': 'callback_handling',
+                'callback_date': callback_date.isoformat(),
+                'sequence_paused': is_sequence_campaign
+            }
+            
+            return CampaignResponseBuilder.activity_completed(
+                result_action='callback_scheduled',
+                activity_id=activity.id,
+                additional_info={
+                    'callback_date': callback_date,
+                    'callback_type': callback_type
+                }
+            )
+            
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+            )
+    
+    @classmethod
+    def _handle_contact_not_available(cls, activity: Activity, sequence_info: ActivitySequence,
+                                    notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
+        """
+        Handle contact not available - similar to no answer but different tracking
         
-        # Non-sequence specific behavior
-        else:
-            # For non-sequence campaigns, we need to ensure this contact is prioritized when the callback date comes
-            contact = activity.contacts.first()
-            if contact:
-                # We could add a special field to track callbacks for non-sequence campaigns
-                # For example, by adding a contact_status field to CampaignTarget
-                if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
-                    campaign_target = activity.campaign_info.campaign_target
-                    campaign_target.status = 'CALLBACK_PENDING'  # Custom status for non-sequence targets
-                    campaign_target.save()
-        
-        return {
-            'success': True,
-            'action': 'callback_scheduled',
-            'message': f'Contact will be called back on {callback_date}',
-            'callback_date': callback_date,
-            'callback_type': callback_type,
-            'is_sequence_campaign': is_sequence_campaign
-        }
+        Returns:
+            Response: Standardized response
+        """
+        # For now, handle the same as no answer
+        return cls._handle_no_answer_call(activity, sequence_info, notes, is_sequence_campaign, **kwargs)
     
     @classmethod
     def _handle_successful_call(cls, activity: Activity, sequence_info: ActivitySequence,
-                            notes: str, is_sequence_campaign: bool = True, **kwargs) -> Dict:
+                            notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle successful call - create meeting and manage campaign target appropriately
         Works for both sequence and non-sequence campaigns
+        
+        Returns:
+            Response: Standardized response with meeting scheduling info
         """
-        meeting_date = kwargs.get('meeting_date')
-        
-        # Complete current activity
-        activity.complete(outcome_notes=f"Successfully scheduled meeting. {notes}" if notes else "Successfully scheduled meeting")
-        
-        # Get campaign information
-        campaign = None
-        campaign_target = None
-        if hasattr(activity, 'campaign_info'):
-            campaign_info = activity.campaign_info
-            campaign = campaign_info.campaign
-            campaign_target = campaign_info.campaign_target
-        
-        # Update campaign info
-        if hasattr(activity, 'campaign_info'):
-            campaign_info = activity.campaign_info
-            campaign_info.meeting_scheduled = True
-            campaign_info.save()
+        try:
+            meeting_date = kwargs.get('meeting_date')
             
-            # Update campaign target status
-            if campaign_target:
-                campaign_target.update_status(CampaignTarget.Status.MEETING_SECURED)
-        
-        # Create meeting activity if date provided
-        if meeting_date:
-            cls._create_meeting_activity(activity, meeting_date, notes)
-        
-        # For sequence campaigns, end the sequence
-        if is_sequence_campaign:
-            cls._complete_contact_sequence(activity)
-        else:
-            # For non-sequence campaigns, remove contact from queue
-            if campaign_target:
-                # Mark as completed so it doesn't appear in contact list
-                campaign_target.status = CampaignTarget.Status.COMPLETED
-                campaign_target.save()
-        
-        # Update campaign objectives
-        cls._update_campaign_objectives(activity, 'meeting_scheduled')
-        
-        # Determine which AE should receive this opportunity if it's converted later
-        assigned_ae = None
-        if campaign:
-            from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
-            receivers = campaign.get_receivers()
+            # Complete current activity
+            activity.complete(outcome_notes=f"Successfully scheduled meeting. {notes}" if notes else "Successfully scheduled meeting")
             
-            if receivers.exists():
-                assigned_ae = receivers.first()
-        
-        return {
-            'success': True,
-            'action': 'meeting_scheduled',
-            'message': 'Meeting scheduled successfully',
-            'meeting_date': meeting_date,
-            'assigned_ae': assigned_ae.id if assigned_ae else None,
-            'is_sequence_campaign': is_sequence_campaign
-        }
+            # Get campaign information
+            campaign = None
+            campaign_target = None
+            if hasattr(activity, 'campaign_info'):
+                campaign_info = activity.campaign_info
+                campaign = campaign_info.campaign
+                campaign_target = campaign_info.campaign_target
+            
+            # Update campaign info
+            if hasattr(activity, 'campaign_info'):
+                campaign_info = activity.campaign_info
+                campaign_info.meeting_scheduled = True
+                campaign_info.save()
+                
+                # Update campaign target status
+                if campaign_target:
+                    campaign_target.update_status(CampaignTarget.Status.MEETING_SECURED)
+            
+            # Create meeting activity if date provided
+            meeting_activity_id = None
+            if meeting_date:
+                meeting_activity = cls._create_meeting_activity(activity, meeting_date, notes)
+                meeting_activity_id = meeting_activity.id
+            
+            # For sequence campaigns, end the sequence
+            if is_sequence_campaign:
+                cancelled_count = cls._complete_contact_sequence(activity)
+            else:
+                # For non-sequence campaigns, remove contact from queue
+                if campaign_target:
+                    # Mark as completed so it doesn't appear in contact list
+                    campaign_target.status = CampaignTarget.Status.COMPLETED
+                    campaign_target.save()
+            
+            # Update campaign objectives
+            cls._update_campaign_objectives(activity, 'meeting_scheduled')
+            
+            # Determine which AE should receive this opportunity if it's converted later
+            assigned_ae = None
+            if campaign:
+                from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
+                receivers = campaign.get_receivers()
+                
+                if receivers.exists():
+                    assigned_ae = receivers.first()
+            
+            data = {
+                'activity_id': activity.id,
+                'action': 'meeting_scheduled',
+                'meeting_date': meeting_date,
+                'meeting_activity_id': meeting_activity_id,
+                'assigned_ae': assigned_ae.id if assigned_ae else None,
+                'is_sequence_campaign': is_sequence_campaign
+            }
+            
+            meta = {
+                'operation': 'successful_call_handling',
+                'meeting_created': bool(meeting_activity_id),
+                'sequence_completed': is_sequence_campaign
+            }
+            
+            return CampaignResponseBuilder.activity_completed(
+                result_action='meeting_scheduled',
+                activity_id=activity.id,
+                additional_info={
+                    'meeting_date': meeting_date,
+                    'meeting_activity_id': meeting_activity_id,
+                    'assigned_ae': assigned_ae.id if assigned_ae else None
+                }
+            )
+            
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+            )
     
     @classmethod
     def _handle_not_interested(cls, activity: Activity, sequence_info: ActivitySequence,
-                              notes: str, **kwargs) -> Dict:
+                              notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle not interested - option to disqualify contact or whole account
+        
+        Returns:
+            Response: Standardized response with disqualification info
         """
-        disqualify_account = kwargs.get('disqualify_account', False)
-        
-        # Complete current activity
-        activity.complete(outcome_notes=f"Not interested. {notes}" if notes else "Not interested")
-        
-        if disqualify_account:
-            # Cancel all activities for this account in this campaign
-            cls._cancel_account_sequence(activity)
-            return {
-                'success': True,
-                'action': 'account_disqualified',
-                'message': 'Account removed from campaign (not interested)'
+        try:
+            disqualify_account = kwargs.get('disqualify_account', False)
+            
+            # Complete current activity
+            activity.complete(outcome_notes=f"Not interested. {notes}" if notes else "Not interested")
+            
+            if disqualify_account:
+                # Cancel all activities for this account in this campaign
+                cancelled_count = cls._cancel_account_sequence(activity)
+                
+                data = {
+                    'activity_id': activity.id,
+                    'action': 'account_disqualified',
+                    'activities_cancelled': cancelled_count
+                }
+                
+                message = 'Account removed from campaign (not interested)'
+                
+            else:
+                # Cancel remaining activities for just this contact
+                cancelled_count = cls._cancel_contact_sequence(activity)
+                
+                data = {
+                    'activity_id': activity.id,
+                    'action': 'contact_disqualified',
+                    'activities_cancelled': cancelled_count
+                }
+                
+                message = 'Contact removed from sequence (not interested)'
+            
+            meta = {
+                'operation': 'not_interested_handling',
+                'account_disqualified': disqualify_account,
+                'activities_cancelled': cancelled_count
             }
-        else:
-            # Cancel remaining activities for just this contact
-            cls._cancel_contact_sequence(activity)
-            return {
-                'success': True,
-                'action': 'contact_disqualified',
-                'message': 'Contact removed from sequence (not interested)'
-            }
-    
+            
+            return StandardizedSuccessResponse.success(
+                message=message,
+                data=data,
+                meta=meta
+            )
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+            )
     
     @classmethod
     def _handle_email_linkedin_result(cls, activity: Activity, result: str,
-                                     notes: str = None, **kwargs) -> Dict:
+                                     notes: str = None, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle email/LinkedIn activity results
+        
+        Returns:
+            Response: Standardized response with email/LinkedIn result processing
         """
-        sequence_info = getattr(activity, 'sequence_info', None)
-        
-        # For emails/LinkedIn, typically we just complete and move to next
-        # unless there's a specific response
-        
-        if result == 'NO_RESPONSE':
-            # Wait for min_delay, then auto-progress to next step
-            activity.complete(outcome_notes=f"No response. {notes}" if notes else "No response")
-            cls._activate_next_activity(activity)
+        try:
+            sequence_info = getattr(activity, 'sequence_info', None)
             
-            return {
-                'success': True,
-                'action': 'completed_moving_next',
-                'message': 'Email/LinkedIn sent, moving to next step'
-            }
-        
-        elif result == 'POSITIVE_RESPONSE':
-            return cls._handle_successful_call(activity, sequence_info, notes, **kwargs)
-        
-        elif result == 'UNSUBSCRIBE_OPTOUT':
-            activity.complete(outcome_notes=f"Unsubscribed/Opted out. {notes}" if notes else "Unsubscribed/Opted out")
-            cls._cancel_contact_sequence(activity)
+            # For emails/LinkedIn, typically we just complete and move to next
+            # unless there's a specific response
             
-            return {
-                'success': True,
-                'action': 'contact_removed',
-                'message': 'Contact removed from sequence (unsubscribed)'
-            }
-        
-        elif result in ['SENT', 'DELIVERED', 'OPENED', 'CLICKED']:
-            # Standard email/LinkedIn metrics - complete and move to next
-            activity.complete(outcome_notes=notes)
-            cls._activate_next_activity(activity)
+            if result == 'NO_RESPONSE':
+                # Wait for min_delay, then auto-progress to next step
+                activity.complete(outcome_notes=f"No response. {notes}" if notes else "No response")
+                cls._activate_next_activity(activity)
+                
+                data = {
+                    'activity_id': activity.id,
+                    'action': 'completed_moving_next'
+                }
+                
+                message = 'Email/LinkedIn sent, moving to next step'
+                
+            elif result == 'POSITIVE_RESPONSE':
+                return cls._handle_successful_call(activity, sequence_info, notes, is_sequence_campaign, **kwargs)
             
-            return {
-                'success': True,
-                'action': 'completed',
-                'message': 'Activity completed'
+            elif result == 'UNSUBSCRIBE_OPTOUT':
+                activity.complete(outcome_notes=f"Unsubscribed/Opted out. {notes}" if notes else "Unsubscribed/Opted out")
+                cancelled_count = cls._cancel_contact_sequence(activity)
+                
+                data = {
+                    'activity_id': activity.id,
+                    'action': 'contact_removed',
+                    'activities_cancelled': cancelled_count
+                }
+                
+                message = 'Contact removed from sequence (unsubscribed)'
+                
+            elif result in ['SENT', 'DELIVERED', 'OPENED', 'CLICKED']:
+                # Standard email/LinkedIn metrics - complete and move to next
+                activity.complete(outcome_notes=notes)
+                cls._activate_next_activity(activity)
+                
+                data = {
+                    'activity_id': activity.id,
+                    'action': 'completed'
+                }
+                
+                message = 'Activity completed'
+            
+            elif result == 'BOUNCED':
+                return cls._handle_email_bounced(activity, sequence_info, notes, is_sequence_campaign, **kwargs)
+                
+            else:
+                # Invalid result for email/LinkedIn
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=result)
+                )
+            
+            meta = {
+                'operation': 'email_linkedin_handling',
+                'result': result,
+                'sequence_progressed': result in ['NO_RESPONSE', 'SENT', 'DELIVERED', 'OPENED', 'CLICKED']
             }
-        
-        else:
-            # Invalid result for email/LinkedIn
+            
+            return StandardizedSuccessResponse.success(
+                message=message,
+                data=data,
+                meta=meta
+            )
+            
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
             raise StandardizedValidationError(
-                CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=result)
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
             )
 
     
@@ -590,49 +847,70 @@ class CampaignResultService:
             pass
     
     @classmethod
-    def _cancel_contact_sequence(cls, activity: Activity):
+    def _cancel_contact_sequence(cls, activity: Activity) -> int:
         """
         Cancel remaining activities for this contact in this campaign
         For non-sequence campaigns, update the campaign target status
+        
+        Returns:
+            int: Number of activities cancelled
         """
         contact = activity.contacts.first()
         campaign = activity.campaign_info.campaign if hasattr(activity, 'campaign_info') else None
         campaign_target = activity.campaign_info.campaign_target if hasattr(activity, 'campaign_info') else None
         
+        cancelled_count = 0
+        
         # Cancel planned activities for this contact
         if contact and campaign:
-            Activity.objects.filter(
+            cancelled_activities = Activity.objects.filter(
                 campaign_info__campaign=campaign,
                 contacts=contact,
                 status=Activity.Status.PLANNED
-            ).update(status=Activity.Status.CANCELLED)
+            )
+            cancelled_count = cancelled_activities.count()
+            cancelled_activities.update(status=Activity.Status.CANCELLED)
         
         # For non-sequence campaigns, update the target status
         if campaign and campaign.sequence_type is None and campaign_target:
             campaign_target.status = CampaignTarget.Status.STOPPED
             campaign_target.save()
+        
+        return cancelled_count
     
     @classmethod
-    def _cancel_account_sequence(cls, activity: Activity):
+    def _cancel_account_sequence(cls, activity: Activity) -> int:
         """
         Cancel remaining activities for this account in this campaign
+        
+        Returns:
+            int: Number of activities cancelled
         """
         account = activity.account
         campaign = activity.campaign_info.campaign if hasattr(activity, 'campaign_info') else None
         
+        cancelled_count = 0
+        
         if account and campaign:
-            Activity.objects.filter(
+            cancelled_activities = Activity.objects.filter(
                 campaign_info__campaign=campaign,
                 account=account,
                 status=Activity.Status.PLANNED
-            ).update(status=Activity.Status.CANCELLED)
+            )
+            cancelled_count = cancelled_activities.count()
+            cancelled_activities.update(status=Activity.Status.CANCELLED)
+        
+        return cancelled_count
     
     @classmethod
-    def _complete_contact_sequence(cls, activity: Activity):
+    def _complete_contact_sequence(cls, activity: Activity) -> int:
         """
         Mark sequence as completed for this contact
+        
+        Returns:
+            int: Number of activities cancelled
         """
-        cls._cancel_contact_sequence(activity)
+        return cls._cancel_contact_sequence(activity)
     
     @classmethod
     def _create_meeting_activity(cls, activity: Activity, meeting_date: date, notes: str):
@@ -661,6 +939,8 @@ class CampaignResultService:
                 campaign=activity.campaign_info.campaign,
                 campaign_target=activity.campaign_info.campaign_target
             )
+        
+        return meeting_activity
     
     @classmethod
     def _update_campaign_objectives(cls, activity: Activity, objective_type: str):

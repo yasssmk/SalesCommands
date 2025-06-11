@@ -8,6 +8,12 @@ from apps.accounts.models import Contact, Account
 from .campaign_activity_service import CampaignActivityService
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, CampaignErrorMessages
+from rest_framework.response import Response
+from apps.campaign.utils.standardized_responses import (
+    StandardizedSuccessResponse, 
+    CampaignResponseBuilder, 
+    CampaignSuccessMessages
+)
 
 
 class CampaignCreationService:
@@ -21,7 +27,8 @@ class CampaignCreationService:
                                     target_accounts: List[int] = None,
                                     target_contacts: List[int] = None,
                                     target_leads: List[int] = None,
-                                    target_opportunities: List[int] = None) -> Dict:
+                                    target_opportunities: List[int] = None,
+                                    targeting_stats: Dict = None) -> Response:
         """
         Create a new campaign and generate all activities with optimized queries
         
@@ -31,99 +38,125 @@ class CampaignCreationService:
             target_contacts: Optional list of specific contact IDs
             target_leads: Optional list of specific lead IDs
             target_opportunities: Optional list of specific opportunity IDs
+            targeting_stats: Optional targeting statistics from preparation
             
         Returns:
-            Dictionary with campaign creation results
+            Response: Standardized API response with campaign creation results
         """
-        with transaction.atomic():
-            # Validate required client_id
-            client_id = campaign_data.get('client_id')
-            if not client_id:
-                raise StandardizedValidationError(CoreErrorMessages.CLIENT_ID_REQUIRED)
-            
-            # Create the campaign
-            campaign = Campaign.objects.create(**campaign_data)
-            
-            # Create campaign targets
-            targets_created = cls._create_campaign_targets(
-                campaign, 
-                target_accounts, 
-                target_contacts,
-                target_leads,
-                target_opportunities
-            )
+        try:
+            with transaction.atomic():
+                # Validate required client_id
+                client_id = campaign_data.get('client_id')
+                if not client_id:
+                    raise StandardizedValidationError(CoreErrorMessages.CLIENT_ID_REQUIRED)
+                
+                # Create the campaign
+                campaign = Campaign.objects.create(**campaign_data)
+                
+                # Create campaign targets
+                targets_created = cls._create_campaign_targets(
+                    campaign, 
+                    target_accounts, 
+                    target_contacts,
+                    target_leads,
+                    target_opportunities
+                )
 
-            # Generate activities for all targets
-            activity_result = CampaignActivityService.create_activities_for_campaign(
-                campaign, target_contacts=target_contacts
+                # Generate activities for all targets
+                activity_result = CampaignActivityService.create_activities_for_campaign(
+                    campaign, target_contacts=target_contacts
+                )
+                
+                # Use standardized response builder
+                return CampaignResponseBuilder.campaign_created(
+                    campaign_id=campaign.id,
+                    campaign_name=campaign.name,
+                    targets_created=targets_created,
+                    activities_created=activity_result['total_activities_created'],
+                    skipped_contacts=activity_result.get('skipped_contacts', []),
+                    targeting_stats=targeting_stats
+                )
+                
+        except StandardizedValidationError:
+            # Re-raise validation errors (they're already properly formatted)
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_SEQUENCE_GENERATION_FAILED.format(reason=str(e))
             )
-            
-            return {
-                'success': True,
-                'campaign_id': campaign.id,
-                'campaign_name': campaign.name,
-                'targets_created': targets_created,
-                'activities_created': activity_result['total_activities_created'],
-                'skipped_contacts': activity_result['skipped_contacts'],
-            }
     
     @classmethod
-    def start_campaign(cls, campaign: Campaign) -> Dict:
+    def start_campaign(cls, campaign: Campaign) -> Response:
         """
         Start/activate a campaign - ONE TIME ACTION
         - Mark campaign as active
         - Initialize campaign state
         - Return initial playlist
         """
-        # Validate campaign can be started
-        if campaign.status == 'ACTIVE':
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_ALREADY_STARTED)
-        
-        if campaign.status in ['COMPLETED', 'CANCELLED']:
-            raise StandardizedValidationError(
-                CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=campaign.status)
+        try:
+            # Validate campaign can be started
+            if campaign.status == 'ACTIVE':
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_ALREADY_STARTED)
+            
+            if campaign.status in ['COMPLETED', 'CANCELLED']:
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=campaign.status)
+                )
+            
+            # Mark campaign as started
+            campaign.status = 'ACTIVE'
+            campaign.started_at = timezone.now()
+            campaign.save()
+            
+            # Import here to avoid circular imports
+            from .campaign_queue_service import CampaignQueueService
+            
+            # Get the initial active activities using standardized queue service
+            playlist_response = CampaignQueueService.get_active_activities_for_campaign(
+                campaign, 
+                limit=20,
+                prefetch_relations=True  # Enable serialization for response
             )
-        
-        # Mark campaign as started
-        campaign.status = 'ACTIVE'
-        campaign.started_at = timezone.now()
-        campaign.save()
-        
-        # Import here to avoid circular imports
-        from .campaign_queue_service import CampaignQueueService
-        
-        # Get the initial active activities
-        playlist_data = CampaignQueueService.get_active_activities_for_campaign(campaign, limit=20)
-        
-        # Serialize activities for JSON response
-        ready_activities = []
-        for activity in playlist_data.get('ready_activities', []):
-            ready_activities.append({
-                'id': activity.id,
-                'title': activity.title,
-                'activity_type': activity.activity_type,
-                'activity_type_display': activity.get_activity_type_display(),
-                'account_id': activity.account_id,
-                'account_name': activity.account.company_name if hasattr(activity, 'account') else None,
-                'scheduled_start': activity.scheduled_start,
-                'status': activity.status,
-                'contacts': [
-                    {'id': c.id, 'name': c.full_name} 
-                    for c in activity.contacts.all()
-                ] if hasattr(activity, 'contacts') else []
-            })
-        
-        playlist_data['ready_activities'] = ready_activities
-        
-        return {
-            'success': True,
-            'campaign_id': campaign.id,
-            'campaign_status': campaign.status,
-            'playlist': playlist_data
-        }
+            
+            # Extract data from the standardized Response object
+            if hasattr(playlist_response, 'data') and 'data' in playlist_response.data:
+                playlist_data = playlist_response.data['data']
+                items = playlist_data.get('items', [])
+                
+                # Create enhanced response with campaign started info
+                additional_data = {
+                    'total_pending': playlist_data.get('total_pending', 0),
+                    'queue_info': playlist_data.get('queue_info', {}),
+                    'campaign_started': True,
+                    'started_at': campaign.started_at.isoformat(),
+                    'activity_types_breakdown': playlist_data.get('activity_types_breakdown', {})
+                }
+                
+                return CampaignResponseBuilder.campaign_playlist(
+                    campaign_id=campaign.id,
+                    campaign_name=campaign.name,
+                    items=items,
+                    queue_type=playlist_data.get('queue_type', 'activity'),
+                    is_sequence=playlist_data.get('is_sequence', bool(campaign.sequence_type)),
+                    total_items=len(items),
+                    additional_data=additional_data
+                )
+            else:
+                # Fallback if response format is unexpected
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.QUEUE_OPTIMIZATION_FAILED
+                )
+            
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=f"start failed: {str(e)}")
+            )
     
     @classmethod
-    def pause_campaign(cls, campaign: Campaign, pause_until: date = None) -> Dict:
+    def pause_campaign(cls, campaign: Campaign, pause_until: date = None) -> Response:
         """
         Pause a campaign (pause all active activities)
         
@@ -132,31 +165,59 @@ class CampaignCreationService:
             pause_until: Optional date to pause until
             
         Returns:
-            Dictionary with pause result
+            Response: Standardized API response with pause result
         """
-        from apps.activities.models import Activity
-        
-        # Update all planned activities to set pause date
-        activities_paused = 0
-        
-        for activity in Activity.objects.filter(
-            campaign_info__campaign=campaign,
-            status=Activity.Status.PLANNED
-        ):
-            if hasattr(activity, 'sequence_info'):
-                activity.sequence_info.sequence_paused_until = pause_until
-                activity.sequence_info.save()
-                activities_paused += 1
-        
-        return {
-            'success': True,
-            'action': 'campaign_paused',
-            'message': f'Campaign paused. {activities_paused} activities affected',
-            'pause_until': pause_until
-        }
+        try:
+            from apps.activities.models import Activity
+            
+            # Update all planned activities to set pause date
+            activities_paused = 0
+            
+            for activity in Activity.objects.filter(
+                campaign_info__campaign=campaign,
+                status=Activity.Status.PLANNED
+            ):
+                if hasattr(activity, 'sequence_info'):
+                    activity.sequence_info.sequence_paused_until = pause_until
+                    activity.sequence_info.save()
+                    activities_paused += 1
+            
+            # Update campaign status
+            campaign.status = 'PAUSED'
+            campaign.save()
+            
+            # Prepare message with pause date info
+            message = CampaignSuccessMessages.CAMPAIGN_PAUSED.format(name=campaign.name)
+            if pause_until:
+                message += f" until {pause_until}"
+            
+            data = {
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'activities_paused': activities_paused,
+                'pause_until': pause_until.isoformat() if pause_until else None,
+                'paused_at': timezone.now().isoformat()
+            }
+            
+            meta = {
+                'operation': 'campaign_pause',
+                'activities_affected': activities_paused,
+                'pause_until': pause_until.isoformat() if pause_until else None
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message=message,
+                data=data,
+                meta=meta
+            )
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=f"pause failed: {str(e)}")
+            )
     
     @classmethod
-    def resume_campaign(cls, campaign: Campaign) -> Dict:
+    def resume_campaign(cls, campaign: Campaign) -> Response:
         """
         Resume a paused campaign
         
@@ -164,31 +225,64 @@ class CampaignCreationService:
             campaign: The campaign to resume
             
         Returns:
-            Dictionary with resume result
+            Response: Standardized API response with resume result
         """
-        from apps.activities.models import Activity
-        
-        # Clear pause dates from all activities
-        activities_resumed = 0
-        
-        for activity in Activity.objects.filter(campaign_info__campaign=campaign):
-            if hasattr(activity, 'sequence_info') and activity.sequence_info.sequence_paused_until:
-                activity.sequence_info.sequence_paused_until = None
-                activity.sequence_info.save()
-                activities_resumed += 1
-        
-        # Import here to avoid circular imports
-        from .campaign_execution_service import CampaignExecutionService
-        
-        # Get updated playlist
-        updated_playlist = CampaignExecutionService.get_campaign_playlist(campaign)
-        
-        return {
-            'success': True,
-            'action': 'campaign_resumed',
-            'message': f'Campaign resumed. {activities_resumed} activities available',
-            'active_activities': updated_playlist['total_items']
-        }
+        try:
+            from apps.activities.models import Activity
+            
+            # Clear pause dates from all activities
+            activities_resumed = 0
+            
+            for activity in Activity.objects.filter(campaign_info__campaign=campaign):
+                if hasattr(activity, 'sequence_info') and activity.sequence_info.sequence_paused_until:
+                    activity.sequence_info.sequence_paused_until = None
+                    activity.sequence_info.save()
+                    activities_resumed += 1
+            
+            # Update campaign status
+            campaign.status = 'ACTIVE'
+            campaign.save()
+            
+            # Import here to avoid circular imports
+            from .campaign_execution_service import CampaignExecutionService
+            
+            # Get updated playlist using standardized execution service
+            updated_playlist_response = CampaignExecutionService.get_campaign_playlist(campaign)
+            
+            # Extract active activities count from the standardized Response
+            active_activities_count = 0
+            if hasattr(updated_playlist_response, 'data') and 'data' in updated_playlist_response.data:
+                playlist_data = updated_playlist_response.data['data']
+                items = playlist_data.get('items', [])
+                active_activities_count = len(items)
+            
+            data = {
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'activities_resumed': activities_resumed,
+                'active_activities': active_activities_count,
+                'resumed_at': timezone.now().isoformat()
+            }
+            
+            meta = {
+                'operation': 'campaign_resume',
+                'activities_affected': activities_resumed,
+                'active_activities_available': active_activities_count
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message=CampaignSuccessMessages.CAMPAIGN_RESUMED.format(name=campaign.name),
+                data=data,
+                meta=meta
+            )
+            
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=f"resume failed: {str(e)}")
+            )
     
     @classmethod
     def _create_campaign_targets(cls, campaign: Campaign, 

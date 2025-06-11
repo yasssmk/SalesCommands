@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
+from core.error_messages import CampaignErrorMessages, CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from apps.campaign.models.campaign import Campaign
 from django.db.models import Q
@@ -13,11 +14,14 @@ from apps.campaign.serializers.campaign_serializer import (
     CampaignSerializer,
     CampaignListSerializer
 )
+from apps.campaign.services.campaign_manager import CampaignManager
+from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse
 
 
 class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
     """
     API endpoints for managing campaigns
+    Now returns standardized responses consistently
     """
     queryset = Campaign.objects.all()
     entity_name = 'campaign'
@@ -71,9 +75,9 @@ class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
             queryset = queryset.filter(campaign_type=campaign_type)
         
         # Filter by status
-        status = self.request.query_params.get('status')
-        if status:
-            queryset = queryset.filter(status=status)
+        campaign_status = self.request.query_params.get('status')
+        if campaign_status:
+            queryset = queryset.filter(status=campaign_status)
         
         # Filter by sequence type
         sequence_type = self.request.query_params.get('sequence_type')
@@ -97,84 +101,137 @@ class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
     
     def perform_create(self, serializer):
         """Create a new campaign for the current client"""
-        client_id = self.get_client_id()
-        campaign = serializer.save(
-            client_id=client_id,
-            owner=self.request.user
-        )
-        return campaign
+        try:
+            client_id = self.get_client_id()
+            campaign = serializer.save(
+                client_id=client_id,
+                owner=self.request.user
+            )
+            return campaign
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_SEQUENCE_GENERATION_FAILED.format(reason=str(e))
+            )
     
     def perform_update(self, serializer):
         """Update a campaign with validation"""
-        instance = serializer.instance
-        self.validate_client_id(instance)
-        
-        # Validate owner permissions
-        if instance.owner != self.request.user:
-            raise StandardizedValidationError("You can only modify your own campaigns")
+        try:
+            instance = serializer.instance
+            self.validate_client_id(instance)
             
-        return serializer.save()
+            # Validate owner permissions
+            if instance.owner != self.request.user:
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+                
+            return serializer.save()
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state="update failed")
+            )
     
     def perform_destroy(self, instance):
         """Delete a campaign with validation"""
-        self.validate_client_id(instance)
-        
-        # Validate owner permissions
-        if instance.owner != self.request.user:
-            raise StandardizedValidationError("You can only delete your own campaigns")
+        try:
+            self.validate_client_id(instance)
             
-        instance.delete()
+            # Validate owner permissions
+            if instance.owner != self.request.user:
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+                
+            instance.delete()
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign deletion failed")
+            )
     
     @action(detail=True, methods=['get'])
     def summary(self, request, pk=None):
-        """Get a summary of campaign performance"""
-        campaign = self.get_object()
-        
-        # Get objectives
-        objectives = campaign.objectives.all()
-        
-        # Get targets and their status counts
-        targets = campaign.targets.all()
-        target_counts = {
-            'total': targets.count(),
-            'by_status': {}
-        }
-        
-        # Count targets by status
-        from apps.campaign.models.campaign_target import CampaignTarget
-        for status_choice in CampaignTarget.Status.choices:
-            status_code = status_choice[0]
-            status_display = status_choice[1]
-            count = targets.filter(status=status_code).count()
-            target_counts['by_status'][status_code] = {
-                'display': status_display,
-                'count': count
-            }
-        
-        # Get target type breakdown
-        target_summary = campaign.get_target_summary()
-        
-        # Prepare summary data
-        data = {
-            'id': campaign.id,
-            'name': campaign.name,
-            'start_date': campaign.start_date,
-            'end_date': campaign.end_date,
-            'has_sequence': campaign.has_sequence(),
-            'is_call_list': campaign.is_call_list(),
-            'target_summary': target_summary,
-            'objectives': [
-                {
-                    'id': obj.id,
-                    'name': obj.name,
-                    'objective_type': obj.objective_type,
-                    'objective_type_display': obj.get_objective_type_display(),
-                    'target_value': obj.target_value,
-                    'current_value': obj.current_value,
-                    'progress_percentage': obj.progress_percentage()
-                } for obj in objectives
-            ],
-            'targets': target_counts
-        }
-        
-        return Response(data)
+        """
+        Get a summary of campaign performance
+        Now uses CampaignManager for standardized response
+        """
+        try:
+            campaign = self.get_object()
+            
+            # Validate ownership or permissions
+            if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
+                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+            
+            # Use CampaignManager.get_campaign_summary for standardized response
+            summary_response = CampaignManager.get_campaign_summary(campaign)
+            
+            # Extract data from the standardized Response and enhance with additional info
+            if hasattr(summary_response, 'data') and 'data' in summary_response.data:
+                summary_data = summary_response.data['data']
+                
+                # Get objectives using direct query (for additional detail)
+                objectives = campaign.objectives.all()
+                
+                # Get targets and their status counts using direct query (for additional detail)
+                targets = campaign.targets.all()
+                target_counts = {
+                    'total': targets.count(),
+                    'by_status': {}
+                }
+                
+                # Count targets by status
+                from apps.campaign.models.campaign_target import CampaignTarget
+                for status_choice in CampaignTarget.Status.choices:
+                    status_code = status_choice[0]
+                    status_display = status_choice[1]
+                    count = targets.filter(status=status_code).count()
+                    target_counts['by_status'][status_code] = {
+                        'display': status_display,
+                        'count': count
+                    }
+                
+                # Get target type breakdown
+                target_summary = campaign.get_target_summary()
+                
+                # Enhance the summary data with ViewSet-specific details
+                enhanced_data = summary_data.copy()
+                enhanced_data.update({
+                    'objectives': [
+                        {
+                            'id': obj.id,
+                            'name': obj.name,
+                            'objective_type': obj.objective_type,
+                            'objective_type_display': obj.get_objective_type_display(),
+                            'target_value': obj.target_value,
+                            'current_value': obj.current_value,
+                            'progress_percentage': obj.progress_percentage()
+                        } for obj in objectives
+                    ],
+                    'detailed_targets': target_counts,
+                    'target_breakdown': target_summary
+                })
+                
+                # Return enhanced standardized response
+                return StandardizedSuccessResponse.success(
+                    message="Campaign summary retrieved successfully",
+                    data=enhanced_data,
+                    meta={
+                        'operation': 'campaign_summary_detailed',
+                        'objectives_count': len(objectives),
+                        'targets_count': target_counts['total']
+                    }
+                )
+            else:
+                # Fallback if summary response format is unexpected
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED
+                )
+                
+        except StandardizedValidationError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED
+            )
