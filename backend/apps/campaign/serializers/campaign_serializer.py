@@ -448,3 +448,76 @@ class CampaignSerializer(serializers.ModelSerializer):
         except Exception as e:
             # If stakeholder update fails, log but don't fail the entire update
             pass  # In production, this should be logged
+
+
+class CampaignListSerializer(serializers.ModelSerializer):
+    """Simplified serializer for listing campaigns"""
+    
+    owner_name = serializers.SerializerMethodField(read_only=True)
+    campaign_type_display = serializers.CharField(source='get_campaign_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    has_sequence = serializers.SerializerMethodField(read_only=True)
+    target_counts = serializers.SerializerMethodField(read_only=True)
+    owner_count = serializers.SerializerMethodField(read_only=True)
+    executor_count = serializers.SerializerMethodField(read_only=True)
+    receiver_count = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = Campaign
+        fields = [
+            'id',
+            'name',
+            'campaign_type',
+            'campaign_type_display',
+            'has_sequence',
+            'owner',
+            'owner_name',
+            'owner_count',
+            'executor_count',
+            'receiver_count',
+            'start_date',
+            'end_date',
+            'status',
+            'status_display',
+            'target_counts',
+            'created_at'
+        ]
+    
+    def get_owner_name(self, obj):
+        """Get the full name of the campaign owner"""
+        if obj.owner:
+            return f"{obj.owner.first_name} {obj.owner.last_name}"
+        return None
+    
+    def get_has_sequence(self, obj):
+        """Check if campaign has automated sequences"""
+        return obj.has_sequence()
+    
+    def get_target_counts(self, obj):
+        """Get simplified target counts"""
+        summary = obj.get_target_summary()
+        return {
+            'total': summary['total'],
+            'accounts': summary['accounts'],
+            'contacts': summary['contacts'],
+            'leads': summary['leads']
+        }
+    
+    def get_owner_count(self, obj):
+        """Get count of owners"""
+        return obj.get_owners().count()
+    
+    def get_executor_count(self, obj):
+        """Get count of executors"""
+        return obj.get_executors().count()
+    
+    def get_receiver_count(self, obj):
+        """Get count of receivers"""
+        return obj.get_receivers().count()
+
+
+# Export serializers
+__all__ = [
+    'CampaignSerializer',
+    'CampaignListSerializer'
+]

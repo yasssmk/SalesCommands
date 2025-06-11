@@ -453,3 +453,49 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Target update failed")
             )
+
+
+class CampaignTargetListSerializer(serializers.ModelSerializer):
+    """Simplified serializer for listing campaign targets"""
+    
+    target_type = serializers.SerializerMethodField(read_only=True)
+    target_name = serializers.SerializerMethodField(read_only=True)
+    campaign_name = serializers.CharField(source='campaign.name', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    class Meta:
+        model = CampaignTarget
+        fields = [
+            'id',
+            'campaign',
+            'campaign_name',
+            'target_type',
+            'target_name',
+            'status',
+            'status_display',
+            'activities_generated',
+            'created_at'
+        ]
+    
+    def get_target_type(self, obj):
+        """Return the type of target"""
+        return obj.get_target_type()
+    
+    def get_target_name(self, obj):
+        """Return a friendly name for the target"""
+        if obj.contact:
+            return f"{obj.contact.first_name} {obj.contact.last_name}"
+        elif obj.lead:
+            return obj.lead.title
+        elif obj.target_opportunity:
+            return obj.target_opportunity.name
+        elif obj.account:
+            return obj.account.company_name
+        return "Unknown"
+
+
+# Export serializers
+__all__ = [
+    'CampaignTargetSerializer',
+    'CampaignTargetListSerializer'
+]
