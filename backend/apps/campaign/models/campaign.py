@@ -1,9 +1,9 @@
-# apps/campaign/models/campaign.py
+# apps/campaign/models/campaign.py - Save method update only
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
-from core.exceptions import ValidationError
+from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
 from django.db.models import Q
@@ -218,31 +218,57 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         from .campaign_stakeholder import CampaignStakeholder
         return self.get_stakeholders_by_role(CampaignStakeholder.StakeholderRole.RECEIVER)
     
+    def clean(self):
+        """Validate campaign data using standardized validation"""
+        super().clean()
+        
+        try:
+            # Ensure end date is after start date
+            if self.end_date and self.start_date and self.end_date < self.start_date:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Date range (end date {self.end_date} must be after start date {self.start_date})"
+                    )
+                )
+
+            # Validate end date is not in the past
+            from django.utils import timezone
+            today = timezone.now().date()
+            if self.end_date and self.end_date < today:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"End date (must be in the future, current date: {today})"
+                    )
+                )
+                
+        except StandardizedValidationError:
+            # Re-raise standardized validation errors
+            raise
+        except Exception as e:
+            # Convert any unexpected errors to standardized format
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign validation failed")
+            )
         
     def save(self, *args, **kwargs):
-        # Ensure end date is after start date
-        if self.end_date and self.start_date and self.end_date < self.start_date:
-            raise ValidationError(
-                CoreErrorMessages.INVALID_DATE_RANGE.format(
-                    start_date=self.start_date,
-                    end_date=self.end_date
-                )
-            )
+        """Save with standardized validation"""
+        try:
+            # Run clean validation first
+            self.full_clean()
+            
+            super().save(*args, **kwargs)
 
-        from django.utils import timezone
-        today = timezone.now().date()
-        if self.end_date and self.end_date < today:
-            raise ValidationError(
-                _("Campaign end date must be in the future. Current date: {today}, End date: {end_date}").format(
-                    today=today,
-                    end_date=self.end_date
-                )
-            )
+            # If this is a new campaign and owner is set, add owner as OWNER stakeholder
+            if self.owner and not hasattr(self, '_owner_added_as_stakeholder'):
+                from .campaign_stakeholder import CampaignStakeholder
+                self.add_stakeholder(self.owner, CampaignStakeholder.StakeholderRole.OWNER)
+                self._owner_added_as_stakeholder = True
                 
-        super().save(*args, **kwargs)
-
-        # If this is a new campaign and owner is set, add owner as OWNER stakeholder
-        if self.owner and not hasattr(self, '_owner_added_as_stakeholder'):
-            from .campaign_stakeholder import CampaignStakeholder
-            self.add_stakeholder(self.owner, CampaignStakeholder.StakeholderRole.OWNER)
-            self._owner_added_as_stakeholder = True
+        except StandardizedValidationError:
+            # Re-raise standardized validation errors
+            raise
+        except Exception as e:
+            # Convert any unexpected errors to standardized format
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign save failed")
+            )

@@ -4,7 +4,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
-from core.exceptions import ValidationError
+from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 
 
@@ -158,91 +158,172 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         return f"{self.campaign.name} - No Target ({self.get_status_display()})"
     
     def clean(self):
-        """Validate that exactly one target type is set"""
+        """Validate that exactly one target type is set using standardized validation"""
         super().clean()
         
-        target_count = sum([
-            bool(self.account),
-            bool(self.contact),
-            bool(self.lead),
-            bool(self.target_opportunity)
-        ])
-        
-        if target_count == 0:
-            raise ValidationError(
-                "One target (account, contact, lead, or opportunity) must be specified"
-            )
-        
-        if target_count > 1:
-            raise ValidationError(
-                "Only one target type can be specified per campaign target"
+        try:
+            target_count = sum([
+                bool(self.account),
+                bool(self.contact),
+                bool(self.lead),
+                bool(self.target_opportunity)
+            ])
+            
+            if target_count == 0:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(
+                        field="Target (one of: account, contact, lead, or opportunity)"
+                    )
+                )
+            
+            if target_count > 1:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field="Target selection (only one target type can be specified per campaign target)"
+                    )
+                )
+                
+        except StandardizedValidationError:
+            # Re-raise standardized validation errors
+            raise
+        except Exception as e:
+            # Convert any unexpected errors to standardized format
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Target validation failed")
             )
     
     def save(self, *args, **kwargs):
-        # Run clean validation
-        self.full_clean()
-        super().save(*args, **kwargs)
+        """Save with standardized validation"""
+        try:
+            # Run clean validation first
+            self.full_clean()
+            super().save(*args, **kwargs)
+            
+        except StandardizedValidationError:
+            # Re-raise standardized validation errors
+            raise
+        except Exception as e:
+            # Convert any unexpected errors to standardized format
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Target save failed")
+            )
     
     def get_target_type(self):
         """Return the type of target"""
-        if self.contact:
-            return 'contact'
-        elif self.lead:
-            return 'lead'
-        elif self.target_opportunity:
-            return 'opportunity'
-        elif self.account:
-            return 'account'
-        return None
+        try:
+            if self.contact:
+                return 'contact'
+            elif self.lead:
+                return 'lead'
+            elif self.target_opportunity:
+                return 'opportunity'
+            elif self.account:
+                return 'account'
+            return None
+        except Exception:
+            return None
     
     def get_target(self):
         """Return the actual target object"""
-        if self.contact:
-            return self.contact
-        elif self.lead:
-            return self.lead
-        elif self.target_opportunity:
-            return self.target_opportunity
-        elif self.account:
-            return self.account
-        return None
+        try:
+            if self.contact:
+                return self.contact
+            elif self.lead:
+                return self.lead
+            elif self.target_opportunity:
+                return self.target_opportunity
+            elif self.account:
+                return self.account
+            return None
+        except Exception:
+            return None
     
     def get_target_account(self):
         """Get the account associated with this target"""
-        if self.account:
-            return self.account
-        elif self.contact:
-            return self.contact.account
-        elif self.lead:
-            return self.lead.account
-        elif self.target_opportunity:
-            return self.target_opportunity.account
-        return None
+        try:
+            if self.account:
+                return self.account
+            elif self.contact:
+                return self.contact.account
+            elif self.lead:
+                return self.lead.account
+            elif self.target_opportunity:
+                return self.target_opportunity.account
+            return None
+        except Exception:
+            return None
     
     def mark_activities_generated(self, save=True):
         """Mark that activities have been generated for this target"""
-        self.activities_generated = True
-        
-        if save:
-            self.save()
+        try:
+            self.activities_generated = True
+            
+            if save:
+                self.save()
+                
+        except StandardizedValidationError:
+            # Re-raise standardized validation errors
+            raise
+        except Exception as e:
+            # Convert any unexpected errors to standardized format
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to mark activities as generated")
+            )
     
     def update_status(self, new_status, save=True):
         """
-        Update the status
+        Update the status with validation
         
         Args:
             new_status (str): New status value
             save (bool): Whether to save the instance
+            
+        Raises:
+            StandardizedValidationError: If status is invalid
         """
-        self.status = new_status
-        
-        if save:
-            self.save()
+        try:
+            # Validate status
+            valid_statuses = [choice[0] for choice in self.Status.choices]
+            if new_status not in valid_statuses:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Status (must be one of: {', '.join(valid_statuses)})"
+                    )
+                )
+            
+            self.status = new_status
+            
+            if save:
+                self.save()
+                
+        except StandardizedValidationError:
+            # Re-raise standardized validation errors
+            raise
+        except Exception as e:
+            # Convert any unexpected errors to standardized format
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Status update failed")
+            )
     
     def link_opportunity(self, opportunity, save=True):
-        """Link an opportunity to this target"""
-        self.linked_opportunity = opportunity
-        self.update_status(self.Status.OPPORTUNITY_CREATED, save=False)
-        
-        if save:
-            self.save()
+        """Link an opportunity to this target with validation"""
+        try:
+            if not opportunity:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="Opportunity")
+                )
+                
+            self.linked_opportunity = opportunity
+            self.update_status(self.Status.OPPORTUNITY_CREATED, save=False)
+            
+            if save:
+                self.save()
+                
+        except StandardizedValidationError:
+            # Re-raise standardized validation errors
+            raise
+        except Exception as e:
+            # Convert any unexpected errors to standardized format
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Opportunity linking failed")
+            )
