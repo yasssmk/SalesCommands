@@ -17,12 +17,13 @@ from apps.campaign.utils.standardized_responses import (
     CampaignResponseBuilder,
     CampaignSuccessMessages
 )
+from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 
 
-class CampaignStakeholderViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
+class CampaignStakeholderViewSet(BaseAPIView, ClientScopeManager.ViewMixin, CampaignPermissionMixin, viewsets.ModelViewSet):
     """
     API endpoints for managing campaign stakeholders
-    Now returns standardized responses consistently
+    Now returns standardized responses consistently with centralized permissions
     """
     queryset = CampaignStakeholder.objects.all()
     serializer_class = CampaignStakeholderSerializer
@@ -64,10 +65,7 @@ class CampaignStakeholderViewSet(BaseAPIView, ClientScopeManager.ViewMixin, view
         try:
             client_id = self.get_client_id()
             
-            # Validate campaign access
-            campaign = serializer.validated_data['campaign']
-            if campaign.client_id != client_id:
-                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            campaign = self.get_validated_campaign_from_data('campaign', allow_stakeholders=False)
             
             # Set added_by to current user
             serializer.save(
@@ -86,12 +84,8 @@ class CampaignStakeholderViewSet(BaseAPIView, ClientScopeManager.ViewMixin, view
         """Update a campaign stakeholder with validation and client scoping"""
         try:
             instance = serializer.instance
-            self.validate_client_id(instance)
             
-            # Validate campaign access
-            campaign = serializer.validated_data.get('campaign', instance.campaign)
-            if campaign.client_id != self.get_client_id():
-                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            self.validate_campaign_related_object(instance, allow_stakeholders=False)
             
             serializer.save()
         except StandardizedValidationError:
@@ -105,7 +99,9 @@ class CampaignStakeholderViewSet(BaseAPIView, ClientScopeManager.ViewMixin, view
     def perform_destroy(self, instance):
         """Delete a campaign stakeholder with validation"""
         try:
-            self.validate_client_id(instance)
+
+            self.validate_campaign_related_object(instance, allow_stakeholders=False)
+            
             instance.delete()
         except StandardizedValidationError:
             # Re-raise validation errors
@@ -136,11 +132,8 @@ class CampaignStakeholderViewSet(BaseAPIView, ClientScopeManager.ViewMixin, view
                     CoreErrorMessages.REQUIRED_FIELD.format(field="stakeholders")
                 )
             
-            # Get the campaign
-            try:
-                campaign = Campaign.objects.get(id=campaign_id, client_id=self.get_client_id())
-            except Campaign.DoesNotExist:
-                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+            campaign = self.get_validated_campaign(pk=campaign_id, require_ownership=True)
             
             # Add stakeholders
             successful = []
@@ -224,11 +217,8 @@ class CampaignStakeholderViewSet(BaseAPIView, ClientScopeManager.ViewMixin, view
                     CoreErrorMessages.REQUIRED_FIELD.format(field="stakeholders")
                 )
             
-            # Get the campaign
-            try:
-                campaign = Campaign.objects.get(id=campaign_id, client_id=self.get_client_id())
-            except Campaign.DoesNotExist:
-                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+            campaign = self.get_validated_campaign(pk=campaign_id, require_ownership=True)
             
             # Remove stakeholders
             successful = []

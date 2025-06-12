@@ -11,11 +11,12 @@ from core.apps_shared_methods import BaseAPIView
 from apps.campaign.models.campaign_objective import CampaignObjective
 from apps.campaign.serializers.campaign_objective_serializer import CampaignObjectiveSerializer
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse
+from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 
-class CampaignObjectiveViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
+class CampaignObjectiveViewSet(BaseAPIView, ClientScopeManager.ViewMixin, CampaignPermissionMixin, viewsets.ModelViewSet):
     """
     API endpoints for managing campaign objectives
-    Now returns standardized responses consistently
+    Now returns standardized responses consistently with centralized permissions
     """
     serializer_class = CampaignObjectiveSerializer
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
@@ -40,14 +41,12 @@ class CampaignObjectiveViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewse
     def perform_create(self, serializer):
         """Create a new objective with validation"""
         try:
-            # Get campaign and validate ownership
-            campaign = serializer.validated_data['campaign']
-            if campaign.owner != self.request.user:
-                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+
+            campaign = self.get_validated_campaign_from_data('campaign', allow_stakeholders=False)
                 
             client_id = self.get_client_id()
-
             return serializer.save(client_id=client_id)
+            
         except StandardizedValidationError:
             # Re-raise validation errors
             raise
@@ -61,13 +60,7 @@ class CampaignObjectiveViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewse
         try:
             instance = serializer.instance
             
-            # Validate client scope via campaign
-            if str(instance.campaign.client_id) != str(self.get_client_id()):
-                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
-                
-            # Validate owner permissions
-            if instance.campaign.owner != self.request.user:
-                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+            self.validate_campaign_related_object(instance, allow_stakeholders=False)
                 
             return serializer.save()
         except StandardizedValidationError:
@@ -81,13 +74,8 @@ class CampaignObjectiveViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewse
     def perform_destroy(self, instance):
         """Delete an objective with validation"""
         try:
-            # Validate client scope via campaign
-            if str(instance.campaign.client_id) != str(self.get_client_id()):
-                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
-                
-            # Validate owner permissions
-            if instance.campaign.owner != self.request.user:
-                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+
+            self.validate_campaign_related_object(instance, allow_stakeholders=False)
                 
             instance.delete()
         except StandardizedValidationError:
@@ -107,9 +95,7 @@ class CampaignObjectiveViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewse
         try:
             objective = self.get_object()
             
-            # Validate owner permissions
-            if objective.campaign.owner != self.request.user:
-                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+            self.validate_campaign_related_object(objective, allow_stakeholders=False)
                 
             # Get new value from request
             new_value = request.data.get('value', None)

@@ -4,7 +4,6 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages, CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
@@ -16,12 +15,15 @@ from apps.campaign.serializers.campaign_serializer import (
 )
 from apps.campaign.services.campaign_manager import CampaignManager
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse
+from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 
 
-class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
+class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSet):
     """
     API endpoints for managing campaigns
-    Now returns standardized responses consistently
+    Now returns standardized responses consistently with centralized permissions
+    
+    ✅ Ordre d'héritage simplifié - CampaignPermissionMixin inclut déjà ClientScopeManager.ViewMixin
     """
     queryset = Campaign.objects.all()
     entity_name = 'campaign'
@@ -117,11 +119,9 @@ class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
         """Update a campaign with validation"""
         try:
             instance = serializer.instance
-            self.validate_client_id(instance)
             
-            # Validate owner permissions
-            if instance.owner != self.request.user:
-                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+            # ✅ APRÈS: Validation centralisée (1 ligne)
+            self.validate_campaign_related_object(instance, allow_stakeholders=False)
                 
             return serializer.save()
         except StandardizedValidationError:
@@ -135,11 +135,8 @@ class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
     def perform_destroy(self, instance):
         """Delete a campaign with validation"""
         try:
-            self.validate_client_id(instance)
-            
-            # Validate owner permissions
-            if instance.owner != self.request.user:
-                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+            # ✅ APRÈS: Validation centralisée (1 ligne)
+            self.validate_campaign_related_object(instance, allow_stakeholders=False)
                 
             instance.delete()
         except StandardizedValidationError:
@@ -157,11 +154,12 @@ class CampaignViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
         Now uses CampaignManager for standardized response
         """
         try:
-            campaign = self.get_object()
-            
-            # Validate ownership or permissions
-            if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
-                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+            # ✅ APRÈS: Validation centralisée avec stakeholders autorisés (1 ligne)
+            campaign = self.get_validated_campaign(
+                require_ownership=True, 
+                allow_stakeholders=True, 
+                check_state=False
+            )
             
             # Use CampaignManager.get_campaign_summary for standardized response
             summary_response = CampaignManager.get_campaign_summary(campaign)

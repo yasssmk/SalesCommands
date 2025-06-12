@@ -22,6 +22,7 @@ from apps.activities.models import Activity, ActivityCampaign, ActivitySequence
 from django.db import transaction
 from apps.campaign.config.variables import DEFAULT_PLAYLIST_LIMIT
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse, CampaignSuccessMessages
+from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 
 
 class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
@@ -160,12 +161,9 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
     def start_campaign(self, request, pk=None):
         """
         Start/activate a campaign and get initial playlist
-        """
-        campaign = self.get_object()
-        
+        """        
         # Validate ownership
-        if campaign.owner != request.user:
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+        campaign = self.get_validated_campaign(require_ownership=True)
         
         # CampaignManager.start_campaign now returns Response directly
         return CampaignManager.start_campaign(campaign)
@@ -178,11 +176,7 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         Query params:
         - limit: Number of activities to return (default: 20)
         """
-        campaign = self.get_object()
-        
-        # Validate ownership
-        if campaign.owner != request.user:
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+        campaign = self.get_validated_campaign(require_ownership=True, check_state=False)
         
         limit = int(request.query_params.get('limit', DEFAULT_PLAYLIST_LIMIT))
         
@@ -194,11 +188,11 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         """
         Get comprehensive campaign summary
         """
-        campaign = self.get_object()
-        
-        # Validate ownership
-        if campaign.owner != request.user:
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+        campaign = self.get_validated_campaign(
+            require_ownership=True, 
+            allow_stakeholders=True, 
+            check_state=False
+        )
         
         # CampaignManager.get_campaign_summary now returns Response directly
         return CampaignManager.get_campaign_summary(campaign)
@@ -213,11 +207,7 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             "pause_until": "2025-02-01"  # Optional
         }
         """
-        campaign = self.get_object()
-        
-        # Validate ownership
-        if campaign.owner != request.user:
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+        campaign = self.get_validated_campaign(require_ownership=True)
         
         pause_until = request.data.get('pause_until', None)
         if pause_until:
@@ -232,11 +222,7 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         """
         Resume a paused campaign
         """
-        campaign = self.get_object()
-        
-        # Validate ownership
-        if campaign.owner != request.user:
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+        campaign = self.get_validated_campaign(require_ownership=True)
         
         # CampaignManager.resume_campaign now returns Response directly
         return CampaignManager.resume_campaign(campaign)
@@ -246,11 +232,11 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         """
         Get all contacts in campaign with email/LinkedIn activities that might have responses
         """
-        campaign = self.get_object()
-        
-        # Validate ownership
-        if campaign.owner != request.user:
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+        campaign = self.get_validated_campaign(
+            require_ownership=True, 
+            allow_stakeholders=True, 
+            check_state=False
+        )
         
         # CampaignManager.get_campaign_contacts_with_responses now returns Response directly
         return CampaignManager.get_campaign_contacts_with_responses(campaign)
@@ -331,17 +317,11 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         }
         """
         try:
-            campaign = self.get_object()
-            
-            # Validate ownership or permissions
-            if campaign.owner != request.user and not request.user.has_perm('campaign.change_campaign'):
-                raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
-            
-            # Validate campaign state - cannot modify completed campaigns
-            if campaign.status in ['COMPLETED', 'CANCELLED']:
-                raise StandardizedValidationError(
-                    CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=campaign.status)
-                )
+            campaign = self.get_validated_campaign(
+                require_ownership=True, 
+                allow_stakeholders=True,
+                check_state=True
+            )
             
             # Extract and validate required data
             account_id = request.data.get('account_id')
@@ -394,11 +374,11 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             "notes": "Optional notes about removal reason"
         }
         """
-        campaign = self.get_object()
-        
-        # Validate ownership or permissions
-        if campaign.owner != request.user and not request.user.has_perm('campaign.change_campaign'):
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+        campaign = self.get_validated_campaign(
+            require_ownership=True, 
+            allow_stakeholders=True,
+            check_state=True
+        )
         
         contact_id = request.data.get('contact_id')
         notes = request.data.get('notes')
@@ -433,11 +413,11 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         Query params:
         - status: Comma-separated list of activity statuses to filter by
         """
-        campaign = self.get_object()
-        
-        # Validate ownership or permissions
-        if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+        campaign = self.get_validated_campaign(
+            require_ownership=True, 
+            allow_stakeholders=True, 
+            check_state=False
+        )
         
         # Parse status filter
         status_filter = None
@@ -460,11 +440,11 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         - account_id: ID of the account to get activities for
         - status: Comma-separated list of activity statuses to filter by
         """
-        campaign = self.get_object()
-        
-        # Validate ownership or permissions
-        if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+        campaign = self.get_validated_campaign(
+            require_ownership=True, 
+            allow_stakeholders=True, 
+            check_state=False
+        )
         
         # Get account ID
         account_id = request.query_params.get('account_id')
@@ -505,11 +485,11 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         - contact_id: ID of the contact to get activities for
         - status: Comma-separated list of activity statuses to filter by
         """
-        campaign = self.get_object()
-        
-        # Validate ownership or permissions
-        if campaign.owner != request.user and not request.user.has_perm('campaign.view_campaign'):
-            raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
+        campaign = self.get_validated_campaign(
+            require_ownership=True, 
+            allow_stakeholders=True, 
+            check_state=False
+        )
         
         # Get contact ID
         contact_id = request.query_params.get('contact_id')
@@ -556,7 +536,11 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             "callback_date": "2025-01-10",  # Optional, for callbacks
         }
         """
-        campaign = self.get_object()
+        campaign = self.get_validated_campaign(
+            require_ownership=True, 
+            allow_stakeholders=True, 
+            check_state=False
+        )
         
         # Verify this is a non-sequence campaign
         if campaign.sequence_type:
