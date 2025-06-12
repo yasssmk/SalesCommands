@@ -1,4 +1,4 @@
-# apps/campaign/serializers/campaign_serializer.py - Validation methods update
+# apps/campaign/serializers/campaign_serializer.py
 
 from rest_framework import serializers
 from apps.campaign.models.campaign import Campaign
@@ -7,6 +7,15 @@ from apps.campaign.serializers.campaign_stakeholders_serializer import CampaignS
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from end_users.models import User
+
+# ✅ Import des constantes
+from apps.campaign.config.variables import (
+    SERIALIZER_CONFIGS,
+    VALIDATION_LIMITS,
+    DATE_FORMATS,
+    FIELD_NAMES,
+    CAMPAIGN_FORBIDDEN_STATES
+)
 
 class CampaignSerializer(serializers.ModelSerializer):
     """Serializer for Campaign model with standardized validation"""
@@ -60,11 +69,25 @@ class CampaignSerializer(serializers.ModelSerializer):
     
     # Campaign name with custom validation
     name = serializers.CharField(
-        max_length=100,
+        max_length=VALIDATION_LIMITS['MAX_CAMPAIGN_NAME_LENGTH'],
         error_messages={
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Campaign Name'),
             'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Campaign Name'),
-            'max_length': CoreErrorMessages.INVALID_FIELD.format(field='Campaign Name (maximum 100 characters)')
+            'max_length': CoreErrorMessages.INVALID_FIELD.format(
+                field=f'Campaign Name (maximum {VALIDATION_LIMITS["MAX_CAMPAIGN_NAME_LENGTH"]} characters)'
+            )
+        }
+    )
+    
+    # Description with validation
+    description = serializers.CharField(
+        max_length=VALIDATION_LIMITS['MAX_DESCRIPTION_LENGTH'],
+        required=False,
+        allow_blank=True,
+        error_messages={
+            'max_length': CoreErrorMessages.INVALID_FIELD.format(
+                field=f'Description (maximum {VALIDATION_LIMITS["MAX_DESCRIPTION_LENGTH"]} characters)'
+            )
         }
     )
     
@@ -90,67 +113,9 @@ class CampaignSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Campaign
-        fields = [
-            'id',
-            'name',
-            'description',
-            
-            # Campaign configuration
-            'campaign_type',
-            'campaign_type_display',
-            'sequence_type',
-            'sequence_type_display',
-            'has_sequence',
-            'is_call_list',
-            
-            # Ownership
-            'owner',
-            'owner_name',
-            
-            # Stakeholders
-            'stakeholders',
-            'owner_ids',
-            'executor_ids',
-            'receiver_ids',
-            'owner_count',
-            'executor_count',
-            'receiver_count',
-            
-            # Dates
-            'start_date',
-            'end_date',
-            
-            # Status
-            'status',
-            'status_display',
-            
-            # Target information
-            'target_summary',
-            'has_mixed_targets',
-            
-            # Metadata
-            'created_at',
-            'updated_at',
-            'created_by',
-            'updated_by'
-        ]
-        read_only_fields = [
-            'owner_name',
-            'campaign_type_display',
-            'sequence_type_display',
-            'status_display',
-            'has_sequence',
-            'is_call_list',
-            'target_summary',
-            'has_mixed_targets',
-            'owner_count',
-            'executor_count',
-            'receiver_count',
-            'created_at',
-            'updated_at',
-            'created_by',
-            'updated_by'
-        ]
+
+        fields = SERIALIZER_CONFIGS['CAMPAIGN_FIELDS']
+        read_only_fields = SERIALIZER_CONFIGS['CAMPAIGN_READ_ONLY_FIELDS']
     
     def get_owner_name(self, obj):
         """Get the full name of the campaign owner"""
@@ -291,6 +256,16 @@ class CampaignSerializer(serializers.ModelSerializer):
                         )
                     )
             
+            # ✅ Validation avec constantes
+            # Validate description length
+            description = data.get('description', '')
+            if description and len(description) > VALIDATION_LIMITS['MAX_DESCRIPTION_LENGTH']:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Description (maximum {VALIDATION_LIMITS['MAX_DESCRIPTION_LENGTH']} characters)"
+                    )
+                )
+            
             return data
             
         except StandardizedValidationError:
@@ -354,6 +329,14 @@ class CampaignSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         """Update a campaign with stakeholders and standardized error handling"""
         try:
+            # ✅ Validation avec constantes - empêcher modification des campagnes terminées
+            if instance.status in CAMPAIGN_FORBIDDEN_STATES:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Campaign status (cannot modify {instance.get_status_display()} campaigns)"
+                    )
+                )
+            
             # Extract stakeholder data
             owner_ids = validated_data.pop('owner_ids', None)
             executor_ids = validated_data.pop('executor_ids', None)
@@ -464,23 +447,11 @@ class CampaignListSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Campaign
+        # ✅ Configuration simplifiée pour la liste
         fields = [
-            'id',
-            'name',
-            'campaign_type',
-            'campaign_type_display',
-            'has_sequence',
-            'owner',
-            'owner_name',
-            'owner_count',
-            'executor_count',
-            'receiver_count',
-            'start_date',
-            'end_date',
-            'status',
-            'status_display',
-            'target_counts',
-            'created_at'
+            'id', 'name', 'campaign_type', 'campaign_type_display', 'has_sequence',
+            'owner', 'owner_name', 'owner_count', 'executor_count', 'receiver_count',
+            'start_date', 'end_date', 'status', 'status_display', 'target_counts', 'created_at'
         ]
     
     def get_owner_name(self, obj):

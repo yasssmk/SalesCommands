@@ -20,7 +20,7 @@ from apps.campaign.utils.standardized_responses import (
 from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 
 
-class CampaignStakeholderViewSet(BaseAPIView, ClientScopeManager.ViewMixin, CampaignPermissionMixin, viewsets.ModelViewSet):
+class CampaignStakeholderViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSet):
     """
     API endpoints for managing campaign stakeholders
     Now returns standardized responses consistently with centralized permissions

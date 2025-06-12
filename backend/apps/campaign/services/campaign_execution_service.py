@@ -16,6 +16,12 @@ from apps.campaign.utils.standardized_responses import (
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages
 
+# Import configuration variables
+from apps.campaign.config.variables import (
+    FIELD_NAMES,
+    OPERATION_MESSAGES
+)
+
 
 class CampaignExecutionService:
     """
@@ -136,7 +142,7 @@ class CampaignExecutionService:
             with transaction.atomic():
                 # Find all planned activities for this contact in this campaign
                 activities = Activity.objects.filter(
-                    campaign_info__campaign=campaign,
+                    **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
                     contacts=contact,
                     status=Activity.Status.PLANNED
                 )
@@ -152,8 +158,10 @@ class CampaignExecutionService:
                 
                 # Update campaign target status if this is a direct contact target
                 campaign_target = CampaignTarget.objects.filter(
-                    campaign=campaign,
-                    contact=contact
+                    **{
+                        FIELD_NAMES['CAMPAIGN']: campaign,
+                        FIELD_NAMES['CONTACT']: contact
+                    }
                 ).first()
                 
                 if campaign_target:
@@ -162,10 +170,10 @@ class CampaignExecutionService:
                 
                 # Prepare response data
                 data = {
-                    'campaign_id': campaign.id,
-                    'campaign_name': campaign.name,
-                    'contact_id': contact.id,
-                    'contact_name': f"{contact.first_name} {contact.last_name}",
+                    f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
+                    f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
+                    f"{FIELD_NAMES['CONTACT']}_id": contact.id,
+                    f"{FIELD_NAMES['CONTACT']}_name": f"{contact.first_name} {contact.last_name}",
                     'activities_cancelled': activities_count,
                     'action': 'contact_removed'
                 }
@@ -176,8 +184,11 @@ class CampaignExecutionService:
                     'target_updated': bool(campaign_target)
                 }
                 
+                # Use operation message from config
+                message = OPERATION_MESSAGES['CONTACT_REMOVED']
+                
                 return StandardizedSuccessResponse.success(
-                    message=CampaignSuccessMessages.CONTACT_REMOVED,
+                    message=message,
                     data=data,
                     meta=meta
                 )
@@ -207,8 +218,10 @@ class CampaignExecutionService:
             with transaction.atomic():
                 # Find all planned activities for this account in this campaign
                 activities = Activity.objects.filter(
-                    campaign_info__campaign=campaign,
-                    account=account,
+                    **{
+                        f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign,
+                        FIELD_NAMES['ACCOUNT']: account
+                    },
                     status=Activity.Status.PLANNED
                 )
                 
@@ -223,8 +236,10 @@ class CampaignExecutionService:
                 
                 # Update campaign target status
                 campaign_target = CampaignTarget.objects.filter(
-                    campaign=campaign,
-                    account=account
+                    **{
+                        FIELD_NAMES['CAMPAIGN']: campaign,
+                        FIELD_NAMES['ACCOUNT']: account
+                    }
                 ).first()
                 
                 if campaign_target:
@@ -233,10 +248,10 @@ class CampaignExecutionService:
                 
                 # Prepare response data
                 data = {
-                    'campaign_id': campaign.id,
-                    'campaign_name': campaign.name,
-                    'account_id': account.id,
-                    'account_name': account.company_name,
+                    f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
+                    f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
+                    f"{FIELD_NAMES['ACCOUNT']}_id": account.id,
+                    f"{FIELD_NAMES['ACCOUNT']}_name": account.company_name,
                     'activities_cancelled': activities_count,
                     'action': 'account_removed'
                 }
@@ -247,8 +262,11 @@ class CampaignExecutionService:
                     'target_updated': bool(campaign_target)
                 }
                 
+                # Use operation message from config
+                message = OPERATION_MESSAGES['ACCOUNT_REMOVED']
+                
                 return StandardizedSuccessResponse.success(
-                    message=CampaignSuccessMessages.ACCOUNT_REMOVED,
+                    message=message,
                     data=data,
                     meta=meta
                 )
@@ -275,10 +293,10 @@ class CampaignExecutionService:
         try:
             # Get all completed email/LinkedIn activities for this campaign
             email_linkedin_activities = Activity.objects.filter(
-                campaign_info__campaign=campaign,
+                **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
                 activity_type__in=[Activity.ActivityType.EMAIL, Activity.ActivityType.LINKEDIN],
                 status=Activity.Status.COMPLETED
-            ).select_related('account').prefetch_related('contacts')
+            ).select_related(FIELD_NAMES['ACCOUNT']).prefetch_related('contacts')
             
             contacts_with_activities = {}
             
@@ -288,8 +306,8 @@ class CampaignExecutionService:
                     
                     if contact_key not in contacts_with_activities:
                         contacts_with_activities[contact_key] = {
-                            'contact': contact,
-                            'account': activity.account,
+                            FIELD_NAMES['CONTACT']: contact,
+                            FIELD_NAMES['ACCOUNT']: activity.account,
                             'activities': []
                         }
                     
@@ -305,21 +323,21 @@ class CampaignExecutionService:
             # Format for standardized response
             formatted_contacts = []
             for item in contacts_with_activities.values():
-                contact = item['contact']
-                account = item['account']
+                contact = item[FIELD_NAMES['CONTACT']]
+                account = item[FIELD_NAMES['ACCOUNT']]
                 
                 formatted_contacts.append({
-                    'contact_id': contact.id,
-                    'contact_name': f"{contact.first_name} {contact.last_name}",
-                    'contact_email': contact.email,
-                    'account_id': account.id,
-                    'account_name': account.company_name,
+                    f"{FIELD_NAMES['CONTACT']}_id": contact.id,
+                    f"{FIELD_NAMES['CONTACT']}_name": f"{contact.first_name} {contact.last_name}",
+                    f"{FIELD_NAMES['CONTACT']}_email": contact.email,
+                    f"{FIELD_NAMES['ACCOUNT']}_id": account.id,
+                    f"{FIELD_NAMES['ACCOUNT']}_name": account.company_name,
                     'activities': item['activities']
                 })
             
             data = {
-                'campaign_id': campaign.id,
-                'campaign_name': campaign.name,
+                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
+                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
                 'contacts': formatted_contacts
             }
             
@@ -399,7 +417,7 @@ class CampaignExecutionService:
                     title=f"{Activity.ActivityType(activity_type).label} with {contact.first_name} {contact.last_name}",
                     activity_type=activity_type,
                     description=notes or '',
-                    account=contact.account,
+                    **{FIELD_NAMES['ACCOUNT']: contact.account},
                     owner=user,
                     status=Activity.Status.COMPLETED,
                     scheduled_start=timezone.now(),
@@ -414,9 +432,11 @@ class CampaignExecutionService:
                 # Create campaign relationship
                 ActivityCampaign.objects.create(
                     activity=activity,
-                    campaign=campaign,
-                    campaign_target=target,
-                    client_id=campaign.client_id
+                    **{
+                        FIELD_NAMES['CAMPAIGN']: campaign,
+                        'campaign_target': target,
+                        'client_id': campaign.client_id
+                    }
                 )
                 
                 # Add sequence info for consistent tracking (with manual source type)
@@ -445,10 +465,10 @@ class CampaignExecutionService:
             # Prepare response data
             data = {
                 'activity_id': activity.id,
-                'campaign_id': campaign.id,
-                'contact_id': contact.id,
+                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
+                f"{FIELD_NAMES['CONTACT']}_id": contact.id,
                 'activity_type': activity_type,
-                'result': result_info
+                FIELD_NAMES['RESULT']: result_info
             }
             
             meta = {
@@ -457,8 +477,11 @@ class CampaignExecutionService:
                 'result_processed': True
             }
             
+            # Use operation message from config
+            message = OPERATION_MESSAGES['ACTIVITY_COMPLETED']
+            
             return StandardizedSuccessResponse.success(
-                message=f"Manual {activity_type.lower()} activity added and processed successfully",
+                message=message,
                 data=data,
                 meta=meta
             )

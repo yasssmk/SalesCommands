@@ -17,7 +17,7 @@ from apps.campaign.utils.standardized_responses import (
 )
 from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 
-class CampaignTargetViewSet(BaseAPIView, ClientScopeManager.ViewMixin, CampaignPermissionMixin, viewsets.ModelViewSet):
+class CampaignTargetViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSet):
     """
     API endpoints for managing campaign targets
     Now returns standardized responses consistently with centralized permissions

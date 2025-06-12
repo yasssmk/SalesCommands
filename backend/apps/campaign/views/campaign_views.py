@@ -17,6 +17,15 @@ from apps.campaign.services.campaign_manager import CampaignManager
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse
 from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 
+# Import configuration variables
+from apps.campaign.config.variables import (
+    QUERY_PARAMS,
+    FILTER_CONFIGS,
+    SEARCH_CONFIGS,
+    ORDERING_CONFIGS,
+    DEFAULT_ORDERINGS
+)
+
 
 class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSet):
     """
@@ -28,10 +37,10 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
     queryset = Campaign.objects.all()
     entity_name = 'campaign'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['campaign_type', 'owner', 'status', 'sequence_type']
-    search_fields = ['name', 'description']
-    ordering_fields = ['name', 'start_date', 'end_date', 'created_at']
-    ordering = ['-created_at']
+    filterset_fields = FILTER_CONFIGS['CAMPAIGN_FILTERS']
+    search_fields = SEARCH_CONFIGS['CAMPAIGN_SEARCH']
+    ordering_fields = ORDERING_CONFIGS['CAMPAIGN_ORDERING']
+    ordering = DEFAULT_ORDERINGS['CAMPAIGNS']
     
     def get_serializer_class(self):
         """Use different serializers for list vs detail views"""
@@ -50,12 +59,12 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
         queryset = queryset.select_related('owner')
         
         # Filter by owner
-        owner_id = self.request.query_params.get('owner')
+        owner_id = self.request.query_params.get(QUERY_PARAMS['OWNER'])
         if owner_id:
             queryset = queryset.filter(owner_id=owner_id)
         
         # Filter by stakeholder role
-        stakeholder_role = self.request.query_params.get('stakeholder_role')
+        stakeholder_role = self.request.query_params.get(QUERY_PARAMS['STAKEHOLDER_ROLE'])
         if stakeholder_role:
             # Find campaigns where the current user has this role
             queryset = queryset.filter(
@@ -64,7 +73,7 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
             ).distinct()
         
         # My campaigns (either owner or any stakeholder)
-        my_campaigns = self.request.query_params.get('my_campaigns', None)
+        my_campaigns = self.request.query_params.get(QUERY_PARAMS['MY_CAMPAIGNS'], None)
         if my_campaigns and my_campaigns.lower() == 'true':
             queryset = queryset.filter(
                 Q(owner=self.request.user) | 
@@ -77,7 +86,7 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
             queryset = queryset.filter(campaign_type=campaign_type)
         
         # Filter by status
-        campaign_status = self.request.query_params.get('status')
+        campaign_status = self.request.query_params.get(QUERY_PARAMS['STATUS'])
         if campaign_status:
             queryset = queryset.filter(status=campaign_status)
         
@@ -90,8 +99,8 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
                 queryset = queryset.filter(sequence_type=sequence_type)
         
         # Filter by date range
-        start_after = self.request.query_params.get('start_after')
-        start_before = self.request.query_params.get('start_before')
+        start_after = self.request.query_params.get(QUERY_PARAMS['START_AFTER'])
+        start_before = self.request.query_params.get(QUERY_PARAMS['START_BEFORE'])
         
         if start_after:
             queryset = queryset.filter(start_date__gte=start_after)

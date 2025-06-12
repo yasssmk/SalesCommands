@@ -15,6 +15,14 @@ from apps.campaign.utils.standardized_responses import (
     CampaignSuccessMessages
 )
 
+# Import configuration variables
+from apps.campaign.config.variables import (
+    FIELD_NAMES,
+    OPERATION_MESSAGES,
+    CAMPAIGN_STATUSES,
+    DEFAULT_PLAYLIST_LIMIT
+)
+
 
 class CampaignCreationService:
     """
@@ -94,17 +102,22 @@ class CampaignCreationService:
         - Return initial playlist
         """
         try:
+            # Get status values from CAMPAIGN_STATUSES
+            active_status = next(status[0] for status in CAMPAIGN_STATUSES if status[1] == 'Active')
+            completed_status = next(status[0] for status in CAMPAIGN_STATUSES if status[1] == 'Completed')
+            cancelled_status = next(status[0] for status in CAMPAIGN_STATUSES if status[1] == 'Cancelled')
+            
             # Validate campaign can be started
-            if campaign.status == 'ACTIVE':
+            if campaign.status == active_status:
                 raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_ALREADY_STARTED)
             
-            if campaign.status in ['COMPLETED', 'CANCELLED']:
+            if campaign.status in [completed_status, cancelled_status]:
                 raise StandardizedValidationError(
                     CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=campaign.status)
                 )
             
             # Mark campaign as started
-            campaign.status = 'ACTIVE'
+            campaign.status = active_status
             campaign.started_at = timezone.now()
             campaign.save()
             
@@ -114,7 +127,7 @@ class CampaignCreationService:
             # Get the initial active activities using standardized queue service
             playlist_response = CampaignQueueService.get_active_activities_for_campaign(
                 campaign, 
-                limit=20,
+                limit=DEFAULT_PLAYLIST_LIMIT,
                 prefetch_relations=True  # Enable serialization for response
             )
             
@@ -170,11 +183,14 @@ class CampaignCreationService:
         try:
             from apps.activities.models import Activity
             
+            # Get paused status from CAMPAIGN_STATUSES
+            paused_status = next(status[0] for status in CAMPAIGN_STATUSES if status[1] == 'Paused')
+            
             # Update all planned activities to set pause date
             activities_paused = 0
             
             for activity in Activity.objects.filter(
-                campaign_info__campaign=campaign,
+                **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
                 status=Activity.Status.PLANNED
             ):
                 if hasattr(activity, 'sequence_info'):
@@ -183,17 +199,17 @@ class CampaignCreationService:
                     activities_paused += 1
             
             # Update campaign status
-            campaign.status = 'PAUSED'
+            campaign.status = paused_status
             campaign.save()
             
-            # Prepare message with pause date info
-            message = CampaignSuccessMessages.CAMPAIGN_PAUSED.format(name=campaign.name)
+            # Use operation message from config
+            message = OPERATION_MESSAGES['CAMPAIGN_PAUSED'].format(name=campaign.name)
             if pause_until:
                 message += f" until {pause_until}"
             
             data = {
-                'campaign_id': campaign.id,
-                'campaign_name': campaign.name,
+                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
+                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
                 'activities_paused': activities_paused,
                 'pause_until': pause_until.isoformat() if pause_until else None,
                 'paused_at': timezone.now().isoformat()
@@ -230,17 +246,20 @@ class CampaignCreationService:
         try:
             from apps.activities.models import Activity
             
+            # Get active status from CAMPAIGN_STATUSES
+            active_status = next(status[0] for status in CAMPAIGN_STATUSES if status[1] == 'Active')
+            
             # Clear pause dates from all activities
             activities_resumed = 0
             
-            for activity in Activity.objects.filter(campaign_info__campaign=campaign):
+            for activity in Activity.objects.filter(**{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign}):
                 if hasattr(activity, 'sequence_info') and activity.sequence_info.sequence_paused_until:
                     activity.sequence_info.sequence_paused_until = None
                     activity.sequence_info.save()
                     activities_resumed += 1
             
             # Update campaign status
-            campaign.status = 'ACTIVE'
+            campaign.status = active_status
             campaign.save()
             
             # Import here to avoid circular imports
@@ -257,8 +276,8 @@ class CampaignCreationService:
                 active_activities_count = len(items)
             
             data = {
-                'campaign_id': campaign.id,
-                'campaign_name': campaign.name,
+                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
+                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
                 'activities_resumed': activities_resumed,
                 'active_activities': active_activities_count,
                 'resumed_at': timezone.now().isoformat()
@@ -270,8 +289,11 @@ class CampaignCreationService:
                 'active_activities_available': active_activities_count
             }
             
+            # Use operation message from config
+            message = OPERATION_MESSAGES['CAMPAIGN_RESUMED'].format(name=campaign.name)
+            
             return StandardizedSuccessResponse.success(
-                message=CampaignSuccessMessages.CAMPAIGN_RESUMED.format(name=campaign.name),
+                message=message,
                 data=data,
                 meta=meta
             )
@@ -318,11 +340,15 @@ class CampaignCreationService:
                     account = Account.objects.get(id=account_id)
                     
                     # Check if target already exists
-                    if not CampaignTarget.objects.filter(campaign=campaign, account=account).exists():
+                    if not CampaignTarget.objects.filter(
+                        **{FIELD_NAMES['CAMPAIGN']: campaign, FIELD_NAMES['ACCOUNT']: account}
+                    ).exists():
                         CampaignTarget.objects.create(
-                            campaign=campaign,
-                            account=account,
-                            client_id=client_id  
+                            **{
+                                FIELD_NAMES['CAMPAIGN']: campaign,
+                                FIELD_NAMES['ACCOUNT']: account,
+                                'client_id': client_id
+                            }
                         )
                         targets_created += 1
                             
@@ -336,11 +362,15 @@ class CampaignCreationService:
                     contact = Contact.objects.get(id=contact_id)
                     
                     # Check if target already exists
-                    if not CampaignTarget.objects.filter(campaign=campaign, contact=contact).exists():
+                    if not CampaignTarget.objects.filter(
+                        **{FIELD_NAMES['CAMPAIGN']: campaign, FIELD_NAMES['CONTACT']: contact}
+                    ).exists():
                         CampaignTarget.objects.create(
-                            campaign=campaign,
-                            contact=contact,
-                            client_id=client_id  
+                            **{
+                                FIELD_NAMES['CAMPAIGN']: campaign,
+                                FIELD_NAMES['CONTACT']: contact,
+                                'client_id': client_id
+                            }
                         )
                         targets_created += 1
                             
@@ -354,11 +384,15 @@ class CampaignCreationService:
                     lead = Lead.objects.get(id=lead_id)
                     
                     # Check if target already exists
-                    if not CampaignTarget.objects.filter(campaign=campaign, lead=lead).exists():
+                    if not CampaignTarget.objects.filter(
+                        **{FIELD_NAMES['CAMPAIGN']: campaign, FIELD_NAMES['LEAD']: lead}
+                    ).exists():
                         CampaignTarget.objects.create(
-                            campaign=campaign,
-                            lead=lead,
-                            client_id=client_id  
+                            **{
+                                FIELD_NAMES['CAMPAIGN']: campaign,
+                                FIELD_NAMES['LEAD']: lead,
+                                'client_id': client_id
+                            }
                         )
                         targets_created += 1
                             
@@ -372,11 +406,15 @@ class CampaignCreationService:
                     opportunity = Opportunity.objects.get(id=opportunity_id)
                     
                     # Check if target already exists
-                    if not CampaignTarget.objects.filter(campaign=campaign, target_opportunity=opportunity).exists():
+                    if not CampaignTarget.objects.filter(
+                        **{FIELD_NAMES['CAMPAIGN']: campaign, FIELD_NAMES['TARGET_OPPORTUNITY']: opportunity}
+                    ).exists():
                         CampaignTarget.objects.create(
-                            campaign=campaign,
-                            target_opportunity=opportunity,
-                            client_id=client_id  
+                            **{
+                                FIELD_NAMES['CAMPAIGN']: campaign,
+                                FIELD_NAMES['TARGET_OPPORTUNITY']: opportunity,
+                                'client_id': client_id
+                            }
                         )
                         targets_created += 1
                             

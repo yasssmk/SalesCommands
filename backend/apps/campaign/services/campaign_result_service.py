@@ -15,7 +15,16 @@ from apps.campaign.utils.standardized_responses import (
 )
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages, CoreErrorMessages
-from apps.campaign.config.variables import TIER_MAX_ATTEMPTS, TIER_PRIORITY_SCORES
+
+# Import configuration variables
+from apps.campaign.config.variables import (
+    TIER_MAX_ATTEMPTS, 
+    TIER_PRIORITY_SCORES,
+    FIELD_NAMES,
+    CALL_RESULTS,
+    EMAIL_LINKEDIN_RESULTS,
+    OPERATION_MESSAGES
+)
 
 
 class CampaignResultService:
@@ -95,6 +104,12 @@ class CampaignResultService:
         Returns:
             Response: Standardized response with call result processing
         """
+        # Validate result is in allowed call results
+        if result not in CALL_RESULTS:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=result)
+            )
+        
         sequence_info = getattr(activity, 'sequence_info', None)
         campaign_info = getattr(activity, 'campaign_info', None)
         
@@ -151,7 +166,7 @@ class CampaignResultService:
             # Cancel all remaining activities for this contact in this campaign
             if is_sequence_campaign and campaign: 
                 remaining_activities = Activity.objects.filter(
-                    campaign_info__campaign=campaign,
+                    **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
                     contacts=contact,
                     status=Activity.Status.PLANNED
                 )
@@ -171,7 +186,7 @@ class CampaignResultService:
             data = {
                 'activity_id': activity.id,
                 'action': 'sequence_regenerated' if is_sequence_campaign else 'completed',
-                'contact_id': contact.id if contact else None,
+                f"{FIELD_NAMES['CONTACT']}_id": contact.id if contact else None,
                 'phone_marked_invalid': True,
                 'new_activities_count': new_activities_count
             }
@@ -226,7 +241,7 @@ class CampaignResultService:
             if is_sequence_campaign and campaign:
                 # Cancel all remaining activities for this contact in this campaign
                 remaining_activities = Activity.objects.filter(
-                    campaign_info__campaign=campaign,
+                    **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
                     contacts=contact,
                     status=Activity.Status.PLANNED
                 )
@@ -249,7 +264,7 @@ class CampaignResultService:
             data = {
                 'activity_id': activity.id,
                 'action': 'sequence_regenerated' if is_sequence_campaign else 'completed',
-                'contact_id': contact.id if contact else None,
+                f"{FIELD_NAMES['CONTACT']}_id": contact.id if contact else None,
                 'email_marked_invalid': True,
                 'new_activities_count': new_activities_count
             }
@@ -323,7 +338,7 @@ class CampaignResultService:
         
         # Get the last completed activity to link properly
         last_completed = Activity.objects.filter(
-            campaign_info__campaign=campaign,
+            **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
             contacts=contact,
             status=Activity.Status.COMPLETED,
             sequence_info__isnull=False
@@ -762,6 +777,12 @@ class CampaignResultService:
             Response: Standardized response with email/LinkedIn result processing
         """
         try:
+            # Validate result is in allowed email/LinkedIn results
+            if result not in EMAIL_LINKEDIN_RESULTS:
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=result)
+                )
+            
             sequence_info = getattr(activity, 'sequence_info', None)
             
             # For emails/LinkedIn, typically we just complete and move to next
@@ -804,7 +825,7 @@ class CampaignResultService:
                     'action': 'completed'
                 }
                 
-                message = 'Activity completed'
+                message = OPERATION_MESSAGES['ACTIVITY_COMPLETED']
             
             elif result == 'BOUNCED':
                 return cls._handle_email_bounced(activity, sequence_info, notes, is_sequence_campaign, **kwargs)
@@ -817,7 +838,7 @@ class CampaignResultService:
             
             meta = {
                 'operation': 'email_linkedin_handling',
-                'result': result,
+                FIELD_NAMES['RESULT']: result,
                 'sequence_progressed': result in ['NO_RESPONSE', 'SENT', 'DELIVERED', 'OPENED', 'CLICKED']
             }
             
@@ -864,7 +885,7 @@ class CampaignResultService:
         # Cancel planned activities for this contact
         if contact and campaign:
             cancelled_activities = Activity.objects.filter(
-                campaign_info__campaign=campaign,
+                **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
                 contacts=contact,
                 status=Activity.Status.PLANNED
             )
@@ -893,8 +914,10 @@ class CampaignResultService:
         
         if account and campaign:
             cancelled_activities = Activity.objects.filter(
-                campaign_info__campaign=campaign,
-                account=account,
+                **{
+                    f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign,
+                    FIELD_NAMES['ACCOUNT']: account
+                },
                 status=Activity.Status.PLANNED
             )
             cancelled_count = cancelled_activities.count()
@@ -922,7 +945,7 @@ class CampaignResultService:
             title=f"Meeting with {activity.account.company_name}",
             activity_type=Activity.ActivityType.MEETING,
             description=f"Meeting scheduled from {activity.title}. {notes}" if notes else f"Meeting scheduled from {activity.title}",
-            account=activity.account,
+            **{FIELD_NAMES['ACCOUNT']: activity.account},
             owner=activity.owner,
             scheduled_start=timezone.make_aware(timezone.datetime.combine(meeting_date, timezone.datetime.min.time().replace(hour=10))),
             status=Activity.Status.PLANNED
@@ -936,8 +959,10 @@ class CampaignResultService:
             from apps.activities.models import ActivityCampaign
             ActivityCampaign.objects.create(
                 activity=meeting_activity,
-                campaign=activity.campaign_info.campaign,
-                campaign_target=activity.campaign_info.campaign_target
+                **{
+                    FIELD_NAMES['CAMPAIGN']: activity.campaign_info.campaign,
+                    'campaign_target': activity.campaign_info.campaign_target
+                }
             )
         
         return meeting_activity

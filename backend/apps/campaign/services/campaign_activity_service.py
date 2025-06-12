@@ -6,6 +6,13 @@ from apps.campaign.models import Campaign, CampaignTarget
 from apps.sequence.sequences.chasing_sequence import ChasingSequence
 from apps.accounts.models import Contact
 
+# Import configuration variables
+from apps.campaign.config.variables import (
+    FIELD_NAMES,
+    DEFAULT_SUMMARY_ACTIVITIES,
+    OPERATION_MESSAGES
+)
+
 
 class CampaignActivityService:
     """
@@ -49,7 +56,7 @@ class CampaignActivityService:
         with transaction.atomic():
             # Process each valid contact
             for contact_info in valid_contacts:
-                contact = contact_info['contact']
+                contact = contact_info[FIELD_NAMES['CONTACT']]
                 has_phone = contact_info['has_phone']
                 has_email = contact_info['has_email']
                 has_linkedin = contact_info['has_linkedin']
@@ -268,11 +275,11 @@ class CampaignActivityService:
         Returns:
             Dictionary with extracted contacts and account mapping
         """
-        campaign_targets = CampaignTarget.objects.filter(campaign=campaign).select_related(
-            'account', 
-            'contact',
-            'lead',
-            'target_opportunity'
+        campaign_targets = CampaignTarget.objects.filter(**{FIELD_NAMES['CAMPAIGN']: campaign}).select_related(
+            FIELD_NAMES['ACCOUNT'], 
+            FIELD_NAMES['CONTACT'],
+            FIELD_NAMES['LEAD'],
+            FIELD_NAMES['TARGET_OPPORTUNITY']
         )
 
         # OPTIMIZATION: Create index dictionaries for O(1) lookups instead of O(n*m) nested loops
@@ -315,18 +322,18 @@ class CampaignActivityService:
             all_contacts = Contact.objects.filter(
                 id__in=target_contacts,
                 account_id__in=account_ids
-            ).select_related('standard_department', 'account')
+            ).select_related('standard_department', FIELD_NAMES['ACCOUNT'])
         else:
             # Get all contacts for the collected accounts
             all_contacts = Contact.objects.filter(
                 account_id__in=account_ids
-            ).select_related('standard_department', 'account')
+            ).select_related('standard_department', FIELD_NAMES['ACCOUNT'])
             
             # Add directly targeted contacts even if their account was not included
             if direct_contact_ids:
                 direct_contacts = Contact.objects.filter(
                     id__in=direct_contact_ids
-                ).exclude(account_id__in=account_ids).select_related('standard_department', 'account')
+                ).exclude(account_id__in=account_ids).select_related('standard_department', FIELD_NAMES['ACCOUNT'])
                 
                 # Combine QuerySets
                 all_contacts = (all_contacts | direct_contacts).distinct()
@@ -346,8 +353,8 @@ class CampaignActivityService:
             if hasattr(contact, 'opted_out') and contact.opted_out:
                 skipped_contacts.append({
                     'contact_id': contact.id,
-                    'contact': f"{contact.first_name} {contact.last_name}",
-                    'account': contact.account.company_name if contact.account else "Unknown",
+                    FIELD_NAMES['CONTACT']: f"{contact.first_name} {contact.last_name}",
+                    FIELD_NAMES['ACCOUNT']: contact.account.company_name if contact.account else "Unknown",
                     'reason': 'Contact has opted out of communications'
                 })
                 continue
@@ -361,15 +368,15 @@ class CampaignActivityService:
             if not (has_phone or has_email or has_linkedin):
                 skipped_contacts.append({
                     'contact_id': contact.id,
-                    'contact': f"{contact.first_name} {contact.last_name}",
-                    'account': contact.account.company_name if contact.account else "Unknown",
+                    FIELD_NAMES['CONTACT']: f"{contact.first_name} {contact.last_name}",
+                    FIELD_NAMES['ACCOUNT']: contact.account.company_name if contact.account else "Unknown",
                     'reason': 'No communication channels available'
                 })
                 continue
             
             # Valid contact for activities
             valid_contacts.append({
-                'contact': contact,
+                FIELD_NAMES['CONTACT']: contact,
                 'has_phone': has_phone,
                 'has_email': has_email,
                 'has_linkedin': has_linkedin

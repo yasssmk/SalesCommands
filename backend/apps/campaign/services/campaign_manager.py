@@ -17,6 +17,12 @@ from apps.campaign.utils.standardized_responses import (
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages
 
+# Import configuration variables
+from apps.campaign.config.variables import (
+    FIELD_NAMES,
+    OPERATION_MESSAGES
+)
+
 
 class CampaignManager:
     """
@@ -390,32 +396,34 @@ class CampaignManager:
                         activities_cancelled = response_data.get('activities_cancelled', 0)
                         
                         successful.append({
-                            'contact_id': contact_id,
-                            'contact_name': f"{contact.first_name} {contact.last_name}",
+                            f"{FIELD_NAMES['CONTACT']}_id": contact_id,
+                            f"{FIELD_NAMES['CONTACT']}_name": f"{contact.first_name} {contact.last_name}",
                             'activities_cancelled': activities_cancelled
                         })
                         total_activities_cancelled += activities_cancelled
                     
                 except Contact.DoesNotExist:
                     failed.append({
-                        'contact_id': contact_id,
+                        f"{FIELD_NAMES['CONTACT']}_id": contact_id,
                         'error': 'Contact not found'
                     })
                 except Exception as e:
                     failed.append({
-                        'contact_id': contact_id,
+                        f"{FIELD_NAMES['CONTACT']}_id": contact_id,
                         'error': str(e)
                     })
             
-            # Use bulk operation response
+            # Use bulk operation response with operation message from config
+            message = OPERATION_MESSAGES['BULK_OPERATION_COMPLETED'].format(
+                successful=len(successful),
+                total=len(contact_ids)
+            )
+            
             return CampaignResponseBuilder.bulk_operation(
                 operation_type='contact_removal',
                 successful_items=successful,
                 failed_items=failed,
-                custom_message=CampaignSuccessMessages.BULK_CONTACTS_REMOVED.format(
-                    successful=len(successful),
-                    total=len(contact_ids)
-                )
+                custom_message=message
             )
             
         except StandardizedValidationError:

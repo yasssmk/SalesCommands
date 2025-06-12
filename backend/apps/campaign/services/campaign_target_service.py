@@ -5,6 +5,7 @@ from apps.accounts.models import Account, Contact
 from apps.leads.models import Lead
 from apps.opportunities.models import Opportunity
 
+
 class CampaignTargetService:
     """
     Service for handling campaign target selection and preparation

@@ -13,7 +13,7 @@ from apps.campaign.serializers.campaign_objective_serializer import CampaignObje
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse
 from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 
-class CampaignObjectiveViewSet(BaseAPIView, ClientScopeManager.ViewMixin, CampaignPermissionMixin, viewsets.ModelViewSet):
+class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSet):
     """
     API endpoints for managing campaign objectives
     Now returns standardized responses consistently with centralized permissions

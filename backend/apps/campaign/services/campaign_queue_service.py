@@ -14,7 +14,9 @@ from apps.campaign.config.variables import (
     CALLBACK_PRIORITY_BOOST,
     SEQUENCE_STEP_PRIORITY_BONUS,
     WORKING_DAYS,
-    BUYING_AUTHORITY_PRIORITY_BOOST
+    BUYING_AUTHORITY_PRIORITY_BOOST,
+    FIELD_NAMES,
+    OPERATION_MESSAGES
 )
 from apps.campaign.utils.standardized_responses import (
     StandardizedSuccessResponse, 
@@ -51,15 +53,15 @@ class CampaignQueueService:
         try:
             # Build base queryset
             query = Activity.objects.filter(
-                campaign_info__campaign=campaign,
+                **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
                 status__in=[Activity.Status.PLANNED]
             )
             
             # CRITICAL: Always prefetch relations needed for priority calculation
             # This prevents N+1 queries in _calculate_priority_score()
             query = query.select_related(
-                'account',  # For tier-based scoring
-                'campaign_info__campaign_target',  # Campaign relationship
+                FIELD_NAMES['ACCOUNT'],  # For tier-based scoring
+                f"campaign_info__{FIELD_NAMES['CAMPAIGN']}_target",  # Campaign relationship
                 'previous_activity',  # For overdue calculation
                 'sequence_info'  # For sequence-based scoring
             )
@@ -109,10 +111,10 @@ class CampaignQueueService:
                         'title': activity.title,
                         'activity_type': activity.activity_type,
                         'activity_type_display': activity.get_activity_type_display(),
-                        'account_id': activity.account_id,
-                        'account_name': activity.account.company_name,  # Now safely accessed due to select_related
+                        f"{FIELD_NAMES['ACCOUNT']}_id": activity.account_id,
+                        f"{FIELD_NAMES['ACCOUNT']}_name": activity.account.company_name,  # Now safely accessed due to select_related
                         'scheduled_start': activity.scheduled_start,
-                        'status': activity.status,
+                        FIELD_NAMES['STATUS']: activity.status,
                     }
                     
                     # Add contacts - now efficiently prefetched
@@ -185,7 +187,7 @@ class CampaignQueueService:
             # First, update any expired callbacks to IN_PROGRESS
             today = date.today()
             callback_targets = CampaignTarget.objects.filter(
-                campaign=campaign,
+                **{FIELD_NAMES['CAMPAIGN']: campaign},
                 status=CampaignTarget.Status.CALLBACK_PENDING,
                 callback_date__lte=today  # Callback date is today or in the past
             )
@@ -200,12 +202,12 @@ class CampaignQueueService:
             
             # Get all campaign targets for this campaign
             campaign_targets = CampaignTarget.objects.filter(
-                campaign=campaign
+                **{FIELD_NAMES['CAMPAIGN']: campaign}
             ).select_related(
-                'account', 
-                'contact',
-                'lead',
-                'target_opportunity'
+                FIELD_NAMES['ACCOUNT'], 
+                FIELD_NAMES['CONTACT'],
+                FIELD_NAMES['LEAD'],
+                FIELD_NAMES['TARGET_OPPORTUNITY']
             )
             
             # Create a map of contact_id to campaign_target for efficient lookup
@@ -218,7 +220,7 @@ class CampaignQueueService:
             contacts_with_score = []
             
             for contact_info in valid_contacts:
-                contact = contact_info['contact']
+                contact = contact_info[FIELD_NAMES['CONTACT']]
                 
                 # Skip contacts that have already been processed (completed or stopped)
                 target = target_by_contact_id.get(contact.id) or contact_to_target_map.get(contact.id)
@@ -263,8 +265,8 @@ class CampaignQueueService:
                 type_priorities = {
                     'opportunity': 30,  # Highest priority for opportunity targets
                     'lead': 20,         # High priority for leads
-                    'contact': 15,      # Medium priority for direct contacts
-                    'account': 10       # Base priority for account targets
+                    FIELD_NAMES['CONTACT']: 15,      # Medium priority for direct contacts
+                    FIELD_NAMES['ACCOUNT']: 10       # Base priority for account targets
                 }
                 score += type_priorities.get(target_type, 0)
                 
@@ -289,13 +291,13 @@ class CampaignQueueService:
                 
                 # Add the contact with its score to the list
                 contacts_with_score.append({
-                    'contact': contact,
-                    'contact_id': contact.id,
-                    'contact_name': f"{contact.first_name} {contact.last_name}",
+                    FIELD_NAMES['CONTACT']: contact,
+                    f"{FIELD_NAMES['CONTACT']}_id": contact.id,
+                    f"{FIELD_NAMES['CONTACT']}_name": f"{contact.first_name} {contact.last_name}",
                     'email': contact.email,
                     'phone': contact.phone,
-                    'account': account,
-                    'account_name': account.company_name,
+                    FIELD_NAMES['ACCOUNT']: account,
+                    f"{FIELD_NAMES['ACCOUNT']}_name": account.company_name,
                     'target_type': target_type,
                     'target_id': target.id,
                     'has_phone': contact_info['has_phone'],
@@ -303,7 +305,7 @@ class CampaignQueueService:
                     'has_linkedin': contact_info['has_linkedin'],
                     'priority_score': score,
                     'callback_date': target.callback_date if hasattr(target, 'callback_date') else None,
-                    'status': target.status
+                    FIELD_NAMES['STATUS']: target.status
                 })
             
             # Sort by priority score (descending)
@@ -325,7 +327,7 @@ class CampaignQueueService:
                 campaign_id=campaign.id,
                 campaign_name=campaign.name,
                 items=contacts_with_score,
-                queue_type='contact',
+                queue_type=FIELD_NAMES['CONTACT'],
                 is_sequence=False,
                 total_items=contact_counts['prioritized'],
                 additional_data={
@@ -370,8 +372,8 @@ class CampaignQueueService:
                 
                 # Add activation-specific data
                 activation_data = {
-                    'campaign_id': campaign.id,
-                    'campaign_name': campaign.name,
+                    f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
+                    f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
                     'campaign_activated': True,
                     'activation_time': timezone.now().isoformat(),
                     'initial_queue': items,
@@ -384,8 +386,11 @@ class CampaignQueueService:
                     'activated_at': timezone.now().isoformat()
                 }
                 
+                # Use operation message from config
+                message = OPERATION_MESSAGES['CAMPAIGN_STARTED'].format(name=campaign.name)
+                
                 return StandardizedSuccessResponse.success(
-                    message=CampaignSuccessMessages.CAMPAIGN_STARTED.format(name=campaign.name),
+                    message=message,
                     data=activation_data,
                     meta=meta
                 )
@@ -505,7 +510,7 @@ class CampaignQueueService:
             from core.utils.business_days import BusinessDayCalculator
             
             if not hasattr(activity, 'sequence_info') or not activity.previous_activity:
-                return {'status': 'ready', 'days_waiting': 0}
+                return {FIELD_NAMES['STATUS']: 'ready', 'days_waiting': 0}
             
             sequence_info = activity.sequence_info
             
@@ -529,28 +534,28 @@ class CampaignQueueService:
                         today, target_date)
                     
                     return {
-                        'status': 'waiting',
+                        FIELD_NAMES['STATUS']: 'waiting',
                         'business_days_waiting': business_days_waiting,
                         'ready_in_business_days': ready_in_days,
                         'ready_date': target_date
                     }
                 elif business_days_waiting == 0:
                     return {
-                        'status': 'ready', 
+                        FIELD_NAMES['STATUS']: 'ready', 
                         'business_days_waiting': 0,
                         'ready_date': today
                     }
                 else:
                     return {
-                        'status': 'overdue',
+                        FIELD_NAMES['STATUS']: 'overdue',
                         'business_days_waiting': business_days_waiting,
                         'business_days_overdue': business_days_waiting
                     }
             
-            return {'status': 'pending_previous', 'business_days_waiting': 0}
+            return {FIELD_NAMES['STATUS']: 'pending_previous', 'business_days_waiting': 0}
         except Exception:
             # If calculation fails, default to ready status
-            return {'status': 'ready', 'days_waiting': 0}
+            return {FIELD_NAMES['STATUS']: 'ready', 'days_waiting': 0}
 
     @classmethod
     def _calculate_priority_score(cls, activity: Activity) -> float:
@@ -632,7 +637,7 @@ class CampaignQueueService:
                 total_activities = len(all_campaign_activities)
             else:
                 # Fallback: query database (should be avoided)
-                all_activities = Activity.objects.filter(campaign_info__campaign=campaign)
+                all_activities = Activity.objects.filter(**{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign})
                 
                 status_counts = {
                     'planned': all_activities.filter(status=Activity.Status.PLANNED).count(),
@@ -644,7 +649,7 @@ class CampaignQueueService:
             # Count by delay status using already processed data
             delay_status_counts = {'ready': 0, 'waiting': 0, 'overdue': 0}
             for item in ready_activities:
-                delay_status = item['delay_status']['status']
+                delay_status = item['delay_status'][FIELD_NAMES['STATUS']]
                 if delay_status in delay_status_counts:
                     delay_status_counts[delay_status] += 1
             

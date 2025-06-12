@@ -3,6 +3,11 @@
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages, CoreErrorMessages
 from core.client_scope import ClientScopeManager
+from apps.campaign.config.variables import (
+    CAMPAIGN_FORBIDDEN_STATES,
+    FIELD_NAMES,
+    CAMPAIGN_PERMISSIONS
+)
 
 
 class CampaignPermissionMixin(ClientScopeManager.ViewMixin):
@@ -29,8 +34,8 @@ class CampaignPermissionMixin(ClientScopeManager.ViewMixin):
             
         # Si stakeholders autorisés, vérifier les permissions
         if allow_stakeholders:
-            # Vérifier permissions Django générales
-            if user.has_perm('campaign.change_campaign'):
+
+            if user.has_perm(CAMPAIGN_PERMISSIONS['CHANGE']):
                 return True
                 
             # Vérifier si l'utilisateur est stakeholder de cette campagne
@@ -53,8 +58,9 @@ class CampaignPermissionMixin(ClientScopeManager.ViewMixin):
             campaign: Instance de Campaign
             forbidden_states: Liste des états interdits (défaut: COMPLETED, CANCELLED)
         """
+
         if forbidden_states is None:
-            forbidden_states = ['COMPLETED', 'CANCELLED']
+            forbidden_states = CAMPAIGN_FORBIDDEN_STATES
             
         if campaign.status in forbidden_states:
             raise StandardizedValidationError(
@@ -85,7 +91,7 @@ class CampaignPermissionMixin(ClientScopeManager.ViewMixin):
         except Campaign.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
         
-        # ✅ Maintenant self.validate_client_id() est disponible via l'héritage
+        # Validation client scope
         self.validate_client_id(campaign)
         
         # Validation ownership si requis
@@ -106,7 +112,7 @@ class CampaignPermissionMixin(ClientScopeManager.ViewMixin):
             obj: Objet avec une relation FK vers Campaign
             allow_stakeholders: Si True, autorise les stakeholders
         """
-        # ✅ Maintenant self.validate_client_id() est disponible via l'héritage
+        # Validation client scope
         self.validate_client_id(obj)
         
         # Récupérer la campagne liée
@@ -117,7 +123,7 @@ class CampaignPermissionMixin(ClientScopeManager.ViewMixin):
         
         return campaign
     
-    def get_validated_campaign_from_data(self, data_key='campaign', allow_stakeholders=False):
+    def get_validated_campaign_from_data(self, data_key=None, allow_stakeholders=False):
         """
         Valider une campagne depuis les données de la requête
         
@@ -128,6 +134,10 @@ class CampaignPermissionMixin(ClientScopeManager.ViewMixin):
         Returns:
             Instance de Campaign validée
         """
+
+        if data_key is None:
+            data_key = FIELD_NAMES['CAMPAIGN']
+            
         # Extraire campaign depuis les données validées du serializer
         campaign = None
         
@@ -139,11 +149,14 @@ class CampaignPermissionMixin(ClientScopeManager.ViewMixin):
         
         # Fallback: essayer depuis les données brutes
         if not campaign:
-            campaign_id = self.request.data.get(data_key) or self.request.data.get(f'{data_key}_id')
+            # ✅ Utilisation des constantes pour les noms de champs
+            campaign_id = (
+                self.request.data.get(data_key) or 
+                self.request.data.get(FIELD_NAMES['CAMPAIGN_ID'])
+            )
             if campaign_id:
                 try:
                     from apps.campaign.models.campaign import Campaign
-                    # ✅ Maintenant self.get_client_id() est disponible via l'héritage
                     campaign = Campaign.objects.get(pk=campaign_id, client_id=self.get_client_id())
                 except Campaign.DoesNotExist:
                     raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)

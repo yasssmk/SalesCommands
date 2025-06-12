@@ -20,19 +20,27 @@ from apps.campaign.services.campaign_activity_service import CampaignActivitySer
 from apps.campaign.services.campaign_target_service import CampaignTargetService
 from apps.activities.models import Activity, ActivityCampaign, ActivitySequence
 from django.db import transaction
-from apps.campaign.config.variables import DEFAULT_PLAYLIST_LIMIT
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse, CampaignSuccessMessages
 from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
+from apps.campaign.config.variables import (
+    DEFAULT_PLAYLIST_LIMIT,
+    FIELD_NAMES,
+    QUERY_PARAMS,
+    URL_PATTERNS,
+    DATE_FORMATS,
+    VALIDATION_LIMITS,
+    FILTER_CONFIGS
+)
 
 
-class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
+class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSet):
     """
     ViewSet for managing campaigns with sequence and activity management
     Now returns standardized responses consistently
     """
     serializer_class = CampaignSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['campaign_type', 'owner', 'status']
+    filterset_fields = FILTER_CONFIGS['CAMPAIGN_FILTERS']
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'start_date', 'end_date', 'created_at']
     ordering = ['-created_at']
@@ -43,7 +51,7 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         queryset = self.filter_queryset_by_client(queryset)
         
         # Filter by owner if requested
-        owner_filter = self.request.query_params.get('my_campaigns', None)
+        owner_filter = self.request.query_params.get(QUERY_PARAMS['MY_CAMPAIGNS'], None)
         if owner_filter and owner_filter.lower() == 'true':
             queryset = queryset.filter(owner=self.request.user)
         
@@ -95,8 +103,8 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             if start_date and end_date:
                 from datetime import datetime, date
                 try:
-                    start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
-                    end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+                    start_dt = datetime.strptime(start_date, DATE_FORMATS['INPUT_DATE']).date()
+                    end_dt = datetime.strptime(end_date, DATE_FORMATS['INPUT_DATE']).date()
                     
                     if end_dt < start_dt:
                         raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_DATE_INVALID)
@@ -178,7 +186,7 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         """
         campaign = self.get_validated_campaign(require_ownership=True, check_state=False)
         
-        limit = int(request.query_params.get('limit', DEFAULT_PLAYLIST_LIMIT))
+        limit = int(request.query_params.get(QUERY_PARAMS['LIMIT'], DEFAULT_PLAYLIST_LIMIT))
         
         # CampaignManager.get_campaign_playlist now returns Response directly
         return CampaignManager.get_campaign_playlist(campaign, limit=limit)
@@ -249,7 +257,7 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
         Query params:
         - account_id: ID of the account to get campaigns for
         """
-        account_id = request.query_params.get('account_id')
+        account_id = request.query_params.get(QUERY_PARAMS['ACCOUNT_ID'])
         
         if not account_id:
             raise StandardizedValidationError(
@@ -549,9 +557,9 @@ class CampaignManagementViewSet(BaseAPIView, ClientScopeManager.ViewMixin, views
             )
         
         # Validate required fields
-        contact_id = request.data.get('contact_id')
+        contact_id = request.data.get(FIELD_NAMES['CONTACT_ID'])
         activity_type = request.data.get('activity_type')
-        result = request.data.get('result')
+        result = request.data.get(FIELD_NAMES['RESULT'])
         
         if not all([contact_id, activity_type, result]):
             raise StandardizedValidationError(

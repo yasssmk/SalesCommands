@@ -8,22 +8,34 @@ from core.exceptions import StandardizedValidationError
 from apps.campaign.models.campaign_objective import CampaignObjective
 from apps.campaign.models.campaign import Campaign
 
+# ✅ Import des constantes
+from apps.campaign.config.variables import (
+    SERIALIZER_CONFIGS,
+    VALIDATION_LIMITS,
+    FIELD_NAMES,
+    CAMPAIGN_PERMISSIONS
+)
+
 class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """Serializer for CampaignObjective model with standardized validation"""
     
     # Fields for write operations
     name = serializers.CharField(
+        # ✅ Validation avec constantes
+        max_length=VALIDATION_LIMITS['MAX_CAMPAIGN_NAME_LENGTH'],
         error_messages={
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Objective Name'),
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Objective Name'),
             'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Objective Name'),
-            'max_length': CoreErrorMessages.INVALID_FIELD.format(field='Objective Name (maximum 100 characters)')
+            'max_length': CoreErrorMessages.INVALID_FIELD.format(
+                field=f'Objective Name (maximum {VALIDATION_LIMITS["MAX_CAMPAIGN_NAME_LENGTH"]} characters)'
+            )
         }
     )
     
     campaign_id = serializers.PrimaryKeyRelatedField(
         queryset=Campaign.objects.all(),
-        source='campaign',
+        source=FIELD_NAMES['CAMPAIGN'],  # ✅ Utilisation de la constante
         error_messages={
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Campaign'),
             'does_not_exist': CoreErrorMessages.OBJECT_NOT_FOUND,
@@ -34,11 +46,19 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
     target_value = serializers.DecimalField(
         max_digits=12,
         decimal_places=2,
+        min_value=VALIDATION_LIMITS['MIN_TARGET_VALUE'],
+        max_value=VALIDATION_LIMITS['MAX_TARGET_VALUE'],
         error_messages={
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Target Value'),
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Target Value (must be a valid number)'),
             'max_digits': CoreErrorMessages.INVALID_FIELD.format(field='Target Value (maximum 12 digits)'),
-            'max_decimal_places': CoreErrorMessages.INVALID_FIELD.format(field='Target Value (maximum 2 decimal places)')
+            'max_decimal_places': CoreErrorMessages.INVALID_FIELD.format(field='Target Value (maximum 2 decimal places)'),
+            'min_value': CoreErrorMessages.INVALID_FIELD.format(
+                field=f'Target Value (minimum {VALIDATION_LIMITS["MIN_TARGET_VALUE"]})'
+            ),
+            'max_value': CoreErrorMessages.INVALID_FIELD.format(
+                field=f'Target Value (maximum {VALIDATION_LIMITS["MAX_TARGET_VALUE"]})'
+            )
         }
     )
     
@@ -47,10 +67,16 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
         decimal_places=2,
         required=False,
         default=0.00,
+        min_value=0.00,
+        max_value=VALIDATION_LIMITS['MAX_TARGET_VALUE'],
         error_messages={
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Current Value (must be a valid number)'),
             'max_digits': CoreErrorMessages.INVALID_FIELD.format(field='Current Value (maximum 12 digits)'),
-            'max_decimal_places': CoreErrorMessages.INVALID_FIELD.format(field='Current Value (maximum 2 decimal places)')
+            'max_decimal_places': CoreErrorMessages.INVALID_FIELD.format(field='Current Value (maximum 2 decimal places)'),
+            'min_value': CoreErrorMessages.INVALID_FIELD.format(field='Current Value (cannot be negative)'),
+            'max_value': CoreErrorMessages.INVALID_FIELD.format(
+                field=f'Current Value (maximum {VALIDATION_LIMITS["MAX_TARGET_VALUE"]})'
+            )
         }
     )
     
@@ -68,12 +94,8 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
     
     class Meta:
         model = CampaignObjective
-        fields = [
-            'id', 'campaign_id', 'name', 'description',
-            'objective_type', 'objective_type_display', 'target_value',
-            'current_value', 'unit', 'is_primary', 'progress_percentage',
-            'last_updated', 'created_at', 'updated_at'
-        ]
+
+        fields = SERIALIZER_CONFIGS['OBJECTIVE_FIELDS']
         read_only_fields = ['id', 'created_at', 'updated_at', 'last_updated']
     
     def get_objective_type_display(self, obj):
@@ -93,9 +115,12 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
     def validate_target_value(self, value):
         """Validate target value is positive"""
         try:
-            if value <= 0:
+            # ✅ Validation avec constantes
+            if value <= VALIDATION_LIMITS['MIN_TARGET_VALUE']:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field="Target Value (must be greater than 0)")
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Target Value (must be greater than {VALIDATION_LIMITS['MIN_TARGET_VALUE']})"
+                    )
                 )
             return value
         except StandardizedValidationError:
@@ -129,7 +154,7 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
             client_id = self._get_client_id_from_context()
             
             # Validate client scope for campaign
-            campaign = data.get('campaign')
+            campaign = data.get(FIELD_NAMES['CAMPAIGN'])  # ✅ Utilisation de la constante
             if campaign:
                 # Validate client ID first (basic security)
                 try:
@@ -144,8 +169,8 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
                     
                     # Check if user is the campaign owner
                     if campaign.owner and campaign.owner.id != current_user.id:
-                        # Check if user has permissions or is a stakeholder
-                        if not current_user.has_perm('campaign.change_campaign'):
+                        # ✅ Utilisation de la constante pour les permissions
+                        if not current_user.has_perm(CAMPAIGN_PERMISSIONS['CHANGE']):
                             # Check if user is a stakeholder
                             from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
                             is_stakeholder = CampaignStakeholder.objects.filter(
