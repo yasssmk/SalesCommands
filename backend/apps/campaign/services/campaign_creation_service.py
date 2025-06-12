@@ -121,43 +121,63 @@ class CampaignCreationService:
             campaign.started_at = timezone.now()
             campaign.save()
             
-            # Import here to avoid circular imports
-            from .campaign_queue_service import CampaignQueueService
+            # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignQueueService
+            from .campaign_core import CampaignCoreService
             
-            # Get the initial active activities using standardized queue service
-            playlist_response = CampaignQueueService.get_active_activities_for_campaign(
-                campaign, 
-                limit=DEFAULT_PLAYLIST_LIMIT,
-                prefetch_relations=True  # Enable serialization for response
-            )
-            
-            # Extract data from the standardized Response object
-            if hasattr(playlist_response, 'data') and 'data' in playlist_response.data:
-                playlist_data = playlist_response.data['data']
-                items = playlist_data.get('items', [])
-                
-                # Create enhanced response with campaign started info
-                additional_data = {
-                    'total_pending': playlist_data.get('total_pending', 0),
-                    'queue_info': playlist_data.get('queue_info', {}),
-                    'campaign_started': True,
-                    'started_at': campaign.started_at.isoformat(),
-                    'activity_types_breakdown': playlist_data.get('activity_types_breakdown', {})
-                }
-                
-                return CampaignResponseBuilder.campaign_playlist(
-                    campaign_id=campaign.id,
-                    campaign_name=campaign.name,
-                    items=items,
-                    queue_type=playlist_data.get('queue_type', 'activity'),
-                    is_sequence=playlist_data.get('is_sequence', bool(campaign.sequence_type)),
-                    total_items=len(items),
-                    additional_data=additional_data
+            # Get the initial active activities using CampaignCoreService
+            try:
+                playlist_response = CampaignCoreService.get_campaign_playlist_internal(
+                    campaign=campaign,
+                    limit=DEFAULT_PLAYLIST_LIMIT
                 )
-            else:
-                # Fallback if response format is unexpected
-                raise StandardizedValidationError(
-                    CampaignErrorMessages.QUEUE_OPTIMIZATION_FAILED
+                
+                # Extract data from the standardized Response object
+                if hasattr(playlist_response, 'data') and 'data' in playlist_response.data:
+                    playlist_data = playlist_response.data['data']
+                    items = playlist_data.get('items', [])
+                    
+                    # Create enhanced response with campaign started info
+                    additional_data = {
+                        'total_pending': playlist_data.get('total_pending', 0),
+                        'queue_info': playlist_data.get('queue_info', {}),
+                        'campaign_started': True,
+                        'started_at': campaign.started_at.isoformat(),
+                        'activity_types_breakdown': playlist_data.get('activity_types_breakdown', {})
+                    }
+                    
+                    return CampaignResponseBuilder.campaign_playlist(
+                        campaign_id=campaign.id,
+                        campaign_name=campaign.name,
+                        items=items,
+                        queue_type=playlist_data.get('queue_type', 'activity'),
+                        is_sequence=playlist_data.get('is_sequence', bool(campaign.sequence_type)),
+                        total_items=len(items),
+                        additional_data=additional_data
+                    )
+                else:
+                    # Fallback si le format de réponse est inattendu
+                    raise StandardizedValidationError(
+                        CampaignErrorMessages.QUEUE_OPTIMIZATION_FAILED
+                    )
+                    
+            except StandardizedValidationError:
+                # Re-raise validation errors
+                raise
+            except Exception as e:
+                # Fallback response si playlist échoue
+                return StandardizedSuccessResponse.success(
+                    message=f"Campaign {campaign.name} started successfully",
+                    data={
+                        'campaign_id': campaign.id,
+                        'campaign_name': campaign.name,
+                        'campaign_started': True,
+                        'started_at': campaign.started_at.isoformat(),
+                        'playlist_error': str(e)
+                    },
+                    meta={
+                        'operation': 'campaign_start',
+                        'playlist_generated': False
+                    }
                 )
             
         except StandardizedValidationError:
@@ -252,7 +272,7 @@ class CampaignCreationService:
             # Clear pause dates from all activities
             activities_resumed = 0
             
-            for activity in Activity.objects.filter(**{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign}):
+            for activity in Activity.objects.filter(campaign_info__campaign=campaign):
                 if hasattr(activity, 'sequence_info') and activity.sequence_info.sequence_paused_until:
                     activity.sequence_info.sequence_paused_until = None
                     activity.sequence_info.save()
@@ -262,22 +282,30 @@ class CampaignCreationService:
             campaign.status = active_status
             campaign.save()
             
-            # Import here to avoid circular imports
-            from .campaign_execution_service import CampaignExecutionService
+            # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignExecutionService
+            from .campaign_core import CampaignCoreService
             
-            # Get updated playlist using standardized execution service
-            updated_playlist_response = CampaignExecutionService.get_campaign_playlist(campaign)
-            
-            # Extract active activities count from the standardized Response
-            active_activities_count = 0
-            if hasattr(updated_playlist_response, 'data') and 'data' in updated_playlist_response.data:
-                playlist_data = updated_playlist_response.data['data']
-                items = playlist_data.get('items', [])
-                active_activities_count = len(items)
+            # Get updated playlist using CampaignCoreService
+            try:
+                updated_playlist_response = CampaignCoreService.get_campaign_playlist_internal(
+                    campaign=campaign,
+                    limit=DEFAULT_PLAYLIST_LIMIT
+                )
+                
+                # Extract active activities count from the standardized Response
+                active_activities_count = 0
+                if hasattr(updated_playlist_response, 'data') and 'data' in updated_playlist_response.data:
+                    playlist_data = updated_playlist_response.data['data']
+                    items = playlist_data.get('items', [])
+                    active_activities_count = len(items)
+                    
+            except Exception:
+                # Si la récupération de playlist échoue, continuer sans (non-critique)
+                active_activities_count = 0
             
             data = {
-                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
                 'activities_resumed': activities_resumed,
                 'active_activities': active_activities_count,
                 'resumed_at': timezone.now().isoformat()

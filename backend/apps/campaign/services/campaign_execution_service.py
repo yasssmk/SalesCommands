@@ -6,8 +6,7 @@ from rest_framework.response import Response
 from apps.campaign.models import Campaign, CampaignTarget
 from apps.accounts.models import Contact, Account
 from apps.activities.models import Activity
-from .campaign_queue_service import CampaignQueueService
-from apps.campaign.config.variables import DEFAULT_PLAYLIST_LIMIT
+from .campaign_core import CampaignCoreService
 from apps.campaign.utils.standardized_responses import (
     StandardizedSuccessResponse, 
     CampaignResponseBuilder, 
@@ -31,94 +30,16 @@ class CampaignExecutionService:
     """
     
     @classmethod
-    def get_campaign_playlist(cls, campaign: Campaign, limit: int = None, current_activity_type: str = None) -> Response:
-        """
-        Get current playlist with configurable limit
-        Works for both sequence and non-sequence campaigns
-        
-        Args:
-            campaign: The campaign to get queue for
-            limit: Number of items to return (default: campaign config or 20)
-            current_activity_type: Optional current activity type for batching similar activities
-            
-        Returns:
-            Response: Standardized response with queue data (activities or contacts) and queue information
-        """
+    def get_campaign_playlist(cls, campaign: Campaign, limit: int = None, 
+                             current_activity_type: str = None) -> Response:
+        """Get campaign playlist - returns standardized response"""
         try:
-            if limit is None:
-                limit = DEFAULT_PLAYLIST_LIMIT
-            
-            # Check if this is a campaign with or without sequence
-            if campaign.sequence_type:
-                # For sequence campaigns, get activity queue with serialization enabled
-                queue_response = CampaignQueueService.get_active_activities_for_campaign(
-                    campaign, 
-                    limit,
-                    prefetch_relations=True,  # Enable serialization for API response
-                    current_activity_type=current_activity_type
-                )
-                
-                # Extract data from the standardized Response to verify and enhance if needed
-                if hasattr(queue_response, 'data') and 'data' in queue_response.data:
-                    response_data = queue_response.data['data']
-                    items = response_data.get('items', [])
-                    
-                    # Return the response directly with any additional execution-specific data
-                    return CampaignResponseBuilder.campaign_playlist(
-                        campaign_id=campaign.id,
-                        campaign_name=campaign.name,
-                        items=items,
-                        queue_type='activity',
-                        is_sequence=True,
-                        total_items=response_data.get('total_items', len(items)),
-                        additional_data={
-                            'total_pending': response_data.get('total_pending', 0),
-                            'queue_info': response_data.get('queue_info', {}),
-                            'activity_types_breakdown': response_data.get('activity_types_breakdown', {}),
-                            'execution_context': 'playlist_request'
-                        }
-                    )
-                else:
-                    # If response format is unexpected, raise error
-                    raise StandardizedValidationError(
-                        CampaignErrorMessages.QUEUE_OPTIMIZATION_FAILED
-                    )
-                
-            else:
-                # For non-sequence campaigns, get contact queue
-                contact_response = CampaignQueueService.get_prioritized_contacts_for_campaign(
-                    campaign,
-                    limit
-                )
-                
-                # Extract data from the standardized Response
-                if hasattr(contact_response, 'data') and 'data' in contact_response.data:
-                    response_data = contact_response.data['data']
-                    items = response_data.get('items', [])
-                    
-                    # Return enhanced contact playlist response
-                    return CampaignResponseBuilder.campaign_playlist(
-                        campaign_id=campaign.id,
-                        campaign_name=campaign.name,
-                        items=items,
-                        queue_type='contact',
-                        is_sequence=False,
-                        total_items=response_data.get('total_items', len(items)),
-                        additional_data={
-                            'total_pending': response_data.get('total_pending', 0),
-                            'skipped_contacts': response_data.get('skipped_contacts', []),
-                            'counts': response_data.get('counts', {}),
-                            'execution_context': 'contact_queue_request'
-                        }
-                    )
-                else:
-                    # If response format is unexpected, raise error
-                    raise StandardizedValidationError(
-                        CampaignErrorMessages.QUEUE_OPTIMIZATION_FAILED
-                    )
-                
+            return CampaignCoreService.get_campaign_playlist_internal(
+                campaign=campaign,
+                limit=limit,
+                current_activity_type=current_activity_type
+            )
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -126,23 +47,16 @@ class CampaignExecutionService:
             )
     
     @classmethod
-    def remove_contact_from_campaign(cls, campaign: Campaign, contact: Contact, notes: str = None) -> Response:
+    def remove_contact_from_campaign(cls, campaign: Campaign, contact: Contact, 
+                                   notes: str = None) -> Response:
         """
-        Remove a contact from a campaign by canceling all their activities
-        
-        Args:
-            campaign: The campaign to remove the contact from
-            contact: The contact to remove
-            notes: Optional notes about the removal reason
-            
-        Returns:
-            Response: Standardized response with removal information
+        Remove contact - RÉÉCRIRE directement sans import CampaignExecutionService
         """
         try:
             with transaction.atomic():
                 # Find all planned activities for this contact in this campaign
                 activities = Activity.objects.filter(
-                    **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
+                    campaign_info__campaign=campaign,
                     contacts=contact,
                     status=Activity.Status.PLANNED
                 )
@@ -158,10 +72,8 @@ class CampaignExecutionService:
                 
                 # Update campaign target status if this is a direct contact target
                 campaign_target = CampaignTarget.objects.filter(
-                    **{
-                        FIELD_NAMES['CAMPAIGN']: campaign,
-                        FIELD_NAMES['CONTACT']: contact
-                    }
+                    campaign=campaign,
+                    contact=contact
                 ).first()
                 
                 if campaign_target:
@@ -170,10 +82,10 @@ class CampaignExecutionService:
                 
                 # Prepare response data
                 data = {
-                    f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                    f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
-                    f"{FIELD_NAMES['CONTACT']}_id": contact.id,
-                    f"{FIELD_NAMES['CONTACT']}_name": f"{contact.first_name} {contact.last_name}",
+                    'campaign_id': campaign.id,
+                    'campaign_name': campaign.name,
+                    'contact_id': contact.id,
+                    'contact_name': f"{contact.first_name} {contact.last_name}",
                     'activities_cancelled': activities_count,
                     'action': 'contact_removed'
                 }
@@ -184,44 +96,31 @@ class CampaignExecutionService:
                     'target_updated': bool(campaign_target)
                 }
                 
-                # Use operation message from config
-                message = OPERATION_MESSAGES['CONTACT_REMOVED']
-                
                 return StandardizedSuccessResponse.success(
-                    message=message,
+                    message=OPERATION_MESSAGES['CONTACT_REMOVED'],
                     data=data,
                     meta=meta
                 )
                 
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
                 CampaignErrorMessages.CAMPAIGN_CONTACT_MAPPING_FAILED
             )
-        
+    
     @classmethod
-    def remove_account_from_campaign(cls, campaign: Campaign, account: Account, notes: str = None) -> Response:
+    def remove_account_from_campaign(cls, campaign: Campaign, account: Account, 
+                                   notes: str = None) -> Response:
         """
-        Remove an account from a campaign by canceling all related activities
-        
-        Args:
-            campaign: The campaign to remove the account from
-            account: The account to remove
-            notes: Optional notes about the removal reason
-            
-        Returns:
-            Response: Standardized response with removal information
+        Remove account - RÉÉCRIRE directement sans import CampaignExecutionService
         """
         try:
             with transaction.atomic():
                 # Find all planned activities for this account in this campaign
                 activities = Activity.objects.filter(
-                    **{
-                        f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign,
-                        FIELD_NAMES['ACCOUNT']: account
-                    },
+                    campaign_info__campaign=campaign,
+                    account=account,
                     status=Activity.Status.PLANNED
                 )
                 
@@ -236,10 +135,8 @@ class CampaignExecutionService:
                 
                 # Update campaign target status
                 campaign_target = CampaignTarget.objects.filter(
-                    **{
-                        FIELD_NAMES['CAMPAIGN']: campaign,
-                        FIELD_NAMES['ACCOUNT']: account
-                    }
+                    campaign=campaign,
+                    account=account
                 ).first()
                 
                 if campaign_target:
@@ -248,10 +145,10 @@ class CampaignExecutionService:
                 
                 # Prepare response data
                 data = {
-                    f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                    f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
-                    f"{FIELD_NAMES['ACCOUNT']}_id": account.id,
-                    f"{FIELD_NAMES['ACCOUNT']}_name": account.company_name,
+                    'campaign_id': campaign.id,
+                    'campaign_name': campaign.name,
+                    'account_id': account.id,
+                    'account_name': account.company_name,
                     'activities_cancelled': activities_count,
                     'action': 'account_removed'
                 }
@@ -262,41 +159,32 @@ class CampaignExecutionService:
                     'target_updated': bool(campaign_target)
                 }
                 
-                # Use operation message from config
-                message = OPERATION_MESSAGES['ACCOUNT_REMOVED']
-                
                 return StandardizedSuccessResponse.success(
-                    message=message,
+                    message=OPERATION_MESSAGES['ACCOUNT_REMOVED'],
                     data=data,
                     meta=meta
                 )
                 
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
                 CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
             )
     
+    
     @classmethod
     def get_campaign_contacts_with_responses(cls, campaign: Campaign) -> Response:
         """
-        Get all contacts in campaign with their email/LinkedIn activities that might have responses
-        
-        Args:
-            campaign: The campaign to check
-            
-        Returns:
-            Response: Standardized response with contacts and their email/LinkedIn activities
+        Get contacts with responses - RÉÉCRIRE directement sans import CampaignExecutionService
         """
         try:
             # Get all completed email/LinkedIn activities for this campaign
             email_linkedin_activities = Activity.objects.filter(
-                **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
+                campaign_info__campaign=campaign,
                 activity_type__in=[Activity.ActivityType.EMAIL, Activity.ActivityType.LINKEDIN],
                 status=Activity.Status.COMPLETED
-            ).select_related(FIELD_NAMES['ACCOUNT']).prefetch_related('contacts')
+            ).select_related('account').prefetch_related('contacts')
             
             contacts_with_activities = {}
             
@@ -306,8 +194,8 @@ class CampaignExecutionService:
                     
                     if contact_key not in contacts_with_activities:
                         contacts_with_activities[contact_key] = {
-                            FIELD_NAMES['CONTACT']: contact,
-                            FIELD_NAMES['ACCOUNT']: activity.account,
+                            'contact': contact,
+                            'account': activity.account,
                             'activities': []
                         }
                     
@@ -317,27 +205,27 @@ class CampaignExecutionService:
                         'title': activity.title,
                         'completed_at': activity.completed_at,
                         'outcome_notes': activity.outcome_notes,
-                        'can_add_response': True  # All completed email/LinkedIn can have responses added
+                        'can_add_response': True
                     })
             
             # Format for standardized response
             formatted_contacts = []
             for item in contacts_with_activities.values():
-                contact = item[FIELD_NAMES['CONTACT']]
-                account = item[FIELD_NAMES['ACCOUNT']]
+                contact = item['contact']
+                account = item['account']
                 
                 formatted_contacts.append({
-                    f"{FIELD_NAMES['CONTACT']}_id": contact.id,
-                    f"{FIELD_NAMES['CONTACT']}_name": f"{contact.first_name} {contact.last_name}",
-                    f"{FIELD_NAMES['CONTACT']}_email": contact.email,
-                    f"{FIELD_NAMES['ACCOUNT']}_id": account.id,
-                    f"{FIELD_NAMES['ACCOUNT']}_name": account.company_name,
+                    'contact_id': contact.id,
+                    'contact_name': f"{contact.first_name} {contact.last_name}",
+                    'contact_email': contact.email,
+                    'account_id': account.id,
+                    'account_name': account.company_name,
                     'activities': item['activities']
                 })
             
             data = {
-                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
                 'contacts': formatted_contacts
             }
             
@@ -354,7 +242,6 @@ class CampaignExecutionService:
             )
             
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -367,24 +254,12 @@ class CampaignExecutionService:
                                       user=None, **kwargs) -> Response:
         """
         Add a manual activity for a contact in a non-sequence campaign
-        
-        Args:
-            campaign: The campaign (must be non-sequence)
-            contact: The contact
-            activity_type: Type of activity (CALL, EMAIL, etc.)
-            result: Activity result
-            notes: Optional notes
-            user: User creating the activity
-            **kwargs: Additional data (meeting_date, callback_date, etc.)
-            
-        Returns:
-            Response: Standardized response with activity creation and result processing information
         """
         try:
             # Verify this is a non-sequence campaign
             if campaign.sequence_type:
                 raise StandardizedValidationError(
-                    CampaignErrorMessages.CAMPAIGN_NO_SEQUENCE_TYPE
+                    "This operation is only for campaigns without sequences"
                 )
             
             # Validate activity type
@@ -417,7 +292,7 @@ class CampaignExecutionService:
                     title=f"{Activity.ActivityType(activity_type).label} with {contact.first_name} {contact.last_name}",
                     activity_type=activity_type,
                     description=notes or '',
-                    **{FIELD_NAMES['ACCOUNT']: contact.account},
+                    account=contact.account,
                     owner=user,
                     status=Activity.Status.COMPLETED,
                     scheduled_start=timezone.now(),
@@ -432,11 +307,9 @@ class CampaignExecutionService:
                 # Create campaign relationship
                 ActivityCampaign.objects.create(
                     activity=activity,
-                    **{
-                        FIELD_NAMES['CAMPAIGN']: campaign,
-                        'campaign_target': target,
-                        'client_id': campaign.client_id
-                    }
+                    campaign=campaign,
+                    campaign_target=target,
+                    client_id=campaign.client_id
                 )
                 
                 # Add sequence info for consistent tracking (with manual source type)
@@ -448,7 +321,7 @@ class CampaignExecutionService:
                     client_id=campaign.client_id
                 )
                 
-                # Process the result
+                # Process the result - UTILISER import local pour éviter circularité
                 from .campaign_result_service import CampaignResultService
                 result_response = CampaignResultService.process_activity_result(
                     activity=activity,
@@ -465,10 +338,10 @@ class CampaignExecutionService:
             # Prepare response data
             data = {
                 'activity_id': activity.id,
-                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                f"{FIELD_NAMES['CONTACT']}_id": contact.id,
+                'campaign_id': campaign.id,
+                'contact_id': contact.id,
                 'activity_type': activity_type,
-                FIELD_NAMES['RESULT']: result_info
+                'result': result_info
             }
             
             meta = {

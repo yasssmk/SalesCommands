@@ -4,7 +4,6 @@ from rest_framework.response import Response
 from apps.campaign.models import Campaign
 from apps.accounts.models import Contact, Account
 from apps.activities.models import Activity
-from .campaign_queue_service import CampaignQueueService
 from apps.campaign.utils.standardized_responses import (
     StandardizedSuccessResponse, 
     CampaignSuccessMessages
@@ -30,18 +29,13 @@ class CampaignAnalyticsService:
     def get_campaign_summary(cls, campaign: Campaign) -> Response:
         """
         Get a comprehensive summary of campaign progress
-        
-        Args:
-            campaign: The campaign to summarize
-            
-        Returns:
-            Response: Standardized response with campaign summary data
+        MODIFIER : Utiliser CampaignCoreService pour éviter l'import circulaire
         """
         try:
             # Get all activities for this campaign with optimized query
             all_activities = Activity.objects.filter(
-                **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign}
-            ).select_related(FIELD_NAMES['ACCOUNT']).prefetch_related('contacts')
+                campaign_info__campaign=campaign
+            ).select_related('account').prefetch_related('contacts')
             
             # Status counts
             status_counts = {
@@ -86,13 +80,15 @@ class CampaignAnalyticsService:
                 target_summary['targets_by_status'][status] = target_summary['targets_by_status'].get(status, 0) + 1
             
             # Get current active activities (limited to avoid performance issues)
-            # Use the standardized queue service but extract data from Response
+            # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignQueueService
             next_activities = []
             try:
-                active_response = CampaignQueueService.get_active_activities_for_campaign(
-                    campaign, 
-                    limit=DEFAULT_SUMMARY_ACTIVITIES,
-                    prefetch_relations=False  # We want raw Activity objects for processing
+                # Import local pour éviter circularité
+                from .campaign_core import CampaignCoreService
+                
+                active_response = CampaignCoreService.get_campaign_playlist_internal(
+                    campaign=campaign,
+                    limit=DEFAULT_SUMMARY_ACTIVITIES
                 )
                 
                 # Extract activities from the standardized Response
@@ -102,13 +98,25 @@ class CampaignAnalyticsService:
                     
                     # Format next activities from the Activity objects
                     for activity in ready_activities[:DEFAULT_SUMMARY_ACTIVITIES]:
-                        next_activities.append({
-                            'id': activity.id,
-                            'title': activity.title,
-                            'type': activity.activity_type,
-                            FIELD_NAMES['ACCOUNT']: activity.account.company_name,
-                            'contacts': [c.full_name for c in activity.contacts.all()]
-                        })
+                        # Vérifier si c'est un objet Activity ou un dict serialized
+                        if hasattr(activity, 'id'):
+                            # Raw Activity object
+                            next_activities.append({
+                                'id': activity.id,
+                                'title': activity.title,
+                                'type': activity.activity_type,
+                                'account': activity.account.company_name,
+                                'contacts': [c.full_name for c in activity.contacts.all()]
+                            })
+                        else:
+                            # Serialized dict
+                            next_activities.append({
+                                'id': activity.get('id'),
+                                'title': activity.get('title'),
+                                'type': activity.get('activity_type'),
+                                'account': activity.get('account_name', 'Unknown'),
+                                'contacts': [c.get('name', 'Unknown') for c in activity.get('contacts', [])]
+                            })
                 
             except Exception:
                 # If getting next activities fails, continue without them (non-critical)
@@ -116,8 +124,8 @@ class CampaignAnalyticsService:
             
             # Prepare response data
             data = {
-                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
                 'dates': {
                     'start_date': campaign.start_date,
                     'end_date': campaign.end_date
@@ -152,7 +160,7 @@ class CampaignAnalyticsService:
             raise StandardizedValidationError(
                 CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED
             )
-    
+        
     @classmethod
     def get_campaign_activities(cls, campaign: Campaign, status_filter: List[str] = None) -> Response:
         """

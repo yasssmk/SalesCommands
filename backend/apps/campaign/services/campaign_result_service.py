@@ -523,9 +523,7 @@ class CampaignResultService:
                               notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle callback request - pause sequence or prioritize contact for non-sequence campaigns
-        
-        Returns:
-            Response: Standardized response with callback scheduling info
+        MODIFIER : Éviter les imports circulaires en supprimant les références aux autres services
         """
         try:
             callback_date = kwargs.get('callback_date')
@@ -535,6 +533,20 @@ class CampaignResultService:
                 raise StandardizedValidationError(
                     CampaignErrorMessages.ACTIVITY_CALLBACK_DATE_REQUIRED
                 )
+            
+            # AJOUTER : Validation que la date de callback est cohérente
+            if callback_date < date.today():
+                raise StandardizedValidationError(
+                    "Callback date cannot be in the past"
+                )
+            
+            # AJOUTER : Validation que la date est avant la fin de campagne
+            if hasattr(activity, 'campaign_info') and activity.campaign_info:
+                campaign = activity.campaign_info.campaign
+                if callback_date > campaign.end_date:
+                    raise StandardizedValidationError(
+                        f"Callback date must be before campaign end date ({campaign.end_date})"
+                    )
             
             # Complete current activity
             activity.complete(outcome_notes=f"Callback requested for {callback_date}. {notes}" if notes else f"Callback requested for {callback_date}")
@@ -622,9 +634,7 @@ class CampaignResultService:
         """
         Handle successful call - create meeting and manage campaign target appropriately
         Works for both sequence and non-sequence campaigns
-        
-        Returns:
-            Response: Standardized response with meeting scheduling info
+        MODIFIER : Éviter l'import circulaire pour la playlist
         """
         try:
             meeting_date = kwargs.get('meeting_date')
@@ -959,10 +969,8 @@ class CampaignResultService:
             from apps.activities.models import ActivityCampaign
             ActivityCampaign.objects.create(
                 activity=meeting_activity,
-                **{
-                    FIELD_NAMES['CAMPAIGN']: activity.campaign_info.campaign,
-                    'campaign_target': activity.campaign_info.campaign_target
-                }
+                campaign=activity.campaign_info.campaign,
+                campaign_target=activity.campaign_info.campaign_target
             )
         
         return meeting_activity

@@ -5,10 +5,10 @@ from rest_framework.response import Response
 from apps.campaign.models import Campaign
 from apps.accounts.models import Contact, Account
 from apps.activities.models import Activity
-from .campaign_creation_service import CampaignCreationService
-from .campaign_execution_service import CampaignExecutionService
-from .campaign_analytics_service import CampaignAnalyticsService
-from .campaign_result_service import CampaignResultService
+from apps.campaign.services.campaign_creation_service import CampaignCreationService
+from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
+from .campaign_core import CampaignCoreService
+from django.db import transaction
 from apps.campaign.utils.standardized_responses import (
     StandardizedSuccessResponse, 
     CampaignResponseBuilder, 
@@ -16,12 +16,7 @@ from apps.campaign.utils.standardized_responses import (
 )
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages
-
-# Import configuration variables
-from apps.campaign.config.variables import (
-    FIELD_NAMES,
-    OPERATION_MESSAGES
-)
+from apps.campaign.config.variables import FIELD_NAMES, OPERATION_MESSAGES
 
 
 class CampaignManager:
@@ -108,8 +103,8 @@ class CampaignManager:
                              current_activity_type: str = None) -> Response:
         """Get campaign playlist - returns standardized response"""
         try:
-            # CampaignExecutionService now returns Response directly
-            return CampaignExecutionService.get_campaign_playlist(
+            # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignExecutionService
+            return CampaignCoreService.get_campaign_playlist_internal(
                 campaign=campaign,
                 limit=limit,
                 current_activity_type=current_activity_type
@@ -127,14 +122,12 @@ class CampaignManager:
                                    notes: str = None) -> Response:
         """Remove contact - returns standardized response"""
         try:
-            # CampaignExecutionService now returns Response directly
-            return CampaignExecutionService.remove_contact_from_campaign(
+            return CampaignCoreService.remove_contact_from_campaign_internal(
                 campaign=campaign,
                 contact=contact,
                 notes=notes
             )
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -146,14 +139,12 @@ class CampaignManager:
                                    notes: str = None) -> Response:
         """Remove account - returns standardized response"""
         try:
-            # CampaignExecutionService now returns Response directly
-            return CampaignExecutionService.remove_account_from_campaign(
+            return CampaignCoreService.remove_account_from_campaign_internal(
                 campaign=campaign,
                 account=account,
                 notes=notes
             )
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -164,10 +155,8 @@ class CampaignManager:
     def get_campaign_contacts_with_responses(cls, campaign: Campaign) -> Response:
         """Get contacts with responses - returns standardized response"""
         try:
-            # CampaignExecutionService now returns Response directly
-            return CampaignExecutionService.get_campaign_contacts_with_responses(campaign)
+            return CampaignCoreService.get_campaign_contacts_with_responses_internal(campaign)
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -181,43 +170,16 @@ class CampaignManager:
                          notes: str = None, **kwargs) -> Response:
         """
         Complete an activity and process the result with updated playlist
-        Orchestrates between CampaignResultService and CampaignExecutionService
         """
         try:
-            # Process the result using CampaignResultService (returns Response)
-            result_response = CampaignResultService.process_activity_result(
-                activity, result, notes, **kwargs
-            )
-            
-            # Extract result info from the standardized Response
-            result_info = {}
-            if hasattr(result_response, 'data') and 'data' in result_response.data:
-                result_info = result_response.data['data']
-            
-            # Get updated campaign playlist if activity belongs to a campaign
-            next_activities = []
-            if hasattr(activity, 'campaign_info') and activity.campaign_info:
-                campaign = activity.campaign_info.campaign
-                try:
-                    updated_playlist_response = cls.get_campaign_playlist(campaign, limit=10)
-                    # Extract items from the standardized Response
-                    if hasattr(updated_playlist_response, 'data') and 'data' in updated_playlist_response.data:
-                        playlist_data = updated_playlist_response.data['data']
-                        next_activities = playlist_data.get('items', [])
-                except Exception:
-                    # If playlist generation fails, continue without it (non-critical)
-                    pass
-            
-            # Use CampaignResponseBuilder for activity completion
-            return CampaignResponseBuilder.activity_completed(
-                result_action=result_info.get('action', 'completed'),
-                activity_id=activity.id,
-                next_activities=next_activities,
-                additional_info=result_info
+            return CampaignCoreService.complete_activity_internal(
+                activity=activity,
+                result=result,
+                notes=notes,
+                **kwargs
             )
             
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -316,34 +278,98 @@ class CampaignManager:
                                       activity_type: str, result: str, notes: str = None, 
                                       user=None, **kwargs) -> Response:
         """
-        Add manual activity - returns standardized response with playlist update
+        Add manual activity - RÉÉCRIRE directement sans import CampaignExecutionService
         """
         try:
-            # CampaignExecutionService handles creation and result processing
-            result_response = CampaignExecutionService.add_manual_activity_to_campaign(
-                campaign=campaign,
-                contact=contact,
-                activity_type=activity_type,
-                result=result,
-                notes=notes,
-                user=user,
-                **kwargs
-            )
+            # Verify this is a non-sequence campaign
+            if campaign.sequence_type:
+                raise StandardizedValidationError(
+                    "This operation is only for campaigns without sequences"
+                )
             
-            # Extract result info from the standardized Response
-            result_info = {}
-            if hasattr(result_response, 'data') and 'data' in result_response.data:
-                result_info = result_response.data['data']
+            # Validate activity type
+            valid_types = [choice[0] for choice in Activity.ActivityType.choices]
+            if activity_type not in valid_types:
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=activity_type)
+                )
             
-            # Get updated playlist
+            # Get the campaign target for this contact
+            target = None
+            for t in campaign.targets.all():
+                if (t.contact_id == contact.id or 
+                    (t.account_id == contact.account_id) or
+                    (t.lead and t.lead.account_id == contact.account_id) or
+                    (t.target_opportunity and t.target_opportunity.account_id == contact.account_id)):
+                    target = t
+                    break
+            
+            if not target:
+                raise StandardizedValidationError(CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN)
+            
+            from django.utils import timezone
+            from apps.activities.models import ActivityCampaign, ActivitySequence
+            
+            # Create activity in transaction
+            with transaction.atomic():
+                # Create activity
+                activity = Activity.objects.create(
+                    title=f"{Activity.ActivityType(activity_type).label} with {contact.first_name} {contact.last_name}",
+                    activity_type=activity_type,
+                    description=notes or '',
+                    account=contact.account,
+                    owner=user,
+                    status=Activity.Status.COMPLETED,
+                    scheduled_start=timezone.now(),
+                    completed_at=timezone.now(),
+                    outcome_notes=notes or '',
+                    client_id=campaign.client_id
+                )
+                
+                # Add contact relationship
+                activity.contacts.add(contact)
+                
+                # Create campaign relationship
+                ActivityCampaign.objects.create(
+                    activity=activity,
+                    campaign=campaign,
+                    campaign_target=target,
+                    client_id=campaign.client_id
+                )
+                
+                # Add sequence info for consistent tracking
+                ActivitySequence.objects.create(
+                    activity=activity,
+                    source_type=ActivitySequence.SourceType.MANUAL,
+                    sequence_position=1,
+                    min_delay_days=0,
+                    client_id=campaign.client_id
+                )
+                
+                # MODIFIER : Utiliser CampaignCoreService pour traiter le résultat
+                result_response = CampaignCoreService.complete_activity_internal(
+                    activity=activity,
+                    result=result,
+                    notes=notes,
+                    **kwargs
+                )
+                
+                # Extract result info from the standardized response
+                result_info = {}
+                if hasattr(result_response, 'data') and 'data' in result_response.data:
+                    result_info = result_response.data['data']
+            
+            # Get updated playlist using CampaignCoreService
             next_activities = []
             try:
-                updated_playlist_response = cls.get_campaign_playlist(campaign, limit=10)
+                updated_playlist_response = CampaignCoreService.get_campaign_playlist_internal(
+                    campaign=campaign, 
+                    limit=10
+                )
                 if hasattr(updated_playlist_response, 'data') and 'data' in updated_playlist_response.data:
                     playlist_data = updated_playlist_response.data['data']
                     next_activities = playlist_data.get('items', [])
             except Exception:
-                # If playlist fails, continue without it (non-critical)
                 pass
             
             # Enhance the response with playlist data
@@ -363,7 +389,6 @@ class CampaignManager:
             )
             
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
