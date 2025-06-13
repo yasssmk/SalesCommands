@@ -307,70 +307,82 @@ class CampaignResultService:
     
     @classmethod
     def _regenerate_sequence_for_contact(cls, campaign: Campaign, campaign_target: CampaignTarget,
-                                       contact: Contact, start_from_step: int,
-                                       has_phone: bool, has_email: bool, has_linkedin: bool) -> List[Activity]:
+                                    contact: Contact, start_from_step: int,
+                                    has_phone: bool, has_email: bool, has_linkedin: bool) -> List[Activity]:
         """
         Regenerate sequence for a contact starting from a specific step
+        SÉCURISÉ : Transaction atomique pour création + linking
         """
-        # Get the appropriate sequence based on available channels
-        if has_phone and has_email:
-            sequence_dict = ChasingSequence.get_standard_sequence()
-        elif not has_phone and has_email and has_linkedin:
-            sequence_dict = ChasingSequence.get_sequence_without_phone()
-        elif has_phone and not has_email and has_linkedin:
-            sequence_dict = ChasingSequence.get_sequence_without_email()
-        elif has_phone and not (has_email or has_linkedin):
-            sequence_dict = ChasingSequence.get_sequence_phone_only()
-        else:
-            # If no valid channels, return empty list
-            return []
-        
-        # Calculate which steps to create based on current progress
-        # Map the current step to the new sequence
-        steps_to_create = []
-        
-        # For simplicity, let's continue with remaining steps in new sequence
-        # Starting from next logical step
-        remaining_steps = len(sequence_dict) - start_from_step + 1
-        
-        new_activities = []
-        previous_activity = None
-        
-        # Get the last completed activity to link properly
-        last_completed = Activity.objects.filter(
-            **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
-            contacts=contact,
-            status=Activity.Status.COMPLETED,
-            sequence_info__isnull=False
-        ).order_by('-sequence_info__sequence_position').first()
-        
-        # Create activities starting from the next logical step
-        for i, (step_num, step_config) in enumerate(sequence_dict.items(), 1):
-            if i <= start_from_step:
-                continue  # Skip already completed/current steps
+        try:
+            # Get the appropriate sequence based on available channels
+            if has_phone and has_email:
+                sequence_dict = ChasingSequence.get_standard_sequence()
+            elif not has_phone and has_email and has_linkedin:
+                sequence_dict = ChasingSequence.get_sequence_without_phone()
+            elif has_phone and not has_email and has_linkedin:
+                sequence_dict = ChasingSequence.get_sequence_without_email()
+            elif has_phone and not (has_email or has_linkedin):
+                sequence_dict = ChasingSequence.get_sequence_phone_only()
+            else:
+                # If no valid channels, return empty list
+                return []
             
-            # Create the activity
-            activity = cls._create_regenerated_activity(
-                campaign=campaign,
-                campaign_target=campaign_target,
-                contact=contact,
-                step_number=step_num,
-                step_config=step_config,
+            # Calculate which steps to create based on current progress
+            remaining_steps = len(sequence_dict) - start_from_step + 1
+            
+            # Get the last completed activity to link properly (en dehors de la transaction)
+            last_completed = Activity.objects.filter(
+                campaign_info__campaign=campaign,
+                contacts=contact,
+                status=Activity.Status.COMPLETED,
+                sequence_info__isnull=False
+            ).order_by('-sequence_info__sequence_position').first()
+            
+            new_activities = []
+            
+            # AJOUTER : Transaction atomique pour toute la création + linking
+            with transaction.atomic():
                 previous_activity=last_completed if not new_activities else new_activities[-1]
+                
+                # Create activities starting from the next logical step
+                for i, (step_num, step_config) in enumerate(sequence_dict.items(), 1):
+                    if i <= start_from_step:
+                        continue  # Skip already completed/current steps
+                    
+                    # Create the activity
+                    activity = cls._create_regenerated_activity(
+                        campaign=campaign,
+                        campaign_target=campaign_target,
+                        contact=contact,
+                        step_number=step_num,
+                        step_config=step_config,
+                        previous_activity=previous_activity
+                    )
+                    
+                    new_activities.append(activity)
+                    
+                    # Link to previous activity (dans la transaction)
+                    if previous_activity:
+                        # Update previous activity to point to this one
+                        previous_activity.next_activity = activity
+                        previous_activity.save()
+                        
+                        # Update current activity to point back to previous
+                        activity.previous_activity = previous_activity
+                        activity.save()
+                    
+                    # Current activity becomes previous for next iteration
+                    previous_activity = activity
+            
+            # APRÈS la transaction : Retourner les activités créées
+            return new_activities
+            
+        except Exception as e:
+            # En cas d'erreur, les nouvelles activités seront rollback automatiquement
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_SEQUENCE_GENERATION_FAILED.format(reason=str(e))
             )
-            
-            new_activities.append(activity)
-            
-            # Link to previous activity
-            if last_completed and not previous_activity:
-                last_completed.next_activity = activity
-                activity.previous_activity = last_completed
-                last_completed.save()
-                activity.save()
-            
-            previous_activity = activity
-        
-        return new_activities
+
     
     @classmethod
     def _create_regenerated_activity(cls, campaign: Campaign, campaign_target: CampaignTarget,
@@ -379,18 +391,40 @@ class CampaignResultService:
         """
         Create a single regenerated activity
         """
-        # Import here to avoid circular imports
-        from apps.campaign.services.campaign_activity_service import CampaignActivityService
+        # Create the base activity
+        activity = Activity.objects.create(
+            title=f"Step {step_number}: {step_config['description']}",
+            activity_type=step_config['type'],
+            description=step_config['description'],
+            account=campaign_target.account,
+            owner=campaign.owner,
+            status=Activity.Status.PLANNED,
+            client_id=campaign.client_id
+        )
         
-        # Use the same logic as the original activity creation
-        return CampaignActivityService._create_single_activity(
+        # Add contact relationship
+        activity.contacts.set([contact])
+        
+        # Create campaign relationship
+        from apps.activities.models import ActivityCampaign, ActivitySequence
+        ActivityCampaign.objects.create(
+            activity=activity,
             campaign=campaign,
             campaign_target=campaign_target,
-            contact=contact,
-            step_number=step_number,
-            step_config=step_config,
-            previous_activity=previous_activity
+            client_id=campaign.client_id
         )
+        
+        # Create sequence relationship with day-counting
+        ActivitySequence.objects.create(
+            activity=activity,
+            source_type=ActivitySequence.SourceType.CAMPAIGN,
+            sequence_position=step_number,
+            call_attempts=0,
+            min_delay_days=step_config['min_delay'],
+            client_id=campaign.client_id
+        )
+        
+        return activity
     
     @classmethod
     def _handle_no_answer_call(cls, activity: Activity, sequence_info: ActivitySequence,
@@ -548,43 +582,45 @@ class CampaignResultService:
                         f"Callback date must be before campaign end date ({campaign.end_date})"
                     )
             
-            # Complete current activity
-            activity.complete(outcome_notes=f"Callback requested for {callback_date}. {notes}" if notes else f"Callback requested for {callback_date}")
-            
-            # Common behavior: update campaign target status
-            if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
-                campaign_target = activity.campaign_info.campaign_target
-                # Mark campaign target with a special status or field for callback tracking
-                campaign_target.callback_date = callback_date  # This field would need to be added to the CampaignTarget model
-                campaign_target.save()
-            
-            # Sequence-specific behavior
-            if is_sequence_campaign and sequence_info:
-                sequence_info.callback_requested_date = callback_date
-                sequence_info.sequence_paused_until = callback_date
-                sequence_info.save()
+            with transaction.atomic():
+                # Complete current activity
+                activity.complete(outcome_notes=f"Callback requested for {callback_date}. {notes}" if notes else f"Callback requested for {callback_date}")
                 
-                # Update next activity if it exists
-                next_activity = activity.next_activity
-                if next_activity:
-                    # Update next activity type if specified
-                    if callback_type != next_activity.activity_type:
-                        next_activity.activity_type = callback_type
-                        next_activity.title = f"Callback: {next_activity.title}"
-                        next_activity.save()
+                # Common behavior: update campaign target status
+                if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
+                    campaign_target = activity.campaign_info.campaign_target
+                    # Mark campaign target with a special status or field for callback tracking
+                    campaign_target.callback_date = callback_date  # This field would need to be added to the CampaignTarget model
+                    campaign_target.save()
+                
+                # Sequence-specific behavior
+                if is_sequence_campaign and sequence_info:
+                    sequence_info.callback_requested_date = callback_date
+                    sequence_info.sequence_paused_until = callback_date
+                    sequence_info.save()
+                    
+                    # Update next activity if it exists
+                    next_activity = activity.next_activity
+                    if next_activity:
+                        # Update next activity type if specified
+                        if callback_type != next_activity.activity_type:
+                            next_activity.activity_type = callback_type
+                            next_activity.title = f"Callback: {next_activity.title}"
+                            next_activity.save()
+                
+                # Non-sequence specific behavior
+                else:
+                    # For non-sequence campaigns, we need to ensure this contact is prioritized when the callback date comes
+                    contact = activity.contacts.first()
+                    if contact:
+                        # We could add a special field to track callbacks for non-sequence campaigns
+                        # For example, by adding a contact_status field to CampaignTarget
+                        if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
+                            campaign_target = activity.campaign_info.campaign_target
+                            campaign_target.status = 'CALLBACK_PENDING'  # Custom status for non-sequence targets
+                            campaign_target.save()
             
-            # Non-sequence specific behavior
-            else:
-                # For non-sequence campaigns, we need to ensure this contact is prioritized when the callback date comes
-                contact = activity.contacts.first()
-                if contact:
-                    # We could add a special field to track callbacks for non-sequence campaigns
-                    # For example, by adding a contact_status field to CampaignTarget
-                    if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
-                        campaign_target = activity.campaign_info.campaign_target
-                        campaign_target.status = 'CALLBACK_PENDING'  # Custom status for non-sequence targets
-                        campaign_target.save()
-            
+            # APRÈS la transaction : Préparer la réponse (pas de modification DB)
             data = {
                 'activity_id': activity.id,
                 'action': 'callback_scheduled',
@@ -615,7 +651,7 @@ class CampaignResultService:
             raise StandardizedValidationError(
                 CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
             )
-    
+        
     @classmethod
     def _handle_contact_not_available(cls, activity: Activity, sequence_info: ActivitySequence,
                                     notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
@@ -630,64 +666,66 @@ class CampaignResultService:
     
     @classmethod
     def _handle_successful_call(cls, activity: Activity, sequence_info: ActivitySequence,
-                            notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
+                        notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle successful call - create meeting and manage campaign target appropriately
-        Works for both sequence and non-sequence campaigns
-        MODIFIER : Éviter l'import circulaire pour la playlist
+        SÉCURISÉ : Transaction atomique pour éviter les états partiels
         """
         try:
             meeting_date = kwargs.get('meeting_date')
             
-            # Complete current activity
-            activity.complete(outcome_notes=f"Successfully scheduled meeting. {notes}" if notes else "Successfully scheduled meeting")
-            
-            # Get campaign information
-            campaign = None
-            campaign_target = None
-            if hasattr(activity, 'campaign_info'):
-                campaign_info = activity.campaign_info
-                campaign = campaign_info.campaign
-                campaign_target = campaign_info.campaign_target
-            
-            # Update campaign info
-            if hasattr(activity, 'campaign_info'):
-                campaign_info = activity.campaign_info
-                campaign_info.meeting_scheduled = True
-                campaign_info.save()
+            # AJOUTER : Transaction atomique pour toutes les modifications DB
+            with transaction.atomic():
+                # Complete current activity
+                activity.complete(outcome_notes=f"Successfully scheduled meeting. {notes}" if notes else "Successfully scheduled meeting")
                 
-                # Update campaign target status
-                if campaign_target:
-                    campaign_target.update_status(CampaignTarget.Status.MEETING_SECURED)
-            
-            # Create meeting activity if date provided
-            meeting_activity_id = None
-            if meeting_date:
-                meeting_activity = cls._create_meeting_activity(activity, meeting_date, notes)
-                meeting_activity_id = meeting_activity.id
-            
-            # For sequence campaigns, end the sequence
-            if is_sequence_campaign:
-                cancelled_count = cls._complete_contact_sequence(activity)
-            else:
-                # For non-sequence campaigns, remove contact from queue
-                if campaign_target:
-                    # Mark as completed so it doesn't appear in contact list
-                    campaign_target.status = CampaignTarget.Status.COMPLETED
-                    campaign_target.save()
-            
-            # Update campaign objectives
-            cls._update_campaign_objectives(activity, 'meeting_scheduled')
-            
-            # Determine which AE should receive this opportunity if it's converted later
-            assigned_ae = None
-            if campaign:
-                from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
-                receivers = campaign.get_receivers()
+                # Get campaign information
+                campaign = None
+                campaign_target = None
+                if hasattr(activity, 'campaign_info'):
+                    campaign_info = activity.campaign_info
+                    campaign = campaign_info.campaign
+                    campaign_target = campaign_info.campaign_target
                 
-                if receivers.exists():
-                    assigned_ae = receivers.first()
+                # Update campaign info
+                if hasattr(activity, 'campaign_info'):
+                    campaign_info = activity.campaign_info
+                    campaign_info.meeting_scheduled = True
+                    campaign_info.save()
+                    
+                    # Update campaign target status
+                    if campaign_target:
+                        campaign_target.update_status(CampaignTarget.Status.MEETING_SECURED)
+                
+                # Create meeting activity if date provided
+                meeting_activity_id = None
+                if meeting_date:
+                    meeting_activity = cls._create_meeting_activity(activity, meeting_date, notes)
+                    meeting_activity_id = meeting_activity.id
+                
+                # For sequence campaigns, end the sequence
+                if is_sequence_campaign:
+                    cancelled_count = cls._complete_contact_sequence(activity)
+                else:
+                    # For non-sequence campaigns, remove contact from queue
+                    if campaign_target:
+                        # Mark as completed so it doesn't appear in contact list
+                        campaign_target.status = CampaignTarget.Status.COMPLETED
+                        campaign_target.save()
+                
+                # Update campaign objectives
+                cls._update_campaign_objectives(activity, 'meeting_scheduled')
+                
+                # Determine which AE should receive this opportunity if it's converted later
+                assigned_ae = None
+                if campaign:
+                    from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
+                    receivers = campaign.get_receivers()
+                    
+                    if receivers.exists():
+                        assigned_ae = receivers.first()
             
+            # APRÈS la transaction : Préparer la réponse (pas de modification DB)
             data = {
                 'activity_id': activity.id,
                 'action': 'meeting_scheduled',
