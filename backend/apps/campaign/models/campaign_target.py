@@ -1,11 +1,13 @@
 # apps/campaign/models/campaign_target.py
 
 from django.db import models
+from django.utils import timezone
+from typing import Dict, Optional
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, CampaignErrorMessages
 
 
 class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
@@ -270,16 +272,17 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to mark activities as generated")
             )
     
-    def update_status(self, new_status, save=True):
+    def update_status(self, new_status, save=True, validate_consistency=False):
         """
-        Update the status with validation
+        Update the status with validation and optional consistency check
         
         Args:
             new_status (str): New status value
             save (bool): Whether to save the instance
+            validate_consistency (bool): If True, validates status matches activities
             
         Raises:
-            StandardizedValidationError: If status is invalid
+            StandardizedValidationError: If status is invalid or inconsistent
         """
         try:
             # Validate status
@@ -290,6 +293,16 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                         field=f"Status (must be one of: {', '.join(valid_statuses)})"
                     )
                 )
+            
+            # NOUVEAU: Validation optionnelle de cohérence avec les activités
+            if validate_consistency:
+                expected_status = self._calculate_expected_status()
+                if expected_status and new_status != expected_status:
+                    raise StandardizedValidationError(
+                        CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(
+                            current_state=f"Status '{new_status}' inconsistent with activities (expected: '{expected_status}')"
+                        )
+                    )
             
             self.status = new_status
             
@@ -327,3 +340,192 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Opportunity linking failed")
             )
+    
+    def _calculate_expected_status(self) -> Optional[str]:
+        """
+        Calcule le statut attendu basé sur les activités associées
+        
+        Returns:
+            Optional[str]: Statut attendu ou None si indéterminable
+        """
+        from apps.activities.models import Activity
+        
+        activities = Activity.objects.filter(campaign_info__campaign_target=self)
+        if not activities.exists():
+            return None
+        
+        # Récupérer les statuts et notes
+        activity_data = activities.values_list('status', 'outcome_notes')
+        statuses = [data[0] for data in activity_data]
+        notes = [data[1] or '' for data in activity_data]
+        
+        # Vérifier si un meeting a été sécurisé
+        has_meeting = any(
+            'meeting' in note.lower() and 'scheduled' in note.lower()
+            for note in notes
+        )
+        
+        if has_meeting:
+            return self.Status.MEETING_SECURED
+        
+        # Analyser les statuts
+        completed_count = statuses.count(Activity.Status.COMPLETED)
+        cancelled_count = statuses.count(Activity.Status.CANCELLED)
+        total_count = len(statuses)
+        
+        if completed_count == total_count:
+            return self.Status.COMPLETED
+        elif cancelled_count == total_count:
+            return self.Status.STOPPED
+        elif completed_count > 0 or cancelled_count > 0:
+            return self.Status.IN_PROGRESS
+        else:
+            return self.Status.QUEUED
+    
+    def sync_status_with_activities(self, save=True) -> bool:
+        """
+        Synchronise automatiquement le statut avec l'état des activités
+        
+        Args:
+            save (bool): Si True, sauvegarde automatiquement
+            
+        Returns:
+            bool: True si le statut a changé, False sinon
+        """
+        try:
+            expected_status = self._calculate_expected_status()
+            if not expected_status:
+                return False  # Pas d'activités, pas de changement
+            
+            if self.status != expected_status:
+                old_status = self.status
+                self.status = expected_status
+                
+                if save:
+                    self.save(update_fields=['status', 'updated_at'])
+                
+                return True
+            
+            return False
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_TARGET_ORPHANED.format(
+                    target=f"Failed to sync status for target {self.id}: {str(e)}"
+                )
+            )
+    
+    def get_activities_summary(self) -> Dict:
+        """
+        Obtient un résumé des activités pour diagnostic et debugging
+        
+        Returns:
+            Dict: Résumé complet des activités associées
+        """
+        from apps.activities.models import Activity
+        
+        activities = Activity.objects.filter(campaign_info__campaign_target=self)
+        
+        summary = {
+            'target_id': self.id,
+            'target_type': self.get_target_type(),
+            'current_status': self.status,
+            'total_activities': activities.count(),
+            'by_status': {},
+            'by_type': {},
+            'has_meeting_scheduled': False,
+            'last_completed_activity': None,
+            'expected_status': self._calculate_expected_status()
+        }
+        
+        # Compter par statut d'activité
+        for status_choice in Activity.Status.choices:
+            status_code = status_choice[0]
+            count = activities.filter(status=status_code).count()
+            summary['by_status'][status_code] = count
+        
+        # Compter par type d'activité
+        for type_choice in Activity.ActivityType.choices:
+            type_code = type_choice[0]
+            count = activities.filter(activity_type=type_code).count()
+            if count > 0:
+                summary['by_type'][type_code] = count
+        
+        # Vérifier présence de meeting
+        meeting_notes = activities.filter(
+            models.Q(outcome_notes__icontains='meeting') & 
+            models.Q(outcome_notes__icontains='scheduled')
+        ).exists()
+        summary['has_meeting_scheduled'] = meeting_notes
+        
+        # Dernière activité complétée
+        last_activity = activities.filter(
+            status=Activity.Status.COMPLETED
+        ).order_by('-completed_at').first()
+        
+        if last_activity:
+            summary['last_completed_activity'] = {
+                'id': last_activity.id,
+                'type': last_activity.activity_type,
+                'completed_at': last_activity.completed_at.isoformat() if last_activity.completed_at else None,
+                'notes': last_activity.outcome_notes or ''
+            }
+        
+        return summary
+    
+    def validate_status_consistency(self) -> Dict:
+        """
+        Valide la cohérence du statut actuel avec les activités
+        Utile pour diagnostics et maintenance
+        
+        Returns:
+            Dict: Rapport de validation avec détails
+        """
+        expected_status = self._calculate_expected_status()
+        current_status = self.status
+        
+        is_consistent = (
+            expected_status is None or  # Pas d'activités = pas de contrainte
+            current_status == expected_status
+        )
+        
+        return {
+            'target_id': self.id,
+            'is_consistent': is_consistent,
+            'current_status': current_status,
+            'expected_status': expected_status,
+            'needs_sync': not is_consistent,
+            'activities_count': self.get_activities_summary()['total_activities'],
+            'validation_timestamp': timezone.now().isoformat()
+        }
+    
+    def auto_update_status_if_needed(self) -> Dict:
+        """
+        Met à jour automatiquement le statut si incohérent
+        Méthode utilitaire pour la maintenance et les hooks automatiques
+        
+        Returns:
+            Dict: Rapport de mise à jour
+        """
+        validation = self.validate_status_consistency()
+        
+        if validation['needs_sync']:
+            old_status = self.status
+            status_changed = self.sync_status_with_activities(save=True)
+            
+            return {
+                'target_id': self.id,
+                'action_taken': 'status_updated',
+                'old_status': old_status,
+                'new_status': self.status,
+                'was_inconsistent': True,
+                'timestamp': timezone.now().isoformat()
+            }
+        else:
+            return {
+                'target_id': self.id,
+                'action_taken': 'no_change_needed',
+                'status': self.status,
+                'was_inconsistent': False,
+                'timestamp': timezone.now().isoformat()
+            }

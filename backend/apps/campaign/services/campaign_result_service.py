@@ -39,15 +39,7 @@ class CampaignResultService:
         """
         Process the result of an activity and handle appropriate actions
         Works for both sequence and non-sequence campaigns
-        
-        Args:
-            activity: The activity to process
-            result: The result code (e.g., 'NO_ANSWER', 'SUCCESSFUL', etc.)
-            notes: Optional notes about the result
-            **kwargs: Additional data like callback_date, meeting_date, etc.
-            
-        Returns:
-            Response: Standardized response with result processing information
+        MODIFIÉ : Ajout de la synchronisation automatique du statut CampaignTarget
         """
         try:
             # Validate activity exists and is accessible
@@ -67,9 +59,9 @@ class CampaignResultService:
             
             # Route to appropriate handler based on activity type
             if activity.activity_type == Activity.ActivityType.CALL:
-                return cls._handle_call_result(activity, result, notes, is_sequence_campaign, **kwargs)
+                response = cls._handle_call_result(activity, result, notes, is_sequence_campaign, **kwargs)
             elif activity.activity_type in [Activity.ActivityType.EMAIL, Activity.ActivityType.LINKEDIN]:
-                return cls._handle_email_linkedin_result(activity, result, notes, is_sequence_campaign, **kwargs)
+                response = cls._handle_email_linkedin_result(activity, result, notes, is_sequence_campaign, **kwargs)
             else:
                 # Unsupported activity type
                 raise StandardizedValidationError(
@@ -77,6 +69,11 @@ class CampaignResultService:
                         current_state=f"Unsupported activity type: {activity.activity_type}"
                     )
                 )
+            
+            # NOUVEAU : Synchronisation automatique du statut CampaignTarget
+            cls._sync_campaign_target_status(activity)
+            
+            return response
                 
         except StandardizedValidationError:
             # Re-raise validation errors
@@ -86,6 +83,33 @@ class CampaignResultService:
             raise StandardizedValidationError(
                 CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
             )
+    
+    def _sync_campaign_target_status(cls, activity: Activity):
+        """
+        Hook pour synchroniser automatiquement le statut du CampaignTarget
+        après traitement d'un résultat d'activité
+        
+        Args:
+            activity: Activity qui vient d'être traitée
+        """
+        try:
+            # Obtenir le CampaignTarget associé
+            if hasattr(activity, 'campaign_info') and activity.campaign_info:
+                campaign_target = activity.campaign_info.campaign_target
+                
+                if campaign_target:
+                    # Synchroniser le statut automatiquement
+                    sync_result = campaign_target.auto_update_status_if_needed()
+                    
+                    # Log pour debugging en cas de changement de statut
+                    if sync_result.get('action_taken') == 'status_updated':
+                        # En production, ceci pourrait être loggé proprement
+                        pass  # MVP : pas de logging complexe
+                        
+        except Exception:
+            # En cas d'erreur de synchronisation, ne pas faire crasher le processus principal
+            # MVP : Synchronisation best-effort, pas critique
+            pass
 
     
     @classmethod
@@ -669,12 +693,12 @@ class CampaignResultService:
                         notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle successful call - create meeting and manage campaign target appropriately
-        SÉCURISÉ : Transaction atomique pour éviter les états partiels
+        MODIFIÉ : Ajout de la mise à jour explicite du statut pour les meetings
         """
         try:
             meeting_date = kwargs.get('meeting_date')
             
-            # AJOUTER : Transaction atomique pour toutes les modifications DB
+            # Transaction atomique pour toutes les modifications DB
             with transaction.atomic():
                 # Complete current activity
                 activity.complete(outcome_notes=f"Successfully scheduled meeting. {notes}" if notes else "Successfully scheduled meeting")
@@ -693,9 +717,13 @@ class CampaignResultService:
                     campaign_info.meeting_scheduled = True
                     campaign_info.save()
                     
-                    # Update campaign target status
+                    # NOUVEAU : Mise à jour explicite du statut pour meeting sécurisé
                     if campaign_target:
-                        campaign_target.update_status(CampaignTarget.Status.MEETING_SECURED)
+                        campaign_target.update_status(
+                            campaign_target.Status.MEETING_SECURED, 
+                            save=True, 
+                            validate_consistency=False  # On force ce statut car on sait qu'un meeting est sécurisé
+                        )
                 
                 # Create meeting activity if date provided
                 meeting_activity_id = None
@@ -710,7 +738,7 @@ class CampaignResultService:
                     # For non-sequence campaigns, remove contact from queue
                     if campaign_target:
                         # Mark as completed so it doesn't appear in contact list
-                        campaign_target.status = CampaignTarget.Status.COMPLETED
+                        campaign_target.status = campaign_target.Status.COMPLETED
                         campaign_target.save()
                 
                 # Update campaign objectives
@@ -725,7 +753,7 @@ class CampaignResultService:
                     if receivers.exists():
                         assigned_ae = receivers.first()
             
-            # APRÈS la transaction : Préparer la réponse (pas de modification DB)
+            # Préparer la réponse (après la transaction)
             data = {
                 'activity_id': activity.id,
                 'action': 'meeting_scheduled',
@@ -764,9 +792,7 @@ class CampaignResultService:
                               notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle not interested - option to disqualify contact or whole account
-        
-        Returns:
-            Response: Standardized response with disqualification info
+        MODIFIÉ : Ajout de la mise à jour explicite du statut pour disqualification
         """
         try:
             disqualify_account = kwargs.get('disqualify_account', False)
@@ -777,6 +803,25 @@ class CampaignResultService:
             if disqualify_account:
                 # Cancel all activities for this account in this campaign
                 cancelled_count = cls._cancel_account_sequence(activity)
+                
+                # NOUVEAU : Mettre à jour le statut de tous les targets de ce compte
+                if hasattr(activity, 'campaign_info') and activity.campaign_info:
+                    campaign = activity.campaign_info.campaign
+                    account = activity.account
+                    
+                    # Mettre à jour tous les campaign targets pour ce compte
+                    from apps.campaign.models.campaign_target import CampaignTarget
+                    account_targets = CampaignTarget.objects.filter(
+                        campaign=campaign,
+                        account=account
+                    )
+                    
+                    for target in account_targets:
+                        target.update_status(
+                            target.Status.STOPPED, 
+                            save=True,
+                            validate_consistency=False  # Force le statut car disqualification manuelle
+                        )
                 
                 data = {
                     'activity_id': activity.id,
@@ -789,6 +834,15 @@ class CampaignResultService:
             else:
                 # Cancel remaining activities for just this contact
                 cancelled_count = cls._cancel_contact_sequence(activity)
+                
+                # NOUVEAU : Mettre à jour le statut du target de ce contact
+                if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
+                    campaign_target = activity.campaign_info.campaign_target
+                    campaign_target.update_status(
+                        campaign_target.Status.STOPPED, 
+                        save=True,
+                        validate_consistency=False  # Force le statut car disqualification manuelle
+                    )
                 
                 data = {
                     'activity_id': activity.id,
@@ -1032,3 +1086,5 @@ class CampaignResultService:
             )
             for objective in meeting_objectives:
                 objective.update_progress(1, increment=True)
+    
+    
