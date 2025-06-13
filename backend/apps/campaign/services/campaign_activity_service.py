@@ -1,11 +1,15 @@
 # apps/campaign/services/campaign_activity_service.py (revised)
-from typing import List, Dict
+from typing import List, Dict, TYPE_CHECKING
 from django.db import transaction
 from apps.activities.models import Activity, ActivityCampaign, ActivitySequence
 from apps.campaign.models import Campaign, CampaignTarget
 from apps.sequence.sequences.chasing_sequence import ChasingSequence
+from apps.campaign.utils.contact_helpers import ContactSafetyHelper
+from core.error_messages import CampaignErrorMessages
+from core.exceptions import StandardizedValidationError
 from apps.accounts.models import Contact
-
+if TYPE_CHECKING:
+    from apps.accounts.models import Account
 # Import configuration variables
 from apps.campaign.config.variables import (
     FIELD_NAMES,
@@ -98,15 +102,19 @@ class CampaignActivityService:
         Create sequence activities for a specific contact with stakeholder-based assignment
         """
 
-        if not campaign.sequence_type:
+        try:
+            activity_account = cls._get_safe_account_for_activity(campaign_target, contact)
+        except StandardizedValidationError:
+            # Si pas d'account valide, on ne peut pas créer d'activités
+            # Log this situation mais ne fait pas crasher le processus complet
             return []
         
         # Get sequence type from campaign, default to CHASING if not set
-        from apps.sequence.sequences.sequence_dispatcher import SequenceDisptacher
-        sequence_type = getattr(campaign, 'sequence_type', SequenceDisptacher.CHASING)
+        from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+        sequence_type = getattr(campaign, 'sequence_type', SequenceDispatcher.CHASING)
         
         # Get the sequence dictionary from the dispatcher
-        sequence_dict = SequenceDisptacher.get_sequence(
+        sequence_dict = SequenceDispatcher.get_sequence(
             sequence_type=sequence_type,
             has_phone=has_phone,
             has_email=has_email,
@@ -141,7 +149,7 @@ class CampaignActivityService:
                 title=f"Step {step_number}: {step_config['description']}",
                 activity_type=step_config['type'],
                 description=step_config['description'],
-                account=campaign_target.account,
+                account=activity_account,
                 owner=activity_owner,  # Use stakeholder-based owner
                 status=Activity.Status.PLANNED,
                 client_id=campaign.client_id  # Set client_id from campaign
@@ -158,58 +166,71 @@ class CampaignActivityService:
             
             previous_activity = activity
         
-        # Bulk create activities
-        created_activities = Activity.objects.bulk_create(activity_instances)
+        if not activity_instances:
+            return []
         
-        # Now set up contact relationships, campaign links and sequence info
-        for i, activity in enumerate(created_activities):
-            # Add contact relationship
-            activity.contacts.add(contact)
+        try:
+            # Bulk create activities
+            created_activities = Activity.objects.bulk_create(activity_instances)
             
-            # Create campaign relationship
-            campaign_info = ActivityCampaign.objects.create(
-                activity=activity,
-                campaign=campaign,
-                campaign_target=campaign_target,
-                client_id=campaign.client_id
+            # Now set up contact relationships, campaign links and sequence info
+            for i, activity in enumerate(created_activities):
+                # Add contact relationship
+                activity.contacts.add(contact)
+                
+                # Create campaign relationship
+                campaign_info = ActivityCampaign.objects.create(
+                    activity=activity,
+                    campaign=campaign,
+                    campaign_target=campaign_target,
+                    client_id=campaign.client_id
+                )
+                
+                # Get previous step info
+                info = campaign_info_instances[i]
+                step_number = info['step_number']
+                step_config = info['step_config']
+                
+                # Create sequence relationship with day-counting
+                sequence_info = ActivitySequence.objects.create(
+                    activity=activity,
+                    source_type=ActivitySequence.SourceType.CAMPAIGN,
+                    sequence_position=step_number,
+                    call_attempts=0,
+                    min_delay_days=step_config['min_delay'],
+                    client_id=campaign.client_id
+                )
+                
+                # Link activities (previous/next)
+                prev_activity_index = i - 1
+                if prev_activity_index >= 0:
+                    prev_activity = created_activities[prev_activity_index]
+                    
+                    # Use direct database update for sequence instead of instance save
+                    from django.db.models import F
+                    ActivitySequence.objects.filter(activity=prev_activity).update(
+                        next_sequence_activity=activity
+                    )
+                    
+                    # Use direct updates for activity links too
+                    Activity.objects.filter(id=prev_activity.id).update(
+                        next_activity=activity
+                    )
+                    
+                    Activity.objects.filter(id=activity.id).update(
+                        previous_activity=prev_activity
+                    )
+            
+            return created_activities
+            
+        except Exception as e:
+            # Si la création des activités échoue, lever une erreur standardisée
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_SEQUENCE_GENERATION_FAILED.format(
+                    reason=f"Failed to create activities for contact {contact.id}: {str(e)}"
+                )
             )
-            
-            # Get previous step info
-            info = campaign_info_instances[i]
-            step_number = info['step_number']
-            step_config = info['step_config']
-            
-            # Create sequence relationship with day-counting
-            sequence_info = ActivitySequence.objects.create(
-                activity=activity,
-                source_type=ActivitySequence.SourceType.CAMPAIGN,
-                sequence_position=step_number,
-                call_attempts=0,
-                min_delay_days=step_config['min_delay'],
-                client_id=campaign.client_id
-            )
-            
-            # Link activities (previous/next)
-            prev_activity_index = i - 1
-            if prev_activity_index >= 0:
-                prev_activity = created_activities[prev_activity_index]
-                
-                # Use direct database update for sequence instead of instance save
-                from django.db.models import F
-                ActivitySequence.objects.filter(activity=prev_activity).update(
-                    next_sequence_activity=activity
-                )
-                
-                # Use direct updates for activity links too
-                Activity.objects.filter(id=prev_activity.id).update(
-                    next_activity=activity
-                )
-                
-                Activity.objects.filter(id=activity.id).update(
-                    previous_activity=prev_activity
-                )
         
-        return created_activities
         
     @classmethod
     def _create_single_activity(cls, campaign: Campaign, campaign_target: CampaignTarget,
@@ -217,16 +238,20 @@ class CampaignActivityService:
                                previous_activity: Activity = None) -> Activity:
         """
         Create a single activity with all necessary relationships (no scheduled date)
+        SÉCURISÉ contre les accounts manquants
         """
-        # Create the base activity - NO SCHEDULED DATE
+        # NOUVEAU: Validation sécurisée de l'account
+        activity_account = cls._get_safe_account_for_activity(campaign_target, contact)
+        
+        # Create the base activity - SÉCURISÉ avec account validé
         activity = Activity.objects.create(
             title=f"Step {step_number}: {step_config['description']}",
             activity_type=step_config['type'],
             description=step_config['description'],
-            account=campaign_target.account,
+            account=activity_account,  # ✅ SÉCURISÉ - account validé
             owner=campaign.owner,
-            # NO scheduled_start - will be set when campaign is activated
-            status=Activity.Status.PLANNED
+            status=Activity.Status.PLANNED,
+            client_id=campaign.client_id
         )
         
         # Add contact relationship
@@ -236,7 +261,8 @@ class CampaignActivityService:
         ActivityCampaign.objects.create(
             activity=activity,
             campaign=campaign,
-            campaign_target=campaign_target
+            campaign_target=campaign_target,
+            client_id=campaign.client_id
         )
         
         # Create sequence relationship with day-counting
@@ -245,8 +271,8 @@ class CampaignActivityService:
             source_type=ActivitySequence.SourceType.CAMPAIGN,
             sequence_position=step_number,
             call_attempts=0,
-            # Store the minimum delay from sequence config
-            min_delay_days=step_config['min_delay']
+            min_delay_days=step_config['min_delay'],
+            client_id=campaign.client_id
         )
         
         # Set next sequence activity link (for easier navigation)
@@ -266,7 +292,7 @@ class CampaignActivityService:
     @classmethod
     def _extract_contacts_from_targets(cls, campaign: Campaign, target_contacts: List[int] = None):
         """
-        Extract all relevant contacts from campaign targets - OPTIMIZED VERSION
+        Extract all relevant contacts from campaign targets - SÉCURISÉ CONTRE LES CONTACTS SANS ACCOUNT
         
         Args:
             campaign: The campaign to extract contacts for
@@ -287,41 +313,45 @@ class CampaignActivityService:
         direct_contact_ids = set()
         
         # Build lookup dictionaries - O(m) where m = number of targets
-        target_by_contact_id = {}          # contact_id -> target
-        target_by_account_id = {}          # account_id -> target
-        lead_account_to_target = {}        # lead.account_id -> target
-        opportunity_account_to_target = {} # opportunity.account_id -> target
+        target_by_contact_id = {}          
+        target_by_account_id = {}          
+        lead_account_to_target = {}        
+        opportunity_account_to_target = {} 
 
         for target in campaign_targets:
-            # For direct account targets
+            # For direct account targets - SÉCURISÉ
             if target.account:
                 account_ids.add(target.account.id)
-                # Only set if not already set (first target wins for account)
                 if target.account.id not in target_by_account_id:
                     target_by_account_id[target.account.id] = target
             
-            # For direct contact targets
+            # For direct contact targets - SÉCURISÉ avec validation
             if target.contact:
-                direct_contact_ids.add(target.contact.id)
-                target_by_contact_id[target.contact.id] = target
-                if target.contact.account_id:
-                    account_ids.add(target.contact.account_id)
+                # NOUVEAU: Validation que le contact a un account valide
+                if ContactSafetyHelper.validate_contact_has_account(target.contact):
+                    direct_contact_ids.add(target.contact.id)
+                    target_by_contact_id[target.contact.id] = target
+                    account_id = ContactSafetyHelper.get_account_id(target.contact)
+                    if account_id:
+                        account_ids.add(account_id)
+                # Si le contact n'a pas d'account valide, on l'ignore ici
+                # Il sera traité dans skipped_contacts plus bas
             
-            # For lead targets (get associated account)
+            # For lead targets - SÉCURISÉ
             if target.lead and target.lead.account_id:
                 account_ids.add(target.lead.account_id)
                 lead_account_to_target[target.lead.account_id] = target
             
-            # For opportunity targets (get associated account)
+            # For opportunity targets - SÉCURISÉ  
             if target.target_opportunity and target.target_opportunity.account_id:
                 account_ids.add(target.target_opportunity.account_id)
                 opportunity_account_to_target[target.target_opportunity.account_id] = target
         
-        # Get contacts with single optimized query
+        # Get contacts with single optimized query - SÉCURISÉ
         if target_contacts:
             all_contacts = Contact.objects.filter(
                 id__in=target_contacts,
-                account_id__in=account_ids
+                account_id__in=account_ids  # Déjà filtré pour avoir des accounts valides
             ).select_related('standard_department', FIELD_NAMES['ACCOUNT'])
         else:
             # Get all contacts for the collected accounts
@@ -338,23 +368,48 @@ class CampaignActivityService:
                 # Combine QuerySets
                 all_contacts = (all_contacts | direct_contacts).distinct()
         
-        # Process contacts with O(1) lookups instead of O(n*m)
+        # Process contacts with O(1) lookups and SÉCURISATION
         contacts_by_account = {}
         skipped_contacts = []
         valid_contacts = []
         contact_to_target_map = {}
         
         for contact in all_contacts:
-            if contact.account_id not in contacts_by_account:
-                contacts_by_account[contact.account_id] = []
-            contacts_by_account[contact.account_id].append(contact)
+            # NOUVEAU: Validation critique - skip si pas d'account valide
+            if not ContactSafetyHelper.validate_contact_has_account(contact):
+                contact_info = ContactSafetyHelper.get_contact_display_info(contact)
+                skipped_contacts.append({
+                    'contact_id': contact_info['contact_id'],
+                    FIELD_NAMES['CONTACT']: contact_info['contact_name'],
+                    FIELD_NAMES['ACCOUNT']: contact_info['account_name'],
+                    'reason': 'Contact has no valid account association'
+                })
+                continue
+            
+            # SÉCURISÉ: Utiliser helper pour obtenir account_id
+            account_id = ContactSafetyHelper.get_account_id(contact)
+            if not account_id:
+                # Double vérification - normalement déjà attrapé au-dessus
+                contact_info = ContactSafetyHelper.get_contact_display_info(contact)
+                skipped_contacts.append({
+                    'contact_id': contact_info['contact_id'],
+                    FIELD_NAMES['CONTACT']: contact_info['contact_name'],
+                    FIELD_NAMES['ACCOUNT']: contact_info['account_name'],
+                    'reason': 'Contact account ID is missing'
+                })
+                continue
+            
+            if account_id not in contacts_by_account:
+                contacts_by_account[account_id] = []
+            contacts_by_account[account_id].append(contact)
             
             # Check if the contact should be excluded due to opt-out status
             if hasattr(contact, 'opted_out') and contact.opted_out:
+                contact_info = ContactSafetyHelper.get_contact_display_info(contact)
                 skipped_contacts.append({
-                    'contact_id': contact.id,
-                    FIELD_NAMES['CONTACT']: f"{contact.first_name} {contact.last_name}",
-                    FIELD_NAMES['ACCOUNT']: contact.account.company_name if contact.account else "Unknown",
+                    'contact_id': contact_info['contact_id'],
+                    FIELD_NAMES['CONTACT']: contact_info['contact_name'],
+                    FIELD_NAMES['ACCOUNT']: contact_info['account_name'],
                     'reason': 'Contact has opted out of communications'
                 })
                 continue
@@ -366,10 +421,11 @@ class CampaignActivityService:
             
             # Skip if no communication channels
             if not (has_phone or has_email or has_linkedin):
+                contact_info = ContactSafetyHelper.get_contact_display_info(contact)
                 skipped_contacts.append({
-                    'contact_id': contact.id,
-                    FIELD_NAMES['CONTACT']: f"{contact.first_name} {contact.last_name}",
-                    FIELD_NAMES['ACCOUNT']: contact.account.company_name if contact.account else "Unknown",
+                    'contact_id': contact_info['contact_id'],
+                    FIELD_NAMES['CONTACT']: contact_info['contact_name'],
+                    FIELD_NAMES['ACCOUNT']: contact_info['account_name'],
                     'reason': 'No communication channels available'
                 })
                 continue
@@ -394,12 +450,23 @@ class CampaignActivityService:
             if target:
                 contact_to_target_map[contact.id] = target
         
+        # NOUVEAU: Vérifier et signaler les contacts directement ciblés sans account valide
+        for target in campaign_targets:
+            if target.contact and not ContactSafetyHelper.validate_contact_has_account(target.contact):
+                contact_info = ContactSafetyHelper.get_contact_display_info(target.contact)
+                skipped_contacts.append({
+                    'contact_id': contact_info['contact_id'],
+                    FIELD_NAMES['CONTACT']: contact_info['contact_name'],
+                    FIELD_NAMES['ACCOUNT']: contact_info['account_name'],
+                    'reason': 'Direct target contact has no valid account association'
+                })
+        
         return {
             'valid_contacts': valid_contacts,
             'contacts_by_account': contacts_by_account,
             'skipped_contacts': skipped_contacts,
             'contact_to_target_map': contact_to_target_map,
-            'all_targets': dict(target_by_account_id)  # Simplified for compatibility
+            'all_targets': dict(target_by_account_id)
         }
 
     @classmethod
@@ -440,3 +507,42 @@ class CampaignActivityService:
             return target_by_account_id[contact.account_id]
         
         return None
+    
+    @classmethod
+    def _get_safe_account_for_activity(cls, campaign_target: CampaignTarget, 
+                                     contact: Contact) -> 'Account':
+        """
+        Safely get account for activity creation from campaign target or contact
+        
+        Args:
+            campaign_target: CampaignTarget instance
+            contact: Contact instance as fallback
+            
+        Returns:
+            Account: Valid account instance
+            
+        Raises:
+            StandardizedValidationError: If no valid account can be found
+        """
+        # Essayer d'abord le campaign_target.account
+        if campaign_target and hasattr(campaign_target, 'account') and campaign_target.account:
+            return campaign_target.account
+        
+        # Fallback: essayer contact.account
+        contact_account = ContactSafetyHelper.get_account(contact)
+        if contact_account:
+            return contact_account
+        
+        # Pas d'account valide trouvé
+        target_info = "Unknown Target"
+        if campaign_target:
+            target_type = getattr(campaign_target, 'get_target_type', lambda: 'unknown')()
+            target_info = f"{target_type} target"
+        
+        contact_info = ContactSafetyHelper.get_contact_display_info(contact)
+        
+        raise StandardizedValidationError(
+            CampaignErrorMessages.CAMPAIGN_ACTIVITY_ORPHANED.format(
+                activity=f"Cannot create activity for {target_info} - no valid account found for contact {contact_info['contact_name']}"
+            )
+        )

@@ -10,6 +10,7 @@ from apps.campaign.utils.standardized_responses import (
 )
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages
+from apps.campaign.utils.contact_helpers import ContactSafetyHelper
 
 # Import configuration variables
 from apps.campaign.config.variables import (
@@ -423,16 +424,19 @@ class CampaignAnalyticsService:
                 prefetched_contacts = activity.contacts.all()
                 
                 for contact in prefetched_contacts:
+                    contact_info = ContactSafetyHelper.get_contact_display_info(contact)
                     contacts_data.append({
-                        'id': contact.id,
-                        'name': f"{contact.first_name} {contact.last_name}",
-                        'email': contact.email,
-                        'phone': getattr(contact, 'phone', None)
+                        'id': contact_info['contact_id'],
+                        'name': contact_info['contact_name'],
+                        'email': contact_info['email'],
+                        'phone': contact_info['phone']
                     })
                     
             except Exception:
                 # Fallback if contacts not properly prefetched
                 contacts_data = [{'id': None, 'name': 'Contacts not loaded', 'email': None, 'phone': None}]
+
+            account_info = cls._get_safe_activity_account_info(activity)
             
             # Format activity data - account should be select_related from calling method
             activity_data = {
@@ -444,8 +448,8 @@ class CampaignAnalyticsService:
                 'status_display': activity.get_status_display(),
                 'scheduled_start': activity.scheduled_start,
                 'completed_at': activity.completed_at,
-                f"{FIELD_NAMES['ACCOUNT']}_id": activity.account_id,
-                f"{FIELD_NAMES['ACCOUNT']}_name": getattr(activity.account, 'company_name', 'Unknown'),
+                f"{FIELD_NAMES['ACCOUNT']}_id": account_info['account_id'],
+                f"{FIELD_NAMES['ACCOUNT']}_name": account_info['account_name'],
                 'contacts': contacts_data,
             }
             
@@ -547,6 +551,58 @@ class CampaignAnalyticsService:
             # Re-raise validation errors
             raise
         except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED
+            )
+    
+    @classmethod
+    def _get_safe_activity_account_info(cls, activity) -> dict:
+        """
+        Safely extract account information from activity
+        
+        Args:
+            activity: Activity instance
+            
+        Returns:
+            dict: Safe account information
+        """
+        try:
+            # Essayer d'accéder à l'account via la relation
+            if hasattr(activity, 'account') and activity.account:
+                return {
+                    'account_id': activity.account.id,
+                    'account_name': getattr(activity.account, 'company_name', 'Unknown Account'),
+                    'has_account': True
+                }
+            
+            # Fallback : essayer via account_id direct
+            if hasattr(activity, 'account_id') and activity.account_id:
+                return {
+                    'account_id': activity.account_id,
+                    'account_name': 'Account not loaded',  # Account pas préfetchée
+                    'has_account': True
+                }
+            
+            # Pas d'account du tout
+            return {
+                'account_id': None,
+                'account_name': 'No Account',
+                'has_account': False
+            }
+            
+        except StandardizedValidationError:
+            # Re-lever les erreurs de validation standardisées
+            raise
+        except (AttributeError, TypeError):
+            # Pour les erreurs d'accès aux attributs, retourner des valeurs par défaut
+            # plutôt que de faire planter l'API
+            return {
+                'account_id': None,
+                'account_name': 'Account Information Unavailable',
+                'has_account': False
+            }
+        except Exception as e:
+            # Pour toute autre erreur inattendue, lever une erreur standardisée
             raise StandardizedValidationError(
                 CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED
             )
