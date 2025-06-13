@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, CampaignErrorMessages
 from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
 from django.db.models import Q
 
@@ -255,6 +255,32 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         try:
             # Run clean validation first
             self.full_clean()
+
+            if self.pk:  # Campaign existe déjà
+                try:
+                    old_instance = Campaign.objects.get(pk=self.pk)
+                    old_sequence_type = old_instance.sequence_type
+                    new_sequence_type = self.sequence_type
+                    
+                    # Si le sequence_type change
+                    if old_sequence_type != new_sequence_type:
+                        # Vérifier s'il y a des activités existantes
+                        from apps.activities.models import Activity
+                        existing_activities = Activity.objects.filter(
+                            campaign_info__campaign=self
+                        ).exists()
+                        
+                        if existing_activities:
+                            raise StandardizedValidationError(
+                                CampaignErrorMessages.CAMPAIGN_TRANSITION_INVALID.format(
+                                    from_state=f"sequence_type '{old_sequence_type or 'None'}'",
+                                    to_state=f"sequence_type '{new_sequence_type or 'None'}' (campaign has existing activities)"
+                                )
+                            )
+                            
+                except Campaign.DoesNotExist:
+                    # Campaign en cours de création, pas de validation nécessaire
+                    pass
             
             super().save(*args, **kwargs)
 
