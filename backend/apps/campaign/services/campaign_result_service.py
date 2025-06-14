@@ -1042,6 +1042,15 @@ class CampaignResultService:
         """
         Create a meeting activity from successful sequence
         """
+
+        if meeting_date <= date.today():
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(
+                    field="Meeting date (must be in the future)"
+                )
+            )
+        
+        
         # Create meeting activity
         meeting_activity = Activity.objects.create(
             title=f"Meeting with {activity.account.company_name}",

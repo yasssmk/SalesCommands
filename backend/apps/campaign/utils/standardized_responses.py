@@ -13,6 +13,7 @@ class CampaignSuccessMessages:
     # Campaign Creation
     CAMPAIGN_CREATED = "Campaign '{name}' created successfully with {activities_count} activities"
     CAMPAIGN_CREATED_NO_ACTIVITIES = "Campaign '{name}' created successfully (no sequence activities)"
+    CAMPAIGN_CREATED_EMPTY = "Campaign '{name}' created but no valid contacts found - please review target selection"
     
     # Campaign Control
     CAMPAIGN_STARTED = "Campaign '{name}' started successfully"
@@ -288,5 +289,46 @@ class CampaignResponseBuilder:
         return StandardizedSuccessResponse.success(
             message=message,
             data=data,
+            meta=meta
+        )
+    
+    @staticmethod
+    def campaign_created_empty(
+        campaign_id: int,
+        campaign_name: str,
+        targets_created: int,
+        skipped_contacts: List,
+        targeting_stats: Dict = None
+    ) -> Response:
+        """Réponse pour une campagne créée mais sans contacts valides"""
+        
+        message = CampaignSuccessMessages.CAMPAIGN_CREATED_EMPTY.format(
+            name=campaign_name
+        )
+        
+        data = {
+            'campaign_id': campaign_id,
+            'campaign_name': campaign_name,
+            'targets_created': targets_created,
+            'activities_created': 0,
+            'skipped_contacts': skipped_contacts,
+            'warning': 'No valid contacts found for campaign activities'
+        }
+        
+        meta = {
+            'operation': 'campaign_creation',
+            'targets_created': targets_created,
+            'activities_created': 0,
+            'has_warning': True,
+            'warning_type': 'empty_campaign'
+        }
+        
+        if targeting_stats:
+            meta['targeting_stats'] = targeting_stats
+            
+        return StandardizedSuccessResponse.created(
+            message=message,
+            data=data,
+            resource_id=campaign_id,
             meta=meta
         )

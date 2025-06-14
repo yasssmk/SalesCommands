@@ -1,15 +1,26 @@
-# apps/campaign/services/campaign_activity_service.py (revised)
-from typing import List, Dict, TYPE_CHECKING
+# apps/campaign/services/campaign_activity_service.py (version complète finale)
+
+from typing import List, Dict, Optional, TYPE_CHECKING
 from django.db import transaction
+from django.utils import timezone
+from rest_framework.response import Response
 from apps.activities.models import Activity, ActivityCampaign, ActivitySequence
 from apps.campaign.models import Campaign, CampaignTarget
 from apps.sequence.sequences.chasing_sequence import ChasingSequence
-from apps.campaign.utils.contact_helpers import ContactSafetyHelper
-from core.error_messages import CampaignErrorMessages
-from core.exceptions import StandardizedValidationError
 from apps.accounts.models import Contact
+from apps.campaign.utils.contact_helpers import ContactSafetyHelper
+from apps.campaign.utils.standardized_responses import (
+    StandardizedSuccessResponse, 
+    CampaignResponseBuilder, 
+    CampaignSuccessMessages
+)
+from core.exceptions import StandardizedValidationError
+from core.error_messages import CampaignErrorMessages
+
+# Import conditionnel pour éviter les imports circulaires
 if TYPE_CHECKING:
     from apps.accounts.models import Account
+
 # Import configuration variables
 from apps.campaign.config.variables import (
     FIELD_NAMES,
@@ -21,10 +32,12 @@ from apps.campaign.config.variables import (
 class CampaignActivityService:
     """
     Service for creating and managing campaign activities based on sequences
+    Version sécurisée avec réponses standardisées et gestion des edge cases
     """
     
     @classmethod
-    def create_activities_for_campaign(cls, campaign: Campaign, target_contacts: List[int] = None) -> Dict:
+    def create_activities_for_campaign(cls, campaign: Campaign, target_contacts: List[int] = None,
+                                     for_campaign_creation: bool = True) -> Response:
         """
         Create activities for all targets in a campaign with optimized queries
         For campaigns without sequence, just extract and return contacts without creating activities
@@ -32,9 +45,10 @@ class CampaignActivityService:
         Args:
             campaign: The campaign to create activities for
             target_contacts: Optional list of specific contact IDs to target
+            for_campaign_creation: True si appelé lors de création de campagne, False pour génération ultérieure
             
         Returns:
-            Dictionary with creation summary or contact queue for non-sequence campaigns
+            Response: Standardized response with creation summary or contact queue
         """
         created_count = 0
         
@@ -44,17 +58,41 @@ class CampaignActivityService:
         skipped_contacts = extraction_result['skipped_contacts']
         contact_to_target_map = extraction_result['contact_to_target_map']
         
-        # For campaigns without a sequence, just return the contact information
+        # For campaigns without a sequence, return contact queue response
         if not campaign.sequence_type:
-            return {
-                'total_activities_created': 0,
-                'skipped_contacts': skipped_contacts,
-                'valid_contacts': valid_contacts,
-                'contact_to_target_map': contact_to_target_map,
-                'is_sequence': False,
-                'success': True,
-                'message': 'Campaign has no sequence - contacts extracted for manual activities'
-            }
+            return CampaignResponseBuilder.campaign_playlist(
+                campaign_id=campaign.id,
+                campaign_name=campaign.name,
+                items=valid_contacts,
+                queue_type='contact',
+                is_sequence=False,
+                total_items=len(valid_contacts),
+                additional_data={
+                    'skipped_contacts': skipped_contacts,
+                    'contact_to_target_map': contact_to_target_map,
+                    'message': 'Campaign has no sequence - contacts extracted for manual activities'
+                }
+            )
+        
+        # Check for empty campaign (no valid contacts for sequence)
+        if not valid_contacts:
+            if for_campaign_creation:
+                return CampaignResponseBuilder.campaign_created_empty(
+                    campaign_id=campaign.id,
+                    campaign_name=campaign.name,
+                    targets_created=len(contact_to_target_map),
+                    skipped_contacts=skipped_contacts
+                )
+            else:
+                return CampaignResponseBuilder.activities_generated(
+                    campaign_id=campaign.id,
+                    campaign_name=campaign.name,
+                    activities_created=0,
+                    skipped_contacts=skipped_contacts,
+                    additional_data={
+                        'warning': 'No valid contacts found for activity generation'
+                    }
+                )
             
         # For campaigns with sequence, create activities
         with transaction.atomic():
@@ -87,21 +125,89 @@ class CampaignActivityService:
                     campaign_target.sequence_created = True
                     campaign_target.save(update_fields=['sequence_created'])
         
-        return {
-            'total_activities_created': created_count,
-            'skipped_contacts': skipped_contacts,
-            'is_sequence': True,
-            'success': True
-        }
+        # Return appropriate response based on context
+        if for_campaign_creation:
+            # Contexte : création de campagne
+            if created_count == 0:
+                return CampaignResponseBuilder.campaign_created_empty(
+                    campaign_id=campaign.id,
+                    campaign_name=campaign.name,
+                    targets_created=len(contact_to_target_map),
+                    skipped_contacts=skipped_contacts
+                )
+            else:
+                return CampaignResponseBuilder.campaign_created(
+                    campaign_id=campaign.id,
+                    campaign_name=campaign.name,
+                    targets_created=len(contact_to_target_map),
+                    activities_created=created_count,
+                    skipped_contacts=skipped_contacts
+                )
+        else:
+            # Contexte : génération d'activités pour campagne existante
+            return CampaignResponseBuilder.activities_generated(
+                campaign_id=campaign.id,
+                campaign_name=campaign.name,
+                activities_created=created_count,
+                skipped_contacts=skipped_contacts,
+                additional_data={
+                    'valid_contacts': len(valid_contacts),
+                    'targets_processed': len(contact_to_target_map)
+                }
+            )
         
+    @classmethod
+    def _get_safe_account_for_activity(cls, campaign_target: CampaignTarget, 
+                                     contact: Contact) -> 'Account':
+        """
+        Safely get account for activity creation from campaign target or contact
+        
+        Args:
+            campaign_target: CampaignTarget instance
+            contact: Contact instance as fallback
+            
+        Returns:
+            Account: Valid account instance
+            
+        Raises:
+            StandardizedValidationError: If no valid account can be found
+        """
+        # Essayer d'abord le campaign_target.account
+        if campaign_target and hasattr(campaign_target, 'account') and campaign_target.account:
+            return campaign_target.account
+        
+        # Fallback: essayer contact.account
+        contact_account = ContactSafetyHelper.get_account(contact)
+        if contact_account:
+            return contact_account
+        
+        # Pas d'account valide trouvé
+        target_info = "Unknown Target"
+        if campaign_target:
+            target_type = getattr(campaign_target, 'get_target_type', lambda: 'unknown')()
+            target_info = f"{target_type} target"
+        
+        contact_info = ContactSafetyHelper.get_contact_display_info(contact)
+        
+        raise StandardizedValidationError(
+            CampaignErrorMessages.CAMPAIGN_ACTIVITY_ORPHANED.format(
+                activity=f"Cannot create activity for {target_info} - no valid account found for contact {contact_info['contact_name']}"
+            )
+        )
+    
     @classmethod
     def _create_activities_for_contact(cls, campaign: Campaign, campaign_target: CampaignTarget, 
                                 contact: Contact, has_phone: bool, has_email: bool, 
                                 has_linkedin: bool) -> List[Activity]:
         """
         Create sequence activities for a specific contact with stakeholder-based assignment
+        SÉCURISÉ contre les accounts manquants
         """
 
+        if not campaign.sequence_type:
+            return []
+        
+        # Validation sécurisée de l'account avant création des activités
         try:
             activity_account = cls._get_safe_account_for_activity(campaign_target, contact)
         except StandardizedValidationError:
@@ -144,15 +250,15 @@ class CampaignActivityService:
         
         # Create activities for each step in the sequence
         for step_number, step_config in sequence_dict.items():
-            # Create the base activity - NO SCHEDULED DATE
+            # Create the base activity - SÉCURISÉ avec account validé
             activity = Activity(
                 title=f"Step {step_number}: {step_config['description']}",
                 activity_type=step_config['type'],
                 description=step_config['description'],
-                account=activity_account,
-                owner=activity_owner,  # Use stakeholder-based owner
+                account=activity_account,  # ✅ SÉCURISÉ - account validé ci-dessus
+                owner=activity_owner,
                 status=Activity.Status.PLANNED,
-                client_id=campaign.client_id  # Set client_id from campaign
+                client_id=campaign.client_id
             )
             
             activity_instances.append(activity)
@@ -166,6 +272,7 @@ class CampaignActivityService:
             
             previous_activity = activity
         
+        # Si aucune activité créée (séquence vide), retourner liste vide
         if not activity_instances:
             return []
         
@@ -231,6 +338,7 @@ class CampaignActivityService:
                 )
             )
         
+        return created_activities
         
     @classmethod
     def _create_single_activity(cls, campaign: Campaign, campaign_target: CampaignTarget,
@@ -240,7 +348,7 @@ class CampaignActivityService:
         Create a single activity with all necessary relationships (no scheduled date)
         SÉCURISÉ contre les accounts manquants
         """
-        # NOUVEAU: Validation sécurisée de l'account
+        # Validation sécurisée de l'account
         activity_account = cls._get_safe_account_for_activity(campaign_target, contact)
         
         # Create the base activity - SÉCURISÉ avec account validé
@@ -327,7 +435,7 @@ class CampaignActivityService:
             
             # For direct contact targets - SÉCURISÉ avec validation
             if target.contact:
-                # NOUVEAU: Validation que le contact a un account valide
+                # Validation que le contact a un account valide
                 if ContactSafetyHelper.validate_contact_has_account(target.contact):
                     direct_contact_ids.add(target.contact.id)
                     target_by_contact_id[target.contact.id] = target
@@ -375,7 +483,7 @@ class CampaignActivityService:
         contact_to_target_map = {}
         
         for contact in all_contacts:
-            # NOUVEAU: Validation critique - skip si pas d'account valide
+            # Validation critique - skip si pas d'account valide
             if not ContactSafetyHelper.validate_contact_has_account(contact):
                 contact_info = ContactSafetyHelper.get_contact_display_info(contact)
                 skipped_contacts.append({
@@ -450,7 +558,7 @@ class CampaignActivityService:
             if target:
                 contact_to_target_map[contact.id] = target
         
-        # NOUVEAU: Vérifier et signaler les contacts directement ciblés sans account valide
+        # Vérifier et signaler les contacts directement ciblés sans account valide
         for target in campaign_targets:
             if target.contact and not ContactSafetyHelper.validate_contact_has_account(target.contact):
                 contact_info = ContactSafetyHelper.get_contact_display_info(target.contact)
@@ -507,42 +615,133 @@ class CampaignActivityService:
             return target_by_account_id[contact.account_id]
         
         return None
-    
+
     @classmethod
-    def _get_safe_account_for_activity(cls, campaign_target: CampaignTarget, 
-                                     contact: Contact) -> 'Account':
+    def cleanup_orphaned_activities(cls, campaign: Campaign) -> Dict:
         """
-        Safely get account for activity creation from campaign target or contact
+        Nettoie les activités orphelines (sans target valide)
+        Méthode utilitaire pour maintenance
         
         Args:
-            campaign_target: CampaignTarget instance
-            contact: Contact instance as fallback
+            campaign: Campaign à nettoyer
             
         Returns:
-            Account: Valid account instance
-            
-        Raises:
-            StandardizedValidationError: If no valid account can be found
+            Dict: Rapport de nettoyage
         """
-        # Essayer d'abord le campaign_target.account
-        if campaign_target and hasattr(campaign_target, 'account') and campaign_target.account:
-            return campaign_target.account
+        from apps.activities.models import Activity
         
-        # Fallback: essayer contact.account
-        contact_account = ContactSafetyHelper.get_account(contact)
-        if contact_account:
-            return contact_account
+        # Trouver les activités de la campagne sans target valide
+        campaign_activities = Activity.objects.filter(
+            campaign_info__campaign=campaign
+        ).select_related('campaign_info__campaign_target')
         
-        # Pas d'account valide trouvé
-        target_info = "Unknown Target"
-        if campaign_target:
-            target_type = getattr(campaign_target, 'get_target_type', lambda: 'unknown')()
-            target_info = f"{target_type} target"
+        orphaned_activities = []
         
-        contact_info = ContactSafetyHelper.get_contact_display_info(contact)
+        for activity in campaign_activities:
+            campaign_info = getattr(activity, 'campaign_info', None)
+            if not campaign_info or not campaign_info.campaign_target:
+                orphaned_activities.append(activity)
         
-        raise StandardizedValidationError(
-            CampaignErrorMessages.CAMPAIGN_ACTIVITY_ORPHANED.format(
-                activity=f"Cannot create activity for {target_info} - no valid account found for contact {contact_info['contact_name']}"
+        # Supprimer les activités orphelines
+        orphaned_count = 0
+        if orphaned_activities:
+            orphaned_ids = [a.id for a in orphaned_activities]
+            Activity.objects.filter(id__in=orphaned_ids).delete()
+            orphaned_count = len(orphaned_ids)
+        
+        return {
+            'campaign_id': campaign.id,
+            'campaign_name': campaign.name,
+            'orphaned_activities_found': len(orphaned_activities),
+            'orphaned_activities_deleted': orphaned_count,
+            'cleanup_successful': True,
+            'cleanup_timestamp': timezone.now().isoformat()
+        }
+    
+    @classmethod
+    def validate_campaign_integrity(cls, campaign: Campaign) -> Dict:
+        """
+        Valide l'intégrité d'une campagne (diagnostic)
+        
+        Args:
+            campaign: Campaign à valider
+            
+        Returns:
+            Dict: Rapport de validation
+        """
+        from apps.activities.models import Activity
+        
+        # Compter les targets
+        total_targets = campaign.targets.count()
+        targets_with_activities = campaign.targets.filter(
+            activity_campaign__isnull=False
+        ).distinct().count()
+        
+        # Compter les activités
+        total_activities = Activity.objects.filter(
+            campaign_info__campaign=campaign
+        ).count()
+        
+        orphaned_activities = Activity.objects.filter(
+            campaign_info__campaign=campaign,
+            campaign_info__campaign_target__isnull=True
+        ).count()
+        
+        # Contacts valides vs skipped
+        extraction_result = cls._extract_contacts_from_targets(campaign)
+        valid_contacts_count = len(extraction_result['valid_contacts'])
+        skipped_contacts_count = len(extraction_result['skipped_contacts'])
+        
+        # Déterminer l'état
+        is_empty = (total_activities == 0 and campaign.sequence_type is not None)
+        has_orphans = (orphaned_activities > 0)
+        has_issues = (skipped_contacts_count > valid_contacts_count)
+        
+        integrity_status = 'healthy'
+        if is_empty:
+            integrity_status = 'empty'
+        elif has_orphans or has_issues:
+            integrity_status = 'issues_detected'
+        
+        return {
+            'campaign_id': campaign.id,
+            'campaign_name': campaign.name,
+            'integrity_status': integrity_status,
+            'is_empty_campaign': is_empty,
+            'targets': {
+                'total': total_targets,
+                'with_activities': targets_with_activities,
+                'without_activities': total_targets - targets_with_activities
+            },
+            'activities': {
+                'total': total_activities,
+                'orphaned': orphaned_activities
+            },
+            'contacts': {
+                'valid': valid_contacts_count,
+                'skipped': skipped_contacts_count
+            },
+            'recommendations': cls._get_integrity_recommendations(
+                is_empty, has_orphans, has_issues, skipped_contacts_count, valid_contacts_count
             )
-        )
+        }
+    
+    @classmethod
+    def _get_integrity_recommendations(cls, is_empty: bool, has_orphans: bool, 
+                                     has_issues: bool, skipped: int, valid: int) -> List[str]:
+        """Helper pour générer des recommandations d'amélioration"""
+        recommendations = []
+        
+        if is_empty:
+            recommendations.append("Campaign has no activities - verify target contacts have valid communication channels")
+        
+        if has_orphans:
+            recommendations.append("Orphaned activities detected - run cleanup_orphaned_activities()")
+        
+        if has_issues and skipped > valid:
+            recommendations.append(f"More contacts skipped ({skipped}) than valid ({valid}) - review target selection")
+        
+        if not recommendations:
+            recommendations.append("Campaign integrity is good")
+        
+        return recommendations
