@@ -25,6 +25,8 @@ class CampaignSuccessMessages:
     ACTIVITY_CALLBACK_SCHEDULED = "Callback scheduled for {date}"
     ACTIVITY_MEETING_SCHEDULED = "Meeting scheduled successfully for {date}"
     ACTIVITY_SEQUENCE_PROGRESSED = "Activity completed, sequence progressed"
+    ACTIVITIES_GENERATED = "Generated {activities_count} activities for campaign '{name}'"
+    ACTIVITIES_GENERATED_EMPTY = "No activities generated for campaign '{name}' - no valid contacts found"
     
     # Campaign Management
     CONTACT_REMOVED = "Contact removed from campaign successfully"
@@ -330,5 +332,50 @@ class CampaignResponseBuilder:
             message=message,
             data=data,
             resource_id=campaign_id,
+            meta=meta
+        )
+    
+    @staticmethod
+    def activities_generated(
+        campaign_id: int,
+        campaign_name: str,
+        activities_created: int,
+        skipped_contacts: List = None,
+        additional_data: Dict = None
+    ) -> Response:
+        """Réponse spécialisée pour la génération d'activités (campagne existante)"""
+        
+        if activities_created > 0:
+            message = CampaignSuccessMessages.ACTIVITIES_GENERATED.format(
+                activities_count=activities_created,
+                name=campaign_name
+            )
+        else:
+            message = CampaignSuccessMessages.ACTIVITIES_GENERATED_EMPTY.format(
+                name=campaign_name
+            )
+        
+        data = {
+            'campaign_id': campaign_id,
+            'campaign_name': campaign_name,
+            'activities_created': activities_created,
+            'operation': 'activities_generation'
+        }
+        
+        if skipped_contacts:
+            data['skipped_contacts'] = skipped_contacts
+            
+        if additional_data:
+            data.update(additional_data)
+            
+        meta = {
+            'operation': 'activities_generation',
+            'activities_created': activities_created,
+            'campaign_modified': activities_created > 0
+        }
+        
+        return StandardizedSuccessResponse.success(
+            message=message,
+            data=data,
             meta=meta
         )
