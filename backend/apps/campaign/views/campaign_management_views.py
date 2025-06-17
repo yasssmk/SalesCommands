@@ -620,7 +620,7 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
 
-class ActivityResultViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ViewSet):
+class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewSet):
     """
     ViewSet for handling activity results and completion
     Now returns standardized responses consistently
@@ -681,6 +681,123 @@ class ActivityResultViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.
             
         except Activity.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+    
+    @action(detail=False, methods=['get'])
+    def get_next_step_options(self, request):
+        """
+        Get available next step options based on campaign target type
+        
+        Query params:
+        - campaign_target_id: ID of the campaign target
+        """
+        try:
+            campaign_target_id = request.query_params.get('campaign_target_id')
+            
+            if not campaign_target_id:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="campaign_target_id")
+                )
+            
+            # Get campaign target and validate access
+            try:
+                from apps.campaign.models import CampaignTarget
+                campaign_target = CampaignTarget.objects.get(id=campaign_target_id)
+                
+                # Validate client scope
+                self.validate_client_id(campaign_target)
+                
+                # Validate campaign ownership/stakeholder access
+                campaign = campaign_target.campaign
+                self.validate_campaign_related_object(campaign_target, allow_stakeholders=True)
+                
+            except CampaignTarget.DoesNotExist:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            
+            # Determine target type and available options
+            target_type = campaign_target.get_target_type()
+            target_object = campaign_target.get_target()
+            
+            available_options = []
+            
+            # Meeting is always available as next step
+            available_options.append({
+                'type': 'meeting',
+                'label': 'Schedule Meeting',
+                'description': 'Schedule a follow-up meeting',
+                'requires_fields': ['meeting_date', 'notes']
+            })
+            
+            # Lead creation (only for account/contact targets)
+            if target_type in ['account', 'contact']:
+                available_options.append({
+                    'type': 'lead',
+                    'label': 'Create Lead',
+                    'description': 'Create a new lead for this prospect',
+                    'requires_fields': ['lead_title', 'description', 'notes']
+                })
+            
+            # Opportunity creation (valid for account/contact/lead targets)
+            if target_type in ['account', 'contact', 'lead']:
+                available_options.append({
+                    'type': 'opportunity',
+                    'label': 'Create Opportunity',
+                    'description': 'Create a new sales opportunity',
+                    'requires_fields': ['opportunity_title', 'expected_close_date', 'amount', 'notes']
+                })
+            
+            # Opportunity advancement (only for opportunity targets)
+            if target_type == 'opportunity':
+                available_options.append({
+                    'type': 'opportunity_advance',
+                    'label': 'Advance Opportunity',
+                    'description': 'Update existing opportunity (stage, amount, etc.)',
+                    'requires_fields': ['notes'],  # Simple for MVP
+                    'disabled': True,  # Disabled until stages are implemented
+                    'disabled_reason': 'Opportunity stages not yet implemented'
+                })
+            
+            # Other/Custom option
+            available_options.append({
+                'type': 'other',
+                'label': 'Other Action',
+                'description': 'Custom next step with notes only',
+                'requires_fields': ['notes']
+            })
+            
+            # Prepare response data
+            data = {
+                'campaign_target_id': campaign_target.id,
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'target_type': target_type,
+                'target_info': {
+                    'id': target_object.id,
+                    'name': getattr(target_object, 'company_name', None) or 
+                            getattr(target_object, 'title', None) or 
+                            f"{getattr(target_object, 'first_name', '')} {getattr(target_object, 'last_name', '')}".strip(),
+                    'type': target_type
+                },
+                'available_options': available_options
+            }
+            
+            meta = {
+                'operation': 'next_step_options',
+                'target_type': target_type,
+                'options_count': len(available_options)
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message="Next step options retrieved successfully",
+                data=data,
+                meta=meta
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to get next step options")
+            )
     
     @action(detail=True, methods=['post'])
     def add_email_response(self, request, pk=None):

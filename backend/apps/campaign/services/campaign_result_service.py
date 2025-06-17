@@ -689,19 +689,117 @@ class CampaignResultService:
         return cls._handle_no_answer_call(activity, sequence_info, notes, is_sequence_campaign, **kwargs)
     
     @classmethod
+    # def _handle_successful_call(cls, activity: Activity, sequence_info: ActivitySequence,
+    #                     notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
+    #     """
+    #     Handle successful call - create meeting and manage campaign target appropriately
+    #     MODIFIÉ : Ajout de la mise à jour explicite du statut pour les meetings
+    #     """
+    #     try:
+    #         meeting_date = kwargs.get('meeting_date')
+            
+    #         # Transaction atomique pour toutes les modifications DB
+    #         with transaction.atomic():
+    #             # Complete current activity
+    #             activity.complete(outcome_notes=f"Successfully scheduled meeting. {notes}" if notes else "Successfully scheduled meeting")
+                
+    #             # Get campaign information
+    #             campaign = None
+    #             campaign_target = None
+    #             if hasattr(activity, 'campaign_info'):
+    #                 campaign_info = activity.campaign_info
+    #                 campaign = campaign_info.campaign
+    #                 campaign_target = campaign_info.campaign_target
+                
+    #             # Update campaign info
+    #             if hasattr(activity, 'campaign_info'):
+    #                 campaign_info = activity.campaign_info
+    #                 campaign_info.meeting_scheduled = True
+    #                 campaign_info.save()
+                    
+    #                 # NOUVEAU : Mise à jour explicite du statut pour meeting sécurisé
+    #                 if campaign_target:
+    #                     campaign_target.update_status(
+    #                         campaign_target.Status.MEETING_SECURED, 
+    #                         save=True, 
+    #                         validate_consistency=False  # On force ce statut car on sait qu'un meeting est sécurisé
+    #                     )
+                
+    #             # Create meeting activity if date provided
+    #             meeting_activity_id = None
+    #             if meeting_date:
+    #                 meeting_activity = cls._create_meeting_activity(activity, meeting_date, notes)
+    #                 meeting_activity_id = meeting_activity.id
+                
+    #             # For sequence campaigns, end the sequence
+    #             if is_sequence_campaign:
+    #                 cancelled_count = cls._complete_contact_sequence(activity)
+    #             else:
+    #                 # For non-sequence campaigns, remove contact from queue
+    #                 if campaign_target:
+    #                     # Mark as completed so it doesn't appear in contact list
+    #                     campaign_target.status = campaign_target.Status.COMPLETED
+    #                     campaign_target.save()
+                
+    #             # Update campaign objectives
+    #             cls._update_campaign_objectives(activity, 'meeting_scheduled')
+                
+    #             # Determine which AE should receive this opportunity if it's converted later
+    #             assigned_ae = None
+    #             if campaign:
+    #                 from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
+    #                 receivers = campaign.get_receivers()
+                    
+    #                 if receivers.exists():
+    #                     assigned_ae = receivers.first()
+            
+    #         # Préparer la réponse (après la transaction)
+    #         data = {
+    #             'activity_id': activity.id,
+    #             'action': 'meeting_scheduled',
+    #             'meeting_date': meeting_date,
+    #             'meeting_activity_id': meeting_activity_id,
+    #             'assigned_ae': assigned_ae.id if assigned_ae else None,
+    #             'is_sequence_campaign': is_sequence_campaign
+    #         }
+            
+    #         meta = {
+    #             'operation': 'successful_call_handling',
+    #             'meeting_created': bool(meeting_activity_id),
+    #             'sequence_completed': is_sequence_campaign
+    #         }
+            
+    #         return CampaignResponseBuilder.activity_completed(
+    #             result_action='meeting_scheduled',
+    #             activity_id=activity.id,
+    #             additional_info={
+    #                 'meeting_date': meeting_date,
+    #                 'meeting_activity_id': meeting_activity_id,
+    #                 'assigned_ae': assigned_ae.id if assigned_ae else None
+    #             }
+    #         )
+            
+    #     except StandardizedValidationError:
+    #         # Re-raise validation errors
+    #         raise
+    #     except Exception as e:
+    #         raise StandardizedValidationError(
+    #             CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+    #         )
+
+
+    @classmethod
     def _handle_successful_call(cls, activity: Activity, sequence_info: ActivitySequence,
                         notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
-        Handle successful call - create meeting and manage campaign target appropriately
-        MODIFIÉ : Ajout de la mise à jour explicite du statut pour les meetings
+        Handle successful call - complete sequence and mark target as completed
+        MODIFIÉ : Target COMPLETED car objectif campagne atteint (next step secured)
         """
         try:
-            meeting_date = kwargs.get('meeting_date')
-            
             # Transaction atomique pour toutes les modifications DB
             with transaction.atomic():
                 # Complete current activity
-                activity.complete(outcome_notes=f"Successfully scheduled meeting. {notes}" if notes else "Successfully scheduled meeting")
+                activity.complete(outcome_notes=f"Activity successful. {notes}" if notes else "Activity successful")
                 
                 # Get campaign information
                 campaign = None
@@ -711,76 +809,44 @@ class CampaignResultService:
                     campaign = campaign_info.campaign
                     campaign_target = campaign_info.campaign_target
                 
-                # Update campaign info
-                if hasattr(activity, 'campaign_info'):
-                    campaign_info = activity.campaign_info
-                    campaign_info.meeting_scheduled = True
-                    campaign_info.save()
-                    
-                    # NOUVEAU : Mise à jour explicite du statut pour meeting sécurisé
-                    if campaign_target:
-                        campaign_target.update_status(
-                            campaign_target.Status.MEETING_SECURED, 
-                            save=True, 
-                            validate_consistency=False  # On force ce statut car on sait qu'un meeting est sécurisé
-                        )
-                
-                # Create meeting activity if date provided
-                meeting_activity_id = None
-                if meeting_date:
-                    meeting_activity = cls._create_meeting_activity(activity, meeting_date, notes)
-                    meeting_activity_id = meeting_activity.id
-                
                 # For sequence campaigns, end the sequence
                 if is_sequence_campaign:
                     cancelled_count = cls._complete_contact_sequence(activity)
-                else:
-                    # For non-sequence campaigns, remove contact from queue
-                    if campaign_target:
-                        # Mark as completed so it doesn't appear in contact list
-                        campaign_target.status = campaign_target.Status.COMPLETED
-                        campaign_target.save()
                 
-                # Update campaign objectives
-                cls._update_campaign_objectives(activity, 'meeting_scheduled')
-                
-                # Determine which AE should receive this opportunity if it's converted later
-                assigned_ae = None
-                if campaign:
-                    from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
-                    receivers = campaign.get_receivers()
-                    
-                    if receivers.exists():
-                        assigned_ae = receivers.first()
+                # Dans tous les cas, marquer le target comme COMPLETED
+                # Car l'objectif de la campagne est atteint (next step secured)
+                if campaign_target:
+                    campaign_target.status = campaign_target.Status.COMPLETED
+                    campaign_target.save()
             
             # Préparer la réponse (après la transaction)
             data = {
                 'activity_id': activity.id,
-                'action': 'meeting_scheduled',
-                'meeting_date': meeting_date,
-                'meeting_activity_id': meeting_activity_id,
-                'assigned_ae': assigned_ae.id if assigned_ae else None,
+                'action': 'successful_needs_next_step',
+                'campaign_id': campaign.id if campaign else None,
+                'campaign_target_id': campaign_target.id if campaign_target else None,
                 'is_sequence_campaign': is_sequence_campaign
             }
             
             meta = {
                 'operation': 'successful_call_handling',
-                'meeting_created': bool(meeting_activity_id),
-                'sequence_completed': is_sequence_campaign
+                'sequence_completed': is_sequence_campaign,
+                'target_completed': True,
+                'needs_next_step_selection': True
             }
             
             return CampaignResponseBuilder.activity_completed(
-                result_action='meeting_scheduled',
+                result_action='successful_needs_next_step',
                 activity_id=activity.id,
                 additional_info={
-                    'meeting_date': meeting_date,
-                    'meeting_activity_id': meeting_activity_id,
-                    'assigned_ae': assigned_ae.id if assigned_ae else None
+                    'campaign_id': campaign.id if campaign else None,
+                    'campaign_target_id': campaign_target.id if campaign_target else None,
+                    'next_step_required': True,
+                    'target_completed': True
                 }
             )
             
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
