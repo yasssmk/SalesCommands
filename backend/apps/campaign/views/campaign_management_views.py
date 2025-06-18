@@ -18,6 +18,7 @@ from apps.campaign.services.campaign_result_service import CampaignResultService
 from apps.campaign.models.campaign_target import CampaignTarget
 from apps.campaign.services.campaign_activity_service import CampaignActivityService
 from apps.campaign.services.campaign_target_service import CampaignTargetService
+from apps.campaign.services.campaign_tracking_service import CampaignTrackingService
 from apps.activities.models import Activity, ActivityCampaign, ActivitySequence
 from django.db import transaction
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse, CampaignSuccessMessages
@@ -618,6 +619,266 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
             
         except Contact.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+    
+    @action(detail=True, methods=['get'])
+    def dashboard(self, request, pk=None):
+        """
+        Get campaign dashboard with metrics vs objectives
+        VERSION MVP : Simple et direct
+        
+        Response includes:
+        - Current metrics (leads, meetings, opportunities, deals)
+        - Objectives vs achieved comparison
+        - Quick health indicators
+        """
+        try:
+            campaign = self.get_validated_campaign(
+                require_ownership=True, 
+                allow_stakeholders=True, 
+                check_state=False
+            )
+            
+            # Obtenir les métriques actuelles
+            current_metrics = CampaignTrackingService.get_campaign_metrics(campaign)
+            
+            # Obtenir les objectifs
+            objectives = campaign.objectives.all()
+            objectives_data = []
+            
+            for objective in objectives:
+                # Mapper les types d'objectifs aux métriques
+                metric_value = 0
+                if objective.objective_type == 'LEADS':
+                    metric_value = current_metrics['leads_created']
+                elif objective.objective_type == 'MEETINGS':
+                    metric_value = current_metrics['meetings_secured']
+                elif objective.objective_type == 'OPPORTUNITIES':
+                    metric_value = current_metrics['opportunities_created']
+                elif objective.objective_type == 'CLOSED_DEALS':
+                    metric_value = current_metrics['deals_closed']
+                elif objective.objective_type == 'PIPELINE_VALUE':
+                    metric_value = current_metrics['pipeline_value']
+                elif objective.objective_type == 'REVENUE':
+                    metric_value = current_metrics['revenue_generated']
+                
+                # Calculer progression
+                target_value = float(objective.target_value)
+                progress_percentage = (metric_value / target_value * 100) if target_value > 0 else 0
+                
+                objectives_data.append({
+                    'id': objective.id,
+                    'name': objective.name,
+                    'type': objective.objective_type,
+                    'type_display': objective.get_objective_type_display(),
+                    'target_value': target_value,
+                    'current_value': metric_value,
+                    'progress_percentage': round(progress_percentage, 1),
+                    'status': 'achieved' if progress_percentage >= 100 else 'in_progress' if progress_percentage > 0 else 'not_started',
+                    'is_primary': objective.is_primary
+                })
+            
+            # Calculer indicateurs de santé
+            health_indicators = {
+                'overall_health': 'good',  # good, warning, critical
+                'total_results': (
+                    current_metrics['leads_created'] + 
+                    current_metrics['meetings_secured'] + 
+                    current_metrics['opportunities_created'] + 
+                    current_metrics['deals_closed']
+                ),
+                'conversion_rates': {},
+                'alerts': []
+            }
+            
+            # Taux de conversion
+            if current_metrics['leads_created'] > 0:
+                meeting_rate = (current_metrics['meetings_secured'] / current_metrics['leads_created']) * 100
+                health_indicators['conversion_rates']['leads_to_meetings'] = round(meeting_rate, 1)
+                
+                if meeting_rate < 10:
+                    health_indicators['overall_health'] = 'critical'
+                    health_indicators['alerts'].append('Low meeting conversion rate (<10%)')
+                elif meeting_rate < 25:
+                    health_indicators['overall_health'] = 'warning'
+                    health_indicators['alerts'].append('Meeting conversion rate could be improved')
+            
+            if current_metrics['meetings_secured'] > 0:
+                opp_rate = (current_metrics['opportunities_created'] / current_metrics['meetings_secured']) * 100
+                health_indicators['conversion_rates']['meetings_to_opportunities'] = round(opp_rate, 1)
+            
+            if current_metrics['opportunities_created'] > 0:
+                deal_rate = (current_metrics['deals_closed'] / current_metrics['opportunities_created']) * 100
+                health_indicators['conversion_rates']['opportunities_to_deals'] = round(deal_rate, 1)
+            
+            # Vérifier si campagne active sans résultats
+            if campaign.status == 'ACTIVE' and health_indicators['total_results'] == 0:
+                health_indicators['overall_health'] = 'warning'
+                health_indicators['alerts'].append('Active campaign with no results yet')
+            
+            # Vérifier objectifs en retard
+            behind_objectives = [obj for obj in objectives_data if obj['progress_percentage'] < 50]
+            if len(behind_objectives) > len(objectives_data) / 2:
+                health_indicators['overall_health'] = 'warning'
+                health_indicators['alerts'].append('Multiple objectives behind target')
+            
+            # Préparer réponse finale
+            dashboard_data = {
+                'campaign': {
+                    'id': campaign.id,
+                    'name': campaign.name,
+                    'status': campaign.status,
+                    'start_date': campaign.start_date,
+                    'end_date': campaign.end_date,
+                    'campaign_type': campaign.campaign_type,
+                    'has_sequence': campaign.sequence_type is not None
+                },
+                'current_metrics': current_metrics,
+                'objectives': objectives_data,
+                'health_indicators': health_indicators,
+                'summary': {
+                    'total_objectives': len(objectives_data),
+                    'achieved_objectives': len([obj for obj in objectives_data if obj['status'] == 'achieved']),
+                    'primary_objective': next((obj for obj in objectives_data if obj['is_primary']), None),
+                    'last_updated': current_metrics['last_updated']
+                }
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Dashboard data retrieved for campaign '{campaign.name}'",
+                data=dashboard_data,
+                meta={
+                    'operation': 'campaign_dashboard',
+                    'campaign_id': campaign.id,
+                    'health_status': health_indicators['overall_health']
+                }
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to generate campaign dashboard")
+            )
+
+    @action(detail=True, methods=['get'])
+    def metrics(self, request, pk=None):
+        """
+        Get raw campaign metrics (simpler endpoint)
+        VERSION MVP : Métriques brutes sans comparaison objectifs
+        """
+        try:
+            campaign = self.get_validated_campaign(
+                require_ownership=True, 
+                allow_stakeholders=True, 
+                check_state=False
+            )
+            
+            # Obtenir les métriques directement
+            metrics = CampaignTrackingService.get_campaign_metrics(campaign)
+            
+            # Ajouter quelques infos de contexte
+            metrics['campaign_id'] = campaign.id
+            metrics['campaign_name'] = campaign.name
+            metrics['campaign_status'] = campaign.status
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Metrics retrieved for campaign '{campaign.name}'",
+                data=metrics,
+                meta={
+                    'operation': 'campaign_metrics',
+                    'campaign_id': campaign.id
+                }
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to retrieve campaign metrics")
+            )
+
+    @action(detail=True, methods=['post'])
+    def integrity_check(self, request, pk=None):
+        """
+        Check campaign tracking data integrity
+        VERSION MVP : Vérification manuelle sur demande
+        """
+        try:
+            campaign = self.get_validated_campaign(
+                require_ownership=True, 
+                allow_stakeholders=True, 
+                check_state=False
+            )
+            
+            # Obtenir le result tracking
+            result_tracking = CampaignTrackingService.get_or_create_result_tracking(campaign)
+            
+            # Générer rapport d'intégrité
+            integrity_report = result_tracking.get_integrity_report()
+            
+            # Ajouter recommandations simples
+            recommendations = []
+            if integrity_report['integrity_score'] < 90:
+                recommendations.append("Consider running cleanup - some tracked objects may no longer exist")
+            if integrity_report.get('has_orphaned_objects', False):
+                recommendations.append("Orphaned objects detected - review campaign relationships")
+            if not recommendations:
+                recommendations.append("Campaign tracking integrity is healthy")
+            
+            integrity_report['recommendations'] = recommendations
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Integrity check completed for campaign '{campaign.name}'",
+                data=integrity_report,
+                meta={
+                    'operation': 'integrity_check',
+                    'campaign_id': campaign.id,
+                    'needs_cleanup': integrity_report.get('needs_cleanup', False)
+                }
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to check campaign integrity")
+            )
+
+    @action(detail=True, methods=['post'])
+    def cleanup_tracking(self, request, pk=None):
+        """
+        Clean up invalid tracking data
+        VERSION MVP : Nettoyage manuel sur demande
+        """
+        try:
+            campaign = self.get_validated_campaign(
+                require_ownership=True, 
+                allow_stakeholders=False,  # Only owners can cleanup
+                check_state=False
+            )
+            
+            # Obtenir le result tracking
+            result_tracking = CampaignTrackingService.get_or_create_result_tracking(campaign)
+            
+            # Faire le nettoyage
+            cleanup_report = CampaignTrackingService.cleanup_invalid_tracking_data(campaign)
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Cleanup completed for campaign '{campaign.name}'",
+                data=cleanup_report,
+                meta={
+                    'operation': 'tracking_cleanup',
+                    'campaign_id': campaign.id,
+                    'cleanup_successful': cleanup_report.get('cleanup_successful', False)
+                }
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to cleanup campaign tracking")
+            )
 
 
 class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewSet):
@@ -799,6 +1060,194 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to get next step options")
             )
     
+
+    @action(detail=False, methods=['post'])
+    def process_next_step_choice(self, request):
+        """
+        Process user's choice for next step after successful campaign activity
+        
+        Expected payload:
+        {
+            "campaign_target_id": 123,
+            "source_activity_id": 456,
+            "choice_type": "meeting|lead|opportunity|other",
+            "contact_id": 789,  # Required for meeting/lead/opportunity
+            
+            // For meeting:
+            "meeting_date": "2025-01-15",
+            "notes": "Follow up on pricing discussion",
+            
+            // For lead:
+            "lead_title": "Interested in Enterprise Plan",
+            "description": "Contact showed interest...",
+            "notes": "Next: send proposal",
+            
+            // For opportunity:
+            "opportunity_title": "Q2 Enterprise Deal",
+            "expected_close_date": "2025-03-30",
+            "amount": 50000,
+            "opportunity_type": "NEW_BUSINESS",
+            "notes": "Strong buying signals",
+            
+            // For other:
+            "notes": "Custom action taken"
+        }
+        """
+        try:
+            # Extract and validate required fields
+            campaign_target_id = request.data.get('campaign_target_id')
+            source_activity_id = request.data.get('source_activity_id')
+            choice_type = request.data.get('choice_type')
+            
+            if not all([campaign_target_id, source_activity_id, choice_type]):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(
+                        field="campaign_target_id, source_activity_id, and choice_type"
+                    )
+                )
+            
+            # Validate choice_type
+            valid_choices = ['meeting', 'lead', 'opportunity', 'other']
+            if choice_type not in valid_choices:
+                raise StandardizedValidationError(
+                    f"Invalid choice_type. Must be one of: {', '.join(valid_choices)}"
+                )
+            
+            # Get and validate campaign target
+            try:
+                from apps.campaign.models import CampaignTarget
+                campaign_target = CampaignTarget.objects.get(id=campaign_target_id)
+                self.validate_client_id(campaign_target)
+                self.validate_campaign_related_object(campaign_target, allow_stakeholders=True)
+            except CampaignTarget.DoesNotExist:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND + " (campaign target)")
+            
+            # Get and validate source activity
+            try:
+                source_activity = Activity.objects.get(id=source_activity_id)
+                self.validate_client_id(source_activity)
+            except Activity.DoesNotExist:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND + " (source activity)")
+            
+            # Import service
+            from apps.campaign.services.campaign_business_result_service import CampaignBusinessResultService
+            
+            # Route to appropriate handler based on choice_type
+            if choice_type == 'meeting':
+                # Validate required fields for meeting
+                contact_id = request.data.get('contact_id')
+                meeting_date = request.data.get('meeting_date')
+                
+                if not all([contact_id, meeting_date]):
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(field="contact_id and meeting_date for meeting creation")
+                    )
+                
+                # Parse meeting date
+                try:
+                    from datetime import datetime
+                    meeting_date = datetime.strptime(meeting_date, '%Y-%m-%d').date()
+                except ValueError:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(field="meeting_date (expected YYYY-MM-DD format)")
+                    )
+                
+                return CampaignBusinessResultService.create_meeting_next_step(
+                    campaign_target=campaign_target,
+                    user=request.user,
+                    meeting_date=meeting_date,
+                    contact_id=contact_id,
+                    source_activity=source_activity,
+                    notes=request.data.get('notes', '')
+                )
+            
+            elif choice_type == 'lead':
+                # Validate required fields for lead
+                contact_id = request.data.get('contact_id')
+                lead_title = request.data.get('lead_title')
+                
+                if not all([contact_id, lead_title]):
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(field="contact_id and lead_title for lead creation")
+                    )
+                
+                return CampaignBusinessResultService.create_lead_next_step(
+                    campaign_target=campaign_target,
+                    user=request.user,
+                    contact_id=contact_id,
+                    source_activity=source_activity,
+                    lead_title=lead_title,
+                    description=request.data.get('description', ''),
+                    notes=request.data.get('notes', '')
+                )
+            
+            elif choice_type == 'opportunity':
+                # Validate required fields for opportunity
+                contact_id = request.data.get('contact_id')
+                opportunity_title = request.data.get('opportunity_title')
+                expected_close_date = request.data.get('expected_close_date')
+                
+                if not all([contact_id, opportunity_title, expected_close_date]):
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(
+                            field="contact_id, opportunity_title, and expected_close_date for opportunity creation"
+                        )
+                    )
+                
+                # Parse expected close date
+                try:
+                    from datetime import datetime
+                    expected_close_date = datetime.strptime(expected_close_date, '%Y-%m-%d').date()
+                except ValueError:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(field="expected_close_date (expected YYYY-MM-DD format)")
+                    )
+                
+                # Parse amount (optional, default to 0)
+                amount = 0
+                if request.data.get('amount'):
+                    try:
+                        amount = float(request.data.get('amount'))
+                    except (ValueError, TypeError):
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_FIELD.format(field="amount (must be a number)")
+                        )
+                
+                return CampaignBusinessResultService.create_opportunity_next_step(
+                    campaign_target=campaign_target,
+                    user=request.user,
+                    contact_id=contact_id,
+                    source_activity=source_activity,
+                    opportunity_title=opportunity_title,
+                    expected_close_date=expected_close_date,
+                    amount=amount,
+                    opportunity_type=request.data.get('opportunity_type'),
+                    notes=request.data.get('notes', '')
+                )
+            
+            elif choice_type == 'other':
+                # Only notes required for other
+                notes = request.data.get('notes', '')
+                if not notes:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(field="notes for custom action")
+                    )
+                
+                return CampaignBusinessResultService.create_other_next_step(
+                    campaign_target=campaign_target,
+                    user=request.user,
+                    source_activity=source_activity,
+                    notes=notes
+                )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to process next step choice")
+            )
+        
+
     @action(detail=True, methods=['post'])
     def add_email_response(self, request, pk=None):
         """

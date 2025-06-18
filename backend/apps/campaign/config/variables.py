@@ -222,7 +222,8 @@ SERIALIZER_CONFIGS = {
         'sequence_type', 'sequence_type_display', 'has_sequence', 'is_call_list',
         'owner', 'owner_name', 'stakeholders', 'start_date', 'end_date',
         'status', 'status_display', 'target_summary', 'has_mixed_targets',
-        'created_at', 'updated_at', 'created_by', 'updated_by'
+        'created_at', 'updated_at', 'created_by', 'updated_by', 'result_tracking',
+        'quick_metrics', 'target_summary'
     ],
     'CAMPAIGN_READ_ONLY_FIELDS': [
         'owner_name', 'campaign_type_display', 'sequence_type_display',

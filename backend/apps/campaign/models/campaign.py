@@ -298,3 +298,108 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign save failed")
             )
+    
+    def get_or_create_result_tracking(self):
+        """
+        Obtenir ou créer le CampaignResultTracking pour cette campagne
+        
+        Returns:
+            CampaignResultTracking: Instance de tracking
+        """
+        try:
+            from apps.campaign.models.campaign_result_tracking import CampaignResultTracking
+            result_tracking, created = CampaignResultTracking.objects.get_or_create(
+                campaign=self,
+                defaults={'client_id': self.client_id}
+            )
+            return result_tracking
+        except Exception as e:
+
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to get result tracking: {str(e)}"
+                )
+            )
+
+    def get_metrics_summary(self) -> dict:
+        """
+        Obtenir un résumé rapide des métriques de campagne
+        
+        Returns:
+            dict: Métriques essentielles
+        """
+        try:
+            result_tracking = self.get_or_create_result_tracking()
+            return {
+                'leads_created': result_tracking.leads_created_count,
+                'meetings_secured': result_tracking.meetings_secured_count,
+                'opportunities_created': result_tracking.opportunities_created_count,
+                'deals_closed': result_tracking.deals_closed_count,
+                'pipeline_value': float(result_tracking.pipeline_value_created),
+                'revenue_generated': float(result_tracking.revenue_generated)
+            }
+        except Exception:
+            return {
+                'leads_created': 0,
+                'meetings_secured': 0,
+                'opportunities_created': 0,
+                'deals_closed': 0,
+                'pipeline_value': 0.0,
+                'revenue_generated': 0.0
+            }
+
+    def get_conversion_health(self) -> str:
+        """
+        Évaluer la santé des conversions de la campagne
+        
+        Returns:
+            str: 'healthy', 'needs_improvement', 'poor', 'no_data'
+        """
+        try:
+            metrics = self.get_metrics_summary()
+            
+            if metrics['leads_created'] == 0:
+                return 'no_data'
+            
+            # Calculer taux de conversion leads -> meetings
+            meeting_rate = (metrics['meetings_secured'] / metrics['leads_created']) * 100
+            
+            if meeting_rate >= 25:
+                return 'healthy'
+            elif meeting_rate >= 10:
+                return 'needs_improvement'
+            else:
+                return 'poor'
+                
+        except Exception:
+            return 'no_data'
+
+    def needs_attention(self) -> bool:
+        """
+        Déterminer si la campagne nécessite attention
+        
+        Returns:
+            bool: True si attention requise
+        """
+        try:
+            # Campagne active sans résultats
+            if self.status == 'ACTIVE':
+                metrics = self.get_metrics_summary()
+                total_results = sum([
+                    metrics['leads_created'],
+                    metrics['meetings_secured'], 
+                    metrics['opportunities_created'],
+                    metrics['deals_closed']
+                ])
+                
+                if total_results == 0:
+                    return True
+            
+            # Conversions faibles
+            if self.get_conversion_health() == 'poor':
+                return True
+                
+            return False
+            
+        except Exception:
+            return True  # En cas d'erreur, mieux vaut signaler attention requise

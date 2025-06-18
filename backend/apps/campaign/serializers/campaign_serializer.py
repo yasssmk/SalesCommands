@@ -4,6 +4,8 @@ from rest_framework import serializers
 from apps.campaign.models.campaign import Campaign
 from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
 from apps.campaign.serializers.campaign_stakeholders_serializer import CampaignStakeholderSerializer
+from apps.campaign.models.campaign_result_tracking import CampaignResultTracking
+from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from end_users.models import User
@@ -17,7 +19,7 @@ from apps.campaign.config.variables import (
     CAMPAIGN_FORBIDDEN_STATES
 )
 
-class CampaignSerializer(serializers.ModelSerializer):
+class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """Serializer for Campaign model with standardized validation"""
     
     # Read-only fields
@@ -110,6 +112,21 @@ class CampaignSerializer(serializers.ModelSerializer):
     owner_count = serializers.SerializerMethodField(read_only=True)
     executor_count = serializers.SerializerMethodField(read_only=True)
     receiver_count = serializers.SerializerMethodField(read_only=True)
+
+    # === NOUVEAU : RESULT TRACKING INTÉGRÉ ===
+    result_tracking = serializers.SerializerMethodField(
+        help_text="Campaign results and metrics tracking"
+    )
+    
+    # === MÉTRIQUES RAPIDES (computed fields) ===
+    quick_metrics = serializers.SerializerMethodField(
+        help_text="Quick overview of campaign metrics"
+    )
+    
+    # === RÉSUMÉ DES TARGETS ===
+    target_summary = serializers.SerializerMethodField(
+        help_text="Summary of campaign targets by type"
+    )
     
     class Meta:
         model = Campaign
@@ -431,6 +448,115 @@ class CampaignSerializer(serializers.ModelSerializer):
         except Exception as e:
             # If stakeholder update fails, log but don't fail the entire update
             pass  # In production, this should be logged
+    
+    def get_quick_metrics(self, obj: Campaign) -> dict:
+        """
+        Métriques rapides pour affichage dans les listes
+        """
+        try:
+            # Obtenir le result tracking existant (sans créer)
+            try:
+                result_tracking = obj.result_tracking
+            except CampaignResultTracking.DoesNotExist:
+                # Pas encore de tracking, retourner zéros
+                return {
+                    'total_results': 0,
+                    'conversion_health': 'no_data',
+                    'last_activity': None,
+                    'needs_attention': False
+                }
+            
+            # Calculer métriques rapides
+            total_results = (
+                result_tracking.leads_created_count +
+                result_tracking.meetings_secured_count +
+                result_tracking.opportunities_created_count +
+                result_tracking.deals_closed_count
+            )
+            
+            # Évaluer la "santé" de conversion
+            conversion_health = 'healthy'
+            if result_tracking.leads_created_count > 0:
+                meeting_rate = (result_tracking.meetings_secured_count / result_tracking.leads_created_count) * 100
+                if meeting_rate < 10:
+                    conversion_health = 'poor'
+                elif meeting_rate < 25:
+                    conversion_health = 'needs_improvement'
+            
+            # Déterminer si la campagne nécessite attention
+            needs_attention = (
+                conversion_health == 'poor' or
+                (total_results == 0 and obj.status == 'ACTIVE')
+            )
+            
+            return {
+                'total_results': total_results,
+                'conversion_health': conversion_health,
+                'last_activity': result_tracking.last_updated.isoformat() if result_tracking.last_updated else None,
+                'needs_attention': needs_attention
+            }
+            
+        except Exception:
+            return {
+                'total_results': 0,
+                'conversion_health': 'error',
+                'last_activity': None,
+                'needs_attention': True
+            }
+    
+    def get_target_summary(self, obj: Campaign) -> dict:
+        """
+        Résumé des targets de campagne (existant, optimisé)
+        """
+        try:
+            # Utiliser la méthode existante du modèle
+            return obj.get_target_summary()
+        except Exception:
+            return {
+                'accounts': 0,
+                'contacts': 0,
+                'leads': 0,
+                'opportunities': 0,
+                'total': 0
+            }
+    
+    def to_representation(self, instance: Campaign) -> dict:
+        """
+        Personnaliser la représentation selon le contexte
+        """
+        try:
+            representation = super().to_representation(instance)
+            
+            context = self.context or {}
+            
+            # Pour les vues liste, simplifier les données
+            if context.get('list_view', False):
+                # Garder seulement les champs essentiels pour la liste
+                simplified = {
+                    'id': representation['id'],
+                    'name': representation['name'],
+                    'campaign_type': representation['campaign_type'],
+                    'campaign_type_display': representation['campaign_type_display'],
+                    'status': representation['status'],
+                    'status_display': representation['status_display'],
+                    'start_date': representation['start_date'],
+                    'end_date': representation['end_date'],
+                    'owner_name': representation['owner_name'],
+                    'quick_metrics': representation['quick_metrics'],
+                    'target_summary': representation['target_summary']
+                }
+                return simplified
+            
+            # Pour les vues détail, inclure tout
+            return representation
+            
+        except Exception as e:
+            # Fallback en cas d'erreur de représentation
+            return {
+                'id': getattr(instance, 'id', None),
+                'name': getattr(instance, 'name', 'Unknown Campaign'),
+                'error': f'Serialization error: {str(e)}'
+            }
 
 
 class CampaignListSerializer(serializers.ModelSerializer):
@@ -451,7 +577,7 @@ class CampaignListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'campaign_type', 'campaign_type_display', 'has_sequence',
             'owner', 'owner_name', 'owner_count', 'executor_count', 'receiver_count',
-            'start_date', 'end_date', 'status', 'status_display', 'target_counts', 'created_at'
+            'start_date', 'end_date', 'status', 'status_display', 'quick_metrics', 'target_counts', 'created_at'
         ]
     
     def get_owner_name(self, obj):
@@ -486,9 +612,79 @@ class CampaignListSerializer(serializers.ModelSerializer):
         """Get count of receivers"""
         return obj.get_receivers().count()
 
+class CampaignDetailSerializer(CampaignSerializer):
+    """
+    Serializer détaillé pour les vues single campaign
+    """
+    
+    # Inclure des champs additionnels pour la vue détail
+    objectives = serializers.SerializerMethodField()
+    stakeholders_summary = serializers.SerializerMethodField()
+    
+    class Meta(CampaignSerializer.Meta):
+        fields = CampaignSerializer.Meta.fields + [
+            'objectives',
+            'stakeholders_summary'
+        ]
+    
+    def get_objectives(self, obj: Campaign) -> list:
+        """Obtenir les objectifs de la campagne"""
+        try:
+            from apps.campaign.serializers.campaign_objective_serializer import CampaignObjectiveSerializer
+            objectives = obj.objectives.all()
+            return CampaignObjectiveSerializer(objectives, many=True, context=self.context).data
+        except Exception:
+            return []
+    
+    def get_stakeholders_summary(self, obj: Campaign) -> dict:
+        """Résumé des stakeholders"""
+        try:
+            stakeholders = obj.stakeholder_links.select_related('user').all()
+            summary = {
+                'total': stakeholders.count(),
+                'by_role': {},
+                'owners': [],
+                'executors': []
+            }
+            
+            for link in stakeholders:
+                role = link.role
+                if role not in summary['by_role']:
+                    summary['by_role'][role] = 0
+                summary['by_role'][role] += 1
+                
+                user_info = {
+                    'id': link.user.id,
+                    'name': link.user.get_full_name() or link.user.username
+                }
+                
+                if role == 'OWNER':
+                    summary['owners'].append(user_info)
+                elif role == 'EXECUTOR':
+                    summary['executors'].append(user_info)
+            
+            return summary
+            
+        except Exception:
+            return {
+                'total': 0,
+                'by_role': {},
+                'owners': [],
+                'executors': []
+            }
+    
+    def to_representation(self, instance: Campaign) -> dict:
+        """Force le contexte detailed pour cette classe"""
+        if not self.context:
+            self.context = {}
+        self.context['detailed_result_tracking'] = True
+        
+        return super().to_representation(instance)
+
 
 # Export serializers
 __all__ = [
     'CampaignSerializer',
-    'CampaignListSerializer'
+    'CampaignListSerializer',
+    'CampaignDetailSerializer'
 ]
