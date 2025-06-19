@@ -170,3 +170,37 @@ class CampaignPermissionMixin(ClientScopeManager.ViewMixin):
         self.validate_campaign_ownership(campaign, allow_stakeholders=allow_stakeholders)
         
         return campaign
+    
+    def _get_validated_account(self, account_id):
+        """
+        Helper pour récupérer et valider un account avec client scope
+        
+        Args:
+            account_id: ID de l'account
+            
+        Returns:
+            Instance d'Account validée
+        """
+        try:
+            from apps.accounts.models import Account
+            account = Account.objects.get(id=account_id, client_id=self.get_client_id())
+            return account
+        except Account.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+    def _get_validated_contact(self, contact_id):
+        """
+        Helper pour récupérer et valider un contact avec client scope
+        
+        Args:
+            contact_id: ID du contact
+            
+        Returns:
+            Instance de Contact validée
+        """
+        try:
+            from apps.accounts.models import Contact
+            contact = Contact.objects.get(id=contact_id, account__client_id=self.get_client_id())
+            return contact
+        except Contact.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)

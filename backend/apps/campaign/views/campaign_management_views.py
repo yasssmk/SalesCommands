@@ -265,54 +265,48 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
                 CoreErrorMessages.REQUIRED_FIELD.format(field="account_id")
             )
         
-        try:
-            from apps.accounts.models import Account
-            account = Account.objects.get(id=account_id)
+
+        account = self._get_validated_account(account_id)
             
-            # Check client scope
-            self.validate_client_id(account)
-            
-            # Get campaign targets for this account
-            targets = CampaignTarget.objects.filter(
+        # Get campaign targets for this account
+        targets = CampaignTarget.objects.filter(
                 account=account
             ).select_related('campaign', 'campaign__owner')
             
-            # Format response
-            campaigns_data = []
-            for target in targets:
-                campaign = target.campaign
-                campaigns_data.append({
-                    'campaign_id': campaign.id,
-                    'campaign_name': campaign.name,
-                    'campaign_type': campaign.campaign_type,
-                    'campaign_type_display': campaign.get_campaign_type_display(),
-                    'start_date': campaign.start_date,
-                    'end_date': campaign.end_date,
-                    'owner_name': f"{campaign.owner.first_name} {campaign.owner.last_name}",
-                    'status': target.status,
-                    'status_display': target.get_status_display()
-                })
+        # Format response
+        campaigns_data = []
+        for target in targets:
+            campaign = target.campaign
+            campaigns_data.append({
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'campaign_type': campaign.campaign_type,
+                'campaign_type_display': campaign.get_campaign_type_display(),
+                'start_date': campaign.start_date,
+                'end_date': campaign.end_date,
+                'owner_name': f"{campaign.owner.first_name} {campaign.owner.last_name}",
+                'status': target.status,
+                'status_display': target.get_status_display()
+            })
+        
+        # Return standardized response
+        data = {
+            'account_id': account.id,
+            'account_name': account.company_name,
+            'campaigns': campaigns_data
+        }
+        
+        meta = {
+            'operation': 'account_campaigns_retrieval',
+            'campaigns_count': len(campaigns_data)
+        }
+        
+        return StandardizedSuccessResponse.success(
+            message=f"Retrieved {len(campaigns_data)} campaigns for account {account.company_name}",
+            data=data,
+            meta=meta
+        )
             
-            # Return standardized response
-            data = {
-                'account_id': account.id,
-                'account_name': account.company_name,
-                'campaigns': campaigns_data
-            }
-            
-            meta = {
-                'operation': 'account_campaigns_retrieval',
-                'campaigns_count': len(campaigns_data)
-            }
-            
-            return StandardizedSuccessResponse.success(
-                message=f"Retrieved {len(campaigns_data)} campaigns for account {account.company_name}",
-                data=data,
-                meta=meta
-            )
-            
-        except Account.DoesNotExist:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
     
     @action(detail=True, methods=['post'])
     def remove_account(self, request, pk=None):
@@ -342,14 +336,7 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
                 )
             
             # Validate account exists and is accessible
-            try:
-                from apps.accounts.models import Account
-                account = Account.objects.get(id=account_id)
-            except Account.DoesNotExist:
-                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-            
-            # Validate client scope
-            self.validate_client_id(account)
+            account = self._get_validated_account(account_id)
             
             # Validate account is actually targeted by this campaign
             campaign_target = campaign.targets.filter(account=account).first()
@@ -397,22 +384,16 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
                 CoreErrorMessages.REQUIRED_FIELD.format(field="Contact ID")
             )
         
-        try:
-            from apps.accounts.models import Contact
-            contact = Contact.objects.get(id=contact_id)
+        contact = self._get_validated_contact(contact_id)
+        
             
-            # Validate client scope
-            self.validate_client_id(contact)
+        # Remove contact from campaign - CampaignManager now returns Response directly
+        return CampaignManager.remove_contact_from_campaign(
+            campaign=campaign,
+            contact=contact,
+            notes=notes
+        )
             
-            # Remove contact from campaign - CampaignManager now returns Response directly
-            return CampaignManager.remove_contact_from_campaign(
-                campaign=campaign,
-                contact=contact,
-                notes=notes
-            )
-            
-        except Contact.DoesNotExist:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
     
     @action(detail=True, methods=['get'])
     def activities(self, request, pk=None):
@@ -468,22 +449,16 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
         if status_param:
             status_filter = status_param.split(',')
         
-        try:
-            from apps.accounts.models import Account
-            account = Account.objects.get(id=account_id)
+        account = self._get_validated_account(account_id)
+
             
-            # Validate client scope
-            self.validate_client_id(account)
-            
-            # CampaignManager.get_account_activities_in_campaign now returns Response directly
-            return CampaignManager.get_account_activities_in_campaign(
-                campaign=campaign,
-                account=account,
-                status_filter=status_filter
-            )
-            
-        except Account.DoesNotExist:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        # CampaignManager.get_account_activities_in_campaign now returns Response directly
+        return CampaignManager.get_account_activities_in_campaign(
+            campaign=campaign,
+            account=account,
+            status_filter=status_filter
+        )
+
 
     @action(detail=True, methods=['get'])
     def contact_activities(self, request, pk=None):
@@ -506,29 +481,22 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(field="contact_id")
             )
+    
+        contact = self._get_validated_contact(contact_id)
         
         # Parse status filter
         status_filter = None
         status_param = request.query_params.get('status')
         if status_param:
             status_filter = status_param.split(',')
-        
-        try:
-            from apps.accounts.models import Contact
-            contact = Contact.objects.get(id=contact_id)
+                    
+        # CampaignManager.get_contact_activities_in_campaign now returns Response directly
+        return CampaignManager.get_contact_activities_in_campaign(
+            campaign=campaign,
+            contact=contact,
+            status_filter=status_filter
+        )
             
-            # Validate client scope
-            self.validate_client_id(contact)
-            
-            # CampaignManager.get_contact_activities_in_campaign now returns Response directly
-            return CampaignManager.get_contact_activities_in_campaign(
-                campaign=campaign,
-                contact=contact,
-                status_filter=status_filter
-            )
-            
-        except Contact.DoesNotExist:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
     @action(detail=True, methods=['post'], url_path='add-manual-activity')
     def add_manual_activity(self, request, pk=None):

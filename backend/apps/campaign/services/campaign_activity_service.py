@@ -6,7 +6,6 @@ from django.utils import timezone
 from rest_framework.response import Response
 from apps.activities.models import Activity, ActivityCampaign, ActivitySequence
 from apps.campaign.models import Campaign, CampaignTarget
-from apps.sequence.sequences.chasing_sequence import ChasingSequence
 from apps.accounts.models import Contact
 from apps.campaign.utils.contact_helpers import ContactSafetyHelper
 from apps.campaign.utils.standardized_responses import (
@@ -121,9 +120,8 @@ class CampaignActivityService:
                 created_count += len(activities_created)
                 
                 # Mark the target as having activities generated
-                if not campaign_target.sequence_created and activities_created:
-                    campaign_target.sequence_created = True
-                    campaign_target.save(update_fields=['sequence_created'])
+                if not campaign_target.activities_generated and activities_created:
+                    campaign_target.mark_activities_generated()
         
         # Return appropriate response based on context
         if for_campaign_creation:

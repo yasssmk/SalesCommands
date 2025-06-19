@@ -46,12 +46,7 @@ class CampaignTargetViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Model
     def perform_create(self, serializer):
         """Create a new campaign target with validation"""
         try:
-            # ✅ AVANT: Validation répétée
-            # campaign = serializer.validated_data['campaign']
-            # if campaign.owner != self.request.user:
-            #     raise StandardizedValidationError(CampaignErrorMessages.CAMPAIGN_OWNER_REQUIRED)
-            
-            # ✅ APRÈS: Validation centralisée
+
             campaign = self.get_validated_campaign_from_data('campaign', allow_stakeholders=False)
                 
             return serializer.save()
@@ -248,216 +243,141 @@ class CampaignTargetViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Model
     
     def _create_account_targets(self, campaign, account_ids, notes):
         """Helper method to create account targets"""
-        successful = []
-        failed = []
-        
-        try:
-            from apps.accounts.models import Account
-            accounts = Account.objects.filter(
-                id__in=account_ids,
-                client_id=self.get_client_id()
-            )
-            
-            # Check for existing targets
-            existing_account_targets = CampaignTarget.objects.filter(
-                campaign=campaign,
-                account__in=accounts
-            ).values_list('account_id', flat=True)
-            
-            for account in accounts:
-                if account.id in existing_account_targets:
-                    failed.append({
-                        'target_type': 'account',
-                        'target_id': account.id,
-                        'target_name': account.company_name,
-                        'error': 'Already a target for this campaign'
-                    })
-                    continue
-                    
-                target = CampaignTarget.objects.create(
-                    campaign=campaign,
-                    account=account,
-                    notes=notes,
-                    client_id=self.get_client_id()
-                )
-                
-                successful.append({
-                    'target_id': target.id,
-                    'target_type': 'account',
-                    'target_name': account.company_name,
-                    'created_at': target.created_at.isoformat()
-                })
-                
-        except Exception as e:
-            # If there's an error processing accounts, add all to failed
-            for account_id in account_ids:
-                failed.append({
-                    'target_type': 'account',
-                    'target_id': account_id,
-                    'target_name': 'Unknown',
-                    'error': str(e)
-                })
-        
-        return {'successful': successful, 'failed': failed}
-    
+        from apps.accounts.models import Account
+        return self._create_targets_of_type(
+            campaign=campaign,
+            target_ids=account_ids,
+            target_type='account',
+            notes=notes,
+            model_class=Account,
+            model_filter={'id__in': account_ids, 'client_id': self.get_client_id()},
+            existing_filter_field='account',
+            target_create_field='account',
+            name_getter=lambda obj: obj.company_name
+        )
+
     def _create_contact_targets(self, campaign, contact_ids, notes):
         """Helper method to create contact targets"""
-        successful = []
-        failed = []
-        
-        try:
-            from apps.accounts.models import Contact
-            contacts = Contact.objects.filter(
-                id__in=contact_ids,
-                account__client_id=self.get_client_id()
-            )
-            
-            # Check for existing targets
-            existing_contact_targets = CampaignTarget.objects.filter(
-                campaign=campaign,
-                contact__in=contacts
-            ).values_list('contact_id', flat=True)
-            
-            for contact in contacts:
-                if contact.id in existing_contact_targets:
-                    failed.append({
-                        'target_type': 'contact',
-                        'target_id': contact.id,
-                        'target_name': f"{contact.first_name} {contact.last_name}",
-                        'error': 'Already a target for this campaign'
-                    })
-                    continue
-                    
-                target = CampaignTarget.objects.create(
-                    campaign=campaign,
-                    contact=contact,
-                    notes=notes,
-                    client_id=self.get_client_id()
-                )
-                
-                successful.append({
-                    'target_id': target.id,
-                    'target_type': 'contact',
-                    'target_name': f"{contact.first_name} {contact.last_name}",
-                    'created_at': target.created_at.isoformat()
-                })
-                
-        except Exception as e:
-            # If there's an error processing contacts, add all to failed
-            for contact_id in contact_ids:
-                failed.append({
-                    'target_type': 'contact',
-                    'target_id': contact_id,
-                    'target_name': 'Unknown',
-                    'error': str(e)
-                })
-        
-        return {'successful': successful, 'failed': failed}
-    
+        from apps.accounts.models import Contact
+        return self._create_targets_of_type(
+            campaign=campaign,
+            target_ids=contact_ids,
+            target_type='contact',
+            notes=notes,
+            model_class=Contact,
+            model_filter={'id__in': contact_ids, 'account__client_id': self.get_client_id()},
+            existing_filter_field='contact',
+            target_create_field='contact',
+            name_getter=lambda obj: f"{obj.first_name} {obj.last_name}"
+        )
+
     def _create_lead_targets(self, campaign, lead_ids, notes):
         """Helper method to create lead targets"""
-        successful = []
-        failed = []
-        
-        try:
-            from apps.leads.models import Lead
-            leads = Lead.objects.filter(
-                id__in=lead_ids,
-                client_id=self.get_client_id()
-            )
-            
-            # Check for existing targets
-            existing_lead_targets = CampaignTarget.objects.filter(
-                campaign=campaign,
-                lead__in=leads
-            ).values_list('lead_id', flat=True)
-            
-            for lead in leads:
-                if lead.id in existing_lead_targets:
-                    failed.append({
-                        'target_type': 'lead',
-                        'target_id': lead.id,
-                        'target_name': lead.title,
-                        'error': 'Already a target for this campaign'
-                    })
-                    continue
-                    
-                target = CampaignTarget.objects.create(
-                    campaign=campaign,
-                    lead=lead,
-                    notes=notes,
-                    client_id=self.get_client_id()
-                )
-                
-                successful.append({
-                    'target_id': target.id,
-                    'target_type': 'lead',
-                    'target_name': lead.title,
-                    'created_at': target.created_at.isoformat()
-                })
-                
-        except Exception as e:
-            # If there's an error processing leads, add all to failed
-            for lead_id in lead_ids:
-                failed.append({
-                    'target_type': 'lead',
-                    'target_id': lead_id,
-                    'target_name': 'Unknown',
-                    'error': str(e)
-                })
-        
-        return {'successful': successful, 'failed': failed}
-    
+        from apps.leads.models import Lead
+        return self._create_targets_of_type(
+            campaign=campaign,
+            target_ids=lead_ids,
+            target_type='lead',
+            notes=notes,
+            model_class=Lead,
+            model_filter={'id__in': lead_ids, 'client_id': self.get_client_id()},
+            existing_filter_field='lead',
+            target_create_field='lead',
+            name_getter=lambda obj: obj.title
+        )
+
     def _create_opportunity_targets(self, campaign, opportunity_ids, notes):
         """Helper method to create opportunity targets"""
+        from apps.opportunities.models import Opportunity
+        return self._create_targets_of_type(
+            campaign=campaign,
+            target_ids=opportunity_ids,
+            target_type='opportunity',
+            notes=notes,
+            model_class=Opportunity,
+            model_filter={'id__in': opportunity_ids, 'client_id': self.get_client_id()},
+            existing_filter_field='target_opportunity',
+            target_create_field='target_opportunity',
+            name_getter=lambda obj: obj.name
+        )
+
+    def _create_targets_of_type(self, campaign, target_ids, target_type, notes, model_class, 
+                          model_filter, existing_filter_field, target_create_field, name_getter):
+        """
+        Méthode helper locale pour éliminer la duplication entre les 4 types de targets
+        Reste dans le ViewSet, pas dans le mixin
+        """
         successful = []
         failed = []
         
+        # Get objects with proper error handling
         try:
-            from apps.opportunities.models import Opportunity
-            opportunities = Opportunity.objects.filter(
-                id__in=opportunity_ids,
-                client_id=self.get_client_id()
+            objects = model_class.objects.filter(**model_filter)
+        except Exception as e:
+            # Si on ne peut pas récupérer les objets, c'est une erreur système
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Failed to retrieve {target_type} objects")
             )
-            
-            # Check for existing targets
-            existing_opportunity_targets = CampaignTarget.objects.filter(
+        
+        # Check for existing targets
+        try:
+            existing_filter = {f'{existing_filter_field}__in': objects}
+            existing_targets = CampaignTarget.objects.filter(
                 campaign=campaign,
-                target_opportunity__in=opportunities
-            ).values_list('target_opportunity_id', flat=True)
-            
-            for opportunity in opportunities:
-                if opportunity.id in existing_opportunity_targets:
+                **existing_filter
+            ).values_list(f'{existing_filter_field}_id', flat=True)
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Failed to check existing {target_type} targets")
+            )
+        
+        # Traiter chaque objet individuellement
+        for obj in objects:
+            try:
+                if obj.id in existing_targets:
                     failed.append({
-                        'target_type': 'opportunity',
-                        'target_id': opportunity.id,
-                        'target_name': opportunity.name,
+                        'target_type': target_type,
+                        'target_id': obj.id,
+                        'target_name': name_getter(obj),
                         'error': 'Already a target for this campaign'
                     })
                     continue
                     
-                target = CampaignTarget.objects.create(
-                    campaign=campaign,
-                    target_opportunity=opportunity,
-                    notes=notes,
-                    client_id=self.get_client_id()
-                )
+                # Create target
+                create_kwargs = {
+                    'campaign': campaign,
+                    target_create_field: obj,
+                    'notes': notes,
+                    'client_id': self.get_client_id()
+                }
+                target = CampaignTarget.objects.create(**create_kwargs)
                 
                 successful.append({
                     'target_id': target.id,
-                    'target_type': 'opportunity',
-                    'target_name': opportunity.name,
+                    'target_type': target_type,
+                    'target_name': name_getter(obj),
                     'created_at': target.created_at.isoformat()
                 })
                 
-        except Exception as e:
-            # If there's an error processing opportunities, add all to failed
-            for opportunity_id in opportunity_ids:
+            except Exception as e:
+                # ✅ Erreur spécifique à cet objet, on l'ajoute aux failed mais on continue
                 failed.append({
-                    'target_type': 'opportunity',
-                    'target_id': opportunity_id,
-                    'target_name': 'Unknown',
-                    'error': str(e)
+                    'target_type': target_type,
+                    'target_id': obj.id,
+                    'target_name': name_getter(obj),
+                    'error': f"Creation failed: {str(e)}"
                 })
+        
+        # Vérifier si on a des IDs qui n'ont pas été trouvés
+        found_ids = [obj.id for obj in objects]
+        missing_ids = set(target_ids) - set(found_ids)
+        
+        for missing_id in missing_ids:
+            failed.append({
+                'target_type': target_type,
+                'target_id': missing_id,
+                'target_name': 'Unknown',
+                'error': CoreErrorMessages.OBJECT_NOT_FOUND
+            })
         
         return {'successful': successful, 'failed': failed}

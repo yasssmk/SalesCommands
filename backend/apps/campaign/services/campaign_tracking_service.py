@@ -173,84 +173,83 @@ class CampaignTrackingService:
                 )
             )
     
-    # apps/campaign/services/campaign_tracking_service.py (ajout à la classe existante)
 
-@classmethod
-def cleanup_invalid_tracking_data(cls, campaign: Campaign) -> dict:
-    """
-    Nettoyer les données de tracking invalides (version MVP)
-    
-    Args:
-        campaign: Campaign instance
+    @classmethod
+    def cleanup_invalid_tracking_data(cls, campaign: Campaign) -> dict:
+        """
+        Nettoyer les données de tracking invalides (version MVP)
         
-    Returns:
-        dict: Rapport de nettoyage simple
-    """
-    try:
-        result_tracking = cls.get_or_create_result_tracking(campaign)
-        
-        # Obtenir rapport d'intégrité
-        integrity_report = result_tracking.get_integrity_report()
-        
-        cleanup_actions = []
-        
-        with transaction.atomic():
-            # Nettoyer leads invalides
-            if integrity_report['leads'].get('deleted_ids'):
-                invalid_leads = integrity_report['leads']['deleted_ids']
-                result_tracking.tracked_lead_ids = [
-                    id for id in result_tracking.tracked_lead_ids 
-                    if id not in invalid_leads
-                ]
-                result_tracking.leads_created_count = len(result_tracking.tracked_lead_ids)
-                cleanup_actions.append(f"Removed {len(invalid_leads)} deleted leads")
+        Args:
+            campaign: Campaign instance
             
-            # Nettoyer meetings invalides
-            if integrity_report['meetings'].get('deleted_ids'):
-                invalid_meetings = integrity_report['meetings']['deleted_ids']
-                result_tracking.tracked_meeting_ids = [
-                    id for id in result_tracking.tracked_meeting_ids
-                    if id not in invalid_meetings
-                ]
-                result_tracking.meetings_secured_count = len(result_tracking.tracked_meeting_ids)
-                cleanup_actions.append(f"Removed {len(invalid_meetings)} deleted meetings")
+        Returns:
+            dict: Rapport de nettoyage simple
+        """
+        try:
+            result_tracking = cls.get_or_create_result_tracking(campaign)
             
-            # Nettoyer opportunities invalides
-            if integrity_report['opportunities'].get('deleted_ids'):
-                invalid_opps = integrity_report['opportunities']['deleted_ids']
-                result_tracking.tracked_opportunity_ids = [
-                    id for id in result_tracking.tracked_opportunity_ids
-                    if id not in invalid_opps
-                ]
-                result_tracking.opportunities_created_count = len(result_tracking.tracked_opportunity_ids)
-                cleanup_actions.append(f"Removed {len(invalid_opps)} deleted opportunities")
+            # Obtenir rapport d'intégrité
+            integrity_report = result_tracking.get_integrity_report()
             
-            # Nettoyer deals invalides
-            if integrity_report['deals'].get('deleted_ids'):
-                invalid_deals = integrity_report['deals']['deleted_ids']
-                result_tracking.tracked_deal_ids = [
-                    id for id in result_tracking.tracked_deal_ids
-                    if id not in invalid_deals
-                ]
-                result_tracking.deals_closed_count = len(result_tracking.tracked_deal_ids)
-                cleanup_actions.append(f"Removed {len(invalid_deals)} deleted deals")
+            cleanup_actions = []
             
-            # Sauvegarder si des changements
-            if cleanup_actions:
-                result_tracking.save()
-        
-        return {
-            'campaign_id': campaign.id,
-            'campaign_name': campaign.name,
-            'cleanup_successful': len(cleanup_actions) > 0,
-            'actions_taken': cleanup_actions,
-            'before_integrity_score': integrity_report['integrity_score'],
-            'after_integrity_score': 100.0 if cleanup_actions else integrity_report['integrity_score']
-        }
-        
-    except Exception as e:
-        raise StandardizedValidationError(
-            CoreErrorMessages.UNEXPECTED_ERROR.format(
-                detail=f"Failed to cleanup tracking data for campaign {campaign.id}: {str(e)}"
+            with transaction.atomic():
+                # Nettoyer leads invalides
+                if integrity_report['leads'].get('deleted_ids'):
+                    invalid_leads = integrity_report['leads']['deleted_ids']
+                    result_tracking.tracked_lead_ids = [
+                        id for id in result_tracking.tracked_lead_ids 
+                        if id not in invalid_leads
+                    ]
+                    result_tracking.leads_created_count = len(result_tracking.tracked_lead_ids)
+                    cleanup_actions.append(f"Removed {len(invalid_leads)} deleted leads")
+                
+                # Nettoyer meetings invalides
+                if integrity_report['meetings'].get('deleted_ids'):
+                    invalid_meetings = integrity_report['meetings']['deleted_ids']
+                    result_tracking.tracked_meeting_ids = [
+                        id for id in result_tracking.tracked_meeting_ids
+                        if id not in invalid_meetings
+                    ]
+                    result_tracking.meetings_secured_count = len(result_tracking.tracked_meeting_ids)
+                    cleanup_actions.append(f"Removed {len(invalid_meetings)} deleted meetings")
+                
+                # Nettoyer opportunities invalides
+                if integrity_report['opportunities'].get('deleted_ids'):
+                    invalid_opps = integrity_report['opportunities']['deleted_ids']
+                    result_tracking.tracked_opportunity_ids = [
+                        id for id in result_tracking.tracked_opportunity_ids
+                        if id not in invalid_opps
+                    ]
+                    result_tracking.opportunities_created_count = len(result_tracking.tracked_opportunity_ids)
+                    cleanup_actions.append(f"Removed {len(invalid_opps)} deleted opportunities")
+                
+                # Nettoyer deals invalides
+                if integrity_report['deals'].get('deleted_ids'):
+                    invalid_deals = integrity_report['deals']['deleted_ids']
+                    result_tracking.tracked_deal_ids = [
+                        id for id in result_tracking.tracked_deal_ids
+                        if id not in invalid_deals
+                    ]
+                    result_tracking.deals_closed_count = len(result_tracking.tracked_deal_ids)
+                    cleanup_actions.append(f"Removed {len(invalid_deals)} deleted deals")
+                
+                # Sauvegarder si des changements
+                if cleanup_actions:
+                    result_tracking.save()
+            
+            return {
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'cleanup_successful': len(cleanup_actions) > 0,
+                'actions_taken': cleanup_actions,
+                'before_integrity_score': integrity_report['integrity_score'],
+                'after_integrity_score': 100.0 if cleanup_actions else integrity_report['integrity_score']
+            }
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to cleanup tracking data for campaign {campaign.id}: {str(e)}"
+                )
             )
-        )

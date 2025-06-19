@@ -127,34 +127,6 @@ class ActivityViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
                 save=False
             )
             
-            # Update campaign information if exists
-            if hasattr(activity, 'campaign_info'):
-                campaign_info = activity.campaign_info
-                campaign_info.meeting_scheduled = completion_data.get('meeting_scheduled', False)
-                campaign_info.opportunity_created = completion_data.get('opportunity_created', False)
-                campaign_info.save()
-                
-                # Update campaign objectives if needed
-                self._update_campaign_objectives(activity, completion_data)
-            
-            # Update sequence information if exists
-            if hasattr(activity, 'sequence_info'):
-                sequence_info = activity.sequence_info
-                
-                # Set sequence outcome
-                if 'sequence_outcome' in completion_data:
-                    sequence_info.set_outcome(
-                        completion_data['sequence_outcome'],
-                        notes=completion_data.get('outcome_notes'),
-                        callback_date=completion_data.get('callback_requested_date'),
-                        save=False
-                    )
-                
-                sequence_info.save()
-                
-                # Handle sequence progression
-                self._handle_sequence_progression(activity, completion_data)
-            
             # Save the activity
             activity.save()
         
@@ -307,60 +279,4 @@ class ActivityViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
         
         return Response(list(sequence_data.values()))
     
-    def _update_campaign_objectives(self, activity, completion_data):
-        """Update campaign objectives based on activity completion"""
-        if not hasattr(activity, 'campaign_info'):
-            return
-        
-        campaign = activity.campaign_info.campaign
-        
-        # Update various objectives based on the outcome
-        from apps.campaign.models.campaign_objective import CampaignObjective
-        
-        # Update meeting objectives
-        if completion_data.get('meeting_scheduled'):
-            meeting_objectives = campaign.objectives.filter(
-                objective_type=CampaignObjective.ObjectiveType.MEETINGS
-            )
-            for objective in meeting_objectives:
-                objective.update_progress(1, increment=True)
-        
-        # Update opportunity objectives
-        if completion_data.get('opportunity_created'):
-            opportunity_objectives = campaign.objectives.filter(
-                objective_type=CampaignObjective.ObjectiveType.OPPORTUNITIES
-            )
-            for objective in opportunity_objectives:
-                objective.update_progress(1, increment=True)
-    
-    def _handle_sequence_progression(self, activity, completion_data):
-        """Handle what happens next in the sequence"""
-        if not hasattr(activity, 'sequence_info'):
-            return
-        
-        sequence_info = activity.sequence_info
-        sequence_outcome = completion_data.get('sequence_outcome')
-        
-        # Handle different outcomes
-        if sequence_outcome == ActivitySequence.SequenceOutcome.NO_ANSWER:
-            # Create next activity in sequence if not at the end
-            if sequence_info.sequence_position < 10:  # Chasing sequence has 10 steps
-                self._create_next_sequence_activity(activity)
-        
-        elif sequence_outcome == ActivitySequence.SequenceOutcome.NOT_INTERESTED:
-            # End sequence for this contact/account
-            # This will be implemented based on business rules
-            pass
-        
-        elif sequence_outcome == ActivitySequence.SequenceOutcome.MEETING_SCHEDULED:
-            # Create meeting activity
-            # Update campaign target status
-            if hasattr(activity, 'campaign_info'):
-                campaign_target = activity.campaign_info.campaign_target
-                campaign_target.update_status('MEETING_SECURED')
-    
-    def _create_next_sequence_activity(self, current_activity):
-        """Create the next activity in the sequence"""
-        # This will be implemented when we create the sequence service
-        # For now, just return None
-        pass
+   

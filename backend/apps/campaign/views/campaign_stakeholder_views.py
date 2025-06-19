@@ -113,172 +113,184 @@ class CampaignStakeholderViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.
     
     @action(detail=False, methods=['post'], url_path='bulk-add')
     def bulk_add(self, request):
-        """
-        Add multiple stakeholders to a campaign at once
-        Now returns standardized response with detailed results
-        """
-        try:
-            # Get campaign ID
-            campaign_id = request.data.get('campaign_id')
-            if not campaign_id:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field="campaign_id")
-                )
-            
-            # Get stakeholder data
-            stakeholders_data = request.data.get('stakeholders', [])
-            if not stakeholders_data:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field="stakeholders")
-                )
-            
+        """Add multiple stakeholders to a campaign at once"""
+        # ✅ Validation initiale centralisée
+        campaign_id, stakeholders_data = self._validate_bulk_request_data(request.data)
+        campaign = self.get_validated_campaign(pk=campaign_id, require_ownership=True)
+        
+        # ✅ Traitement centralisé
+        successful, failed = self._process_bulk_stakeholders(
+            campaign=campaign, 
+            stakeholders_data=stakeholders_data, 
+            operation='add'
+        )
+        
+        # Use CampaignResponseBuilder for bulk operation
+        return CampaignResponseBuilder.bulk_operation(
+            operation_type='stakeholder_addition',
+            successful_items=successful,
+            failed_items=failed,
+            custom_message=CampaignSuccessMessages.BULK_OPERATION_COMPLETED.format(
+                successful=len(successful),
+                total=len(stakeholders_data)
+            )
+        )
 
-            campaign = self.get_validated_campaign(pk=campaign_id, require_ownership=True)
-            
-            # Add stakeholders
-            successful = []
-            failed = []
-            
-            for data in stakeholders_data:
-                user_id = data.get('user_id')
-                role = data.get('role')
-                
-                if not user_id or not role:
-                    failed.append({
-                        'data': data,
-                        'error': CoreErrorMessages.REQUIRED_FIELD.format(field="user_id and role")
-                    })
-                    continue
-                
-                try:
-                    # Get user
-                    User = get_user_model()
-                    user = User.objects.get(id=user_id)
-                    
-                    # Add stakeholder using Campaign method
-                    stakeholder = campaign.add_stakeholder(
-                        user=user,
-                        role=role,
-                        added_by=request.user
-                    )
-                    
-                    # Serialize the created stakeholder
-                    stakeholder_data = CampaignStakeholderSerializer(stakeholder).data
-                    successful.append(stakeholder_data)
-                    
-                except User.DoesNotExist:
-                    failed.append({
-                        'data': data,
-                        'error': CoreErrorMessages.OBJECT_NOT_FOUND
-                    })
-                except Exception as e:
-                    failed.append({
-                        'data': data,
-                        'error': str(e)
-                    })
-            
-            # Use CampaignResponseBuilder for bulk operation
-            return CampaignResponseBuilder.bulk_operation(
-                operation_type='stakeholder_addition',
-                successful_items=successful,
-                failed_items=failed,
-                custom_message=CampaignSuccessMessages.BULK_OPERATION_COMPLETED.format(
-                    successful=len(successful),
-                    total=len(stakeholders_data)
-                )
-            )
-            
-        except StandardizedValidationError:
-            # Re-raise validation errors
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                CampaignErrorMessages.BULK_OPERATION_FAILED.format(operation="stakeholder addition")
-            )
-    
     @action(detail=False, methods=['post'], url_path='bulk-remove')
     def bulk_remove(self, request):
-        """
-        Remove multiple stakeholders from a campaign at once
-        Now returns standardized response with detailed results
-        """
-        try:
-            # Get campaign ID
-            campaign_id = request.data.get('campaign_id')
-            if not campaign_id:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field="campaign_id")
-                )
-            
-            # Get stakeholder data
-            stakeholders_data = request.data.get('stakeholders', [])
-            if not stakeholders_data:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field="stakeholders")
-                )
-            
+        """Remove multiple stakeholders from a campaign at once"""
+        # ✅ Validation initiale centralisée
+        campaign_id, stakeholders_data = self._validate_bulk_request_data(request.data)
+        campaign = self.get_validated_campaign(pk=campaign_id, require_ownership=True)
+        
+        # ✅ Traitement centralisé
+        successful, failed = self._process_bulk_stakeholders(
+            campaign=campaign, 
+            stakeholders_data=stakeholders_data, 
+            operation='remove'
+        )
+        
+        # Use CampaignResponseBuilder for bulk operation
+        return CampaignResponseBuilder.bulk_operation(
+            operation_type='stakeholder_removal',
+            successful_items=successful,
+            failed_items=failed,
+            custom_message=f"Bulk stakeholder removal: {len(successful)}/{len(stakeholders_data)} successful"
+        )
 
-            campaign = self.get_validated_campaign(pk=campaign_id, require_ownership=True)
-            
-            # Remove stakeholders
-            successful = []
-            failed = []
-            
-            for data in stakeholders_data:
-                user_id = data.get('user_id')
-                role = data.get('role')  # Role is optional for removal
-                
-                if not user_id:
-                    failed.append({
-                        'data': data,
-                        'error': CoreErrorMessages.REQUIRED_FIELD.format(field="user_id")
-                    })
-                    continue
-                
-                try:
-                    # Get user
-                    User = get_user_model()
-                    user = User.objects.get(id=user_id)
-                    
-                    # Remove stakeholder using Campaign method
-                    removed_count = campaign.remove_stakeholder(user=user, role=role)
-                    
-                    if removed_count > 0:
-                        successful.append({
-                            'user_id': user_id,
-                            'user_name': f"{user.first_name} {user.last_name}".strip() or user.username,
-                            'role': role,
-                            'stakeholders_removed': removed_count
-                        })
-                    else:
-                        failed.append({
-                            'data': data,
-                            'error': 'No matching stakeholder found to remove'
-                        })
-                        
-                except User.DoesNotExist:
-                    failed.append({
-                        'data': data,
-                        'error': CoreErrorMessages.OBJECT_NOT_FOUND
-                    })
-                except Exception as e:
-                    failed.append({
-                        'data': data,
-                        'error': str(e)
-                    })
-            
-            # Use CampaignResponseBuilder for bulk operation
-            return CampaignResponseBuilder.bulk_operation(
-                operation_type='stakeholder_removal',
-                successful_items=successful,
-                failed_items=failed,
-                custom_message=f"Bulk stakeholder removal: {len(successful)}/{len(stakeholders_data)} successful"
-            )
-            
-        except StandardizedValidationError:
-            # Re-raise validation errors
-            raise
-        except Exception as e:
+    def _validate_bulk_request_data(self, data):
+        """
+        Valider les données communes aux opérations bulk
+        Méthode helper locale au ViewSet
+        """
+        # Get campaign ID
+        campaign_id = data.get('campaign_id')
+        if not campaign_id:
             raise StandardizedValidationError(
-                CampaignErrorMessages.BULK_OPERATION_FAILED.format(operation="stakeholder removal")
+                CoreErrorMessages.REQUIRED_FIELD.format(field="campaign_id")
             )
+        
+        # Get stakeholder data
+        stakeholders_data = data.get('stakeholders', [])
+        if not stakeholders_data:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field="stakeholders")
+            )
+        
+        return campaign_id, stakeholders_data
+
+    def _process_bulk_stakeholders(self, campaign, stakeholders_data, operation):
+        """
+        Traiter une liste de stakeholders pour add/remove
+        Méthode helper locale au ViewSet
+        
+        Args:
+            campaign: Instance de Campaign
+            stakeholders_data: Liste des données stakeholder
+            operation: 'add' ou 'remove'
+            
+        Returns:
+            Tuple (successful, failed)
+        """
+        successful = []
+        failed = []
+        
+        for data in stakeholders_data:
+            try:
+                if operation == 'add':
+                    result = self._process_single_stakeholder_add(campaign, data)
+                else:  # remove
+                    result = self._process_single_stakeholder_remove(campaign, data)
+                    
+                if result['success']:
+                    successful.append(result['data'])
+                else:
+                    failed.append({
+                        'data': data,
+                        'error': result['error']
+                    })
+                    
+            except Exception as e:
+                failed.append({
+                    'data': data,
+                    'error': str(e)
+                })
+        
+        return successful, failed
+
+    def _process_single_stakeholder_add(self, campaign, data):
+        """Traiter l'ajout d'un seul stakeholder"""
+        user_id = data.get('user_id')
+        role = data.get('role')
+        
+        if not user_id or not role:
+            return {
+                'success': False,
+                'error': CoreErrorMessages.REQUIRED_FIELD.format(field="user_id and role")
+            }
+        
+        try:
+            # Get user
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            
+            # Add stakeholder using Campaign method
+            stakeholder = campaign.add_stakeholder(
+                user=user,
+                role=role,
+                added_by=self.request.user
+            )
+            
+            # Serialize the created stakeholder
+            stakeholder_data = CampaignStakeholderSerializer(stakeholder).data
+            return {
+                'success': True,
+                'data': stakeholder_data
+            }
+            
+        except User.DoesNotExist:
+            return {
+                'success': False,
+                'error': CoreErrorMessages.OBJECT_NOT_FOUND
+            }
+
+    def _process_single_stakeholder_remove(self, campaign, data):
+        """Traiter la suppression d'un seul stakeholder"""
+        user_id = data.get('user_id')
+        role = data.get('role')  # Role is optional for removal
+        
+        if not user_id:
+            return {
+                'success': False,
+                'error': CoreErrorMessages.REQUIRED_FIELD.format(field="user_id")
+            }
+        
+        try:
+            # Get user
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            
+            # Remove stakeholder using Campaign method
+            removed_count = campaign.remove_stakeholder(user=user, role=role)
+            
+            if removed_count > 0:
+                return {
+                    'success': True,
+                    'data': {
+                        'user_id': user_id,
+                        'user_name': f"{user.first_name} {user.last_name}".strip() or user.username,
+                        'role': role,
+                        'stakeholders_removed': removed_count
+                    }
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': 'No matching stakeholder found to remove'
+                }
+                
+        except User.DoesNotExist:
+            return {
+                'success': False,
+                'error': CoreErrorMessages.OBJECT_NOT_FOUND
+            }

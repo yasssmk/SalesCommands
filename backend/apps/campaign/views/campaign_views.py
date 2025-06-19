@@ -58,6 +58,15 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
         # Prefetch related objects for performance
         queryset = queryset.select_related('owner')
         
+        # ✅ Apply filters using helper methods
+        queryset = self._apply_ownership_filters(queryset)
+        queryset = self._apply_campaign_attribute_filters(queryset)
+        queryset = self._apply_date_filters(queryset)
+        
+        return queryset
+
+    def _apply_ownership_filters(self, queryset):
+        """Apply ownership and stakeholder related filters"""
         # Filter by owner
         owner_id = self.request.query_params.get(QUERY_PARAMS['OWNER'])
         if owner_id:
@@ -66,7 +75,6 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
         # Filter by stakeholder role
         stakeholder_role = self.request.query_params.get(QUERY_PARAMS['STAKEHOLDER_ROLE'])
         if stakeholder_role:
-            # Find campaigns where the current user has this role
             queryset = queryset.filter(
                 stakeholder_links__user=self.request.user,
                 stakeholder_links__role=stakeholder_role
@@ -80,6 +88,10 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
                 Q(stakeholder_links__user=self.request.user)
             ).distinct()
         
+        return queryset
+
+    def _apply_campaign_attribute_filters(self, queryset):
+        """Apply filters based on campaign attributes"""
         # Filter by campaign type
         campaign_type = self.request.query_params.get('campaign_type')
         if campaign_type:
@@ -98,7 +110,10 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
             else:
                 queryset = queryset.filter(sequence_type=sequence_type)
         
-        # Filter by date range
+        return queryset
+
+    def _apply_date_filters(self, queryset):
+        """Apply date range filters"""
         start_after = self.request.query_params.get(QUERY_PARAMS['START_AFTER'])
         start_before = self.request.query_params.get(QUERY_PARAMS['START_BEFORE'])
         
@@ -158,87 +173,89 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
     
     @action(detail=True, methods=['get'])
     def summary(self, request, pk=None):
-        """
-        Get a summary of campaign performance
-        Now uses CampaignManager for standardized response
-        """
-        try:
-            # ✅ APRÈS: Validation centralisée avec stakeholders autorisés (1 ligne)
-            campaign = self.get_validated_campaign(
-                require_ownership=True, 
-                allow_stakeholders=True, 
-                check_state=False
+        """Get a summary of campaign performance"""
+        campaign = self.get_validated_campaign(
+            require_ownership=True, 
+            allow_stakeholders=True, 
+            check_state=False
+        )
+        
+        # ✅ Use CampaignManager for base summary
+        summary_response = CampaignManager.get_campaign_summary(campaign)
+        
+        # ✅ Extract and enhance data using helper methods
+        if hasattr(summary_response, 'data') and 'data' in summary_response.data:
+            base_data = summary_response.data['data']
+            enhanced_data = self._enhance_summary_data(campaign, base_data)
+            
+            return StandardizedSuccessResponse.success(
+                message="Campaign summary retrieved successfully",
+                data=enhanced_data,
+                meta=self._build_summary_meta(enhanced_data)
             )
-            
-            # Use CampaignManager.get_campaign_summary for standardized response
-            summary_response = CampaignManager.get_campaign_summary(campaign)
-            
-            # Extract data from the standardized Response and enhance with additional info
-            if hasattr(summary_response, 'data') and 'data' in summary_response.data:
-                summary_data = summary_response.data['data']
-                
-                # Get objectives using direct query (for additional detail)
-                objectives = campaign.objectives.all()
-                
-                # Get targets and their status counts using direct query (for additional detail)
-                targets = campaign.targets.all()
-                target_counts = {
-                    'total': targets.count(),
-                    'by_status': {}
-                }
-                
-                # Count targets by status
-                from apps.campaign.models.campaign_target import CampaignTarget
-                for status_choice in CampaignTarget.Status.choices:
-                    status_code = status_choice[0]
-                    status_display = status_choice[1]
-                    count = targets.filter(status=status_code).count()
-                    target_counts['by_status'][status_code] = {
-                        'display': status_display,
-                        'count': count
-                    }
-                
-                # Get target type breakdown
-                target_summary = campaign.get_target_summary()
-                
-                # Enhance the summary data with ViewSet-specific details
-                enhanced_data = summary_data.copy()
-                enhanced_data.update({
-                    'objectives': [
-                        {
-                            'id': obj.id,
-                            'name': obj.name,
-                            'objective_type': obj.objective_type,
-                            'objective_type_display': obj.get_objective_type_display(),
-                            'target_value': obj.target_value,
-                            'current_value': obj.current_value,
-                            'progress_percentage': obj.progress_percentage()
-                        } for obj in objectives
-                    ],
-                    'detailed_targets': target_counts,
-                    'target_breakdown': target_summary
-                })
-                
-                # Return enhanced standardized response
-                return StandardizedSuccessResponse.success(
-                    message="Campaign summary retrieved successfully",
-                    data=enhanced_data,
-                    meta={
-                        'operation': 'campaign_summary_detailed',
-                        'objectives_count': len(objectives),
-                        'targets_count': target_counts['total']
-                    }
-                )
-            else:
-                # Fallback if summary response format is unexpected
-                raise StandardizedValidationError(
-                    CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED
-                )
-                
-        except StandardizedValidationError:
-            # Re-raise validation errors
-            raise
-        except Exception as e:
+        else:
             raise StandardizedValidationError(
                 CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED
             )
+
+    def _enhance_summary_data(self, campaign, base_data):
+        """
+        Enhance base summary data with ViewSet-specific details
+        Méthode helper locale au ViewSet
+        """
+        enhanced_data = base_data.copy()
+        
+        # Add objectives details
+        enhanced_data['objectives'] = self._get_objectives_summary(campaign)
+        
+        # Add detailed targets information
+        enhanced_data['detailed_targets'] = self._get_targets_summary(campaign)
+        
+        # Add target breakdown
+        enhanced_data['target_breakdown'] = campaign.get_target_summary()
+        
+        return enhanced_data
+
+    def _get_objectives_summary(self, campaign):
+        """Get detailed objectives information"""
+        objectives = campaign.objectives.all()
+        return [
+            {
+                'id': obj.id,
+                'name': obj.name,
+                'objective_type': obj.objective_type,
+                'objective_type_display': obj.get_objective_type_display(),
+                'target_value': obj.target_value,
+                'current_value': obj.current_value,
+                'progress_percentage': obj.progress_percentage()
+            } for obj in objectives
+        ]
+
+    def _get_targets_summary(self, campaign):
+        """Get detailed targets information with status counts"""
+        targets = campaign.targets.all()
+        target_counts = {
+            'total': targets.count(),
+            'by_status': {}
+        }
+        
+        # Count targets by status
+        from apps.campaign.models.campaign_target import CampaignTarget
+        for status_choice in CampaignTarget.Status.choices:
+            status_code = status_choice[0]
+            status_display = status_choice[1]
+            count = targets.filter(status=status_code).count()
+            target_counts['by_status'][status_code] = {
+                'display': status_display,
+                'count': count
+            }
+        
+        return target_counts
+
+    def _build_summary_meta(self, enhanced_data):
+        """Build meta information for summary response"""
+        return {
+            'operation': 'campaign_summary_detailed',
+            'objectives_count': len(enhanced_data.get('objectives', [])),
+            'targets_count': enhanced_data.get('detailed_targets', {}).get('total', 0)
+        }

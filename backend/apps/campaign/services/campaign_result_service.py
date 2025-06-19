@@ -1103,63 +1103,63 @@ class CampaignResultService:
         """
         return cls._cancel_contact_sequence(activity)
     
-    @classmethod
-    def _create_meeting_activity(cls, activity: Activity, meeting_date: date, notes: str):
-        """
-        Create a meeting activity from successful sequence
-        """
+    # @classmethod
+    # def _create_meeting_activity(cls, activity: Activity, meeting_date: date, notes: str):
+    #     """
+    #     Create a meeting activity from successful sequence
+    #     """
 
-        if meeting_date <= date.today():
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(
-                    field="Meeting date (must be in the future)"
-                )
-            )
+    #     if meeting_date <= date.today():
+    #         raise StandardizedValidationError(
+    #             CoreErrorMessages.INVALID_FIELD.format(
+    #                 field="Meeting date (must be in the future)"
+    #             )
+    #         )
         
         
-        # Create meeting activity
-        meeting_activity = Activity.objects.create(
-            title=f"Meeting with {activity.account.company_name}",
-            activity_type=Activity.ActivityType.MEETING,
-            description=f"Meeting scheduled from {activity.title}. {notes}" if notes else f"Meeting scheduled from {activity.title}",
-            **{FIELD_NAMES['ACCOUNT']: activity.account},
-            owner=activity.owner,
-            scheduled_start=timezone.make_aware(timezone.datetime.combine(meeting_date, timezone.datetime.min.time().replace(hour=10))),
-            status=Activity.Status.PLANNED
-        )
+    #     # Create meeting activity
+    #     meeting_activity = Activity.objects.create(
+    #         title=f"Meeting with {activity.account.company_name}",
+    #         activity_type=Activity.ActivityType.MEETING,
+    #         description=f"Meeting scheduled from {activity.title}. {notes}" if notes else f"Meeting scheduled from {activity.title}",
+    #         **{FIELD_NAMES['ACCOUNT']: activity.account},
+    #         owner=activity.owner,
+    #         scheduled_start=timezone.make_aware(timezone.datetime.combine(meeting_date, timezone.datetime.min.time().replace(hour=10))),
+    #         status=Activity.Status.PLANNED
+    #     )
         
-        # Link contacts
-        meeting_activity.contacts.set(activity.contacts.all())
+    #     # Link contacts
+    #     meeting_activity.contacts.set(activity.contacts.all())
         
-        # Link to campaign if applicable
-        if hasattr(activity, 'campaign_info'):
-            from apps.activities.models import ActivityCampaign
-            ActivityCampaign.objects.create(
-                activity=meeting_activity,
-                campaign=activity.campaign_info.campaign,
-                campaign_target=activity.campaign_info.campaign_target
-            )
+    #     # Link to campaign if applicable
+    #     if hasattr(activity, 'campaign_info'):
+    #         from apps.activities.models import ActivityCampaign
+    #         ActivityCampaign.objects.create(
+    #             activity=meeting_activity,
+    #             campaign=activity.campaign_info.campaign,
+    #             campaign_target=activity.campaign_info.campaign_target
+    #         )
         
-        return meeting_activity
+    #     return meeting_activity
     
-    @classmethod
-    def _update_campaign_objectives(cls, activity: Activity, objective_type: str):
-        """
-        Update campaign objectives based on activity results
-        """
-        if not hasattr(activity, 'campaign_info'):
-            return
+    # @classmethod
+    # def _update_campaign_objectives(cls, activity: Activity, objective_type: str):
+    #     """
+    #     Update campaign objectives based on activity results
+    #     """
+    #     if not hasattr(activity, 'campaign_info'):
+    #         return
         
-        campaign = activity.campaign_info.campaign
+    #     campaign = activity.campaign_info.campaign
         
-        # Update relevant objectives
-        from apps.campaign.models.campaign_objective import CampaignObjective
+    #     # Update relevant objectives
+    #     from apps.campaign.models.campaign_objective import CampaignObjective
         
-        if objective_type == 'meeting_scheduled':
-            meeting_objectives = campaign.objectives.filter(
-                objective_type=CampaignObjective.ObjectiveType.MEETINGS
-            )
-            for objective in meeting_objectives:
-                objective.update_progress(1, increment=True)
+    #     if objective_type == 'meeting_scheduled':
+    #         meeting_objectives = campaign.objectives.filter(
+    #             objective_type=CampaignObjective.ObjectiveType.MEETINGS
+    #         )
+    #         for objective in meeting_objectives:
+    #             objective.update_progress(1, increment=True)
     
     

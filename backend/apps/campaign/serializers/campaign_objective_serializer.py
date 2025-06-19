@@ -161,27 +161,6 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
                     self.validate_client_id(campaign)
                 except Exception as e:
                     raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
-                
-                # Validate that the user owns the campaign or has permissions
-                request = self.context.get('request')
-                if request and hasattr(request, 'user'):
-                    current_user = request.user
-                    
-                    # Check if user is the campaign owner
-                    if campaign.owner and campaign.owner.id != current_user.id:
-                        # ✅ Utilisation de la constante pour les permissions
-                        if not current_user.has_perm(CAMPAIGN_PERMISSIONS['CHANGE']):
-                            # Check if user is a stakeholder
-                            from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
-                            is_stakeholder = CampaignStakeholder.objects.filter(
-                                campaign=campaign,
-                                user=current_user
-                            ).exists()
-                            
-                            if not is_stakeholder:
-                                raise StandardizedValidationError(
-                                    CoreErrorMessages.PERMISSION_DENIED
-                                )
             
             # Validate objective_type
             objective_type = data.get('objective_type')

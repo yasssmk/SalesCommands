@@ -381,9 +381,11 @@ class CampaignManager:
                 'activity_type': activity_type,
                 'playlist_updated': len(next_activities) > 0
             }
+
+            message = OPERATION_MESSAGES['ACTIVITY_COMPLETED']
             
             return StandardizedSuccessResponse.success(
-                message=f"Manual {activity_type.lower()} activity added successfully",
+                message=message,
                 data=enhanced_data,
                 meta=meta
             )

@@ -88,70 +88,74 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
     
     @action(detail=True, methods=['post'])
     def update_progress(self, request, pk=None):
+        """Update the progress of an objective"""
+        objective = self.get_object()
+        
+        self.validate_campaign_related_object(objective, allow_stakeholders=False)
+        
+        # ✅ Utilise une méthode helper locale pour la validation
+        new_value, increment = self._validate_progress_input(request.data)
+        
+        # Update progress
+        progress = objective.update_progress(new_value, increment=increment)
+        
+        # Prepare response data
+        data = {
+            'objective_id': objective.id,
+            'objective_name': objective.name,
+            'current_value': float(objective.current_value),
+            'target_value': float(objective.target_value),
+            'progress_percentage': progress,
+            'increment_applied': increment,
+            'value_added': new_value if increment else None,
+            'new_value_set': new_value if not increment else None
+        }
+        
+        meta = {
+            'operation': 'objective_progress_update',
+            'increment_mode': increment,
+            'progress_percentage': progress
+        }
+        
+        # Return standardized success response
+        return StandardizedSuccessResponse.success(
+            message=f"Objective progress updated successfully to {progress:.1f}%",
+            data=data,
+            meta=meta
+        )
+
+    def _validate_progress_input(self, data):
         """
-        Update the progress of an objective
-        Now returns standardized response
+        Valider les données d'entrée pour la mise à jour de progression
+        Méthode helper locale au ViewSet
+        
+        Args:
+            data: Données de la requête
+            
+        Returns:
+            Tuple (new_value, increment)
         """
-        try:
-            objective = self.get_object()
-            
-            self.validate_campaign_related_object(objective, allow_stakeholders=False)
-                
-            # Get new value from request
-            new_value = request.data.get('value', None)
-            if new_value is None:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field="value")
-                )
-                
-            try:
-                new_value = float(new_value)
-            except (ValueError, TypeError):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field="value (must be a number)")
-                )
-                
-            # Validate value is not negative
-            if new_value < 0:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field="value (cannot be negative)")
-                )
-            
-            # Get increment flag
-            increment = request.data.get('increment', False)
-            
-            # Update progress
-            progress = objective.update_progress(new_value, increment=increment)
-            
-            # Prepare response data
-            data = {
-                'objective_id': objective.id,
-                'objective_name': objective.name,
-                'current_value': float(objective.current_value),
-                'target_value': float(objective.target_value),
-                'progress_percentage': progress,
-                'increment_applied': increment,
-                'value_added': new_value if increment else None,
-                'new_value_set': new_value if not increment else None
-            }
-            
-            meta = {
-                'operation': 'objective_progress_update',
-                'increment_mode': increment,
-                'progress_percentage': progress
-            }
-            
-            # Return standardized success response
-            return StandardizedSuccessResponse.success(
-                message=f"Objective progress updated successfully to {progress:.1f}%",
-                data=data,
-                meta=meta
-            )
-            
-        except StandardizedValidationError:
-            # Re-raise validation errors
-            raise
-        except Exception as e:
+        # Get new value from request
+        new_value = data.get('value', None)
+        if new_value is None:
             raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Progress update failed")
+                CoreErrorMessages.REQUIRED_FIELD.format(field="value")
             )
+            
+        try:
+            new_value = float(new_value)
+        except (ValueError, TypeError):
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="value (must be a number)")
+            )
+            
+        # Validate value is not negative
+        if new_value < 0:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="value (cannot be negative)")
+            )
+        
+        # Get increment flag
+        increment = data.get('increment', False)
+        
+        return new_value, increment
