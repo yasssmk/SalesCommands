@@ -4,11 +4,13 @@ from rest_framework import serializers
 from apps.campaign.models.campaign import Campaign
 from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
 from apps.campaign.serializers.campaign_stakeholders_serializer import CampaignStakeholderSerializer
+from apps.campaign.serializers.campaign_objective_serializer import CampaignObjectiveSerializer
 from apps.campaign.models.campaign_result_tracking import CampaignResultTracking
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from end_users.models import User
+from django.db import transaction
 
 # ✅ Import des constantes
 from apps.campaign.config.variables import (
@@ -107,6 +109,9 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='End Date (format: YYYY-MM-DD)')
         }
     )
+
+    objective = CampaignObjectiveSerializer(write_only=True, required=False)
+    objectives = CampaignObjectiveSerializer(many=True, read_only=True)
     
     # Computed stakeholder summaries
     owner_count = serializers.SerializerMethodField(read_only=True)
@@ -130,7 +135,6 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     
     class Meta:
         model = Campaign
-
         fields = SERIALIZER_CONFIGS['CAMPAIGN_FIELDS']
         read_only_fields = SERIALIZER_CONFIGS['CAMPAIGN_READ_ONLY_FIELDS']
     
@@ -308,9 +312,12 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             )
     
     def create(self, validated_data):
-        """Create a new campaign with stakeholders and standardized error handling"""
+        """Create a new campaign with optional objective and stakeholders"""
         try:
-            # Extract stakeholder data
+            # ✅ AJOUTER : Extraire les données d'objectif
+            objective_data = validated_data.pop('objective', None)
+            
+            # Extract stakeholder data (garder logique existante)
             owner_ids = validated_data.pop('owner_ids', [])
             executor_ids = validated_data.pop('executor_ids', [])
             receiver_ids = validated_data.pop('receiver_ids', [])
@@ -326,11 +333,22 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 if 'owner' not in validated_data:
                     validated_data['owner'] = user
             
-            # Create the campaign
-            campaign = Campaign.objects.create(**validated_data)
-            
-            # Add stakeholders with error handling
-            self._add_stakeholders_safely(campaign, owner_ids, executor_ids, receiver_ids, user)
+            #  Transaction atomique pour campagne + objectif
+            with transaction.atomic():
+                # Create the campaign
+                campaign = Campaign.objects.create(**validated_data)
+                
+                # Créer l'objectif si fourni
+                if objective_data:
+                    objective_data['campaign'] = campaign
+                    objective_data['client_id'] = campaign.client_id
+                    objective_data['is_primary'] = True  # Premier objectif = primary pour MVP
+                    
+                    from apps.campaign.models.campaign_objective import CampaignObjective
+                    CampaignObjective.objects.create(**objective_data)
+                
+                # Add stakeholders with error handling (garder logique existante)
+                self._add_stakeholders_safely(campaign, owner_ids, executor_ids, receiver_ids, user)
             
             return campaign
             

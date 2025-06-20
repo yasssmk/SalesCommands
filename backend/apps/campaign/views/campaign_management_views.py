@@ -588,16 +588,160 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
         except Contact.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
     
+    # @action(detail=True, methods=['get'])
+    # def dashboard(self, request, pk=None):
+    #     """
+    #     Get campaign dashboard with metrics vs objectives
+    #     VERSION MVP : Simple et direct
+        
+    #     Response includes:
+    #     - Current metrics (leads, meetings, opportunities, deals)
+    #     - Objectives vs achieved comparison
+    #     - Quick health indicators
+    #     """
+    #     try:
+    #         campaign = self.get_validated_campaign(
+    #             require_ownership=True, 
+    #             allow_stakeholders=True, 
+    #             check_state=False
+    #         )
+            
+    #         # Obtenir les métriques actuelles
+    #         current_metrics = CampaignTrackingService.get_campaign_metrics(campaign)
+            
+    #         # Obtenir les objectifs
+    #         objectives = campaign.objectives.all()
+    #         objectives_data = []
+            
+    #         for objective in objectives:
+    #             # Mapper les types d'objectifs aux métriques
+    #             metric_value = 0
+    #             if objective.objective_type == 'LEADS':
+    #                 metric_value = current_metrics['leads_created']
+    #             elif objective.objective_type == 'MEETINGS':
+    #                 metric_value = current_metrics['meetings_secured']
+    #             elif objective.objective_type == 'OPPORTUNITIES':
+    #                 metric_value = current_metrics['opportunities_created']
+    #             elif objective.objective_type == 'CLOSED_DEALS':
+    #                 metric_value = current_metrics['deals_closed']
+    #             elif objective.objective_type == 'PIPELINE_VALUE':
+    #                 metric_value = current_metrics['pipeline_value']
+    #             elif objective.objective_type == 'REVENUE':
+    #                 metric_value = current_metrics['revenue_generated']
+                
+    #             # Calculer progression
+    #             target_value = float(objective.target_value)
+    #             progress_percentage = (metric_value / target_value * 100) if target_value > 0 else 0
+                
+    #             objectives_data.append({
+    #                 'id': objective.id,
+    #                 'name': objective.name,
+    #                 'type': objective.objective_type,
+    #                 'type_display': objective.get_objective_type_display(),
+    #                 'target_value': target_value,
+    #                 'current_value': metric_value,
+    #                 'progress_percentage': round(progress_percentage, 1),
+    #                 'status': 'achieved' if progress_percentage >= 100 else 'in_progress' if progress_percentage > 0 else 'not_started',
+    #                 'is_primary': objective.is_primary
+    #             })
+            
+    #         # Calculer indicateurs de santé
+    #         health_indicators = {
+    #             'overall_health': 'good',  # good, warning, critical
+    #             'total_results': (
+    #                 current_metrics['leads_created'] + 
+    #                 current_metrics['meetings_secured'] + 
+    #                 current_metrics['opportunities_created'] + 
+    #                 current_metrics['deals_closed']
+    #             ),
+    #             'conversion_rates': {},
+    #             'alerts': []
+    #         }
+            
+    #         # Taux de conversion
+    #         if current_metrics['leads_created'] > 0:
+    #             meeting_rate = (current_metrics['meetings_secured'] / current_metrics['leads_created']) * 100
+    #             health_indicators['conversion_rates']['leads_to_meetings'] = round(meeting_rate, 1)
+                
+    #             if meeting_rate < 10:
+    #                 health_indicators['overall_health'] = 'critical'
+    #                 health_indicators['alerts'].append('Low meeting conversion rate (<10%)')
+    #             elif meeting_rate < 25:
+    #                 health_indicators['overall_health'] = 'warning'
+    #                 health_indicators['alerts'].append('Meeting conversion rate could be improved')
+            
+    #         if current_metrics['meetings_secured'] > 0:
+    #             opp_rate = (current_metrics['opportunities_created'] / current_metrics['meetings_secured']) * 100
+    #             health_indicators['conversion_rates']['meetings_to_opportunities'] = round(opp_rate, 1)
+            
+    #         if current_metrics['opportunities_created'] > 0:
+    #             deal_rate = (current_metrics['deals_closed'] / current_metrics['opportunities_created']) * 100
+    #             health_indicators['conversion_rates']['opportunities_to_deals'] = round(deal_rate, 1)
+            
+    #         # Vérifier si campagne active sans résultats
+    #         if campaign.status == 'ACTIVE' and health_indicators['total_results'] == 0:
+    #             health_indicators['overall_health'] = 'warning'
+    #             health_indicators['alerts'].append('Active campaign with no results yet')
+            
+    #         # Vérifier objectifs en retard
+    #         behind_objectives = [obj for obj in objectives_data if obj['progress_percentage'] < 50]
+    #         if len(behind_objectives) > len(objectives_data) / 2:
+    #             health_indicators['overall_health'] = 'warning'
+    #             health_indicators['alerts'].append('Multiple objectives behind target')
+            
+    #         # Préparer réponse finale
+    #         dashboard_data = {
+    #             'campaign': {
+    #                 'id': campaign.id,
+    #                 'name': campaign.name,
+    #                 'status': campaign.status,
+    #                 'start_date': campaign.start_date,
+    #                 'end_date': campaign.end_date,
+    #                 'campaign_type': campaign.campaign_type,
+    #                 'has_sequence': campaign.sequence_type is not None
+    #             },
+    #             'current_metrics': current_metrics,
+    #             'objectives': objectives_data,
+    #             'health_indicators': health_indicators,
+    #             'summary': {
+    #                 'total_objectives': len(objectives_data),
+    #                 'achieved_objectives': len([obj for obj in objectives_data if obj['status'] == 'achieved']),
+    #                 'primary_objective': next((obj for obj in objectives_data if obj['is_primary']), None),
+    #                 'last_updated': current_metrics['last_updated']
+    #             }
+    #         }
+            
+    #         return StandardizedSuccessResponse.success(
+    #             message=f"Dashboard data retrieved for campaign '{campaign.name}'",
+    #             data=dashboard_data,
+    #             meta={
+    #                 'operation': 'campaign_dashboard',
+    #                 'campaign_id': campaign.id,
+    #                 'health_status': health_indicators['overall_health']
+    #             }
+    #         )
+            
+    #     except StandardizedValidationError:
+    #         raise
+    #     except Exception as e:
+    #         raise StandardizedValidationError(
+    #             CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to generate campaign dashboard")
+
+
+    #         )
+
     @action(detail=True, methods=['get'])
     def dashboard(self, request, pk=None):
         """
-        Get campaign dashboard with metrics vs objectives
-        VERSION MVP : Simple et direct
+        Get campaign dashboard with factual metrics
+        VERSION MVP : Données factuelles uniquement, sans interprétations
         
         Response includes:
         - Current metrics (leads, meetings, opportunities, deals)
-        - Objectives vs achieved comparison
-        - Quick health indicators
+        - Objectives vs achieved comparison (factuel)
+        - Activities progress (compteurs factuels)
+        - Timeline progress (progression temporelle factuelle)
+        - Conversion rates (taux factuels)
         """
         try:
             campaign = self.get_validated_campaign(
@@ -606,118 +750,59 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
                 check_state=False
             )
             
-            # Obtenir les métriques actuelles
-            current_metrics = CampaignTrackingService.get_campaign_metrics(campaign)
+            # Utiliser le service analytics pour obtenir toutes les données
+            from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
             
-            # Obtenir les objectifs
-            objectives = campaign.objectives.all()
-            objectives_data = []
+            # Le service retourne déjà une Response standardisée
+            return CampaignAnalyticsService.get_campaign_dashboard_data(campaign)
             
-            for objective in objectives:
-                # Mapper les types d'objectifs aux métriques
-                metric_value = 0
-                if objective.objective_type == 'LEADS':
-                    metric_value = current_metrics['leads_created']
-                elif objective.objective_type == 'MEETINGS':
-                    metric_value = current_metrics['meetings_secured']
-                elif objective.objective_type == 'OPPORTUNITIES':
-                    metric_value = current_metrics['opportunities_created']
-                elif objective.objective_type == 'CLOSED_DEALS':
-                    metric_value = current_metrics['deals_closed']
-                elif objective.objective_type == 'PIPELINE_VALUE':
-                    metric_value = current_metrics['pipeline_value']
-                elif objective.objective_type == 'REVENUE':
-                    metric_value = current_metrics['revenue_generated']
-                
-                # Calculer progression
-                target_value = float(objective.target_value)
-                progress_percentage = (metric_value / target_value * 100) if target_value > 0 else 0
-                
-                objectives_data.append({
-                    'id': objective.id,
-                    'name': objective.name,
-                    'type': objective.objective_type,
-                    'type_display': objective.get_objective_type_display(),
-                    'target_value': target_value,
-                    'current_value': metric_value,
-                    'progress_percentage': round(progress_percentage, 1),
-                    'status': 'achieved' if progress_percentage >= 100 else 'in_progress' if progress_percentage > 0 else 'not_started',
-                    'is_primary': objective.is_primary
-                })
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to generate campaign dashboard")
+            )
+
+    @action(detail=True, methods=['get'])
+    def dashboard_summary(self, request, pk=None):
+        """
+        Get simplified dashboard summary using campaign helper methods
+        VERSION MVP : Résumé rapide via les helpers du modèle
+        
+        Alternative plus légère au dashboard complet
+        """
+        try:
+            campaign = self.get_validated_campaign(
+                require_ownership=True, 
+                allow_stakeholders=True, 
+                check_state=False
+            )
             
-            # Calculer indicateurs de santé
-            health_indicators = {
-                'overall_health': 'good',  # good, warning, critical
-                'total_results': (
-                    current_metrics['leads_created'] + 
-                    current_metrics['meetings_secured'] + 
-                    current_metrics['opportunities_created'] + 
-                    current_metrics['deals_closed']
-                ),
-                'conversion_rates': {},
-                'alerts': []
-            }
+            # Utiliser les helpers du modèle Campaign
+            dashboard_summary = campaign.get_dashboard_summary()
             
-            # Taux de conversion
-            if current_metrics['leads_created'] > 0:
-                meeting_rate = (current_metrics['meetings_secured'] / current_metrics['leads_created']) * 100
-                health_indicators['conversion_rates']['leads_to_meetings'] = round(meeting_rate, 1)
-                
-                if meeting_rate < 10:
-                    health_indicators['overall_health'] = 'critical'
-                    health_indicators['alerts'].append('Low meeting conversion rate (<10%)')
-                elif meeting_rate < 25:
-                    health_indicators['overall_health'] = 'warning'
-                    health_indicators['alerts'].append('Meeting conversion rate could be improved')
-            
-            if current_metrics['meetings_secured'] > 0:
-                opp_rate = (current_metrics['opportunities_created'] / current_metrics['meetings_secured']) * 100
-                health_indicators['conversion_rates']['meetings_to_opportunities'] = round(opp_rate, 1)
-            
-            if current_metrics['opportunities_created'] > 0:
-                deal_rate = (current_metrics['deals_closed'] / current_metrics['opportunities_created']) * 100
-                health_indicators['conversion_rates']['opportunities_to_deals'] = round(deal_rate, 1)
-            
-            # Vérifier si campagne active sans résultats
-            if campaign.status == 'ACTIVE' and health_indicators['total_results'] == 0:
-                health_indicators['overall_health'] = 'warning'
-                health_indicators['alerts'].append('Active campaign with no results yet')
-            
-            # Vérifier objectifs en retard
-            behind_objectives = [obj for obj in objectives_data if obj['progress_percentage'] < 50]
-            if len(behind_objectives) > len(objectives_data) / 2:
-                health_indicators['overall_health'] = 'warning'
-                health_indicators['alerts'].append('Multiple objectives behind target')
-            
-            # Préparer réponse finale
-            dashboard_data = {
-                'campaign': {
+            # Ajouter info de base sur la campagne
+            summary_data = {
+                'campaign_info': {
                     'id': campaign.id,
                     'name': campaign.name,
+                    'type': campaign.campaign_type,
+                    'type_display': campaign.get_campaign_type_display(),
                     'status': campaign.status,
-                    'start_date': campaign.start_date,
-                    'end_date': campaign.end_date,
-                    'campaign_type': campaign.campaign_type,
+                    'start_date': campaign.start_date.isoformat(),
+                    'end_date': campaign.end_date.isoformat(),
                     'has_sequence': campaign.sequence_type is not None
                 },
-                'current_metrics': current_metrics,
-                'objectives': objectives_data,
-                'health_indicators': health_indicators,
-                'summary': {
-                    'total_objectives': len(objectives_data),
-                    'achieved_objectives': len([obj for obj in objectives_data if obj['status'] == 'achieved']),
-                    'primary_objective': next((obj for obj in objectives_data if obj['is_primary']), None),
-                    'last_updated': current_metrics['last_updated']
-                }
+                'summary': dashboard_summary
             }
             
             return StandardizedSuccessResponse.success(
-                message=f"Dashboard data retrieved for campaign '{campaign.name}'",
-                data=dashboard_data,
+                message=f"Dashboard summary retrieved for campaign '{campaign.name}'",
+                data=summary_data,
                 meta={
-                    'operation': 'campaign_dashboard',
+                    'operation': 'campaign_dashboard_summary',
                     'campaign_id': campaign.id,
-                    'health_status': health_indicators['overall_health']
+                    'summary_type': 'factual_only'
                 }
             )
             
@@ -725,7 +810,107 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
             raise
         except Exception as e:
             raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to generate campaign dashboard")
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to generate campaign dashboard summary")
+            )
+
+    @action(detail=True, methods=['get'])
+    def objectives_progress(self, request, pk=None):
+        """
+        Get detailed objectives progress only
+        VERSION MVP : Focus sur les objectifs uniquement
+        """
+        try:
+            campaign = self.get_validated_campaign(
+                require_ownership=True, 
+                allow_stakeholders=True, 
+                check_state=False
+            )
+            
+            # Utiliser helper du modèle
+            objectives_summary = campaign.get_objectives_progress_summary()
+            
+            # Ajouter détails des objectifs individuels si demandé
+            include_details = request.query_params.get('include_details', 'false').lower() == 'true'
+            
+            response_data = {
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'objectives_summary': objectives_summary
+            }
+            
+            if include_details and objectives_summary.get('has_objectives', False):
+                # Utiliser le service pour obtenir les détails
+                from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
+                from apps.campaign.services.campaign_tracking_service import CampaignTrackingService
+                
+                tracking_metrics = CampaignTrackingService.get_campaign_metrics(campaign)
+                objectives_data = CampaignAnalyticsService._calculate_objectives_vs_results(campaign, tracking_metrics)
+                response_data['objectives_details'] = objectives_data['objectives']
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Objectives progress retrieved for campaign '{campaign.name}'",
+                data=response_data,
+                meta={
+                    'operation': 'objectives_progress',
+                    'campaign_id': campaign.id,
+                    'include_details': include_details
+                }
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to retrieve objectives progress")
+            )
+
+    @action(detail=True, methods=['get'])
+    def conversion_analysis(self, request, pk=None):
+        """
+        Get detailed conversion rates analysis
+        VERSION MVP : Focus sur les taux de conversion uniquement
+        """
+        try:
+            campaign = self.get_validated_campaign(
+                require_ownership=True, 
+                allow_stakeholders=True, 
+                check_state=False
+            )
+            
+            # Utiliser helper du modèle pour obtenir les taux
+            conversion_rates = campaign.get_conversion_rates()
+            
+            # Ajouter métriques brutes pour contexte
+            tracking_metrics = campaign.get_metrics_summary()
+            
+            response_data = {
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'raw_metrics': tracking_metrics,
+                'conversion_rates': conversion_rates,
+                'funnel_data': {
+                    'leads': tracking_metrics['leads_created'],
+                    'meetings': tracking_metrics['meetings_secured'],
+                    'opportunities': tracking_metrics['opportunities_created'],
+                    'deals': tracking_metrics['deals_closed']
+                }
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Conversion analysis retrieved for campaign '{campaign.name}'",
+                data=response_data,
+                meta={
+                    'operation': 'conversion_analysis',
+                    'campaign_id': campaign.id,
+                    'data_type': 'factual_rates_only'
+                }
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to retrieve conversion analysis")
             )
 
     @action(detail=True, methods=['get'])
@@ -764,6 +949,7 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to retrieve campaign metrics")
             )
+
 
     @action(detail=True, methods=['post'])
     def integrity_check(self, request, pk=None):

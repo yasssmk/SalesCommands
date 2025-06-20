@@ -26,6 +26,10 @@ class CampaignTrackingService:
                     'client_id': campaign.client_id
                 }
             )
+
+            if not created:
+                cls._auto_validate_and_clean(result_tracking, silent=True)
+
             return result_tracking
             
         except Exception as e:
@@ -51,8 +55,16 @@ class CampaignTrackingService:
             # Obtenir le result tracking
             result_tracking = cls.get_or_create_result_tracking(source_campaign)
             
+            if cls._is_already_tracked(result_tracking, 'lead', lead.id):
+                print(f"Lead {lead.id} already tracked for campaign {source_campaign.id}")
+                return
+            
             # Track le lead directement
-            result_tracking.track_lead(lead.id)
+            success = result_tracking.track_lead(lead.id)
+            
+            # ✅ AJOUTER : Auto-validation après modification
+            if success:
+                cls._auto_validate_and_clean(result_tracking, silent=True)
                     
         except Exception:
             # Silent fail - don't break lead creation if tracking fails
@@ -78,12 +90,20 @@ class CampaignTrackingService:
             # Obtenir le result tracking
             result_tracking = cls.get_or_create_result_tracking(source_campaign)
             
+            if cls._is_already_tracked(result_tracking, 'opportunity', opportunity.id):
+                print(f"Opportunity {opportunity.id} already tracked for campaign {source_campaign.id}")
+                return
+            
             # Convertir amount en Decimal
             from decimal import Decimal
             pipeline_value = Decimal(str(amount)) if amount > 0 else None
             
             # Track l'opportunity directement
-            result_tracking.track_opportunity(opportunity.id, pipeline_value=pipeline_value)
+            success = result_tracking.track_opportunity(opportunity.id, pipeline_value=pipeline_value)
+            
+            # ✅ AJOUTER : Auto-validation après modification
+            if success:
+                cls._auto_validate_and_clean(result_tracking, silent=True)
                     
         except Exception:
             # Silent fail - don't break opportunity creation
@@ -109,12 +129,20 @@ class CampaignTrackingService:
             # Obtenir le result tracking
             result_tracking = cls.get_or_create_result_tracking(source_campaign)
             
+            if cls._is_already_tracked(result_tracking, 'deal', opportunity.id):
+                print(f"Deal {opportunity.id} already tracked for campaign {source_campaign.id}")
+                return
+            
             # Convertir amount en Decimal
             from decimal import Decimal
             revenue = Decimal(str(amount)) if amount > 0 else None
             
             # Track le deal directement
-            result_tracking.track_deal_closed(opportunity.id, revenue=revenue)
+            success = result_tracking.track_deal_closed(opportunity.id, revenue=revenue)
+            
+            # ✅ AJOUTER : Auto-validation après modification
+            if success:
+                cls._auto_validate_and_clean(result_tracking, silent=True)
                     
         except Exception:
             # Silent fail - don't break deal closure
@@ -140,14 +168,112 @@ class CampaignTrackingService:
             # Obtenir le result tracking
             result_tracking = cls.get_or_create_result_tracking(source_campaign)
             
+            if cls._is_already_tracked(result_tracking, 'meeting', activity.id):
+                print(f"Meeting {activity.id} already tracked for campaign {source_campaign.id}")
+                return
+            
             # Track le meeting directement
-            result_tracking.track_meeting(activity.id)
+            success = result_tracking.track_meeting(activity.id)
+            
+            # ✅ AJOUTER : Auto-validation après modification
+            if success:
+                cls._auto_validate_and_clean(result_tracking, silent=True)
                     
         except Exception:
             # Silent fail - don't break meeting creation
             print(f"Failed to track meeting {activity.id} for campaign {source_campaign.id if source_campaign else 'unknown'}")
             pass
     
+
+    @classmethod
+    def _is_already_tracked(cls, result_tracking: CampaignResultTracking, object_type: str, object_id: int) -> bool:
+        """Vérifier si un objet est déjà tracké pour éviter les doublons"""
+        try:
+            if object_type == 'lead':
+                return object_id in result_tracking.tracked_lead_ids
+            elif object_type == 'meeting':
+                return object_id in result_tracking.tracked_meeting_ids
+            elif object_type == 'opportunity':
+                return object_id in result_tracking.tracked_opportunity_ids
+            elif object_type == 'deal':
+                return object_id in result_tracking.tracked_deal_ids
+            return False
+        except Exception:
+            return False
+    
+    @classmethod
+    def _auto_validate_and_clean(cls, result_tracking: CampaignResultTracking, silent: bool = True):
+        """
+        Auto-validation et nettoyage silencieux des données de tracking
+        MÉTHODE CLÉE pour maintenir l'intégrité
+        """
+        try:
+            corrections_made = []
+            
+            with transaction.atomic():
+                # 1. Supprimer les doublons dans les listes
+                original_leads = result_tracking.tracked_lead_ids.copy()
+                result_tracking.tracked_lead_ids = list(set(result_tracking.tracked_lead_ids))
+                if len(original_leads) != len(result_tracking.tracked_lead_ids):
+                    corrections_made.append(f"Removed {len(original_leads) - len(result_tracking.tracked_lead_ids)} duplicate leads")
+                
+                original_meetings = result_tracking.tracked_meeting_ids.copy()
+                result_tracking.tracked_meeting_ids = list(set(result_tracking.tracked_meeting_ids))
+                if len(original_meetings) != len(result_tracking.tracked_meeting_ids):
+                    corrections_made.append(f"Removed {len(original_meetings) - len(result_tracking.tracked_meeting_ids)} duplicate meetings")
+                
+                original_opportunities = result_tracking.tracked_opportunity_ids.copy()
+                result_tracking.tracked_opportunity_ids = list(set(result_tracking.tracked_opportunity_ids))
+                if len(original_opportunities) != len(result_tracking.tracked_opportunity_ids):
+                    corrections_made.append(f"Removed {len(original_opportunities) - len(result_tracking.tracked_opportunity_ids)} duplicate opportunities")
+                
+                original_deals = result_tracking.tracked_deal_ids.copy()
+                result_tracking.tracked_deal_ids = list(set(result_tracking.tracked_deal_ids))
+                if len(original_deals) != len(result_tracking.tracked_deal_ids):
+                    corrections_made.append(f"Removed {len(original_deals) - len(result_tracking.tracked_deal_ids)} duplicate deals")
+                
+                # 2. Recalculer les compteurs si incohérence
+                if result_tracking.leads_created_count != len(result_tracking.tracked_lead_ids):
+                    old_count = result_tracking.leads_created_count
+                    result_tracking.leads_created_count = len(result_tracking.tracked_lead_ids)
+                    corrections_made.append(f"Fixed leads count: {old_count} -> {result_tracking.leads_created_count}")
+                
+                if result_tracking.meetings_secured_count != len(result_tracking.tracked_meeting_ids):
+                    old_count = result_tracking.meetings_secured_count
+                    result_tracking.meetings_secured_count = len(result_tracking.tracked_meeting_ids)
+                    corrections_made.append(f"Fixed meetings count: {old_count} -> {result_tracking.meetings_secured_count}")
+                
+                if result_tracking.opportunities_created_count != len(result_tracking.tracked_opportunity_ids):
+                    old_count = result_tracking.opportunities_created_count
+                    result_tracking.opportunities_created_count = len(result_tracking.tracked_opportunity_ids)
+                    corrections_made.append(f"Fixed opportunities count: {old_count} -> {result_tracking.opportunities_created_count}")
+                
+                if result_tracking.deals_closed_count != len(result_tracking.tracked_deal_ids):
+                    old_count = result_tracking.deals_closed_count
+                    result_tracking.deals_closed_count = len(result_tracking.tracked_deal_ids)
+                    corrections_made.append(f"Fixed deals count: {old_count} -> {result_tracking.deals_closed_count}")
+                
+                # 3. Corriger les valeurs négatives
+                if result_tracking.pipeline_value_created < 0:
+                    result_tracking.pipeline_value_created = 0
+                    corrections_made.append("Fixed negative pipeline value")
+                
+                if result_tracking.revenue_generated < 0:
+                    result_tracking.revenue_generated = 0
+                    corrections_made.append("Fixed negative revenue")
+                
+                # Sauvegarder seulement si corrections apportées
+                if corrections_made:
+                    result_tracking.save()
+                    
+                    if not silent:
+                        print(f"Auto-corrections applied to campaign {result_tracking.campaign.id}: {'; '.join(corrections_made)}")
+                
+        except Exception as e:
+            if not silent:
+                print(f"Auto-validation failed for campaign {result_tracking.campaign.id}: {str(e)}")
+    
+
     # === MÉTHODES UTILITAIRES POUR LE MVP ===
     
     @classmethod
@@ -155,6 +281,8 @@ class CampaignTrackingService:
         """Récupérer les métriques d'une campagne (version MVP)"""
         try:
             result_tracking = cls.get_or_create_result_tracking(campaign)
+
+            cls._auto_validate_and_clean(result_tracking, silent=True)
             
             return {
                 'leads_created': result_tracking.leads_created_count,
@@ -194,6 +322,11 @@ class CampaignTrackingService:
             cleanup_actions = []
             
             with transaction.atomic():
+
+                # Auto-validation complète (non-silencieuse pour ce cas)
+                cls._auto_validate_and_clean(result_tracking, silent=False)
+                cleanup_actions.append("Applied auto-validation corrections")
+
                 # Nettoyer leads invalides
                 if integrity_report['leads'].get('deleted_ids'):
                     invalid_leads = integrity_report['leads']['deleted_ids']

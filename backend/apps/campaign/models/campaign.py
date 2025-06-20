@@ -7,6 +7,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, CampaignErrorMessages
 from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
 from django.db.models import Q
+from django.utils import timezone
 
 class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
     """
@@ -348,58 +349,180 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
                 'revenue_generated': 0.0
             }
 
-    def get_conversion_health(self) -> str:
+    
+    def get_objectives_progress_summary(self) -> dict:
         """
-        Évaluer la santé des conversions de la campagne
+        Progression globale des objectifs (utilise CampaignAnalyticsService)
         
         Returns:
-            str: 'healthy', 'needs_improvement', 'poor', 'no_data'
+            dict: Résumé de progression des objectifs
         """
         try:
-            metrics = self.get_metrics_summary()
+            from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
+            from apps.campaign.services.campaign_tracking_service import CampaignTrackingService
             
-            if metrics['leads_created'] == 0:
-                return 'no_data'
+            # Obtenir les métriques via le service de tracking
+            tracking_metrics = CampaignTrackingService.get_campaign_metrics(self)
             
-            # Calculer taux de conversion leads -> meetings
-            meeting_rate = (metrics['meetings_secured'] / metrics['leads_created']) * 100
+            # Utiliser le service analytics pour le calcul
+            objectives_data = CampaignAnalyticsService._calculate_objectives_vs_results(self, tracking_metrics)
             
-            if meeting_rate >= 25:
-                return 'healthy'
-            elif meeting_rate >= 10:
-                return 'needs_improvement'
-            else:
-                return 'poor'
-                
+            # Retourner le summary directement
+            return objectives_data['summary']
+            
         except Exception:
-            return 'no_data'
+            return {
+                'has_objectives': False,
+                'total_objectives': 0,
+                'achieved_objectives': 0,
+                'overall_progress_percentage': 0.0,
+                'primary_objectives_count': 0
+            }
 
-    def needs_attention(self) -> bool:
+    def get_activities_progress_summary(self) -> dict:
         """
-        Déterminer si la campagne nécessite attention
+        Progression des activités (utilise CampaignAnalyticsService)
         
         Returns:
-            bool: True si attention requise
+            dict: Résumé de progression des activités
         """
         try:
-            # Campagne active sans résultats
-            if self.status == 'ACTIVE':
-                metrics = self.get_metrics_summary()
-                total_results = sum([
-                    metrics['leads_created'],
-                    metrics['meetings_secured'], 
-                    metrics['opportunities_created'],
-                    metrics['deals_closed']
-                ])
-                
-                if total_results == 0:
-                    return True
+            from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
             
-            # Conversions faibles
-            if self.get_conversion_health() == 'poor':
-                return True
-                
-            return False
+            # Utiliser directement le service analytics
+            return CampaignAnalyticsService._calculate_activities_progress(self)
             
         except Exception:
-            return True  # En cas d'erreur, mieux vaut signaler attention requise
+            return {
+                'total_activities': 0,
+                'completed_activities': 0,
+                'planned_activities': 0,
+                'cancelled_activities': 0,
+                'completion_rate': 0.0
+            }
+
+    def get_timeline_progress_summary(self) -> dict:
+        """
+        Progression temporelle (utilise CampaignAnalyticsService)
+        
+        Returns:
+            dict: Résumé de progression temporelle
+        """
+        try:
+            from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
+            
+            # Utiliser directement le service analytics
+            return CampaignAnalyticsService._calculate_timeline_progress(self)
+            
+        except Exception:
+            from datetime import date
+            return {
+                'start_date': self.start_date.isoformat() if self.start_date else None,
+                'end_date': self.end_date.isoformat() if self.end_date else None,
+                'current_date': date.today().isoformat(),
+                'total_days': 1,
+                'elapsed_days': 0,
+                'remaining_days': 0,
+                'time_elapsed_percentage': 0.0,
+                'time_remaining_percentage': 0.0,
+                'is_started': False,
+                'is_ended': False
+            }
+
+    def get_conversion_rates(self) -> dict:
+        """
+        Taux de conversion (utilise CampaignAnalyticsService)
+        
+        Returns:
+            dict: Taux de conversion factuels
+        """
+        try:
+            from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
+            from apps.campaign.services.campaign_tracking_service import CampaignTrackingService
+            
+            # Obtenir les métriques via le service de tracking
+            tracking_metrics = CampaignTrackingService.get_campaign_metrics(self)
+            
+            # Utiliser le service analytics pour les conversions
+            conversion_data = CampaignAnalyticsService._calculate_conversion_rates(tracking_metrics)
+            
+            # Retourner le format simplifié pour compatibilité
+            return conversion_data['conversion_rates']
+            
+        except Exception:
+            return {
+                'leads_to_meetings': {'rate_percentage': 0, 'numerator': 0, 'denominator': 0},
+                'meetings_to_opportunities': {'rate_percentage': 0, 'numerator': 0, 'denominator': 0},
+                'opportunities_to_deals': {'rate_percentage': 0, 'numerator': 0, 'denominator': 0},
+                'overall_conversion': {'rate_percentage': 0, 'numerator': 0, 'denominator': 0}
+            }
+
+    def get_dashboard_summary(self) -> dict:
+        """
+        Résumé complet dashboard (utilise CampaignAnalyticsService)
+        
+        Returns:
+            dict: Résumé factuel complet
+        """
+        try:
+            from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
+            
+            # Utiliser le service pour obtenir toutes les données d'un coup
+            dashboard_response = CampaignAnalyticsService.get_campaign_dashboard_data(self)
+            
+            # Extraire les données de la Response standardisée
+            if hasattr(dashboard_response, 'data') and 'data' in dashboard_response.data:
+                dashboard_data = dashboard_response.data['data']
+                
+                # Retourner résumé simplifié
+                return {
+                    'objectives_summary': dashboard_data.get('objectives_progress', {}).get('summary', {}),
+                    'activities_summary': {
+                        'total_activities': dashboard_data.get('activities_progress', {}).get('total_activities', 0),
+                        'completion_rate': dashboard_data.get('activities_progress', {}).get('completion_rate', 0)
+                    },
+                    'timeline_summary': {
+                        'time_elapsed_percentage': dashboard_data.get('timeline_progress', {}).get('time_elapsed_percentage', 0),
+                        'is_started': dashboard_data.get('timeline_progress', {}).get('is_started', False),
+                        'is_ended': dashboard_data.get('timeline_progress', {}).get('is_ended', False)
+                    },
+                    'conversion_summary': dashboard_data.get('conversion_rates', {}).get('conversion_rates', {}),
+                    'tracking_metrics': dashboard_data.get('tracking_metrics', {}),
+                    'last_updated': dashboard_data.get('last_updated')
+                }
+            
+            # Fallback si le format de Response change
+            return self._get_fallback_dashboard_summary()
+            
+        except Exception:
+            return self._get_fallback_dashboard_summary()
+
+    def _get_fallback_dashboard_summary(self) -> dict:
+        """Fallback pour get_dashboard_summary en cas d'erreur"""
+        try:
+            # Utiliser les autres méthodes helper individuellement
+            return {
+                'objectives_summary': self.get_objectives_progress_summary(),
+                'activities_summary': {
+                    'total_activities': self.get_activities_progress_summary().get('total_activities', 0),
+                    'completion_rate': self.get_activities_progress_summary().get('completion_rate', 0)
+                },
+                'timeline_summary': {
+                    'time_elapsed_percentage': self.get_timeline_progress_summary().get('time_elapsed_percentage', 0),
+                    'is_started': self.get_timeline_progress_summary().get('is_started', False),
+                    'is_ended': self.get_timeline_progress_summary().get('is_ended', False)
+                },
+                'conversion_summary': self.get_conversion_rates(),
+                'tracking_metrics': self.get_metrics_summary(),
+                'last_updated': timezone.now().isoformat()
+            }
+        except Exception:
+            return {
+                'objectives_summary': {'has_objectives': False},
+                'activities_summary': {'total_activities': 0, 'completion_rate': 0},
+                'timeline_summary': {'time_elapsed_percentage': 0, 'is_started': False, 'is_ended': False},
+                'conversion_summary': {},
+                'tracking_metrics': {},
+                'last_updated': timezone.now().isoformat(),
+                'error': 'Failed to generate dashboard summary'
+            }

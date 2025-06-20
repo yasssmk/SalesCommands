@@ -12,6 +12,7 @@ from apps.opportunities.models import Opportunity, OpportunitySource, Opportunit
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
+from apps.campaign.services.campaign_tracking_service import CampaignTrackingService
 
 
 class CampaignBusinessResultService:
@@ -71,6 +72,13 @@ class CampaignBusinessResultService:
                     campaign_target=campaign_target,
                     client_id=campaign.client_id
                 )
+
+            try:
+                CampaignTrackingService.track_meeting_scheduled(meeting_activity, campaign)
+            except Exception as e:
+                # Silent fail pour MVP - ne pas casser la création du meeting
+                print(f"Warning: Failed to track meeting {meeting_activity.id} for campaign {campaign.id}: {str(e)}")
+            
             
             return StandardizedSuccessResponse.success(
                 message="Meeting scheduled successfully",
@@ -143,8 +151,11 @@ class CampaignBusinessResultService:
                 )
                 
                 # Track lead creation
-                from .campaign_tracking_service import CampaignTrackingService
-                CampaignTrackingService.track_lead_created(lead, campaign)
+                try:
+                    CampaignTrackingService.track_lead_created(lead, campaign)
+                except Exception as e:
+                    # Silent fail pour MVP - ne pas casser la création du lead
+                    print(f"Warning: Failed to track lead {lead.id} for campaign {campaign.id}: {str(e)}")
             
             return StandardizedSuccessResponse.success(
                 message="Lead created successfully",
@@ -249,8 +260,12 @@ class CampaignBusinessResultService:
                 )
                 
                 # Track opportunity creation
-                from .campaign_tracking_service import CampaignTrackingService
-                CampaignTrackingService.track_opportunity_created(opportunity, campaign, amount)
+                try:
+                    CampaignTrackingService.track_opportunity_created(opportunity, campaign, amount)
+                except Exception as e:
+                    # Silent fail pour MVP - ne pas casser la création de l'opportunity
+                    print(f"Warning: Failed to track opportunity {opportunity.id} for campaign {campaign.id}: {str(e)}")
+            
             
             return StandardizedSuccessResponse.success(
                 message="Opportunity created successfully",

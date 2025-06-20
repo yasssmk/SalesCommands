@@ -1,5 +1,3 @@
-# apps/campaign/views/campaign_objective_views.py
-
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -15,19 +13,19 @@ from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 
 class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSet):
     """
-    API endpoints for managing campaign objectives
-    Now returns standardized responses consistently with centralized permissions
+    API endpoints for managing campaign objectives (CRUD uniquement)
+    Pour analytics et dashboard : utiliser campaign_management_views.py
     """
     serializer_class = CampaignObjectiveSerializer
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['campaign', 'objective_type', 'is_primary']
-    ordering_fields = ['name', 'target_value', 'current_value', 'created_at']
+    ordering_fields = ['name', 'target_value', 'created_at']
     ordering = ['campaign', '-is_primary', 'created_at']
     
     def get_queryset(self):
         """Get objectives for the current client with filters"""
         try:
-            queryset = CampaignObjective.objects.all()
+            queryset = CampaignObjective.objects.select_related('campaign').all()
             
             # Apply client scoping through related campaign
             queryset = queryset.filter(campaign__client_id=self.get_client_id())
@@ -41,14 +39,11 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
     def perform_create(self, serializer):
         """Create a new objective with validation"""
         try:
-
             campaign = self.get_validated_campaign_from_data('campaign', allow_stakeholders=False)
-                
             client_id = self.get_client_id()
             return serializer.save(client_id=client_id)
             
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -59,12 +54,9 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
         """Update an objective with validation"""
         try:
             instance = serializer.instance
-            
             self.validate_campaign_related_object(instance, allow_stakeholders=False)
-                
             return serializer.save()
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -74,12 +66,9 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
     def perform_destroy(self, instance):
         """Delete an objective with validation"""
         try:
-
             self.validate_campaign_related_object(instance, allow_stakeholders=False)
-                
             instance.delete()
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -87,75 +76,86 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
             )
     
     @action(detail=True, methods=['post'])
-    def update_progress(self, request, pk=None):
-        """Update the progress of an objective"""
-        objective = self.get_object()
-        
-        self.validate_campaign_related_object(objective, allow_stakeholders=False)
-        
-        # ✅ Utilise une méthode helper locale pour la validation
-        new_value, increment = self._validate_progress_input(request.data)
-        
-        # Update progress
-        progress = objective.update_progress(new_value, increment=increment)
-        
-        # Prepare response data
-        data = {
-            'objective_id': objective.id,
-            'objective_name': objective.name,
-            'current_value': float(objective.current_value),
-            'target_value': float(objective.target_value),
-            'progress_percentage': progress,
-            'increment_applied': increment,
-            'value_added': new_value if increment else None,
-            'new_value_set': new_value if not increment else None
-        }
-        
-        meta = {
-            'operation': 'objective_progress_update',
-            'increment_mode': increment,
-            'progress_percentage': progress
-        }
-        
-        # Return standardized success response
-        return StandardizedSuccessResponse.success(
-            message=f"Objective progress updated successfully to {progress:.1f}%",
-            data=data,
-            meta=meta
-        )
-
-    def _validate_progress_input(self, data):
+    def set_as_primary(self, request, pk=None):
         """
-        Valider les données d'entrée pour la mise à jour de progression
-        Méthode helper locale au ViewSet
-        
-        Args:
-            data: Données de la requête
-            
-        Returns:
-            Tuple (new_value, increment)
+        Set this objective as primary for its campaign
+        UNIQUE : Gestion spécifique aux objectifs
         """
-        # Get new value from request
-        new_value = data.get('value', None)
-        if new_value is None:
-            raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(field="value")
-            )
-            
         try:
-            new_value = float(new_value)
-        except (ValueError, TypeError):
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field="value (must be a number)")
+            objective = self.get_object()
+            self.validate_campaign_related_object(objective, allow_stakeholders=False)
+            
+            # Désactiver les autres objectifs primaires de cette campagne
+            CampaignObjective.objects.filter(
+                campaign=objective.campaign,
+                is_primary=True
+            ).exclude(id=objective.id).update(is_primary=False)
+            
+            # Activer celui-ci comme primaire
+            objective.is_primary = True
+            objective.save(update_fields=['is_primary'])
+            
+            data = {
+                'objective_id': objective.id,
+                'objective_name': objective.name,
+                'is_primary': True,
+                'campaign_id': objective.campaign.id,
+                'campaign_name': objective.campaign.name
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Objective '{objective.name}' set as primary successfully",
+                data=data,
+                meta={
+                    'operation': 'set_primary_objective',
+                    'objective_id': objective.id
+                }
             )
             
-        # Validate value is not negative
-        if new_value < 0:
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
             raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field="value (cannot be negative)")
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to set objective as primary")
             )
-        
-        # Get increment flag
-        increment = data.get('increment', False)
-        
-        return new_value, increment
+    
+    @action(detail=True, methods=['post'])
+    def sync_progress(self, request, pk=None):
+        """
+        Synchronize objective progress with actual campaign results
+        UNIQUE : Gestion spécifique aux objectifs
+        """
+        try:
+            objective = self.get_object()
+            self.validate_campaign_related_object(objective, allow_stakeholders=False)
+            
+            # Obtenir la valeur actuelle depuis le tracking
+            current_value = objective.get_current_value()
+            progress_percentage = objective.get_progress_percentage()
+            
+            data = {
+                'objective_id': objective.id,
+                'objective_name': objective.name,
+                'current_value': current_value,
+                'target_value': float(objective.target_value),
+                'progress_percentage': round(progress_percentage, 1),
+                'is_achieved': progress_percentage >= 100,
+                'sync_timestamp': timezone.now().isoformat()
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Objective progress synchronized successfully",
+                data=data,
+                meta={
+                    'operation': 'objective_sync_progress',
+                    'objective_id': objective.id,
+                    'progress_percentage': round(progress_percentage, 1)
+                }
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to sync objective progress")
+            )

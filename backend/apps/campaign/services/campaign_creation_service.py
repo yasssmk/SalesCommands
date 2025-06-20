@@ -36,9 +36,10 @@ class CampaignCreationService:
                                     target_contacts: List[int] = None,
                                     target_leads: List[int] = None,
                                     target_opportunities: List[int] = None,
-                                    targeting_stats: Dict = None) -> Response:
+                                    targeting_stats: Dict = None,
+                                    objective_data: Dict = None) -> Response:  
         """
-        Create a new campaign and generate all activities with optimized queries
+        Create a new campaign with optional objective and generate all activities
         
         Args:
             campaign_data: Dictionary with campaign fields (name, description, etc.)
@@ -47,6 +48,7 @@ class CampaignCreationService:
             target_leads: Optional list of specific lead IDs
             target_opportunities: Optional list of specific opportunity IDs
             targeting_stats: Optional targeting statistics from preparation
+            objective_data: Optional objective data to create with campaign  
             
         Returns:
             Response: Standardized API response with campaign creation results
@@ -58,10 +60,37 @@ class CampaignCreationService:
                 if not client_id:
                     raise StandardizedValidationError(CoreErrorMessages.CLIENT_ID_REQUIRED)
                 
-                # Create the campaign
-                campaign = Campaign.objects.create(**campaign_data)
+                # ✅ REMPLACER : Utiliser le serializer au lieu de création directe
+                # Préparer le payload pour le serializer
+                serializer_data = campaign_data.copy()
                 
-                # Create campaign targets
+                # Ajouter les données d'objectif si fournies
+                if objective_data:
+                    serializer_data['objective'] = objective_data
+                
+                # Importer et utiliser le serializer
+                from apps.campaign.serializers.campaign_serializer import CampaignSerializer
+                
+                # Créer un contexte minimal pour le serializer
+                context = {'request': None}  # MVP : contexte minimal
+                
+                # Valider et créer via le serializer
+                serializer = CampaignSerializer(data=serializer_data, context=context)
+                
+                if not serializer.is_valid():
+                    # Convertir les erreurs du serializer en StandardizedValidationError
+                    error_messages = []
+                    for field, errors in serializer.errors.items():
+                        if isinstance(errors, list):
+                            error_messages.extend([f"{field}: {error}" for error in errors])
+                        else:
+                            error_messages.append(f"{field}: {errors}")
+                    raise StandardizedValidationError('; '.join(error_messages))
+                
+                # Créer la campagne (+ objectif si fourni)
+                campaign = serializer.save()
+                
+                # Create campaign targets (garder logique existante)
                 targets_created = cls._create_campaign_targets(
                     campaign, 
                     target_accounts, 
@@ -70,19 +99,49 @@ class CampaignCreationService:
                     target_opportunities
                 )
 
-                # Generate activities for all targets
+                # Generate activities for all targets (garder logique existante)
                 activity_result = CampaignActivityService.create_activities_for_campaign(
                     campaign, target_contacts=target_contacts
                 )
                 
-                # Use standardized response builder
-                return CampaignResponseBuilder.campaign_created(
-                    campaign_id=campaign.id,
-                    campaign_name=campaign.name,
-                    targets_created=targets_created,
-                    activities_created=activity_result['total_activities_created'],
-                    skipped_contacts=activity_result.get('skipped_contacts', []),
-                    targeting_stats=targeting_stats
+                # ✅ AJOUTER : Inclure info sur l'objectif créé dans la réponse
+                objective_created = objective_data is not None
+                objective_info = None
+                
+                if objective_created:
+                    # Récupérer l'objectif créé pour la réponse
+                    created_objective = campaign.objectives.first()
+                    if created_objective:
+                        objective_info = {
+                            'id': created_objective.id,
+                            'name': created_objective.name,
+                            'type': created_objective.objective_type,
+                            'target_value': float(created_objective.target_value),
+                            'is_primary': created_objective.is_primary
+                        }
+                
+                # Utiliser le response builder existant avec info objectif
+                response_data = {
+                    'campaign_id': campaign.id,
+                    'campaign_name': campaign.name,
+                    'targets_created': targets_created,
+                    'activities_created': activity_result.get('total_activities_created', 0),
+                    'skipped_contacts': activity_result.get('skipped_contacts', []),
+                    'targeting_stats': targeting_stats,
+                    'objective_created': objective_created,  
+                    'objective_info': objective_info  
+                }
+                
+                return StandardizedSuccessResponse.success(
+                    message=f"Campaign '{campaign.name}' created successfully" + 
+                           (" with objective" if objective_created else ""),
+                    data=response_data,
+                    meta={
+                        'operation': 'campaign_creation_with_activities',
+                        'objective_created': objective_created,
+                        'targets_created': targets_created,
+                        'activities_created': activity_result.get('total_activities_created', 0)
+                    }
                 )
                 
         except StandardizedValidationError:
@@ -92,6 +151,7 @@ class CampaignCreationService:
             raise StandardizedValidationError(
                 CampaignErrorMessages.CAMPAIGN_SEQUENCE_GENERATION_FAILED.format(reason=str(e))
             )
+    
     
     @classmethod
     def start_campaign(cls, campaign: Campaign) -> Response:
