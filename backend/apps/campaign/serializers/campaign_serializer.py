@@ -238,27 +238,185 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         except Exception as e:
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_FIELD.format(field="End Date")
+        
             )
     
-    def validate(self, data):
-        """Validate campaign data with standardized error handling"""
-        try:
-            # Validate dates
-            start_date = data.get('start_date', self.instance.start_date if self.instance else None)
-            end_date = data.get('end_date', self.instance.end_date if self.instance else None)
+    def validate_objective(self, value):
+        """Validate objective data"""
+        if not value:
+            return value
             
-            if start_date and end_date and end_date < start_date:
+        try:
+            # Validate target_value
+            target_value = value.get('target_value', 0)
+            if target_value <= 0:
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(
-                        field=f"Date range (end date {end_date} must be after start date {start_date})"
+                        field="Objective target value (must be greater than 0)"
                     )
                 )
             
-            # Validate sequence_type with campaign_type
+            # Validate objective_type exists
+            objective_type = value.get('objective_type')
+            if not objective_type:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="Objective type")
+                )
+            
+            # Validate objective_type is valid choice
+            from apps.campaign.models.campaign_objective import CampaignObjective
+            valid_types = [choice[0] for choice in CampaignObjective.ObjectiveType.choices]
+            if objective_type not in valid_types:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Objective type (must be one of: {', '.join(valid_types)})"
+                    )
+                )
+            
+            # Validate objective name
+            name = value.get('name', '').strip()
+            if not name:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field="Objective name")
+                )
+            
+            if len(name) > VALIDATION_LIMITS['MAX_CAMPAIGN_NAME_LENGTH']:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Objective name (maximum {VALIDATION_LIMITS['MAX_CAMPAIGN_NAME_LENGTH']} characters)"
+                    )
+                )
+            
+            return value
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="Objective data")
+            )
+
+    def validate_campaign_type(self, value):
+        """Validate campaign type"""
+        try:
+            # Ensure campaign type is valid
+            valid_types = [choice[0] for choice in Campaign.CampaignType.choices]
+            if value not in valid_types:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Campaign type (must be one of: {', '.join(valid_types)})"
+                    )
+                )
+            
+            return value
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="Campaign type")
+            )
+
+    def validate_sequence_type(self, value):
+        """Validate sequence type"""
+        if value is None:
+            return value
+            
+        try:
+            # Import sequence types
+            from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+            
+            valid_sequences = [choice[0] for choice in SequenceDispatcher.SEQUENCE_CHOICES]
+            if value not in valid_sequences:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Sequence type (must be one of: {', '.join(valid_sequences)})"
+                    )
+                )
+            
+            return value
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="Sequence type")
+            )
+
+    def validate_owner_ids(self, value):
+        """Validate owner IDs list"""
+        return self._validate_stakeholder_list(value, "Owner IDs")
+
+    def validate_executor_ids(self, value):
+        """Validate executor IDs list"""
+        return self._validate_stakeholder_list(value, "Executor IDs")
+
+    def validate_receiver_ids(self, value):
+        """Validate receiver IDs list"""
+        return self._validate_stakeholder_list(value, "Receiver IDs")
+
+    def _validate_stakeholder_list(self, value, field_name):
+        """Helper to validate stakeholder lists"""
+        if not value:
+            return value
+            
+        try:
+            # Check for duplicates
+            user_ids = [user.id if hasattr(user, 'id') else user for user in value]
+            if len(user_ids) != len(set(user_ids)):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"{field_name} (cannot contain duplicate users)"
+                    )
+                )
+            
+            # Validate maximum stakeholders per role
+            max_stakeholders = 10  # Business rule
+            if len(value) > max_stakeholders:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"{field_name} (maximum {max_stakeholders} users per role)"
+                    )
+                )
+            
+            return value
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field=field_name)
+            )
+    
+    def validate(self, data):
+        """Validate campaign data with standardized error handling - ENHANCED VERSION"""
+        try:
+            # === VALIDATION DES DATES (existante + améliorée) ===
+            start_date = data.get('start_date', self.instance.start_date if self.instance else None)
+            end_date = data.get('end_date', self.instance.end_date if self.instance else None)
+            
+            if start_date and end_date:
+                if end_date < start_date:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field=f"Date range (end date {end_date} must be after start date {start_date})"
+                        )
+                    )
+                
+                # NOUVEAU : Validation durée maximale
+                duration_days = (end_date - start_date).days
+                max_duration = 365  # Business rule: max 1 year
+                if duration_days > max_duration:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field=f"Campaign duration (maximum {max_duration} days, got {duration_days} days)"
+                        )
+                    )
+            
+            # === VALIDATION CAMPAIGN TYPE vs SEQUENCE TYPE (existante) ===
             campaign_type = data.get('campaign_type', self.instance.campaign_type if self.instance else None)
             sequence_type = data.get('sequence_type', self.instance.sequence_type if self.instance else None)
             
-            # Call list campaigns should not have a sequence
             if campaign_type == Campaign.CampaignType.CALL_LIST and sequence_type is not None:
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(
@@ -266,7 +424,15 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                     )
                 )
             
-            # Validate stakeholder lists don't contain duplicates
+            # === NOUVELLE : VALIDATION OBJECTIVE vs CAMPAIGN TYPE ===
+            objective_data = data.get('objective')
+            if objective_data and campaign_type:
+                self._validate_objective_consistency(objective_data, campaign_type)
+            
+            # === NOUVELLE : VALIDATION STAKEHOLDERS CROISÉE ===
+            self._validate_stakeholder_consistency(data)
+            
+            # === VALIDATION EXISTANTE : Stakeholder duplicates ===
             stakeholder_fields = ['owner_ids', 'executor_ids', 'receiver_ids']
             for field_name in stakeholder_fields:
                 stakeholder_list = data.get(field_name, [])
@@ -277,8 +443,11 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                         )
                     )
             
-            # ✅ Validation avec constantes
-            # Validate description length
+            # === NOUVELLE : VALIDATION STATE TRANSITIONS ===
+            if self.instance:  # Update case
+                self._validate_state_transitions(data)
+            
+            # === VALIDATION EXISTANTE : Description length ===
             description = data.get('description', '')
             if description and len(description) > VALIDATION_LIMITS['MAX_DESCRIPTION_LENGTH']:
                 raise StandardizedValidationError(
@@ -290,12 +459,10 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             return data
             
         except StandardizedValidationError:
-            # Re-raise standardized validation errors
             raise
         except serializers.ValidationError as e:
             # Convert DRF validation errors to standardized format
             if isinstance(e.detail, dict):
-                # Multiple field errors
                 error_messages = []
                 for field, errors in e.detail.items():
                     if isinstance(errors, list):
@@ -306,105 +473,198 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             else:
                 raise StandardizedValidationError(str(e.detail))
         except Exception as e:
-            # Convert any unexpected errors to standardized format
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign validation failed")
             )
+
+    def _validate_objective_consistency(self, objective_data, campaign_type):
+        """Validate objective is consistent with campaign type"""
+        try:
+            objective_type = objective_data.get('objective_type')
+            
+            # Business rules for objective vs campaign type
+            if campaign_type == Campaign.CampaignType.CALL_LIST:
+                # Call lists typically focus on meetings
+                if objective_type in ['OPPORTUNITIES', 'CLOSED_DEALS', 'REVENUE']:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field=f"Objective type '{objective_type}' not recommended for Call List campaigns"
+                        )
+                    )
+            
+            # Validate target value makes sense for objective type
+            target_value = objective_data.get('target_value', 0)
+            if objective_type in ['REVENUE', 'PIPELINE_VALUE'] and target_value < 1000:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field="Revenue/Pipeline objectives should have target value ≥ 1000"
+                    )
+                )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception:
+            # Don't fail validation for consistency checks
+            pass
+
+    def _validate_stakeholder_consistency(self, data):
+        """Validate stakeholder assignments are consistent"""
+        try:
+            owner_ids = data.get('owner_ids', [])
+            executor_ids = data.get('executor_ids', [])
+            receiver_ids = data.get('receiver_ids', [])
+            
+            # Convert to user IDs for comparison
+            owner_user_ids = {user.id if hasattr(user, 'id') else user for user in owner_ids}
+            executor_user_ids = {user.id if hasattr(user, 'id') else user for user in executor_ids}
+            receiver_user_ids = {user.id if hasattr(user, 'id') else user for user in receiver_ids}
+            
+            # Business rule: Users can have multiple roles
+            # But warn if someone is both executor and receiver (might be confusing)
+            overlap_exec_recv = executor_user_ids & receiver_user_ids
+            if overlap_exec_recv:
+                # This is a warning, not an error - just log it
+                pass
+            
+            # Validate total unique stakeholders doesn't exceed limit
+            all_stakeholder_ids = owner_user_ids | executor_user_ids | receiver_user_ids
+            max_total_stakeholders = 20  # Business rule
+            if len(all_stakeholder_ids) > max_total_stakeholders:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Total stakeholders (maximum {max_total_stakeholders} unique users)"
+                    )
+                )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception:
+            # Don't fail validation for consistency checks
+            pass
+
+    def _validate_state_transitions(self, data):
+        """Validate state transitions are allowed"""
+        try:
+            if not self.instance:
+                return
+                
+            current_status = self.instance.status
+            new_status = data.get('status', current_status)
+            
+            # Don't allow modifications to completed/cancelled campaigns
+            if current_status in CAMPAIGN_FORBIDDEN_STATES:
+                forbidden_fields = {'name', 'description', 'start_date', 'end_date', 'campaign_type', 'sequence_type'}
+                modified_fields = forbidden_fields & set(data.keys())
+                
+                if modified_fields:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field=f"Campaign modification (cannot modify {', '.join(modified_fields)} when status is {current_status})"
+                        )
+                    )
+            
+            # Validate status transitions
+            valid_transitions = {
+                'DRAFT': ['ACTIVE', 'CANCELLED'],
+                'ACTIVE': ['PAUSED', 'COMPLETED', 'CANCELLED'],
+                'PAUSED': ['ACTIVE', 'CANCELLED'],
+                'COMPLETED': [],  # Final state
+                'CANCELLED': []   # Final state
+            }
+            
+            if new_status != current_status:
+                allowed_states = valid_transitions.get(current_status, [])
+                if new_status not in allowed_states:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field=f"Status transition (cannot change from {current_status} to {new_status})"
+                        )
+                    )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception:
+            # If unexpected error occurs, we should still allow the campaign to be created/updated
+            pass  # In production, this should be logged but not fail validation
+
     
     def create(self, validated_data):
-        """Create a new campaign with optional objective and stakeholders"""
+        """
+        Create campaign with optional objective
+        Delegue to service for business logic - serializer only handles validation
+        """
         try:
-            # ✅ AJOUTER : Extraire les données d'objectif
+            # Extract objective data if provided
             objective_data = validated_data.pop('objective', None)
             
-            # Extract stakeholder data (garder logique existante)
-            owner_ids = validated_data.pop('owner_ids', [])
-            executor_ids = validated_data.pop('executor_ids', [])
-            receiver_ids = validated_data.pop('receiver_ids', [])
+            # Delegate to service for business logic
+            from apps.campaign.services.campaign_creation_service import CampaignCreationService
             
-            # Get the current user
-            request = self.context.get('request')
-            user = request.user if request and hasattr(request, 'user') else None
-            
-            # Set created_by and updated_by
-            if user:
-                validated_data['created_by'] = user
-                validated_data['updated_by'] = user
-                if 'owner' not in validated_data:
-                    validated_data['owner'] = user
-            
-            #  Transaction atomique pour campagne + objectif
-            with transaction.atomic():
-                # Create the campaign
-                campaign = Campaign.objects.create(**validated_data)
-                
-                # Créer l'objectif si fourni
-                if objective_data:
-                    objective_data['campaign'] = campaign
-                    objective_data['client_id'] = campaign.client_id
-                    objective_data['is_primary'] = True  # Premier objectif = primary pour MVP
-                    
-                    from apps.campaign.models.campaign_objective import CampaignObjective
-                    CampaignObjective.objects.create(**objective_data)
-                
-                # Add stakeholders with error handling (garder logique existante)
-                self._add_stakeholders_safely(campaign, owner_ids, executor_ids, receiver_ids, user)
+            campaign = CampaignCreationService.create_campaign_with_objective(
+                campaign_data=validated_data,
+                objective_data=objective_data
+            )
             
             return campaign
             
         except StandardizedValidationError:
-            # Re-raise standardized validation errors
+            # Re-raise service validation errors
             raise
         except Exception as e:
-            # Convert any unexpected errors to standardized format
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign creation failed")
+            # Convert unexpected errors to validation errors
+            raise serializers.ValidationError(
+                f"Campaign creation failed: {str(e)}"
             )
     
     def update(self, instance, validated_data):
-        """Update a campaign with stakeholders and standardized error handling"""
+        """
+        Update campaign - keep objective handling separate for simplicity
+        """
         try:
-            # ✅ Validation avec constantes - empêcher modification des campagnes terminées
-            if instance.status in CAMPAIGN_FORBIDDEN_STATES:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(
-                        field=f"Campaign status (cannot modify {instance.get_status_display()} campaigns)"
-                    )
-                )
+            # Extract objective data if provided
+            objective_data = validated_data.pop('objective', None)
             
-            # Extract stakeholder data
-            owner_ids = validated_data.pop('owner_ids', None)
-            executor_ids = validated_data.pop('executor_ids', None)
-            receiver_ids = validated_data.pop('receiver_ids', None)
-            
-            # Get the current user
-            request = self.context.get('request')
-            user = request.user if request and hasattr(request, 'user') else None
-            
-            # Set updated_by
-            if user:
-                validated_data['updated_by'] = user
-            
-            # Update the instance
+            # Update campaign fields
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
-            
             instance.save()
             
-            # Update stakeholders if provided
-            self._update_stakeholders_safely(instance, owner_ids, executor_ids, receiver_ids, user)
+            # Handle objective update if provided
+            if objective_data:
+                self._update_or_create_objective(instance, objective_data)
             
             return instance
             
-        except StandardizedValidationError:
-            # Re-raise standardized validation errors
-            raise
         except Exception as e:
-            # Convert any unexpected errors to standardized format
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign update failed")
+            raise serializers.ValidationError(
+                f"Campaign update failed: {str(e)}"
             )
     
+    def _update_or_create_objective(self, campaign, objective_data):
+        """Helper to update or create objective"""
+        try:
+            from apps.campaign.models.campaign_objective import CampaignObjective
+            
+            # Try to get existing primary objective
+            existing_objective = campaign.objectives.filter(is_primary=True).first()
+            
+            if existing_objective:
+                # Update existing
+                for attr, value in objective_data.items():
+                    setattr(existing_objective, attr, value)
+                existing_objective.save()
+            else:
+                # Create new primary objective
+                objective_data['campaign'] = campaign
+                objective_data['is_primary'] = True
+                objective_data['client_id'] = campaign.client_id
+                CampaignObjective.objects.create(**objective_data)
+                
+        except Exception as e:
+            raise serializers.ValidationError(
+                f"Objective update failed: {str(e)}"
+            )
+        
     def _add_stakeholders_safely(self, campaign, owner_ids, executor_ids, receiver_ids, user):
         """Add stakeholders with error handling"""
         try:
@@ -427,7 +687,7 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             # If stakeholder addition fails, we should still have the campaign created
             # Log the error but don't fail the entire creation
             pass  # In production, this should be logged
-    
+        
     def _update_stakeholders_safely(self, instance, owner_ids, executor_ids, receiver_ids, user):
         """Update stakeholders with error handling"""
         try:
@@ -466,7 +726,7 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         except Exception as e:
             # If stakeholder update fails, log but don't fail the entire update
             pass  # In production, this should be logged
-    
+
     def get_quick_metrics(self, obj: Campaign) -> dict:
         """
         Métriques rapides pour affichage dans les listes

@@ -1,7 +1,6 @@
 # apps/campaign/urls.py (version complète mise à jour)
 from django.urls import path
-from .views.campaign_management_views import CampaignManagementViewSet, ActivityResultViewSet
-from .views.campaign_views import CampaignViewSet
+from .views.campaign_views import CampaignViewSet, ActivityResultViewSet
 from .views.campaign_target_views import CampaignTargetViewSet
 from .views.campaign_objective_views import CampaignObjectiveViewSet
 from .views.campaign_stakeholder_views import CampaignStakeholderViewSet
@@ -13,57 +12,57 @@ urlpatterns = [
     # =========================================================================
     
     # Basic CRUD
-    path('', CampaignManagementViewSet.as_view({'get': 'list', 'post': 'create'}), name='campaign-list'),
-    path('<int:pk>/', CampaignManagementViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='campaign-detail'),
+    path('', CampaignViewSet.as_view({'get': 'list', 'post': 'create'}), name='campaign-list'),
+    path('<int:pk>/', CampaignViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='campaign-detail'),
     
     # Campaign Creation with Targets
-    path('create-with-targets/', CampaignManagementViewSet.as_view({'post': 'create_with_targets'}), name='campaign-create-with-targets'),
+    path('create-with-targets/', CampaignViewSet.as_view({'post': 'create_with_targets'}), name='campaign-create-with-targets'),
     
     # Campaign Control Actions
-    path('<int:pk>/start/', CampaignManagementViewSet.as_view({'post': 'start_campaign'}), name='campaign-start'),
-    path('<int:pk>/pause/', CampaignManagementViewSet.as_view({'post': 'pause_campaign'}), name='campaign-pause'),
-    path('<int:pk>/resume/', CampaignManagementViewSet.as_view({'post': 'resume_campaign'}), name='campaign-resume'),
+    path('<int:pk>/start/', CampaignViewSet.as_view({'post': 'start_campaign'}), name='campaign-start'),
+    path('<int:pk>/pause/', CampaignViewSet.as_view({'post': 'pause_campaign'}), name='campaign-pause'),
+    path('<int:pk>/resume/', CampaignViewSet.as_view({'post': 'resume_campaign'}), name='campaign-resume'),
     
     # Campaign Playlist & Summary
-    path('<int:pk>/playlist/', CampaignManagementViewSet.as_view({'get': 'playlist'}), name='campaign-playlist'),
-    path('<int:pk>/summary/', CampaignManagementViewSet.as_view({'get': 'summary'}), name='campaign-summary'),
-    path('<int:pk>/contacts-responses/', CampaignManagementViewSet.as_view({'get': 'contacts_with_responses'}), name='campaign-contacts-responses'),
+    path('<int:pk>/playlist/', CampaignViewSet.as_view({'get': 'playlist'}), name='campaign-playlist'),
+    path('<int:pk>/summary/', CampaignViewSet.as_view({'get': 'summary'}), name='campaign-summary'),
+    path('<int:pk>/contacts-responses/', CampaignViewSet.as_view({'get': 'contacts_with_responses'}), name='campaign-contacts-responses'),
     
     # =========================================================================
     # CAMPAIGN ANALYTICS & DASHBOARD (SOURCE UNIQUE - NOUVEAUX ENDPOINTS)
     # =========================================================================
     
     # Dashboard complet (service analytics)
-    path('<int:pk>/dashboard/', CampaignManagementViewSet.as_view({'get': 'dashboard'}), name='campaign-dashboard'),
+    path('<int:pk>/dashboard/', CampaignViewSet.as_view({'get': 'dashboard'}), name='campaign-dashboard'),
     
     # Dashboard rapide (helpers modèle)
-    path('<int:pk>/dashboard-summary/', CampaignManagementViewSet.as_view({'get': 'dashboard_summary'}), name='campaign-dashboard-summary'),
+    path('<int:pk>/dashboard-summary/', CampaignViewSet.as_view({'get': 'dashboard_summary'}), name='campaign-dashboard-summary'),
     
     # Analytics spécialisés
-    path('<int:pk>/objectives-progress/', CampaignManagementViewSet.as_view({'get': 'objectives_progress'}), name='campaign-objectives-progress'),
-    path('<int:pk>/conversion-analysis/', CampaignManagementViewSet.as_view({'get': 'conversion_analysis'}), name='campaign-conversion-analysis'),
+    path('<int:pk>/objectives-progress/', CampaignViewSet.as_view({'get': 'objectives_progress'}), name='campaign-objectives-progress'),
+    path('<int:pk>/conversion-analysis/', CampaignViewSet.as_view({'get': 'conversion_analysis'}), name='campaign-conversion-analysis'),
     
     # Métriques simples et maintenance
-    path('<int:pk>/metrics/', CampaignManagementViewSet.as_view({'get': 'metrics'}), name='campaign-metrics'),
-    path('<int:pk>/integrity-check/', CampaignManagementViewSet.as_view({'post': 'integrity_check'}), name='campaign-integrity-check'),
-    path('<int:pk>/cleanup-tracking/', CampaignManagementViewSet.as_view({'post': 'cleanup_tracking'}), name='campaign-cleanup-tracking'),
+    path('<int:pk>/metrics/', CampaignViewSet.as_view({'get': 'metrics'}), name='campaign-metrics'),
+    path('<int:pk>/integrity-check/', CampaignViewSet.as_view({'post': 'integrity_check'}), name='campaign-integrity-check'),
+    path('<int:pk>/cleanup-tracking/', CampaignViewSet.as_view({'post': 'cleanup_tracking'}), name='campaign-cleanup-tracking'),
     
     # =========================================================================
     # ACCOUNT/CONTACT MANAGEMENT
     # =========================================================================
     
-    path('account-campaigns/', CampaignManagementViewSet.as_view({'get': 'account_campaigns'}), name='account-campaigns'),
-    path('<int:pk>/remove-account/', CampaignManagementViewSet.as_view({'post': 'remove_account'}), name='campaign-remove-account'),
-    path('<int:pk>/remove-contact/', CampaignManagementViewSet.as_view({'post': 'remove_contact'}), name='campaign-remove-contact'),
+    path('account-campaigns/', CampaignViewSet.as_view({'get': 'account_campaigns'}), name='account-campaigns'),
+    path('<int:pk>/remove-account/', CampaignViewSet.as_view({'post': 'remove_account'}), name='campaign-remove-account'),
+    path('<int:pk>/remove-contact/', CampaignViewSet.as_view({'post': 'remove_contact'}), name='campaign-remove-contact'),
     
     # =========================================================================
     # ACTIVITY MANAGEMENT
     # =========================================================================
     
-    path('<int:pk>/activities/', CampaignManagementViewSet.as_view({'get': 'activities'}), name='campaign-activities'),
-    path('<int:pk>/account-activities/', CampaignManagementViewSet.as_view({'get': 'account_activities'}), name='campaign-account-activities'),
-    path('<int:pk>/contact-activities/', CampaignManagementViewSet.as_view({'get': 'contact_activities'}), name='campaign-contact-activities'),
-    path('<int:pk>/add-manual-activity/', CampaignManagementViewSet.as_view({'post': 'add_manual_activity'}), name='campaign-add-manual-activity'),
+    path('<int:pk>/activities/', CampaignViewSet.as_view({'get': 'activities'}), name='campaign-activities'),
+    path('<int:pk>/account-activities/', CampaignViewSet.as_view({'get': 'account_activities'}), name='campaign-account-activities'),
+    path('<int:pk>/contact-activities/', CampaignViewSet.as_view({'get': 'contact_activities'}), name='campaign-contact-activities'),
+    path('<int:pk>/add-manual-activity/', CampaignViewSet.as_view({'post': 'add_manual_activity'}), name='campaign-add-manual-activity'),
     
     # =========================================================================
     # BASIC CAMPAIGN CRUD (Interface alternative simplifiée)
@@ -118,59 +117,89 @@ urlpatterns = [
 # =========================================================================
 
 """
-ARCHITECTURE CLARIFIÉE - SOURCE UNIQUE POUR DASHBOARD :
+UNIFIED API ENDPOINTS (après consolidation) :
 
-📊 DASHBOARD & ANALYTICS (CampaignManagementViewSet - SOURCE UNIQUE) :
-GET    /campaigns/{id}/dashboard/                     - 🎯 Dashboard complet (service analytics)
-GET    /campaigns/{id}/dashboard-summary/             - 🎯 Dashboard rapide (helpers modèle)  
-GET    /campaigns/{id}/objectives-progress/           - 🎯 Focus objectifs avec détails
-GET    /campaigns/{id}/conversion-analysis/           - 🎯 Focus taux de conversion
-GET    /campaigns/{id}/metrics/                       - 🎯 Métriques brutes tracking
-POST   /campaigns/{id}/integrity-check/               - 🔧 Vérification intégrité données
-POST   /campaigns/{id}/cleanup-tracking/              - 🔧 Nettoyage données invalides
+=== CAMPAIGN CRUD ===
+GET    /campaigns/                          # List campaigns
+POST   /campaigns/                          # Create campaign  
+GET    /campaigns/{id}/                     # Get campaign details
+PUT    /campaigns/{id}/                     # Update campaign
+DELETE /campaigns/{id}/                     # Delete campaign
 
-🏗️ CAMPAIGN MANAGEMENT (CampaignManagementViewSet - GESTION PRINCIPALE) :
-POST   /campaigns/create-with-targets/                - Création campagne + targets + activités
-POST   /campaigns/{id}/start/                         - Démarrer campagne
-GET    /campaigns/{id}/playlist/                      - Playlist activités à faire
-GET    /campaigns/{id}/summary/                       - Résumé progression activités
-POST   /campaigns/{id}/pause/                         - Pause campagne
-POST   /campaigns/{id}/resume/                        - Reprendre campagne
+=== CAMPAIGN CREATION ===
+POST   /campaigns/create_with_targets/      # Create campaign with targets & activities
 
-📋 OBJECTIVES CRUD UNIQUEMENT (CampaignObjectiveViewSet - PAS D'ANALYTICS) :
-GET    /campaigns/objectives/                         - Liste objectifs
-POST   /campaigns/objectives/                         - Créer objectif
-GET    /campaigns/objectives/{id}/                    - Détail objectif
-PUT    /campaigns/objectives/{id}/                    - Modifier objectif
-DELETE /campaigns/objectives/{id}/                    - Supprimer objectif
-POST   /campaigns/objectives/{id}/set-as-primary/     - Définir comme primaire
-POST   /campaigns/objectives/{id}/sync-progress/      - Resynchroniser progression
+=== CAMPAIGN LIFECYCLE ===
+POST   /campaigns/{id}/start_campaign/      # Start campaign
+POST   /campaigns/{id}/pause_campaign/      # Pause campaign  
+POST   /campaigns/{id}/resume_campaign/     # Resume campaign
 
-🎯 TARGETS CRUD (CampaignTargetViewSet) :
-GET    /campaigns/targets/                            - Liste targets
-POST   /campaigns/targets/                            - Créer target
-POST   /campaigns/targets/bulk-create/                - Créer plusieurs targets
+=== CAMPAIGN EXECUTION ===
+GET    /campaigns/{id}/playlist/            # Get campaign playlist
+GET    /campaigns/{id}/contacts_with_responses/  # Get contacts with responses
+POST   /campaigns/{id}/add-manual-activity/ # Add manual activity
 
-👥 STAKEHOLDERS CRUD (CampaignStakeholderViewSet) :
-GET    /campaigns/stakeholders/                       - Liste stakeholders
-POST   /campaigns/stakeholders/                       - Créer stakeholder
-POST   /campaigns/stakeholders/bulk-add/              - Ajouter plusieurs stakeholders
+=== CAMPAIGN MANAGEMENT ===
+POST   /campaigns/{id}/remove_account/      # Remove account from campaign
+POST   /campaigns/{id}/remove_contact/      # Remove contact from campaign
 
-✅ ACTIVITY RESULTS (ActivityResultViewSet) :
-POST   /campaigns/activities/{id}/complete/           - Compléter activité avec résultat
-POST   /campaigns/activities/{id}/add-response/       - Ajouter réponse email/LinkedIn
-GET    /campaigns/activities/next-step-options/       - Options next steps disponibles
-POST   /campaigns/activities/next-step-process/       - Traiter choix next step
+=== CAMPAIGN ANALYTICS ===
+GET    /campaigns/{id}/summary/             # Campaign summary (detailed)
+GET    /campaigns/{id}/activities/          # All campaign activities
+GET    /campaigns/{id}/account_activities/  # Activities for specific account
+GET    /campaigns/{id}/contact_activities/  # Activities for specific contact
 
-PRINCIPE ARCHITECTURAL :
-- 🎯 Dashboard/Analytics → CampaignManagementViewSet (SOURCE UNIQUE)
-- 📋 CRUD Objectifs → CampaignObjectiveViewSet (CRUD UNIQUEMENT)  
-- 🏗️ Gestion Campagne → CampaignManagementViewSet (PRINCIPAL)
-- ✅ Résultats → ActivityResultViewSet (SPÉCIALISÉ)
+=== CAMPAIGN DASHBOARD ===
+GET    /campaigns/{id}/dashboard/           # Full dashboard data
+GET    /campaigns/{id}/dashboard_summary/   # Simple dashboard summary  
+GET    /campaigns/{id}/metrics/             # Raw metrics only
 
-EXEMPLES D'UTILISATION FRONTEND :
-- Afficher dashboard → GET /campaigns/123/dashboard/
-- Modifier objectif → PUT /campaigns/objectives/456/
-- Voir progression objectifs → GET /campaigns/123/objectives-progress/
-- Démarrer campagne → POST /campaigns/123/start/
+=== CAMPAIGN UTILITIES ===
+GET    /campaigns/account_campaigns/        # Campaigns for specific account
+
+=== CAMPAIGN OBJECTIVES ===
+GET    /campaign-objectives/               # List objectives
+POST   /campaign-objectives/               # Create objective
+GET    /campaign-objectives/{id}/          # Get objective
+PUT    /campaign-objectives/{id}/          # Update objective  
+DELETE /campaign-objectives/{id}/          # Delete objective
+POST   /campaign-objectives/{id}/set_as_primary/  # Set as primary
+POST   /campaign-objectives/{id}/sync_progress/   # Sync progress
+
+=== CAMPAIGN STAKEHOLDERS ===
+GET    /campaign-stakeholders/             # List stakeholders
+POST   /campaign-stakeholders/             # Create stakeholder
+GET    /campaign-stakeholders/{id}/        # Get stakeholder
+PUT    /campaign-stakeholders/{id}/        # Update stakeholder
+DELETE /campaign-stakeholders/{id}/        # Delete stakeholder
+POST   /campaign-stakeholders/bulk-add/    # Bulk add stakeholders
+POST   /campaign-stakeholders/bulk-remove/ # Bulk remove stakeholders
+
+=== CAMPAIGN TARGETS ===  
+GET    /campaign-targets/                  # List targets
+POST   /campaign-targets/                  # Create target
+GET    /campaign-targets/{id}/             # Get target
+PUT    /campaign-targets/{id}/             # Update target
+DELETE /campaign-targets/{id}/             # Delete target
+POST   /campaign-targets/{id}/update_status/      # Update target status
+POST   /campaign-targets/bulk_create/      # Bulk create targets
+
+=== ACTIVITY RESULTS ===
+POST   /activity-results/{id}/complete_activity/       # Complete activity
+GET    /activity-results/get_next_step_options/        # Get next step options  
+POST   /activity-results/process_next_step_choice/     # Process next step choice
+POST   /activity-results/{id}/add_email_response/      # Add email response
+
+=== QUERY PARAMETERS ===
+?my_campaigns=true          # Filter to user's campaigns
+?status=ACTIVE              # Filter by campaign status
+?campaign_type=HUNTING      # Filter by campaign type
+?sequence_type=CHASING      # Filter by sequence type
+?owner=123                  # Filter by owner ID
+?stakeholder_role=EXECUTOR  # Filter by stakeholder role
+?start_after=2025-01-01     # Filter by start date after
+?start_before=2025-12-31    # Filter by start date before
+?limit=20                   # Limit results (for playlist, etc.)
+?include=objectives,tracking # Dashboard sections to include
+?format=summary|detailed    # Dashboard format type
 """

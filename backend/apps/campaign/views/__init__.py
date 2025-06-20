@@ -14,14 +14,8 @@ ViewSet Architecture:
 - Consistent error handling and response formatting
 """
 
-# Management ViewSets (Complex Operations)
-from .campaign_management_views import (
-    CampaignManagementViewSet,
-    ActivityResultViewSet
-)
-
 # Standard CRUD ViewSets
-from .campaign_views import CampaignViewSet
+from .campaign_views import CampaignViewSet, ActivityResultViewSet
 from .campaign_objective_views import CampaignObjectiveViewSet
 from .campaign_stakeholder_views import CampaignStakeholderViewSet
 from .campaign_target_views import CampaignTargetViewSet

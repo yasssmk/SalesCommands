@@ -1,29 +1,28 @@
-# apps/campaign/services/campaign_manager.py
-from typing import Dict, List, Optional
+# apps/campaign/services/campaign_core_service.py
+from typing import List, Dict, Optional
 from datetime import date
+from django.db import transaction
 from rest_framework.response import Response
+from apps.activities.models import Activity
 from apps.campaign.models import Campaign
 from apps.accounts.models import Contact, Account
-from apps.activities.models import Activity
-from apps.campaign.services.campaign_creation_service import CampaignCreationService
-from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
-from .campaign_core import CampaignCoreService
-from django.db import transaction
 from apps.campaign.utils.standardized_responses import (
     StandardizedSuccessResponse, 
-    CampaignResponseBuilder, 
-    CampaignSuccessMessages
+    CampaignResponseBuilder
 )
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages
-from apps.campaign.config.variables import FIELD_NAMES, OPERATION_MESSAGES
+from apps.campaign.config.variables import (
+    DEFAULT_PLAYLIST_LIMIT,
+    OPERATION_MESSAGES,
+    FIELD_NAMES
+)
 
 
-class CampaignManager:
+class CampaignCoreService:
     """
-    Main orchestrator for campaign operations - delegates to specialized services
-    Provides unified interface while maintaining separation of concerns
-    Now returns standardized Response objects with proper error handling
+    Service unifié pour toutes les opérations de campagne
+    Remplace CampaignManager + CampaignCoreService pour éliminer la délégation inutile
     """
     
     # ===== CAMPAIGN CREATION & LIFECYCLE =====
@@ -35,9 +34,11 @@ class CampaignManager:
                                     target_leads: List[int] = None,
                                     target_opportunities: List[int] = None,
                                     targeting_stats: Dict = None) -> Response:
-        """Create campaign with activities - delegates to CampaignCreationService"""
+        """Create campaign with activities - délègue au service spécialisé"""
         try:
-            # CampaignCreationService now returns Response directly
+            # Import local pour éviter circularité
+            from .campaign_creation_service import CampaignCreationService
+            
             return CampaignCreationService.create_campaign_with_activities(
                 campaign_data=campaign_data,
                 target_accounts=target_accounts,
@@ -47,7 +48,6 @@ class CampaignManager:
                 targeting_stats=targeting_stats
             )
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -56,12 +56,11 @@ class CampaignManager:
     
     @classmethod
     def start_campaign(cls, campaign: Campaign) -> Response:
-        """Start campaign - delegates to CampaignCreationService"""
+        """Start campaign - délègue au service spécialisé"""
         try:
-            # CampaignCreationService now returns Response directly
+            from .campaign_creation_service import CampaignCreationService
             return CampaignCreationService.start_campaign(campaign)
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -70,12 +69,11 @@ class CampaignManager:
     
     @classmethod
     def pause_campaign(cls, campaign: Campaign, pause_until: date = None) -> Response:
-        """Pause campaign - delegates to CampaignCreationService"""
+        """Pause campaign - délègue au service spécialisé"""
         try:
-            # CampaignCreationService now returns Response directly
+            from .campaign_creation_service import CampaignCreationService
             return CampaignCreationService.pause_campaign(campaign, pause_until)
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -84,12 +82,11 @@ class CampaignManager:
     
     @classmethod
     def resume_campaign(cls, campaign: Campaign) -> Response:
-        """Resume campaign - delegates to CampaignCreationService"""
+        """Resume campaign - délègue au service spécialisé"""
         try:
-            # CampaignCreationService now returns Response directly
+            from .campaign_creation_service import CampaignCreationService
             return CampaignCreationService.resume_campaign(campaign)
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -101,82 +98,82 @@ class CampaignManager:
     @classmethod
     def get_campaign_playlist(cls, campaign: Campaign, limit: int = None, 
                              current_activity_type: str = None) -> Response:
-        """Get campaign playlist - returns standardized response"""
+        """Get campaign playlist - logique centralisée sans circularité"""
         try:
-            # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignExecutionService
-            return CampaignCoreService.get_campaign_playlist_internal(
-                campaign=campaign,
-                limit=limit,
-                current_activity_type=current_activity_type
-            )
-        except StandardizedValidationError:
-            # Re-raise validation errors
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                CampaignErrorMessages.PLAYLIST_EMPTY
-            )
-    
-    @classmethod
-    def remove_contact_from_campaign(cls, campaign: Campaign, contact: Contact, 
-                                   notes: str = None) -> Response:
-        """Remove contact - returns standardized response"""
-        try:
-            return CampaignCoreService.remove_contact_from_campaign_internal(
-                campaign=campaign,
-                contact=contact,
-                notes=notes
-            )
+            if limit is None:
+                limit = DEFAULT_PLAYLIST_LIMIT
+            
+            # Import local pour éviter la circularité
+            from .campaign_queue_service import CampaignQueueService
+            
+            if campaign.sequence_type:
+                # Pour campagnes avec séquence : queue d'activités
+                return CampaignQueueService.get_active_activities_for_campaign(
+                    campaign=campaign,
+                    limit=limit,
+                    prefetch_relations=True,
+                    current_activity_type=current_activity_type
+                )
+            else:
+                # Pour campagnes sans séquence : queue de contacts
+                return CampaignQueueService.get_prioritized_contacts_for_campaign(
+                    campaign=campaign,
+                    limit=limit
+                )
+                
         except StandardizedValidationError:
             raise
         except Exception as e:
             raise StandardizedValidationError(
-                CampaignErrorMessages.CAMPAIGN_CONTACT_MAPPING_FAILED
+                CampaignErrorMessages.QUEUE_OPTIMIZATION_FAILED
             )
-    
-    @classmethod
-    def remove_account_from_campaign(cls, campaign: Campaign, account: Account, 
-                                   notes: str = None) -> Response:
-        """Remove account - returns standardized response"""
-        try:
-            return CampaignCoreService.remove_account_from_campaign_internal(
-                campaign=campaign,
-                account=account,
-                notes=notes
-            )
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
-            )
-    
-    @classmethod
-    def get_campaign_contacts_with_responses(cls, campaign: Campaign) -> Response:
-        """Get contacts with responses - returns standardized response"""
-        try:
-            return CampaignCoreService.get_campaign_contacts_with_responses_internal(campaign)
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED
-            )
-    
-    # ===== ACTIVITY MANAGEMENT =====
     
     @classmethod
     def complete_activity(cls, activity: Activity, result: str, 
                          notes: str = None, **kwargs) -> Response:
-        """
-        Complete an activity and process the result with updated playlist
-        """
+        """Complete activity and get next playlist"""
         try:
-            return CampaignCoreService.complete_activity_internal(
+            # Import local pour éviter la circularité
+            from .campaign_result_service import CampaignResultService
+            
+            # Traiter le résultat
+            result_response = CampaignResultService.process_activity_result(
                 activity=activity,
                 result=result,
                 notes=notes,
                 **kwargs
+            )
+            
+            # Récupérer les prochaines activités
+            next_activities = []
+            if hasattr(activity, 'campaign_info') and activity.campaign_info:
+                campaign = activity.campaign_info.campaign
+                try:
+                    playlist_response = cls.get_campaign_playlist(
+                        campaign=campaign, 
+                        limit=10
+                    )
+                    
+                    # Extraire les données de la réponse
+                    if hasattr(playlist_response, 'data') and 'data' in playlist_response.data:
+                        playlist_data = playlist_response.data['data']
+                        next_activities = playlist_data.get('items', [])
+                        
+                except Exception:
+                    # Si récupération playlist échoue, continuer sans (non-critique)
+                    pass
+            
+            # Extraire les données du résultat
+            result_info = {}
+            if hasattr(result_response, 'data') and 'data' in result_response.data:
+                result_info = result_response.data['data']
+            
+            # Construire la réponse finale
+            return CampaignResponseBuilder.activity_completed(
+                result_action=result_info.get('action', 'completed'),
+                activity_id=activity.id,
+                next_activities=next_activities,
+                additional_info=result_info
             )
             
         except StandardizedValidationError:
@@ -186,16 +183,206 @@ class CampaignManager:
                 CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
             )
     
+    @classmethod
+    def remove_contact_from_campaign(cls, campaign: Campaign, contact: Contact, 
+                                   notes: str = None) -> Response:
+        """Remove contact from campaign"""
+        try:
+            with transaction.atomic():
+                activities = Activity.objects.filter(
+                    campaign_info__campaign=campaign,
+                    contacts=contact,
+                    status=Activity.Status.PLANNED
+                )
+                
+                activities_count = activities.count()
+                activities.update(
+                    status=Activity.Status.CANCELLED, 
+                    outcome_notes=f"Manually removed from campaign: {notes}" if notes else "Manually removed from campaign"
+                )
+                
+                # Import local pour éviter circularité
+                from apps.campaign.models import CampaignTarget
+                campaign_target = CampaignTarget.objects.filter(
+                    campaign=campaign, contact=contact
+                ).first()
+                
+                status_update_result = {'status_updated': False}
+                if campaign_target:
+                    # Import de la méthode centralisée
+                    from .campaign_result_service import CampaignResultService
+                    status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
+                        campaign_target, 'not_interested'  # Suppression manuelle = pas intéressé
+                    )
+                
+                data = {
+                    'campaign_id': campaign.id,
+                    'campaign_name': campaign.name,
+                    'contact_id': contact.id,
+                    'contact_name': f"{contact.first_name} {contact.last_name}",
+                    'activities_cancelled': activities_count,
+                    'action': 'contact_removed',
+                    'target_status_updated': status_update_result.get('status_updated', False),
+                    'old_target_status': status_update_result.get('old_status'),
+                    'new_target_status': status_update_result.get('new_status')
+                }
+                
+                meta = {
+                    'operation': 'contact_removal',
+                    'activities_affected': activities_count,
+                    'target_updated': bool(campaign_target),
+                    'status_update_method': 'centralized'
+                }
+                
+                return StandardizedSuccessResponse.success(
+                    message=OPERATION_MESSAGES['CONTACT_REMOVED'],
+                    data=data,
+                    meta=meta
+                )
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_CONTACT_MAPPING_FAILED
+            )
+
+    @classmethod
+    def remove_account_from_campaign(cls, campaign: Campaign, account: Account, 
+                                   notes: str = None) -> Response:
+        """Remove account from campaign"""
+        try:
+            with transaction.atomic():
+                activities = Activity.objects.filter(
+                    campaign_info__campaign=campaign,
+                    account=account,
+                    status=Activity.Status.PLANNED
+                )
+                
+                activities_count = activities.count()
+                activities.update(
+                    status=Activity.Status.CANCELLED, 
+                    outcome_notes=f"Account removed from campaign: {notes}" if notes else "Account removed from campaign"
+                )
+                
+                # Import local pour éviter circularité
+                from apps.campaign.models import CampaignTarget
+                campaign_target = CampaignTarget.objects.filter(
+                    campaign=campaign, account=account
+                ).first()
+                
+                if campaign_target:
+                    campaign_target.status = CampaignTarget.Status.STOPPED
+                    campaign_target.save()
+                
+                data = {
+                    'campaign_id': campaign.id,
+                    'campaign_name': campaign.name,
+                    'account_id': account.id,
+                    'account_name': account.company_name,
+                    'activities_cancelled': activities_count,
+                    'action': 'account_removed'
+                }
+                
+                meta = {
+                    'operation': 'account_removal',
+                    'activities_affected': activities_count,
+                    'target_updated': bool(campaign_target)
+                }
+                
+                return StandardizedSuccessResponse.success(
+                    message=OPERATION_MESSAGES['ACCOUNT_REMOVED'],
+                    data=data,
+                    meta=meta
+                )
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
+            )
+
+    @classmethod
+    def get_campaign_contacts_with_responses(cls, campaign: Campaign) -> Response:
+        """Get contacts with potential responses"""
+        try:
+            email_linkedin_activities = Activity.objects.filter(
+                campaign_info__campaign=campaign,
+                activity_type__in=[Activity.ActivityType.EMAIL, Activity.ActivityType.LINKEDIN],
+                status=Activity.Status.COMPLETED
+            ).select_related('account').prefetch_related('contacts')
+            
+            contacts_with_activities = {}
+            
+            for activity in email_linkedin_activities:
+                for contact in activity.contacts.all():
+                    contact_key = contact.id
+                    
+                    if contact_key not in contacts_with_activities:
+                        contacts_with_activities[contact_key] = {
+                            'contact': contact,
+                            'account': activity.account,
+                            'activities': []
+                        }
+                    
+                    contacts_with_activities[contact_key]['activities'].append({
+                        'id': activity.id,
+                        'type': activity.activity_type,
+                        'title': activity.title,
+                        'completed_at': activity.completed_at,
+                        'outcome_notes': activity.outcome_notes,
+                        'can_add_response': True
+                    })
+            
+            formatted_contacts = []
+            for item in contacts_with_activities.values():
+                contact = item['contact']
+                account = item['account']
+                
+                formatted_contacts.append({
+                    'contact_id': contact.id,
+                    'contact_name': f"{contact.first_name} {contact.last_name}",
+                    'contact_email': contact.email,
+                    'account_id': account.id,
+                    'account_name': account.company_name,
+                    'activities': item['activities']
+                })
+            
+            data = {
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'contacts': formatted_contacts
+            }
+            
+            meta = {
+                'operation': 'contacts_with_responses',
+                'contacts_count': len(formatted_contacts),
+                'total_activities_processed': email_linkedin_activities.count()
+            }
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Retrieved {len(formatted_contacts)} contacts with potential responses",
+                data=data,
+                meta=meta
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED
+            )
+    
     # ===== ANALYTICS & REPORTING =====
     
     @classmethod
     def get_campaign_summary(cls, campaign: Campaign) -> Response:
-        """Get campaign summary - returns standardized response"""
+        """Get campaign summary - délègue au service spécialisé"""
         try:
-            # CampaignAnalyticsService now returns Response directly
+            from .campaign_analytics_service import CampaignAnalyticsService
             return CampaignAnalyticsService.get_campaign_summary(campaign)
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -204,15 +391,14 @@ class CampaignManager:
     
     @classmethod
     def get_campaign_activities(cls, campaign: Campaign, status_filter: List[str] = None) -> Response:
-        """Get campaign activities - returns standardized response"""
+        """Get campaign activities - délègue au service spécialisé"""
         try:
-            # CampaignAnalyticsService now returns Response directly
+            from .campaign_analytics_service import CampaignAnalyticsService
             return CampaignAnalyticsService.get_campaign_activities(
                 campaign=campaign,
                 status_filter=status_filter
             )
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -222,16 +408,15 @@ class CampaignManager:
     @classmethod
     def get_account_activities_in_campaign(cls, campaign: Campaign, account: Account, 
                                         status_filter: List[str] = None) -> Response:
-        """Get account activities - returns standardized response"""
+        """Get account activities - délègue au service spécialisé"""
         try:
-            # CampaignAnalyticsService now returns Response directly
+            from .campaign_analytics_service import CampaignAnalyticsService
             return CampaignAnalyticsService.get_account_activities_in_campaign(
                 campaign=campaign,
                 account=account,
                 status_filter=status_filter
             )
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -241,16 +426,15 @@ class CampaignManager:
     @classmethod
     def get_contact_activities_in_campaign(cls, campaign: Campaign, contact: Contact, 
                                         status_filter: List[str] = None) -> Response:
-        """Get contact activities - returns standardized response"""
+        """Get contact activities - délègue au service spécialisé"""
         try:
-            # CampaignAnalyticsService now returns Response directly
+            from .campaign_analytics_service import CampaignAnalyticsService
             return CampaignAnalyticsService.get_contact_activities_in_campaign(
                 campaign=campaign,
                 contact=contact,
                 status_filter=status_filter
             )
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -259,12 +443,11 @@ class CampaignManager:
     
     @classmethod
     def get_campaign_performance_metrics(cls, campaign: Campaign) -> Response:
-        """Get performance metrics - returns standardized response"""
+        """Get performance metrics - délègue au service spécialisé"""
         try:
-            # CampaignAnalyticsService now returns Response directly
+            from .campaign_analytics_service import CampaignAnalyticsService
             return CampaignAnalyticsService.get_campaign_performance_metrics(campaign)
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
@@ -277,9 +460,7 @@ class CampaignManager:
     def add_manual_activity_to_campaign(cls, campaign: Campaign, contact: Contact, 
                                       activity_type: str, result: str, notes: str = None, 
                                       user=None, **kwargs) -> Response:
-        """
-        Add manual activity - RÉÉCRIRE directement sans import CampaignExecutionService
-        """
+        """Add manual activity for non-sequence campaigns"""
         try:
             # Verify this is a non-sequence campaign
             if campaign.sequence_type:
@@ -346,8 +527,8 @@ class CampaignManager:
                     client_id=campaign.client_id
                 )
                 
-                # MODIFIER : Utiliser CampaignCoreService pour traiter le résultat
-                result_response = CampaignCoreService.complete_activity_internal(
+                # Process result using unified method
+                result_response = cls.complete_activity(
                     activity=activity,
                     result=result,
                     notes=notes,
@@ -359,10 +540,10 @@ class CampaignManager:
                 if hasattr(result_response, 'data') and 'data' in result_response.data:
                     result_info = result_response.data['data']
             
-            # Get updated playlist using CampaignCoreService
+            # Get updated playlist
             next_activities = []
             try:
-                updated_playlist_response = CampaignCoreService.get_campaign_playlist_internal(
+                updated_playlist_response = cls.get_campaign_playlist(
                     campaign=campaign, 
                     limit=10
                 )
@@ -382,10 +563,8 @@ class CampaignManager:
                 'playlist_updated': len(next_activities) > 0
             }
 
-            message = OPERATION_MESSAGES['ACTIVITY_COMPLETED']
-            
             return StandardizedSuccessResponse.success(
-                message=message,
+                message=OPERATION_MESSAGES['ACTIVITY_COMPLETED'],
                 data=enhanced_data,
                 meta=meta
             )
@@ -402,9 +581,7 @@ class CampaignManager:
     @classmethod
     def bulk_remove_contacts(cls, campaign: Campaign, contact_ids: List[int], 
                            notes: str = None) -> Response:
-        """
-        Bulk remove multiple contacts from campaign
-        """
+        """Bulk remove multiple contacts from campaign"""
         try:
             from apps.accounts.models import Contact
             
@@ -440,7 +617,7 @@ class CampaignManager:
                         'error': str(e)
                     })
             
-            # Use bulk operation response with operation message from config
+            # Use bulk operation response
             message = OPERATION_MESSAGES['BULK_OPERATION_COMPLETED'].format(
                 successful=len(successful),
                 total=len(contact_ids)
@@ -454,7 +631,6 @@ class CampaignManager:
             )
             
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(

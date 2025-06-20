@@ -182,7 +182,7 @@ class CampaignCreationService:
             campaign.save()
             
             # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignQueueService
-            from .campaign_core import CampaignCoreService
+            from .campaign_core_service import CampaignCoreService
             
             # Get the initial active activities using CampaignCoreService
             try:
@@ -343,7 +343,7 @@ class CampaignCreationService:
             campaign.save()
             
             # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignExecutionService
-            from .campaign_core import CampaignCoreService
+            from .campaign_core_service import CampaignCoreService
             
             # Get updated playlist using CampaignCoreService
             try:
@@ -510,3 +510,69 @@ class CampaignCreationService:
                     continue
         
         return targets_created
+
+    @classmethod
+    def create_campaign_with_objective(cls, campaign_data: Dict, objective_data: Dict = None) -> Campaign:
+        """
+        Create campaign with optional objective
+        Extracted from CampaignSerializer to separate business logic from validation
+        
+        Args:
+            campaign_data: Validated campaign data
+            objective_data: Optional objective data to create with campaign
+            
+        Returns:
+            Campaign: Created campaign instance
+        """
+        try:
+            with transaction.atomic():
+                # Create campaign entity
+                campaign = cls._create_campaign_entity(campaign_data)
+                
+                # Create primary objective if provided
+                if objective_data:
+                    objective = cls._create_primary_objective(campaign, objective_data)
+                    
+                return campaign
+                
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_SEQUENCE_GENERATION_FAILED.format(
+                    reason=f"Campaign creation failed: {str(e)}"
+                )
+            )
+
+    @classmethod
+    def _create_campaign_entity(cls, campaign_data: Dict) -> Campaign:
+        """Create the campaign entity with validated data"""
+        try:
+            # Import local pour éviter circularité
+            from apps.campaign.models import Campaign
+            
+            campaign = Campaign.objects.create(**campaign_data)
+            return campaign
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                f"Failed to create campaign: {str(e)}"
+            )
+
+    @classmethod  
+    def _create_primary_objective(cls, campaign: Campaign, objective_data: Dict):
+        """Create primary objective for campaign"""
+        try:
+            # Import local pour éviter circularité
+            from apps.campaign.models.campaign_objective import CampaignObjective
+            
+            # Set as primary and link to campaign
+            objective_data['campaign'] = campaign
+            objective_data['is_primary'] = True
+            objective_data['client_id'] = campaign.client_id
+            
+            objective = CampaignObjective.objects.create(**objective_data)
+            return objective
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                f"Failed to create campaign objective: {str(e)}"
+            )

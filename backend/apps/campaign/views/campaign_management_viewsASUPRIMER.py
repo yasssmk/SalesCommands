@@ -13,7 +13,7 @@ from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from apps.campaign.models import Campaign
 from apps.campaign.serializers import CampaignSerializer
-from apps.campaign.services.campaign_manager import CampaignManager
+from apps.campaign.services.campaign_core_service import CampaignCoreService
 from apps.campaign.services.campaign_result_service import CampaignResultService
 from apps.campaign.models.campaign_target import CampaignTarget
 from apps.campaign.services.campaign_activity_service import CampaignActivityService
@@ -144,8 +144,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
             campaign_data['client_id'] = client_id
             campaign_data['owner_id'] = request.user.id
             
-            # Create campaign and activities - CampaignManager now returns Response directly
-            return CampaignManager.create_campaign_with_activities(
+            # Create campaign and activities - CampaignCoreService now returns Response directly
+            return CampaignCoreService.create_campaign_with_activities(
                 campaign_data=campaign_data,
                 target_accounts=target_result['target_accounts'],
                 target_contacts=target_result['target_contacts'],
@@ -174,8 +174,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
         # Validate ownership
         campaign = self.get_validated_campaign(require_ownership=True)
         
-        # CampaignManager.start_campaign now returns Response directly
-        return CampaignManager.start_campaign(campaign)
+        # CampaignCoreService.start_campaign now returns Response directly
+        return CampaignCoreService.start_campaign(campaign)
     
     @action(detail=True, methods=['get'])
     def playlist(self, request, pk=None):
@@ -189,8 +189,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
         
         limit = int(request.query_params.get(QUERY_PARAMS['LIMIT'], DEFAULT_PLAYLIST_LIMIT))
         
-        # CampaignManager.get_campaign_playlist now returns Response directly
-        return CampaignManager.get_campaign_playlist(campaign, limit=limit)
+        # CampaignCoreService.get_campaign_playlist now returns Response directly
+        return CampaignCoreService.get_campaign_playlist(campaign, limit=limit)
     
     @action(detail=True, methods=['get'])
     def summary(self, request, pk=None):
@@ -203,8 +203,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
             check_state=False
         )
         
-        # CampaignManager.get_campaign_summary now returns Response directly
-        return CampaignManager.get_campaign_summary(campaign)
+        # CampaignCoreService.get_campaign_summary now returns Response directly
+        return CampaignCoreService.get_campaign_summary(campaign)
     
     @action(detail=True, methods=['post'])
     def pause_campaign(self, request, pk=None):
@@ -223,8 +223,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
             from datetime import datetime
             pause_until = datetime.strptime(pause_until, '%Y-%m-%d').date()
         
-        # CampaignManager.pause_campaign now returns Response directly
-        return CampaignManager.pause_campaign(campaign, pause_until=pause_until)
+        # CampaignCoreService.pause_campaign now returns Response directly
+        return CampaignCoreService.pause_campaign(campaign, pause_until=pause_until)
     
     @action(detail=True, methods=['post'])
     def resume_campaign(self, request, pk=None):
@@ -233,8 +233,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
         """
         campaign = self.get_validated_campaign(require_ownership=True)
         
-        # CampaignManager.resume_campaign now returns Response directly
-        return CampaignManager.resume_campaign(campaign)
+        # CampaignCoreService.resume_campaign now returns Response directly
+        return CampaignCoreService.resume_campaign(campaign)
     
     @action(detail=True, methods=['get'])
     def contacts_with_responses(self, request, pk=None):
@@ -247,8 +247,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
             check_state=False
         )
         
-        # CampaignManager.get_campaign_contacts_with_responses now returns Response directly
-        return CampaignManager.get_campaign_contacts_with_responses(campaign)
+        # CampaignCoreService.get_campaign_contacts_with_responses now returns Response directly
+        return CampaignCoreService.get_campaign_contacts_with_responses(campaign)
     
     @action(detail=False, methods=['get'])
     def account_campaigns(self, request):
@@ -343,8 +343,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
             if not campaign_target:
                 raise StandardizedValidationError(CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN)
             
-            # Remove account from campaign - CampaignManager now returns Response directly
-            return CampaignManager.remove_account_from_campaign(
+            # Remove account from campaign - CampaignCoreService now returns Response directly
+            return CampaignCoreService.remove_account_from_campaign(
                 campaign=campaign,
                 account=account,
                 notes=notes
@@ -387,8 +387,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
         contact = self._get_validated_contact(contact_id)
         
             
-        # Remove contact from campaign - CampaignManager now returns Response directly
-        return CampaignManager.remove_contact_from_campaign(
+        # Remove contact from campaign - CampaignCoreService now returns Response directly
+        return CampaignCoreService.remove_contact_from_campaign(
             campaign=campaign,
             contact=contact,
             notes=notes
@@ -415,8 +415,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
         if status_param:
             status_filter = status_param.split(',')
         
-        # CampaignManager.get_campaign_activities now returns Response directly
-        return CampaignManager.get_campaign_activities(
+        # CampaignCoreService.get_campaign_activities now returns Response directly
+        return CampaignCoreService.get_campaign_activities(
             campaign=campaign,
             status_filter=status_filter
         )
@@ -452,8 +452,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
         account = self._get_validated_account(account_id)
 
             
-        # CampaignManager.get_account_activities_in_campaign now returns Response directly
-        return CampaignManager.get_account_activities_in_campaign(
+        # CampaignCoreService.get_account_activities_in_campaign now returns Response directly
+        return CampaignCoreService.get_account_activities_in_campaign(
             campaign=campaign,
             account=account,
             status_filter=status_filter
@@ -490,8 +490,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
         if status_param:
             status_filter = status_param.split(',')
                     
-        # CampaignManager.get_contact_activities_in_campaign now returns Response directly
-        return CampaignManager.get_contact_activities_in_campaign(
+        # CampaignCoreService.get_contact_activities_in_campaign now returns Response directly
+        return CampaignCoreService.get_contact_activities_in_campaign(
             campaign=campaign,
             contact=contact,
             status_filter=status_filter
@@ -574,8 +574,8 @@ class CampaignManagementViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.M
                     request.data.get('callback_date'), '%Y-%m-%d'
                 ).date()
             
-            # CampaignManager.add_manual_activity_to_campaign now returns Response directly
-            return CampaignManager.add_manual_activity_to_campaign(
+            # CampaignCoreService.add_manual_activity_to_campaign now returns Response directly
+            return CampaignCoreService.add_manual_activity_to_campaign(
                 campaign=campaign,
                 contact=contact,
                 activity_type=activity_type,
@@ -1086,8 +1086,8 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
             if 'disqualify_account' in request.data:
                 kwargs['disqualify_account'] = request.data.get('disqualify_account')
             
-            # Process the result - CampaignManager.complete_activity now returns Response directly
-            return CampaignManager.complete_activity(
+            # Process the result - CampaignCoreService.complete_activity now returns Response directly
+            return CampaignCoreService.complete_activity(
                 activity=activity,
                 result=result,
                 notes=notes,

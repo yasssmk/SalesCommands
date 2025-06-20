@@ -406,7 +406,7 @@ class CampaignAnalyticsService:
             next_activities = []
             try:
                 # Import local pour éviter circularité
-                from .campaign_core import CampaignCoreService
+                from .campaign_core_service import CampaignCoreService
                 
                 active_response = CampaignCoreService.get_campaign_playlist_internal(
                     campaign=campaign,
