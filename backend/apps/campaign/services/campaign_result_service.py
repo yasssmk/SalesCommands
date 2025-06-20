@@ -7,7 +7,6 @@ from rest_framework.response import Response
 from apps.activities.models import Activity, ActivitySequence
 from apps.campaign.models import Campaign, CampaignTarget
 from apps.accounts.models import Contact
-from apps.sequence.sequences.chasing_sequence import ChasingSequence
 from apps.campaign.utils.standardized_responses import (
     StandardizedSuccessResponse, 
     CampaignResponseBuilder, 
@@ -338,22 +337,25 @@ class CampaignResultService:
         SÉCURISÉ : Transaction atomique pour création + linking
         """
         try:
-            # Get the appropriate sequence based on available channels
-            if has_phone and has_email:
-                sequence_dict = ChasingSequence.get_standard_sequence()
-            elif not has_phone and has_email and has_linkedin:
-                sequence_dict = ChasingSequence.get_sequence_without_phone()
-            elif has_phone and not has_email and has_linkedin:
-                sequence_dict = ChasingSequence.get_sequence_without_email()
-            elif has_phone and not (has_email or has_linkedin):
-                sequence_dict = ChasingSequence.get_sequence_phone_only()
-            else:
-                # If no valid channels, return empty list
+             
+            from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+        
+            # Get the appropriate sequence based on campaign sequence type and available channels
+            sequence_dict = SequenceDispatcher.get_sequence(
+                sequence_type=campaign.sequence_type, 
+                has_phone=has_phone,
+                has_email=has_email,
+                has_linkedin=has_linkedin
+            )
+            
+            # Si aucune séquence disponible, retourner liste vide
+            if not sequence_dict:
                 return []
             
             # Calculate which steps to create based on current progress
             remaining_steps = len(sequence_dict) - start_from_step + 1
             
+            # Le reste du code reste identique...
             # Get the last completed activity to link properly (en dehors de la transaction)
             last_completed = Activity.objects.filter(
                 campaign_info__campaign=campaign,
@@ -1103,6 +1105,51 @@ class CampaignResultService:
         """
         return cls._cancel_contact_sequence(activity)
     
+    @classmethod
+    def update_campaign_target_status_for_business_result(cls, campaign_target: CampaignTarget, 
+                                                        business_result_type: str) -> dict:
+        """
+        Met à jour le statut du CampaignTarget basé sur le type de résultat business créé
+        Logique simplifiée avec 4 statuts seulement
+        
+        Args:
+            campaign_target: Le target à mettre à jour
+            business_result_type: Type de résultat ('meeting', 'lead', 'opportunity', 'callback', 'not_interested', 'other')
+            
+        Returns:
+            dict: Informations sur la mise à jour effectuée
+        """
+        try:
+            old_status = campaign_target.status
+            
+            # ✅ UTILISER : La méthode existante du modèle au lieu de dupliquer la logique
+            update_result = campaign_target.auto_update_status_if_needed()
+            
+            # Enrichir les informations retournées avec le contexte business
+            enhanced_result = {
+                'status_updated': update_result.get('action_taken') == 'status_updated',
+                'old_status': update_result.get('old_status', old_status),
+                'new_status': update_result.get('new_status', campaign_target.status),
+                'business_result_type': business_result_type,
+                'campaign_id': campaign_target.campaign.id,
+                'target_id': campaign_target.id,
+                'was_inconsistent': update_result.get('was_inconsistent', False),
+                'timestamp': update_result.get('timestamp')
+            }
+            
+            return enhanced_result
+            
+        except Exception as e:
+            # Log l'erreur mais ne pas faire crasher le processus principal
+            return {
+                'status_updated': False,
+                'error': str(e),
+                'business_result_type': business_result_type,
+                'campaign_id': getattr(campaign_target.campaign, 'id', None) if hasattr(campaign_target, 'campaign') else None,
+                'target_id': getattr(campaign_target, 'id', None)
+            }
+
+        
     # @classmethod
     # def _create_meeting_activity(cls, activity: Activity, meeting_date: date, notes: str):
     #     """

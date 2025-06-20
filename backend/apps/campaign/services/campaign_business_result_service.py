@@ -73,6 +73,11 @@ class CampaignBusinessResultService:
                     client_id=campaign.client_id
                 )
 
+                from apps.campaign.services.campaign_result_service import CampaignResultService
+                status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
+                    campaign_target, 'meeting'
+                )
+
             try:
                 CampaignTrackingService.track_meeting_scheduled(meeting_activity, campaign)
             except Exception as e:
@@ -88,7 +93,9 @@ class CampaignBusinessResultService:
                     'meeting_date': meeting_date,
                     'contact_name': f"{contact.first_name} {contact.last_name}",
                     'account_name': target_account.company_name,
-                    'campaign_id': campaign.id
+                    'campaign_id': campaign.id,
+                    'target_status_updated': status_update_result.get('status_updated', False),
+                    'new_target_status': status_update_result.get('new_status')
                 },
                 meta={'operation': 'meeting_creation_from_campaign'}
             )
@@ -149,6 +156,11 @@ class CampaignBusinessResultService:
                     created_by=user,
                     updated_by=user
                 )
+
+                from apps.campaign.services.campaign_result_service import CampaignResultService
+                status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
+                    campaign_target, 'lead'
+                )
                 
                 # Track lead creation
                 try:
@@ -165,7 +177,9 @@ class CampaignBusinessResultService:
                     'lead_title': lead.title,
                     'contact_name': f"{contact.first_name} {contact.last_name}",
                     'account_name': target_account.company_name,
-                    'campaign_id': campaign.id
+                    'campaign_id': campaign.id,
+                    'target_status_updated': status_update_result.get('status_updated', False),
+                    'new_target_status': status_update_result.get('new_status')
                 },
                 meta={'operation': 'lead_creation_from_campaign'}
             )
@@ -258,6 +272,11 @@ class CampaignBusinessResultService:
                     conversion_status=OpportunitySource.ConversionStatus.NOT_APPLICABLE,
                     client_id=campaign.client_id
                 )
+
+                from apps.campaign.services.campaign_result_service import CampaignResultService
+                status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
+                    campaign_target, 'opportunity'
+                )
                 
                 # Track opportunity creation
                 try:
@@ -277,7 +296,9 @@ class CampaignBusinessResultService:
                     'account_name': target_account.company_name,
                     'amount': amount,
                     'expected_close_date': expected_close_date,
-                    'campaign_id': campaign.id
+                    'campaign_id': campaign.id,
+                    'target_status_updated': status_update_result.get('status_updated', False),
+                    'new_target_status': status_update_result.get('new_status')
                 },
                 meta={'operation': 'opportunity_creation_from_campaign'}
             )
@@ -297,6 +318,11 @@ class CampaignBusinessResultService:
         """
         try:
             campaign = campaign_target.campaign
+
+            from apps.campaign.services.campaign_result_service import CampaignResultService
+            status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
+                campaign_target, 'other'
+            )
             
             # Just return success with notes recorded
             # Could extend this to create a custom activity or note if needed
@@ -307,7 +333,9 @@ class CampaignBusinessResultService:
                     'type': 'other',
                     'notes': notes,
                     'campaign_id': campaign.id,
-                    'source_activity_id': source_activity.id
+                    'source_activity_id': source_activity.id,
+                    'target_status_updated': status_update_result.get('status_updated', False),
+                    'new_target_status': status_update_result.get('new_status')
                 },
                 meta={'operation': 'other_next_step_from_campaign'}
             )

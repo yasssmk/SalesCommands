@@ -317,6 +317,8 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Status update failed")
             )
+        
+    
     
     def link_opportunity(self, opportunity, save=True):
         """Link an opportunity to this target with validation"""
@@ -344,6 +346,7 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
     def _calculate_expected_status(self) -> Optional[str]:
         """
         Calcule le statut attendu basé sur les activités associées
+        ADAPTÉ aux 4 statuts simplifiés : IN_PROGRESS, CALLBACK_PENDING, COMPLETED, STOPPED
         
         Returns:
             Optional[str]: Statut attendu ou None si indéterminable
@@ -359,28 +362,50 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         statuses = [data[0] for data in activity_data]
         notes = [data[1] or '' for data in activity_data]
         
-        # Vérifier si un meeting a été sécurisé
-        has_meeting = any(
-            'meeting' in note.lower() and 'scheduled' in note.lower()
+        # ✅ LOGIQUE SIMPLIFIÉE avec 4 statuts seulement
+        
+        # 1. Vérifier si callback demandé (priorité haute)
+        has_callback = any(
+            'callback' in note.lower() 
             for note in notes
         )
+        if has_callback:
+            return self.Status.CALLBACK_PENDING
         
-        if has_meeting:
-            return self.Status.MEETING_SECURED
+        # 2. Vérifier si résultat business positif (meeting, lead, etc.)
+        has_positive_result = any(
+            ('meeting' in note.lower() and 'scheduled' in note.lower()) or
+            ('lead' in note.lower() and 'created' in note.lower()) or
+            ('opportunity' in note.lower() and 'created' in note.lower()) or
+            ('successful' in note.lower())
+            for note in notes
+        )
+        if has_positive_result:
+            return self.Status.COMPLETED
         
-        # Analyser les statuts
+        # 3. Vérifier si contact pas intéressé
+        has_not_interested = any(
+            'not interested' in note.lower() or 'unsubscribe' in note.lower()
+            for note in notes
+        )
+        if has_not_interested:
+            return self.Status.STOPPED
+        
+        # 4. Analyser les statuts d'activités pour déterminer progression
         completed_count = statuses.count(Activity.Status.COMPLETED)
         cancelled_count = statuses.count(Activity.Status.CANCELLED)
         total_count = len(statuses)
         
-        if completed_count == total_count:
-            return self.Status.COMPLETED
-        elif cancelled_count == total_count:
+        # Si toutes les activités sont annulées = STOPPED
+        if cancelled_count == total_count:
             return self.Status.STOPPED
-        elif completed_count > 0 or cancelled_count > 0:
+        
+        # Si au moins une activité complétée = IN_PROGRESS
+        if completed_count > 0:
             return self.Status.IN_PROGRESS
-        else:
-            return self.Status.QUEUED
+        
+        # Par défaut, si activités existent mais rien de complété = IN_PROGRESS
+        return self.Status.IN_PROGRESS
     
     def sync_status_with_activities(self, save=True) -> bool:
         """
