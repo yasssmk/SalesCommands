@@ -690,105 +690,6 @@ class CampaignResultService:
         # For now, handle the same as no answer
         return cls._handle_no_answer_call(activity, sequence_info, notes, is_sequence_campaign, **kwargs)
     
-    @classmethod
-    # def _handle_successful_call(cls, activity: Activity, sequence_info: ActivitySequence,
-    #                     notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
-    #     """
-    #     Handle successful call - create meeting and manage campaign target appropriately
-    #     MODIFIÉ : Ajout de la mise à jour explicite du statut pour les meetings
-    #     """
-    #     try:
-    #         meeting_date = kwargs.get('meeting_date')
-            
-    #         # Transaction atomique pour toutes les modifications DB
-    #         with transaction.atomic():
-    #             # Complete current activity
-    #             activity.complete(outcome_notes=f"Successfully scheduled meeting. {notes}" if notes else "Successfully scheduled meeting")
-                
-    #             # Get campaign information
-    #             campaign = None
-    #             campaign_target = None
-    #             if hasattr(activity, 'campaign_info'):
-    #                 campaign_info = activity.campaign_info
-    #                 campaign = campaign_info.campaign
-    #                 campaign_target = campaign_info.campaign_target
-                
-    #             # Update campaign info
-    #             if hasattr(activity, 'campaign_info'):
-    #                 campaign_info = activity.campaign_info
-    #                 campaign_info.meeting_scheduled = True
-    #                 campaign_info.save()
-                    
-    #                 # NOUVEAU : Mise à jour explicite du statut pour meeting sécurisé
-    #                 if campaign_target:
-    #                     campaign_target.update_status(
-    #                         campaign_target.Status.MEETING_SECURED, 
-    #                         save=True, 
-    #                         validate_consistency=False  # On force ce statut car on sait qu'un meeting est sécurisé
-    #                     )
-                
-    #             # Create meeting activity if date provided
-    #             meeting_activity_id = None
-    #             if meeting_date:
-    #                 meeting_activity = cls._create_meeting_activity(activity, meeting_date, notes)
-    #                 meeting_activity_id = meeting_activity.id
-                
-    #             # For sequence campaigns, end the sequence
-    #             if is_sequence_campaign:
-    #                 cancelled_count = cls._complete_contact_sequence(activity)
-    #             else:
-    #                 # For non-sequence campaigns, remove contact from queue
-    #                 if campaign_target:
-    #                     # Mark as completed so it doesn't appear in contact list
-    #                     campaign_target.status = campaign_target.Status.COMPLETED
-    #                     campaign_target.save()
-                
-    #             # Update campaign objectives
-    #             cls._update_campaign_objectives(activity, 'meeting_scheduled')
-                
-    #             # Determine which AE should receive this opportunity if it's converted later
-    #             assigned_ae = None
-    #             if campaign:
-    #                 from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
-    #                 receivers = campaign.get_receivers()
-                    
-    #                 if receivers.exists():
-    #                     assigned_ae = receivers.first()
-            
-    #         # Préparer la réponse (après la transaction)
-    #         data = {
-    #             'activity_id': activity.id,
-    #             'action': 'meeting_scheduled',
-    #             'meeting_date': meeting_date,
-    #             'meeting_activity_id': meeting_activity_id,
-    #             'assigned_ae': assigned_ae.id if assigned_ae else None,
-    #             'is_sequence_campaign': is_sequence_campaign
-    #         }
-            
-    #         meta = {
-    #             'operation': 'successful_call_handling',
-    #             'meeting_created': bool(meeting_activity_id),
-    #             'sequence_completed': is_sequence_campaign
-    #         }
-            
-    #         return CampaignResponseBuilder.activity_completed(
-    #             result_action='meeting_scheduled',
-    #             activity_id=activity.id,
-    #             additional_info={
-    #                 'meeting_date': meeting_date,
-    #                 'meeting_activity_id': meeting_activity_id,
-    #                 'assigned_ae': assigned_ae.id if assigned_ae else None
-    #             }
-    #         )
-            
-    #     except StandardizedValidationError:
-    #         # Re-raise validation errors
-    #         raise
-    #     except Exception as e:
-    #         raise StandardizedValidationError(
-    #             CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
-    #         )
-
 
     @classmethod
     def _handle_successful_call(cls, activity: Activity, sequence_info: ActivitySequence,
@@ -857,10 +758,10 @@ class CampaignResultService:
     
     @classmethod
     def _handle_not_interested(cls, activity: Activity, sequence_info: ActivitySequence,
-                              notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
+                          notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
         Handle not interested - option to disqualify contact or whole account
-        MODIFIÉ : Ajout de la mise à jour explicite du statut pour disqualification
+        MODIFIÉ : Utilise la méthode centralisée pour mise à jour du statut
         """
         try:
             disqualify_account = kwargs.get('disqualify_account', False)
@@ -872,29 +773,32 @@ class CampaignResultService:
                 # Cancel all activities for this account in this campaign
                 cancelled_count = cls._cancel_account_sequence(activity)
                 
-                # NOUVEAU : Mettre à jour le statut de tous les targets de ce compte
+                # ✅ REMPLACER : Utiliser la méthode centralisée pour tous les targets du compte
                 if hasattr(activity, 'campaign_info') and activity.campaign_info:
                     campaign = activity.campaign_info.campaign
                     account = activity.account
                     
-                    # Mettre à jour tous les campaign targets pour ce compte
+                    # Mettre à jour tous les campaign targets pour ce compte avec la méthode centralisée
                     from apps.campaign.models.campaign_target import CampaignTarget
                     account_targets = CampaignTarget.objects.filter(
                         campaign=campaign,
                         account=account
                     )
                     
+                    targets_updated = []
                     for target in account_targets:
-                        target.update_status(
-                            target.Status.STOPPED, 
-                            save=True,
-                            validate_consistency=False  # Force le statut car disqualification manuelle
+                        status_update_result = cls.update_campaign_target_status_for_business_result(
+                            target, 'not_interested'
                         )
+                        targets_updated.append(status_update_result)
                 
                 data = {
                     'activity_id': activity.id,
                     'action': 'account_disqualified',
-                    'activities_cancelled': cancelled_count
+                    'activities_cancelled': cancelled_count,
+                    # ✅ AJOUTER : Informations sur les mises à jour de statuts
+                    'targets_updated': len(targets_updated) if 'targets_updated' in locals() else 0,
+                    'status_updates': targets_updated if 'targets_updated' in locals() else []
                 }
                 
                 message = 'Account removed from campaign (not interested)'
@@ -903,19 +807,21 @@ class CampaignResultService:
                 # Cancel remaining activities for just this contact
                 cancelled_count = cls._cancel_contact_sequence(activity)
                 
-                # NOUVEAU : Mettre à jour le statut du target de ce contact
+                #  Utiliser la méthode centralisée pour le target de ce contact
+                status_update_result = {'status_updated': False}
                 if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
                     campaign_target = activity.campaign_info.campaign_target
-                    campaign_target.update_status(
-                        campaign_target.Status.STOPPED, 
-                        save=True,
-                        validate_consistency=False  # Force le statut car disqualification manuelle
+                    status_update_result = cls.update_campaign_target_status_for_business_result(
+                        campaign_target, 'not_interested'
                     )
                 
                 data = {
                     'activity_id': activity.id,
                     'action': 'contact_disqualified',
-                    'activities_cancelled': cancelled_count
+                    'activities_cancelled': cancelled_count,
+                    'target_status_updated': status_update_result.get('status_updated', False),
+                    'old_target_status': status_update_result.get('old_status'),
+                    'new_target_status': status_update_result.get('new_status')
                 }
                 
                 message = 'Contact removed from sequence (not interested)'
@@ -1149,64 +1055,6 @@ class CampaignResultService:
                 'target_id': getattr(campaign_target, 'id', None)
             }
 
-        
-    # @classmethod
-    # def _create_meeting_activity(cls, activity: Activity, meeting_date: date, notes: str):
-    #     """
-    #     Create a meeting activity from successful sequence
-    #     """
 
-    #     if meeting_date <= date.today():
-    #         raise StandardizedValidationError(
-    #             CoreErrorMessages.INVALID_FIELD.format(
-    #                 field="Meeting date (must be in the future)"
-    #             )
-    #         )
-        
-        
-    #     # Create meeting activity
-    #     meeting_activity = Activity.objects.create(
-    #         title=f"Meeting with {activity.account.company_name}",
-    #         activity_type=Activity.ActivityType.MEETING,
-    #         description=f"Meeting scheduled from {activity.title}. {notes}" if notes else f"Meeting scheduled from {activity.title}",
-    #         **{FIELD_NAMES['ACCOUNT']: activity.account},
-    #         owner=activity.owner,
-    #         scheduled_start=timezone.make_aware(timezone.datetime.combine(meeting_date, timezone.datetime.min.time().replace(hour=10))),
-    #         status=Activity.Status.PLANNED
-    #     )
-        
-    #     # Link contacts
-    #     meeting_activity.contacts.set(activity.contacts.all())
-        
-    #     # Link to campaign if applicable
-    #     if hasattr(activity, 'campaign_info'):
-    #         from apps.activities.models import ActivityCampaign
-    #         ActivityCampaign.objects.create(
-    #             activity=meeting_activity,
-    #             campaign=activity.campaign_info.campaign,
-    #             campaign_target=activity.campaign_info.campaign_target
-    #         )
-        
-    #     return meeting_activity
-    
-    # @classmethod
-    # def _update_campaign_objectives(cls, activity: Activity, objective_type: str):
-    #     """
-    #     Update campaign objectives based on activity results
-    #     """
-    #     if not hasattr(activity, 'campaign_info'):
-    #         return
-        
-    #     campaign = activity.campaign_info.campaign
-        
-    #     # Update relevant objectives
-    #     from apps.campaign.models.campaign_objective import CampaignObjective
-        
-    #     if objective_type == 'meeting_scheduled':
-    #         meeting_objectives = campaign.objectives.filter(
-    #             objective_type=CampaignObjective.ObjectiveType.MEETINGS
-    #         )
-    #         for objective in meeting_objectives:
-    #             objective.update_progress(1, increment=True)
     
     

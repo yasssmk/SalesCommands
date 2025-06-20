@@ -19,8 +19,6 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         PENDING = 'PENDING', _('Pending')
         IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
         CALLBACK_PENDING = 'CALLBACK_PENDING', _('Callback Pending') 
-        MEETING_SECURED = 'MEETING_SECURED', _('Meeting Secured')
-        OPPORTUNITY_CREATED = 'OPPORTUNITY_CREATED', _('Opportunity Created')
         COMPLETED = 'COMPLETED', _('Completed')
         STOPPED = 'STOPPED', _('Stopped')
     
@@ -319,34 +317,10 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             )
         
     
-    
-    def link_opportunity(self, opportunity, save=True):
-        """Link an opportunity to this target with validation"""
-        try:
-            if not opportunity:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field="Opportunity")
-                )
-                
-            self.linked_opportunity = opportunity
-            self.update_status(self.Status.OPPORTUNITY_CREATED, save=False)
-            
-            if save:
-                self.save()
-                
-        except StandardizedValidationError:
-            # Re-raise standardized validation errors
-            raise
-        except Exception as e:
-            # Convert any unexpected errors to standardized format
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Opportunity linking failed")
-            )
-    
     def _calculate_expected_status(self) -> Optional[str]:
         """
         Calcule le statut attendu basé sur les activités associées
-        ADAPTÉ aux 4 statuts simplifiés : IN_PROGRESS, CALLBACK_PENDING, COMPLETED, STOPPED
+        ADAPTÉ aux 5 statuts : PENDING, IN_PROGRESS, CALLBACK_PENDING, COMPLETED, STOPPED
         
         Returns:
             Optional[str]: Statut attendu ou None si indéterminable
@@ -362,8 +336,8 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         statuses = [data[0] for data in activity_data]
         notes = [data[1] or '' for data in activity_data]
         
-        # ✅ LOGIQUE SIMPLIFIÉE avec 4 statuts seulement
-        
+        # ✅ LOGIQUE AVEC 5 STATUTS 
+
         # 1. Vérifier si callback demandé (priorité haute)
         has_callback = any(
             'callback' in note.lower() 
@@ -391,10 +365,15 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         if has_not_interested:
             return self.Status.STOPPED
         
-        # 4. Analyser les statuts d'activités pour déterminer progression
+        # 4. Vérifier si aucune activité n'a encore commencé
         completed_count = statuses.count(Activity.Status.COMPLETED)
         cancelled_count = statuses.count(Activity.Status.CANCELLED)
+        planned_count = statuses.count(Activity.Status.PLANNED)
         total_count = len(statuses)
+        
+        # Si toutes les activités sont PLANNED = PENDING (Option A)
+        if planned_count == total_count:
+            return self.Status.PENDING
         
         # Si toutes les activités sont annulées = STOPPED
         if cancelled_count == total_count:
@@ -404,7 +383,7 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         if completed_count > 0:
             return self.Status.IN_PROGRESS
         
-        # Par défaut, si activités existent mais rien de complété = IN_PROGRESS
+        # Par défaut, si mix d'activités (some planned, some cancelled) = IN_PROGRESS
         return self.Status.IN_PROGRESS
     
     def sync_status_with_activities(self, save=True) -> bool:

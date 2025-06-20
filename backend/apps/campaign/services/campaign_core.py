@@ -156,9 +156,13 @@ class CampaignCoreService:
                     campaign=campaign, contact=contact
                 ).first()
                 
+                status_update_result = {'status_updated': False}
                 if campaign_target:
-                    campaign_target.status = CampaignTarget.Status.STOPPED
-                    campaign_target.save()
+                    # Import de la méthode centralisée
+                    from apps.campaign.services.campaign_result_service import CampaignResultService
+                    status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
+                        campaign_target, 'not_interested'  # Suppression manuelle = pas intéressé
+                    )
                 
                 # Import local pour les messages
                 from apps.campaign.config.variables import OPERATION_MESSAGES
@@ -169,13 +173,17 @@ class CampaignCoreService:
                     'contact_id': contact.id,
                     'contact_name': f"{contact.first_name} {contact.last_name}",
                     'activities_cancelled': activities_count,
-                    'action': 'contact_removed'
+                    'action': 'contact_removed',
+                    'target_status_updated': status_update_result.get('status_updated', False),
+                    'old_target_status': status_update_result.get('old_status'),
+                    'new_target_status': status_update_result.get('new_status')
                 }
                 
                 meta = {
                     'operation': 'contact_removal',
                     'activities_affected': activities_count,
-                    'target_updated': bool(campaign_target)
+                    'target_updated': bool(campaign_target),
+                    'status_update_method': 'centralized'
                 }
                 
                 return StandardizedSuccessResponse.success(
