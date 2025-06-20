@@ -14,12 +14,15 @@ from .standardized_responses import (
     StandardizedSuccessResponse, 
     CampaignResponseBuilder
 )
+from .query_optimizer import CampaignQueryOptimizer
+
 
 __all__ = [
     # Response Utilities
     'CampaignSuccessMessages',
     'StandardizedSuccessResponse',
     'CampaignResponseBuilder',
+    'CampaignQueryOptimizer'
 ]
 
 # Utility groups
