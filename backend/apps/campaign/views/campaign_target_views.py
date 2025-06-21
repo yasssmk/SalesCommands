@@ -147,12 +147,60 @@ class CampaignTargetViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Model
                     CoreErrorMessages.INVALID_FIELD.format(field="status")
                 )
             
+            trigger = request.data.get('trigger', None)
+            notes = request.data.get('notes', None)
+            reason = request.data.get('reason', None)  # For business trigger methods
+            callback_date = request.data.get('callback_date', None)
+
             # Store old status for response
             old_status = target.status
             old_status_display = target.get_status_display()
             
             # Update status
-            target.update_status(new_status)
+            if new_status == CampaignTarget.Status.COMPLETED and reason:
+                # Use business trigger method for completion
+                update_result = target.mark_as_completed(
+                    reason=reason,
+                    notes=notes,
+                    user=request.user
+                )
+            elif new_status == CampaignTarget.Status.STOPPED and reason:
+                # Use business trigger method for stopping
+                update_result = target.mark_as_stopped(
+                    reason=reason,
+                    notes=notes,
+                    user=request.user
+                )
+            elif new_status == CampaignTarget.Status.CALLBACK_PENDING:
+                # Use business trigger method for callback
+                if callback_date:
+                    from datetime import datetime
+                    parsed_date = datetime.strptime(callback_date, '%Y-%m-%d').date()
+                    update_result = target.request_callback(
+                        callback_date=parsed_date,
+                        notes=notes,
+                        user=request.user
+                    )
+                else:
+                    update_result = target.request_callback(
+                        notes=notes,
+                        user=request.user
+                    )
+            elif new_status == CampaignTarget.Status.IN_PROGRESS:
+                # Use business trigger method for progress
+                update_result = target.start_progress(
+                    notes=notes,
+                    user=request.user
+                )
+            else:
+                # Fallback to enhanced update_status with manual source
+                update_result = target.update_status(
+                    new_status=new_status,
+                    trigger=trigger,
+                    notes=notes or f"Manual status change to {target.get_status_display()}",
+                    user=request.user,
+                    source='manual'  # 🔧 Uses State Machine validation
+                )
             
             # Prepare response data
             data = {
@@ -164,12 +212,18 @@ class CampaignTargetViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Model
                 'new_status': target.status,
                 'new_status_display': target.get_status_display(),
                 'campaign_id': target.campaign.id,
-                'campaign_name': target.campaign.name
-            }
+                'campaign_name': target.campaign.name,
+                'state_machine_used': update_result.get('state_machine_used', True),
+                'business_trigger': update_result.get('trigger'),
+                'method_used': 'business_trigger' if reason else 'manual_update',
+                'transition_valid': update_result.get('transition_valid', True)
+                }
             
             meta = {
                 'operation': 'target_status_update',
-                'status_changed': old_status != new_status
+                'status_changed': update_result.get('status_updated', False),
+                'state_machine_integration': True, 
+                'validation_method': 'state_machine'  
             }
             
             return StandardizedSuccessResponse.success(

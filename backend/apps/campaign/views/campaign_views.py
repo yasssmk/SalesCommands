@@ -1097,34 +1097,8 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
     @action(detail=False, methods=['post'])
     def process_next_step_choice(self, request):
         """
-        Process user's choice for next step after successful campaign activity - Simplified validation
-        
-        Expected payload:
-        {
-            "campaign_target_id": 123,
-            "source_activity_id": 456,
-            "choice_type": "meeting|lead|opportunity|other",
-            "contact_id": 789,  # Required for meeting/lead/opportunity
-            
-            // For meeting:
-            "meeting_date": "2025-01-15",
-            "notes": "Follow up on pricing discussion",
-            
-            // For lead:
-            "lead_title": "Interested in Enterprise Plan", 
-            "description": "Contact showed interest...",
-            "notes": "Next: send proposal",
-            
-            // For opportunity:
-            "opportunity_title": "Q2 Enterprise Deal",
-            "expected_close_date": "2025-03-30",
-            "amount": 50000,
-            "opportunity_type": "NEW_BUSINESS",
-            "notes": "Strong buying signals",
-            
-            // For other:
-            "notes": "Custom action taken"
-        }
+        Process user's choice for next step after successful campaign activity
+        UPDATED: Uses enhanced State Machine business result method
         """
         try:
             # Extract and validate required fields using helper
@@ -1201,7 +1175,7 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
         return campaign_target, source_activity
     
     def _process_meeting_choice(self, data, campaign_target, source_activity, service):
-        """Helper to process meeting choice"""
+        """Helper to process meeting choice - UPDATED: Enhanced response handling"""
         contact_id = data.get('contact_id')
         meeting_date = self._parse_date_field(data, 'meeting_date')
         
@@ -1210,7 +1184,8 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
                 CoreErrorMessages.REQUIRED_FIELD.format(field="contact_id and meeting_date for meeting creation")
             )
         
-        return service.create_meeting_next_step(
+        # Service call (already uses enhanced method)
+        result = service.create_meeting_next_step(
             campaign_target=campaign_target,
             user=self.request.user,
             meeting_date=meeting_date,
@@ -1218,9 +1193,17 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
             source_activity=source_activity,
             notes=data.get('notes', '')
         )
+        
+        if hasattr(result, 'data') and 'data' in result.data:
+            result_data = result.data['data']
+            if result_data.get('state_machine_used'):
+                print(f"STATE_MACHINE_INTEGRATION: Meeting creation used business trigger '{result_data.get('business_trigger')}' for target {campaign_target.id}")
+
+        
+        return result
     
     def _process_lead_choice(self, data, campaign_target, source_activity, service):
-        """Helper to process lead choice"""
+        """Helper to process lead choice - UPDATED: Enhanced response handling"""
         contact_id = data.get('contact_id')
         lead_title = data.get('lead_title')
         
@@ -1229,7 +1212,8 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
                 CoreErrorMessages.REQUIRED_FIELD.format(field="contact_id and lead_title for lead creation")
             )
         
-        return service.create_lead_next_step(
+        # 🔧 UNCHANGED: Service call (already uses enhanced method)
+        result = service.create_lead_next_step(
             campaign_target=campaign_target,
             user=self.request.user,
             contact_id=contact_id,
@@ -1238,9 +1222,18 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
             description=data.get('description', ''),
             notes=data.get('notes', '')
         )
-    
+        
+        # Log State Machine integration for audit
+        if hasattr(result, 'data') and 'data' in result.data:
+            result_data = result.data['data']
+            if result_data.get('state_machine_used'):
+                print(f"STATE_MACHINE_INTEGRATION: Lead creation used business trigger '{result_data.get('business_trigger')}' for target {campaign_target.id}")
+
+        
+        return result
+
     def _process_opportunity_choice(self, data, campaign_target, source_activity, service):
-        """Helper to process opportunity choice"""
+        """Helper to process opportunity choice - UPDATED: Enhanced response handling"""
         contact_id = data.get('contact_id')
         opportunity_title = data.get('opportunity_title')
         expected_close_date = self._parse_date_field(data, 'expected_close_date')
@@ -1262,7 +1255,8 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
                     CoreErrorMessages.INVALID_FIELD.format(field="amount (must be a number)")
                 )
         
-        return service.create_opportunity_next_step(
+        # Service call (already uses enhanced method)
+        result = service.create_opportunity_next_step(
             campaign_target=campaign_target,
             user=self.request.user,
             contact_id=contact_id,
@@ -1273,18 +1267,36 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
             opportunity_type=data.get('opportunity_type'),
             notes=data.get('notes', '')
         )
-    
+        
+        # Log State Machine integration for audit
+        if hasattr(result, 'data') and 'data' in result.data:
+            result_data = result.data['data']
+            if result_data.get('state_machine_used'):
+                print(f"STATE_MACHINE_INTEGRATION: Opportunity creation used business trigger '{result_data.get('business_trigger')}' for target {campaign_target.id}")
+
+        
+        return result
+
     def _process_other_choice(self, data, campaign_target, source_activity, service):
-        """Helper to process other choice"""
+        """Helper to process other choice - UPDATED: Enhanced response handling"""
         notes = data.get('notes', '')
         if not notes:
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(field="notes for custom action")
             )
         
-        return service.create_other_next_step(
+        # Service call (already uses enhanced method)
+        result = service.create_other_next_step(
             campaign_target=campaign_target,
             user=self.request.user,
             source_activity=source_activity,
             notes=notes
         )
+        
+        # Log State Machine integration for audit
+        if hasattr(result, 'data') and 'data' in result.data:
+            result_data = result.data['data']
+            if result_data.get('state_machine_used'):
+                print(f"STATE_MACHINE_INTEGRATION: Other action used business trigger '{result_data.get('business_trigger')}' for target {campaign_target.id}")
+        
+        return result

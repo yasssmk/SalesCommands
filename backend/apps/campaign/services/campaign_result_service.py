@@ -573,10 +573,9 @@ class CampaignResultService:
     
     @classmethod
     def _handle_callback_requested(cls, activity: Activity, sequence_info: ActivitySequence,
-                              notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
+                            notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
         """
-        Handle callback request - pause sequence or prioritize contact for non-sequence campaigns
-        MODIFIER : Éviter les imports circulaires en supprimant les références aux autres services
+        Handle callback request - UPDATED to use State Machine business triggers
         """
         try:
             callback_date = kwargs.get('callback_date')
@@ -587,32 +586,27 @@ class CampaignResultService:
                     CampaignErrorMessages.ACTIVITY_CALLBACK_DATE_REQUIRED
                 )
             
-            # AJOUTER : Validation que la date de callback est cohérente
+            # Validation que la date de callback est cohérente
             if callback_date < date.today():
                 raise StandardizedValidationError(
                     "Callback date cannot be in the past"
                 )
             
-            # AJOUTER : Validation que la date est avant la fin de campagne
-            if hasattr(activity, 'campaign_info') and activity.campaign_info:
-                campaign = activity.campaign_info.campaign
-                if callback_date > campaign.end_date:
-                    raise StandardizedValidationError(
-                        f"Callback date must be before campaign end date ({campaign.end_date})"
-                    )
-            
             with transaction.atomic():
                 # Complete current activity
                 activity.complete(outcome_notes=f"Callback requested for {callback_date}. {notes}" if notes else f"Callback requested for {callback_date}")
                 
-                # Common behavior: update campaign target status
+                # 🔧 NEW: Use State Machine business trigger
+                target_update_result = {}
                 if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
                     campaign_target = activity.campaign_info.campaign_target
-                    # Mark campaign target with a special status or field for callback tracking
-                    campaign_target.callback_date = callback_date  # This field would need to be added to the CampaignTarget model
-                    campaign_target.save()
+                    target_update_result = campaign_target.request_callback(
+                        callback_date=callback_date,
+                        notes=f"Callback requested: {notes}" if notes else "Callback requested",
+                        user=getattr(activity, 'owner', None)
+                    )
                 
-                # Sequence-specific behavior
+                # Sequence-specific behavior (existing logic)
                 if is_sequence_campaign and sequence_info:
                     sequence_info.callback_requested_date = callback_date
                     sequence_info.sequence_paused_until = callback_date
@@ -621,56 +615,43 @@ class CampaignResultService:
                     # Update next activity if it exists
                     next_activity = activity.next_activity
                     if next_activity:
-                        # Update next activity type if specified
                         if callback_type != next_activity.activity_type:
                             next_activity.activity_type = callback_type
                             next_activity.title = f"Callback: {next_activity.title}"
                             next_activity.save()
-                
-                # Non-sequence specific behavior
-                else:
-                    # For non-sequence campaigns, we need to ensure this contact is prioritized when the callback date comes
-                    contact = activity.contacts.first()
-                    if contact:
-                        # We could add a special field to track callbacks for non-sequence campaigns
-                        # For example, by adding a contact_status field to CampaignTarget
-                        if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
-                            campaign_target = activity.campaign_info.campaign_target
-                            campaign_target.status = 'CALLBACK_PENDING'  # Custom status for non-sequence targets
-                            campaign_target.save()
             
-            # APRÈS la transaction : Préparer la réponse (pas de modification DB)
+            # Préparer la réponse avec info State Machine
             data = {
                 'activity_id': activity.id,
                 'action': 'callback_scheduled',
                 'callback_date': callback_date,
                 'callback_type': callback_type,
-                'is_sequence_campaign': is_sequence_campaign
+                'is_sequence_campaign': is_sequence_campaign,
+                'target_status_updated': target_update_result.get('status_updated', False),
+                'new_target_status': target_update_result.get('new_status'),
+                'state_machine_used': target_update_result.get('state_machine_used', False)
             }
             
             meta = {
                 'operation': 'callback_handling',
                 'callback_date': callback_date.isoformat(),
-                'sequence_paused': is_sequence_campaign
+                'sequence_paused': is_sequence_campaign,
+                'state_machine_integration': True
             }
             
             return CampaignResponseBuilder.activity_completed(
                 result_action='callback_scheduled',
                 activity_id=activity.id,
-                additional_info={
-                    'callback_date': callback_date,
-                    'callback_type': callback_type
-                }
+                additional_info=data
             )
             
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
                 CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
             )
-        
+            
     @classmethod
     def _handle_contact_not_available(cls, activity: Activity, sequence_info: ActivitySequence,
                                     notes: str, is_sequence_campaign: bool = True, **kwargs) -> Response:
@@ -709,11 +690,14 @@ class CampaignResultService:
                 if is_sequence_campaign:
                     cancelled_count = cls._complete_contact_sequence(activity)
                 
-                # Dans tous les cas, marquer le target comme COMPLETED
-                # Car l'objectif de la campagne est atteint (next step secured)
+                # Use State Machine business trigger instead of direct status change
+                target_update_result = {}
                 if campaign_target:
-                    campaign_target.status = campaign_target.Status.COMPLETED
-                    campaign_target.save()
+                    target_update_result = campaign_target.mark_as_completed(
+                        reason='successful_activity',
+                        notes=f"Successful call activity: {notes}" if notes else "Successful call activity",
+                        user=getattr(activity, 'owner', None)
+                    )
             
             # Préparer la réponse (après la transaction)
             data = {
@@ -721,14 +705,17 @@ class CampaignResultService:
                 'action': 'successful_needs_next_step',
                 'campaign_id': campaign.id if campaign else None,
                 'campaign_target_id': campaign_target.id if campaign_target else None,
-                'is_sequence_campaign': is_sequence_campaign
+                'is_sequence_campaign': is_sequence_campaign,
+                'target_status_updated': target_update_result.get('status_updated', False),
+                'new_target_status': target_update_result.get('new_status')
             }
             
             meta = {
                 'operation': 'successful_call_handling',
                 'sequence_completed': is_sequence_campaign,
                 'target_completed': True,
-                'needs_next_step_selection': True
+                'needs_next_step_selection': True,
+                'state_machine_used': target_update_result.get('state_machine_used', False)
             }
             
             return CampaignResponseBuilder.activity_completed(
@@ -780,16 +767,17 @@ class CampaignResultService:
                     
                     targets_updated = []
                     for target in account_targets:
-                        status_update_result = cls.update_campaign_target_status_for_business_result(
-                            target, 'not_interested'
+                        update_result = target.mark_as_stopped(
+                            reason='not_interested',
+                            notes=f"Account-wide not interested: {notes}" if notes else "Account-wide not interested",
+                            user=getattr(activity, 'owner', None)
                         )
-                        targets_updated.append(status_update_result)
+                        targets_updated.append(update_result)
                 
                 data = {
                     'activity_id': activity.id,
                     'action': 'account_disqualified',
                     'activities_cancelled': cancelled_count,
-                    # ✅ AJOUTER : Informations sur les mises à jour de statuts
                     'targets_updated': len(targets_updated) if 'targets_updated' in locals() else 0,
                     'status_updates': targets_updated if 'targets_updated' in locals() else []
                 }
@@ -800,21 +788,24 @@ class CampaignResultService:
                 # Cancel remaining activities for just this contact
                 cancelled_count = cls._cancel_contact_sequence(activity)
                 
-                #  Utiliser la méthode centralisée pour le target de ce contact
-                status_update_result = {'status_updated': False}
+                #  Use State Machine business trigger
+                target_update_result = {'status_updated': False}
                 if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign_target:
                     campaign_target = activity.campaign_info.campaign_target
-                    status_update_result = cls.update_campaign_target_status_for_business_result(
-                        campaign_target, 'not_interested'
+                    target_update_result = campaign_target.mark_as_stopped(
+                        reason='not_interested',
+                        notes=f"Contact not interested: {notes}" if notes else "Contact not interested",
+                        user=getattr(activity, 'owner', None)
                     )
                 
                 data = {
                     'activity_id': activity.id,
                     'action': 'contact_disqualified',
                     'activities_cancelled': cancelled_count,
-                    'target_status_updated': status_update_result.get('status_updated', False),
-                    'old_target_status': status_update_result.get('old_status'),
-                    'new_target_status': status_update_result.get('new_status')
+                    'target_status_updated': target_update_result.get('status_updated', False),
+                    'old_target_status': target_update_result.get('old_status'),
+                    'new_target_status': target_update_result.get('new_status'),
+                    'state_machine_used': target_update_result.get('state_machine_used', False)
                 }
                 
                 message = 'Contact removed from sequence (not interested)'
@@ -822,7 +813,8 @@ class CampaignResultService:
             meta = {
                 'operation': 'not_interested_handling',
                 'account_disqualified': disqualify_account,
-                'activities_cancelled': cancelled_count
+                'activities_cancelled': cancelled_count,
+                'state_machine_integration': True
             }
             
             return StandardizedSuccessResponse.success(
@@ -1006,46 +998,78 @@ class CampaignResultService:
     
     @classmethod
     def update_campaign_target_status_for_business_result(cls, campaign_target: CampaignTarget, 
-                                                        business_result_type: str) -> dict:
+                                                        business_result_type: str, user=None, 
+                                                        notes: str = None, callback_date=None) -> dict:
         """
-        Met à jour le statut du CampaignTarget basé sur le type de résultat business créé
-        Logique simplifiée avec 4 statuts seulement
-        
-        Args:
-            campaign_target: Le target à mettre à jour
-            business_result_type: Type de résultat ('meeting', 'lead', 'opportunity', 'callback', 'not_interested', 'other')
-            
-        Returns:
-            dict: Informations sur la mise à jour effectuée
+        ENHANCED: Supports callback_date for callback business results
         """
         try:
             old_status = campaign_target.status
             
-            # ✅ UTILISER : La méthode existante du modèle au lieu de dupliquer la logique
-            update_result = campaign_target.auto_update_status_if_needed()
+            # Enhanced mapping with callback date support
+            if business_result_type == 'callback' and callback_date:
+                update_result = campaign_target.request_callback(
+                    callback_date=callback_date,
+                    notes=notes or "Business result: callback scheduled",
+                    user=user
+                )
+                trigger_used = 'callback_requested'
+                method_used = 'request_callback'
+            else:
+                # Use the existing mapping for other business results
+                business_result_mapping = {
+                    'meeting': ('mark_as_completed', 'meeting_scheduled'),
+                    'lead': ('mark_as_completed', 'lead_created'), 
+                    'opportunity': ('mark_as_completed', 'opportunity_created'),
+                    'not_interested': ('mark_as_stopped', 'not_interested'),
+                    'wrong_contact': ('mark_as_stopped', 'wrong_contact'),
+                    'invalid_contact_info': ('mark_as_stopped', 'invalid_contact_info'),
+                    'unsubscribed': ('mark_as_stopped', 'unsubscribed'),
+                    'other': ('mark_as_completed', 'manual_completion')
+                }
+                
+                method_name, reason = business_result_mapping.get(
+                    business_result_type, 
+                    ('mark_as_completed', 'manual_completion')
+                )
+                
+                # Execute the method
+                if method_name == 'mark_as_completed':
+                    update_result = campaign_target.mark_as_completed(
+                        reason=reason,
+                        notes=notes or f"Business result: {business_result_type}",
+                        user=user
+                    )
+                elif method_name == 'mark_as_stopped':
+                    update_result = campaign_target.mark_as_stopped(
+                        reason=reason,
+                        notes=notes or f"Business result: {business_result_type}",
+                        user=user
+                    )
+                
+                trigger_used = reason
+                method_used = method_name
             
-            # Enrichir les informations retournées avec le contexte business
-            enhanced_result = {
-                'status_updated': update_result.get('action_taken') == 'status_updated',
+            return {
+                'status_updated': update_result.get('status_updated', False),
                 'old_status': update_result.get('old_status', old_status),
                 'new_status': update_result.get('new_status', campaign_target.status),
                 'business_result_type': business_result_type,
+                'business_trigger_used': trigger_used,
+                'method_used': method_used,
+                'state_machine_used': update_result.get('state_machine_used', True),
                 'campaign_id': campaign_target.campaign.id,
                 'target_id': campaign_target.id,
-                'was_inconsistent': update_result.get('was_inconsistent', False),
-                'timestamp': update_result.get('timestamp')
+                'timestamp': update_result.get('timestamp', timezone.now().isoformat()),
+                'updated_by': user.id if user else None
             }
             
-            return enhanced_result
-            
         except Exception as e:
-            # Log l'erreur mais ne pas faire crasher le processus principal
             return {
                 'status_updated': False,
                 'error': str(e),
                 'business_result_type': business_result_type,
-                'campaign_id': getattr(campaign_target.campaign, 'id', None) if hasattr(campaign_target, 'campaign') else None,
-                'target_id': getattr(campaign_target, 'id', None)
+                'timestamp': timezone.now().isoformat()
             }
 
 

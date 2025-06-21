@@ -75,8 +75,12 @@ class CampaignBusinessResultService:
 
                 from apps.campaign.services.campaign_result_service import CampaignResultService
                 status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
-                    campaign_target, 'meeting'
-                )
+                campaign_target=campaign_target, 
+                business_result_type='meeting',
+                user=user,
+                notes=f"Meeting scheduled with {contact.first_name} {contact.last_name} for {meeting_date}" + 
+                      (f": {notes}" if notes else "")
+            )
 
             try:
                 CampaignTrackingService.track_meeting_scheduled(meeting_activity, campaign)
@@ -95,9 +99,14 @@ class CampaignBusinessResultService:
                     'account_name': target_account.company_name,
                     'campaign_id': campaign.id,
                     'target_status_updated': status_update_result.get('status_updated', False),
-                    'new_target_status': status_update_result.get('new_status')
+                    'new_target_status': status_update_result.get('new_status'),
+                    'state_machine_used': status_update_result.get('state_machine_used', False),
+                    'business_trigger': status_update_result.get('business_trigger_used')
                 },
-                meta={'operation': 'meeting_creation_from_campaign'}
+                meta={
+                'operation': 'meeting_creation_from_campaign',
+                'state_machine_integration': True 
+            }
             )
             
         except StandardizedValidationError:
@@ -159,8 +168,13 @@ class CampaignBusinessResultService:
 
                 from apps.campaign.services.campaign_result_service import CampaignResultService
                 status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
-                    campaign_target, 'lead'
+                    campaign_target=campaign_target,
+                    business_result_type='lead',
+                    user=user,
+                    notes=f"Lead '{lead_title}' created for {contact.first_name} {contact.last_name}" +
+                        (f": {notes}" if notes else "")
                 )
+       
                 
                 # Track lead creation
                 try:
@@ -179,9 +193,16 @@ class CampaignBusinessResultService:
                     'account_name': target_account.company_name,
                     'campaign_id': campaign.id,
                     'target_status_updated': status_update_result.get('status_updated', False),
-                    'new_target_status': status_update_result.get('new_status')
+                    'new_target_status': status_update_result.get('new_status'),
+                    # 🔧 NEW: Add State Machine integration info
+                    'state_machine_used': status_update_result.get('state_machine_used', False),
+                    'business_trigger': status_update_result.get('business_trigger_used')
+                    # 🔧 END NEW
                 },
-                meta={'operation': 'lead_creation_from_campaign'}
+                meta={
+                    'operation': 'lead_creation_from_campaign',
+                    'state_machine_integration': True  # 🔧 NEW
+                }
             )
             
         except StandardizedValidationError:
@@ -190,7 +211,7 @@ class CampaignBusinessResultService:
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Lead creation failed: {str(e)}")
             )
-    
+        
     @classmethod
     def create_opportunity_next_step(cls, campaign_target: CampaignTarget, user, contact_id: int,
                                 source_activity: Activity, opportunity_title: str,
@@ -275,8 +296,13 @@ class CampaignBusinessResultService:
 
                 from apps.campaign.services.campaign_result_service import CampaignResultService
                 status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
-                    campaign_target, 'opportunity'
+                    campaign_target=campaign_target,
+                    business_result_type='opportunity',
+                    user=user,
+                    notes=f"Opportunity '{opportunity_title}' created for {contact.first_name} {contact.last_name}, amount: ${amount}" +
+                        (f": {notes}" if notes else "")
                 )
+
                 
                 # Track opportunity creation
                 try:
@@ -298,9 +324,16 @@ class CampaignBusinessResultService:
                     'expected_close_date': expected_close_date,
                     'campaign_id': campaign.id,
                     'target_status_updated': status_update_result.get('status_updated', False),
-                    'new_target_status': status_update_result.get('new_status')
+                    'new_target_status': status_update_result.get('new_status'),
+                    # 🔧 NEW: Add State Machine integration info
+                    'state_machine_used': status_update_result.get('state_machine_used', False),
+                    'business_trigger': status_update_result.get('business_trigger_used')
+                    # 🔧 END NEW
                 },
-                meta={'operation': 'opportunity_creation_from_campaign'}
+                meta={
+                    'operation': 'opportunity_creation_from_campaign',
+                    'state_machine_integration': True  # 🔧 NEW
+                }
             )
             
         except StandardizedValidationError:
@@ -321,8 +354,12 @@ class CampaignBusinessResultService:
 
             from apps.campaign.services.campaign_result_service import CampaignResultService
             status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
-                campaign_target, 'other'
+                campaign_target=campaign_target,
+                business_result_type='other',
+                user=user,
+                notes=f"Custom next step: {notes}"
             )
+
             
             # Just return success with notes recorded
             # Could extend this to create a custom activity or note if needed
@@ -335,9 +372,16 @@ class CampaignBusinessResultService:
                     'campaign_id': campaign.id,
                     'source_activity_id': source_activity.id,
                     'target_status_updated': status_update_result.get('status_updated', False),
-                    'new_target_status': status_update_result.get('new_status')
+                    'new_target_status': status_update_result.get('new_status'),
+                    # 🔧 NEW: Add State Machine integration info
+                    'state_machine_used': status_update_result.get('state_machine_used', False),
+                    'business_trigger': status_update_result.get('business_trigger_used')
+                    # 🔧 END NEW
                 },
-                meta={'operation': 'other_next_step_from_campaign'}
+                meta={
+                    'operation': 'other_next_step_from_campaign',
+                    'state_machine_integration': True  # 🔧 NEW
+                }
             )
             
         except Exception as e:

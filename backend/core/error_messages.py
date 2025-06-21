@@ -165,3 +165,13 @@ class CampaignErrorMessages:
     DEPENDENCY_VIOLATION = _("Cannot perform action due to dependency: {dependency}")
     RELATED_OBJECT_REQUIRED = _("Related object required: {object_type}")
     CASCADE_DELETE_BLOCKED = _("Cannot delete campaign with active dependencies")
+
+    # Campaign Target Status Transitions
+    TARGET_INVALID_STATE = _("Invalid target state: {state}")
+    TARGET_TRANSITION_INVALID = _("Cannot transition from '{from_state}' to '{to_state}'. Allowed transitions: {allowed_transitions}")
+    TARGET_FINAL_STATE_IMMUTABLE = _("Cannot modify target in final state '{state}'")
+    TARGET_TRANSITION_MISSING_TRIGGER = _("Business trigger required for transition to '{to_state}'")
+    TARGET_TRANSITION_INVALID_TRIGGER = _("Invalid trigger '{trigger}' for transition from '{from_state}' to '{to_state}'")
+    TARGET_STATE_MACHINE_ERROR = _("State machine validation failed: {reason}")
+    TARGET_STATUS_UPDATE_FAILED = _("Failed to update target status: {reason}")
+    TARGET_STATUS_SYNC_FAILED = _("Failed to synchronize target status with activities: {reason}")

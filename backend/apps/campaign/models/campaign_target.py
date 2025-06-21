@@ -8,6 +8,8 @@ from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, CampaignErrorMessages
+from apps.campaign.utils.target_state_machine import TargetStateMachine
+from django.db import transaction
 
 
 class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
@@ -269,21 +271,35 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to mark activities as generated")
             )
-    
-    def update_status(self, new_status, save=True, validate_consistency=False):
+
+
+    def update_status(self, new_status, trigger=None, notes=None, user=None, 
+                    save=True, validate_consistency=False, source='manual'):
         """
-        Update the status with validation and optional consistency check
+        Enhanced status update with hybrid State Machine approach
         
         Args:
-            new_status (str): New status value
+            new_status (str): Target status to transition to
+            trigger (str): Business trigger causing the transition (for State Machine)
+            notes (str): Optional notes for the transition
+            user: User performing the action
             save (bool): Whether to save the instance
             validate_consistency (bool): If True, validates status matches activities
+            source (str): Source of the change - 'manual', 'auto_sync', 'business_result'
             
-        Raises:
-            StandardizedValidationError: If status is invalid or inconsistent
+        Returns:
+            dict: Transition result information
+            
+        Source behavior:
+            - 'auto_sync': Bypasses State Machine, uses existing activity-based logic
+            - 'manual': Uses State Machine validation for user-initiated changes  
+            - 'business_result': Uses State Machine validation with business triggers
         """
         try:
-            # Validate status
+            old_status = self.status
+            old_status_display = self.get_status_display()
+            
+            # 1. Basic status validation (existing logic - always applied)
             valid_statuses = [choice[0] for choice in self.Status.choices]
             if new_status not in valid_statuses:
                 raise StandardizedValidationError(
@@ -292,7 +308,18 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                     )
                 )
             
-            # NOUVEAU: Validation optionnelle de cohérence avec les activités
+            # 2. Determine if State Machine validation should be used
+            use_state_machine = source in ['manual', 'business_result']
+            
+            # 3. State Machine validation (hybrid approach)
+            if use_state_machine:
+                TargetStateMachine.validate_transition(
+                    from_state=old_status,
+                    to_state=new_status,
+                    trigger=trigger
+                )
+            
+            # 4. Consistency validation (existing logic - applied when requested)
             if validate_consistency:
                 expected_status = self._calculate_expected_status()
                 if expected_status and new_status != expected_status:
@@ -302,20 +329,113 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                         )
                     )
             
-            self.status = new_status
+            # 5. No change needed
+            if old_status == new_status:
+                return {
+                    'status_updated': False,
+                    'old_status': old_status,
+                    'new_status': new_status,
+                    'source': source,
+                    'state_machine_used': use_state_machine,
+                    'no_change_needed': True,
+                    'timestamp': timezone.now().isoformat()
+                }
             
-            if save:
-                self.save()
+            # 6. Perform the transition
+            with transaction.atomic():
+                self.status = new_status
                 
+                # Enhanced transition notes with source tracking
+                if notes or source != 'auto_sync':
+                    transition_note = f"[{timezone.now().strftime('%Y-%m-%d %H:%M')}] Status: {old_status} → {new_status}"
+                    
+                    # Add source information
+                    if source == 'manual':
+                        transition_note += " (manual change)"
+                    elif source == 'business_result':
+                        transition_note += " (business result)"
+                    elif source == 'auto_sync':
+                        transition_note += " (auto-sync)"
+                    
+                    # Add trigger information
+                    if trigger:
+                        transition_note += f" [trigger: {trigger}]"
+                    
+                    # Add user notes
+                    if notes:
+                        transition_note += f": {notes}"
+                    
+                    # Append to existing notes
+                    if self.notes:
+                        self.notes += f"\n{transition_note}"
+                    else:
+                        self.notes = transition_note
+                
+                if save:
+                    self.save()
+                    
+                # Enhanced logging with source tracking
+                self._log_status_transition(
+                    old_status=old_status,
+                    new_status=new_status,
+                    trigger=trigger,
+                    user=user,
+                    notes=notes,
+                    source=source
+                )
+            
+            return {
+                'status_updated': True,
+                'old_status': old_status,
+                'old_status_display': old_status_display,
+                'new_status': new_status,
+                'new_status_display': self.get_status_display(),
+                'trigger': trigger,
+                'source': source,
+                'state_machine_used': use_state_machine,
+                'transition_valid': True,
+                'timestamp': timezone.now().isoformat(),
+                'updated_by': user.id if user else None
+            }
+            
         except StandardizedValidationError:
-            # Re-raise standardized validation errors
+            # Re-raise validation errors from State Machine or existing logic
             raise
         except Exception as e:
-            # Convert any unexpected errors to standardized format
             raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Status update failed")
+                CampaignErrorMessages.TARGET_STATUS_UPDATE_FAILED.format(reason=str(e))
             )
-        
+
+    def _log_status_transition(self, old_status: str, new_status: str, 
+                            trigger: str = None, user=None, notes: str = None, 
+                            source: str = 'manual'):
+        """
+        Enhanced logging with source tracking and State Machine information
+        """
+        try:
+            log_entry = {
+                'target_id': self.id,
+                'campaign_id': self.campaign.id,
+                'target_type': self.get_target_type(),
+                'old_status': old_status,
+                'new_status': new_status,
+                'trigger': trigger,
+                'source': source,
+                'user_id': user.id if user else None,
+                'notes': notes,
+                'state_machine_used': source in ['manual', 'business_result'],
+                'is_final_state': TargetStateMachine.is_final_state(new_status),
+                'allowed_next_transitions': TargetStateMachine.get_allowed_transitions(new_status),
+                'timestamp': timezone.now().isoformat()
+            }
+            
+            # TODO: Replace with proper audit logging system
+            print(f"TARGET_STATUS_TRANSITION: {log_entry}")
+            
+        except Exception as e:
+            # Don't fail the transaction for logging errors
+            print(f"Failed to log status transition: {str(e)}")
+            
     
     def _calculate_expected_status(self) -> Optional[str]:
         """
@@ -389,6 +509,7 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
     def sync_status_with_activities(self, save=True) -> bool:
         """
         Synchronise automatiquement le statut avec l'état des activités
+        FIXED: Uses enhanced update_status with source='auto_sync' only
         
         Args:
             save (bool): Si True, sauvegarde automatiquement
@@ -402,20 +523,24 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                 return False  # Pas d'activités, pas de changement
             
             if self.status != expected_status:
-                old_status = self.status
-                self.status = expected_status
+                # 🔧 FIX: Use update_status ONLY, remove direct modification
+                result = self.update_status(
+                    new_status=expected_status,
+                    trigger='activity_sync',  # Informational trigger
+                    notes='Auto-synchronized with activity status',
+                    source='auto_sync',  # 🔑 This bypasses State Machine validation
+                    save=save,
+                    validate_consistency=False  # Skip consistency check since we're fixing it
+                )
                 
-                if save:
-                    self.save(update_fields=['status', 'updated_at'])
-                
-                return True
+                return result.get('status_updated', False)
             
             return False
             
         except Exception as e:
             raise StandardizedValidationError(
-                CampaignErrorMessages.CAMPAIGN_TARGET_ORPHANED.format(
-                    target=f"Failed to sync status for target {self.id}: {str(e)}"
+                CampaignErrorMessages.TARGET_STATUS_SYNC_FAILED.format(
+                    reason=f"Failed to sync status for target {self.id}: {str(e)}"
                 )
             )
     
@@ -477,21 +602,37 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         
         return summary
     
-    def validate_status_consistency(self) -> Dict:
+    def validate_status_consistency(self, check_state_machine=True) -> Dict:
         """
-        Valide la cohérence du statut actuel avec les activités
-        Utile pour diagnostics et maintenance
+        Enhanced validation with optional State Machine checks
         
+        Args:
+            check_state_machine: If True, also validates State Machine compliance
+            
         Returns:
-            Dict: Rapport de validation avec détails
+            Dict: Enhanced validation report
         """
         expected_status = self._calculate_expected_status()
         current_status = self.status
         
         is_consistent = (
-            expected_status is None or  # Pas d'activités = pas de contrainte
+            expected_status is None or  # No activities = no constraint
             current_status == expected_status
         )
+        
+        # NEW: Optional State Machine validation
+        state_machine_issues = []
+        if check_state_machine and self.notes:
+            # Check if previous transitions were valid
+            history = self.get_status_history_summary()
+            for transition in history['transitions']:
+                from_state = transition['from_status']
+                to_state = transition['to_status']
+                if not TargetStateMachine.can_transition(from_state, to_state):
+                    state_machine_issues.append({
+                        'invalid_transition': f"{from_state} → {to_state}",
+                        'timestamp': transition['timestamp']
+                    })
         
         return {
             'target_id': self.id,
@@ -500,29 +641,38 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             'expected_status': expected_status,
             'needs_sync': not is_consistent,
             'activities_count': self.get_activities_summary()['total_activities'],
+            'state_machine_compliant': len(state_machine_issues) == 0,
+            'state_machine_issues': state_machine_issues,
             'validation_timestamp': timezone.now().isoformat()
         }
-    
-    def auto_update_status_if_needed(self) -> Dict:
+
+    def auto_update_status_if_needed(self, user=None) -> Dict:
         """
-        Met à jour automatiquement le statut si incohérent
-        Méthode utilitaire pour la maintenance et les hooks automatiques
+        Enhanced auto-update with user tracking
         
+        Args:
+            user: User triggering the auto-update (for audit)
+            
         Returns:
-            Dict: Rapport de mise à jour
+            Dict: Enhanced update report
         """
         validation = self.validate_status_consistency()
         
         if validation['needs_sync']:
             old_status = self.status
+            
+            # Use our enhanced sync method (already fixed)
             status_changed = self.sync_status_with_activities(save=True)
             
+            # Enhanced reporting with State Machine info
             return {
                 'target_id': self.id,
                 'action_taken': 'status_updated',
                 'old_status': old_status,
                 'new_status': self.status,
                 'was_inconsistent': True,
+                'state_machine_used': False,  # auto_sync bypasses State Machine
+                'triggered_by_user': user.id if user else None,
                 'timestamp': timezone.now().isoformat()
             }
         else:
@@ -531,5 +681,338 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                 'action_taken': 'no_change_needed',
                 'status': self.status,
                 'was_inconsistent': False,
+                'is_state_machine_compliant': validation.get('state_machine_compliant', True),
                 'timestamp': timezone.now().isoformat()
+            }
+
+
+    def mark_as_completed(self, reason: str = 'manual_completion', notes: str = None, user=None) -> dict:
+        """
+        Mark target as completed with appropriate business trigger
+        
+        Args:
+            reason: Completion reason - maps to State Machine triggers
+            notes: Optional completion notes
+            user: User marking as completed
+            
+        Returns:
+            dict: Update result from enhanced update_status()
+        """
+        # Map reasons to State Machine triggers
+        trigger_mapping = {
+            'manual_completion': 'manual_completion',
+            'successful_activity': 'successful_activity', 
+            'meeting_scheduled': 'meeting_scheduled',
+            'lead_created': 'lead_created',
+            'opportunity_created': 'opportunity_created'
+        }
+        
+        trigger = trigger_mapping.get(reason, 'manual_completion')
+        completion_notes = f"Target completed: {reason}"
+        if notes:
+            completion_notes += f" - {notes}"
+        
+        return self.update_status(
+            new_status=self.Status.COMPLETED,
+            trigger=trigger,
+            notes=completion_notes,
+            user=user,
+            source='business_result'
+        )
+
+    def mark_as_stopped(self, reason: str = 'not_interested', notes: str = None, user=None) -> dict:
+        """
+        Mark target as stopped with appropriate business trigger
+        
+        Args:
+            reason: Stop reason - maps to State Machine triggers
+            notes: Optional stop notes
+            user: User marking as stopped
+            
+        Returns:
+            dict: Update result from enhanced update_status()
+        """
+        # Map reasons to State Machine triggers
+        trigger_mapping = {
+            'not_interested': 'not_interested',
+            'wrong_contact': 'wrong_contact',
+            'invalid_contact_info': 'invalid_contact_info',
+            'unsubscribed': 'unsubscribed',
+            'manual_stop': 'manual_stop'
+        }
+        
+        trigger = trigger_mapping.get(reason, 'manual_stop')
+        stop_notes = f"Target stopped: {reason}"
+        if notes:
+            stop_notes += f" - {notes}"
+        
+        return self.update_status(
+            new_status=self.Status.STOPPED,
+            trigger=trigger,
+            notes=stop_notes,
+            user=user,
+            source='business_result'
+        )
+
+    def request_callback(self, callback_date=None, notes: str = None, user=None) -> dict:
+        """
+        Mark target as callback pending with State Machine validation
+        
+        Args:
+            callback_date: When callback was requested for
+            notes: Optional callback notes
+            user: User requesting callback
+            
+        Returns:
+            dict: Update result from enhanced update_status()
+        """
+        callback_notes = "Callback requested"
+        if callback_date:
+            self.callback_date = callback_date
+            callback_notes += f" for {callback_date}"
+        if notes:
+            callback_notes += f" - {notes}"
+        
+        return self.update_status(
+            new_status=self.Status.CALLBACK_PENDING,
+            trigger='callback_requested',
+            notes=callback_notes,
+            user=user,
+            source='business_result'
+        )
+
+    def start_progress(self, notes: str = None, user=None) -> dict:
+        """
+        Mark target as in progress with State Machine validation
+        
+        Args:
+            notes: Optional progress notes
+            user: User starting progress
+            
+        Returns:
+            dict: Update result from enhanced update_status()
+        """
+        # Determine appropriate trigger based on current status
+        if self.status == self.Status.PENDING:
+            trigger = 'campaign_started'
+            progress_notes = "Campaign activities started"
+        elif self.status == self.Status.CALLBACK_PENDING:
+            trigger = 'callback_expired'
+            progress_notes = "Callback period expired, resuming activities"
+        else:
+            trigger = 'first_activity_started'
+            progress_notes = "Target activities in progress"
+        
+        if notes:
+            progress_notes += f" - {notes}"
+        
+        return self.update_status(
+            new_status=self.Status.IN_PROGRESS,
+            trigger=trigger,
+            notes=progress_notes,
+            user=user,
+            source='business_result'
+        )
+
+    def expire_callback(self, notes: str = None, user=None) -> dict:
+        """
+        Move from callback pending back to in progress when callback expires
+        
+        Args:
+            notes: Optional expiration notes
+            user: User processing expiration
+            
+        Returns:
+            dict: Update result from enhanced update_status()
+        """
+        if self.status != self.Status.CALLBACK_PENDING:
+            raise StandardizedValidationError(
+                f"Cannot expire callback for target in status: {self.status}"
+            )
+        
+        expiry_notes = "Callback period expired"
+        if notes:
+            expiry_notes += f" - {notes}"
+        
+        # Clear callback date when expired
+        self.callback_date = None
+        
+        return self.update_status(
+            new_status=self.Status.IN_PROGRESS,
+            trigger='callback_expired',
+            notes=expiry_notes,
+            user=user,
+            source='business_result'
+        )
+    
+    def get_available_actions(self) -> dict:
+        """
+        Get available actions based on current status using State Machine
+        Useful for UI and API to show what actions are permitted
+        
+        Returns:
+            dict: Available actions with their triggers and descriptions
+        """
+        current_status = self.status
+        allowed_transitions = TargetStateMachine.get_allowed_transitions(current_status)
+        
+        actions = {}
+        
+        # Define action mappings
+        action_mappings = {
+            'IN_PROGRESS': {
+                'start_progress': 'Begin working on this target',
+                'continue_activities': 'Continue campaign activities'
+            },
+            'CALLBACK_PENDING': {
+                'request_callback': 'Schedule callback with contact',
+                'set_callback_date': 'Set or update callback date'
+            },
+            'COMPLETED': {
+                'mark_completed_success': 'Mark as successfully completed',
+                'mark_completed_meeting': 'Mark completed with meeting scheduled',
+                'mark_completed_lead': 'Mark completed with lead created',
+                'mark_completed_opportunity': 'Mark completed with opportunity created'
+            },
+            'STOPPED': {
+                'mark_stopped_not_interested': 'Mark as not interested',
+                'mark_stopped_wrong_contact': 'Mark as wrong contact',
+                'mark_stopped_invalid_info': 'Mark as invalid contact info',
+                'mark_stopped_unsubscribed': 'Mark as unsubscribed'
+            }
+        }
+        
+        # Build available actions based on allowed transitions
+        for allowed_status in allowed_transitions:
+            if allowed_status in action_mappings:
+                actions.update(action_mappings[allowed_status])
+        
+        # Add universal actions for non-final states
+        if not TargetStateMachine.is_final_state(current_status):
+            actions['manual_status_change'] = 'Manually change status'
+            actions['add_notes'] = 'Add notes without changing status'
+        
+        return {
+            'current_status': current_status,
+            'current_status_display': self.get_status_display(),
+            'is_final_state': TargetStateMachine.is_final_state(current_status),
+            'allowed_transitions': allowed_transitions,
+            'available_actions': actions
+        }
+
+    def can_perform_action(self, action_type: str) -> bool:
+        """
+        Check if a specific action can be performed on this target
+        
+        Args:
+            action_type: Type of action ('complete', 'stop', 'callback', 'progress')
+            
+        Returns:
+            bool: True if action is allowed
+        """
+        current_status = self.status
+        
+        action_requirements = {
+            'complete': ['IN_PROGRESS', 'CALLBACK_PENDING'],
+            'stop': ['IN_PROGRESS', 'CALLBACK_PENDING'],
+            'callback': ['IN_PROGRESS'],
+            'progress': ['PENDING', 'CALLBACK_PENDING'],
+            'expire_callback': ['CALLBACK_PENDING']
+        }
+        
+        required_statuses = action_requirements.get(action_type, [])
+        return current_status in required_statuses
+
+    def get_status_history_summary(self) -> dict:
+        """
+        Get a summary of status changes from notes
+        Useful for debugging and audit purposes
+        
+        Returns:
+            dict: Summary of status transitions found in notes
+        """
+        if not self.notes:
+            return {'transitions': [], 'total_changes': 0}
+        
+        import re
+        
+        # Pattern to match status transition notes
+        transition_pattern = r'\[([\d\-: ]+)\] Status: (\w+) → (\w+)'
+        
+        transitions = []
+        for match in re.finditer(transition_pattern, self.notes):
+            timestamp_str, from_status, to_status = match.groups()
+            transitions.append({
+                'timestamp': timestamp_str,
+                'from_status': from_status,
+                'to_status': to_status
+            })
+        
+        return {
+            'transitions': transitions,
+            'total_changes': len(transitions),
+            'current_status': self.status
+        }
+    
+    def get_state_machine_integration_status(self) -> dict:
+        """
+        Verify State Machine integration is working properly
+        Useful for debugging and system health checks
+        
+        Returns:
+            dict: Integration status report
+        """
+        try:
+            # Test State Machine validation
+            current_status = self.status
+            allowed_transitions = TargetStateMachine.get_allowed_transitions(current_status)
+            is_final_state = TargetStateMachine.is_final_state(current_status)
+            
+            # Test business trigger methods availability
+            available_methods = []
+            if self.can_perform_action('complete'):
+                available_methods.append('mark_as_completed')
+            if self.can_perform_action('stop'):
+                available_methods.append('mark_as_stopped')
+            if self.can_perform_action('callback'):
+                available_methods.append('request_callback')
+            if self.can_perform_action('progress'):
+                available_methods.append('start_progress')
+            
+            # Check status consistency
+            consistency_report = self.validate_status_consistency()
+            
+            # Check if notes contain State Machine transitions
+            history_summary = self.get_status_history_summary()
+            has_state_machine_transitions = any(
+                'business result' in transition.get('notes', '') or 
+                'trigger:' in transition.get('notes', '')
+                for transition in history_summary.get('transitions', [])
+            )
+            
+            return {
+                'target_id': self.id,
+                'campaign_id': self.campaign.id,
+                'integration_status': 'active',
+                'current_status': current_status,
+                'is_final_state': is_final_state,
+                'allowed_transitions': allowed_transitions,
+                'available_business_methods': available_methods,
+                'status_consistency': {
+                    'is_consistent': consistency_report.get('is_consistent'),
+                    'state_machine_compliant': consistency_report.get('state_machine_compliant', True)
+                },
+                'transition_history': {
+                    'total_transitions': history_summary.get('total_changes', 0),
+                    'has_state_machine_transitions': has_state_machine_transitions
+                },
+                'verification_timestamp': timezone.now().isoformat()
+            }
+            
+        except Exception as e:
+            return {
+                'target_id': self.id,
+                'integration_status': 'error',
+                'error': str(e),
+                'verification_timestamp': timezone.now().isoformat()
             }

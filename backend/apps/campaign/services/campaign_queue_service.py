@@ -155,10 +155,13 @@ class CampaignQueueService:
                 CampaignErrorMessages.QUEUE_OPTIMIZATION_FAILED
             )
 
+    # Replace the entire method in apps/campaign/services/campaign_queue_service.py
+
     @classmethod
     def get_prioritized_contacts_for_campaign(cls, campaign: Campaign, limit: int = 50) -> Response:
         """
         Get a prioritized list of contacts for a non-sequence campaign
+        UPDATED: Uses State Machine for callback expiration
         
         Args:
             campaign: The campaign to get contacts for
@@ -174,14 +177,31 @@ class CampaignQueueService:
                     CampaignErrorMessages.CAMPAIGN_NO_SEQUENCE_TYPE
                 )
             
-            # First, update any expired callbacks to IN_PROGRESS
+            # 🔧 MODIFIED: Use State Machine for expired callbacks instead of direct update
             today = date.today()
-            callback_targets = CampaignTarget.objects.filter(
+            expired_callback_targets = CampaignTarget.objects.filter(
                 **{CONFIG.fields.campaign: campaign},
                 status=CampaignTarget.Status.CALLBACK_PENDING,
                 callback_date__lte=today  # Callback date is today or in the past
             )
-            updated_count = callback_targets.update(status=CampaignTarget.Status.IN_PROGRESS)
+            
+            # Process expired callbacks with State Machine
+            updated_count = 0
+            for target in expired_callback_targets:
+                try:
+                    # 🔧 NEW: Use State Machine business trigger instead of direct update
+                    expiry_result = target.expire_callback(
+                        notes=f"Callback expired (was due: {target.callback_date})",
+                        user=None  # System operation
+                    )
+                    
+                    if expiry_result.get('status_updated'):
+                        updated_count += 1
+                        
+                except Exception as e:
+                    # Log error but continue processing other targets
+                    print(f"Failed to expire callback for target {target.id}: {str(e)}")
+            # 🔧 END MODIFICATION
             
             # Use the activity service to extract contacts
             from apps.campaign.services.campaign_activity_service import CampaignActivityService
@@ -277,7 +297,7 @@ class CampaignQueueService:
                 
                 # Special status for CALLBACK_PENDING
                 if target.status == CampaignTarget.Status.CALLBACK_PENDING:
-                    score += CONFIG.priorities.callback_priority_boost   // 2  # Half the boost of an actual callback date
+                    score += CONFIG.priorities.callback_priority_boost // 2  # Half the boost of an actual callback date
                 
                 # Add the contact with its score to the list
                 contacts_with_score.append({
@@ -309,7 +329,7 @@ class CampaignQueueService:
                 'total': len(valid_contacts),
                 'skipped': len(skipped_contacts),
                 'prioritized': len(contacts_with_score),
-                'callbacks_updated': updated_count
+                'callbacks_updated': updated_count  # 🔧 ENHANCED: Now includes State Machine updates
             }
             
             # Use CampaignResponseBuilder for standardized contact queue response
@@ -323,7 +343,10 @@ class CampaignQueueService:
                 additional_data={
                     'total_pending': contact_counts['total'],
                     'skipped_contacts': skipped_contacts,
-                    'counts': contact_counts
+                    'counts': contact_counts,
+                    # 🔧 NEW: Add State Machine integration info
+                    'state_machine_integration': True,
+                    'callbacks_expired_with_state_machine': updated_count
                 }
             )
             
@@ -334,7 +357,7 @@ class CampaignQueueService:
             raise StandardizedValidationError(
                 CampaignErrorMessages.QUEUE_OPTIMIZATION_FAILED
             )
-    
+        
     @classmethod
     def activate_campaign(cls, campaign: Campaign) -> Response:
         """

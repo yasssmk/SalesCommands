@@ -181,8 +181,8 @@ class CampaignCoreService:
     
     @classmethod
     def remove_contact_from_campaign(cls, campaign: Campaign, contact: Contact, 
-                                   notes: str = None) -> Response:
-        """Remove contact from campaign"""
+                               notes: str = None) -> Response:
+        """Remove contact from campaign - UPDATED: Uses State Machine business triggers"""
         try:
             with transaction.atomic():
                 activities = Activity.objects.filter(
@@ -203,13 +203,15 @@ class CampaignCoreService:
                     campaign=campaign, contact=contact
                 ).first()
                 
+                # Use State Machine business trigger instead of centralized method
                 status_update_result = {'status_updated': False}
                 if campaign_target:
-                    # Import de la méthode centralisée
-                    from .campaign_result_service import CampaignResultService
-                    status_update_result = CampaignResultService.update_campaign_target_status_for_business_result(
-                        campaign_target, 'not_interested'  # Suppression manuelle = pas intéressé
+                    status_update_result = campaign_target.mark_as_stopped(
+                        reason='manual_stop',
+                        notes=f"Contact manually removed from campaign: {notes}" if notes else "Contact manually removed from campaign",
+                        user=None  
                     )
+
                 
                 data = {
                     'campaign_id': campaign.id,
@@ -220,14 +222,17 @@ class CampaignCoreService:
                     'action': 'contact_removed',
                     'target_status_updated': status_update_result.get('status_updated', False),
                     'old_target_status': status_update_result.get('old_status'),
-                    'new_target_status': status_update_result.get('new_status')
+                    'new_target_status': status_update_result.get('new_status'),
+                    'state_machine_used': status_update_result.get('state_machine_used', False),
+                    'business_trigger': status_update_result.get('trigger')
                 }
                 
                 meta = {
                     'operation': 'contact_removal',
                     'activities_affected': activities_count,
                     'target_updated': bool(campaign_target),
-                    'status_update_method': 'centralized'
+                    'status_update_method': 'state_machine_business_trigger',  
+                    'state_machine_integration': True 
                 }
                 
                 return StandardizedSuccessResponse.success(
@@ -243,10 +248,11 @@ class CampaignCoreService:
                 CampaignErrorMessages.CAMPAIGN_CONTACT_MAPPING_FAILED
             )
 
+
     @classmethod
     def remove_account_from_campaign(cls, campaign: Campaign, account: Account, 
-                                   notes: str = None) -> Response:
-        """Remove account from campaign"""
+                               notes: str = None) -> Response:
+        """Remove account from campaign - UPDATED: Uses State Machine business triggers"""
         try:
             with transaction.atomic():
                 activities = Activity.objects.filter(
@@ -261,15 +267,21 @@ class CampaignCoreService:
                     outcome_notes=f"Account removed from campaign: {notes}" if notes else "Account removed from campaign"
                 )
                 
-                # Import local pour éviter circularité
+                # Use State Machine business triggers for all account targets
                 from apps.campaign.models import CampaignTarget
-                campaign_target = CampaignTarget.objects.filter(
+                account_targets = CampaignTarget.objects.filter(
                     campaign=campaign, account=account
-                ).first()
+                )
                 
-                if campaign_target:
-                    campaign_target.status = CampaignTarget.Status.STOPPED
-                    campaign_target.save()
+                targets_updated = []
+                for campaign_target in account_targets:
+                    update_result = campaign_target.mark_as_stopped(
+                        reason='manual_stop',
+                        notes=f"Account manually removed from campaign: {notes}" if notes else "Account manually removed from campaign",
+                        user=None  # Could be enhanced to accept user parameter
+                    )
+                    targets_updated.append(update_result)
+
                 
                 data = {
                     'campaign_id': campaign.id,
@@ -277,13 +289,17 @@ class CampaignCoreService:
                     'account_id': account.id,
                     'account_name': account.company_name,
                     'activities_cancelled': activities_count,
-                    'action': 'account_removed'
+                    'action': 'account_removed',
+                    'targets_updated': len(targets_updated),
+                    'state_machine_updates': targets_updated
                 }
                 
                 meta = {
                     'operation': 'account_removal',
                     'activities_affected': activities_count,
-                    'target_updated': bool(campaign_target)
+                    'targets_updated': len(targets_updated),
+                    'status_update_method': 'state_machine_business_trigger',  
+                    'state_machine_integration': True  
                 }
                 
                 return StandardizedSuccessResponse.success(
@@ -298,7 +314,7 @@ class CampaignCoreService:
             raise StandardizedValidationError(
                 CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
             )
-
+    
     @classmethod
     def get_campaign_contacts_with_responses(cls, campaign: Campaign) -> Response:
         """Get contacts with potential responses"""
