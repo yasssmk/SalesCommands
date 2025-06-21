@@ -5,7 +5,8 @@ from apps.campaign.models.campaign_result_tracking import CampaignResultTracking
 from apps.campaign.models.campaign import Campaign
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages, CampaignErrorMessages
+from core.error_messages import CoreErrorMessages
+from apps.campaign.config.settings import CONFIG
 
 
 class CampaignResultTrackingSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -52,47 +53,8 @@ class CampaignResultTrackingSerializer(ClientScopeManager.SerializerMixin, seria
     
     class Meta:
         model = CampaignResultTracking
-        fields = [
-            'id',
-            'campaign',
-            'campaign_name',
-            # Compteurs (read-only)
-            'leads_created_count',
-            'meetings_secured_count', 
-            'opportunities_created_count',
-            'deals_closed_count',
-            # Valeurs monétaires (read-only)
-            'pipeline_value_created',
-            'revenue_generated',
-            'pipeline_value_formatted',
-            'revenue_formatted',
-            # IDs trackés (read-only pour sécurité)
-            'tracked_lead_ids',
-            'tracked_meeting_ids',
-            'tracked_opportunity_ids', 
-            'tracked_deal_ids',
-            # Métadonnées
-            'last_updated',
-            # Champs calculés
-            'total_tracked_objects',
-            'conversion_rates',
-            'integrity_score',
-            'tracked_objects_summary'
-        ]
-        read_only_fields = [
-            'id',
-            'leads_created_count',
-            'meetings_secured_count',
-            'opportunities_created_count', 
-            'deals_closed_count',
-            'pipeline_value_created',
-            'revenue_generated',
-            'tracked_lead_ids',
-            'tracked_meeting_ids',
-            'tracked_opportunity_ids',
-            'tracked_deal_ids',
-            'last_updated'
-        ]
+        fields = CONFIG.serializers.result_tracking_fields
+        read_only_fields = CONFIG.serializers.result_tracking_read_only_fields
     
     def get_total_tracked_objects(self, obj: CampaignResultTracking) -> int:
         """Calculer le nombre total d'objets trackés"""
@@ -264,11 +226,11 @@ class CampaignResultTrackingSerializer(ClientScopeManager.SerializerMixin, seria
             
             # Ajouter des alertes d'intégrité si score faible
             integrity_score = representation.get('integrity_score', 100)
-            if integrity_score < 90:
+            if integrity_score < CONFIG.validation.integrity_warning_threshold:
                 representation['integrity_warnings'] = [
                     f"Integrity score is {integrity_score}% - consider running cleanup"
                 ]
-                if integrity_score < 50:
+                if integrity_score < CONFIG.validation.integrity_critical_threshold:
                     representation['integrity_warnings'].append(
                         "Critical integrity issues detected - immediate cleanup recommended"
                     )
@@ -335,9 +297,9 @@ class CampaignResultTrackingIntegritySerializer(serializers.Serializer):
             has_orphaned = data.get('has_orphaned_objects', False)
             needs_cleanup = data.get('needs_cleanup', False)
             
-            if integrity_score < 50:
+            if integrity_score < CONFIG.validation.integrity_warning_threshold:
                 recommendations.append("Critical: Run immediate cleanup - integrity below 50%")
-            elif integrity_score < 90:
+            elif integrity_score < CONFIG.validation.integrity_critical_threshold:
                 recommendations.append("Warning: Consider running cleanup - integrity below 90%")
             
             if has_orphaned:

@@ -12,11 +12,7 @@ from apps.campaign.utils.standardized_responses import (
 )
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages
-from apps.campaign.config.variables import (
-    DEFAULT_PLAYLIST_LIMIT,
-    OPERATION_MESSAGES,
-    FIELD_NAMES
-)
+from apps.campaign.config.settings import CONFIG
 
 
 class CampaignCoreService:
@@ -101,7 +97,7 @@ class CampaignCoreService:
         """Get campaign playlist - logique centralisée sans circularité"""
         try:
             if limit is None:
-                limit = DEFAULT_PLAYLIST_LIMIT
+                limit = CONFIG.limits.playlist_limit
             
             # Import local pour éviter la circularité
             from .campaign_queue_service import CampaignQueueService
@@ -235,7 +231,7 @@ class CampaignCoreService:
                 }
                 
                 return StandardizedSuccessResponse.success(
-                    message=OPERATION_MESSAGES['CONTACT_REMOVED'],
+                    message=CONFIG.messages.contact_removed,
                     data=data,
                     meta=meta
                 )
@@ -291,7 +287,7 @@ class CampaignCoreService:
                 }
                 
                 return StandardizedSuccessResponse.success(
-                    message=OPERATION_MESSAGES['ACCOUNT_REMOVED'],
+                    message=CONFIG.messages.account_removed,
                     data=data,
                     meta=meta
                 )
@@ -545,7 +541,7 @@ class CampaignCoreService:
             try:
                 updated_playlist_response = cls.get_campaign_playlist(
                     campaign=campaign, 
-                    limit=10
+                    limit=CONFIG.limits.playlist_limit
                 )
                 if hasattr(updated_playlist_response, 'data') and 'data' in updated_playlist_response.data:
                     playlist_data = updated_playlist_response.data['data']
@@ -564,7 +560,7 @@ class CampaignCoreService:
             }
 
             return StandardizedSuccessResponse.success(
-                message=OPERATION_MESSAGES['ACTIVITY_COMPLETED'],
+                message=CONFIG.messages.activity_completed,
                 data=enhanced_data,
                 meta=meta
             )
@@ -600,25 +596,25 @@ class CampaignCoreService:
                         activities_cancelled = response_data.get('activities_cancelled', 0)
                         
                         successful.append({
-                            f"{FIELD_NAMES['CONTACT']}_id": contact_id,
-                            f"{FIELD_NAMES['CONTACT']}_name": f"{contact.first_name} {contact.last_name}",
+                            f"{CONFIG.fields.contact}_id": contact_id,
+                            f"{CONFIG.fields.contact}_name": f"{contact.first_name} {contact.last_name}",
                             'activities_cancelled': activities_cancelled
                         })
                         total_activities_cancelled += activities_cancelled
                     
                 except Contact.DoesNotExist:
                     failed.append({
-                        f"{FIELD_NAMES['CONTACT']}_id": contact_id,
+                        f"{CONFIG.fields.contact}_id": contact_id,
                         'error': 'Contact not found'
                     })
                 except Exception as e:
                     failed.append({
-                        f"{FIELD_NAMES['CONTACT']}_id": contact_id,
+                        f"{CONFIG.fields.contact}_id": contact_id,
                         'error': str(e)
                     })
             
             # Use bulk operation response
-            message = OPERATION_MESSAGES['BULK_OPERATION_COMPLETED'].format(
+            message = CONFIG.messages.bulk_operation_completed.format(
                 successful=len(successful),
                 total=len(contact_ids)
             )

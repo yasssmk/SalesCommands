@@ -21,11 +21,7 @@ if TYPE_CHECKING:
     from apps.accounts.models import Account
 
 # Import configuration variables
-from apps.campaign.config.variables import (
-    FIELD_NAMES,
-    DEFAULT_SUMMARY_ACTIVITIES,
-    OPERATION_MESSAGES
-)
+from apps.campaign.config.settings import CONFIG
 
 
 class CampaignActivityService:
@@ -97,7 +93,7 @@ class CampaignActivityService:
         with transaction.atomic():
             # Process each valid contact
             for contact_info in valid_contacts:
-                contact = contact_info[FIELD_NAMES['CONTACT']]
+                contact = contact_info[CONFIG.fields.contact]
                 has_phone = contact_info['has_phone']
                 has_email = contact_info['has_email']
                 has_linkedin = contact_info['has_linkedin']
@@ -407,11 +403,11 @@ class CampaignActivityService:
         Returns:
             Dictionary with extracted contacts and account mapping
         """
-        campaign_targets = CampaignTarget.objects.filter(**{FIELD_NAMES['CAMPAIGN']: campaign}).select_related(
-            FIELD_NAMES['ACCOUNT'], 
-            FIELD_NAMES['CONTACT'],
-            FIELD_NAMES['LEAD'],
-            FIELD_NAMES['TARGET_OPPORTUNITY']
+        campaign_targets = CampaignTarget.objects.filter(**{CONFIG.fields.campaign: campaign}).select_related(
+            CONFIG.fields.account, 
+            CONFIG.fields.contact,
+            CONFIG.fields.lead,
+            CONFIG.fields.target_opportunity
         )
 
         # OPTIMIZATION: Create index dictionaries for O(1) lookups instead of O(n*m) nested loops
@@ -458,18 +454,18 @@ class CampaignActivityService:
             all_contacts = Contact.objects.filter(
                 id__in=target_contacts,
                 account_id__in=account_ids  # Déjà filtré pour avoir des accounts valides
-            ).select_related('standard_department', FIELD_NAMES['ACCOUNT'])
+            ).select_related('standard_department', CONFIG.fields.account)
         else:
             # Get all contacts for the collected accounts
             all_contacts = Contact.objects.filter(
                 account_id__in=account_ids
-            ).select_related('standard_department', FIELD_NAMES['ACCOUNT'])
+            ).select_related('standard_department', CONFIG.fields.account)
             
             # Add directly targeted contacts even if their account was not included
             if direct_contact_ids:
                 direct_contacts = Contact.objects.filter(
                     id__in=direct_contact_ids
-                ).exclude(account_id__in=account_ids).select_related('standard_department', FIELD_NAMES['ACCOUNT'])
+                ).exclude(account_id__in=account_ids).select_related('standard_department', CONFIG.fields.account)
                 
                 # Combine QuerySets
                 all_contacts = (all_contacts | direct_contacts).distinct()
@@ -486,8 +482,8 @@ class CampaignActivityService:
                 contact_info = ContactSafetyHelper.get_contact_display_info(contact)
                 skipped_contacts.append({
                     'contact_id': contact_info['contact_id'],
-                    FIELD_NAMES['CONTACT']: contact_info['contact_name'],
-                    FIELD_NAMES['ACCOUNT']: contact_info['account_name'],
+                    CONFIG.fields.contact: contact_info['contact_name'],
+                    CONFIG.fields.account: contact_info['account_name'],
                     'reason': 'Contact has no valid account association'
                 })
                 continue
@@ -499,8 +495,8 @@ class CampaignActivityService:
                 contact_info = ContactSafetyHelper.get_contact_display_info(contact)
                 skipped_contacts.append({
                     'contact_id': contact_info['contact_id'],
-                    FIELD_NAMES['CONTACT']: contact_info['contact_name'],
-                    FIELD_NAMES['ACCOUNT']: contact_info['account_name'],
+                    CONFIG.fields.contact: contact_info['contact_name'],
+                    CONFIG.fields.account: contact_info['account_name'],
                     'reason': 'Contact account ID is missing'
                 })
                 continue
@@ -514,8 +510,8 @@ class CampaignActivityService:
                 contact_info = ContactSafetyHelper.get_contact_display_info(contact)
                 skipped_contacts.append({
                     'contact_id': contact_info['contact_id'],
-                    FIELD_NAMES['CONTACT']: contact_info['contact_name'],
-                    FIELD_NAMES['ACCOUNT']: contact_info['account_name'],
+                    CONFIG.fields.contact: contact_info['contact_name'],
+                    CONFIG.fields.account: contact_info['account_name'],
                     'reason': 'Contact has opted out of communications'
                 })
                 continue
@@ -530,15 +526,15 @@ class CampaignActivityService:
                 contact_info = ContactSafetyHelper.get_contact_display_info(contact)
                 skipped_contacts.append({
                     'contact_id': contact_info['contact_id'],
-                    FIELD_NAMES['CONTACT']: contact_info['contact_name'],
-                    FIELD_NAMES['ACCOUNT']: contact_info['account_name'],
+                    CONFIG.fields.contact: contact_info['contact_name'],
+                    CONFIG.fields.account: contact_info['account_name'],
                     'reason': 'No communication channels available'
                 })
                 continue
             
             # Valid contact for activities
             valid_contacts.append({
-                FIELD_NAMES['CONTACT']: contact,
+                CONFIG.fields.contact: contact,
                 'has_phone': has_phone,
                 'has_email': has_email,
                 'has_linkedin': has_linkedin
@@ -562,8 +558,8 @@ class CampaignActivityService:
                 contact_info = ContactSafetyHelper.get_contact_display_info(target.contact)
                 skipped_contacts.append({
                     'contact_id': contact_info['contact_id'],
-                    FIELD_NAMES['CONTACT']: contact_info['contact_name'],
-                    FIELD_NAMES['ACCOUNT']: contact_info['account_name'],
+                    CONFIG.fields.contact: contact_info['contact_name'],
+                    CONFIG.fields.account: contact_info['account_name'],
                     'reason': 'Direct target contact has no valid account association'
                 })
         

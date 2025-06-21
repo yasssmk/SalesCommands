@@ -16,14 +16,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages, CoreErrorMessages
 
 # Import configuration variables
-from apps.campaign.config.variables import (
-    TIER_MAX_ATTEMPTS, 
-    TIER_PRIORITY_SCORES,
-    FIELD_NAMES,
-    CALL_RESULTS,
-    EMAIL_LINKEDIN_RESULTS,
-    OPERATION_MESSAGES
-)
+from apps.campaign.config.settings import CONFIG
 
 
 class CampaignResultService:
@@ -128,7 +121,7 @@ class CampaignResultService:
             Response: Standardized response with call result processing
         """
         # Validate result is in allowed call results
-        if result not in CALL_RESULTS:
+        if result not in CONFIG.validation.call_results:
             raise StandardizedValidationError(
                 CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=result)
             )
@@ -189,7 +182,7 @@ class CampaignResultService:
             # Cancel all remaining activities for this contact in this campaign
             if is_sequence_campaign and campaign: 
                 remaining_activities = Activity.objects.filter(
-                    **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
+                    **{f"campaign_info__{CONFIG.fields.campaign}": campaign},
                     contacts=contact,
                     status=Activity.Status.PLANNED
                 )
@@ -209,7 +202,7 @@ class CampaignResultService:
             data = {
                 'activity_id': activity.id,
                 'action': 'sequence_regenerated' if is_sequence_campaign else 'completed',
-                f"{FIELD_NAMES['CONTACT']}_id": contact.id if contact else None,
+                f"{CONFIG.fields.contact}_id": contact.id if contact else None,
                 'phone_marked_invalid': True,
                 'new_activities_count': new_activities_count
             }
@@ -264,7 +257,7 @@ class CampaignResultService:
             if is_sequence_campaign and campaign:
                 # Cancel all remaining activities for this contact in this campaign
                 remaining_activities = Activity.objects.filter(
-                    **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
+                    **{f"campaign_info__{CONFIG.fields.campaign}": campaign},
                     contacts=contact,
                     status=Activity.Status.PLANNED
                 )
@@ -287,7 +280,7 @@ class CampaignResultService:
             data = {
                 'activity_id': activity.id,
                 'action': 'sequence_regenerated' if is_sequence_campaign else 'completed',
-                f"{FIELD_NAMES['CONTACT']}_id": contact.id if contact else None,
+                f"{CONFIG.fields.contact}_id": contact.id if contact else None,
                 'email_marked_invalid': True,
                 'new_activities_count': new_activities_count
             }
@@ -465,7 +458,7 @@ class CampaignResultService:
             if is_sequence_campaign and sequence_info:
                 # Get tier-based max attempts
                 account_tier = getattr(activity.account, 'tier', 'C')
-                tier_max_attempts = TIER_MAX_ATTEMPTS.get(account_tier, 2)
+                tier_max_attempts = CONFIG.tiers.max_attempts.get(account_tier, 2)
                 
                 # Increment call attempts
                 sequence_info.call_attempts += 1
@@ -854,7 +847,7 @@ class CampaignResultService:
         """
         try:
             # Validate result is in allowed email/LinkedIn results
-            if result not in EMAIL_LINKEDIN_RESULTS:
+            if result not in CONFIG.validation.email_linkedin_results:
                 raise StandardizedValidationError(
                     CampaignErrorMessages.ACTIVITY_INVALID_RESULT.format(result=result)
                 )
@@ -901,7 +894,7 @@ class CampaignResultService:
                     'action': 'completed'
                 }
                 
-                message = OPERATION_MESSAGES['ACTIVITY_COMPLETED']
+                message = CONFIG.messages.activity_completed
             
             elif result == 'BOUNCED':
                 return cls._handle_email_bounced(activity, sequence_info, notes, is_sequence_campaign, **kwargs)
@@ -914,7 +907,7 @@ class CampaignResultService:
             
             meta = {
                 'operation': 'email_linkedin_handling',
-                FIELD_NAMES['RESULT']: result,
+                CONFIG.fields.result: result,
                 'sequence_progressed': result in ['NO_RESPONSE', 'SENT', 'DELIVERED', 'OPENED', 'CLICKED']
             }
             
@@ -961,7 +954,7 @@ class CampaignResultService:
         # Cancel planned activities for this contact
         if contact and campaign:
             cancelled_activities = Activity.objects.filter(
-                **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
+                **{f"campaign_info__{CONFIG.fields.campaign}": campaign},
                 contacts=contact,
                 status=Activity.Status.PLANNED
             )
@@ -991,8 +984,8 @@ class CampaignResultService:
         if account and campaign:
             cancelled_activities = Activity.objects.filter(
                 **{
-                    f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign,
-                    FIELD_NAMES['ACCOUNT']: account
+                    f"campaign_info__{CONFIG.fields.campaign}": campaign,
+                    CONFIG.fields.account: account
                 },
                 status=Activity.Status.PLANNED
             )

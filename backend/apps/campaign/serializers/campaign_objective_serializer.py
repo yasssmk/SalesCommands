@@ -7,6 +7,7 @@ from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from apps.campaign.models.campaign_objective import CampaignObjective
 from apps.campaign.models.campaign import Campaign
+from apps.campaign.config.settings import CONFIG
 
 
 class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -30,12 +31,8 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
     
     class Meta:
         model = CampaignObjective
-        fields = [
-            'id', 'campaign_id', 'name', 'objective_type', 'objective_type_display',
-            'target_value', 'current_value', 'progress_percentage', 'unit', 
-            'is_primary', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        fields = CONFIG.serializers.objective_fields
+        read_only_fields = CONFIG.serializers.objective_read_only_fields
     
     def get_current_value(self, obj):
         """Get current value from campaign tracking"""

@@ -148,6 +148,9 @@ class ValidationConfig:
     
     account_enhancement_fields: List[str] = field(default_factory=lambda: ['tier'])
 
+    # Integrity checks
+    integrity_warning_threshold: float = 90.0
+    integrity_critical_threshold: float = 50.0
 
 @dataclass(frozen=True)
 class FieldConfig:
@@ -246,9 +249,13 @@ class SerializerConfig:
     
     # Objective fields
     objective_fields: List[str] = field(default_factory=lambda: [
-        'id', 'campaign_id', 'name', 'description', 'objective_type',
+        'id', 'campaign_id', 'name', 'objective_type',
         'objective_type_display', 'target_value', 'current_value', 'unit',
         'is_primary', 'progress_percentage', 'last_updated', 'created_at', 'updated_at'
+    ])
+
+    objective_read_only_fields: List[str] = field(default_factory=lambda: [
+        'id', 'created_at', 'updated_at', 'current_value', 'progress_percentage', 'objective_type_display'
     ])
     
     # Target fields
@@ -278,6 +285,38 @@ class SerializerConfig:
     
     stakeholder_read_only_fields: List[str] = field(default_factory=lambda: [
         'added_at', 'added_by_name', 'user_name', 'role_display', 'campaign_name'
+    ])
+
+    # Result tracking fields
+
+    result_tracking_fields: List[str] = field(default_factory=lambda: [
+        'id', 'campaign', 'campaign_name',
+        'leads_created_count', 'meetings_secured_count', 
+        'opportunities_created_count', 'deals_closed_count',
+        'pipeline_value_created', 'revenue_generated',
+        'pipeline_value_formatted', 'revenue_formatted',
+        'tracked_lead_ids', 'tracked_meeting_ids',
+        'tracked_opportunity_ids', 'tracked_deal_ids',
+        'last_updated', 'total_tracked_objects',
+        'conversion_rates', 'integrity_score',
+        'tracked_objects_summary'
+    ])
+
+    result_tracking_read_only_fields: List[str] = field(default_factory=lambda: [
+        'id', 'leads_created_count', 'meetings_secured_count',
+        'opportunities_created_count', 'deals_closed_count',
+        'pipeline_value_created', 'revenue_generated',
+        'tracked_lead_ids', 'tracked_meeting_ids',
+        'tracked_opportunity_ids', 'tracked_deal_ids',
+        'last_updated'
+    ])
+
+    result_tracking_list_fields: List[str] = field(default_factory=lambda: [
+        'id', 'campaign', 'campaign_name',
+        'leads_created_count', 'meetings_secured_count',
+        'opportunities_created_count', 'deals_closed_count',
+        'pipeline_value_formatted', 'revenue_formatted',
+        'last_updated', 'integrity_score'
     ])
 
 

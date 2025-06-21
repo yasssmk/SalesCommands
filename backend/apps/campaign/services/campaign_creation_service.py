@@ -16,12 +16,7 @@ from apps.campaign.utils.standardized_responses import (
 )
 
 # Import configuration variables
-from apps.campaign.config.variables import (
-    FIELD_NAMES,
-    OPERATION_MESSAGES,
-    CAMPAIGN_STATUSES,
-    DEFAULT_PLAYLIST_LIMIT
-)
+from apps.campaign.config.settings import CONFIG
 
 
 class CampaignCreationService:
@@ -163,9 +158,9 @@ class CampaignCreationService:
         """
         try:
             # Get status values from CAMPAIGN_STATUSES
-            active_status = next(status[0] for status in CAMPAIGN_STATUSES if status[1] == 'Active')
-            completed_status = next(status[0] for status in CAMPAIGN_STATUSES if status[1] == 'Completed')
-            cancelled_status = next(status[0] for status in CAMPAIGN_STATUSES if status[1] == 'Cancelled')
+            active_status = next(status[0] for status in CONFIG.validation.campaign_statuses if status[1] == 'Active')
+            completed_status = next(status[0] for status in CONFIG.validation.campaign_statuses if status[1] == 'Completed')
+            cancelled_status = next(status[0] for status in CONFIG.validation.campaign_statuses if status[1] == 'Cancelled')
             
             # Validate campaign can be started
             if campaign.status == active_status:
@@ -188,7 +183,7 @@ class CampaignCreationService:
             try:
                 playlist_response = CampaignCoreService.get_campaign_playlist_internal(
                     campaign=campaign,
-                    limit=DEFAULT_PLAYLIST_LIMIT
+                    limit=CONFIG.limits.playlist_limit
                 )
                 
                 # Extract data from the standardized Response object
@@ -264,13 +259,13 @@ class CampaignCreationService:
             from apps.activities.models import Activity
             
             # Get paused status from CAMPAIGN_STATUSES
-            paused_status = next(status[0] for status in CAMPAIGN_STATUSES if status[1] == 'Paused')
+            paused_status = next(status[0] for status in CONFIG.validation.campaign_statuses if status[1] == 'Paused')
             
             # Update all planned activities to set pause date
             activities_paused = 0
             
             for activity in Activity.objects.filter(
-                **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign},
+                **{f"campaign_info__{CONFIG.fields.campaign}": campaign},
                 status=Activity.Status.PLANNED
             ):
                 if hasattr(activity, 'sequence_info'):
@@ -283,13 +278,13 @@ class CampaignCreationService:
             campaign.save()
             
             # Use operation message from config
-            message = OPERATION_MESSAGES['CAMPAIGN_PAUSED'].format(name=campaign.name)
+            message = CONFIG.messages.campaign_paused.format(name=campaign.name)
             if pause_until:
                 message += f" until {pause_until}"
             
             data = {
-                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
+                f"{CONFIG.fields.campaign}_id": campaign.id,
+                f"{CONFIG.fields.campaign}_name": campaign.name,
                 'activities_paused': activities_paused,
                 'pause_until': pause_until.isoformat() if pause_until else None,
                 'paused_at': timezone.now().isoformat()
@@ -327,7 +322,7 @@ class CampaignCreationService:
             from apps.activities.models import Activity
             
             # Get active status from CAMPAIGN_STATUSES
-            active_status = next(status[0] for status in CAMPAIGN_STATUSES if status[1] == 'Active')
+            active_status = next(status[0] for status in CONFIG.validation.campaign_statuses if status[1] == 'Active')
             
             # Clear pause dates from all activities
             activities_resumed = 0
@@ -349,7 +344,7 @@ class CampaignCreationService:
             try:
                 updated_playlist_response = CampaignCoreService.get_campaign_playlist_internal(
                     campaign=campaign,
-                    limit=DEFAULT_PLAYLIST_LIMIT
+                    limit=CONFIG.limits.playlist_limit
                 )
                 
                 # Extract active activities count from the standardized Response
@@ -378,7 +373,7 @@ class CampaignCreationService:
             }
             
             # Use operation message from config
-            message = OPERATION_MESSAGES['CAMPAIGN_RESUMED'].format(name=campaign.name)
+            message = CONFIG.messages.campaign_resumed.format(name=campaign.name)
             
             return StandardizedSuccessResponse.success(
                 message=message,
@@ -429,12 +424,12 @@ class CampaignCreationService:
                     
                     # Check if target already exists
                     if not CampaignTarget.objects.filter(
-                        **{FIELD_NAMES['CAMPAIGN']: campaign, FIELD_NAMES['ACCOUNT']: account}
+                        **{CONFIG.fields.campaign: campaign, CONFIG.fields.account: account}
                     ).exists():
                         CampaignTarget.objects.create(
                             **{
-                                FIELD_NAMES['CAMPAIGN']: campaign,
-                                FIELD_NAMES['ACCOUNT']: account,
+                                CONFIG.fields.campaign: campaign,
+                                CONFIG.fields.account: account,
                                 'client_id': client_id
                             }
                         )
@@ -451,12 +446,12 @@ class CampaignCreationService:
                     
                     # Check if target already exists
                     if not CampaignTarget.objects.filter(
-                        **{FIELD_NAMES['CAMPAIGN']: campaign, FIELD_NAMES['CONTACT']: contact}
+                        **{CONFIG.fields.campaign: campaign, CONFIG.fields.contact: contact}
                     ).exists():
                         CampaignTarget.objects.create(
                             **{
-                                FIELD_NAMES['CAMPAIGN']: campaign,
-                                FIELD_NAMES['CONTACT']: contact,
+                                CONFIG.fields.campaign: campaign,
+                                CONFIG.fields.contact: contact,
                                 'client_id': client_id
                             }
                         )
@@ -473,12 +468,12 @@ class CampaignCreationService:
                     
                     # Check if target already exists
                     if not CampaignTarget.objects.filter(
-                        **{FIELD_NAMES['CAMPAIGN']: campaign, FIELD_NAMES['LEAD']: lead}
+                        **{CONFIG.fields.campaign: campaign, CONFIG.fields.lead: lead}
                     ).exists():
                         CampaignTarget.objects.create(
                             **{
-                                FIELD_NAMES['CAMPAIGN']: campaign,
-                                FIELD_NAMES['LEAD']: lead,
+                                CONFIG.fields.campaign: campaign,
+                                CONFIG.fields.lead: lead,
                                 'client_id': client_id
                             }
                         )
@@ -495,12 +490,12 @@ class CampaignCreationService:
                     
                     # Check if target already exists
                     if not CampaignTarget.objects.filter(
-                        **{FIELD_NAMES['CAMPAIGN']: campaign, FIELD_NAMES['TARGET_OPPORTUNITY']: opportunity}
+                        **{CONFIG.fields.campaign: campaign, CONFIG.fields.target_opportunity: opportunity}
                     ).exists():
                         CampaignTarget.objects.create(
                             **{
-                                FIELD_NAMES['CAMPAIGN']: campaign,
-                                FIELD_NAMES['TARGET_OPPORTUNITY']: opportunity,
+                                CONFIG.fields.campaign: campaign,
+                                CONFIG.fields.target_opportunity: opportunity,
                                 'client_id': client_id
                             }
                         )

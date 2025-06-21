@@ -11,10 +11,7 @@ from core.error_messages import CoreErrorMessages
 from core.client_scope import ClientScopeManager
 
 # Import configuration variables
-from apps.campaign.config.variables import (
-    FIELD_NAMES,
-    SERIALIZER_CONFIGS
-)
+from apps.campaign.config.settings import CONFIG
 
 
 class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -29,7 +26,7 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
     # Write fields with improved error messages
     campaign_id = serializers.PrimaryKeyRelatedField(
         queryset=Campaign.objects.all(),
-        source=FIELD_NAMES['CAMPAIGN'],
+        source=CONFIG.fields.campaign,
         write_only=True,
         error_messages={
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Campaign'),
@@ -39,7 +36,7 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
     )
     account_id = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.all(),
-        source=FIELD_NAMES['ACCOUNT'],
+        source=CONFIG.fields.account,
         write_only=True,
         required=False,
         allow_null=True,
@@ -50,7 +47,7 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
     )
     contact_id = serializers.PrimaryKeyRelatedField(
         queryset=Contact.objects.all(),
-        source=FIELD_NAMES['CONTACT'],
+        source=CONFIG.fields.contact,
         write_only=True,
         required=False,
         allow_null=True,
@@ -61,7 +58,7 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
     )
     lead_id = serializers.PrimaryKeyRelatedField(
         queryset=Lead.objects.all(),
-        source=FIELD_NAMES['LEAD'],
+        source=CONFIG.fields.lead,
         write_only=True,
         required=False,
         allow_null=True,
@@ -73,7 +70,7 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
 
     target_opportunity_id = serializers.PrimaryKeyRelatedField(
         queryset=Opportunity.objects.all(),
-        source=FIELD_NAMES['TARGET_OPPORTUNITY'],
+        source=CONFIG.fields.target_opportunity,
         write_only=True,
         required=False,
         allow_null=True,
@@ -94,8 +91,8 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
     
     class Meta:
         model = CampaignTarget
-        fields = SERIALIZER_CONFIGS['TARGET_FIELDS']
-        read_only_fields = SERIALIZER_CONFIGS['TARGET_READ_ONLY_FIELDS']
+        fields = CONFIG.serializers.target_fields
+        read_only_fields = CONFIG.serializers.target_read_only_fields
     
     def get_target_type(self, obj):
         """Return the type of target"""
@@ -129,7 +126,7 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     'name': f"{obj.contact.first_name} {obj.contact.last_name}".strip(),
                     'email': getattr(obj.contact, 'email', None),
                     'phone': getattr(obj.contact, 'phone', None),
-                    FIELD_NAMES['ACCOUNT']: {
+                    CONFIG.fields.account: {
                         'id': obj.contact.account.id,
                         'name': obj.contact.account.company_name
                     } if obj.contact.account else None
@@ -139,12 +136,12 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     'type': 'lead',
                     'id': obj.lead.id,
                     'title': obj.lead.title,
-                    FIELD_NAMES['STATUS']: getattr(obj.lead, 'lead_status', None),
-                    FIELD_NAMES['CONTACT']: {
+                    CONFIG.fields.status: getattr(obj.lead, 'lead_status', None),
+                    CONFIG.fields.contact: {
                         'id': obj.lead.contact.id,
                         'name': f"{obj.lead.contact.first_name} {obj.lead.contact.last_name}".strip()
                     } if obj.lead.contact else None,
-                    FIELD_NAMES['ACCOUNT']: {
+                    CONFIG.fields.account: {
                         'id': obj.lead.account.id,
                         'name': obj.lead.account.company_name
                     } if obj.lead.account else None
@@ -154,9 +151,9 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     'type': 'opportunity',
                     'id': obj.target_opportunity.id,
                     'name': obj.target_opportunity.name,
-                    FIELD_NAMES['VALUE']: getattr(obj.target_opportunity, 'amount', None),
+                    CONFIG.fields.value: getattr(obj.target_opportunity, 'amount', None),
                     'stage': getattr(obj.target_opportunity, 'stage', None),
-                    FIELD_NAMES['ACCOUNT']: {
+                    CONFIG.fields.account: {
                         'id': obj.target_opportunity.account.id,
                         'name': obj.target_opportunity.account.company_name
                     } if obj.target_opportunity.account else None
@@ -178,10 +175,10 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
         try:
             # Count how many target types are specified
             target_count = sum([
-                bool(data.get(FIELD_NAMES['ACCOUNT'])),
-                bool(data.get(FIELD_NAMES['CONTACT'])),
-                bool(data.get(FIELD_NAMES['LEAD'])),
-                bool(data.get(FIELD_NAMES['TARGET_OPPORTUNITY']))
+                bool(data.get(CONFIG.fields.account)),
+                bool(data.get(CONFIG.fields.contact)),
+                bool(data.get(CONFIG.fields.lead)),
+                bool(data.get(CONFIG.fields.target_opportunity))
             ])
             
             if target_count == 0:
@@ -199,7 +196,7 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 )
             
             # Validate client scope and uniqueness for each target type
-            campaign = data.get(FIELD_NAMES['CAMPAIGN'])
+            campaign = data.get(CONFIG.fields.campaign)
             if campaign:
                 try:
                     client_id = campaign.client_id
@@ -242,22 +239,22 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
         """Validate client scope and uniqueness for each target type"""
         try:
             # Validate client scope and uniqueness for account
-            account = data.get(FIELD_NAMES['ACCOUNT'])
+            account = data.get(CONFIG.fields.account)
             if account:
                 self._validate_account_target(account, campaign, client_id, instance_id)
             
             # Validate client scope and uniqueness for contact
-            contact = data.get(FIELD_NAMES['CONTACT'])
+            contact = data.get(CONFIG.fields.contact)
             if contact:
                 self._validate_contact_target(contact, campaign, client_id, instance_id)
             
             # Validate client scope and uniqueness for lead
-            lead = data.get(FIELD_NAMES['LEAD'])
+            lead = data.get(CONFIG.fields.lead)
             if lead:
                 self._validate_lead_target(lead, campaign, client_id, instance_id)
             
             # Validate client scope and uniqueness for opportunity
-            target_opportunity = data.get(FIELD_NAMES['TARGET_OPPORTUNITY'])
+            target_opportunity = data.get(CONFIG.fields.target_opportunity)
             if target_opportunity:
                 self._validate_opportunity_target(target_opportunity, campaign, client_id, instance_id)
                 
@@ -278,12 +275,12 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
             
             # Check uniqueness - account can only be targeted once per campaign
             existing = CampaignTarget.objects.filter(
-                **{
-                    FIELD_NAMES['CAMPAIGN']: campaign,
-                    FIELD_NAMES['ACCOUNT']: account,
-                    f"{FIELD_NAMES['CONTACT']}__isnull": True,
-                    f"{FIELD_NAMES['LEAD']}__isnull": True,
-                    f"{FIELD_NAMES['TARGET_OPPORTUNITY']}__isnull": True
+                 **{
+                    CONFIG.fields.campaign: campaign,
+                    CONFIG.fields.account: account,
+                    f"{CONFIG.fields.contact}__isnull": True,
+                    f"{CONFIG.fields.lead}__isnull": True,
+                    f"{CONFIG.fields.target_opportunity}__isnull": True
                 }
             ).exclude(id=instance_id)
             
@@ -310,8 +307,8 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # Check uniqueness - contact can only be targeted once per campaign
             existing = CampaignTarget.objects.filter(
                 **{
-                    FIELD_NAMES['CAMPAIGN']: campaign,
-                    FIELD_NAMES['CONTACT']: contact
+                    CONFIG.fields.campaign: campaign,
+                    CONFIG.fields.contact: contact
                 }
             ).exclude(id=instance_id)
             
@@ -339,8 +336,8 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # Check uniqueness - lead can only be targeted once per campaign
             existing = CampaignTarget.objects.filter(
                 **{
-                    FIELD_NAMES['CAMPAIGN']: campaign,
-                    FIELD_NAMES['LEAD']: lead
+                    CONFIG.fields.campaign: campaign,
+                    CONFIG.fields.lead: lead
                 }
             ).exclude(id=instance_id)
             
@@ -367,8 +364,8 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # Check uniqueness - opportunity can only be targeted once per campaign
             existing = CampaignTarget.objects.filter(
                 **{
-                    FIELD_NAMES['CAMPAIGN']: campaign,
-                    FIELD_NAMES['TARGET_OPPORTUNITY']: target_opportunity
+                    CONFIG.fields.campaign: campaign,
+                    CONFIG.fields.target_opportunity: target_opportunity
                 }
             ).exclude(id=instance_id)
             
@@ -440,7 +437,7 @@ class CampaignTargetListSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CampaignTarget
-        fields = SERIALIZER_CONFIGS['TARGET_LIST_FIELDS']
+        fields = CONFIG.serializers.target_list_fields
     
     def get_target_type(self, obj):
         """Return the type of target"""

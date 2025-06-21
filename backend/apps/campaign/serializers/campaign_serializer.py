@@ -13,13 +13,7 @@ from end_users.models import User
 from django.db import transaction
 
 # ✅ Import des constantes
-from apps.campaign.config.variables import (
-    SERIALIZER_CONFIGS,
-    VALIDATION_LIMITS,
-    DATE_FORMATS,
-    FIELD_NAMES,
-    CAMPAIGN_FORBIDDEN_STATES
-)
+from apps.campaign.config.settings import CONFIG
 
 class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """Serializer for Campaign model with standardized validation"""
@@ -73,24 +67,24 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     
     # Campaign name with custom validation
     name = serializers.CharField(
-        max_length=VALIDATION_LIMITS['MAX_CAMPAIGN_NAME_LENGTH'],
+        max_length=CONFIG.limits.max_campaign_name_length,
         error_messages={
             'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Campaign Name'),
             'blank': CoreErrorMessages.REQUIRED_FIELD.format(field='Campaign Name'),
             'max_length': CoreErrorMessages.INVALID_FIELD.format(
-                field=f'Campaign Name (maximum {VALIDATION_LIMITS["MAX_CAMPAIGN_NAME_LENGTH"]} characters)'
+                field=f'Campaign Name (maximum {CONFIG.limits.max_campaign_name_length} characters)'
             )
         }
     )
     
     # Description with validation
     description = serializers.CharField(
-        max_length=VALIDATION_LIMITS['MAX_DESCRIPTION_LENGTH'],
+        max_length=CONFIG.limits.max_description_length,
         required=False,
         allow_blank=True,
         error_messages={
             'max_length': CoreErrorMessages.INVALID_FIELD.format(
-                field=f'Description (maximum {VALIDATION_LIMITS["MAX_DESCRIPTION_LENGTH"]} characters)'
+                field=f'Description (maximum {CONFIG.limits.max_description_length,} characters)'
             )
         }
     )
@@ -135,8 +129,8 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     
     class Meta:
         model = Campaign
-        fields = SERIALIZER_CONFIGS['CAMPAIGN_FIELDS']
-        read_only_fields = SERIALIZER_CONFIGS['CAMPAIGN_READ_ONLY_FIELDS']
+        fields = CONFIG.serializers.campaign_fields
+        read_only_fields = CONFIG.serializers.campaign_read_only_fields
     
     def get_owner_name(self, obj):
         """Get the full name of the campaign owner"""
@@ -280,10 +274,10 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                     CoreErrorMessages.REQUIRED_FIELD.format(field="Objective name")
                 )
             
-            if len(name) > VALIDATION_LIMITS['MAX_CAMPAIGN_NAME_LENGTH']:
+            if len(name) > CONFIG.limits.max_campaign_name_length:
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(
-                        field=f"Objective name (maximum {VALIDATION_LIMITS['MAX_CAMPAIGN_NAME_LENGTH']} characters)"
+                        field=f"Objective name (maximum {CONFIG.limits.max_campaign_name_length} characters)"
                     )
                 )
             
@@ -449,10 +443,10 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             
             # === VALIDATION EXISTANTE : Description length ===
             description = data.get('description', '')
-            if description and len(description) > VALIDATION_LIMITS['MAX_DESCRIPTION_LENGTH']:
+            if description and len(description) > CONFIG.limits.max_description_length:
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(
-                        field=f"Description (maximum {VALIDATION_LIMITS['MAX_DESCRIPTION_LENGTH']} characters)"
+                        field=f"Description (maximum {CONFIG.limits.max_description_length} characters)"
                     )
                 )
             
@@ -552,7 +546,7 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             new_status = data.get('status', current_status)
             
             # Don't allow modifications to completed/cancelled campaigns
-            if current_status in CAMPAIGN_FORBIDDEN_STATES:
+            if current_status in CONFIG.validation.forbidden_states:
                 forbidden_fields = {'name', 'description', 'start_date', 'end_date', 'campaign_type', 'sequence_type'}
                 modified_fields = forbidden_fields & set(data.keys())
                 

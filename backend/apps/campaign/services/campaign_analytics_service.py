@@ -16,10 +16,7 @@ from core.error_messages import CampaignErrorMessages
 from apps.campaign.utils.contact_helpers import ContactSafetyHelper
 
 # Import configuration variables
-from apps.campaign.config.variables import (
-    FIELD_NAMES,
-    DEFAULT_SUMMARY_ACTIVITIES
-)
+from apps.campaign.config.settings import CONFIG
 
 
 class CampaignAnalyticsService:
@@ -410,7 +407,7 @@ class CampaignAnalyticsService:
                 
                 active_response = CampaignCoreService.get_campaign_playlist_internal(
                     campaign=campaign,
-                    limit=DEFAULT_SUMMARY_ACTIVITIES
+                    limit=CONFIG.limits.summary_activities
                 )
                 
                 # Extract activities from the standardized Response
@@ -419,7 +416,7 @@ class CampaignAnalyticsService:
                     ready_activities = response_data.get('items', [])
                     
                     # Format next activities from the Activity objects
-                    for activity in ready_activities[:DEFAULT_SUMMARY_ACTIVITIES]:
+                    for activity in ready_activities[:CONFIG.limits.summary_activities]:
                         # Vérifier si c'est un objet Activity ou un dict serialized
                         if hasattr(activity, 'id'):
                             # Raw Activity object
@@ -499,10 +496,10 @@ class CampaignAnalyticsService:
         try:
             # Build query with OPTIMIZED prefetching
             activities_query = Activity.objects.filter(
-                **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign}
+                **{f"campaign_info__{CONFIG.fields.campaign}": campaign}
             ).select_related(
-                FIELD_NAMES['ACCOUNT'],                        # For activity formatting
-                f"campaign_info__{FIELD_NAMES['CAMPAIGN']}_target", # For campaign relationship
+                CONFIG.fields.account,                        # For activity formatting
+                f"campaign_info__{CONFIG.fields.campaign}_target", # For campaign relationship
                 'sequence_info'                   # For sequence information
             ).prefetch_related(
                 'contacts'                        # CRITICAL: For formatting without N+1
@@ -526,8 +523,8 @@ class CampaignAnalyticsService:
             
             # Prepare response data
             data = {
-                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
+                f"{CONFIG.fields.campaign}_id": campaign.id,
+                f"{CONFIG.fields.campaign}_name": campaign.name,
                 'activities': activities_data,
                 'status_counts': status_counts
             }
@@ -575,12 +572,12 @@ class CampaignAnalyticsService:
             # Build query with OPTIMIZED prefetching
             activities_query = Activity.objects.filter(
                 **{
-                    f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign,
-                    FIELD_NAMES['ACCOUNT']: account
+                    f"campaign_info__{CONFIG.fields.campaign}": campaign,
+                    CONFIG.fields.account: account
                 }
             ).select_related(
-                FIELD_NAMES['ACCOUNT'],                        # Already filtered by account, but needed for formatting
-                f"campaign_info__{FIELD_NAMES['CAMPAIGN']}_target", 
+                CONFIG.fields.account,                        
+                f"campaign_info__{CONFIG.fields.campaign}_target", 
                 'sequence_info'                   
             ).prefetch_related(
                 'contacts'                        # CRITICAL: Prevent N+1 in formatting
@@ -604,10 +601,10 @@ class CampaignAnalyticsService:
             
             # Prepare response data
             data = {
-                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
-                f"{FIELD_NAMES['ACCOUNT']}_id": account.id,
-                f"{FIELD_NAMES['ACCOUNT']}_name": account.company_name,
+                f"{CONFIG.fields.campaign}_id": campaign.id,
+                f"{CONFIG.fields.campaign}_name": campaign.name,
+                f"{CONFIG.fields.account}_id": account.id,
+                f"{CONFIG.fields.account}_name": account.company_name,
                 'activities': activities_data,
                 'status_counts': status_counts
             }
@@ -655,12 +652,12 @@ class CampaignAnalyticsService:
             # Build query with OPTIMIZED prefetching
             activities_query = Activity.objects.filter(
                 **{
-                    f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign,
+                    f"campaign_info__{CONFIG.fields.campaign}": campaign,
                     'contacts': contact
                 }
             ).select_related(
-                FIELD_NAMES['ACCOUNT'],                        
-                f"campaign_info__{FIELD_NAMES['CAMPAIGN']}_target", 
+                CONFIG.fields.account,                        
+                f"campaign_info__{CONFIG.fields.campaign}_target", 
                 'sequence_info'                   
             ).prefetch_related(
                 'contacts'                        # CRITICAL: Prevent N+1 in formatting
@@ -684,12 +681,12 @@ class CampaignAnalyticsService:
             
             # Prepare response data
             data = {
-                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
-                f"{FIELD_NAMES['CONTACT']}_id": contact.id,
-                f"{FIELD_NAMES['CONTACT']}_name": f"{contact.first_name} {contact.last_name}",
-                f"{FIELD_NAMES['ACCOUNT']}_id": contact.account_id,
-                f"{FIELD_NAMES['ACCOUNT']}_name": getattr(contact.account, 'company_name', 'Unknown'),
+                f"{CONFIG.fields.campaign}_id": campaign.id,
+                f"{CONFIG.fields.campaign}_name": campaign.name,
+                f"{CONFIG.fields.contact}_id": contact.id,
+                f"{CONFIG.fields.contact}_name": f"{contact.first_name} {contact.last_name}",
+                f"{CONFIG.fields.account}_id": contact.account_id,
+                f"{CONFIG.fields.account}_name": getattr(contact.account, 'company_name', 'Unknown'),
                 'activities': activities_data,
                 'status_counts': status_counts
             }
@@ -765,12 +762,12 @@ class CampaignAnalyticsService:
                 'title': activity.title,
                 'activity_type': activity.activity_type,
                 'activity_type_display': activity.get_activity_type_display(),
-                FIELD_NAMES['STATUS']: activity.status,
+                CONFIG.fields.status: activity.status,
                 'status_display': activity.get_status_display(),
                 'scheduled_start': activity.scheduled_start,
                 'completed_at': activity.completed_at,
-                f"{FIELD_NAMES['ACCOUNT']}_id": account_info['account_id'],
-                f"{FIELD_NAMES['ACCOUNT']}_name": account_info['account_name'],
+                f"{CONFIG.fields.account}_id": account_info['account_id'],
+                f"{CONFIG.fields.account}_name": account_info['account_name'],
                 'contacts': contacts_data,
             }
             
@@ -801,7 +798,7 @@ class CampaignAnalyticsService:
         try:
             # Get all activities with optimized query
             activities = Activity.objects.filter(
-                **{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign}
+                **{f"campaign_info__{CONFIG.fields.campaign}": campaign}
             ).select_related('sequence_info')
             
             # Calculate key metrics
@@ -844,8 +841,8 @@ class CampaignAnalyticsService:
             
             # Prepare response data
             data = {
-                f"{FIELD_NAMES['CAMPAIGN']}_id": campaign.id,
-                f"{FIELD_NAMES['CAMPAIGN']}_name": campaign.name,
+                f"{CONFIG.fields.campaign}_id": campaign.id,
+                f"{CONFIG.fields.campaign}_name": campaign.name,
                 'performance': {
                     'total_activities': total_activities,
                     'completed_activities': completed_activities,

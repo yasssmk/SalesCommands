@@ -9,10 +9,7 @@ from core.error_messages import CoreErrorMessages
 from core.client_scope import ClientScopeManager
 
 # Import configuration variables
-from apps.campaign.config.variables import (
-    FIELD_NAMES,
-    SERIALIZER_CONFIGS
-)
+from apps.campaign.config.settings import CONFIG
 
 
 class CampaignStakeholderSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -53,8 +50,8 @@ class CampaignStakeholderSerializer(ClientScopeManager.SerializerMixin, serializ
     
     class Meta:
         model = CampaignStakeholder
-        fields = SERIALIZER_CONFIGS['STAKEHOLDER_FIELDS']
-        read_only_fields = SERIALIZER_CONFIGS['STAKEHOLDER_READ_ONLY_FIELDS']
+        fields = CONFIG.serializers.stakeholder_fields
+        read_only_fields = CONFIG.serializers.stakeholder_read_only_fields
     
     def get_user_name(self, obj):
         """Get the name of the stakeholder"""
@@ -87,7 +84,7 @@ class CampaignStakeholderSerializer(ClientScopeManager.SerializerMixin, serializ
         """Validate stakeholder data with standardized error handling"""
         try:
             # Validate client scope for campaign
-            campaign = data.get(FIELD_NAMES['CAMPAIGN'])
+            campaign = data.get(CONFIG.fields.campaign)
             if campaign:
                 try:
                     self.validate_client_id(campaign)
@@ -95,8 +92,8 @@ class CampaignStakeholderSerializer(ClientScopeManager.SerializerMixin, serializ
                     raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
             
             # Validate that user and campaign are provided
-            user = data.get(FIELD_NAMES['USER'])
-            role = data.get(FIELD_NAMES['ROLE'])
+            user = data.get(CONFIG.fields.user)
+            role = data.get(CONFIG.fields.role)
             
             if not user:
                 raise StandardizedValidationError(
@@ -121,9 +118,9 @@ class CampaignStakeholderSerializer(ClientScopeManager.SerializerMixin, serializ
             instance_id = getattr(self.instance, 'id', None)
             existing = CampaignStakeholder.objects.filter(
                 **{
-                    FIELD_NAMES['CAMPAIGN']: campaign,
-                    FIELD_NAMES['USER']: user,
-                    FIELD_NAMES['ROLE']: role
+                    CONFIG.fields.campaign: campaign,
+                    CONFIG.fields.user: user,
+                    CONFIG.fields.role: role
                 }
             ).exclude(id=instance_id)
             
@@ -168,7 +165,7 @@ class CampaignStakeholderSerializer(ClientScopeManager.SerializerMixin, serializ
                 validated_data['added_by'] = request.user
             
             # Ensure client_id is set
-            campaign = validated_data.get(FIELD_NAMES['CAMPAIGN'])
+            campaign = validated_data.get(CONFIG.fields.campaign)
             if campaign and hasattr(campaign, 'client_id'):
                 validated_data['client_id'] = campaign.client_id
             
