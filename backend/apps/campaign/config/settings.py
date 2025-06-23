@@ -235,7 +235,9 @@ class SerializerConfig:
     campaign_fields: List[str] = field(default_factory=lambda: [
         'id', 'name', 'description', 'campaign_type', 'campaign_type_display',
         'sequence_type', 'sequence_type_display', 'has_sequence', 'is_call_list',
-        'owner', 'owner_name', 'stakeholders', 'start_date', 'end_date', 'objective', 'objectives',
+        'owner', 'owner_name','receiver_ids','executor_ids','owner_count', 'executor_count', 'receiver_count', 'stakeholders', 
+        'owner_ids',
+        'start_date', 'end_date', 'objective', 'objectives',
         'status', 'status_display', 'target_summary', 'has_mixed_targets',
         'created_at', 'updated_at', 'created_by', 'updated_by', 'result_tracking',
         'quick_metrics', 'target_summary'
@@ -251,7 +253,7 @@ class SerializerConfig:
     objective_fields: List[str] = field(default_factory=lambda: [
         'id', 'campaign_id', 'name', 'objective_type',
         'objective_type_display', 'target_value', 'current_value', 'unit',
-        'is_primary', 'progress_percentage', 'last_updated', 'created_at', 'updated_at'
+        'is_primary', 'progress_percentage', 'created_at', 'updated_at'
     ])
 
     objective_read_only_fields: List[str] = field(default_factory=lambda: [

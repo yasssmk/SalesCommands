@@ -93,7 +93,7 @@ class CampaignTargetViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Model
         try:
             instance = serializer.instance
             # ✅ Validation avec mixin amélioré
-            self.validate_campaign_related_object(instance, allow_stakeholders=False)
+            self.validate_campaign_ownership(instance, allow_stakeholders=False)
             
             return serializer.save()
             
@@ -108,7 +108,7 @@ class CampaignTargetViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Model
         """Validation simplifiée mais logique conservée"""
         try:
             # ✅ Validation avec mixin amélioré
-            self.validate_campaign_related_object(instance, allow_stakeholders=False)
+            self.validate_campaign_ownership(instance, allow_stakeholders=False)
             
             instance.delete()
             

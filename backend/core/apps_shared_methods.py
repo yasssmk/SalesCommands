@@ -143,7 +143,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                         context={'request': request, 'client_id': client_id}
                     )
                     if serializer.is_valid():
-                        instance = serializer.save(client_id=client_id)
+                        instance = serializer.save(client_id=client_id, user=request.user)
                         created_objects.append(instance)
                     else:
                         raise StandardizedValidationError(serializer.errors)
@@ -237,7 +237,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                             if not serializer.is_valid():
                                 raise StandardizedValidationError(serializer.errors)
 
-                            updated = serializer.save()
+                            updated = serializer.save(user=request.user)
                             updated_objects.append(updated)
                         
                         except Exception as e:
@@ -269,7 +269,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                     if not serializer.is_valid():
                         raise StandardizedValidationError(serializer.errors)
 
-                    updated = serializer.save()
+                    updated = serializer.save(user=request.user)
                     return Response(self.serializer_class(updated).data)
 
         except Exception as exc:

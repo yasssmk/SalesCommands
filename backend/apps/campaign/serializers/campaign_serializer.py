@@ -104,7 +104,11 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         }
     )
 
-    objective = CampaignObjectiveSerializer(write_only=True, required=False)
+    objective = serializers.DictField(
+        write_only=True, 
+        required=False,
+        help_text="Objective data for campaign creation"
+    )
     objectives = CampaignObjectiveSerializer(many=True, read_only=True)
     
     # Computed stakeholder summaries
@@ -122,10 +126,6 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         help_text="Quick overview of campaign metrics"
     )
     
-    # === RÉSUMÉ DES TARGETS ===
-    target_summary = serializers.SerializerMethodField(
-        help_text="Summary of campaign targets by type"
-    )
     
     class Meta:
         model = Campaign
@@ -169,12 +169,6 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         except Exception:
             return True
     
-    def get_target_summary(self, obj):
-        """Get summary of targets in the campaign"""
-        try:
-            return obj.get_target_summary()
-        except Exception:
-            return {'total': 0, 'accounts': 0, 'contacts': 0, 'leads': 0, 'opportunities': 0}
     
     def get_has_mixed_targets(self, obj):
         """Check if campaign has multiple target types"""
@@ -203,6 +197,45 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             return obj.get_receivers().count()
         except Exception:
             return 0
+    
+    def get_result_tracking(self, obj: Campaign) -> dict:
+        """
+        Obtenir le result tracking pour cette campagne - MÉTHODE MANQUANTE
+        """
+        try:
+            # Utiliser la méthode du modèle Campaign
+            result_tracking = obj.get_or_create_result_tracking()
+            
+            # Sérialiser avec le CampaignResultTrackingSerializer
+            from apps.campaign.serializers.campaign_result_tracking_serializer import CampaignResultTrackingSerializer
+            
+            # Créer le contexte pour le serializer
+            context = self.context or {}
+            tracking_context = {
+                'request': context.get('request'),
+                'detailed_result_tracking': context.get('detailed_result_tracking', False),
+                'include_tracked_ids': context.get('include_tracked_ids', False),
+                'include_full_integrity_check': context.get('include_full_integrity_check', False)
+            }
+            
+            # Sérialiser et retourner les données
+            serializer = CampaignResultTrackingSerializer(result_tracking, context=tracking_context)
+            return serializer.data
+            
+        except Exception as e:
+            # En cas d'erreur, retourner un objet minimal plutôt que de faire planter
+            print(f"DEBUG get_result_tracking: Error getting result tracking for campaign {getattr(obj, 'id', 'unknown')}: {e}")
+            return {
+                'id': None,
+                'campaign': getattr(obj, 'id', None),
+                'leads_created_count': 0,
+                'meetings_secured_count': 0,
+                'opportunities_created_count': 0,
+                'deals_closed_count': 0,
+                'pipeline_value_created': '0.00',
+                'revenue_generated': '0.00',
+                'error': f'Failed to load result tracking: {str(e)}'
+            }
     
     def validate_start_date(self, value):
         """Validate start date"""
@@ -236,28 +269,40 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             )
     
     def validate_objective(self, value):
-        """Validate objective data"""
+        """
+        ✅ FIXED: Manual validation for objective data to avoid campaign_id requirement
+        """
         if not value:
             return value
             
         try:
+            # Validate required fields manually
+            required_fields = ['name', 'objective_type', 'target_value']
+            for field in required_fields:
+                if not value.get(field):
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(field=f"Objective {field}")
+                    )
+            
             # Validate target_value
-            target_value = value.get('target_value', 0)
-            if target_value <= 0:
+            target_value = value.get('target_value')
+            try:
+                target_value = float(target_value)
+                if target_value <= 0:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field="Objective target value (must be greater than 0)"
+                        )
+                    )
+            except (ValueError, TypeError):
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(
-                        field="Objective target value (must be greater than 0)"
+                        field="Objective target value (must be a number)"
                     )
                 )
             
             # Validate objective_type exists
             objective_type = value.get('objective_type')
-            if not objective_type:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field="Objective type")
-                )
-            
-            # Validate objective_type is valid choice
             from apps.campaign.models.campaign_objective import CampaignObjective
             valid_types = [choice[0] for choice in CampaignObjective.ObjectiveType.choices]
             if objective_type not in valid_types:
@@ -269,17 +314,16 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             
             # Validate objective name
             name = value.get('name', '').strip()
-            if not name:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field="Objective name")
-                )
-            
             if len(name) > CONFIG.limits.max_campaign_name_length:
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(
                         field=f"Objective name (maximum {CONFIG.limits.max_campaign_name_length} characters)"
                     )
                 )
+            
+            # Clean the data
+            value['target_value'] = target_value
+            value['name'] = name
             
             return value
             
@@ -385,6 +429,20 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     def validate(self, data):
         """Validate campaign data with standardized error handling - ENHANCED VERSION"""
         try:
+
+            if 'client_id' not in data:
+                client_id = self._get_client_id_from_context()
+                data['client_id'] = client_id
+
+            self.validate_client_scoped_uniqueness(
+                data=data,
+                unique_fields=['name', 'client_id'],
+                model_class=Campaign,
+                error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                    fields='Name and Client ID'
+                )
+            )
+
             # === VALIDATION DES DATES (existante + améliorée) ===
             start_date = data.get('start_date', self.instance.start_date if self.instance else None)
             end_date = data.get('end_date', self.instance.end_date if self.instance else None)
@@ -593,7 +651,7 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             
             # Delegate to service for business logic
             from apps.campaign.services.campaign_creation_service import CampaignCreationService
-            
+
             campaign = CampaignCreationService.create_campaign_with_objective(
                 campaign_data=validated_data,
                 objective_data=objective_data
@@ -831,58 +889,54 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             }
 
 
-class CampaignListSerializer(serializers.ModelSerializer):
-    """Simplified serializer for listing campaigns"""
+class CampaignListSerializer(CampaignSerializer):
+    """
+    Simplified serializer for listing campaigns - Inherits from CampaignSerializer
+    This approach avoids code duplication and ensures all SerializerMethodFields are available
+    """
     
-    owner_name = serializers.SerializerMethodField(read_only=True)
-    campaign_type_display = serializers.CharField(source='get_campaign_type_display', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    has_sequence = serializers.SerializerMethodField(read_only=True)
+    # Add specific fields for list view that aren't in parent
     target_counts = serializers.SerializerMethodField(read_only=True)
-    owner_count = serializers.SerializerMethodField(read_only=True)
-    executor_count = serializers.SerializerMethodField(read_only=True)
-    receiver_count = serializers.SerializerMethodField(read_only=True)
     
-    class Meta:
-        model = Campaign
-        # ✅ Configuration simplifiée pour la liste
+    class Meta(CampaignSerializer.Meta):
+        # Override fields to show only what's needed for list view
         fields = [
             'id', 'name', 'campaign_type', 'campaign_type_display', 'has_sequence',
             'owner', 'owner_name', 'owner_count', 'executor_count', 'receiver_count',
             'start_date', 'end_date', 'status', 'status_display', 'quick_metrics', 'target_counts', 'created_at'
         ]
-    
-    def get_owner_name(self, obj):
-        """Get the full name of the campaign owner"""
-        if obj.owner:
-            return f"{obj.owner.first_name} {obj.owner.last_name}"
-        return None
-    
-    def get_has_sequence(self, obj):
-        """Check if campaign has automated sequences"""
-        return obj.has_sequence()
+        # Keep same read_only_fields from parent but only for the fields we use
+        read_only_fields = [
+            'owner_name', 'campaign_type_display', 'status_display', 'has_sequence', 
+            'quick_metrics', 'target_counts', 'owner_count', 'executor_count', 'receiver_count', 'created_at'
+        ]
     
     def get_target_counts(self, obj):
-        """Get simplified target counts"""
-        summary = obj.get_target_summary()
-        return {
-            'total': summary['total'],
-            'accounts': summary['accounts'],
-            'contacts': summary['contacts'],
-            'leads': summary['leads']
-        }
+        """Get simplified target counts for list view"""
+        try:
+            summary = obj.get_target_summary()
+            return {
+                'total': summary['total'],
+                'accounts': summary['accounts'],
+                'contacts': summary['contacts'],
+                'leads': summary['leads'],
+                'opportunities': summary.get('opportunities', 0)
+            }
+        except Exception:
+            return {
+                'total': 0,
+                'accounts': 0,
+                'contacts': 0,
+                'leads': 0,
+                'opportunities': 0
+            }
     
-    def get_owner_count(self, obj):
-        """Get count of owners"""
-        return obj.get_owners().count()
-    
-    def get_executor_count(self, obj):
-        """Get count of executors"""
-        return obj.get_executors().count()
-    
-    def get_receiver_count(self, obj):
-        """Get count of receivers"""
-        return obj.get_receivers().count()
+    def to_representation(self, instance):
+        """Override to set list_view context for optimized serialization"""
+        if not self.context:
+            self.context = {}
+        self.context['list_view'] = True
+        return super().to_representation(instance)
 
 class CampaignDetailSerializer(CampaignSerializer):
     """

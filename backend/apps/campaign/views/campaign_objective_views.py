@@ -14,7 +14,6 @@ from apps.campaign.serializers.campaign_objective_serializer import CampaignObje
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse
 from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 
-# ✅ OPTIMISATION 1: Configuration centralisée
 from apps.campaign.config.settings import CONFIG
 from apps.campaign.utils.query_optimizer import CampaignQueryOptimizer
 
@@ -34,7 +33,6 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
     entity_name = 'campaign_objective'
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     
-    # ✅ OPTIMISATION 1: Configuration centralisée
     filterset_fields = CONFIG.filters.objective_filters
     ordering_fields = CONFIG.filters.objective_ordering
     ordering = CONFIG.filters.default_objective_ordering
@@ -87,7 +85,7 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
         """✅ Validation légèrement simplifiée avec mixin amélioré"""
         try:
             instance = serializer.instance
-            self.validate_campaign_related_object(instance, allow_stakeholders=False)
+            self.validate_campaign_ownership(instance, allow_stakeholders=False)
             return serializer.save()
             
         except StandardizedValidationError:
@@ -100,7 +98,7 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
     def perform_destroy(self, instance):
         """✅ Validation légèrement simplifiée avec mixin amélioré"""
         try:
-            self.validate_campaign_related_object(instance, allow_stakeholders=False)
+            self.validate_campaign_ownership(instance, allow_stakeholders=False)
             instance.delete()
             
         except StandardizedValidationError:
@@ -123,7 +121,7 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
         try:
             # ✅ get_object() bénéficie automatiquement du mixin amélioré
             objective = self.get_object()
-            self.validate_campaign_related_object(objective, allow_stakeholders=False)
+            self.validate_campaign_ownership(objective, allow_stakeholders=False)
             
             # Désactiver les autres objectifs primaires de cette campagne
             CampaignObjective.objects.filter(
@@ -168,7 +166,7 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
         try:
             # ✅ get_object() bénéficie automatiquement du mixin amélioré
             objective = self.get_object()
-            self.validate_campaign_related_object(objective, allow_stakeholders=False)
+            self.validate_campaign_ownership(objective, allow_stakeholders=False)
             
             # Obtenir la valeur actuelle depuis le tracking
             current_value = objective.get_current_value()

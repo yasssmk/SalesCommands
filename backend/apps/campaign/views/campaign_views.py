@@ -48,6 +48,7 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
     queryset = Campaign.objects.all()
     entity_name = 'campaign'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    serializer_class = CampaignSerializer
     
     # ✅ OPTIMISATION 1: Configuration centralisée
     filterset_fields = CONFIG.filters.campaign_filters
@@ -165,7 +166,7 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
         """✅ Validation légèrement simplifiée avec mixin amélioré"""
         try:
             instance = serializer.instance
-            self.validate_campaign_related_object(instance, allow_stakeholders=False)
+            self.validate_campaign_ownership(instance, allow_stakeholders=False)
             return serializer.save()
         except StandardizedValidationError:
             raise
@@ -177,7 +178,7 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
     def perform_destroy(self, instance):
         """✅ Validation légèrement simplifiée avec mixin amélioré"""
         try:
-            self.validate_campaign_related_object(instance, allow_stakeholders=False)
+            self.validate_campaign_ownership(instance, allow_stakeholders=False)
             instance.delete()
         except StandardizedValidationError:
             raise
@@ -203,7 +204,8 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
             target_contact_ids = request.data.get('target_contact_ids', [])
             target_lead_ids = request.data.get('target_lead_ids', [])
             target_opportunity_ids = request.data.get('target_opportunity_ids', [])
-            
+            objective_data = request.data.get('objective', {})
+
             # Validate required fields
             if not campaign_data.get('name'):
                 raise StandardizedValidationError(
@@ -250,10 +252,16 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
             # Set client and ownership
             client_id = self.get_client_id()
             campaign_data['client_id'] = client_id
-            campaign_data['owner_id'] = request.user.id
+            campaign_data['owner'] = request.user.id
+
+            if objective_data:
+                campaign_data['objective'] = objective_data
             
+            print(f"Creating campaign with data: {campaign_data}")
+
             # Create campaign and activities
             return CampaignCoreService.create_campaign_with_activities(
+                request=request,
                 campaign_data=campaign_data,
                 target_accounts=target_result['target_accounts'],
                 target_contacts=target_result['target_contacts'],
@@ -1003,7 +1011,7 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
                 
                 # Validate campaign ownership/stakeholder access
                 campaign = campaign_target.campaign
-                self.validate_campaign_related_object(campaign_target, allow_stakeholders=True)
+                self.validate_campaign_ownership(campaign_target, allow_stakeholders=True)
                 
             except CampaignTarget.DoesNotExist:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
@@ -1161,7 +1169,7 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
             from apps.campaign.models import CampaignTarget
             campaign_target = CampaignTarget.objects.get(id=campaign_target_id)
             self.validate_client_id(campaign_target)
-            self.validate_campaign_related_object(campaign_target, allow_stakeholders=True)
+            self.validate_campaign_ownership(campaign_target, allow_stakeholders=True)
         except CampaignTarget.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND + " (campaign target)")
         

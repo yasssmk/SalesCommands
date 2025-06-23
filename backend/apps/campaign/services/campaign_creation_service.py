@@ -32,7 +32,7 @@ class CampaignCreationService:
                                     target_leads: List[int] = None,
                                     target_opportunities: List[int] = None,
                                     targeting_stats: Dict = None,
-                                    objective_data: Dict = None) -> Response:  
+                                    request=None) -> Response:  
         """
         Create a new campaign with optional objective and generate all activities
         
@@ -54,24 +54,24 @@ class CampaignCreationService:
                 client_id = campaign_data.get('client_id')
                 if not client_id:
                     raise StandardizedValidationError(CoreErrorMessages.CLIENT_ID_REQUIRED)
-                
-                # ✅ REMPLACER : Utiliser le serializer au lieu de création directe
+                                
+                # Utiliser le serializer au lieu de création directe
                 # Préparer le payload pour le serializer
                 serializer_data = campaign_data.copy()
-                
+                objective_data = serializer_data.pop('objective', None)  # Extraire les données d'objectif si présentes
+
                 # Ajouter les données d'objectif si fournies
                 if objective_data:
                     serializer_data['objective'] = objective_data
                 
                 # Importer et utiliser le serializer
                 from apps.campaign.serializers.campaign_serializer import CampaignSerializer
-                
+
                 # Créer un contexte minimal pour le serializer
-                context = {'request': None}  # MVP : contexte minimal
-                
+                context = {'request': request}  
                 # Valider et créer via le serializer
                 serializer = CampaignSerializer(data=serializer_data, context=context)
-                
+
                 if not serializer.is_valid():
                     # Convertir les erreurs du serializer en StandardizedValidationError
                     error_messages = []
@@ -84,7 +84,7 @@ class CampaignCreationService:
                 
                 # Créer la campagne (+ objectif si fourni)
                 campaign = serializer.save()
-                
+
                 # Create campaign targets (garder logique existante)
                 targets_created = cls._create_campaign_targets(
                     campaign, 
@@ -503,11 +503,11 @@ class CampaignCreationService:
                             
                 except Opportunity.DoesNotExist:
                     continue
-        
+        print	(f"Total targets created for campaign {campaign.id}: {targets_created}")
         return targets_created
 
     @classmethod
-    def create_campaign_with_objective(cls, campaign_data: Dict, objective_data: Dict = None) -> Campaign:
+    def create_campaign_with_objective(cls, campaign_data: Dict, objective_data: Dict = None, user=None) -> Campaign:
         """
         Create campaign with optional objective
         Extracted from CampaignSerializer to separate business logic from validation
@@ -563,6 +563,8 @@ class CampaignCreationService:
             objective_data['campaign'] = campaign
             objective_data['is_primary'] = True
             objective_data['client_id'] = campaign.client_id
+
+            print(f"Creating primary objective for campaign {campaign.id} with data: {objective_data}")
             
             objective = CampaignObjective.objects.create(**objective_data)
             return objective

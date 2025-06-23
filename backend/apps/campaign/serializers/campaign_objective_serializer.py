@@ -17,8 +17,8 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
     campaign_id = serializers.PrimaryKeyRelatedField(
         queryset=Campaign.objects.all(),
         source='campaign',
+        required=False,
         error_messages={
-            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Campaign'),
             'does_not_exist': CoreErrorMessages.OBJECT_NOT_FOUND,
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Campaign ID')
         }
@@ -66,11 +66,31 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
     def validate(self, data):
         """Basic validation for MVP"""
         try:
-            # Validate campaign access
-            campaign = data.get('campaign')
-            if campaign:
-                self.validate_client_id(campaign)
+            # Add client_id if not present
+            if 'client_id' not in data:
+                client_id = self._get_client_id_from_context()
+                data['client_id'] = client_id
             
+            # ✅ FIXED: Handle campaign validation based on context
+            campaign = data.get('campaign')
+            
+            # Check context to determine if this is inline creation
+            context = self.context or {}
+            is_inline_creation = context.get('inline_objective_creation', False) or campaign is None
+            
+            if not is_inline_creation:
+                # Standalone objective creation - campaign is required
+                if not campaign:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(field="Campaign")
+                    )
+                # Validate campaign access
+                self.validate_client_id(campaign)
+            else:
+                # Inline creation with campaign - campaign will be set by parent serializer
+                # No campaign validation needed here
+                pass
+                
             return super().validate(data)
             
         except StandardizedValidationError:
@@ -90,4 +110,26 @@ class CampaignObjectiveSerializer(ClientScopeManager.SerializerMixin, serializer
         except Exception as e:
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Objective validation failed")
+            )
+
+    def create(self, validated_data):
+        """
+        ✅ FIXED: Enhanced create method to handle inline creation
+        """
+        try:
+            # If no campaign provided, this should be called from CampaignSerializer
+            # The campaign will be set by the parent
+            if 'campaign' not in validated_data:
+                # This should not happen in normal flow, but provide helpful error
+                raise StandardizedValidationError(
+                    "Campaign must be provided. Use CampaignSerializer for inline objective creation."
+                )
+            
+            return super().create(validated_data)
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                f"Failed to create campaign objective: {str(e)}"
             )

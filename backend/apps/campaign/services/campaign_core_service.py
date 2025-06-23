@@ -29,19 +29,21 @@ class CampaignCoreService:
                                     target_contacts: List[int] = None,
                                     target_leads: List[int] = None,
                                     target_opportunities: List[int] = None,
-                                    targeting_stats: Dict = None) -> Response:
+                                    targeting_stats: Dict = None,
+                                    request=None) -> Response:
         """Create campaign with activities - délègue au service spécialisé"""
         try:
             # Import local pour éviter circularité
             from .campaign_creation_service import CampaignCreationService
-            
+
             return CampaignCreationService.create_campaign_with_activities(
                 campaign_data=campaign_data,
                 target_accounts=target_accounts,
                 target_contacts=target_contacts,
                 target_leads=target_leads,
                 target_opportunities=target_opportunities,
-                targeting_stats=targeting_stats
+                targeting_stats=targeting_stats,
+                request=request
             )
         except StandardizedValidationError:
             raise

@@ -110,7 +110,7 @@ class CampaignStakeholderViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.
         """✅ Validation légèrement simplifiée avec mixin amélioré"""
         try:
             instance = serializer.instance
-            self.validate_campaign_related_object(instance, allow_stakeholders=False)
+            self.validate_campaign_ownership(instance, allow_stakeholders=False)
             serializer.save()
             
         except StandardizedValidationError:
@@ -123,7 +123,7 @@ class CampaignStakeholderViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.
     def perform_destroy(self, instance):
         """✅ Validation légèrement simplifiée avec mixin amélioré"""
         try:
-            self.validate_campaign_related_object(instance, allow_stakeholders=False)
+            self.validate_campaign_ownership(instance, allow_stakeholders=False)
             instance.delete()
             
         except StandardizedValidationError:

@@ -155,7 +155,8 @@ class CampaignPermissionMixin(ClientScopeManager.ViewMixin):
     def validate_campaign_ownership(self, campaign, allow_stakeholders=False):
         """Enhanced validation using centralized permissions config"""
         user = self.request.user
-        
+        print(user)
+        print(campaign.owner)
         # Check if owner
         if campaign.owner == user:
             return True
