@@ -98,8 +98,11 @@ class CampaignCreationService:
                 activity_result = CampaignActivityService.create_activities_for_campaign(
                     campaign, target_contacts=target_contacts
                 )
-                
-                # ✅ AJOUTER : Inclure info sur l'objectif créé dans la réponse
+
+                activities_created_count = activity_result.data['data']['activities_created']
+                skipped_contacts_list = activity_result.data['data'].get('skipped_contacts', [])
+
+                # Inclure info sur l'objectif créé dans la réponse
                 objective_created = objective_data is not None
                 objective_info = None
                 
@@ -120,8 +123,8 @@ class CampaignCreationService:
                     'campaign_id': campaign.id,
                     'campaign_name': campaign.name,
                     'targets_created': targets_created,
-                    'activities_created': activity_result.get('total_activities_created', 0),
-                    'skipped_contacts': activity_result.get('skipped_contacts', []),
+                    'activities_created': activities_created_count,
+                    'skipped_contacts': skipped_contacts_list,
                     'targeting_stats': targeting_stats,
                     'objective_created': objective_created,  
                     'objective_info': objective_info  
@@ -135,7 +138,7 @@ class CampaignCreationService:
                         'operation': 'campaign_creation_with_activities',
                         'objective_created': objective_created,
                         'targets_created': targets_created,
-                        'activities_created': activity_result.get('total_activities_created', 0)
+                        'activities_created': activities_created_count
                     }
                 )
                 

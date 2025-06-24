@@ -129,7 +129,7 @@ class CampaignActivityService:
                     # Mark the target as having activities generated
                     if not campaign_target.activities_generated and activities_created:
                         campaign_target.mark_activities_generated()
-            
+            print(f"Total activities created for campaign {campaign.id}: {created_count}")
             # Return appropriate response based on context
             if for_campaign_creation:
                 # Contexte : création de campagne
@@ -347,7 +347,6 @@ class CampaignActivityService:
                 )
             )
         
-        return created_activities
         
     @classmethod
     def _create_single_activity(cls, campaign: Campaign, campaign_target: CampaignTarget,
