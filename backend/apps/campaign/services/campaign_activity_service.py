@@ -45,109 +45,124 @@ class CampaignActivityService:
         Returns:
             Response: Standardized response with creation summary or contact queue
         """
-        created_count = 0
-        
-        # Extract all relevant contacts regardless of sequence type
-        extraction_result = cls._extract_contacts_from_targets(campaign, target_contacts)
-        valid_contacts = extraction_result['valid_contacts']
-        skipped_contacts = extraction_result['skipped_contacts']
-        contact_to_target_map = extraction_result['contact_to_target_map']
-        
-        # For campaigns without a sequence, return contact queue response
-        if not campaign.sequence_type:
-            return CampaignResponseBuilder.campaign_playlist(
-                campaign_id=campaign.id,
-                campaign_name=campaign.name,
-                items=valid_contacts,
-                queue_type='contact',
-                is_sequence=False,
-                total_items=len(valid_contacts),
-                additional_data={
-                    'skipped_contacts': skipped_contacts,
-                    'contact_to_target_map': contact_to_target_map,
-                    'message': 'Campaign has no sequence - contacts extracted for manual activities'
-                }
-            )
-        
-        # Check for empty campaign (no valid contacts for sequence)
-        if not valid_contacts:
-            if for_campaign_creation:
-                return CampaignResponseBuilder.campaign_created_empty(
+        try:
+            created_count = 0
+
+            print(f"Creating activities for campaign: {campaign.id} - {campaign.name}")
+            
+            # Extract all relevant contacts regardless of sequence type
+            extraction_result = cls._extract_contacts_from_targets(campaign, target_contacts)
+            valid_contacts = extraction_result['valid_contacts']
+            skipped_contacts = extraction_result['skipped_contacts']
+            contact_to_target_map = extraction_result['contact_to_target_map']
+            
+            print(f"Valid contacts extracted: {len(valid_contacts)}")
+            print(f"Skipped contacts: {len(skipped_contacts)}")
+            print(f"Contact to target map: {len(contact_to_target_map)} entries")
+
+            # For campaigns without a sequence, return contact queue response
+            if not campaign.sequence_type:
+                print("Campaign has no sequence type, returning contact queue")
+                return CampaignResponseBuilder.campaign_playlist(
                     campaign_id=campaign.id,
                     campaign_name=campaign.name,
-                    targets_created=len(contact_to_target_map),
-                    skipped_contacts=skipped_contacts
-                )
-            else:
-                return CampaignResponseBuilder.activities_generated(
-                    campaign_id=campaign.id,
-                    campaign_name=campaign.name,
-                    activities_created=0,
-                    skipped_contacts=skipped_contacts,
+                    items=valid_contacts,
+                    queue_type='contact',
+                    is_sequence=False,
+                    total_items=len(valid_contacts),
                     additional_data={
-                        'warning': 'No valid contacts found for activity generation'
+                        'skipped_contacts': skipped_contacts,
+                        'contact_to_target_map': contact_to_target_map,
+                        'message': 'Campaign has no sequence - contacts extracted for manual activities'
                     }
                 )
             
-        # For campaigns with sequence, create activities
-        with transaction.atomic():
-            # Process each valid contact
-            for contact_info in valid_contacts:
-                contact = contact_info[CONFIG.fields.contact]
-                has_phone = contact_info['has_phone']
-                has_email = contact_info['has_email']
-                has_linkedin = contact_info['has_linkedin']
+            # Check for empty campaign (no valid contacts for sequence)
+            if not valid_contacts:
+                print("No valid contacts found for activity generation")
+                if for_campaign_creation:
+                    return CampaignResponseBuilder.campaign_created_empty(
+                        campaign_id=campaign.id,
+                        campaign_name=campaign.name,
+                        targets_created=len(contact_to_target_map),
+                        skipped_contacts=skipped_contacts
+                    )
+                else:
+                    return CampaignResponseBuilder.activities_generated(
+                        campaign_id=campaign.id,
+                        campaign_name=campaign.name,
+                        activities_created=0,
+                        skipped_contacts=skipped_contacts,
+                        additional_data={
+                            'warning': 'No valid contacts found for activity generation'
+                        }
+                    )
                 
-                # Get the associated target for this contact
-                campaign_target = contact_to_target_map.get(contact.id)
-                if not campaign_target:
-                    continue  # Skip if no target mapping found
-                
-                # Create activities for this contact
-                activities_created = cls._create_activities_for_contact(
-                    campaign=campaign,
-                    campaign_target=campaign_target,
-                    contact=contact,
-                    has_phone=has_phone,
-                    has_email=has_email,
-                    has_linkedin=has_linkedin
-                )
-                
-                created_count += len(activities_created)
-                
-                # Mark the target as having activities generated
-                if not campaign_target.activities_generated and activities_created:
-                    campaign_target.mark_activities_generated()
-        
-        # Return appropriate response based on context
-        if for_campaign_creation:
-            # Contexte : création de campagne
-            if created_count == 0:
-                return CampaignResponseBuilder.campaign_created_empty(
-                    campaign_id=campaign.id,
-                    campaign_name=campaign.name,
-                    targets_created=len(contact_to_target_map),
-                    skipped_contacts=skipped_contacts
-                )
+            # For campaigns with sequence, create activities
+            with transaction.atomic():
+                # Process each valid contact
+                for contact_info in valid_contacts:
+                    print(f"Processing contact: {contact_info[CONFIG.fields.contact].id}")
+                    contact = contact_info[CONFIG.fields.contact]
+                    has_phone = contact_info['has_phone']
+                    has_email = contact_info['has_email']
+                    has_linkedin = contact_info['has_linkedin']
+                    
+                    # Get the associated target for this contact
+                    campaign_target = contact_to_target_map.get(contact.id)
+                    if not campaign_target:
+                        continue  # Skip if no target mapping found
+                    print(f"Found target for contact {contact.id}: {campaign_target.id}")
+                    # Create activities for this contact
+                    activities_created = cls._create_activities_for_contact(
+                        campaign=campaign,
+                        campaign_target=campaign_target,
+                        contact=contact,
+                        has_phone=has_phone,
+                        has_email=has_email,
+                        has_linkedin=has_linkedin
+                    )
+                    
+                    created_count += len(activities_created)
+                    print(f"Created {len(activities_created)} activities for contact {contact.id}")
+                    
+                    # Mark the target as having activities generated
+                    if not campaign_target.activities_generated and activities_created:
+                        campaign_target.mark_activities_generated()
+            
+            # Return appropriate response based on context
+            if for_campaign_creation:
+                # Contexte : création de campagne
+                if created_count == 0:
+                    return CampaignResponseBuilder.campaign_created_empty(
+                        campaign_id=campaign.id,
+                        campaign_name=campaign.name,
+                        targets_created=len(contact_to_target_map),
+                        skipped_contacts=skipped_contacts
+                    )
+                else:
+                    return CampaignResponseBuilder.campaign_created(
+                        campaign_id=campaign.id,
+                        campaign_name=campaign.name,
+                        targets_created=len(contact_to_target_map),
+                        activities_created=created_count,
+                        skipped_contacts=skipped_contacts
+                    )
             else:
-                return CampaignResponseBuilder.campaign_created(
+                # Contexte : génération d'activités pour campagne existante
+                return CampaignResponseBuilder.activities_generated(
                     campaign_id=campaign.id,
                     campaign_name=campaign.name,
-                    targets_created=len(contact_to_target_map),
                     activities_created=created_count,
-                    skipped_contacts=skipped_contacts
+                    skipped_contacts=skipped_contacts,
+                    additional_data={
+                        'valid_contacts': len(valid_contacts),
+                        'targets_processed': len(contact_to_target_map)
+                    }
                 )
-        else:
-            # Contexte : génération d'activités pour campagne existante
-            return CampaignResponseBuilder.activities_generated(
-                campaign_id=campaign.id,
-                campaign_name=campaign.name,
-                activities_created=created_count,
-                skipped_contacts=skipped_contacts,
-                additional_data={
-                    'valid_contacts': len(valid_contacts),
-                    'targets_processed': len(contact_to_target_map)
-                }
+        except StandardizedValidationError as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.ACTIVITY_GENERATION_FAILED.format(reason=str(e))
             )
         
     @classmethod

@@ -1,9 +1,9 @@
 # apps/sequence/sequences/chasing_sequence.py
 from typing import Dict, List
 from apps.activities.models import Activity
+from apps.sequence.sequences.base_sequence import Sequence
 
-
-class ChasingSequence:
+class ChasingSequence(Sequence):
     """
     Simple chasing sequence class with static methods returning sequence configurations
     """

@@ -197,13 +197,19 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
             QuerySet of User objects with the specified role
         """
         from django.contrib.auth import get_user_model
+        from .campaign_stakeholder import CampaignStakeholder
+    
         User = get_user_model()
         
-        return User.objects.filter(
-            campaign_roles__campaign=self,
-            campaign_roles__role=role
-        )
+        # Get user IDs from CampaignStakeholder instead of doing reverse lookup
+        stakeholder_user_ids = CampaignStakeholder.objects.filter(
+            campaign=self,
+            role=role
+        ).values_list('user_id', flat=True)
     
+        # Return users with those IDs
+        return User.objects.filter(id__in=stakeholder_user_ids)
+        
     def get_owners(self):
         """Get campaign owners"""
         from .campaign_stakeholder import CampaignStakeholder
@@ -218,6 +224,63 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         """Get campaign receivers"""
         from .campaign_stakeholder import CampaignStakeholder
         return self.get_stakeholders_by_role(CampaignStakeholder.StakeholderRole.RECEIVER)
+    
+    def add_stakeholder(self, user, role, added_by=None):
+        """
+        Add a stakeholder to this campaign with a specific role
+        
+        Args:
+            user: The user to add
+            role: The role to assign (from CampaignStakeholder.StakeholderRole)
+            added_by: The user who is adding this stakeholder
+            
+        Returns:
+            The created CampaignStakeholder instance
+        """
+        from .campaign_stakeholder import CampaignStakeholder
+        
+        # Check if this user already has this role
+        existing = CampaignStakeholder.objects.filter(
+            campaign=self,
+            user=user,
+            role=role
+        ).first()
+        
+        if existing:
+            return existing
+            
+        # Create new stakeholder
+        return CampaignStakeholder.objects.create(
+            campaign=self,
+            user=user,
+            role=role,
+            added_by=added_by,
+            client_id=self.client_id
+        )
+
+    def remove_stakeholder(self, user, role=None):
+        """
+        Remove a stakeholder from this campaign
+        
+        Args:
+            user: The user to remove (if None, removes all users with the given role)
+            role: The role to remove (if None, removes all roles for the given user)
+            
+        Returns:
+            int: Number of stakeholders removed
+        """
+        from .campaign_stakeholder import CampaignStakeholder
+        from django.db.models import Q
+        
+        query = Q(campaign=self)
+        
+        if user:
+            query &= Q(user=user)
+            
+        if role:
+            query &= Q(role=role)
+            
+        return CampaignStakeholder.objects.filter(query).delete()[0]
     
     def clean(self):
         """Validate campaign data using standardized validation"""

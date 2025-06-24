@@ -110,6 +110,7 @@ class CampaignErrorMessages:
     ACTIVITY_SEQUENCE_BROKEN = _("Activity sequence is broken or corrupted")
     ACTIVITY_CALLBACK_DATE_REQUIRED = _("Callback date is required for callback results")
     ACTIVITY_MEETING_DATE_REQUIRED = _("Meeting date is required for successful results")
+    ACTIVITY_GENERATION_FAILED = _("Failed to generate activities: {reason}")
     
     # Campaign Stakeholders
     STAKEHOLDER_ALREADY_EXISTS = _("User already has role {role} for this campaign")
