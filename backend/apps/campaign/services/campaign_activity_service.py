@@ -130,6 +130,7 @@ class CampaignActivityService:
                     if not campaign_target.activities_generated and activities_created:
                         campaign_target.mark_activities_generated()
             print(f"Total activities created for campaign {campaign.id}: {created_count}")
+            
             # Return appropriate response based on context
             if for_campaign_creation:
                 # Contexte : création de campagne

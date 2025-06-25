@@ -1,6 +1,7 @@
 # apps/campaign/urls.py (version corrigée et nettoyée)
 from django.urls import path
-from .views.campaign_views import CampaignViewSet, ActivityResultViewSet
+from .views.campaign_views import CampaignViewSet
+from .views.activity_result_views import ActivityResultViewSet
 from .views.campaign_target_views import CampaignTargetViewSet
 from .views.campaign_objective_views import CampaignObjectiveViewSet
 from .views.campaign_stakeholder_views import CampaignStakeholderViewSet

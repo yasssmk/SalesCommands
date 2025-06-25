@@ -174,17 +174,26 @@ class CampaignCreationService:
                     CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=campaign.status)
                 )
             
-            # Mark campaign as started
-            campaign.status = active_status
-            campaign.started_at = timezone.now()
-            campaign.save()
+
+            with transaction.atomic():
+                # Mark campaign as started
+                campaign.status = active_status
+                campaign.started_at = timezone.now()
+                campaign.save()
+                
+                # ✅ FAIRE PROGRESSER TOUS LES TARGETS PENDING → IN_PROGRESS
+                from .campaign_result_service import CampaignResultService
+                CampaignResultService._sync_campaign_target_status(
+                    campaign=campaign, 
+                    force_campaign_context='start'
+                )
             
             # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignQueueService
             from .campaign_core_service import CampaignCoreService
             
             # Get the initial active activities using CampaignCoreService
             try:
-                playlist_response = CampaignCoreService.get_campaign_playlist_internal(
+                playlist_response = CampaignCoreService.get_campaign_playlist(
                     campaign=campaign,
                     limit=CONFIG.limits.playlist_limit
                 )
@@ -234,7 +243,7 @@ class CampaignCreationService:
                     },
                     meta={
                         'operation': 'campaign_start',
-                        'playlist_generated': False
+                        'playlist_generated': False,
                     }
                 )
             
@@ -264,21 +273,29 @@ class CampaignCreationService:
             # Get paused status from CAMPAIGN_STATUSES
             paused_status = next(status[0] for status in CONFIG.validation.campaign_statuses if status[1] == 'Paused')
             
-            # Update all planned activities to set pause date
-            activities_paused = 0
-            
-            for activity in Activity.objects.filter(
-                **{f"campaign_info__{CONFIG.fields.campaign}": campaign},
-                status=Activity.Status.PLANNED
-            ):
-                if hasattr(activity, 'sequence_info'):
-                    activity.sequence_info.sequence_paused_until = pause_until
-                    activity.sequence_info.save()
-                    activities_paused += 1
-            
-            # Update campaign status
-            campaign.status = paused_status
-            campaign.save()
+            with transaction.atomic():
+                # Update all planned activities to set pause date
+                activities_paused = 0
+                
+                for activity in Activity.objects.filter(
+                    **{f"campaign_info__{CONFIG.fields.campaign}": campaign},
+                    status=Activity.Status.PLANNED
+                ):
+                    if hasattr(activity, 'sequence_info'):
+                        activity.sequence_info.sequence_paused_until = pause_until
+                        activity.sequence_info.save()
+                        activities_paused += 1
+                
+                # Update campaign status
+                campaign.status = paused_status
+                campaign.save()
+                
+                # Sync targets pour pause (selon votre logique métier)
+                from .campaign_result_service import CampaignResultService
+                CampaignResultService._sync_campaign_target_status(
+                    campaign=campaign, 
+                    force_campaign_context='pause'
+                )
             
             # Use operation message from config
             message = CONFIG.messages.campaign_paused.format(name=campaign.name)
@@ -299,11 +316,7 @@ class CampaignCreationService:
                 'pause_until': pause_until.isoformat() if pause_until else None
             }
             
-            return StandardizedSuccessResponse.success(
-                message=message,
-                data=data,
-                meta=meta
-            )
+            return StandardizedSuccessResponse.success(message=message, data=data, meta=meta)
             
         except Exception as e:
             raise StandardizedValidationError(
@@ -313,13 +326,7 @@ class CampaignCreationService:
     @classmethod
     def resume_campaign(cls, campaign: Campaign) -> Response:
         """
-        Resume a paused campaign
-        
-        Args:
-            campaign: The campaign to resume
-            
-        Returns:
-            Response: Standardized API response with resume result
+        Resume a paused campaign - ✅ SIMPLIFIÉ avec _sync_campaign_target_status
         """
         try:
             from apps.activities.models import Activity
@@ -327,30 +334,36 @@ class CampaignCreationService:
             # Get active status from CAMPAIGN_STATUSES
             active_status = next(status[0] for status in CONFIG.validation.campaign_statuses if status[1] == 'Active')
             
-            # Clear pause dates from all activities
-            activities_resumed = 0
+            with transaction.atomic():
+                # Clear pause dates from all activities
+                activities_resumed = 0
+                
+                for activity in Activity.objects.filter(campaign_info__campaign=campaign):
+                    if hasattr(activity, 'sequence_info') and activity.sequence_info.sequence_paused_until:
+                        activity.sequence_info.sequence_paused_until = None
+                        activity.sequence_info.save()
+                        activities_resumed += 1
+                
+                # Update campaign status
+                campaign.status = active_status
+                campaign.save()
+                
+                # ✅ RÉUTILISER _sync_campaign_target_status pour remettre targets en IN_PROGRESS
+                from .campaign_result_service import CampaignResultService
+                CampaignResultService._sync_campaign_target_status(
+                    campaign=campaign, 
+                    force_campaign_context='resume'
+                )
             
-            for activity in Activity.objects.filter(campaign_info__campaign=campaign):
-                if hasattr(activity, 'sequence_info') and activity.sequence_info.sequence_paused_until:
-                    activity.sequence_info.sequence_paused_until = None
-                    activity.sequence_info.save()
-                    activities_resumed += 1
-            
-            # Update campaign status
-            campaign.status = active_status
-            campaign.save()
-            
-            # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignExecutionService
-            from .campaign_core_service import CampaignCoreService
-            
-            # Get updated playlist using CampaignCoreService
+            # Rest of method stays the same...
             try:
+                from .campaign_core_service import CampaignCoreService
+                
                 updated_playlist_response = CampaignCoreService.get_campaign_playlist_internal(
                     campaign=campaign,
                     limit=CONFIG.limits.playlist_limit
                 )
                 
-                # Extract active activities count from the standardized Response
                 active_activities_count = 0
                 if hasattr(updated_playlist_response, 'data') and 'data' in updated_playlist_response.data:
                     playlist_data = updated_playlist_response.data['data']
@@ -358,13 +371,13 @@ class CampaignCreationService:
                     active_activities_count = len(items)
                     
             except Exception:
-                # Si la récupération de playlist échoue, continuer sans (non-critique)
                 active_activities_count = 0
             
             data = {
                 'campaign_id': campaign.id,
                 'campaign_name': campaign.name,
                 'activities_resumed': activities_resumed,
+                'targets_auto_progressed': True,  # ✅ Simple flag
                 'active_activities': active_activities_count,
                 'resumed_at': timezone.now().isoformat()
             }
@@ -375,22 +388,17 @@ class CampaignCreationService:
                 'active_activities_available': active_activities_count
             }
             
-            # Use operation message from config
             message = CONFIG.messages.campaign_resumed.format(name=campaign.name)
             
-            return StandardizedSuccessResponse.success(
-                message=message,
-                data=data,
-                meta=meta
-            )
+            return StandardizedSuccessResponse.success(message=message, data=data, meta=meta)
             
         except StandardizedValidationError:
-            # Re-raise validation errors
             raise
         except Exception as e:
             raise StandardizedValidationError(
                 CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=f"resume failed: {str(e)}")
             )
+
     
     @classmethod
     def _create_campaign_targets(cls, campaign: Campaign, 

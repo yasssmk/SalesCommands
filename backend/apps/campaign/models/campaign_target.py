@@ -274,30 +274,15 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
 
 
     def update_status(self, new_status, trigger=None, notes=None, user=None, 
-                    save=True, validate_consistency=False, source='manual'):
+                save=True, validate_consistency=False, source='manual'):
         """
-        Enhanced status update with hybrid State Machine approach
-        
-        Args:
-            new_status (str): Target status to transition to
-            trigger (str): Business trigger causing the transition (for State Machine)
-            notes (str): Optional notes for the transition
-            user: User performing the action
-            save (bool): Whether to save the instance
-            validate_consistency (bool): If True, validates status matches activities
-            source (str): Source of the change - 'manual', 'auto_sync', 'business_result'
-            
-        Returns:
-            dict: Transition result information
-            
-        Source behavior:
-            - 'auto_sync': Bypasses State Machine, uses existing activity-based logic
-            - 'manual': Uses State Machine validation for user-initiated changes  
-            - 'business_result': Uses State Machine validation with business triggers
+        ✅ CORRIGÉ : Ordre des validations et debugging State Machine
         """
         try:
             old_status = self.status
             old_status_display = self.get_status_display()
+
+            print(f"🔍 Updating status from {old_status} to {new_status} (source: {source}, trigger: {trigger})")
             
             # 1. Basic status validation (existing logic - always applied)
             valid_statuses = [choice[0] for choice in self.Status.choices]
@@ -307,41 +292,57 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                         field=f"Status (must be one of: {', '.join(valid_statuses)})"
                     )
                 )
+            print(f"✅ Basic status validation passed for {new_status}")
             
-            # 2. Determine if State Machine validation should be used
-            use_state_machine = source in ['manual', 'business_result']
-            
-            # 3. State Machine validation (hybrid approach)
-            if use_state_machine:
-                TargetStateMachine.validate_transition(
-                    from_state=old_status,
-                    to_state=new_status,
-                    trigger=trigger
-                )
-            
-            # 4. Consistency validation (existing logic - applied when requested)
-            if validate_consistency:
-                expected_status = self._calculate_expected_status()
-                if expected_status and new_status != expected_status:
-                    raise StandardizedValidationError(
-                        CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(
-                            current_state=f"Status '{new_status}' inconsistent with activities (expected: '{expected_status}')"
-                        )
-                    )
-            
-            # 5. No change needed
+            # 2. No change needed (check early)
             if old_status == new_status:
+                print(f"ℹ️ No change needed: {old_status} == {new_status}")
                 return {
                     'status_updated': False,
                     'old_status': old_status,
                     'new_status': new_status,
                     'source': source,
-                    'state_machine_used': use_state_machine,
+                    'state_machine_used': False,
                     'no_change_needed': True,
                     'timestamp': timezone.now().isoformat()
                 }
             
+            # 3. Determine if State Machine validation should be used
+            use_state_machine = source in ['manual', 'business_result']
+            print(f"🔍 Using State Machine validation: {use_state_machine} (source: {source})")
+
+            # 4. ✅ STATE MACHINE VALIDATION (AVANT consistency validation)
+            if use_state_machine:
+                print(f"🔍 Attempting State Machine validation: {old_status} → {new_status} (trigger: {trigger})")
+                try:
+                    TargetStateMachine.validate_transition(
+                        from_state=old_status,
+                        to_state=new_status,
+                        trigger=trigger
+                    )
+                    print(f"✅ State Machine validation passed: {old_status} → {new_status}")
+                except Exception as state_machine_error:
+                    print(f"❌ State Machine validation FAILED: {str(state_machine_error)}")
+                    raise  # Re-raise l'exception State Machine
+            else:
+                print(f"ℹ️ Skipping State Machine validation (source: {source})")
+
+            # 5. Consistency validation (existing logic - applied when requested)
+            if validate_consistency:
+                expected_status = self._calculate_expected_status()
+                if expected_status and new_status != expected_status:
+                    print(f"❌ Consistency validation failed: expected {expected_status}, got {new_status}")
+                    raise StandardizedValidationError(
+                        CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(
+                            current_state=f"Status '{new_status}' inconsistent with activities (expected: '{expected_status}')"
+                        )
+                    )
+                print(f"✅ Consistency validation passed for {new_status} (expected: {expected_status or 'N/A'})")
+            else:
+                print(f"ℹ️ Skipping consistency validation")
+            
             # 6. Perform the transition
+            print(f"🔍 Performing transition: {old_status} → {new_status}")
             with transaction.atomic():
                 self.status = new_status
                 
@@ -372,7 +373,9 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                         self.notes = transition_note
                 
                 if save:
+                    print(f"🔍 Saving target with new status: {new_status}")
                     self.save()
+                    print(f"✅ Target saved successfully with status: {self.status}")
                     
                 # Enhanced logging with source tracking
                 self._log_status_transition(
@@ -384,6 +387,7 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                     source=source
                 )
             
+            print(f"✅ Status transition completed: {old_status} → {new_status}")
             return {
                 'status_updated': True,
                 'old_status': old_status,
@@ -399,9 +403,13 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             }
             
         except StandardizedValidationError:
+            print(f"❌ Validation error in update_status: re-raising")
             # Re-raise validation errors from State Machine or existing logic
             raise
         except Exception as e:
+            print(f"❌ Unexpected error in update_status: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise StandardizedValidationError(
                 CampaignErrorMessages.TARGET_STATUS_UPDATE_FAILED.format(reason=str(e))
             )
@@ -844,6 +852,83 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             user=user,
             source='business_result'
         )
+    
+    def mark_as_active_due_to_campaign(self, campaign_status_trigger: str = 'campaign_activated', 
+                                 notes: str = None, user=None) -> dict:
+        """
+        Marque le target comme actif suite à un changement de statut de campagne
+        ✅ NOUVEAU : Utilise les triggers spécifiques aux campagnes
+        
+        Args:
+            campaign_status_trigger: 'campaign_activated', 'campaign_resumed', etc.
+            notes: Notes expliquant la raison
+            user: Utilisateur déclenchant l'action
+            
+        Returns:
+            dict: Résultat de la mise à jour de statut
+        """
+
+        print(f"Activating target due to campaign status change: {campaign_status_trigger}")
+        # Mapping des triggers de campagne
+        campaign_trigger_mapping = {
+            'DRAFT_TO_ACTIVE': 'campaign_activated',
+            'PAUSED_TO_ACTIVE': 'campaign_resumed', 
+            'READY_TO_ACTIVE': 'campaign_activated',
+            'GENERIC_ACTIVATION': 'campaign_reactivated'
+        }
+        
+        # Utiliser le trigger fourni ou mapper selon le contexte
+        trigger = campaign_trigger_mapping.get(campaign_status_trigger, campaign_status_trigger)
+        
+        activation_notes = f"Target activated due to campaign status change"
+        if notes:
+            activation_notes += f": {notes}"
+        
+        return self.update_status(
+            new_status=self.Status.IN_PROGRESS,
+            trigger=trigger,
+            notes=activation_notes,
+            user=user,
+            source='business_result'
+        )
+
+    def handle_campaign_pause(self, notes: str = None, user=None) -> dict:
+        """
+        Gère la mise en pause du target suite à la mise en pause de la campagne
+        ✅ NOUVEAU : Logique spécifique pour pause de campagne
+        
+        Args:
+            notes: Notes expliquant la pause
+            user: Utilisateur déclenchant l'action
+            
+        Returns:
+            dict: Résultat de la mise à jour de statut
+        """
+        # Pour la pause, on peut soit :
+        # 1. Laisser les targets en IN_PROGRESS (ils restent actifs conceptuellement)
+        # 2. Les passer en PENDING temporairement
+        # 3. Créer un nouveau statut PAUSED dans TargetStateMachine
+        
+        # Option 2 : Utiliser CALLBACK_PENDING comme état de pause temporaire
+        if self.status == self.Status.IN_PROGRESS:
+            pause_notes = f"Target paused due to campaign pause"
+            if notes:
+                pause_notes += f": {notes}"
+                
+            return self.update_status(
+                new_status=self.Status.PENDING,
+                trigger='campaign_paused',
+                notes=pause_notes,
+                user=user,
+                source='business_result'
+            )
+        else:
+            # Si target pas IN_PROGRESS, ne rien faire
+            return {
+                'status_updated': False,
+                'reason': 'Target not in IN_PROGRESS state',
+                'current_status': self.status
+            }
     
     def get_available_actions(self) -> dict:
         """
