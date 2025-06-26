@@ -39,13 +39,17 @@ class CampaignObjectiveViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Mo
     
     def get_queryset(self):
         """
-        ✅ OPTIMISATION 2: Queries optimisées + configuration centralisée
+        ✅ CORRIGÉ: Queries optimisées + client scoping + campaign filtering
         """
         try:
-            # Base queryset avec client scoping  
-            queryset = CampaignObjective.objects.select_related('campaign').filter(
-                campaign__client_id=self.get_client_id()
-            )
+            # ✅ CORRECT: Base queryset avec client scoping approprié
+            queryset = CampaignObjective.objects.all()
+            queryset = self.filter_queryset_by_client(queryset)
+            
+            # ✅ AJOUT: Filter by campaign - logique métier nécessaire
+            campaign_id = self.request.query_params.get('campaign_id')
+            if campaign_id:
+                queryset = queryset.filter(campaign_id=campaign_id)
             
             # ✅ Optimisation queries automatique
             return CampaignQueryOptimizer.apply_optimization(

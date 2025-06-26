@@ -47,22 +47,17 @@ class CampaignActivityService:
         """
         try:
             created_count = 0
-
-            print(f"Creating activities for campaign: {campaign.id} - {campaign.name}")
-            
+     
             # Extract all relevant contacts regardless of sequence type
             extraction_result = cls._extract_contacts_from_targets(campaign, target_contacts)
             valid_contacts = extraction_result['valid_contacts']
             skipped_contacts = extraction_result['skipped_contacts']
             contact_to_target_map = extraction_result['contact_to_target_map']
             
-            print(f"Valid contacts extracted: {len(valid_contacts)}")
-            print(f"Skipped contacts: {len(skipped_contacts)}")
-            print(f"Contact to target map: {len(contact_to_target_map)} entries")
 
             # For campaigns without a sequence, return contact queue response
             if not campaign.sequence_type:
-                print("Campaign has no sequence type, returning contact queue")
+
                 return CampaignResponseBuilder.campaign_playlist(
                     campaign_id=campaign.id,
                     campaign_name=campaign.name,
@@ -79,7 +74,7 @@ class CampaignActivityService:
             
             # Check for empty campaign (no valid contacts for sequence)
             if not valid_contacts:
-                print("No valid contacts found for activity generation")
+
                 if for_campaign_creation:
                     return CampaignResponseBuilder.campaign_created_empty(
                         campaign_id=campaign.id,
@@ -102,7 +97,7 @@ class CampaignActivityService:
             with transaction.atomic():
                 # Process each valid contact
                 for contact_info in valid_contacts:
-                    print(f"Processing contact: {contact_info[CONFIG.fields.contact].id}")
+ 
                     contact = contact_info[CONFIG.fields.contact]
                     has_phone = contact_info['has_phone']
                     has_email = contact_info['has_email']
@@ -112,7 +107,7 @@ class CampaignActivityService:
                     campaign_target = contact_to_target_map.get(contact.id)
                     if not campaign_target:
                         continue  # Skip if no target mapping found
-                    print(f"Found target for contact {contact.id}: {campaign_target.id}")
+                    
                     # Create activities for this contact
                     activities_created = cls._create_activities_for_contact(
                         campaign=campaign,
@@ -124,12 +119,12 @@ class CampaignActivityService:
                     )
                     
                     created_count += len(activities_created)
-                    print(f"Created {len(activities_created)} activities for contact {contact.id}")
+                    
                     
                     # Mark the target as having activities generated
                     if not campaign_target.activities_generated and activities_created:
                         campaign_target.mark_activities_generated()
-            print(f"Total activities created for campaign {campaign.id}: {created_count}")
+            
             
             # Return appropriate response based on context
             if for_campaign_creation:

@@ -46,10 +46,14 @@ class CampaignTargetViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.Model
         ✅ OPTIMISATION 2: Queries optimisées + configuration centralisée
         """
         try:
-            # Base queryset avec client scoping (BaseAPIView)
-            base_queryset = CampaignTarget.objects.filter(
-                campaign__client_id=self.get_client_id()
-            )
+            # Base queryset avec client scoping
+            base_queryset = CampaignTarget.objects.all()
+            base_queryset = self.filter_queryset_by_client(base_queryset)
+            
+            # ✅ AJOUT: Filter by campaign - logique métier nécessaire
+            campaign_id = self.request.query_params.get('campaign_id')
+            if campaign_id:
+                base_queryset = base_queryset.filter(campaign_id=campaign_id)
             
             # Optimisation queries selon l'action
             return CampaignQueryOptimizer.apply_optimization(

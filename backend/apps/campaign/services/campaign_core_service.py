@@ -57,7 +57,11 @@ class CampaignCoreService:
         """Start campaign - délègue au service spécialisé"""
         try:
             from .campaign_creation_service import CampaignCreationService
+            from .campaign_activity_service import CampaignActivityService
+
             return CampaignCreationService.start_campaign(campaign)
+            from .campaign_activity_service import CampaignActivityService
+
         except StandardizedValidationError:
             raise
         except Exception as e:
