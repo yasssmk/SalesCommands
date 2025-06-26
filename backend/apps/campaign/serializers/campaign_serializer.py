@@ -23,7 +23,7 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     campaign_type_display = serializers.CharField(source='get_campaign_type_display', read_only=True)
     sequence_type_display = serializers.SerializerMethodField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    stakeholders = CampaignStakeholderSerializer(source='stakeholders.through.objects', many=True, read_only=True)
+    stakeholders = CampaignStakeholderSerializer(source='stakeholder_links', many=True, read_only=True)
     
     # Computed fields
     has_sequence = serializers.SerializerMethodField(read_only=True)
