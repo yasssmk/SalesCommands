@@ -40,14 +40,7 @@ class CampaignQueryOptimizer:
     @classmethod
     def optimize_campaigns_queryset(cls, queryset, optimization_level='standard'):
         """
-        Optimize Campaign queryset with intelligent prefetching
-        
-        Args:
-            queryset: Base Campaign queryset (from BaseAPIView.get_queryset())
-            optimization_level: 'minimal', 'standard', 'full', 'dashboard'
-            
-        Returns:
-            Optimized queryset with appropriate prefetching
+        ✅ CORRIGÉ: Optimize Campaign queryset SANS slices problématiques
         """
         if optimization_level == 'minimal':
             return queryset.select_related('owner')
@@ -61,23 +54,25 @@ class CampaignQueryOptimizer:
             )
         
         elif optimization_level == 'full':
+            # ✅ SUPPRIMÉ: slice problématique
             return queryset.select_related(
                 'owner'
             ).prefetch_related(
-                # Objectives with efficient loading
+                # Objectives avec limite raisonnable mais SANS slice
                 Prefetch(
                     'objectives',
                     queryset=cls._get_optimized_objectives_queryset()
                 ),
-                # Stakeholders with user details
+                # Stakeholders sans slice  
                 Prefetch(
                     'stakeholder_links',
                     queryset=cls._get_optimized_stakeholders_queryset()
                 ),
-                # Targets with basic info (limited for performance)
+                # ✅ TARGETS sans slice problématique
                 Prefetch(
                     'targets',
                     queryset=cls._get_optimized_targets_queryset()
+                    # ✅ SUPPRIMÉ: [:max_targets] - pas de slice
                 )
             )
         
@@ -101,7 +96,7 @@ class CampaignQueryOptimizer:
             )
         
         return queryset
-    
+        
     @classmethod
     def optimize_campaign_targets_queryset(cls, queryset, optimization_level='standard'):
         """
@@ -128,14 +123,16 @@ class CampaignQueryOptimizer:
             )
         
         elif optimization_level == 'full':
+            # ✅ SUPPRIMÉ: slice problématique
             return base_queryset.prefetch_related(
                 'contact__account',
                 'lead__account',
                 'target_opportunity__account',
-                # Activities for this target (limited to avoid memory issues)
+                # ✅ ACTIVITIES sans slice problématique
                 Prefetch(
                     'activities',
                     queryset=cls._get_recent_activities_queryset()
+                    # ✅ SUPPRIMÉ: [:max_activities] - pas de slice
                 )
             )
         
@@ -163,13 +160,13 @@ class CampaignQueryOptimizer:
     @classmethod
     def get_dashboard_optimized_queryset(cls, base_queryset):
         """
-        Ultra-optimized queryset for dashboard with minimal queries
+        ✅ CORRIGÉ: Ultra-optimized queryset for dashboard SANS slice externe
         Target: ≤ 12 queries total for dashboard endpoint
         """
         return base_queryset.select_related(
             'owner'
         ).prefetch_related(
-            # Only primary objective for dashboard
+            # Only primary objective for dashboard - PAS de slice ici
             Prefetch(
                 'objectives',
                 queryset=cls._get_dashboard_objectives_queryset(),
@@ -196,21 +193,24 @@ class CampaignQueryOptimizer:
     @classmethod 
     def get_summary_optimized_queryset(cls, base_queryset):
         """
-        Optimized queryset for campaign summary with essential data
+        ✅ CORRIGÉ: Optimized queryset for campaign summary SANS slice
         Target: ≤ 8 queries total
         """
+        # ✅ Appliquer slice seulement si nécessaire, et au bon endroit
+        max_targets = CONFIG.limits.max_prefetch_targets
+        
         return base_queryset.select_related(
             'owner'
         ).prefetch_related(
-            # All objectives for summary
+            # All objectives for summary - pas de limite
             Prefetch(
                 'objectives',
                 queryset=cls._get_optimized_objectives_queryset()
             ),
-            # Target summary data only
+            # ✅ Target summary avec slice DANS le Prefetch si nécessaire
             Prefetch(
                 'targets',
-                queryset=cls._get_summary_targets_queryset(),
+                queryset=cls._get_summary_targets_queryset()[:max_targets],
                 to_attr='summary_targets'
             )
         )
@@ -265,10 +265,9 @@ class CampaignQueryOptimizer:
         """Optimized targets queryset (limited for performance)"""
         from apps.campaign.models.campaign_target import CampaignTarget
         # Now properly access the field from the dataclass
-        max_targets = CONFIG.limits.max_prefetch_targets
         return CampaignTarget.objects.select_related(
             'account', 'contact', 'lead', 'target_opportunity'
-        ).order_by('created_at')[:max_targets]
+        ).order_by('created_at')
     
     @classmethod
     def _get_summary_targets_queryset(cls):
@@ -276,19 +275,19 @@ class CampaignQueryOptimizer:
         from apps.campaign.models.campaign_target import CampaignTarget
         return CampaignTarget.objects.select_related('account').only(
             'id', 'status', 'account__company_name', 'created_at'
-        )
+        ).order_by('created_at')
     
     @classmethod
     def _get_recent_activities_queryset(cls):
         """Recent activities for target detail view"""
         from apps.activities.models import Activity
-        # Access the properly defined field
-        max_activities = CONFIG.limits.summary_activities
+
+
         return Activity.objects.select_related(
             'owner', 'sequence_info'
         ).prefetch_related(
             'contacts'
-        ).order_by('-created_at')[:max_activities]
+        ).order_by('-created_at')
     
     # =========================================================================
     # QUERY AUDITING AND PERFORMANCE MONITORING
@@ -393,22 +392,34 @@ class CampaignQueryOptimizer:
         Returns:
             Optimized queryset
         """
-        # Determine optimization level based on action
-        optimization_level = cls._get_optimization_level_for_action(view_action)
-        
-        # Apply model-specific optimization
-        if model_name == 'Campaign':
-            return cls.optimize_campaigns_queryset(queryset, optimization_level)
-        elif model_name == 'CampaignTarget':
-            return cls.optimize_campaign_targets_queryset(queryset, optimization_level)
-        elif model_name == 'CampaignObjective':
-            return cls.optimize_campaign_objectives_queryset(queryset, optimization_level)
-        elif model_name == 'CampaignStakeholder':
-            return cls.optimize_campaign_stakeholders_queryset(queryset, optimization_level)
-        else:
-            # Unknown model, return as-is
+        try:
+            # Determine optimization level based on action
+            optimization_level = cls._get_optimization_level_for_action(view_action)
+            
+            # ✅ LIMITATION TEMPORAIRE: Utiliser 'standard' au lieu de 'full' pour éviter les slices
+            if optimization_level == 'full':
+                optimization_level = 'standard'  # Downgrade temporaire
+            
+            # Apply model-specific optimization
+            if model_name == 'Campaign':
+                optimized = cls.optimize_campaigns_queryset(queryset, optimization_level)
+            elif model_name == 'CampaignTarget':
+                optimized = cls.optimize_campaign_targets_queryset(queryset, optimization_level)
+            elif model_name == 'CampaignObjective':
+                optimized = cls.optimize_campaign_objectives_queryset(queryset, optimization_level)
+            elif model_name == 'CampaignStakeholder':
+                optimized = cls.optimize_campaign_stakeholders_queryset(queryset, optimization_level)
+            else:
+                # Unknown model, return as-is
+                optimized = queryset
+            
+            return optimized
+            
+        except Exception as e:
+            # ✅ FALLBACK: En cas d'erreur d'optimisation, retourner le queryset original
+            print(f"WARNING: CampaignQueryOptimizer failed for {model_name}.{view_action}: {e}")
             return queryset
-    
+
     @classmethod
     def _get_optimization_level_for_action(cls, action: str) -> str:
         """Determine appropriate optimization level based on view action"""

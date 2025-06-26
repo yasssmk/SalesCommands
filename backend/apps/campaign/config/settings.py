@@ -240,7 +240,7 @@ class SerializerConfig:
         'start_date', 'end_date', 'objective', 'objectives',
         'status', 'status_display', 'target_summary', 'has_mixed_targets',
         'created_at', 'updated_at', 'created_by', 'updated_by', 'result_tracking',
-        'quick_metrics', 'target_summary'
+        'quick_metrics'
     ])
     
     campaign_read_only_fields: List[str] = field(default_factory=lambda: [

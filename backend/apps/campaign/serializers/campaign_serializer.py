@@ -891,52 +891,22 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
 class CampaignListSerializer(CampaignSerializer):
     """
-    Simplified serializer for listing campaigns - Inherits from CampaignSerializer
-    This approach avoids code duplication and ensures all SerializerMethodFields are available
+    ✅ VERSION SIMPLIFIÉE: Pas de logique to_representation complexe
     """
     
-    # Add specific fields for list view that aren't in parent
-    target_counts = serializers.SerializerMethodField(read_only=True)
-    
     class Meta(CampaignSerializer.Meta):
-        # Override fields to show only what's needed for list view
+        # Champs essentiels pour la liste SANS target_summary
         fields = [
             'id', 'name', 'campaign_type', 'campaign_type_display', 'has_sequence',
             'owner', 'owner_name', 'owner_count', 'executor_count', 'receiver_count',
-            'start_date', 'end_date', 'status', 'status_display', 'quick_metrics', 'target_counts', 'created_at'
+            'start_date', 'end_date', 'status', 'status_display', 'quick_metrics', 'created_at'
         ]
-        # Keep same read_only_fields from parent but only for the fields we use
         read_only_fields = [
             'owner_name', 'campaign_type_display', 'status_display', 'has_sequence', 
-            'quick_metrics', 'target_counts', 'owner_count', 'executor_count', 'receiver_count', 'created_at'
+            'quick_metrics', 'owner_count', 'executor_count', 'receiver_count', 'created_at'
         ]
-    
-    def get_target_counts(self, obj):
-        """Get simplified target counts for list view"""
-        try:
-            summary = obj.get_target_summary()
-            return {
-                'total': summary['total'],
-                'accounts': summary['accounts'],
-                'contacts': summary['contacts'],
-                'leads': summary['leads'],
-                'opportunities': summary.get('opportunities', 0)
-            }
-        except Exception:
-            return {
-                'total': 0,
-                'accounts': 0,
-                'contacts': 0,
-                'leads': 0,
-                'opportunities': 0
-            }
-    
-    def to_representation(self, instance):
-        """Override to set list_view context for optimized serialization"""
-        if not self.context:
-            self.context = {}
-        self.context['list_view'] = True
-        return super().to_representation(instance)
+
+
 
 class CampaignDetailSerializer(CampaignSerializer):
     """

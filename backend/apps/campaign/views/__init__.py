@@ -15,10 +15,11 @@ ViewSet Architecture:
 """
 
 # Standard CRUD ViewSets
-from .campaign_views import CampaignViewSet, ActivityResultViewSet
+from .campaign_views import CampaignViewSet
 from .campaign_objective_views import CampaignObjectiveViewSet
 from .campaign_stakeholder_views import CampaignStakeholderViewSet
 from .campaign_target_views import CampaignTargetViewSet
+from .activity_result_views import ActivityResultViewSet
 
 __all__ = [
     # Management ViewSets (Primary Interfaces)

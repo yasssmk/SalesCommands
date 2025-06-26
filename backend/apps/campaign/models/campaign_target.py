@@ -281,8 +281,6 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         try:
             old_status = self.status
             old_status_display = self.get_status_display()
-
-            print(f"🔍 Updating status from {old_status} to {new_status} (source: {source}, trigger: {trigger})")
             
             # 1. Basic status validation (existing logic - always applied)
             valid_statuses = [choice[0] for choice in self.Status.choices]
@@ -292,11 +290,9 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                         field=f"Status (must be one of: {', '.join(valid_statuses)})"
                     )
                 )
-            print(f"✅ Basic status validation passed for {new_status}")
             
             # 2. No change needed (check early)
             if old_status == new_status:
-                print(f"ℹ️ No change needed: {old_status} == {new_status}")
                 return {
                     'status_updated': False,
                     'old_status': old_status,
@@ -309,40 +305,33 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             
             # 3. Determine if State Machine validation should be used
             use_state_machine = source in ['manual', 'business_result']
-            print(f"🔍 Using State Machine validation: {use_state_machine} (source: {source})")
 
             # 4. ✅ STATE MACHINE VALIDATION (AVANT consistency validation)
             if use_state_machine:
-                print(f"🔍 Attempting State Machine validation: {old_status} → {new_status} (trigger: {trigger})")
                 try:
                     TargetStateMachine.validate_transition(
                         from_state=old_status,
                         to_state=new_status,
                         trigger=trigger
                     )
-                    print(f"✅ State Machine validation passed: {old_status} → {new_status}")
                 except Exception as state_machine_error:
-                    print(f"❌ State Machine validation FAILED: {str(state_machine_error)}")
+
                     raise  # Re-raise l'exception State Machine
-            else:
-                print(f"ℹ️ Skipping State Machine validation (source: {source})")
+
 
             # 5. Consistency validation (existing logic - applied when requested)
             if validate_consistency:
                 expected_status = self._calculate_expected_status()
                 if expected_status and new_status != expected_status:
-                    print(f"❌ Consistency validation failed: expected {expected_status}, got {new_status}")
+
                     raise StandardizedValidationError(
                         CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(
                             current_state=f"Status '{new_status}' inconsistent with activities (expected: '{expected_status}')"
                         )
                     )
-                print(f"✅ Consistency validation passed for {new_status} (expected: {expected_status or 'N/A'})")
-            else:
-                print(f"ℹ️ Skipping consistency validation")
+
             
             # 6. Perform the transition
-            print(f"🔍 Performing transition: {old_status} → {new_status}")
             with transaction.atomic():
                 self.status = new_status
                 
@@ -373,9 +362,7 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                         self.notes = transition_note
                 
                 if save:
-                    print(f"🔍 Saving target with new status: {new_status}")
                     self.save()
-                    print(f"✅ Target saved successfully with status: {self.status}")
                     
                 # Enhanced logging with source tracking
                 self._log_status_transition(
@@ -387,7 +374,6 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                     source=source
                 )
             
-            print(f"✅ Status transition completed: {old_status} → {new_status}")
             return {
                 'status_updated': True,
                 'old_status': old_status,
@@ -403,13 +389,10 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             }
             
         except StandardizedValidationError:
-            print(f"❌ Validation error in update_status: re-raising")
             # Re-raise validation errors from State Machine or existing logic
             raise
         except Exception as e:
-            print(f"❌ Unexpected error in update_status: {str(e)}")
-            import traceback
-            traceback.print_exc()
+
             raise StandardizedValidationError(
                 CampaignErrorMessages.TARGET_STATUS_UPDATE_FAILED.format(reason=str(e))
             )

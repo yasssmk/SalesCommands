@@ -151,11 +151,11 @@ class CampaignResultService:
             current_target_status = campaign_target.status
             
             if campaign_status == 'ACTIVE':
-                print(f"CCCCCC: {current_target_status}")
+
                 # Campagne active → targets non-finaux doivent être IN_PROGRESS
                 if current_target_status == campaign_target.Status.PENDING:
                     # ✅ UTILISER le nouveau trigger de campagne
-                    print("BBOM")
+
                     campaign_target.mark_as_active_due_to_campaign(
                         campaign_status_trigger='campaign_activated',
                         notes="Campaign is now active",
