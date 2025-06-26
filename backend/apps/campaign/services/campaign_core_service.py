@@ -53,14 +53,13 @@ class CampaignCoreService:
             )
     
     @classmethod
-    def start_campaign(cls, campaign: Campaign) -> Response:
+    def start_campaign(cls, campaign: Campaign, user=None) -> Response:
         """Start campaign - délègue au service spécialisé"""
         try:
             from .campaign_creation_service import CampaignCreationService
-            from .campaign_activity_service import CampaignActivityService
 
             return CampaignCreationService.start_campaign(campaign)
-            from .campaign_activity_service import CampaignActivityService
+
 
         except StandardizedValidationError:
             raise
@@ -70,7 +69,7 @@ class CampaignCoreService:
             )
     
     @classmethod
-    def pause_campaign(cls, campaign: Campaign, pause_until: date = None) -> Response:
+    def pause_campaign(cls, campaign: Campaign, pause_until: date = None, user=None) -> Response:
         """Pause campaign - délègue au service spécialisé"""
         try:
             from .campaign_creation_service import CampaignCreationService
@@ -83,7 +82,7 @@ class CampaignCoreService:
             )
     
     @classmethod
-    def resume_campaign(cls, campaign: Campaign) -> Response:
+    def resume_campaign(cls, campaign: Campaign, user=None) -> Response:
         """Resume campaign - délègue au service spécialisé"""
         try:
             from .campaign_creation_service import CampaignCreationService

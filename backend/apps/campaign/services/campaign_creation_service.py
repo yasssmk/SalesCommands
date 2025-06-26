@@ -152,7 +152,7 @@ class CampaignCreationService:
     
     
     @classmethod
-    def start_campaign(cls, campaign: Campaign) -> Response:
+    def start_campaign(cls, campaign: Campaign, user=None) -> Response:
         """
         Start/activate a campaign - ONE TIME ACTION
         - Mark campaign as active
@@ -174,10 +174,20 @@ class CampaignCreationService:
                     CampaignErrorMessages.CAMPAIGN_INVALID_STATE.format(current_state=campaign.status)
                 )
             
+            old_status = campaign.status
+
             # Mark campaign as started
             campaign.status = active_status
             campaign.started_at = timezone.now()
             campaign.save()
+
+            targets_sync_result = CampaignTarget.sync_all_targets_with_campaign_status(
+                campaign=campaign,
+                new_campaign_status=active_status,
+                old_campaign_status=old_status,
+                user=user,
+                notes="Campaign started - auto-syncing targets"
+            )
             
             # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignQueueService
             from .campaign_core_service import CampaignCoreService
@@ -200,7 +210,14 @@ class CampaignCreationService:
                         'queue_info': playlist_data.get('queue_info', {}),
                         'campaign_started': True,
                         'started_at': campaign.started_at.isoformat(),
-                        'activity_types_breakdown': playlist_data.get('activity_types_breakdown', {})
+                        'activity_types_breakdown': playlist_data.get('activity_types_breakdown', {}),
+                        'targets_sync_result': {
+                            'targets_processed': targets_sync_result.get('targets_processed', 0),
+                            'targets_updated': targets_sync_result.get('targets_updated', 0),
+                            'targets_skipped': targets_sync_result.get('targets_skipped', 0),
+                            'success_rate': targets_sync_result.get('success_rate', 100.0),
+                            'sync_method': 'auto_update_status_if_needed'
+                        }
                     }
                     
                     return CampaignResponseBuilder.campaign_playlist(
@@ -230,11 +247,13 @@ class CampaignCreationService:
                         'campaign_name': campaign.name,
                         'campaign_started': True,
                         'started_at': campaign.started_at.isoformat(),
+                        'targets_sync_result': targets_sync_result,
                         'playlist_error': str(e)
                     },
                     meta={
                         'operation': 'campaign_start',
-                        'playlist_generated': False
+                        'playlist_generated': False,
+                        'targets_synchronized': True
                     }
                 )
             
@@ -247,7 +266,7 @@ class CampaignCreationService:
             )
     
     @classmethod
-    def pause_campaign(cls, campaign: Campaign, pause_until: date = None) -> Response:
+    def pause_campaign(cls, campaign: Campaign, pause_until: date = None, user=None) -> Response:
         """
         Pause a campaign (pause all active activities)
         
@@ -263,6 +282,8 @@ class CampaignCreationService:
             
             # Get paused status from CAMPAIGN_STATUSES
             paused_status = next(status[0] for status in CONFIG.validation.campaign_statuses if status[1] == 'Paused')
+
+            old_status = campaign.status
             
             # Update all planned activities to set pause date
             activities_paused = 0
@@ -279,6 +300,14 @@ class CampaignCreationService:
             # Update campaign status
             campaign.status = paused_status
             campaign.save()
+
+            targets_sync_result = CampaignTarget.sync_all_targets_with_campaign_status(
+                campaign=campaign,
+                new_campaign_status=paused_status,
+                old_campaign_status=old_status,
+                user=user,
+                notes=f"Campaign paused{' until ' + str(pause_until) if pause_until else ''} - auto-syncing targets"
+            )
             
             # Use operation message from config
             message = CONFIG.messages.campaign_paused.format(name=campaign.name)
@@ -290,13 +319,21 @@ class CampaignCreationService:
                 f"{CONFIG.fields.campaign}_name": campaign.name,
                 'activities_paused': activities_paused,
                 'pause_until': pause_until.isoformat() if pause_until else None,
-                'paused_at': timezone.now().isoformat()
+                'paused_at': timezone.now().isoformat(),
+                'targets_sync_result': {
+                    'targets_processed': targets_sync_result.get('targets_processed', 0),
+                    'targets_updated': targets_sync_result.get('targets_updated', 0),
+                    'targets_skipped': targets_sync_result.get('targets_skipped', 0),
+                    'success_rate': targets_sync_result.get('success_rate', 100.0),
+                    'sync_method': 'auto_update_status_if_needed'
+                }
             }
             
             meta = {
                 'operation': 'campaign_pause',
                 'activities_affected': activities_paused,
-                'pause_until': pause_until.isoformat() if pause_until else None
+                'pause_until': pause_until.isoformat() if pause_until else None,
+                'targets_synchronized': True
             }
             
             return StandardizedSuccessResponse.success(
@@ -311,12 +348,13 @@ class CampaignCreationService:
             )
     
     @classmethod
-    def resume_campaign(cls, campaign: Campaign) -> Response:
+    def resume_campaign(cls, campaign: Campaign, user=None) -> Response:
         """
-        Resume a paused campaign
+        Resume a paused campaign - ✅ UPDATED: Uses centralized target synchronization
         
         Args:
             campaign: The campaign to resume
+            user: User resuming the campaign
             
         Returns:
             Response: Standardized API response with resume result
@@ -326,6 +364,8 @@ class CampaignCreationService:
             
             # Get active status from CAMPAIGN_STATUSES
             active_status = next(status[0] for status in CONFIG.validation.campaign_statuses if status[1] == 'Active')
+            
+            old_status = campaign.status
             
             # Clear pause dates from all activities
             activities_resumed = 0
@@ -340,12 +380,20 @@ class CampaignCreationService:
             campaign.status = active_status
             campaign.save()
             
-            # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignExecutionService
-            from .campaign_core_service import CampaignCoreService
+            # ✅ NEW: Synchronize all campaign targets using centralized method
+            targets_sync_result = CampaignTarget.sync_all_targets_with_campaign_status(
+                campaign=campaign,
+                new_campaign_status=active_status,
+                old_campaign_status=old_status,
+                user=user,
+                notes="Campaign resumed - auto-syncing targets"
+            )
             
             # Get updated playlist using CampaignCoreService
+            from .campaign_core_service import CampaignCoreService
+            
             try:
-                updated_playlist_response = CampaignCoreService.get_campaign_playlist_internal(
+                updated_playlist_response = CampaignCoreService.get_campaign_playlist(
                     campaign=campaign,
                     limit=CONFIG.limits.playlist_limit
                 )
@@ -366,13 +414,22 @@ class CampaignCreationService:
                 'campaign_name': campaign.name,
                 'activities_resumed': activities_resumed,
                 'active_activities': active_activities_count,
-                'resumed_at': timezone.now().isoformat()
+                'resumed_at': timezone.now().isoformat(),
+                # ✅ ADD: Target synchronization results
+                'targets_sync_result': {
+                    'targets_processed': targets_sync_result.get('targets_processed', 0),
+                    'targets_updated': targets_sync_result.get('targets_updated', 0),
+                    'targets_skipped': targets_sync_result.get('targets_skipped', 0),
+                    'success_rate': targets_sync_result.get('success_rate', 100.0),
+                    'sync_method': 'auto_update_status_if_needed'
+                }
             }
             
             meta = {
                 'operation': 'campaign_resume',
                 'activities_affected': activities_resumed,
-                'active_activities_available': active_activities_count
+                'active_activities_available': active_activities_count,
+                'targets_synchronized': True
             }
             
             # Use operation message from config

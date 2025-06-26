@@ -534,6 +534,143 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                     reason=f"Failed to sync status for target {self.id}: {str(e)}"
                 )
             )
+        
+    @classmethod
+    def sync_all_targets_with_campaign_status(cls, campaign, new_campaign_status: str, 
+                                            old_campaign_status: str = None,
+                                            user=None, notes: str = None) -> Dict:
+        """
+        ✅ SIMPLIFIÉ: Synchronise toutes les targets avec le trigger 'campaign_status_change'
+        Utilise la nouvelle logique simplifiée d'auto_update_status_if_needed
+        
+        Args:
+            campaign: Campagne dont les targets doivent être synchronisées
+            new_campaign_status: Nouveau statut de la campagne ('ACTIVE', 'PAUSED', etc.)
+            old_campaign_status: Ancien statut (optionnel, pour logging)
+            user: Utilisateur déclenchant la synchronisation
+            notes: Notes additionnelles
+            
+        Returns:
+            Dict: Résumé de la synchronisation avec compteurs par résultat
+        """
+        try:
+            # Import local pour éviter la circularité
+            from apps.campaign.utils.target_state_machine import TargetStateMachine
+            
+            # ✅ RÉCUPÉRER TOUTES LES TARGETS de la campagne
+            all_targets = cls.objects.filter(campaign=campaign)
+            
+            # Filtrer seulement les targets non-finales (éviter de modifier COMPLETED/STOPPED)
+            syncable_targets = [
+                target for target in all_targets 
+                if not TargetStateMachine.is_final_state(target.status)
+            ]
+            
+            # Compteurs pour le rapport
+            results_summary = {
+                'targets_processed': 0,
+                'targets_updated': 0,
+                'targets_skipped': 0,
+                'targets_failed': 0,
+                'final_targets_ignored': len(all_targets) - len(syncable_targets),
+                'details': []
+            }
+            
+            # ✅ APPLIQUER auto_update_status_if_needed avec trigger 'campaign_status_change'
+            for target in syncable_targets:
+                try:
+                    results_summary['targets_processed'] += 1
+                    
+                    # ✅ UTILISER LE NOUVEAU TRIGGER SPÉCIFIQUE
+                    update_result = target.auto_update_status_if_needed(
+                        user=user, 
+                        trigger_type='campaign_status_change'
+                    )
+                    
+                    # Traiter le résultat
+                    if update_result.get('action_taken') == 'status_updated':
+                        results_summary['targets_updated'] += 1
+                        results_summary['details'].append({
+                            'target_id': target.id,
+                            'target_type': target.get_target_type(),
+                            'old_status': update_result.get('old_status'),
+                            'new_status': update_result.get('new_status'),
+                            'sync_reason': update_result.get('sync_reason'),
+                            'trigger_used': update_result.get('trigger'),
+                            'success': True
+                        })
+                    else:
+                        results_summary['targets_skipped'] += 1
+                        results_summary['details'].append({
+                            'target_id': target.id,
+                            'target_type': target.get_target_type(),
+                            'current_status': target.status,
+                            'reason': update_result.get('reason', 'No change needed'),
+                            'action_taken': update_result.get('action_taken'),
+                            'success': True,
+                            'skipped': True
+                        })
+                    
+                except StandardizedValidationError as validation_error:
+                    results_summary['targets_failed'] += 1
+                    results_summary['details'].append({
+                        'target_id': target.id,
+                        'target_type': target.get_target_type(),
+                        'error': str(validation_error),
+                        'error_type': 'validation_error',
+                        'success': False
+                    })
+                    
+                    # Log l'erreur mais continuer avec les autres targets
+                    print(f"VALIDATION ERROR syncing target {target.id}: {validation_error}")
+                    
+                except Exception as target_error:
+                    results_summary['targets_failed'] += 1
+                    results_summary['details'].append({
+                        'target_id': target.id,
+                        'target_type': target.get_target_type(),
+                        'error': str(target_error),
+                        'error_type': 'unexpected_error',
+                        'success': False
+                    })
+                    
+                    # Log l'erreur mais continuer avec les autres targets
+                    print(f"UNEXPECTED ERROR syncing target {target.id}: {target_error}")
+            
+            # ✅ RAPPORT FINAL simplifié
+            final_result = {
+                'action_taken': 'campaign_status_change_sync',
+                'campaign_id': campaign.id,
+                'campaign_status_change': f"{old_campaign_status or 'Unknown'} → {new_campaign_status}",
+                'sync_method': 'trigger_campaign_status_change',
+                'trigger_type': 'campaign_status_change',
+                'total_targets_in_campaign': len(all_targets),
+                'syncable_targets': len(syncable_targets),
+                'final_targets_ignored': results_summary['final_targets_ignored'],
+                'targets_processed': results_summary['targets_processed'],
+                'targets_updated': results_summary['targets_updated'],
+                'targets_skipped': results_summary['targets_skipped'],
+                'targets_failed': results_summary['targets_failed'],
+                'success_rate': round((results_summary['targets_updated'] / max(1, results_summary['targets_processed'])) * 100, 1),
+                'has_failures': results_summary['targets_failed'] > 0,
+                'details': results_summary['details'] if results_summary['targets_failed'] > 0 else f"{results_summary['targets_updated']} targets synchronized via campaign status change trigger",
+                'timestamp': timezone.now().isoformat()
+            }
+            
+            print(f"✅ CAMPAIGN STATUS SYNC: {final_result['targets_updated']}/{final_result['targets_processed']} targets updated for campaign {campaign.id} → {new_campaign_status}")
+            
+            return final_result
+            
+        except StandardizedValidationError:
+            # ✅ Re-raise les erreurs de validation standardisées
+            raise
+        except Exception as e:
+            # ✅ Convertir erreurs inattendues en format standardisé
+            raise StandardizedValidationError(
+                CampaignErrorMessages.BULK_OPERATION_FAILED.format(
+                    operation=f"campaign status change synchronization for campaign {getattr(campaign, 'id', 'unknown')}: {str(e)}"
+                )
+            )
     
     def get_activities_summary(self) -> Dict:
         """
@@ -637,45 +774,286 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             'validation_timestamp': timezone.now().isoformat()
         }
 
-    def auto_update_status_if_needed(self, user=None) -> Dict:
+    def auto_update_status_if_needed(self, user=None, trigger_type=None) -> Dict:
         """
-        Enhanced auto-update with user tracking
+        ✅ SIMPLIFIÉ: Auto-update avec triggers spécifiques et logiques distinctes
         
         Args:
             user: User triggering the auto-update (for audit)
+            trigger_type: 'campaign_status_change' ou 'activity_result'
             
         Returns:
-            Dict: Enhanced update report
+            Dict: Update report avec action prise
         """
-        validation = self.validate_status_consistency()
+        try:
+            # 1. ✅ VÉRIFIER SI TARGET DÉJÀ DANS UN ÉTAT FINAL (pour tous les triggers)
+            if TargetStateMachine.is_final_state(self.status):
+                return {
+                    'target_id': self.id,
+                    'action_taken': 'no_change_needed',
+                    'reason': 'Target in final state',
+                    'current_status': self.status,
+                    'is_final_state': True,
+                    'trigger_type': trigger_type,
+                    'timestamp': timezone.now().isoformat()
+                }
+            
+            # 2. ✅ ROUTER SELON LE TRIGGER SPÉCIFIQUE
+            if trigger_type == 'campaign_status_change':
+                return self._handle_campaign_status_change_trigger(user)
+                
+            elif trigger_type == 'activity_result':
+                return self._handle_activity_result_trigger(user)
+                
+            else:
+                # Fallback pour compatibilité - utilise trigger campagne par défaut
+                return self._handle_campaign_status_change_trigger(user)
+                
+        except StandardizedValidationError:
+            # ✅ Re-raise les erreurs de validation standardisées
+            raise
+        except Exception as e:
+            # ✅ Convertir erreurs inattendues en format standardisé
+            raise StandardizedValidationError(
+                CampaignErrorMessages.TARGET_STATUS_UPDATE_FAILED.format(
+                    reason=f"Auto-update failed for target {self.id}: {str(e)}"
+                )
+            )
+    
+    def _handle_campaign_status_change_trigger(self, user=None) -> Dict:
+        """
+        ✅ NOUVEAU: Gère uniquement les changements PENDING ↔ IN_PROGRESS selon statut campagne
+        Ignore complètement les targets en CALLBACK_PENDING, COMPLETED, STOPPED
         
-        if validation['needs_sync']:
-            old_status = self.status
+        Args:
+            user: User for audit
             
-            # Use our enhanced sync method (already fixed)
-            status_changed = self.sync_status_with_activities(save=True)
+        Returns:
+            Dict: Update result
+        """
+        try:
+            campaign_status = self.campaign.status
+            current_target_status = self.status
             
-            # Enhanced reporting with State Machine info
-            return {
-                'target_id': self.id,
-                'action_taken': 'status_updated',
-                'old_status': old_status,
-                'new_status': self.status,
-                'was_inconsistent': True,
-                'state_machine_used': False,  # auto_sync bypasses State Machine
-                'triggered_by_user': user.id if user else None,
-                'timestamp': timezone.now().isoformat()
-            }
-        else:
-            return {
-                'target_id': self.id,
-                'action_taken': 'no_change_needed',
-                'status': self.status,
-                'was_inconsistent': False,
-                'is_state_machine_compliant': validation.get('state_machine_compliant', True),
-                'timestamp': timezone.now().isoformat()
-            }
+            # ✅ SEULEMENT pour targets PENDING ou IN_PROGRESS
+            if current_target_status not in [self.Status.PENDING, self.Status.IN_PROGRESS]:
+                return {
+                    'target_id': self.id,
+                    'action_taken': 'no_change_needed',
+                    'reason': f'Target status {current_target_status} not affected by campaign status changes',
+                    'campaign_status': campaign_status,
+                    'target_status': current_target_status,
+                    'trigger_type': 'campaign_status_change',
+                    'timestamp': timezone.now().isoformat()
+                }
+            
+            # ✅ LOGIQUE SIMPLE : ACTIVE → IN_PROGRESS, autres → PENDING
+            if campaign_status == 'ACTIVE':
+                expected_status = self.Status.IN_PROGRESS
+                trigger = 'campaign_activated' if current_target_status == self.Status.PENDING else 'campaign_resumed'
+                notes = "Campaign is active"
+                
+            elif campaign_status in ['PAUSED', 'DRAFT']:
+                expected_status = self.Status.PENDING
+                trigger = 'campaign_paused' if campaign_status == 'PAUSED' else 'campaign_draft'
+                notes = f"Campaign is {campaign_status.lower()}"
+                
+            else:
+                # Pour COMPLETED, CANCELLED, etc. → pas de changement forcé
+                return {
+                    'target_id': self.id,
+                    'action_taken': 'no_change_needed',
+                    'reason': f'No forced alignment for campaign status {campaign_status}',
+                    'campaign_status': campaign_status,
+                    'target_status': current_target_status,
+                    'trigger_type': 'campaign_status_change',
+                    'timestamp': timezone.now().isoformat()
+                }
+            
+            # ✅ APPLIQUER LE CHANGEMENT SI NÉCESSAIRE
+            if current_target_status == expected_status:
+                return {
+                    'target_id': self.id,
+                    'action_taken': 'no_change_needed',
+                    'reason': 'Target already in correct status for campaign state',
+                    'campaign_status': campaign_status,
+                    'target_status': current_target_status,
+                    'trigger_type': 'campaign_status_change',
+                    'timestamp': timezone.now().isoformat()
+                }
+            
+            # ✅ FORCER LE CHANGEMENT avec source='campaign_change'
+            update_result = self.update_status(
+                new_status=expected_status,
+                trigger=trigger,
+                notes=notes,
+                user=user,
+                source='campaign_change',  # Force l'alignement
+                save=True,
+                validate_consistency=False
+            )
+            
+            # Enrichir la réponse
+            update_result['action_taken'] = 'status_updated'
+            update_result['sync_reason'] = 'campaign_status_alignment'
+            update_result['trigger_type'] = 'campaign_status_change'
+            update_result['campaign_status'] = campaign_status
+            
+            return update_result
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.TARGET_STATUS_SYNC_FAILED.format(
+                    reason=f"Campaign status sync failed for target {self.id}: {str(e)}"
+                )
+            )
 
+    def _handle_activity_result_trigger(self, user=None) -> Dict:
+        """
+        ✅ NOUVEAU: Gère uniquement la synchronisation basée sur les résultats d'activités
+        Peut faire passer vers CALLBACK_PENDING, COMPLETED, STOPPED selon les activités
+        
+        Args:
+            user: User for audit
+            
+        Returns:
+            Dict: Update result
+        """
+        try:
+            # ✅ UTILISER LA LOGIQUE EXISTANTE DE VALIDATION DES ACTIVITÉS
+            validation = self.validate_status_consistency()
+            
+            if validation['needs_sync']:
+                old_status = self.status
+                
+                # ✅ UTILISER sync_status_with_activities EXISTANTE avec source='auto_sync'
+                status_changed = self.sync_status_with_activities(save=True)
+                
+                if status_changed:
+                    return {
+                        'target_id': self.id,
+                        'action_taken': 'status_updated',
+                        'sync_reason': 'activities_based_sync',
+                        'old_status': old_status,
+                        'new_status': self.status,
+                        'was_inconsistent': True,
+                        'state_machine_used': False,  # sync_status_with_activities utilise source='auto_sync'
+                        'trigger_type': 'activity_result',
+                        'triggered_by_user': user.id if user else None,
+                        'timestamp': timezone.now().isoformat()
+                    }
+                else:
+                    return {
+                        'target_id': self.id,
+                        'action_taken': 'sync_attempted_no_change',
+                        'reason': 'Activities sync attempted but no change occurred',
+                        'trigger_type': 'activity_result',
+                        'timestamp': timezone.now().isoformat()
+                    }
+            else:
+                return {
+                    'target_id': self.id,
+                    'action_taken': 'no_change_needed',
+                    'reason': 'Target status consistent with activities',
+                    'status': self.status,
+                    'was_inconsistent': False,
+                    'is_state_machine_compliant': validation.get('state_machine_compliant', True),
+                    'trigger_type': 'activity_result',
+                    'timestamp': timezone.now().isoformat()
+                }
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.TARGET_STATUS_UPDATE_FAILED.format(
+                    reason=f"Activity result sync failed for target {self.id}: {str(e)}"
+                )
+            )
+        
+    
+    def _sync_with_campaign_status(self, campaign_status: str, user=None) -> Dict:
+        """
+        ✅ NOUVEAU : Synchronisation basée sur le statut de campagne
+        Utilise les méthodes centralisées pour éviter doublons
+        """
+        current_target_status = self.status
+        
+        try:
+            # ✅ CAMPAGNE ACTIVE → targets non-finaux doivent être IN_PROGRESS
+            if campaign_status == 'ACTIVE':
+                if current_target_status == self.Status.PENDING:
+                    # PENDING → IN_PROGRESS car campagne active
+                    update_result = self.mark_as_active_due_to_campaign(
+                        campaign_status_trigger='campaign_activated',
+                        notes="Campaign is now active",
+                        user=user
+                    )
+                    update_result['sync_reason'] = 'campaign_active_pending_to_progress'
+                    return update_result
+                    
+                elif current_target_status == self.Status.CALLBACK_PENDING:
+                    # CALLBACK_PENDING → IN_PROGRESS car campagne active (callback expired)
+                    update_result = self.mark_as_active_due_to_campaign(
+                        campaign_status_trigger='campaign_resumed',
+                        notes="Campaign active, resuming from callback",
+                        user=user
+                    )
+                    update_result['sync_reason'] = 'campaign_active_callback_to_progress'
+                    return update_result
+            
+            # ✅ CAMPAGNE EN PAUSE → targets IN_PROGRESS peuvent être pausés
+            elif campaign_status == 'PAUSED':
+                if current_target_status == self.Status.IN_PROGRESS:
+                    # IN_PROGRESS → PENDING (pause temporaire)
+                    update_result = self.handle_campaign_pause(
+                        notes="Campaign paused",
+                        user=user
+                    )
+                    update_result['sync_reason'] = 'campaign_paused_progress_to_pending'
+                    return update_result
+            
+            # ✅ CAMPAGNE DRAFT → targets doivent rester PENDING
+            elif campaign_status in ['DRAFT']:
+                if current_target_status == self.Status.IN_PROGRESS:
+                    # Cas rare : campaign remise en DRAFT, targets doivent revenir PENDING
+                    update_result = self.update_status(
+                        new_status=self.Status.PENDING,
+                        trigger='campaign_reactivated',  # Placeholder trigger
+                        notes="Campaign returned to draft status",
+                        user=user,
+                        source='business_result'
+                    )
+                    update_result['sync_reason'] = 'campaign_draft_progress_to_pending'
+                    return update_result
+            
+            # ✅ CAMPAGNE TERMINÉE → laisser targets dans leur état
+            elif campaign_status in ['COMPLETED', 'CANCELLED']:
+                # Pas de changement automatique nécessaire
+                pass
+            
+            # ✅ PAS DE SYNCHRONISATION NÉCESSAIRE
+            return {
+                'target_id': self.id,
+                'action_taken': 'no_sync_needed',
+                'reason': f'No sync needed for campaign status {campaign_status} and target status {current_target_status}',
+                'campaign_status': campaign_status,
+                'target_status': current_target_status,
+                'timestamp': timezone.now().isoformat()
+            }
+            
+        except StandardizedValidationError:
+            # ✅ Re-raise les erreurs de validation standardisées
+            raise
+        except Exception as e:
+            # ✅ Convertir erreurs inattendues en format standardisé
+            raise StandardizedValidationError(
+                CampaignErrorMessages.TARGET_STATUS_SYNC_FAILED.format(
+                    reason=f"Campaign sync failed for target {self.id}: {str(e)}"
+                )
+            )
 
     def mark_as_completed(self, reason: str = 'manual_completion', notes: str = None, user=None) -> dict:
         """

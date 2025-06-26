@@ -290,7 +290,7 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
     def start_campaign(self, request, pk=None):
         """CONSERVÉ - Logique métier essentielle"""
         campaign = self.get_validated_campaign(require_ownership=True)
-        return CampaignCoreService.start_campaign(campaign)
+        return CampaignCoreService.start_campaign(campaign, user=request.user)
     
     @action(detail=True, methods=['post'])
     def pause_campaign(self, request, pk=None):
@@ -301,13 +301,13 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
         if pause_until:
             pause_until = datetime.strptime(pause_until, '%Y-%m-%d').date()
         
-        return CampaignCoreService.pause_campaign(campaign, pause_until=pause_until)
+        return CampaignCoreService.pause_campaign(campaign, pause_until=pause_until, user=request.user)
     
     @action(detail=True, methods=['post'])
     def resume_campaign(self, request, pk=None):
         """CONSERVÉ - Logique métier essentielle"""
         campaign = self.get_validated_campaign(require_ownership=True)
-        return CampaignCoreService.resume_campaign(campaign)
+        return CampaignCoreService.resume_campaign(campaign, user=request.user)
     
     # =========================================================================
     # CAMPAIGN EXECUTION - CONSERVÉ INTÉGRALEMENT

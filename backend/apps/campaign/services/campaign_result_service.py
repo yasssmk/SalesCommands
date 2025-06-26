@@ -31,7 +31,7 @@ class CampaignResultService:
         """
         Process the result of an activity and handle appropriate actions
         Works for both sequence and non-sequence campaigns
-        ✅ AUTO-ACTIVATION de campagne + synchronisation des targets
+        ✅ UPDATED: Uses specific triggers for target synchronization
         """
         try:
             # Validate activity exists and is accessible
@@ -49,11 +49,10 @@ class CampaignResultService:
             if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign.sequence_type:
                 is_sequence_campaign = True
 
-            # ✅ Auto-activation de campagne si nécessaire
+            # ✅ Auto-activation de campagne si nécessaire (inclut maintenant sync targets automatique)
             cls._ensure_campaign_is_active(activity)
 
-            # ✅ Première synchronisation des targets (après activation campagne)
-            cls._sync_campaign_target_status(activity)
+            # ✅ SUPPRIMÉ: Premier sync redondant car _ensure_campaign_is_active fait déjà sync_all_targets_with_campaign_status
             
             # Route to appropriate handler based on activity type
             if activity.activity_type == Activity.ActivityType.CALL:
@@ -68,8 +67,8 @@ class CampaignResultService:
                     )
                 )
             
-            # ✅ Deuxième synchronisation des targets (après traitement résultat)
-            cls._sync_campaign_target_status(activity)
+            # ✅ CONSERVÉ: Sync basé sur le résultat d'activité avec trigger spécifique
+            cls._sync_target_using_centralized_method(activity, "after result processing")
             
             return response
                 
@@ -83,10 +82,51 @@ class CampaignResultService:
             )
 
     @classmethod
+    def _sync_target_using_centralized_method(cls, activity: Activity, context: str = ""):
+        """
+        ✅ SIMPLIFIÉ: Synchronisation avec trigger 'activity_result' spécifique
+        Utilise la nouvelle logique simplifiée d'auto_update_status_if_needed
+        
+        Args:
+            activity: Activity qui vient d'être traitée
+            context: Contexte pour le logging (optionnel)
+        """
+        try:
+            # Obtenir le CampaignTarget associé
+            if not (hasattr(activity, 'campaign_info') and activity.campaign_info):
+                return
+                
+            campaign_target = activity.campaign_info.campaign_target
+            
+            if not campaign_target:
+                return
+            
+            # Récupérer l'utilisateur depuis l'activité
+            user = getattr(activity, 'owner', None)
+            
+            # ✅ UTILISER LE NOUVEAU TRIGGER SPÉCIFIQUE 'activity_result'
+            update_result = campaign_target.auto_update_status_if_needed(
+                user=user,
+                trigger_type='activity_result'
+            )
+            
+            # Logging pour debugging si nécessaire
+            if update_result.get('action_taken') == 'status_updated':
+                print(f"TARGET_SYNC: {context} - Target {campaign_target.id} updated from {update_result.get('old_status')} to {update_result.get('new_status')} via activity_result trigger")
+            elif update_result.get('action_taken') != 'no_change_needed':
+                print(f"TARGET_SYNC: {context} - Target {campaign_target.id} action: {update_result.get('action_taken')} via activity_result trigger")
+                            
+        except Exception as e:
+            # En cas d'erreur de synchronisation, ne pas faire crasher le processus principal
+            print(f"TARGET_SYNC_ERROR: {context} - Failed to sync target for activity {getattr(activity, 'id', 'unknown')} via activity_result trigger: {str(e)}")
+            pass
+    
+    @classmethod
     def _ensure_campaign_is_active(cls, activity: Activity):
         """
-        S'assure que la campagne est ACTIVE avant de traiter un résultat d'activité
+        ✅ ENHANCED: S'assure que la campagne est ACTIVE et synchronise les targets
         Auto-active la campagne si elle n'est pas dans un état interdit
+        + Déclenche la synchronisation de TOUS les targets après activation
         
         Args:
             activity: L'activité en cours de traitement
@@ -111,11 +151,108 @@ class CampaignResultService:
                     f"Cannot process activity result: Campaign is {current_status}"
                 )
             
+            # ✅ NOUVEAU: Récupérer l'utilisateur de l'activité pour audit
+            user = getattr(activity, 'owner', None)
+            old_status = current_status
+            
             # Auto-activation : Passer en ACTIVE
             with transaction.atomic():
                 campaign.status = 'ACTIVE'
                 campaign.started_at = timezone.now()
                 campaign.save()
+                
+                print(f"AUTO-ACTIVATION: Campaign {campaign.id} {old_status} → ACTIVE (triggered by activity result)")
+            
+            # ✅ NOUVEAU: Déclencher la synchronisation de TOUS les targets après activation
+            try:
+                from apps.campaign.models.campaign_target import CampaignTarget
+                
+                targets_sync_result = CampaignTarget.sync_all_targets_with_campaign_status(
+                    campaign=campaign,
+                    new_campaign_status='ACTIVE',
+                    old_campaign_status=old_status,
+                    user=user,
+                    notes="Auto-activated due to activity result processing"
+                )
+                
+                print(f"AUTO-SYNC TARGETS: {targets_sync_result.get('targets_updated', 0)}/{targets_sync_result.get('targets_processed', 0)} targets synchronized after campaign auto-activation")
+                
+            except Exception as sync_error:
+                # Log l'erreur mais ne pas faire crasher le processus principal
+                print(f"WARNING: Failed to sync targets after campaign auto-activation: {str(sync_error)}")
+                # Continuer le traitement de l'activité même si la sync des targets échoue
+                pass
+            
+        except StandardizedValidationError:
+            # Re-raise les erreurs de validation
+            raise
+        except Exception as e:
+            # Ne pas faire crasher le processus principal pour auto-activation
+            raise StandardizedValidationError(
+                f"Failed to auto-activate campaign: {str(e)}"
+            )
+
+    @classmethod
+    def _ensure_campaign_is_active(cls, activity: Activity):
+        """
+        ✅ ENHANCED: S'assure que la campagne est ACTIVE et synchronise les targets
+        Auto-active la campagne si elle n'est pas dans un état interdit
+        + Déclenche la synchronisation de TOUS les targets après activation
+        
+        Args:
+            activity: L'activité en cours de traitement
+        """
+        try:
+            if not (hasattr(activity, 'campaign_info') and activity.campaign_info):
+                return
+                
+            campaign = activity.campaign_info.campaign
+            if not campaign:
+                return
+            
+            current_status = campaign.status
+            
+            # Si déjà ACTIVE, rien à faire
+            if current_status == 'ACTIVE':
+                return
+            
+            # ✅ Utiliser la configuration existante pour les états interdits
+            if current_status in CONFIG.validation.forbidden_states:
+                raise StandardizedValidationError(
+                    f"Cannot process activity result: Campaign is {current_status}"
+                )
+            
+            # ✅ NOUVEAU: Récupérer l'utilisateur de l'activité pour audit
+            user = getattr(activity, 'owner', None)
+            old_status = current_status
+            
+            # Auto-activation : Passer en ACTIVE
+            with transaction.atomic():
+                campaign.status = 'ACTIVE'
+                campaign.started_at = timezone.now()
+                campaign.save()
+                
+                print(f"AUTO-ACTIVATION: Campaign {campaign.id} {old_status} → ACTIVE (triggered by activity result)")
+            
+            # ✅ NOUVEAU: Déclencher la synchronisation de TOUS les targets après activation
+            try:
+                from apps.campaign.models.campaign_target import CampaignTarget
+                
+                targets_sync_result = CampaignTarget.sync_all_targets_with_campaign_status(
+                    campaign=campaign,
+                    new_campaign_status='ACTIVE',
+                    old_campaign_status=old_status,
+                    user=user,
+                    notes="Auto-activated due to activity result processing"
+                )
+                
+                print(f"AUTO-SYNC TARGETS: {targets_sync_result.get('targets_updated', 0)}/{targets_sync_result.get('targets_processed', 0)} targets synchronized after campaign auto-activation")
+                
+            except Exception as sync_error:
+                # Log l'erreur mais ne pas faire crasher le processus principal
+                print(f"WARNING: Failed to sync targets after campaign auto-activation: {str(sync_error)}")
+                # Continuer le traitement de l'activité même si la sync des targets échoue
+                pass
             
         except StandardizedValidationError:
             # Re-raise les erreurs de validation
@@ -126,77 +263,6 @@ class CampaignResultService:
                 f"Failed to auto-activate campaign: {str(e)}"
             )
     
-    @classmethod
-    def _sync_campaign_target_status(cls, activity: Activity):
-        """
-        Hook pour synchroniser automatiquement le statut du CampaignTarget
-        ✅ MODIFIÉ : Utilise les nouveaux triggers de campagne
-        
-        Args:
-            activity: Activity qui vient d'être traitée
-        """
-        try:
-            # Obtenir le CampaignTarget et Campaign associés
-            if not (hasattr(activity, 'campaign_info') and activity.campaign_info):
-                return
-                
-            campaign_target = activity.campaign_info.campaign_target
-            campaign = activity.campaign_info.campaign
-            
-            if not campaign_target or not campaign:
-                return
-            
-            # ✅ LOGIQUE BASÉE SUR LE STATUT DE CAMPAGNE
-            campaign_status = campaign.status
-            current_target_status = campaign_target.status
-            
-            if campaign_status == 'ACTIVE':
-
-                # Campagne active → targets non-finaux doivent être IN_PROGRESS
-                if current_target_status == campaign_target.Status.PENDING:
-                    # ✅ UTILISER le nouveau trigger de campagne
-
-                    campaign_target.mark_as_active_due_to_campaign(
-                        campaign_status_trigger='campaign_activated',
-                        notes="Campaign is now active",
-                        user=getattr(activity, 'owner', None)
-                    )
-                elif current_target_status == campaign_target.Status.CALLBACK_PENDING:
-                    # ✅ Target en callback mais campagne active → reprendre les activités
-                    campaign_target.mark_as_active_due_to_campaign(
-                        campaign_status_trigger='campaign_resumed',
-                        notes="Campaign active, resuming from callback",
-                        user=getattr(activity, 'owner', None)
-                    )
-                    
-            elif campaign_status == 'PAUSED':
-                # Campagne en pause → targets IN_PROGRESS peuvent rester ou passer en CALLBACK_PENDING
-                if current_target_status == 'IN_PROGRESS':
-                    # ✅ OPTIONNEL : Passer en "pause" temporaire
-                    campaign_target.handle_campaign_pause(
-                        notes="Campaign paused",
-                        user=getattr(activity, 'owner', None)
-                    )
-                    
-            elif campaign_status in ['DRAFT']:
-                # Campagne pas encore active → targets doivent rester PENDING
-                # Pas de changement automatique nécessaire
-                pass
-                
-            elif campaign_status in ['COMPLETED', 'CANCELLED']:
-                # Campagne terminée → on peut laisser les targets dans leur état actuel
-                # Ou appliquer une logique spécifique si nécessaire
-                pass
-                
-            else:
-                # ✅ FALLBACK : Synchronisation normale basée sur les activités
-                sync_result = campaign_target.auto_update_status_if_needed()
-                if sync_result.get('action_taken') == 'status_updated':
-                    pass  # MVP : pas de logging complexe
-                            
-        except Exception:
-            # En cas d'erreur de synchronisation, ne pas faire crasher le processus principal
-            pass
     
     @classmethod
     def _handle_call_result(cls, activity: Activity, result: str, 
