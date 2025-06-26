@@ -936,6 +936,7 @@ class CampaignDetailSerializer(CampaignSerializer):
         """Résumé des stakeholders"""
         try:
             stakeholders = obj.stakeholder_links.select_related('user').all()
+            print(f"INFO: Found {stakeholders.count()} stakeholders for campaign {obj.id}")
             summary = {
                 'total': stakeholders.count(),
                 'by_role': {},
@@ -958,10 +959,12 @@ class CampaignDetailSerializer(CampaignSerializer):
                     summary['owners'].append(user_info)
                 elif role == 'EXECUTOR':
                     summary['executors'].append(user_info)
+                
             
             return summary
-            
-        except Exception:
+
+        except Exception as e:
+            print(f"WARNING: Failed to retrieve stakeholders summary for campaign {obj.id}: {e}")
             return {
                 'total': 0,
                 'by_role': {},

@@ -177,3 +177,16 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         if self.role:
             self.role_name = self.role.name
         super().save(*args, **kwargs)
+
+    def get_full_name(self):
+        """
+        Return the user's full name, or username if no first/last name
+        """
+        full_name = f"{self.first_name} {self.last_name}".strip()
+        return full_name if full_name else self.username
+    
+    def get_short_name(self):
+        """
+        Return the short name for the user (first name or username)
+        """
+        return self.first_name or self.username
