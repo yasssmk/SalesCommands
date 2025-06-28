@@ -94,11 +94,13 @@ class CampaignCreationService:
                     target_opportunities
                 )
 
+                print(f"Total targets created for campaign {campaign.id}: {targets_created}")
                 # Generate activities for all targets (garder logique existante)
                 activity_result = CampaignActivityService.create_activities_for_campaign(
                     campaign, target_contacts=target_contacts
                 )
 
+                print(f"Activities created BB for campaign {campaign.id}: {activity_result.data['data']['activities_created']}")
                 activities_created_count = activity_result.data['data']['activities_created']
                 skipped_contacts_list = activity_result.data['data'].get('skipped_contacts', [])
 

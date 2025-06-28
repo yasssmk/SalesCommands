@@ -19,7 +19,7 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     """Serializer for Campaign model with standardized validation"""
     
     # Read-only fields
-    campaign_type_display = serializers.CharField(source='get_campaign_type_display', read_only=True)
+    # campaign_type_display = serializers.CharField(source='get_campaign_type_display', read_only=True)
     sequence_type_display = serializers.SerializerMethodField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     stakeholders = CampaignStakeholderSerializer(source='stakeholder_links', many=True, read_only=True)
@@ -131,18 +131,8 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             return None
     
     def get_sequence_type_display(self, obj):
-        """Get display name for sequence type"""
-        try:
-            if obj.sequence_type:
-                # Get the display value from choices
-                from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
-                for choice in SequenceDispatcher.SEQUENCE_CHOICES:
-                    if choice[0] == obj.sequence_type:
-                        return choice[1]
-                return obj.sequence_type
-            return "No Sequence (Call List)"
-        except Exception:
-            return obj.sequence_type if obj.sequence_type else "No Sequence"
+        """Affichage du type basé sur sequence_type"""
+        return obj.get_sequence_type_display()
     
     def get_has_sequence(self, obj):
         """Check if campaign has automated sequences"""
@@ -343,41 +333,40 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 CoreErrorMessages.INVALID_FIELD.format(field="Objective data")
             )
 
-    def validate_campaign_type(self, value):
-        """Validate campaign type"""
-        try:
-            # Ensure campaign type is valid
-            valid_types = [choice[0] for choice in Campaign.CampaignType.choices]
-            if value not in valid_types:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(
-                        field=f"Campaign type (must be one of: {', '.join(valid_types)})"
-                    )
-                )
+    # def validate_campaign_type(self, value):
+    #     """Validate campaign type"""
+    #     try:
+    #         # Ensure campaign type is valid
+    #         valid_types = [choice[0] for choice in Campaign.CampaignType.choices]
+    #         if value not in valid_types:
+    #             raise StandardizedValidationError(
+    #                 CoreErrorMessages.INVALID_FIELD.format(
+    #                     field=f"Campaign type (must be one of: {', '.join(valid_types)})"
+    #                 )
+    #             )
             
-            return value
+    #         return value
             
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field="Campaign type")
-            )
+    #     except StandardizedValidationError:
+    #         raise
+    #     except Exception as e:
+    #         raise StandardizedValidationError(
+    #             CoreErrorMessages.INVALID_FIELD.format(field="Campaign type")
+    #         )
 
     def validate_sequence_type(self, value):
-        """Validate sequence type"""
+        """Validation sequence_type"""
         if value is None:
-            return value
+            return value  # Call List campaign
             
         try:
-            # Import sequence types
             from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
             
             valid_sequences = [choice[0] for choice in SequenceDispatcher.SEQUENCE_CHOICES]
             if value not in valid_sequences:
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(
-                        field=f"Sequence type (must be one of: {', '.join(valid_sequences)})"
+                        field=f"Sequence type (must be one of: {', '.join(valid_sequences)} or null for Call List)"
                     )
                 )
             
@@ -475,20 +464,20 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                     )
             
             # === VALIDATION CAMPAIGN TYPE vs SEQUENCE TYPE (existante) ===
-            campaign_type = data.get('campaign_type', self.instance.campaign_type if self.instance else None)
+            # campaign_type = data.get('campaign_type', self.instance.campaign_type if self.instance else None)
             sequence_type = data.get('sequence_type', self.instance.sequence_type if self.instance else None)
             
-            if campaign_type == Campaign.CampaignType.CALL_LIST and sequence_type is not None:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(
-                        field="Sequence Type (Call List campaigns cannot have automated sequences)"
-                    )
-                )
+            # if campaign_type == Campaign.CampaignType.CALL_LIST and sequence_type is not None:
+            #     raise StandardizedValidationError(
+            #         CoreErrorMessages.INVALID_FIELD.format(
+            #             field="Sequence Type (Call List campaigns cannot have automated sequences)"
+            #         )
+            #     )
             
             # === NOUVELLE : VALIDATION OBJECTIVE vs CAMPAIGN TYPE ===
             objective_data = data.get('objective')
-            if objective_data and campaign_type:
-                self._validate_objective_consistency(objective_data, campaign_type)
+            if objective_data and sequence_type:
+                self._validate_objective_consistency(objective_data, sequence_type)
             
             # === NOUVELLE : VALIDATION STAKEHOLDERS CROISÉE ===
             self._validate_stakeholder_consistency(data)
@@ -538,14 +527,14 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign validation failed")
             )
 
-    def _validate_objective_consistency(self, objective_data, campaign_type):
+    def _validate_objective_consistency(self, objective_data, sequence_type):
         """Validate objective is consistent with campaign type"""
         try:
             objective_type = objective_data.get('objective_type')
             
             # Business rules for objective vs campaign type
-            if campaign_type == Campaign.CampaignType.CALL_LIST:
-                # Call lists typically focus on meetings
+            if sequence_type is None:  # Call List
+                # Call lists focus on meetings
                 if objective_type in ['OPPORTUNITIES', 'CLOSED_DEALS', 'REVENUE']:
                     raise StandardizedValidationError(
                         CoreErrorMessages.INVALID_FIELD.format(
@@ -874,8 +863,8 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 simplified = {
                     'id': representation['id'],
                     'name': representation['name'],
-                    'campaign_type': representation['campaign_type'],
-                    'campaign_type_display': representation['campaign_type_display'],
+                    'sequence_type': representation['sequence_type'],
+                    'sequence_type_display': representation['sequence_type_display'],
                     'status': representation['status'],
                     'status_display': representation['status_display'],
                     'start_date': representation['start_date'],
@@ -906,12 +895,12 @@ class CampaignListSerializer(CampaignSerializer):
     class Meta(CampaignSerializer.Meta):
         # Champs essentiels pour la liste SANS target_summary
         fields = [
-            'id', 'name', 'campaign_type', 'campaign_type_display', 'has_sequence',
+            'id', 'name', 'sequence_type', 'sequence_type_display', 'has_sequence',
             'owner', 'owner_name', 'owner_count', 'executor_count', 'receiver_count',
             'start_date', 'end_date', 'status', 'status_display', 'quick_metrics', 'created_at'
         ]
         read_only_fields = [
-            'owner_name', 'campaign_type_display', 'status_display', 'has_sequence', 
+            'owner_name', 'sequence_type_display', 'status_display', 'has_sequence', 
             'quick_metrics', 'owner_count', 'executor_count', 'receiver_count', 'created_at'
         ]
 

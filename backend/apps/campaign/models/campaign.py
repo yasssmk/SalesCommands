@@ -34,11 +34,11 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Description')
     )
     
-    campaign_type = models.CharField(
-        max_length=20,
-        choices=CampaignType.choices,
-        verbose_name=_('Campaign Type')
-    )
+    # campaign_type = models.CharField(
+    #     max_length=20,
+    #     choices=CampaignType.choices,
+    #     verbose_name=_('Campaign Type')
+    # )
     
     sequence_type = models.CharField(
         max_length=30,
@@ -93,7 +93,6 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name_plural = _('Campaigns')
         indexes = [
             models.Index(fields=['owner', 'start_date']),
-            models.Index(fields=['campaign_type']),
             models.Index(fields=['sequence_type']),
         ]
 
@@ -107,6 +106,23 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
     def is_call_list(self):
         """Check if this is a simple call list campaign (no sequences)"""
         return self.sequence_type is None
+    
+    def get_sequence_type_display(self):
+        """Affichage du type de séquence"""
+        if not self.sequence_type:
+            return "Call List"
+        
+        try:
+            from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+            for choice in SequenceDispatcher.SEQUENCE_CHOICES:
+                if choice[0] == self.sequence_type:
+                    return choice[1]
+            return self.sequence_type
+        except Exception:
+            return self.sequence_type
+    
+    def __str__(self):
+        return f"{self.name} ({self.get_sequence_type_display()})"
     
     def get_target_summary(self):
         """Get a summary of target types in this campaign"""

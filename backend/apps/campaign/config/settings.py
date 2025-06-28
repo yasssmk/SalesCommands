@@ -233,7 +233,7 @@ class SerializerConfig:
     """Serializer field configuration"""
     # Campaign fields
     campaign_fields: List[str] = field(default_factory=lambda: [
-        'id', 'name', 'description', 'campaign_type', 'campaign_type_display',
+        'id', 'name', 'description',
         'sequence_type', 'sequence_type_display', 'has_sequence', 'is_call_list',
         'owner', 'stakeholders', 'owner_ids', 'executor_ids', 'receiver_ids',
         'start_date', 'end_date', 'objective', 'objectives',
@@ -243,7 +243,7 @@ class SerializerConfig:
     ])
     
     campaign_read_only_fields: List[str] = field(default_factory=lambda: [
-        'campaign_type_display', 'sequence_type_display', 'status_display',
+         'sequence_type_display', 'status_display',
         'has_sequence', 'is_call_list', 'target_summary', 'has_mixed_targets',
         'created_at', 'updated_at', 'created_by', 'updated_by', 'quick_metrics'
     ])
@@ -326,7 +326,7 @@ class FilterConfig:
     """Filter and ordering configuration"""
     # Filter configurations
     campaign_filters: List[str] = field(default_factory=lambda: [
-        'campaign_type', 'owner', 'status', 'sequence_type'
+        'owner', 'status', 'sequence_type'
     ])
     objective_filters: List[str] = field(default_factory=lambda: [
         'campaign', 'objective_type', 'is_primary'

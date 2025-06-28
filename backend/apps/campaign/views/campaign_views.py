@@ -137,9 +137,9 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
     def _apply_campaign_attribute_filters(self, queryset):
         """CONSERVÉ - Logique métier nécessaire"""
         # Filter by campaign type
-        campaign_type = self.request.query_params.get('campaign_type')
-        if campaign_type:
-            queryset = queryset.filter(campaign_type=campaign_type)
+        # campaign_type = self.request.query_params.get('campaign_type')
+        # if campaign_type:
+        #     queryset = queryset.filter(campaign_type=campaign_type)
         
         # Filter by status
         campaign_status = self.request.query_params.get(CONFIG.queries.status)
@@ -865,8 +865,8 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
             campaigns_data.append({
                 'campaign_id': campaign.id,
                 'campaign_name': campaign.name,
-                'campaign_type': campaign.campaign_type,
-                'campaign_type_display': campaign.get_campaign_type_display(),
+                'sequence_type': campaign.campaign_type,
+                'sequence_type_display': campaign.get_sequence_type_display(),
                 'start_date': campaign.start_date,
                 'end_date': campaign.end_date,
                 'owner_name': f"{campaign.owner.first_name} {campaign.owner.last_name}",
