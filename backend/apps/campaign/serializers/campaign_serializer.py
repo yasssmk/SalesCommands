@@ -19,7 +19,6 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     """Serializer for Campaign model with standardized validation"""
     
     # Read-only fields
-    owner_name = serializers.SerializerMethodField(read_only=True)
     campaign_type_display = serializers.CharField(source='get_campaign_type_display', read_only=True)
     sequence_type_display = serializers.SerializerMethodField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -110,16 +109,6 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         help_text="Objective data for campaign creation"
     )
     objectives = CampaignObjectiveSerializer(many=True, read_only=True)
-    
-    # Computed stakeholder summaries
-    owner_count = serializers.SerializerMethodField(read_only=True)
-    executor_count = serializers.SerializerMethodField(read_only=True)
-    receiver_count = serializers.SerializerMethodField(read_only=True)
-
-    # === NOUVEAU : RESULT TRACKING INTÉGRÉ ===
-    result_tracking = serializers.SerializerMethodField(
-        help_text="Campaign results and metrics tracking"
-    )
     
     # === MÉTRIQUES RAPIDES (computed fields) ===
     quick_metrics = serializers.SerializerMethodField(
@@ -235,6 +224,26 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 'pipeline_value_created': '0.00',
                 'revenue_generated': '0.00',
                 'error': f'Failed to load result tracking: {str(e)}'
+            }
+    
+    def get_activities_progress(self, obj: Campaign) -> dict:
+        """Obtenir les métriques détaillées d'activités via CampaignAnalyticsService"""
+        try:
+            from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
+            
+            # Utiliser directement la méthode existante optimisée
+            return CampaignAnalyticsService._calculate_activities_progress(obj)
+            
+        except Exception as e:
+            # Fallback gracieux avec structure cohérente
+            return {
+                'total_activities': 0,
+                'completed_activities': 0,
+                'planned_activities': 0,
+                'cancelled_activities': 0,
+                'completion_rate': 0.0,
+                'type_breakdown': {},
+                'error': f'Failed to calculate activities progress: {str(e)}'
             }
     
     def validate_start_date(self, value):
@@ -910,75 +919,167 @@ class CampaignListSerializer(CampaignSerializer):
 
 class CampaignDetailSerializer(CampaignSerializer):
     """
-    Serializer détaillé pour les vues single campaign
+    Serializer détaillé pour les vues single campaign - VERSION AVEC ACTIVITIES PROGRESS
+    Élimine les doublons et ajoute les métriques d'activités détaillées
     """
     
-    # Inclure des champs additionnels pour la vue détail
-    objectives = serializers.SerializerMethodField()
+    # Ajouter les champs spécifiques au détail
     stakeholders_summary = serializers.SerializerMethodField()
+    result_tracking = serializers.SerializerMethodField()
+    activities_progress = serializers.SerializerMethodField()  # NOUVEAU
     
     class Meta(CampaignSerializer.Meta):
+        # Ajouter les champs détail sans doublons
         fields = CampaignSerializer.Meta.fields + [
-            'objectives',
-            'stakeholders_summary'
+            'result_tracking',
+            'stakeholders_summary',
+            'activities_progress'  # NOUVEAU
         ]
     
-    def get_objectives(self, obj: Campaign) -> list:
-        """Obtenir les objectifs de la campagne"""
-        try:
-            from apps.campaign.serializers.campaign_objective_serializer import CampaignObjectiveSerializer
-            objectives = obj.objectives.all()
-            return CampaignObjectiveSerializer(objectives, many=True, context=self.context).data
-        except Exception:
-            return []
-    
     def get_stakeholders_summary(self, obj: Campaign) -> dict:
-        """Résumé des stakeholders"""
+        """Version optimisée utilisant les données prefetchées"""
         try:
-            stakeholders = obj.stakeholder_links.select_related('user').all()
-            print(f"INFO: Found {stakeholders.count()} stakeholders for campaign {obj.id}")
+            # ✅ OPTIMISATION: Utiliser les données prefetchées si disponibles
+            if hasattr(obj, 'prefetched_stakeholders'):
+                stakeholders = obj.prefetched_stakeholders
+            else:
+                # Fallback pour compatibilité
+                stakeholders = obj.stakeholder_links.select_related('user').all()
+            
             summary = {
-                'total': stakeholders.count(),
+                'total': len(stakeholders) if hasattr(stakeholders, '__len__') else stakeholders.count(),
                 'by_role': {},
-                'owners': [],
-                'executors': []
+                'primary_owner': None,
+                'has_executors': False
             }
             
+            # Compter par rôle et identifier le propriétaire principal
             for link in stakeholders:
                 role = link.role
                 if role not in summary['by_role']:
                     summary['by_role'][role] = 0
                 summary['by_role'][role] += 1
                 
-                user_info = {
-                    'id': link.user.id,
-                    'name': link.user.get_full_name() or link.user.username
-                }
+                # Identifier le propriétaire principal (premier OWNER ou owner du campaign)
+                if role == 'OWNER' and (
+                    summary['primary_owner'] is None or 
+                    (obj.owner and link.user.id == obj.owner.id)
+                ):
+                    summary['primary_owner'] = {
+                        'id': link.user.id,
+                        'name': link.user.get_full_name() or link.user.username
+                    }
                 
-                if role == 'OWNER':
-                    summary['owners'].append(user_info)
-                elif role == 'EXECUTOR':
-                    summary['executors'].append(user_info)
-                
+                if role == 'EXECUTOR':
+                    summary['has_executors'] = True
             
             return summary
 
         except Exception as e:
-            print(f"WARNING: Failed to retrieve stakeholders summary for campaign {obj.id}: {e}")
             return {
                 'total': 0,
                 'by_role': {},
-                'owners': [],
-                'executors': []
+                'primary_owner': None,
+                'has_executors': False,
+                'error': f'Failed to load stakeholders: {str(e)}'
             }
     
+    def get_result_tracking(self, obj: Campaign) -> dict:
+        """Version simplifiée du result tracking sans doublons"""
+        try:
+            result_tracking = obj.get_or_create_result_tracking()
+            
+            # Version simplifiée sans campaign_name et campaign répétés
+            return {
+                'leads_created': result_tracking.leads_created_count,
+                'meetings_secured': result_tracking.meetings_secured_count,
+                'opportunities_created': result_tracking.opportunities_created_count,
+                'deals_closed': result_tracking.deals_closed_count,
+                'pipeline_value': str(result_tracking.pipeline_value_created),
+                'revenue_generated': str(result_tracking.revenue_generated),
+                'pipeline_value_formatted': f"${result_tracking.pipeline_value_created}",
+                'revenue_formatted': f"${result_tracking.revenue_generated}",
+                'conversion_rates': {
+                    'leads_to_meetings': round((result_tracking.meetings_secured_count / max(1, result_tracking.leads_created_count)) * 100, 1),
+                    'meetings_to_opportunities': round((result_tracking.opportunities_created_count / max(1, result_tracking.meetings_secured_count)) * 100, 1),
+                    'opportunities_to_deals': round((result_tracking.deals_closed_count / max(1, result_tracking.opportunities_created_count)) * 100, 1),
+                    'overall_conversion': round((result_tracking.deals_closed_count / max(1, result_tracking.leads_created_count)) * 100, 1)
+                },
+                'integrity_score': getattr(result_tracking, 'integrity_score', 100.0),
+                'last_updated': result_tracking.last_updated
+            }
+            
+        except Exception as e:
+            return {
+                'leads_created': 0,
+                'meetings_secured': 0,
+                'opportunities_created': 0,
+                'deals_closed': 0,
+                'pipeline_value': '0.00',
+                'revenue_generated': '0.00',
+                'pipeline_value_formatted': '$0.00',
+                'revenue_formatted': '$0.00',
+                'conversion_rates': {
+                    'leads_to_meetings': 0,
+                    'meetings_to_opportunities': 0,
+                    'opportunities_to_deals': 0,
+                    'overall_conversion': 0
+                },
+                'integrity_score': 100.0,
+                'error': f'Failed to load result tracking: {str(e)}'
+            }
+    
+    def get_activities_progress(self, obj: Campaign) -> dict:
+        """
+        ✅ VERSION SIMPLIFIÉE: Utilise le service existant optimisé
+        Le CampaignAnalyticsService._calculate_activities_progress() est déjà optimisé
+        """
+        try:
+            from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
+            return CampaignAnalyticsService._calculate_activities_progress(obj)
+            
+        except Exception as e:
+            # Fallback gracieux avec structure cohérente
+            return {
+                'total_activities': 0,
+                'completed_activities': 0,
+                'planned_activities': 0,
+                'cancelled_activities': 0,
+                'completion_rate': 0.0,
+                'type_breakdown': {},
+                'error': f'Failed to calculate activities progress: {str(e)}'
+            }
+
+    def get_objectives(self, obj: Campaign) -> list:
+        """Version simplifiée des objectives sans campaign_id redondant"""
+        try:
+            from apps.campaign.serializers.campaign_objective_serializer import CampaignObjectiveSerializer
+            objectives = obj.objectives.all()
+            
+            # Utiliser le serializer mais exclure les champs redondants
+            serialized = CampaignObjectiveSerializer(objectives, many=True, context=self.context).data
+            
+            # Nettoyer chaque objective
+            for objective in serialized:
+                objective.pop('campaign_id', None)  # Retirer campaign_id redondant
+                
+            return serialized
+        except Exception:
+            return []
+    
     def to_representation(self, instance: Campaign) -> dict:
-        """Force le contexte detailed pour cette classe"""
-        if not self.context:
-            self.context = {}
-        self.context['detailed_result_tracking'] = True
+        """Nettoyer la représentation finale"""
+        representation = super().to_representation(instance)
         
-        return super().to_representation(instance)
+        # Nettoyer les stakeholders individuels (retirer informations redondantes)
+        if 'stakeholders' in representation:
+            for stakeholder in representation['stakeholders']:
+                stakeholder.pop('campaign_name', None)
+                stakeholder.pop('campaign', None)  # Retirer campaign ID de la liste détaillée
+        
+        return representation
+
+
 
 
 # Export serializers

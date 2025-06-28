@@ -235,18 +235,17 @@ class SerializerConfig:
     campaign_fields: List[str] = field(default_factory=lambda: [
         'id', 'name', 'description', 'campaign_type', 'campaign_type_display',
         'sequence_type', 'sequence_type_display', 'has_sequence', 'is_call_list',
-        'owner', 'owner_name','receiver_ids','executor_ids','owner_count', 'executor_count', 'receiver_count', 'stakeholders', 
-        'owner_ids',
+        'owner', 'stakeholders', 'owner_ids', 'executor_ids', 'receiver_ids',
         'start_date', 'end_date', 'objective', 'objectives',
-        'status', 'status_display', 'target_summary', 'has_mixed_targets',
-        'created_at', 'updated_at', 'created_by', 'updated_by', 'result_tracking',
-        'quick_metrics'
+        'status', 'status_display', 'target_summary', 'has_mixed_targets','quick_metrics',
+        'created_at', 'updated_at', 'created_by', 'updated_by'
+        
     ])
     
     campaign_read_only_fields: List[str] = field(default_factory=lambda: [
-        'owner_name', 'campaign_type_display', 'sequence_type_display',
-        'status_display', 'has_sequence', 'is_call_list', 'target_summary',
-        'has_mixed_targets', 'created_at', 'updated_at', 'created_by', 'updated_by'
+        'campaign_type_display', 'sequence_type_display', 'status_display',
+        'has_sequence', 'is_call_list', 'target_summary', 'has_mixed_targets',
+        'created_at', 'updated_at', 'created_by', 'updated_by', 'quick_metrics'
     ])
     
     # Objective fields

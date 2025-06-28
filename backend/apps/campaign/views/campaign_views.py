@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from datetime import datetime, date
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 from django.db import transaction
 
 from core.exceptions import StandardizedValidationError, StandardizedAuthenticationFailed, StandardizedPermissionDenied
@@ -79,12 +79,36 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
         queryset = self._apply_date_filters(queryset)
         
         # ✅ Optimisation queries automatique
-        queryset = CampaignQueryOptimizer.apply_optimization(
-            queryset, 'Campaign', getattr(self, 'action', 'list')
+        if self.action in ['retrieve', 'dashboard', 'summary']:
+            # Optimisation spécialisée pour vues détail
+            return self._optimize_for_detail_view(queryset)
+        elif self.action == 'list':
+            # Optimisation légère pour vue liste
+            return CampaignQueryOptimizer.optimize_campaigns_queryset(queryset, 'standard')
+        else:
+            # Optimisation automatique par action
+            return CampaignQueryOptimizer.apply_optimization(
+                queryset, 'Campaign', getattr(self, 'action', 'list')
+            )
+    
+    def _optimize_for_detail_view(self, queryset):
+        """
+        ✅ OPTIMISATION SPÉCIALISÉE pour CampaignDetailSerializer
+        Combine l'optimiseur existant avec des optimisations spécifiques
+        """
+        # Base optimization via CampaignQueryOptimizer
+        optimized_queryset = CampaignQueryOptimizer.optimize_campaigns_queryset(queryset, 'standard')
+        
+        # ✅ AJOUTS SPÉCIFIQUES pour les nouveaux champs du DetailSerializer
+        return optimized_queryset.select_related(
+            # Relations essentielles pour result_tracking
+            'result_tracking'
+        ).prefetch_related(
+            # ✅ CORRIGÉ: Utiliser la même relation que CampaignAnalyticsService
+            # Pas de prefetch direct car relation inversée complexe - on laissera le service faire ses queries
         )
-
-        return queryset
-
+    
+    
     def _apply_ownership_filters(self, queryset):
         """CONSERVÉ - Logique métier complexe nécessaire"""
         # Filter by owner
@@ -258,7 +282,6 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
             if objective_data:
                 campaign_data['objective'] = objective_data
             
-            print(f"Creating campaign with data: {campaign_data}")
 
             # Create campaign and activities
             return CampaignCoreService.create_campaign_with_activities(

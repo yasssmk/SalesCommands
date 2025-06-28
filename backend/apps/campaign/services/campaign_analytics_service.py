@@ -192,7 +192,7 @@ class CampaignAnalyticsService:
             cancelled_activities = activities.filter(status=Activity.Status.CANCELLED).count()
             
             # Calculate completion rate (factual)
-            completion_rate = (completed_activities / total_activities * 100) if total_activities > 0 else 0
+            completion_rate = ((completed_activities + cancelled_activities) / total_activities * 100) if total_activities > 0 else 0
             
             # Calculate activity type breakdown (factual)
             type_breakdown = {}
