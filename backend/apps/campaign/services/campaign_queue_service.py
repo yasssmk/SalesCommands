@@ -29,6 +29,7 @@ class CampaignQueueService:
                                         current_activity_type: str = None) -> Response:
         """
         Get activities that are ready to be worked on for a campaign
+        🔧 MODIFIÉ : Utilise CampaignAnalyticsService pour les métriques cohérentes
         
         Args:
             campaign: The campaign to get activities for
@@ -75,6 +76,7 @@ class CampaignQueueService:
             except Exception as e:
                 # Si le calcul des dates échoue, on continue avec les données existantes
                 print(f"Warning: Failed to update scheduled dates for campaign {campaign.id}: {str(e)}")
+                update_result = {'updated_count': 0, 'errors': []}
             
             ready_activities = []
             
@@ -142,7 +144,7 @@ class CampaignQueueService:
                 # Return raw Activity objects for internal service calls
                 items_for_response = activities_list
             
-            # Get queue information using already fetched data
+            # 🔧 MODIFIÉ : Utiliser la nouvelle méthode optimisée
             queue_info = cls._get_queue_info(campaign, ready_activities, campaign_activities)
             activity_types_breakdown = cls._get_activity_type_breakdown(ready_activities)
 
@@ -946,50 +948,60 @@ class CampaignQueueService:
     
     @classmethod
     def _get_queue_info(cls, campaign: Campaign, ready_activities: List, 
-                   all_campaign_activities: List = None) -> Dict:
-        """Get summary information about the campaign queue"""
+                all_campaign_activities: List = None) -> Dict:
+        """
+        Get summary information about the campaign queue
+        🔧 MODIFIÉ : Utilise CampaignAnalyticsService pour éviter la duplication
+        """
         try:
-            # Use provided activities if available, otherwise query (fallback)
-            if all_campaign_activities is not None:
-                # Count activities by status using already fetched data - NO DB QUERY
-                status_counts = {
-                    'planned': sum(1 for a in all_campaign_activities if a.status == Activity.Status.PLANNED),
-                    'completed': sum(1 for a in all_campaign_activities if a.status == Activity.Status.COMPLETED),
-                    'cancelled': sum(1 for a in all_campaign_activities if a.status == Activity.Status.CANCELLED),
-                }
-                total_activities = len(all_campaign_activities)
-            else:
-                # Fallback: query database (should be avoided)
-                all_activities = Activity.objects.filter(**{f"campaign_info__{FIELD_NAMES['CAMPAIGN']}": campaign})
-                
-                status_counts = {
-                    'planned': all_activities.filter(status=Activity.Status.PLANNED).count(),
-                    'completed': all_activities.filter(status=Activity.Status.COMPLETED).count(),
-                    'cancelled': all_activities.filter(status=Activity.Status.CANCELLED).count(),
-                }
-                total_activities = sum(status_counts.values())
+            # 🔧 NOUVEAU : Utiliser CampaignAnalyticsService pour les calculs de base
+            from apps.campaign.services.campaign_analytics_service import CampaignAnalyticsService
             
-            # Count by delay status using already processed data
-            delay_status_counts = {'ready': 0, 'waiting': 0, 'overdue': 0}
+            # Obtenir les métriques d'activités optimisées du service analytics
+            activities_progress = CampaignAnalyticsService._calculate_activities_progress(campaign)
+            
+            # 🔧 SPÉCIFIQUE QUEUE : Calculer seulement les delay_status_counts (unique à la queue)
+            delay_status_counts = {'ready': 0, 'waiting': 0, 'overdue': 0, 'pending_previous': 0}
+            
             for item in ready_activities:
                 delay_status = item['delay_status'][CONFIG.fields.status]
                 if delay_status in delay_status_counts:
                     delay_status_counts[delay_status] += 1
             
-            # Calculate progress
-            progress_percentage = (status_counts['completed'] / total_activities * 100) if total_activities > 0 else 0
+            # 🔧 RÉUTILISER : Combiner les données du service analytics avec les données spécifiques à la queue
+            return {
+                # Réutiliser les calculs optimisés du service analytics
+                'status_counts': {
+                    'planned': activities_progress['planned_activities'],
+                    'completed': activities_progress['completed_activities'],
+                    'cancelled': activities_progress['cancelled_activities']
+                },
+                # Ajouter les calculs spécifiques à la queue
+                'delay_status_counts': delay_status_counts,
+                # Réutiliser le calcul de progression (completion_rate est déjà calculé)
+                'progress_percentage': activities_progress['completion_rate'],
+                'total_activities': activities_progress['total_activities'],
+                # 🔧 BONUS : Ajouter les breakdown par type d'activité
+                'type_breakdown': activities_progress.get('type_breakdown', {})
+            }
+            
+        except Exception as e:
+            # 🔧 FALLBACK : Si le service analytics échoue, utiliser calculs minimaux
+            print(f"Warning: Failed to get analytics data for queue info, using fallback: {str(e)}")
+            
+            # Fallback simple sans duplication
+            total_ready = len(ready_activities)
+            delay_status_counts = {'ready': 0, 'waiting': 0, 'overdue': 0, 'pending_previous': 0}
+            
+            for item in ready_activities:
+                delay_status = item['delay_status'][CONFIG.fields.status]
+                if delay_status in delay_status_counts:
+                    delay_status_counts[delay_status] += 1
             
             return {
-                'status_counts': status_counts,
+                'status_counts': {'planned': total_ready, 'completed': 0, 'cancelled': 0},
                 'delay_status_counts': delay_status_counts,
-                'progress_percentage': round(progress_percentage, 1),
-                'total_activities': total_activities
-            }
-        except Exception:
-            # If calculation fails, return minimal info
-            return {
-                'status_counts': {'planned': 0, 'completed': 0, 'cancelled': 0},
-                'delay_status_counts': {'ready': 0, 'waiting': 0, 'overdue': 0},
                 'progress_percentage': 0,
-                'total_activities': 0
+                'total_activities': total_ready,
+                'error': f'Analytics service unavailable: {str(e)}'
             }

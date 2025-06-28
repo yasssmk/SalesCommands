@@ -113,11 +113,11 @@ class BusinessDayCalculator:
                 business_days += 1
                 
         # Subtract holidays that fall on weekdays
-        holidays = cls._get_holidays(country_code, start_date.year, end_date.year)
-        for holiday in holidays:
-            if (start_date <= holiday <= end_date and 
-                holiday.weekday() < 5):  # weekday holiday
-                business_days -= 1
+        # holidays = cls._get_holidays(country_code, start_date.year, end_date.year)
+        # for holiday in holidays:
+        #     if (start_date <= holiday <= end_date and 
+        #         holiday.weekday() < 5):  # weekday holiday
+        #         business_days -= 1
                 
         return business_days
     
