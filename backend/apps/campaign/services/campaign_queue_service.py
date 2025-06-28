@@ -61,6 +61,20 @@ class CampaignQueueService:
             
             # Execute the query ONCE with all optimizations
             campaign_activities = query.all()
+
+            try:
+                update_result = cls._calculate_and_update_scheduled_dates(
+                    campaign, 
+                    update_missing_only=True  # Ne met à jour que les dates manquantes
+                )
+                
+                # Log optionnel des mises à jour pour debugging
+                if update_result['updated_count'] > 0:
+                    print(f"Updated {update_result['updated_count']} missing scheduled_start dates for campaign {campaign.id}")
+                    
+            except Exception as e:
+                # Si le calcul des dates échoue, on continue avec les données existantes
+                print(f"Warning: Failed to update scheduled dates for campaign {campaign.id}: {str(e)}")
             
             ready_activities = []
             
@@ -131,6 +145,17 @@ class CampaignQueueService:
             # Get queue information using already fetched data
             queue_info = cls._get_queue_info(campaign, ready_activities, campaign_activities)
             activity_types_breakdown = cls._get_activity_type_breakdown(ready_activities)
+
+            additional_data = {
+                'total_pending': len(campaign_activities),
+                'queue_info': queue_info,
+                'activity_types_breakdown': activity_types_breakdown,
+                'scheduled_dates_update': {
+                    'updated_count': update_result.get('updated_count', 0),
+                    'errors_count': len(update_result.get('errors', [])),
+                    'integration_enabled': True
+                }
+            }
             
             # Use CampaignResponseBuilder for standardized playlist response
             return CampaignResponseBuilder.campaign_playlist(
@@ -140,11 +165,7 @@ class CampaignQueueService:
                 queue_type='activity',
                 is_sequence=True,
                 total_items=len(ready_activities),
-                additional_data={
-                    'total_pending': len(campaign_activities),
-                    'queue_info': queue_info,
-                    'activity_types_breakdown': activity_types_breakdown
-                }
+                additional_data=additional_data
             )
             
         except StandardizedValidationError:
@@ -154,8 +175,297 @@ class CampaignQueueService:
             raise StandardizedValidationError(
                 CampaignErrorMessages.QUEUE_OPTIMIZATION_FAILED
             )
+    
+    @classmethod
+    def _update_following_scheduled_dates(cls, completed_activity: Activity) -> Dict:
+        """
+        Met à jour les dates planifiées des activités suivantes après completion d'une activité
+        À intégrer dans CampaignResultService.complete_activity()
+        
+        Args:
+            completed_activity: L'activité qui vient d'être complétée
+            
+        Returns:
+            Dict: Résumé des mises à jour effectuées
+        """
+        try:
+            # Vérifier si l'activité fait partie d'une séquence
+            if not hasattr(completed_activity, 'sequence_info') or not completed_activity.sequence_info:
+                return {
+                    'updated_count': 0,
+                    'reason': 'Activity is not part of a sequence',
+                    'activities_updated': []
+                }
+            
+            # Récupérer la campagne
+            campaign = getattr(completed_activity, f"campaign_info__{CONFIG.fields.campaign}", None)
+            if not campaign:
+                return {
+                    'updated_count': 0,
+                    'reason': 'Campaign not found',
+                    'activities_updated': []
+                }
+            
+            # Trouver la prochaine activité dans la séquence
+            next_activity = None
+            try:
+                next_activity = Activity.objects.filter(
+                    **{f"campaign_info__{CONFIG.fields.campaign}": campaign},
+                    sequence_info__sequence_position=completed_activity.sequence_info.sequence_position + 1,
+                    status=Activity.Status.PLANNED
+                ).select_related('sequence_info').first()
+            except Exception as e:
+                print(f"Error finding next activity: {str(e)}")
+            
+            if not next_activity:
+                return {
+                    'updated_count': 0,
+                    'reason': 'No next activity found in sequence',
+                    'activities_updated': []
+                }
+            
+            # Utiliser la méthode existante pour mettre à jour à partir de la prochaine activité
+            update_result = cls._calculate_and_update_scheduled_dates(
+                campaign,
+                update_missing_only=False,  # Forcer la mise à jour même si dates existent
+                start_from_activity=next_activity,
+                force_update=True  # Forcer la recalculation basée sur la nouvelle completion
+            )
+            
+            # Ajouter des informations spécifiques à cette opération
+            update_result['trigger_activity_id'] = completed_activity.id
+            update_result['trigger_activity_position'] = completed_activity.sequence_info.sequence_position
+            update_result['next_activity_id'] = next_activity.id if next_activity else None
+            update_result['operation'] = 'post_completion_update'
+            
+            return update_result
+            
+        except Exception as e:
+            return {
+                'updated_count': 0,
+                'reason': f'Error updating following dates: {str(e)}',
+                'activities_updated': [],
+                'error': str(e)
+            }
 
-    # Replace the entire method in apps/campaign/services/campaign_queue_service.py
+    @classmethod
+    def _calculate_and_update_scheduled_dates(cls, campaign: Campaign, 
+                                        update_missing_only: bool = False,
+                                        start_from_activity: Activity = None,
+                                        force_update: bool = False) -> Dict:
+        """
+        Calculate and update scheduled_start dates for sequence activities
+        
+        Args:
+            campaign: Campaign to update activities for
+            update_missing_only: Only update activities with scheduled_start = None
+            start_from_activity: Start updating from this activity (inclusive)
+            force_update: Update even if calculated date matches current date
+            
+        Returns:
+            Dict: Summary of updated activities and any errors
+        """
+        try:
+            from core.utils.business_days import BusinessDayCalculator
+            from django.db import transaction
+            
+            # Get sequence activities ordered by position
+            sequence_activities = Activity.objects.filter(
+                campaign_info__campaign=campaign,
+                sequence_info__isnull=False,
+                status__in=[Activity.Status.PLANNED, Activity.Status.COMPLETED]
+            ).select_related(
+                'sequence_info', 'previous_activity'
+            ).order_by('sequence_info__sequence_position')
+            
+            if not sequence_activities.exists():
+                return {'updated_count': 0, 'activities_updated': [], 'errors': []}
+            
+            # Find starting point if start_from_activity specified
+            start_index = 0
+            if start_from_activity:
+                for i, activity in enumerate(sequence_activities):
+                    if activity.id == start_from_activity.id:
+                        start_index = i
+                        break
+            
+            updated_activities = []
+            errors = []
+            
+            with transaction.atomic():
+                for i, activity in enumerate(sequence_activities[start_index:], start_index):
+                    try:
+                        # Skip if update_missing_only and scheduled_start exists
+                        if update_missing_only and activity.scheduled_start is not None:
+                            continue
+                        
+                        # Calculate new scheduled_start
+                        new_scheduled_start = cls._calculate_activity_scheduled_start(
+                            activity, campaign, sequence_activities[:i]
+                        )
+                        
+                        # Update if different or force_update
+                        if (force_update or 
+                            activity.scheduled_start is None or 
+                            activity.scheduled_start.date() != new_scheduled_start.date()):
+                            
+                            activity.scheduled_start = new_scheduled_start
+                            activity.save(update_fields=['scheduled_start'])
+                            
+                            updated_activities.append({
+                                'activity_id': activity.id,
+                                'sequence_position': activity.sequence_info.sequence_position,
+                                'old_date': activity.scheduled_start,
+                                'new_date': new_scheduled_start
+                            })
+                    
+                    except Exception as e:
+                        errors.append({
+                            'activity_id': activity.id,
+                            'error': str(e)
+                        })
+            
+            return {
+                'updated_count': len(updated_activities),
+                'activities_updated': updated_activities,
+                'errors': errors,
+                'campaign_id': campaign.id
+            }
+            
+        except Exception as e:
+            return {
+                'updated_count': 0,
+                'activities_updated': [],
+                'errors': [{'general_error': str(e)}],
+                'campaign_id': campaign.id
+            }
+
+    @classmethod
+    def _calculate_activity_scheduled_start(cls, activity: Activity, campaign: Campaign, 
+                                        previous_activities: List[Activity]) -> timezone.datetime:
+        """
+        Calculate scheduled_start for a single activity
+        
+        Args:
+            activity: Activity to calculate date for
+            campaign: Campaign context
+            previous_activities: List of activities before this one in sequence
+            
+        Returns:
+            datetime: Calculated scheduled_start
+        """
+        try:
+            from core.utils.business_days import BusinessDayCalculator
+            
+            sequence_info = activity.sequence_info
+            
+            # First activity in sequence
+            if sequence_info.sequence_position == 1:
+                # Use campaign start_date at default hour (9 AM)
+                base_date = campaign.start_date
+                return timezone.datetime.combine(
+                    base_date, 
+                    timezone.datetime.min.time().replace(hour=CONFIG.time.default_call_start_hour)
+                ).replace(tzinfo=timezone.get_current_timezone())
+            
+            # Find the previous activity
+            previous_activity = None
+            for prev_act in reversed(previous_activities):
+                if (prev_act.sequence_info and 
+                    prev_act.sequence_info.sequence_position == sequence_info.sequence_position - 1):
+                    previous_activity = prev_act
+                    break
+            
+            if not previous_activity:
+                # Fallback: use campaign start_date + estimated days
+                estimated_days = (sequence_info.sequence_position - 1) * sequence_info.min_delay_days
+                base_date = BusinessDayCalculator.add_business_days(
+                    campaign.start_date, estimated_days
+                )
+                return timezone.datetime.combine(
+                    base_date,
+                    timezone.datetime.min.time().replace(hour=CONFIG.time.default_call_start_hour)
+                ).replace(tzinfo=timezone.get_current_timezone())
+            
+            # Calculate based on previous activity
+            if previous_activity.completed_at:
+                # Previous completed: add min_delay_days
+                start_date = previous_activity.completed_at.date()
+                target_date = BusinessDayCalculator.add_business_days(
+                    start_date, sequence_info.min_delay_days
+                )
+            else:
+                # Previous not completed: estimate from its scheduled_start
+                if previous_activity.scheduled_start:
+                    estimated_completion = previous_activity.scheduled_start.date()
+                    target_date = BusinessDayCalculator.add_business_days(
+                        estimated_completion, sequence_info.min_delay_days
+                    )
+                else:
+                    # Last resort: use today + min_delay
+                    target_date = BusinessDayCalculator.add_business_days(
+                        timezone.now().date(), sequence_info.min_delay_days
+                    )
+            
+            # Set appropriate hour based on activity type
+            hour = CONFIG.time.default_call_start_hour
+            if activity.activity_type == Activity.ActivityType.EMAIL:
+                hour = CONFIG.time.default_email_start_hour
+            elif activity.activity_type == Activity.ActivityType.MEETING:
+                hour = CONFIG.time.default_meeting_start_hour
+            
+            return timezone.datetime.combine(
+                target_date,
+                timezone.datetime.min.time().replace(hour=hour)
+            ).replace(tzinfo=timezone.get_current_timezone())
+            
+        except Exception as e:
+            # Fallback: return current time + 2 day
+            print(f"Error calculating scheduled_start for activity {activity.id}: {str(e)}")
+            return timezone.now() + timezone.timedelta(days=2)
+    
+    @classmethod
+    def integrate_into_complete_activity(cls, activity: Activity, completion_result: Dict) -> Dict:
+        """
+        Méthode d'intégration à appeler dans CampaignResultService.complete_activity()
+        
+        Usage dans CampaignResultService.complete_activity():
+        
+        # Après activity.complete(), avant construction de la réponse finale
+        if activity.next_activity or (hasattr(activity, 'sequence_info') and activity.sequence_info):
+            from apps.campaign.services.campaign_queue_service import CampaignQueueService
+            schedule_update = CampaignQueueService.integrate_into_complete_activity(activity, completion_result)
+            completion_result['scheduled_dates_update'] = schedule_update
+        
+        Args:
+            activity: L'activité complétée
+            completion_result: Le dictionnaire de résultat de completion existant
+            
+        Returns:
+            Dict: Informations sur la mise à jour des dates planifiées
+        """
+        try:
+            # Mettre à jour les dates des activités suivantes
+            update_result = cls._update_following_scheduled_dates(activity)
+            
+            # Enrichir le résultat avec des métadonnées
+            update_result['integration_timestamp'] = timezone.now().isoformat()
+            update_result['completed_activity_id'] = activity.id
+            
+            # Log optionnel pour debugging
+            if update_result['updated_count'] > 0:
+                print(f"Completion of activity {activity.id} triggered update of {update_result['updated_count']} following activities")
+            
+            return update_result
+            
+        except Exception as e:
+            return {
+                'updated_count': 0,
+                'error': str(e),
+                'integration_timestamp': timezone.now().isoformat(),
+                'completed_activity_id': activity.id
+            }
+
 
     @classmethod
     def get_prioritized_contacts_for_campaign(cls, campaign: Campaign, limit: int = 50) -> Response:

@@ -14,6 +14,7 @@ from apps.campaign.utils.standardized_responses import (
 )
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages, CoreErrorMessages
+from apps.campaign.services.campaign_queue_service import CampaignQueueService
 
 # Import configuration variables
 from apps.campaign.config.settings import CONFIG
@@ -66,6 +67,31 @@ class CampaignResultService:
                         current_state=f"Unsupported activity type: {activity.activity_type}"
                     )
                 )
+        
+            try:
+                # Vérifier si l'activité a été complétée (pour éviter les appels inutiles)
+                if activity.status == Activity.Status.COMPLETED:
+                    schedule_update = CampaignQueueService.integrate_into_complete_activity(activity, {})
+                    
+                    # Ajouter les informations de mise à jour des dates à la réponse
+                    if hasattr(response, 'data') and 'data' in response.data:
+                        response.data['data']['scheduled_dates_update'] = schedule_update
+                        
+                        # Ajouter aussi dans les métadonnées
+                        if 'meta' not in response.data:
+                            response.data['meta'] = {}
+                        response.data['meta']['dates_updated'] = schedule_update.get('updated_count', 0)
+                        response.data['meta']['schedule_integration'] = True
+                        
+            except Exception as schedule_error:
+                # En cas d'erreur de mise à jour des dates, ne pas faire crasher le processus principal
+                print(f"WARNING: Failed to update scheduled dates after activity result: {str(schedule_error)}")
+                # Ajouter une indication d'erreur dans la réponse si possible
+                if hasattr(response, 'data') and 'data' in response.data:
+                    response.data['data']['scheduled_dates_update'] = {
+                        'updated_count': 0,
+                        'error': str(schedule_error)
+                    }
             
             # ✅ CONSERVÉ: Sync basé sur le résultat d'activité avec trigger spécifique
             cls._sync_target_using_centralized_method(activity, "after result processing")
