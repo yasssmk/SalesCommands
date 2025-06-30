@@ -117,7 +117,8 @@ class CampaignResponseBuilder:
         targets_created: int,
         activities_created: int,
         skipped_contacts: List = None,
-        targeting_stats: Dict = None
+        targeting_stats: Dict = None,
+        additional_data: Dict = None
     ) -> Response:
         """Réponse pour la création de campagne"""
         
@@ -300,7 +301,8 @@ class CampaignResponseBuilder:
         campaign_name: str,
         targets_created: int,
         skipped_contacts: List,
-        targeting_stats: Dict = None
+        targeting_stats: Dict = None,
+        additional_data: Dict = None
     ) -> Response:
         """Réponse pour une campagne créée mais sans contacts valides"""
         

@@ -14,6 +14,11 @@ class ActivitySequenceSerializer(serializers.ModelSerializer):
     sequence_outcome_display = serializers.SerializerMethodField(read_only=True)
     source_type_display = serializers.SerializerMethodField(read_only=True)
     can_attempt_call = serializers.SerializerMethodField(read_only=True)
+
+    sequence_type_display = serializers.SerializerMethodField(read_only=True)
+    sequence_variant_display = serializers.SerializerMethodField(read_only=True)
+    is_from_sequence = serializers.SerializerMethodField(read_only=True)
+    full_sequence_info = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = ActivitySequence
@@ -21,7 +26,10 @@ class ActivitySequenceSerializer(serializers.ModelSerializer):
             'id', 'source_type', 'source_type_display', 'sequence_position',
             'sequence_outcome', 'sequence_outcome_display', 'call_attempts',
             'can_attempt_call', 'callback_requested_date', 'sequence_paused_until',
-            'days_since_last_sequence_activity', 'next_sequence_activity'
+            'days_since_last_sequence_activity', 'next_sequence_activity',
+            'sequence_type', 'sequence_type_display',
+            'sequence_variant', 'sequence_variant_display',
+            'is_from_sequence', 'full_sequence_info'
         ]
         read_only_fields = ['id', 'days_since_last_sequence_activity']
     
@@ -38,6 +46,22 @@ class ActivitySequenceSerializer(serializers.ModelSerializer):
     def get_can_attempt_call(self, obj):
         """Check if another call attempt is allowed"""
         return obj.call_attempts < 3
+    
+    def get_sequence_type_display(self, obj):
+        """Get human-readable display for sequence type"""
+        return obj.get_sequence_type_display()
+    
+    def get_sequence_variant_display(self, obj):
+        """Get human-readable display for sequence variant"""
+        return obj.get_sequence_variant_display()
+    
+    def get_is_from_sequence(self, obj):
+        """Check if this activity is from a sequence"""
+        return obj.is_from_sequence()
+    
+    def get_full_sequence_info(self, obj):
+        """Get complete sequence information for API responses"""
+        return obj.get_full_sequence_info()
 
 
 class ActivityCampaignSerializer(serializers.ModelSerializer):

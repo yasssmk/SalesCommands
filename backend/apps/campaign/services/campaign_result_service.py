@@ -46,14 +46,12 @@ class CampaignResultService:
                 )
             
             # Check if this is a sequence or non-sequence activity
-            is_sequence_campaign = False
-            if hasattr(activity, 'campaign_info') and activity.campaign_info.campaign.sequence_type:
-                is_sequence_campaign = True
+            campaign = activity.campaign_info.campaign
+            is_sequence_campaign = campaign.sequence_type is not None
 
             # ✅ Auto-activation de campagne si nécessaire (inclut maintenant sync targets automatique)
             cls._ensure_campaign_is_active(activity)
 
-            # ✅ SUPPRIMÉ: Premier sync redondant car _ensure_campaign_is_active fait déjà sync_all_targets_with_campaign_status
             
             # Route to appropriate handler based on activity type
             if activity.activity_type == Activity.ActivityType.CALL:

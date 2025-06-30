@@ -9,6 +9,11 @@ class RenewalSequence(Sequence):
     Renewal sequence implementation for contract renewals
     Shows how easily new sequence types can be added
     """
+
+    @classmethod
+    def get_sequence_name(cls) -> str:
+        """Get the display name for this sequence type"""
+        return "Renewals"
     
     @classmethod
     def get_standard_sequence(cls) -> Dict:

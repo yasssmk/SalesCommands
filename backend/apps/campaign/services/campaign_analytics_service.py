@@ -342,19 +342,19 @@ class CampaignAnalyticsService:
                 'error': str(e)
             }
         
-    # ===== MÉTHODES EXISTANTES (GARDÉES TELLES QUELLES) =====
-    
+
     @classmethod
     def get_campaign_summary(cls, campaign: Campaign) -> Response:
         """
         Get a comprehensive summary of campaign progress
-        MODIFIER : Utiliser CampaignCoreService pour éviter l'import circulaire
+        ENHANCED: Now includes sequence information in next activities
+        CORRECTED: Proper playlist retrieval
         """
         try:
             # Get all activities for this campaign with optimized query
             all_activities = Activity.objects.filter(
                 campaign_info__campaign=campaign
-            ).select_related('account').prefetch_related('contacts')
+            ).select_related('account', 'sequence_info').prefetch_related('contacts')
             
             # Status counts
             status_counts = {
@@ -398,47 +398,102 @@ class CampaignAnalyticsService:
                 status = target.status
                 target_summary['targets_by_status'][status] = target_summary['targets_by_status'].get(status, 0) + 1
             
-            # Get current active activities (limited to avoid performance issues)
-            # MODIFIER : Utiliser CampaignCoreService au lieu de CampaignQueueService
+            # ===== CORRECTED: Get current active activities using existing method =====
             next_activities = []
             try:
-                # Import local pour éviter circularité
+                # Use the existing CampaignCoreService method
                 from .campaign_core_service import CampaignCoreService
                 
-                active_response = CampaignCoreService.get_campaign_playlist_internal(
+                playlist_response = CampaignCoreService.get_campaign_playlist(
                     campaign=campaign,
                     limit=CONFIG.limits.summary_activities
                 )
                 
                 # Extract activities from the standardized Response
-                if hasattr(active_response, 'data') and 'data' in active_response.data:
-                    response_data = active_response.data['data']
+                if hasattr(playlist_response, 'data') and 'data' in playlist_response.data:
+                    response_data = playlist_response.data['data']
                     ready_activities = response_data.get('items', [])
                     
-                    # Format next activities from the Activity objects
+                    # ===== ENHANCED: Format next activities with sequence information =====
                     for activity in ready_activities[:CONFIG.limits.summary_activities]:
-                        # Vérifier si c'est un objet Activity ou un dict serialized
                         if hasattr(activity, 'id'):
-                            # Raw Activity object
-                            next_activities.append({
+                            # Raw Activity object - add sequence info if available
+                            activity_info = {
                                 'id': activity.id,
                                 'title': activity.title,
                                 'type': activity.activity_type,
-                                'account': activity.account.company_name,
-                                'contacts': [c.full_name for c in activity.contacts.all()]
-                            })
+                                'account': getattr(activity.account, 'company_name', 'Unknown Account'),
+                                'contacts': []
+                            }
+                            
+                            # Safely get contacts
+                            try:
+                                activity_info['contacts'] = [
+                                    getattr(c, 'full_name', f"{c.first_name} {c.last_name}") 
+                                    for c in activity.contacts.all()
+                                ]
+                            except Exception:
+                                activity_info['contacts'] = ['Contacts not loaded']
+                            
+                            # ✅ ENHANCED: Add sequence information
+                            if hasattr(activity, 'sequence_info') and activity.sequence_info:
+                                sequence_info = activity.sequence_info
+                                activity_info.update({
+                                    'is_from_sequence': sequence_info.is_from_sequence(),
+                                    'sequence_position': sequence_info.sequence_position,
+                                    'sequence_type': sequence_info.sequence_type,
+                                    'sequence_variant': sequence_info.sequence_variant
+                                })
+                                
+                                # Add display names if available
+                                if sequence_info.sequence_type:
+                                    try:
+                                        from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+                                        activity_info['sequence_type_display'] = SequenceDispatcher.get_sequence_display_name(
+                                            sequence_info.sequence_type
+                                        )
+                                        if sequence_info.sequence_variant:
+                                            activity_info['sequence_variant_display'] = SequenceDispatcher.get_variant_display_name(
+                                                sequence_info.sequence_type, sequence_info.sequence_variant
+                                            )
+                                    except Exception:
+                                        # Fallback display names
+                                        activity_info['sequence_type_display'] = sequence_info.sequence_type.title() if sequence_info.sequence_type else None
+                                        activity_info['sequence_variant_display'] = sequence_info.sequence_variant.replace('_', ' ').title() if sequence_info.sequence_variant else None
+                            else:
+                                activity_info.update({
+                                    'is_from_sequence': False,
+                                    'sequence_position': None,
+                                    'sequence_type': None,
+                                    'sequence_variant': None,
+                                    'sequence_type_display': None,
+                                    'sequence_variant_display': None
+                                })
+                            
+                            next_activities.append(activity_info)
                         else:
-                            # Serialized dict
-                            next_activities.append({
+                            # Serialized dict - check if sequence info is already included
+                            activity_info = {
                                 'id': activity.get('id'),
                                 'title': activity.get('title'),
                                 'type': activity.get('activity_type'),
                                 'account': activity.get('account_name', 'Unknown'),
                                 'contacts': [c.get('name', 'Unknown') for c in activity.get('contacts', [])]
-                            })
-                
-            except Exception:
+                            }
+                            
+                            # ✅ ENHANCED: Copy sequence info if available in dict
+                            sequence_fields = [
+                                'is_from_sequence', 'sequence_position', 'sequence_type', 
+                                'sequence_type_display', 'sequence_variant', 'sequence_variant_display'
+                            ]
+                            for field in sequence_fields:
+                                activity_info[field] = activity.get(field, None)
+                            
+                            next_activities.append(activity_info)
+                    
+            except Exception as e:
                 # If getting next activities fails, continue without them (non-critical)
+                # Log the error but don't fail the entire summary
                 next_activities = []
             
             # Prepare response data
@@ -456,13 +511,30 @@ class CampaignAnalyticsService:
                     'outcomes': outcomes
                 },
                 'targets': target_summary,
-                'next_activities': next_activities
+                'next_activities': next_activities,
+                # ✅ ENHANCED: Add sequence summary information
+                'sequence_info': {
+                    'has_sequence': campaign.sequence_type is not None,
+                    'sequence_type': campaign.sequence_type,
+                    'sequence_type_display': None
+                }
             }
+            
+            # Add sequence type display name
+            if campaign.sequence_type:
+                try:
+                    from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+                    data['sequence_info']['sequence_type_display'] = SequenceDispatcher.get_sequence_display_name(
+                        campaign.sequence_type
+                    )
+                except Exception:
+                    data['sequence_info']['sequence_type_display'] = campaign.sequence_type.title()
             
             meta = {
                 'operation': 'campaign_summary',
                 'total_activities': total_activities,
                 'active_activities_count': len(next_activities),
+                'sequence_info_included': True,  # ✅ NEW: Indicate enhanced data
                 'calculation_date': None  # Could add timestamp
             }
             
@@ -533,7 +605,8 @@ class CampaignAnalyticsService:
                 'operation': 'activities_retrieval',
                 'total_activities': activities.count(),
                 'status_filter': status_filter or 'all',
-                'returned_activities': len(activities_data)
+                'returned_activities': len(activities_data),
+                'sequence_info_included': True 
             }
             
             activities_count = len(activities_data)
@@ -613,7 +686,8 @@ class CampaignAnalyticsService:
                 'operation': 'account_activities_retrieval',
                 'total_activities': activities.count(),
                 'status_filter': status_filter or 'all',
-                'returned_activities': len(activities_data)
+                'returned_activities': len(activities_data),
+                'sequence_info_included': True 
             }
             
             activities_count = len(activities_data)
@@ -695,7 +769,8 @@ class CampaignAnalyticsService:
                 'operation': 'contact_activities_retrieval',
                 'total_activities': activities.count(),
                 'status_filter': status_filter or 'all',
-                'returned_activities': len(activities_data)
+                'returned_activities': len(activities_data),
+                'sequence_info_included': True 
             }
             
             activities_count = len(activities_data)
@@ -774,11 +849,57 @@ class CampaignAnalyticsService:
             # Add sequence info if available - should be select_related from calling method
             sequence_info = getattr(activity, 'sequence_info', None)
             if sequence_info:
+
+                is_from_sequence = sequence_info.is_from_sequence()
+                sequence_type = sequence_info.sequence_type
+                sequence_variant = sequence_info.sequence_variant
+
                 activity_data['sequence_info'] = {
                     'position': sequence_info.sequence_position,
                     'call_attempts': sequence_info.call_attempts,
                     'min_delay_days': sequence_info.min_delay_days
                 }
+            
+                activity_data['is_from_sequence'] = is_from_sequence
+            
+                if is_from_sequence and sequence_type:
+                    # Get display names using SequenceDispatcher
+                    try:
+                        from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+                        sequence_type_display = SequenceDispatcher.get_sequence_display_name(sequence_type)
+                        
+                        activity_data['sequence_type'] = sequence_type
+                        activity_data['sequence_type_display'] = sequence_type_display
+                        
+                        if sequence_variant:
+                            sequence_variant_display = SequenceDispatcher.get_variant_display_name(
+                                sequence_type, sequence_variant
+                            )
+                            activity_data['sequence_variant'] = sequence_variant
+                            activity_data['sequence_variant_display'] = sequence_variant_display
+                        else:
+                            activity_data['sequence_variant'] = None
+                            activity_data['sequence_variant_display'] = None
+                            
+                    except (ImportError, Exception):
+                        # Fallback if SequenceDispatcher unavailable
+                        activity_data['sequence_type'] = sequence_type
+                        activity_data['sequence_type_display'] = sequence_type.title() if sequence_type else None
+                        activity_data['sequence_variant'] = sequence_variant
+                        activity_data['sequence_variant_display'] = sequence_variant.replace('_', ' ').title() if sequence_variant else None
+                else:
+                    # Not from sequence or no sequence type
+                    activity_data['sequence_type'] = None
+                    activity_data['sequence_type_display'] = None
+                    activity_data['sequence_variant'] = None
+                    activity_data['sequence_variant_display'] = None
+            else:
+                # No sequence info at all
+                activity_data['is_from_sequence'] = False
+                activity_data['sequence_type'] = None
+                activity_data['sequence_type_display'] = None
+                activity_data['sequence_variant'] = None
+                activity_data['sequence_variant_display'] = None
             
             activities_data.append(activity_data)
         

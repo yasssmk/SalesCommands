@@ -8,11 +8,7 @@ from apps.activities.models import Activity, ActivityCampaign, ActivitySequence
 from apps.campaign.models import Campaign, CampaignTarget
 from apps.accounts.models import Contact
 from apps.campaign.utils.contact_helpers import ContactSafetyHelper
-from apps.campaign.utils.standardized_responses import (
-    StandardizedSuccessResponse, 
-    CampaignResponseBuilder, 
-    CampaignSuccessMessages
-)
+from apps.campaign.utils.standardized_responses import CampaignResponseBuilder
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignErrorMessages
 
@@ -47,6 +43,7 @@ class CampaignActivityService:
         """
         try:
             created_count = 0
+            sequence_variants_used = {}
      
             # Extract all relevant contacts regardless of sequence type
             extraction_result = cls._extract_contacts_from_targets(campaign, target_contacts)
@@ -68,12 +65,18 @@ class CampaignActivityService:
                     additional_data={
                         'skipped_contacts': skipped_contacts,
                         'contact_to_target_map': contact_to_target_map,
-                        'message': 'Campaign has no sequence - contacts extracted for manual activities'
+                        'message': 'Campaign has no sequence - contacts extracted for manual activities',
+                        'sequence_variants_used': {}
                     }
                 )
             
             # Check for empty campaign (no valid contacts for sequence)
             if not valid_contacts:
+
+                additional_data = {
+                    'skipped_contacts': skipped_contacts,
+                    'sequence_variants_used': {}
+                }
 
                 if for_campaign_creation:
                     return CampaignResponseBuilder.campaign_created_empty(
@@ -89,6 +92,7 @@ class CampaignActivityService:
                         activities_created=0,
                         skipped_contacts=skipped_contacts,
                         additional_data={
+                            **additional_data,
                             'warning': 'No valid contacts found for activity generation'
                         }
                     )
@@ -107,7 +111,27 @@ class CampaignActivityService:
                     campaign_target = contact_to_target_map.get(contact.id)
                     if not campaign_target:
                         continue  # Skip if no target mapping found
-                    
+
+                    try:
+                        from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+                        _, sequence_variant = SequenceDispatcher.get_sequence_with_variant(
+                            sequence_type=campaign.sequence_type,
+                            has_phone=has_phone,
+                            has_email=has_email,
+                            has_linkedin=has_linkedin
+                        )
+                        
+                        # Track variant usage
+                        if sequence_variant not in sequence_variants_used:
+
+                            sequence_variants_used[sequence_variant] = 0
+
+                        sequence_variants_used[sequence_variant] += 1
+                        
+                    except (ValueError, Exception):
+                        # If variant determination fails, skip tracking for this contact
+                        sequence_variant = 'unknown'
+
                     # Create activities for this contact
                     activities_created = cls._create_activities_for_contact(
                         campaign=campaign,
@@ -125,7 +149,12 @@ class CampaignActivityService:
                     if not campaign_target.activities_generated and activities_created:
                         campaign_target.mark_activities_generated()
             
-            
+            additional_data_base = {
+                'sequence_variants_used': sequence_variants_used,
+                'has_sequence': True,
+                'sequence_type': campaign.sequence_type
+            }
+
             # Return appropriate response based on context
             if for_campaign_creation:
                 # Contexte : création de campagne
@@ -134,7 +163,8 @@ class CampaignActivityService:
                         campaign_id=campaign.id,
                         campaign_name=campaign.name,
                         targets_created=len(contact_to_target_map),
-                        skipped_contacts=skipped_contacts
+                        skipped_contacts=skipped_contacts,
+                        additional_data=additional_data_base
                     )
                 else:
                     return CampaignResponseBuilder.campaign_created(
@@ -142,7 +172,8 @@ class CampaignActivityService:
                         campaign_name=campaign.name,
                         targets_created=len(contact_to_target_map),
                         activities_created=created_count,
-                        skipped_contacts=skipped_contacts
+                        skipped_contacts=skipped_contacts,
+                        additional_data=additional_data_base
                     )
             else:
                 # Contexte : génération d'activités pour campagne existante
@@ -152,6 +183,7 @@ class CampaignActivityService:
                     activities_created=created_count,
                     skipped_contacts=skipped_contacts,
                     additional_data={
+                        **additional_data_base,
                         'valid_contacts': len(valid_contacts),
                         'targets_processed': len(contact_to_target_map)
                     }
@@ -207,6 +239,8 @@ class CampaignActivityService:
         """
         Create sequence activities for a specific contact with stakeholder-based assignment
         SÉCURISÉ contre les accounts manquants
+        ENHANCED: Now tracks sequence type and variant
+        CORRECTED: Proper sequence type handling without inappropriate fallbacks
         """
 
         if not campaign.sequence_type:
@@ -220,17 +254,27 @@ class CampaignActivityService:
             # Log this situation mais ne fait pas crasher le processus complet
             return []
         
-        # Get sequence type from campaign, default to CHASING if not set
-        from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
-        sequence_type = getattr(campaign, 'sequence_type', SequenceDispatcher.CHASING)
+        # ===== CORRECTED: Use exactly what user chose, no inappropriate fallback =====
+        sequence_type = campaign.sequence_type  # User's choice, period.
         
-        # Get the sequence dictionary from the dispatcher
-        sequence_dict = SequenceDispatcher.get_sequence(
-            sequence_type=sequence_type,
-            has_phone=has_phone,
-            has_email=has_email,
-            has_linkedin=has_linkedin
-        )
+        # ===== CORRECTED: Use enhanced SequenceDispatcher with proper error handling =====
+        from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+        
+        try:
+            # Use new enhanced method that returns tuple (sequence_dict, variant_name)
+            sequence_dict, sequence_variant = SequenceDispatcher.get_sequence_with_variant(
+                sequence_type=sequence_type,
+                has_phone=has_phone,
+                has_email=has_email,
+                has_linkedin=has_linkedin
+            )
+        except ValueError as e:
+            # Sequence type not supported - log and return empty list
+            # Don't force a fallback sequence that user didn't choose
+            return []
+        except Exception as e:
+            # Any other error - log and return empty list
+            return []
         
         # Determine activity owner based on stakeholder roles
         from apps.campaign.models.campaign_stakeholder import CampaignStakeholder
@@ -268,11 +312,13 @@ class CampaignActivityService:
             
             activity_instances.append(activity)
             
-            # We'll handle the sequence and campaign relationships after bulk create
+            # ===== ENHANCED: Store sequence information for later use =====
             campaign_info_instances.append({
                 'step_number': step_number,
                 'step_config': step_config,
-                'previous_activity': previous_activity
+                'previous_activity': previous_activity,
+                'sequence_type': sequence_type,      # User's exact choice
+                'sequence_variant': sequence_variant  # Determined variant
             })
             
             previous_activity = activity
@@ -303,17 +349,20 @@ class CampaignActivityService:
                 step_number = info['step_number']
                 step_config = info['step_config']
                 
-                # Create sequence relationship with day-counting
+                # ===== ENHANCED: Create sequence relationship with sequence tracking =====
                 sequence_info = ActivitySequence.objects.create(
                     activity=activity,
                     source_type=ActivitySequence.SourceType.CAMPAIGN,
                     sequence_position=step_number,
                     call_attempts=0,
                     min_delay_days=step_config['min_delay'],
+                    # ===== NEW: Store sequence identification =====
+                    sequence_type=info['sequence_type'],
+                    sequence_variant=info['sequence_variant'],
                     client_id=campaign.client_id
                 )
                 
-                # Link activities (previous/next)
+                # Link activities (previous/next) - UNCHANGED
                 prev_activity_index = i - 1
                 if prev_activity_index >= 0:
                     prev_activity = created_activities[prev_activity_index]
@@ -346,11 +395,13 @@ class CampaignActivityService:
         
     @classmethod
     def _create_single_activity(cls, campaign: Campaign, campaign_target: CampaignTarget,
-                               contact: Contact, step_number: int, step_config: Dict,
-                               previous_activity: Activity = None) -> Activity:
+                            contact: Contact, step_number: int, step_config: Dict,
+                            previous_activity: Activity = None,
+                            sequence_type: str = None, sequence_variant: str = None) -> Activity:
         """
         Create a single activity with all necessary relationships (no scheduled date)
         SÉCURISÉ contre les accounts manquants
+        ENHANCED: Now accepts sequence type and variant
         """
         # Validation sécurisée de l'account
         activity_account = cls._get_safe_account_for_activity(campaign_target, contact)
@@ -377,17 +428,19 @@ class CampaignActivityService:
             client_id=campaign.client_id
         )
         
-        # Create sequence relationship with day-counting
+
         sequence_info = ActivitySequence.objects.create(
             activity=activity,
             source_type=ActivitySequence.SourceType.CAMPAIGN,
             sequence_position=step_number,
             call_attempts=0,
             min_delay_days=step_config['min_delay'],
+            sequence_type=sequence_type,
+            sequence_variant=sequence_variant,
             client_id=campaign.client_id
         )
         
-        # Set next sequence activity link (for easier navigation)
+        # Set next sequence activity link (for easier navigation) 
         if previous_activity and hasattr(previous_activity, 'sequence_info'):
             previous_activity.sequence_info.next_sequence_activity = activity
             previous_activity.sequence_info.save()

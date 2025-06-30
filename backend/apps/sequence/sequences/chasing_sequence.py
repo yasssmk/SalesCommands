@@ -7,6 +7,11 @@ class ChasingSequence(Sequence):
     """
     Simple chasing sequence class with static methods returning sequence configurations
     """
+
+    @classmethod
+    def get_sequence_name(cls) -> str:
+        """Get the display name for this sequence type"""
+        return "Chasing"
     
     @staticmethod
     def get_standard_sequence() -> Dict:
