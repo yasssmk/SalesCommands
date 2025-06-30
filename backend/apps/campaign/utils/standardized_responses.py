@@ -166,13 +166,14 @@ class CampaignResponseBuilder:
         items: List,
         queue_type: str,
         is_sequence: bool,
+        activities_created: int,
+        skipped_contacts: List = None,
         total_items: int = None,
         additional_data: Dict = None
     ) -> Response:
         """Réponse pour les playlists de campagne"""
         
         items_count = len(items)
-        
         if queue_type == 'activity':
             message = CampaignSuccessMessages.PLAYLIST_RETRIEVED.format(count=items_count)
         else:

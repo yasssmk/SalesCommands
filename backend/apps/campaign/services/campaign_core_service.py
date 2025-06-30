@@ -106,7 +106,6 @@ class CampaignCoreService:
             
             # Import local pour éviter la circularité
             from .campaign_queue_service import CampaignQueueService
-            
             if campaign.sequence_type:
                 # Pour campagnes avec séquence : queue d'activités
                 return CampaignQueueService.get_active_activities_for_campaign(

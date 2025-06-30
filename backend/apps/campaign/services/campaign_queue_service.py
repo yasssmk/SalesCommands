@@ -166,6 +166,7 @@ class CampaignQueueService:
                 items=items_for_response,
                 queue_type='activity',
                 is_sequence=True,
+                activities_created=len(ready_activities),
                 total_items=len(ready_activities),
                 additional_data=additional_data
             )
@@ -489,6 +490,8 @@ class CampaignQueueService:
                     CampaignErrorMessages.CAMPAIGN_NO_SEQUENCE_TYPE
                 )
             
+            
+            
             # 🔧 MODIFIED: Use State Machine for expired callbacks instead of direct update
             today = date.today()
             expired_callback_targets = CampaignTarget.objects.filter(
@@ -613,21 +616,24 @@ class CampaignQueueService:
                 
                 # Add the contact with its score to the list
                 contacts_with_score.append({
-                    CONFIG.fields.contact: contact,
                     f"{CONFIG.fields.contact}_id": contact.id,
                     f"{CONFIG.fields.contact}_name": f"{contact.first_name} {contact.last_name}",
+                    'contact_first_name': contact.first_name,
+                    'contact_last_name': contact.last_name,
                     'email': contact.email,
                     'phone': contact.phone,
-                    CONFIG.fields.account: account,
-                    CONFIG.fields.account_name: account.company_name,
+                    'linkedin': getattr(contact, 'linkedin', None),
+                    f"{CONFIG.fields.account}_id": account.id,
+                    f"{CONFIG.fields.account}_name": account.company_name,
                     'target_type': target_type,
                     'target_id': target.id,
                     'has_phone': contact_info['has_phone'],
                     'has_email': contact_info['has_email'],
                     'has_linkedin': contact_info['has_linkedin'],
                     'priority_score': score,
-                    'callback_date': target.callback_date if hasattr(target, 'callback_date') else None,
-                    CONFIG.fields.status: target.status
+                    'callback_date': target.callback_date.isoformat() if (hasattr(target, 'callback_date') and target.callback_date) else None,
+                    'status': target.status,
+                    'status_display': target.get_status_display() if hasattr(target, 'get_status_display') else target.status
                 })
             
             # Sort by priority score (descending)
@@ -651,12 +657,12 @@ class CampaignQueueService:
                 items=contacts_with_score,
                 queue_type=CONFIG.fields.contact,
                 is_sequence=False,
+                activities_created=0,
                 total_items=contact_counts['prioritized'],
                 additional_data={
                     'total_pending': contact_counts['total'],
                     'skipped_contacts': skipped_contacts,
                     'counts': contact_counts,
-                    # 🔧 NEW: Add State Machine integration info
                     'state_machine_integration': True,
                     'callbacks_expired_with_state_machine': updated_count
                 }

@@ -99,8 +99,10 @@ class CampaignCreationService:
                     campaign, target_contacts=target_contacts
                 )
 
-                activities_created_count = activity_result.data['data']['activities_created']
+                # activities_created_count = activity_result.data['data']['activities_created']
+                activities_created_count = activity_result.data.get('data', {}).get('activities_created', 0)
                 skipped_contacts_list = activity_result.data['data'].get('skipped_contacts', [])
+
 
                 # Inclure info sur l'objectif créé dans la réponse
                 objective_created = objective_data is not None

@@ -54,13 +54,14 @@ class CampaignActivityService:
 
             # For campaigns without a sequence, return contact queue response
             if not campaign.sequence_type:
-
                 return CampaignResponseBuilder.campaign_playlist(
                     campaign_id=campaign.id,
                     campaign_name=campaign.name,
                     items=valid_contacts,
                     queue_type='contact',
                     is_sequence=False,
+                    activities_created= 0,
+                    skipped_contacts=0,
                     total_items=len(valid_contacts),
                     additional_data={
                         'skipped_contacts': skipped_contacts,
@@ -69,6 +70,8 @@ class CampaignActivityService:
                         'sequence_variants_used': {}
                     }
                 )
+ 
+            
             
             # Check for empty campaign (no valid contacts for sequence)
             if not valid_contacts:
