@@ -61,7 +61,7 @@ class CampaignQueueService:
             query = query.prefetch_related('contacts')
             
             # Execute the query ONCE with all optimizations
-            campaign_activities = query.all()
+            campaign_activities = query.all() 
 
             try:
                 update_result = cls._calculate_and_update_scheduled_dates(
@@ -801,25 +801,32 @@ class CampaignQueueService:
             from core.utils.business_days import BusinessDayCalculator
             
             if not hasattr(activity, 'sequence_info'):
+                print("A")
                 return True  # Non-sequence activities are always ready
+            
+            
             
             sequence_info = activity.sequence_info
             
             # Check if sequence is paused
             if sequence_info.sequence_paused_until and sequence_info.sequence_paused_until > date.today():
+                print("B")
                 return False
             
             # First activity in sequence is always ready
             if sequence_info.sequence_position == 1:
+                print("C")
                 return True
             
             # Find the previous completed activity in the sequence
             previous_activity = activity.previous_activity
             if not previous_activity:
+                print("D")
                 return True
             
             # Check if previous activity is completed
             if previous_activity.status != Activity.Status.COMPLETED:
+                print(f"activity {activity} and {previous_activity.id} not completed")
                 return False
             
             # Calculate business days since last completed activity
@@ -829,8 +836,10 @@ class CampaignQueueService:
                     completed_date, date.today())
                 return business_days_passed >= sequence_info.min_delay_days
             
+            print("F")
             return False
-        except Exception:
+        except Exception as e:
+            print("Error calculating activity readiness:", str(e))
             # If calculation fails, default to not ready for safety
             return False
     

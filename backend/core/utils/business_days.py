@@ -31,8 +31,8 @@ class BusinessDayCalculator:
             return False
             
         # Check if it's a holiday
-        holidays = cls._get_holidays(country_code, check_date.year)
-        return check_date not in holidays
+        # holidays = cls._get_holidays(country_code, check_date.year)
+        return check_date 
     
     @classmethod
     def add_business_days(cls, start_date: date, days: int, country_code: str = 'FR') -> date:
@@ -135,65 +135,65 @@ class BusinessDayCalculator:
         """
         return cls.add_business_days(from_date, 1, country_code)
     
-    @classmethod
-    def _get_holidays(cls, country_code: str, year: int, end_year: Optional[int] = None) -> List[date]:
-        """
-        Get holidays for a specific country and year range
-        Uses caching to improve performance
+    # @classmethod
+    # def _get_holidays(cls, country_code: str, year: int, end_year: Optional[int] = None) -> List[date]:
+    #     """
+    #     Get holidays for a specific country and year range
+    #     Uses caching to improve performance
         
-        Args:
-            country_code: Country code
-            year: Start year
-            end_year: Optional end year for range
+    #     Args:
+    #         country_code: Country code
+    #         year: Start year
+    #         end_year: Optional end year for range
             
-        Returns:
-            List[date]: List of holiday dates
-        """
-        # Reset cache if expired
-        now = timezone.now()
-        if cls._cache_expiry is None or now > cls._cache_expiry:
-            cls._holiday_cache = {}
-            # Cache for 1 hour
-            cls._cache_expiry = now + timedelta(hours=1)
+    #     Returns:
+    #         List[date]: List of holiday dates
+    #     """
+    #     # Reset cache if expired
+    #     now = timezone.now()
+    #     if cls._cache_expiry is None or now > cls._cache_expiry:
+    #         cls._holiday_cache = {}
+    #         # Cache for 1 hour
+    #         cls._cache_expiry = now + timedelta(hours=1)
             
-        # Set end_year equal to start year if not specified
-        if end_year is None:
-            end_year = year
+    #     # Set end_year equal to start year if not specified
+    #     if end_year is None:
+    #         end_year = year
             
-        # Create cache key for country and year range
-        cache_key = f"{country_code}_{year}_{end_year}"
+    #     # Create cache key for country and year range
+    #     cache_key = f"{country_code}_{year}_{end_year}"
         
-        # Return cached holidays if available
-        if cache_key in cls._holiday_cache:
-            return cls._holiday_cache[cache_key]
+    #     # Return cached holidays if available
+    #     if cache_key in cls._holiday_cache:
+    #         return cls._holiday_cache[cache_key]
             
-        # Query holidays from the database
-        from apps.campaign.models import HolidayCalendar
+    #     # Query holidays from the database
+    #     from apps.campaign.models import HolidayCalendar
         
-        holiday_dates = []
-        try:
-            holidays = HolidayCalendar.objects.filter(
-                Q(country=country_code) & 
-                Q(holiday_date__year__gte=year) & 
-                Q(holiday_date__year__lte=end_year)
-            )
-            holiday_dates = [h.holiday_date for h in holidays]
-        except:
-            # Fallback to hardcoded French holidays if table doesn't exist
-            if country_code == 'FR':
-                for yr in range(year, end_year + 1):
-                    # Major French holidays - could be expanded
-                    holiday_dates.extend([
-                        date(yr, 1, 1),   # New Year's Day
-                        date(yr, 5, 1),   # Labor Day
-                        date(yr, 5, 8),   # Victory in Europe Day
-                        date(yr, 7, 14),  # Bastille Day
-                        date(yr, 8, 15),  # Assumption Day
-                        date(yr, 11, 1),  # All Saints' Day
-                        date(yr, 11, 11), # Armistice Day
-                        date(yr, 12, 25), # Christmas Day
-                    ])
+    #     holiday_dates = []
+    #     try:
+    #         holidays = HolidayCalendar.objects.filter(
+    #             Q(country=country_code) & 
+    #             Q(holiday_date__year__gte=year) & 
+    #             Q(holiday_date__year__lte=end_year)
+    #         )
+    #         holiday_dates = [h.holiday_date for h in holidays]
+    #     except:
+    #         # Fallback to hardcoded French holidays if table doesn't exist
+    #         if country_code == 'FR':
+    #             for yr in range(year, end_year + 1):
+    #                 # Major French holidays - could be expanded
+    #                 holiday_dates.extend([
+    #                     date(yr, 1, 1),   # New Year's Day
+    #                     date(yr, 5, 1),   # Labor Day
+    #                     date(yr, 5, 8),   # Victory in Europe Day
+    #                     date(yr, 7, 14),  # Bastille Day
+    #                     date(yr, 8, 15),  # Assumption Day
+    #                     date(yr, 11, 1),  # All Saints' Day
+    #                     date(yr, 11, 11), # Armistice Day
+    #                     date(yr, 12, 25), # Christmas Day
+    #                 ])
                     
-        # Cache the results
-        cls._holiday_cache[cache_key] = holiday_dates
-        return holiday_dates
+    #     # Cache the results
+    #     cls._holiday_cache[cache_key] = holiday_dates
+    #     return holiday_dates
