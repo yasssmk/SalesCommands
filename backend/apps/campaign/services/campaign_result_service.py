@@ -507,18 +507,20 @@ class CampaignResultService:
     
     @classmethod
     def _regenerate_sequence_for_contact(cls, campaign: Campaign, campaign_target: CampaignTarget,
-                                    contact: Contact, start_from_step: int,
-                                    has_phone: bool, has_email: bool, has_linkedin: bool) -> List[Activity]:
+                                contact: Contact, start_from_step: int,
+                                has_phone: bool, has_email: bool, has_linkedin: bool) -> List[Activity]:
         """
         Regenerate sequence for a contact starting from a specific step
-        SÉCURISÉ : Transaction atomique pour création + linking
+        CORRIGÉ : Résout le problème de violation de contrainte d'unicité sur previous_activity_id
         """
         try:
-             
+            
             from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+
+            cleaned_count = cls._clean_sequence_links_for_contact(campaign, contact)
         
             # Get the appropriate sequence based on campaign sequence type and available channels
-            sequence_dict = SequenceDispatcher.get_sequence(
+            sequence_dict, sequence_variant = SequenceDispatcher.get_sequence_with_variant(
                 sequence_type=campaign.sequence_type, 
                 has_phone=has_phone,
                 has_email=has_email,
@@ -532,7 +534,6 @@ class CampaignResultService:
             # Calculate which steps to create based on current progress
             remaining_steps = len(sequence_dict) - start_from_step + 1
             
-            # Le reste du code reste identique...
             # Get the last completed activity to link properly (en dehors de la transaction)
             last_completed = Activity.objects.filter(
                 campaign_info__campaign=campaign,
@@ -543,28 +544,33 @@ class CampaignResultService:
             
             new_activities = []
             
-            # AJOUTER : Transaction atomique pour toute la création + linking
+            # CORRECTION : Transaction atomique avec chaînage correct
             with transaction.atomic():
-                previous_activity=last_completed if not new_activities else new_activities[-1]
+                # IMPORTANT : Initialiser previous_activity avec la dernière activité complétée
+                previous_activity = last_completed
                 
                 # Create activities starting from the next logical step
                 for i, (step_num, step_config) in enumerate(sequence_dict.items(), 1):
                     if i <= start_from_step:
                         continue  # Skip already completed/current steps
+
+                    from apps.campaign.services.campaign_activity_service import CampaignActivityService
                     
-                    # Create the activity
-                    activity = cls._create_regenerated_activity(
+                    # Create the activity SANS définir previous_activity 
+                    activity = CampaignActivityService._create_single_activity(
                         campaign=campaign,
                         campaign_target=campaign_target,
                         contact=contact,
                         step_number=step_num,
                         step_config=step_config,
-                        previous_activity=previous_activity
+                        previous_activity=previous_activity,
+                        sequence_type=campaign.sequence_type,  # ✅ AJOUTÉ
+                        sequence_variant=sequence_variant      # ✅ AJOUTÉ
                     )
                     
                     new_activities.append(activity)
                     
-                    # Link to previous activity (dans la transaction)
+                    # CORRECTION : Link to previous activity correctly
                     if previous_activity:
                         # Update previous activity to point to this one
                         previous_activity.next_activity = activity
@@ -574,60 +580,67 @@ class CampaignResultService:
                         activity.previous_activity = previous_activity
                         activity.save()
                     
-                    # Current activity becomes previous for next iteration
-                    previous_activity = activity
+                    # CRITIQUE : Current activity becomes previous for next iteration
+                    previous_activity = activity  
             
             # APRÈS la transaction : Retourner les activités créées
             return new_activities
             
+        except StandardizedValidationError:
+            # Re-raise validation errors (including those from cleaning)
+            raise
         except Exception as e:
             # En cas d'erreur, les nouvelles activités seront rollback automatiquement
             raise StandardizedValidationError(
                 CampaignErrorMessages.CAMPAIGN_SEQUENCE_GENERATION_FAILED.format(reason=str(e))
             )
-
-    
+            
     @classmethod
-    def _create_regenerated_activity(cls, campaign: Campaign, campaign_target: CampaignTarget,
-                                   contact: Contact, step_number: int, step_config: Dict,
-                                   previous_activity: Activity = None) -> Activity:
+    def _clean_sequence_links_for_contact(cls, campaign: Campaign, contact: Contact) -> int:
         """
-        Create a single regenerated activity
+        Nettoie les liens de séquence pour un contact dans une campagne
+        - Nettoie les next_activity de TOUTES les activités
+        - Nettoie les previous_activity des activités NON-COMPLÉTÉES uniquement
+        - PRÉSERVE les previous_activity des activités COMPLÉTÉES pour l'historique
+        
+        Args:
+            campaign: Campagne concernée
+            contact: Contact pour lequel nettoyer les liens
+            
+        Returns:
+            int: Nombre total de liens nettoyés
+            
+        Raises:
+            StandardizedValidationError: Si le nettoyage échoue
         """
-        # Create the base activity
-        activity = Activity.objects.create(
-            title=f"Step {step_number}: {step_config['description']}",
-            activity_type=step_config['type'],
-            description=step_config['description'],
-            account=campaign_target.account,
-            owner=campaign.owner,
-            status=Activity.Status.PLANNED,
-            client_id=campaign.client_id
-        )
+        try:
+            with transaction.atomic():
+                # 1. Nettoyer TOUS les next_activity (même pour les activités complétées)
+                forward_cleaned = Activity.objects.filter(
+                    **{f"campaign_info__{CONFIG.fields.campaign}": campaign},
+                    contacts=contact,
+                    next_activity__isnull=False
+                ).update(next_activity=None)
+                
+                # 2. Nettoyer les previous_activity SEULEMENT pour les activités NON-COMPLÉTÉES
+                backward_cleaned = Activity.objects.filter(
+                    **{f"campaign_info__{CONFIG.fields.campaign}": campaign},
+                    contacts=contact,
+                    status__in=[Activity.Status.PLANNED, Activity.Status.IN_PROGRESS, Activity.Status.CANCELLED],  # Pas COMPLETED
+                    previous_activity__isnull=False
+                ).update(previous_activity=None)
+                
+                total_cleaned = forward_cleaned + backward_cleaned
+                
+                return total_cleaned
+                
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.CAMPAIGN_SEQUENCE_GENERATION_FAILED.format(
+                    reason=f"Failed to clean sequence links for contact {contact.id}: {str(e)}"
+                )
+            )
         
-        # Add contact relationship
-        activity.contacts.set([contact])
-        
-        # Create campaign relationship
-        from apps.activities.models import ActivityCampaign, ActivitySequence
-        ActivityCampaign.objects.create(
-            activity=activity,
-            campaign=campaign,
-            campaign_target=campaign_target,
-            client_id=campaign.client_id
-        )
-        
-        # Create sequence relationship with day-counting
-        ActivitySequence.objects.create(
-            activity=activity,
-            source_type=ActivitySequence.SourceType.CAMPAIGN,
-            sequence_position=step_number,
-            call_attempts=0,
-            min_delay_days=step_config['min_delay'],
-            client_id=campaign.client_id
-        )
-        
-        return activity
     
     @classmethod
     def _handle_no_answer_call(cls, activity: Activity, sequence_info: ActivitySequence,

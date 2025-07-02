@@ -570,11 +570,16 @@ class CampaignAnalyticsService:
             activities_query = Activity.objects.filter(
                 **{f"campaign_info__{CONFIG.fields.campaign}": campaign}
             ).select_related(
-                CONFIG.fields.account,                        # For activity formatting
-                f"campaign_info__{CONFIG.fields.campaign}_target", # For campaign relationship
-                'sequence_info'                   # For sequence information
+                CONFIG.fields.account,                        # Pour activity formatting
+                f"campaign_info__{CONFIG.fields.campaign}_target", # Pour campaign relationship
+                'sequence_info',                  # Pour sequence information
+                # ✅ AJOUT : Préchargement pour previous/next activity info
+                'previous_activity',
+                'previous_activity__sequence_info',
+                'next_activity',
+                'next_activity__sequence_info'
             ).prefetch_related(
-                'contacts'                        # CRITICAL: For formatting without N+1
+                'contacts'                        
             )
             
             # Apply status filter if provided
@@ -651,9 +656,14 @@ class CampaignAnalyticsService:
             ).select_related(
                 CONFIG.fields.account,                        
                 f"campaign_info__{CONFIG.fields.campaign}_target", 
-                'sequence_info'                   
+                'sequence_info',
+                # ✅ AJOUT : Relations pour previous/next activity info
+                'previous_activity',
+                'previous_activity__sequence_info',
+                'next_activity',
+                'next_activity__sequence_info'
             ).prefetch_related(
-                'contacts'                        # CRITICAL: Prevent N+1 in formatting
+                'contacts'                        
             )
             
             # Apply status filter if provided
@@ -806,104 +816,16 @@ class CampaignAnalyticsService:
             This method expects optimized activities with prefetched relations.
             Calling methods MUST ensure proper prefetching to avoid N+1 queries.
         """
-        activities_data = []
+        from apps.activities.serializers.activity_serializer import ActivitySerializer
         
-        for activity in activities:
-            # Format contacts - OPTIMIZED: Use prefetched contacts (no additional DB query)
-            contacts_data = []
-            
-            try:
-                # Access prefetched contacts - if not prefetched, this could cause N+1
-                prefetched_contacts = activity.contacts.all()
-                
-                for contact in prefetched_contacts:
-                    contact_info = ContactSafetyHelper.get_contact_display_info(contact)
-                    contacts_data.append({
-                        'id': contact_info['contact_id'],
-                        'name': contact_info['contact_name'],
-                        'email': contact_info['email'],
-                        'phone': contact_info['phone']
-                    })
-                    
-            except Exception:
-                # Fallback if contacts not properly prefetched
-                contacts_data = [{'id': None, 'name': 'Contacts not loaded', 'email': None, 'phone': None}]
-
-            account_info = cls._get_safe_activity_account_info(activity)
-            
-            # Format activity data - account should be select_related from calling method
-            activity_data = {
-                'id': activity.id,
-                'title': activity.title,
-                'activity_type': activity.activity_type,
-                'activity_type_display': activity.get_activity_type_display(),
-                CONFIG.fields.status: activity.status,
-                'status_display': activity.get_status_display(),
-                'scheduled_start': activity.scheduled_start,
-                'completed_at': activity.completed_at,
-                f"{CONFIG.fields.account}_id": account_info['account_id'],
-                f"{CONFIG.fields.account}_name": account_info['account_name'],
-                'contacts': contacts_data,
-            }
-            
-            # Add sequence info if available - should be select_related from calling method
-            sequence_info = getattr(activity, 'sequence_info', None)
-            if sequence_info:
-
-                is_from_sequence = sequence_info.is_from_sequence()
-                sequence_type = sequence_info.sequence_type
-                sequence_variant = sequence_info.sequence_variant
-
-                activity_data['sequence_info'] = {
-                    'position': sequence_info.sequence_position,
-                    'call_attempts': sequence_info.call_attempts,
-                    'min_delay_days': sequence_info.min_delay_days
-                }
-            
-                activity_data['is_from_sequence'] = is_from_sequence
-            
-                if is_from_sequence and sequence_type:
-                    # Get display names using SequenceDispatcher
-                    try:
-                        from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
-                        sequence_type_display = SequenceDispatcher.get_sequence_display_name(sequence_type)
-                        
-                        activity_data['sequence_type'] = sequence_type
-                        activity_data['sequence_type_display'] = sequence_type_display
-                        
-                        if sequence_variant:
-                            sequence_variant_display = SequenceDispatcher.get_variant_display_name(
-                                sequence_type, sequence_variant
-                            )
-                            activity_data['sequence_variant'] = sequence_variant
-                            activity_data['sequence_variant_display'] = sequence_variant_display
-                        else:
-                            activity_data['sequence_variant'] = None
-                            activity_data['sequence_variant_display'] = None
-                            
-                    except (ImportError, Exception):
-                        # Fallback if SequenceDispatcher unavailable
-                        activity_data['sequence_type'] = sequence_type
-                        activity_data['sequence_type_display'] = sequence_type.title() if sequence_type else None
-                        activity_data['sequence_variant'] = sequence_variant
-                        activity_data['sequence_variant_display'] = sequence_variant.replace('_', ' ').title() if sequence_variant else None
-                else:
-                    # Not from sequence or no sequence type
-                    activity_data['sequence_type'] = None
-                    activity_data['sequence_type_display'] = None
-                    activity_data['sequence_variant'] = None
-                    activity_data['sequence_variant_display'] = None
-            else:
-                # No sequence info at all
-                activity_data['is_from_sequence'] = False
-                activity_data['sequence_type'] = None
-                activity_data['sequence_type_display'] = None
-                activity_data['sequence_variant'] = None
-                activity_data['sequence_variant_display'] = None
-            
-            activities_data.append(activity_data)
+        # Utiliser le serializer avec toutes les relations préchargées
+        serializer = ActivitySerializer(activities, many=True, context={
+            'request': None,  # Pas de request dans un service
+            'include_relations': True  # Flag pour inclure toutes les relations
+        })
         
-        return activities_data
+        
+        return serializer.data
     
     @classmethod
     def get_campaign_performance_metrics(cls, campaign: Campaign) -> Response:

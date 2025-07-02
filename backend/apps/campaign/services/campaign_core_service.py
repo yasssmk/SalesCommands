@@ -108,7 +108,6 @@ class CampaignCoreService:
             from .campaign_queue_service import CampaignQueueService
             if campaign.sequence_type:
                 # Pour campagnes avec séquence : queue d'activités
-                print(f"Fetching playlist for campaign {campaign.id} with limit {limit} and activity type {current_activity_type}")
                 return CampaignQueueService.get_active_activities_for_campaign(
                     campaign=campaign,
                     limit=limit,

@@ -1,4 +1,4 @@
-# apps/campaign/views/campaign_views.py - VERSION FINALE COMPLÈTE
+# apps/campaign/views/campaign_views.py 
 
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action

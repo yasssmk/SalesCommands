@@ -53,8 +53,12 @@ class CampaignQueueService:
             query = query.select_related(
                 CONFIG.fields.account,  
                 f"campaign_info__{CONFIG.fields.campaign}_target",  # Campaign relationship
-                'previous_activity',  # For overdue calculation
-                'sequence_info'  # For sequence-based scoring
+                'sequence_info',  # For sequence-based scoring
+                # ✅ AJOUT : Préchargement des activités précédentes/suivantes pour le serializer
+                'previous_activity',
+                'previous_activity__sequence_info',  # Pour get_previous_activity_info()
+                'next_activity', 
+                'next_activity__sequence_info'  # Pour get_next_activity_info()
             )
             
             # Always prefetch contacts for priority calculation (buying authority check)
@@ -109,37 +113,16 @@ class CampaignQueueService:
             
             # Serialize activities for JSON response if prefetch_relations is True
             if prefetch_relations:
-                serialized_activities = []
-                for activity in activities_list:
-                    # Basic activity data
-                    activity_data = {
-                        'id': activity.id,
-                        'title': activity.title,
-                        'activity_type': activity.activity_type,
-                        'activity_type_display': activity.get_activity_type_display(),
-                        f"{CONFIG.fields.account}_id": activity.account_id,
-                        f"{CONFIG.fields.account}_name": activity.account.company_name,
-                        'scheduled_start': activity.scheduled_start,
-                        CONFIG.fields.status: activity.status,
-                    }
-                    
-                    # Add contacts - now efficiently prefetched
-                    activity_data['contacts'] = [
-                        {'id': c.id, 'name': c.full_name} 
-                        for c in activity.contacts.all()  # No additional queries due to prefetch
-                    ]
-                    
-                    # Add sequence info if available - also prefetched
-                    if hasattr(activity, 'sequence_info') and activity.sequence_info:
-                        activity_data['sequence_info'] = {
-                            'position': activity.sequence_info.sequence_position,
-                            'source_type': activity.sequence_info.source_type,
-                            'call_attempts': activity.sequence_info.call_attempts,
-                        }
-                    
-                    serialized_activities.append(activity_data)
+                # Import du serializer
+                from apps.activities.serializers.activity_serializer import ActivitySerializer
                 
-                items_for_response = serialized_activities
+                # Utiliser le serializer avec le contexte approprié
+                serializer = ActivitySerializer(activities_list, many=True, context={
+                    'request': None,  # Pas de request dans un service
+                    'include_relations': True  # Flag pour inclure toutes les relations
+                })
+                
+                items_for_response = serializer.data
             else:
                 # Return raw Activity objects for internal service calls
                 items_for_response = activities_list
@@ -801,42 +784,38 @@ class CampaignQueueService:
             from core.utils.business_days import BusinessDayCalculator
             
             if not hasattr(activity, 'sequence_info'):
-                print("A")
                 return True  # Non-sequence activities are always ready
             
             
-            
             sequence_info = activity.sequence_info
+            print(sequence_info)
             
             # Check if sequence is paused
             if sequence_info.sequence_paused_until and sequence_info.sequence_paused_until > date.today():
-                print("B")
                 return False
             
             # First activity in sequence is always ready
             if sequence_info.sequence_position == 1:
-                print("C")
                 return True
             
             # Find the previous completed activity in the sequence
             previous_activity = activity.previous_activity
             if not previous_activity:
-                print("D")
                 return True
             
             # Check if previous activity is completed
             if previous_activity.status != Activity.Status.COMPLETED:
-                print(f"activity {activity} and {previous_activity.id} not completed")
                 return False
             
             # Calculate business days since last completed activity
             if previous_activity.completed_at:
                 completed_date = previous_activity.completed_at.date()
+                print(f"activity {activity} completed at {completed_date}")
                 business_days_passed = BusinessDayCalculator.get_business_days_between(
                     completed_date, date.today())
+                print(sequence_info.min_delay_days)
                 return business_days_passed >= sequence_info.min_delay_days
             
-            print("F")
             return False
         except Exception as e:
             print("Error calculating activity readiness:", str(e))
