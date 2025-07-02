@@ -891,19 +891,64 @@ class CampaignListSerializer(CampaignSerializer):
     """
     ✅ VERSION SIMPLIFIÉE: Pas de logique to_representation complexe
     """
-    
+    owner_name = serializers.SerializerMethodField(read_only=True)
+
     class Meta(CampaignSerializer.Meta):
         # Champs essentiels pour la liste SANS target_summary
         fields = [
             'id', 'name', 'sequence_type', 'sequence_type_display', 'has_sequence',
-            'owner', 'owner_name', 'owner_count', 'executor_count', 'receiver_count',
+            'owner', 'owner_name', 
             'start_date', 'end_date', 'status', 'status_display', 'quick_metrics', 'created_at'
         ]
         read_only_fields = [
             'owner_name', 'sequence_type_display', 'status_display', 'has_sequence', 
-            'quick_metrics', 'owner_count', 'executor_count', 'receiver_count', 'created_at'
+            'quick_metrics', 'created_at'
         ]
 
+    def get_owner_name(self, obj):
+        """
+        Get owner full name using get_full_name() method
+        ✅ CORRIGÉ : Gestion d'erreur selon les standards de l'application
+        """
+        if not obj.owner:
+            return None
+        
+        try:
+            # ✅ LOGIQUE SIMPLIFIÉE : Construction robuste du nom
+            owner = obj.owner
+            
+            # Construire le nom à partir de first_name et last_name
+            name_parts = []
+            if hasattr(owner, 'first_name') and owner.first_name:
+                name_parts.append(owner.first_name.strip())
+            if hasattr(owner, 'last_name') and owner.last_name:
+                name_parts.append(owner.last_name.strip())
+            
+            # Si on a au moins un nom, l'utiliser
+            if name_parts:
+                return ' '.join(name_parts)
+            
+            # ✅ FALLBACK STANDARD : Si pas de nom, essayer get_full_name() si disponible
+            if hasattr(owner, 'get_full_name'):
+                try:
+                    full_name = owner.get_full_name()
+                    # Éviter de retourner l'email si get_full_name() fait un fallback
+                    if full_name and full_name != owner.email:
+                        return full_name
+                except Exception:
+                    # Si get_full_name() échoue, continuer vers le fallback final
+                    pass
+            
+            # ✅ FALLBACK FINAL : Retourner l'email si pas d'autre option
+            return owner.email
+            
+        except Exception as e:
+            # ✅ GESTION D'ERREUR STANDARDISÉE : Lever une exception appropriée
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to get owner name for activity {obj.id}: {str(e)}"
+                )
+            )
 
 
 class CampaignDetailSerializer(CampaignSerializer):

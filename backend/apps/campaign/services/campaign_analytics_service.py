@@ -818,14 +818,28 @@ class CampaignAnalyticsService:
         """
         from apps.activities.serializers.activity_serializer import ActivitySerializer
         
-        # Utiliser le serializer avec toutes les relations préchargées
-        serializer = ActivitySerializer(activities, many=True, context={
-            'request': None,  # Pas de request dans un service
-            'include_relations': True  # Flag pour inclure toutes les relations
-        })
-        
-        
-        return serializer.data
+        try:
+            from apps.activities.serializers.activity_serializer import ActivitySerializer
+            
+            # Utiliser le serializer avec toutes les relations préchargées
+            serializer = ActivitySerializer(activities, many=True, context={
+                'request': None,
+                'include_relations': True
+            })
+            
+            # ✅ Le serializer gère automatiquement avec gestion d'erreur standardisée
+            return serializer.data
+            
+        except StandardizedValidationError:
+            # ✅ Re-lever les erreurs de validation standardisées
+            raise
+        except Exception as e:
+            # ✅ Convertir autres erreurs en exceptions standardisées  
+            raise StandardizedValidationError(
+                CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED.format(
+                    detail=f"Activity serialization failed: {str(e)}"
+                )
+            )
     
     @classmethod
     def get_campaign_performance_metrics(cls, campaign: Campaign) -> Response:

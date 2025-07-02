@@ -141,55 +141,50 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         return [f"{c.first_name} {c.last_name}" for c in obj.contacts.all()]
     
     def get_owner_name(self, obj):
-        """Get owner full name using get_full_name() method"""
+        """
+        Get owner full name using get_full_name() method
+        ✅ CORRIGÉ : Gestion d'erreur selon les standards de l'application
+        """
         if not obj.owner:
             return None
         
         try:
-            # Utiliser get_full_name() qui gère first_name + last_name avec fallback
-            full_name = obj.owner.get_full_name()
+            # ✅ LOGIQUE SIMPLIFIÉE : Construction robuste du nom
+            owner = obj.owner
             
-            # Si get_full_name() retourne juste l'email/username, essayer de construire un nom
-            if full_name == obj.owner.email:
-                # Fallback : construire à partir de first_name et last_name
-                if obj.owner.first_name or obj.owner.last_name:
-                    name_parts = []
-                    if obj.owner.first_name:
-                        name_parts.append(obj.owner.first_name)
-                    if obj.owner.last_name:
-                        name_parts.append(obj.owner.last_name)
-                    return ' '.join(name_parts) if name_parts else obj.owner.email
-                else:
-                    return obj.owner.email
+            # Construire le nom à partir de first_name et last_name
+            name_parts = []
+            if hasattr(owner, 'first_name') and owner.first_name:
+                name_parts.append(owner.first_name.strip())
+            if hasattr(owner, 'last_name') and owner.last_name:
+                name_parts.append(owner.last_name.strip())
             
-            return full_name
+            # Si on a au moins un nom, l'utiliser
+            if name_parts:
+                return ' '.join(name_parts)
             
-        except AttributeError:
-            # Fallback si get_full_name() n'existe pas
-            if hasattr(obj.owner, 'first_name') and hasattr(obj.owner, 'last_name'):
-                name_parts = []
-                if obj.owner.first_name:
-                    name_parts.append(obj.owner.first_name)
-                if obj.owner.last_name:
-                    name_parts.append(obj.owner.last_name)
-                return ' '.join(name_parts) if name_parts else str(obj.owner)
+            # ✅ FALLBACK STANDARD : Si pas de nom, essayer get_full_name() si disponible
+            if hasattr(owner, 'get_full_name'):
+                try:
+                    full_name = owner.get_full_name()
+                    # Éviter de retourner l'email si get_full_name() fait un fallback
+                    if full_name and full_name != owner.email:
+                        return full_name
+                except Exception:
+                    # Si get_full_name() échoue, continuer vers le fallback final
+                    pass
             
-            return str(obj.owner)
+            # ✅ FALLBACK FINAL : Retourner l'email si pas d'autre option
+            return owner.email
+            
+        except Exception as e:
+            # ✅ GESTION D'ERREUR STANDARDISÉE : Lever une exception appropriée
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to get owner name for activity {obj.id}: {str(e)}"
+                )
+            )
     
-    def get_contact_validation_info(self, obj):
-        """Get validation info for contacts in this activity"""
-        if not obj.contacts.exists():
-            return None
-        
-        contact = obj.contacts.first()
-        return {
-            'email_is_valid': contact.email_is_valid,
-            'phone_is_valid': contact.phone_is_valid,
-            'opted_out': contact.opted_out,
-            'has_email': bool(contact.email),
-            'has_phone': bool(contact.phone_number),
-            'has_linkedin': bool(contact.linkedin),
-        }
     
     def validate(self, data):
         """Validate the activity data"""
@@ -343,7 +338,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     def get_previous_activity_info(self, obj):
         """
         Get previous activity summary
-        ✅ OPTIMISÉ : Utilise relations préchargées et logique unifiée
+        ✅ CORRIGÉ : Gestion d'erreur standardisée
         """
         if not hasattr(obj, 'previous_activity') or not obj.previous_activity:
             return None
@@ -354,15 +349,12 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             # Utiliser la logique unifiée de get_result pour cohérence
             result = None
             if prev.status == Activity.Status.COMPLETED:
-                # Créer un contexte temporaire pour réutiliser get_result()
-                temp_serializer = self.__class__()
-                result = temp_serializer.get_result(prev)
+                result = self.get_result(prev)
             
             return {
                 'id': prev.id,
                 'activity_type': prev.activity_type,
                 'activity_type_display': prev.get_activity_type_display(),
-                'activity_title': prev.title,
                 'status': prev.status,
                 'status_display': prev.get_status_display(),
                 'result': result,
@@ -371,16 +363,17 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             }
             
         except Exception as e:
-            # Fallback silencieux si relations mal préchargées
-            return {
-                'id': getattr(obj.previous_activity, 'id', None),
-                'error': 'Relation not properly loaded'
-            }
+            # ✅ GESTION D'ERREUR STANDARDISÉE : Plus de fallback silencieux
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to get previous activity info for activity {obj.id}: {str(e)}"
+                )
+            )
 
     def get_next_activity_info(self, obj):
         """
         Get next activity summary  
-        ✅ OPTIMISÉ : Utilise relations préchargées et logique unifiée
+        ✅ CORRIGÉ : Gestion d'erreur standardisée
         """
         if not hasattr(obj, 'next_activity') or not obj.next_activity:
             return None
@@ -391,15 +384,12 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             # Utiliser la logique unifiée de get_result pour cohérence
             result = None
             if next_act.status == Activity.Status.COMPLETED:
-                # Créer un contexte temporaire pour réutiliser get_result()
-                temp_serializer = self.__class__()
-                result = temp_serializer.get_result(next_act)
+                result = self.get_result(next_act)
             
             return {
                 'id': next_act.id,
                 'activity_type': next_act.activity_type,
                 'activity_type_display': next_act.get_activity_type_display(),
-                'activity_title': next_act.title,
                 'status': next_act.status,
                 'status_display': next_act.get_status_display(), 
                 'result': result,
@@ -408,11 +398,39 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             }
             
         except Exception as e:
-            # Fallback silencieux si relations mal préchargées
+            # ✅ GESTION D'ERREUR STANDARDISÉE
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to get next activity info for activity {obj.id}: {str(e)}"
+                )
+            )
+
+    def get_contact_validation_info(self, obj):
+        """
+        Get validation info for contacts in this activity
+        ✅ CORRIGÉ : Gestion d'erreur standardisée
+        """
+        try:
+            if not obj.contacts.exists():
+                return None
+            
+            contact = obj.contacts.first()
             return {
-                'id': getattr(obj.next_activity, 'id', None),
-                'error': 'Relation not properly loaded'
+                'email_is_valid': getattr(contact, 'email_is_valid', False),
+                'phone_is_valid': getattr(contact, 'phone_is_valid', False),
+                'opted_out': getattr(contact, 'opted_out', False),
+                'has_email': bool(getattr(contact, 'email', None)),
+                'has_phone': bool(getattr(contact, 'phone_number', None) or getattr(contact, 'phone', None)),
+                'has_linkedin': bool(getattr(contact, 'linkedin', None)),
             }
+            
+        except Exception as e:
+            # ✅ GESTION D'ERREUR STANDARDISÉE
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to get contact validation info for activity {obj.id}: {str(e)}"
+                )
+            )
     
 
 class ActivityWithCampaignSerializer(ActivitySerializer):

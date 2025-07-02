@@ -113,18 +113,29 @@ class CampaignQueueService:
             
             # Serialize activities for JSON response if prefetch_relations is True
             if prefetch_relations:
-                # Import du serializer
-                from apps.activities.serializers.activity_serializer import ActivitySerializer
-                
-                # Utiliser le serializer avec le contexte approprié
-                serializer = ActivitySerializer(activities_list, many=True, context={
-                    'request': None,  # Pas de request dans un service
-                    'include_relations': True  # Flag pour inclure toutes les relations
-                })
-                
-                items_for_response = serializer.data
+                try:
+                    from apps.activities.serializers.activity_serializer import ActivitySerializer
+                    
+                    # Utiliser le serializer avec le contexte approprié
+                    serializer = ActivitySerializer(activities_list, many=True, context={
+                        'request': None,
+                        'client_id': campaign.client_id  # ✅ Fournir client_id pour ClientScopeManager
+                    })
+                    
+                    # ✅ Accès aux données avec gestion d'erreur
+                    items_for_response = serializer.data
+                    
+                except StandardizedValidationError:
+                    # ✅ Re-lever les erreurs de validation standardisées
+                    raise
+                except Exception as e:
+                    # ✅ Convertir autres erreurs en exceptions standardisées
+                    raise StandardizedValidationError(
+                        CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED.format(
+                            detail=f"Serialization failed: {str(e)}"
+                        )
+                    )
             else:
-                # Return raw Activity objects for internal service calls
                 items_for_response = activities_list
             
             # 🔧 MODIFIÉ : Utiliser la nouvelle méthode optimisée
