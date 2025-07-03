@@ -55,12 +55,12 @@ class CampaignAnalyticsService:
                 'campaign_info': {
                     'id': campaign.id,
                     'name': campaign.name,
-                    'type': campaign.campaign_type,
-                    'type_display': campaign.get_campaign_type_display(),
+                    'sequence_type': getattr(campaign, 'sequence_type', None),
+                    'sequence_type_display': cls._get_sequence_type_display(campaign),
                     'status': campaign.status,
                     'start_date': campaign.start_date.isoformat(),
                     'end_date': campaign.end_date.isoformat(),
-                    'has_sequence': campaign.sequence_type is not None
+                    'has_sequence': getattr(campaign, 'sequence_type', None) is not None
                 },
                 'objectives_progress': objectives_progress,
                 'activities_progress': activities_progress,
@@ -981,3 +981,45 @@ class CampaignAnalyticsService:
             raise StandardizedValidationError(
                 CampaignErrorMessages.ANALYTICS_CALCULATION_FAILED
             )
+        
+    @classmethod
+    def _get_sequence_type_display(cls, campaign):
+        """
+        ✅ NOUVEAU: Helper pour obtenir l'affichage du type de séquence
+        """
+        try:
+            # Essayer d'abord la méthode standard Django
+            if hasattr(campaign, 'get_sequence_type_display'):
+                return campaign.get_sequence_type_display()
+            
+            # Obtenir le sequence_type
+            sequence_type = getattr(campaign, 'sequence_type', None)
+            
+            if sequence_type is None:
+                return 'No Sequence'
+            
+            # Mapping des types de séquence vers des affichages lisibles
+            sequence_type_mapping = {
+                'CHASING': 'Chasing Sequence',
+                'NURTURING': 'Nurturing Sequence',
+                'FOLLOW_UP': 'Follow-up Sequence',
+                'RENEWAL': 'Renewal Sequence',
+                'PROSPECTING': 'Prospecting Sequence',
+                'REACTIVATION': 'Reactivation Sequence',
+                'CUSTOM': 'Custom Sequence'
+            }
+            
+            # Utiliser le mapping ou formater par défaut
+            if sequence_type in sequence_type_mapping:
+                return sequence_type_mapping[sequence_type]
+            
+            # Si c'est un string, le formater
+            if isinstance(sequence_type, str):
+                return sequence_type.replace('_', ' ').title()
+            
+            return str(sequence_type)
+            
+        except Exception as e:
+            # Fallback ultime avec logging
+            print(f"Warning: Could not get sequence type display for campaign {campaign.id}: {e}")
+            return 'Unknown'

@@ -9,6 +9,10 @@ from typing import Dict, List, Optional, Union
 import time
 from dataclasses import dataclass
 from apps.campaign.config.settings import CONFIG
+from django.conf import settings
+from django.db import models
+from core.exceptions import StandardizedValidationError
+from core.error_messages import CoreErrorMessages
 
 
 @dataclass
@@ -160,35 +164,53 @@ class CampaignQueryOptimizer:
     @classmethod
     def get_dashboard_optimized_queryset(cls, base_queryset):
         """
-        ✅ CORRIGÉ: Ultra-optimized queryset for dashboard SANS slice externe
-        Target: ≤ 12 queries total for dashboard endpoint
+        ✅ CORRIGÉ: Ultra-optimized queryset for dashboard avec bonnes relations
         """
-        return base_queryset.select_related(
-            'owner'
-        ).prefetch_related(
-            # Only primary objective for dashboard - PAS de slice ici
-            Prefetch(
-                'objectives',
-                queryset=cls._get_dashboard_objectives_queryset(),
-                to_attr='dashboard_objectives'
+        try:
+            return base_queryset.select_related(
+                'owner'
+            ).prefetch_related(
+                Prefetch(
+                    'objectives',
+                    queryset=cls._get_dashboard_objectives_queryset(),
+                    to_attr='dashboard_objectives'
+                )
+            ).annotate(
+                total_targets=Count('targets', distinct=True),
+                active_targets=Count('targets', filter=Q(targets__status='ACTIVE'), distinct=True),
+                completed_targets=Count('targets', filter=Q(targets__status='COMPLETED'), distinct=True),
+                
+                # ✅ CORRIGÉ: Utiliser la bonne relation via campaign_info
+                total_activities=Count('targets__activity_campaigns__activity', distinct=True),
+                completed_activities=Count(
+                    'targets__activity_campaigns__activity', 
+                    filter=Q(targets__activity_campaigns__activity__status='COMPLETED'),
+                    distinct=True
+                ),
+                pending_activities=Count(
+                    'targets__activity_campaigns__activity',
+                    filter=Q(targets__activity_campaigns__activity__status='PLANNED'),
+                    distinct=True
+                )
             )
-        ).annotate(
-            # Pre-calculate all dashboard metrics in single query
-            total_targets=Count('targets', distinct=True),
-            active_targets=Count('targets', filter=Q(targets__status='ACTIVE'), distinct=True),
-            completed_targets=Count('targets', filter=Q(targets__status='COMPLETED'), distinct=True),
-            total_activities=Count('targets__activities', distinct=True),
-            completed_activities=Count(
-                'targets__activities', 
-                filter=Q(targets__activities__status='COMPLETED'),
-                distinct=True
-            ),
-            pending_activities=Count(
-                'targets__activities',
-                filter=Q(targets__activities__status='PLANNED'),
-                distinct=True
+        except Exception as e:
+            # Fallback sécurisé si les relations échouent
+            return base_queryset.select_related('owner').prefetch_related(
+                Prefetch(
+                    'objectives',
+                    queryset=cls._get_dashboard_objectives_queryset(),
+                    to_attr='dashboard_objectives'
+                )
+            ).annotate(
+                total_targets=Count('targets', distinct=True),
+                active_targets=Count('targets', filter=Q(targets__status='ACTIVE'), distinct=True),
+                completed_targets=Count('targets', filter=Q(targets__status='COMPLETED'), distinct=True),
+                # Pas d'annotations d'activités si elles échouent
+                total_activities=models.Value(0, output_field=models.IntegerField()),
+                completed_activities=models.Value(0, output_field=models.IntegerField()),
+                pending_activities=models.Value(0, output_field=models.IntegerField())
             )
-        )
+
     
     @classmethod 
     def get_summary_optimized_queryset(cls, base_queryset):

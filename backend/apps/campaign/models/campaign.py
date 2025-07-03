@@ -34,12 +34,6 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Description')
     )
     
-    # campaign_type = models.CharField(
-    #     max_length=20,
-    #     choices=CampaignType.choices,
-    #     verbose_name=_('Campaign Type')
-    # )
-    
     sequence_type = models.CharField(
         max_length=30,
         choices=SequenceDispatcher.SEQUENCE_CHOICES,
@@ -108,7 +102,7 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         return self.sequence_type is None
     
     def get_sequence_type_display(self):
-        """Affichage du type de séquence"""
+        """Affichage du type de séquence avec fallback sécurisé"""
         if not self.sequence_type:
             return "Call List"
         
@@ -117,12 +111,12 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
             for choice in SequenceDispatcher.SEQUENCE_CHOICES:
                 if choice[0] == self.sequence_type:
                     return choice[1]
-            return self.sequence_type
-        except Exception:
-            return self.sequence_type
+            # Fallback si le type n'est pas trouvé dans les choices
+            return self.sequence_type.replace('_', ' ').title()
+        except (ImportError, AttributeError):
+            # Fallback en cas de problème d'import
+            return self.sequence_type.replace('_', ' ').title() if self.sequence_type else "Call List"
     
-    def __str__(self):
-        return f"{self.name} ({self.get_sequence_type_display()})"
     
     def get_target_summary(self):
         """Get a summary of target types in this campaign"""
@@ -241,38 +235,6 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         from .campaign_stakeholder import CampaignStakeholder
         return self.get_stakeholders_by_role(CampaignStakeholder.StakeholderRole.RECEIVER)
     
-    def add_stakeholder(self, user, role, added_by=None):
-        """
-        Add a stakeholder to this campaign with a specific role
-        
-        Args:
-            user: The user to add
-            role: The role to assign (from CampaignStakeholder.StakeholderRole)
-            added_by: The user who is adding this stakeholder
-            
-        Returns:
-            The created CampaignStakeholder instance
-        """
-        from .campaign_stakeholder import CampaignStakeholder
-        
-        # Check if this user already has this role
-        existing = CampaignStakeholder.objects.filter(
-            campaign=self,
-            user=user,
-            role=role
-        ).first()
-        
-        if existing:
-            return existing
-            
-        # Create new stakeholder
-        return CampaignStakeholder.objects.create(
-            campaign=self,
-            user=user,
-            role=role,
-            added_by=added_by,
-            client_id=self.client_id
-        )
 
     def remove_stakeholder(self, user, role=None):
         """
