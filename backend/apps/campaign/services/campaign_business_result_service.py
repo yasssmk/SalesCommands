@@ -11,7 +11,7 @@ from apps.leads.models import Lead
 from apps.opportunities.models import Opportunity, OpportunitySource, OpportunityFinancialSummary
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, CampaignErrorMessages, ActivityErrorMessages
 from apps.campaign.services.campaign_tracking_service import CampaignTrackingService
 
 
@@ -45,7 +45,7 @@ class CampaignBusinessResultService:
                 target_account = getattr(target_object, 'account', target_object)
                 if contact.account != target_account:
                     raise StandardizedValidationError(
-                        "Selected contact must belong to the target account"
+                        CampaignErrorMessages.CAMPAIGN_CONTACT_MAPPING_FAILED
                     )
                 
                 # Create meeting activity

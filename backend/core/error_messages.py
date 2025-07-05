@@ -176,3 +176,26 @@ class CampaignErrorMessages:
     TARGET_STATE_MACHINE_ERROR = _("State machine validation failed: {reason}")
     TARGET_STATUS_UPDATE_FAILED = _("Failed to update target status: {reason}")
     TARGET_STATUS_SYNC_FAILED = _("Failed to synchronize target status with activities: {reason}")
+
+class ActivityErrorMessages:
+    """Activity specific error messages"""
+    
+    # Activity State & Validation
+    ACTIVITY_INVALID_STATE = _("Activity is in an invalid state for this operation: {current_state}")
+    ACTIVITY_ALREADY_COMPLETED = _("Activity has already been completed")
+    ACTIVITY_NOT_FOUND = _("Activity not found or does not belong to this campaign")
+    
+    # Activity Results
+    RESULT_INVALID_TYPE = _("Invalid result type: {result_type}")
+    RESULT_MISSING_REQUIRED_FIELDS = _("Result is missing required fields for type {result_type}")
+    RESULT_PROCESSING_FAILED = _("Failed to process activity result: {reason}")
+    
+    # Activity Scheduling
+    SCHEDULED_DATE_REQUIRED = _("Scheduled date is required for scheduled activities")
+    SCHEDULED_DATE_PAST = _("Scheduled date cannot be in the past")
+    
+    # Activity Permissions
+    PERMISSION_DENIED = _("You do not have permission to perform this action on the activity")
+    
+    # Activity Execution
+    EXECUTION_FAILED = _("Failed to execute activity: {reason}")

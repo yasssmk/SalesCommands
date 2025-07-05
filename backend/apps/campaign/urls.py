@@ -88,8 +88,8 @@ urlpatterns = [
     
     path('activities/<int:pk>/complete/', ActivityResultViewSet.as_view({'post': 'complete_activity'}), name='activity-complete'),
     path('activities/<int:pk>/add-response/', ActivityResultViewSet.as_view({'post': 'add_email_response'}), name='activity-add-response'),
-    path('activities/next-step-options/', ActivityResultViewSet.as_view({'get': 'get_next_step_options'}), name='activity-next-step-options'),
-    path('activities/next-step-process/', ActivityResultViewSet.as_view({'post': 'process_next_step_choice'}), name='activity-next-step-process'),
+    path('activities/<int:pk>/next-step-options/', ActivityResultViewSet.as_view({'get': 'get_next_step_options'}), name='activity-next-step-options'),
+    path('activities/<int:pk>/next-step-process/', ActivityResultViewSet.as_view({'post': 'process_next_step_choice'}), name='activity-next-step-process'),
 ]
 
 # =========================================================================

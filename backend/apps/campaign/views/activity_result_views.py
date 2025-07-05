@@ -1,12 +1,14 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CampaignErrorMessages, CoreErrorMessages
+from core.error_messages import CampaignErrorMessages, CoreErrorMessages, ActivityErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from apps.campaign.services.campaign_core_service import CampaignCoreService
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse
 from apps.campaign.mixins.permission_mixins import CampaignPermissionMixin
 from apps.campaign.services.campaign_result_service import CampaignResultService
+from apps.campaign.models.campaign_target import CampaignTarget
+from apps.campaign.serializers.campaign_target_serializer import CampaignTargetSerializer
 from apps.activities.models.activity import Activity
 from datetime import datetime
 
@@ -15,7 +17,11 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
     ViewSet for handling activity results and completion
     ✅ DÉJÀ OPTIMISÉ dans étape 2.2 - Version finale
     """
-    
+    queryset = CampaignTarget.objects.all()
+    serializer_class = CampaignTargetSerializer  
+    entity_name = 'campaign_target'
+
+
     def _get_validated_activity(self, pk):
         """Helper method to get and validate activity ownership"""
         try:
@@ -122,8 +128,8 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to add email response")
             )
         
-    @action(detail=False, methods=['get'])
-    def get_next_step_options(self, request):
+    @action(detail=True, methods=['get'])
+    def get_next_step_options(self, request, pk=None):
         """
         Get available next step options based on campaign target type - Unchanged
         
@@ -131,7 +137,7 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
         - campaign_target_id: ID of the campaign target
         """
         try:
-            campaign_target_id = request.query_params.get('campaign_target_id')
+            campaign_target_id = pk
             
             if not campaign_target_id:
                 raise StandardizedValidationError(
@@ -148,7 +154,7 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
                 
                 # Validate campaign ownership/stakeholder access
                 campaign = campaign_target.campaign
-                self.validate_campaign_ownership(campaign_target, allow_stakeholders=True)
+                self.validate_campaign_ownership(campaign, allow_stakeholders=True)
                 
             except CampaignTarget.DoesNotExist:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
@@ -239,15 +245,18 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to get next step options")
             )
 
-    @action(detail=False, methods=['post'])
-    def process_next_step_choice(self, request):
+    @action(detail=True, methods=['post'])
+    def process_next_step_choice(self, request, pk=None):
         """
         Process user's choice for next step after successful campaign activity
         UPDATED: Uses enhanced State Machine business result method
         """
         try:
+
+            campaign_target_id = pk
+
             # Extract and validate required fields using helper
-            campaign_target_id, source_activity_id, choice_type = self._validate_next_step_required_fields(request.data)
+            source_activity_id, choice_type = self._validate_next_step_required_fields(request.data)
             
             # Get and validate campaign target and source activity
             campaign_target, source_activity = self._get_validated_next_step_objects(
@@ -279,14 +288,13 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
     
     def _validate_next_step_required_fields(self, data):
         """Helper to validate required fields for next step processing"""
-        campaign_target_id = data.get('campaign_target_id')
         source_activity_id = data.get('source_activity_id')
         choice_type = data.get('choice_type')
         
-        if not all([campaign_target_id, source_activity_id, choice_type]):
+        if not all([source_activity_id, choice_type]):
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(
-                    field="campaign_target_id, source_activity_id, and choice_type"
+                    field="source_activity_id and choice_type"
                 )
             )
         
@@ -297,27 +305,58 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
                 f"Invalid choice_type. Must be one of: {', '.join(valid_choices)}"
             )
         
-        return campaign_target_id, source_activity_id, choice_type
+        return source_activity_id, choice_type
     
     def _get_validated_next_step_objects(self, campaign_target_id, source_activity_id):
         """Helper to get and validate campaign target and source activity"""
-        # Get and validate campaign target
+        # Get and validate campaign target with optimized query
         try:
             from apps.campaign.models import CampaignTarget
-            campaign_target = CampaignTarget.objects.get(id=campaign_target_id)
+            campaign_target = CampaignTarget.objects.select_related(
+                'campaign', 'contact', 'account', 'target_opportunity', 'lead'
+            ).get(id=campaign_target_id)
             self.validate_client_id(campaign_target)
-            self.validate_campaign_ownership(campaign_target, allow_stakeholders=True)
+            self.validate_campaign_ownership(campaign_target.campaign, allow_stakeholders=True)
         except CampaignTarget.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND + " (campaign target)")
         
-        # Get and validate source activity
+        # Get and validate source activity with optimized query
         try:
-            source_activity = Activity.objects.get(id=source_activity_id)
+            source_activity = Activity.objects.select_related(
+                'campaign_info__campaign'
+            ).get(id=source_activity_id)
             self.validate_client_id(source_activity)
+            
+            if source_activity.status != Activity.Status.COMPLETED:
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.ACTIVITY_INVALID_STATE.format(
+                        current_state=f"'{source_activity.status}' (Activity result must be COMPLETED)"
+                    )
+                )
+            
+            # ✅ CORRIGÉ: Utiliser message standardisé
+            if (hasattr(source_activity, 'campaign_info') and 
+                source_activity.campaign_info and 
+                source_activity.campaign_info.campaign != campaign_target.campaign):
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.ACTIVITY_NOT_IN_CAMPAIGN
+                )
+                
         except Activity.DoesNotExist:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND + " (source activity)")
+            raise StandardizedValidationError(ActivityErrorMessages.ACTIVITY_NOT_FOUND)
         
         return campaign_target, source_activity
+    
+    def _validate_meeting_date(self, meeting_date):
+        """Helper method to validate meeting date (simple validation)"""
+        from datetime import date
+        
+        if meeting_date < date.today():
+            raise StandardizedValidationError(
+                ActivityErrorMessages.SCHEDULED_DATE_PAST
+            )
+        
+        return meeting_date
     
     def _process_meeting_choice(self, data, campaign_target, source_activity, service):
         """Helper to process meeting choice - UPDATED: Enhanced response handling"""
@@ -328,6 +367,8 @@ class ActivityResultViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ViewS
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(field="contact_id and meeting_date for meeting creation")
             )
+        
+        meeting_date = self._validate_meeting_date(meeting_date)
         
         # Service call (already uses enhanced method)
         result = service.create_meeting_next_step(
