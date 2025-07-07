@@ -208,14 +208,16 @@ class CampaignResultTracking(BaseModelApp, ClientScopeManager.ModelMixin):
         try:
             from apps.opportunities.models import Opportunity
             
+            # ✅ CORRIGÉ: 'source' au lieu de 'sources' (OneToOneField)
             opportunity = Opportunity.objects.select_related(
-                'account', 'contact'
-            ).prefetch_related(
-                'sources'  # OpportunitySource
+                'account', 'contact', 'source'  
             ).get(id=opportunity_id)
             
-            # Vérification directe via OpportunitySource
-            for source in opportunity.sources.all():
+            # ✅ CORRIGÉ: Accès direct à .source au lieu de boucle .sources.all()
+            if hasattr(opportunity, 'source') and opportunity.source:
+                source = opportunity.source
+                
+                # Vérification directe via OpportunitySource
                 if (hasattr(source, 'source_campaign') and 
                     source.source_campaign == self.campaign):
                     return True
@@ -248,7 +250,7 @@ class CampaignResultTracking(BaseModelApp, ClientScopeManager.ModelMixin):
             
         except Opportunity.DoesNotExist:
             return False
-        except Exception:
+        except Exception as e:
             return False
     
     def _validate_deal_origin(self, deal_id: int) -> bool:
@@ -333,7 +335,7 @@ class CampaignResultTracking(BaseModelApp, ClientScopeManager.ModelMixin):
         try:
             if opportunity_id in self.tracked_opportunity_ids:
                 return False
-            
+
             # Valider l'origine
             if not self._validate_opportunity_origin(opportunity_id):
                 raise StandardizedValidationError(
@@ -341,24 +343,24 @@ class CampaignResultTracking(BaseModelApp, ClientScopeManager.ModelMixin):
                         activity=f"Opportunity {opportunity_id} does not belong to campaign {self.campaign.id}"
                     )
                 )
-            
+
             self.tracked_opportunity_ids.append(opportunity_id)
             self.opportunities_created_count += 1
             
             if pipeline_value and pipeline_value > 0:
                 self.pipeline_value_created += pipeline_value
-            
+
             self.save(update_fields=[
                 'tracked_opportunity_ids', 
                 'opportunities_created_count',
                 'pipeline_value_created'
             ])
-            
             return True
             
         except StandardizedValidationError:
             raise
         except Exception as e:
+            print(f"Error tracking opportunity2: {str(e)}")
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Opportunity tracking failed: {str(e)}")
             )

@@ -53,19 +53,19 @@ class CampaignTrackingService:
         
         try:
             # Obtenir le result tracking
+
             result_tracking = cls.get_or_create_result_tracking(source_campaign)
-            
+ 
             if cls._is_already_tracked(result_tracking, 'lead', lead.id):
                 print(f"Lead {lead.id} already tracked for campaign {source_campaign.id}")
                 return
-            
+
             # Track le lead directement
             success = result_tracking.track_lead(lead.id)
-            
             # ✅ AJOUTER : Auto-validation après modification
             if success:
-                cls._auto_validate_and_clean(result_tracking, silent=True)
-                    
+                cls._auto_validate_and_clean(result_tracking, silent=True)  
+
         except Exception:
             # Silent fail - don't break lead creation if tracking fails
             print(f"Failed to track lead {lead.id} for campaign {source_campaign.id if source_campaign else 'unknown'}")  
@@ -89,23 +89,21 @@ class CampaignTrackingService:
         try:
             # Obtenir le result tracking
             result_tracking = cls.get_or_create_result_tracking(source_campaign)
-            
+
             if cls._is_already_tracked(result_tracking, 'opportunity', opportunity.id):
                 print(f"Opportunity {opportunity.id} already tracked for campaign {source_campaign.id}")
                 return
-            
             # Convertir amount en Decimal
             from decimal import Decimal
             pipeline_value = Decimal(str(amount)) if amount > 0 else None
-            
+
             # Track l'opportunity directement
             success = result_tracking.track_opportunity(opportunity.id, pipeline_value=pipeline_value)
-            
             # ✅ AJOUTER : Auto-validation après modification
             if success:
                 cls._auto_validate_and_clean(result_tracking, silent=True)
-                    
-        except Exception:
+                   
+        except Exception as e:
             # Silent fail - don't break opportunity creation
             print(f"Failed to track opportunity {opportunity.id} for campaign {source_campaign.id if source_campaign else 'unknown'}")
             pass
