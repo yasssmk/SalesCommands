@@ -26,7 +26,9 @@ campaign_key = "campaign/"
 urlpatterns = [
     path('admin/', admin.site.urls),
     path(app_key+'accounts/', include('apps.accounts.urls')),
-    path(app_key+'leads/', include('apps.leads.urls')),
+    path('leads/', include('apps.leads.urls')),
+    path('activities/', include('apps.activities.urls')),
+    path('opportunities/', include('apps.opportunities.urls')),
     path('signals/', include('apps.signals.urls')),
     path(campaign_key, include('apps.campaign.urls')),
     # path(app_key+'orgunits/', include('apps.accounts_app.org_units.urls')),

@@ -5,9 +5,10 @@ from apps.opportunities.models import Opportunity
 from apps.accounts.models import Contact, Account
 from core.exceptions import StandardizedValidationError
 from apps.core_apps.serializers import AccountLinkedSerializerMixin
+from core.client_scope import ClientScopeManager
 
 
-class OpportunitySerializer(AccountLinkedSerializerMixin, serializers.ModelSerializer):
+class OpportunitySerializer(AccountLinkedSerializerMixin,ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """Serializer for the core Opportunity model"""
     
     # Read-only fields for display

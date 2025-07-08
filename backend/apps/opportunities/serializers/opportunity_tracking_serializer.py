@@ -253,7 +253,7 @@ class OpportunityHistorySerializer(serializers.ModelSerializer):
         return None
 
 
-class LeadConversionSerializer(serializers.Serializer):
+class LeadConversionSerializer(ClientScopeManager.SerializerMixin, serializers.Serializer):
     """Serializer for converting leads to opportunities"""
     
     # Basic opportunity data
@@ -267,10 +267,10 @@ class LeadConversionSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
     
     # Conversion workflow
-    assign_to = serializers.PrimaryKeyRelatedField(
-        queryset=None,  # Will be set dynamically
+    assign_to_id = serializers.IntegerField(
         required=False,
-        allow_null=True
+        allow_null=True,
+        help_text="User ID to assign the opportunity to"
     )
     conversion_notes = serializers.CharField(required=False, allow_blank=True)
     
@@ -285,6 +285,32 @@ class LeadConversionSerializer(serializers.Serializer):
             self.fields['assign_to'].queryset = User.objects.filter(client_id=client_id)
         else:
             self.fields['assign_to'].queryset = User.objects.all()
+    
+    def validate_assign_to_id(self, value):
+        """Validate that the user exists and belongs to the client"""
+        if value is None:
+            return value
+        
+        from end_users.models import User
+        
+        try:
+            client_id = self._get_client_id_from_context()
+            user = User.objects.get(id=value, client_id=client_id)
+            return value
+        except User.DoesNotExist:
+            raise serializers.ValidationError("User not found or does not belong to your organization")
+        
+    def validate(self, data):
+        """Additional validation for the conversion"""
+        data = super().validate(data)
+        
+        # Validate title is not empty
+        if not data.get('title', '').strip():
+            raise StandardizedValidationError(
+                "Opportunity title cannot be empty",
+                field_name="title"
+            )
+        
     
     def validate_expected_close_date(self, value):
         """Validate expected close date is in the future"""
