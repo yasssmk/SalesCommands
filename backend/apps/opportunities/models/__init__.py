@@ -7,6 +7,7 @@ from .pipeline_stage import PipelineStage
 from .pipeline_substage import PipelineSubStage
 from .opportunity_pipeline import OpportunityPipeline
 from .substage_metadata import SubStageMetadata
+from .substage_activity import SubStageActivity
 
 __all__ = [
     'Opportunity',
@@ -22,4 +23,5 @@ __all__ = [
     'PipelineSubStage',
     'OpportunityPipeline',
     'SubStageMetadata',
+    'SubStageActivity'
 ]

@@ -199,3 +199,129 @@ class ActivityErrorMessages:
     
     # Activity Execution
     EXECUTION_FAILED = _("Failed to execute activity: {reason}")
+
+# À ajouter dans backend/core/error_messages.py
+
+class OpportunityErrorMessages:
+    """Opportunity and Pipeline specific error messages"""
+    
+    # Pipeline Template Errors
+    TEMPLATE_TYPE_NOT_SUPPORTED = _("Template type '{template_type}' not supported. Available types: {available_types}")
+    TEMPLATE_NOT_FOUND = _("Pipeline template not found")
+    TEMPLATE_ALREADY_EXISTS = _("A template with this name already exists")
+    TEMPLATE_IN_USE = _("Cannot delete template '{template_name}' because it is being used by {pipelines_count} opportunity pipeline(s)")
+    TEMPLATE_CREATION_FAILED = _("Template creation failed: {reason}")
+    TEMPLATE_UPDATE_FAILED = _("Template update failed: {reason}")
+    TEMPLATE_DUPLICATION_FAILED = _("Template duplication failed: {reason}")
+    
+    # Pipeline Stage Errors
+    STAGE_NOT_FOUND = _("Pipeline stage not found")
+    STAGE_ORDER_CONFLICT = _("A stage with order {order} already exists in this pipeline")
+    STAGE_NAME_DUPLICATE = _("A stage with name '{stage_name}' already exists in this pipeline")
+    STAGE_INVALID_TRANSITION = _("Cannot transition from stage '{from_stage}' to '{to_stage}'")
+    STAGE_COMPLETION_BLOCKED = _("Cannot complete stage '{stage_name}': {reason}")
+    STAGE_HAS_DEPENDENCIES = _("Cannot modify stage '{stage_name}' because it has active substages")
+    
+    # Pipeline SubStage Errors
+    SUBSTAGE_NOT_FOUND = _("Pipeline substage not found")
+    SUBSTAGE_TYPE_INVALID = _("Invalid substage type: '{substage_type}'")
+    SUBSTAGE_DURATION_INVALID = _("Substage duration must be greater than 0")
+    SUBSTAGE_DATE_INVALID = _("Substage end date must be after start date")
+    SUBSTAGE_ALREADY_COMPLETED = _("Substage '{substage_name}' is already completed")
+    SUBSTAGE_BLOCKED = _("Substage '{substage_name}' is blocked: {reason}")
+    SUBSTAGE_DEPENDENCIES_NOT_MET = _("Cannot start substage '{substage_name}': dependencies not met")
+    
+    # Opportunity Pipeline Errors
+    PIPELINE_NOT_FOUND = _("Opportunity pipeline not found")
+    PIPELINE_ALREADY_EXISTS = _("Opportunity already has a pipeline")
+    PIPELINE_INVALID_STATE = _("Pipeline is in invalid state for this operation: {current_state}")
+    PIPELINE_COMPLETION_FAILED = _("Pipeline completion failed: {reason}")
+    PIPELINE_CREATION_FAILED = _("Pipeline creation failed: {reason}")
+    PIPELINE_CUSTOMIZATION_FAILED = _("Pipeline customization failed: {reason}")
+    PIPELINE_NO_STAGES = _("Pipeline must have at least one stage")
+    PIPELINE_INVALID_CURRENT_STAGE = _("Current stage does not belong to this pipeline")
+    
+    # Substage Metadata Errors
+    METADATA_NOT_FOUND = _("Substage metadata not found")
+    METADATA_STAKEHOLDER_INVALID = _("Invalid stakeholder: contact does not belong to opportunity account")
+    METADATA_DEPARTMENT_INVALID = _("Invalid department selection")
+    METADATA_APPROVAL_REQUIRED = _("Substage '{substage_name}' requires approval before proceeding")
+    METADATA_BUDGET_EXCEEDED = _("Actual cost ({actual}) exceeds estimated budget ({estimated}) for substage '{substage_name}'")
+    METADATA_RISK_THRESHOLD_EXCEEDED = _("Risk level for substage '{substage_name}' exceeds acceptable threshold")
+    
+    # Pipeline Navigation Errors
+    NAVIGATION_NO_NEXT_STAGE = _("No next stage available in pipeline")
+    NAVIGATION_NO_PREVIOUS_STAGE = _("No previous stage available in pipeline")
+    NAVIGATION_STAGE_NOT_READY = _("Stage '{stage_name}' is not ready for transition")
+    NAVIGATION_PREREQUISITES_NOT_MET = _("Cannot move to stage '{stage_name}': prerequisites not met")
+    
+    # Pipeline Validation Errors
+    VALIDATION_STAGE_REQUIRED = _("At least one pipeline stage is required")
+    VALIDATION_ORDER_GAPS = _("Pipeline stages must have consecutive order numbers")
+    VALIDATION_CIRCULAR_DEPENDENCY = _("Circular dependency detected in pipeline stages")
+    VALIDATION_INVALID_TEMPLATE = _("Selected template is not compatible with this opportunity")
+    VALIDATION_MISSING_REQUIRED_FIELDS = _("Missing required fields for stage '{stage_name}': {fields}")
+    
+    # Chasing System Errors (Phase 4)
+    CHASING_NOT_CONFIGURED = _("Automatic chasing is not configured for substage '{substage_name}'")
+    CHASING_INVALID_DELAY = _("Chasing delay must be greater than 0 days")
+    CHASING_SEQUENCE_NOT_FOUND = _("Chasing sequence not found")
+    CHASING_ALREADY_ACTIVE = _("Chasing is already active for substage '{substage_name}'")
+    CHASING_PAUSED = _("Chasing is paused for substage '{substage_name}'")
+    CHASING_TRIGGER_FAILED = _("Failed to trigger automatic chasing: {reason}")
+    
+    # Integration Errors (Phase 3)
+    ACTIVITY_LINK_FAILED = _("Failed to link activity to substage: {reason}")
+    ACTIVITY_NOT_IN_PIPELINE = _("Activity does not belong to this pipeline")
+    ACTIVITY_SUBSTAGE_MISMATCH = _("Activity belongs to a different substage")
+    OPPORTUNITY_NOT_FOUND = _("Opportunity not found or not accessible")
+    OPPORTUNITY_CLOSED = _("Cannot modify pipeline: opportunity is closed")
+    
+    # Permission Errors
+    PIPELINE_OWNER_REQUIRED = _("You can only modify your own opportunity pipelines")
+    PIPELINE_STAKEHOLDER_REQUIRED = _("You must be a stakeholder to access this pipeline")
+    TEMPLATE_MODIFICATION_DENIED = _("You cannot modify this template")
+    STAGE_MODIFICATION_DENIED = _("You cannot modify this stage")
+    
+    # Business Logic Errors
+    STAGE_SKIP_NOT_ALLOWED = _("Stage '{stage_name}' cannot be skipped")
+    SUBSTAGE_PARALLEL_EXECUTION_CONFLICT = _("Cannot execute parallel substages: {conflicting_substages}")
+    PIPELINE_DEADLINE_EXCEEDED = _("Pipeline deadline exceeded: expected completion was {expected_date}")
+    STAKEHOLDER_APPROVAL_PENDING = _("Cannot proceed: stakeholder approval pending for '{substage_name}'")
+    BUDGET_APPROVAL_REQUIRED = _("Budget approval required for substage '{substage_name}': amount {amount}")
+    
+    # Data Integrity Errors
+    PIPELINE_INCONSISTENT_STATE = _("Pipeline data is in an inconsistent state: {details}")
+    STAGE_ORDER_CORRUPTION = _("Stage order corruption detected in pipeline")
+    SUBSTAGE_PARENT_MISMATCH = _("Substage does not belong to the specified stage")
+    TEMPLATE_STAGE_MISMATCH = _("Stage does not belong to the specified template")
+    
+    # Metrics and Analytics Errors
+    METRICS_CALCULATION_FAILED = _("Failed to calculate pipeline metrics: {reason}")
+    PROGRESS_TRACKING_FAILED = _("Failed to track pipeline progress: {reason}")
+    ANALYTICS_DATA_INCOMPLETE = _("Cannot generate analytics: incomplete pipeline data")
+    PERFORMANCE_DATA_UNAVAILABLE = _("Performance data not available for pipeline")
+    
+    # Import/Export Errors
+    PIPELINE_EXPORT_FAILED = _("Failed to export pipeline data: {reason}")
+    PIPELINE_IMPORT_FAILED = _("Failed to import pipeline data: {reason}")
+    TEMPLATE_EXPORT_FAILED = _("Failed to export template: {reason}")
+    BULK_PIPELINE_OPERATION_FAILED = _("Bulk pipeline operation failed: {operation}")
+    
+    # Configuration Errors
+    PIPELINE_CONFIG_INVALID = _("Invalid pipeline configuration: {config_issue}")
+    STAGE_CONFIG_MISSING = _("Stage configuration missing for type '{stage_type}'")
+    SUBSTAGE_TYPE_CONFIG_INVALID = _("Invalid configuration for substage type '{substage_type}'")
+    TEMPLATE_CONFIG_CORRUPTED = _("Template configuration is corrupted")
+    
+    # Timing and Schedule Errors
+    SUBSTAGE_OVERDUE = _("Substage '{substage_name}' is overdue by {days} days")
+    PIPELINE_SCHEDULE_CONFLICT = _("Schedule conflict detected in pipeline: {conflict_details}")
+    STAGE_DURATION_EXCEEDED = _("Stage '{stage_name}' duration exceeded: expected {expected} days, actual {actual} days")
+    CHASING_SCHEDULE_INVALID = _("Invalid chasing schedule configuration")
+    
+    # Resource and Capacity Errors
+    RESOURCE_UNAVAILABLE = _("Required resource not available for substage '{substage_name}': {resource}")
+    CAPACITY_EXCEEDED = _("Pipeline capacity exceeded: maximum {max_pipelines} concurrent pipelines allowed")
+    STAKEHOLDER_UNAVAILABLE = _("Required stakeholder not available: {stakeholder}")
+    DEPARTMENT_OVERLOADED = _("Department '{department}' is overloaded with pipeline activities")

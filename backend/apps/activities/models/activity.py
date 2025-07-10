@@ -108,6 +108,16 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
         blank=True,
         verbose_name=_('Related Opportunity')
     )
+
+    pipeline_substage = models.ForeignKey(
+        'opportunities.PipelineSubStage',
+        on_delete=models.SET_NULL,
+        related_name='direct_activities',
+        null=True,
+        blank=True,
+        verbose_name=_('Pipeline SubStage'),
+        help_text=_('Pipeline substage this activity is directly linked to')
+    )
     
     # Linked list fields for sequence navigation
     previous_activity = models.OneToOneField(
@@ -138,11 +148,11 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
             models.Index(fields=['activity_type']),
             models.Index(fields=['previous_activity']),
             models.Index(fields=['next_activity']),
-            # New indexes for campaign-related queries
             models.Index(fields=['status', 'scheduled_start'], name='activity_status_date_idx'),
             models.Index(fields=['completed_at'], name='activity_completed_idx'),
-            # Composite index for filtering activities by multiple criteria
             models.Index(fields=['status', 'activity_type', 'owner'], name='activity_filter_idx'),
+            models.Index(fields=['pipeline_substage'], name='activity_substage_idx'),
+            models.Index(fields=['pipeline_substage', 'status'], name='activity_substage_status_idx'),
         ]
 
     def __str__(self):
@@ -172,6 +182,9 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
                 end_date=self.scheduled_end
             ))
         
+        if self.pipeline_substage and self.status == 'COMPLETED':
+            self._process_pipeline_completion()
+        
         super().save(*args, **kwargs)
     
     def complete(self, outcome_notes=None, save=True):
@@ -198,3 +211,84 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
             self.save()
         
         return self
+    
+    def link_to_substage(self, substage):
+        """
+        Lie cette activité à une sous-étape de pipeline
+        """
+        self.pipeline_substage = substage
+        self.save(update_fields=['pipeline_substage'])
+        
+        # Créer aussi la liaison dans SubStageActivity
+        from apps.opportunities.models import SubStageActivity
+        SubStageActivity.create_link(
+            substage=substage,
+            activity=self,
+            link_type='FUTURE_ACTIVITY',
+            user=self.user
+        )
+    
+    def unlink_from_substage(self):
+        """
+        Supprime la liaison avec la sous-étape
+        """
+        if self.pipeline_substage:
+            # Supprimer la liaison dans SubStageActivity
+            from apps.opportunities.models import SubStageActivity
+            SubStageActivity.objects.filter(
+                substage=self.pipeline_substage,
+                activity=self,
+                client_id=self.client_id
+            ).delete()
+            
+            self.pipeline_substage = None
+            self.save(update_fields=['pipeline_substage'])
+    
+    def get_pipeline_context(self):
+        """
+        Récupère le contexte pipeline de cette activité
+        """
+        if not self.pipeline_substage:
+            return None
+        
+        return {
+            'substage_id': self.pipeline_substage.id,
+            'substage_name': self.pipeline_substage.name,
+            'stage_id': self.pipeline_substage.stage.id,
+            'stage_name': self.pipeline_substage.stage.name,
+            'pipeline_id': self.pipeline_substage.stage.opportunity_pipeline.id,
+            'opportunity_id': self.pipeline_substage.stage.opportunity_pipeline.opportunity.id,
+        }
+    
+    @property
+    def is_pipeline_activity(self):
+        """
+        Vérifie si cette activité fait partie d'un pipeline
+        """
+        return self.pipeline_substage is not None
+    
+    def _process_pipeline_completion(self):
+        """
+        Traite la completion de l'activité dans le contexte du pipeline
+        Version simplifiée pour MVP
+        """
+        if not self.pipeline_substage:
+            return
+        
+        # Mettre à jour la liaison SubStageActivity
+        from apps.opportunities.models import SubStageActivity
+        try:
+            link = SubStageActivity.objects.get(
+                substage=self.pipeline_substage,
+                activity=self,
+                client_id=self.client_id
+            )
+            link.mark_as_completed()
+        except SubStageActivity.DoesNotExist:
+            # Créer la liaison si elle n'existe pas
+            SubStageActivity.create_link(
+                substage=self.pipeline_substage,
+                activity=self,
+                link_type='PAST_ACTIVITY',
+                user=self.user
+            )

@@ -35,7 +35,13 @@ class PipelineStagesConfig:
         CANCELLED = 'CANCELLED', _('Cancelled')
         FAILED = 'FAILED', _('Failed')
     
-    
+    class ActivityLinkType(models.TextChoices):
+        PAST_ACTIVITY = 'PAST_ACTIVITY', _('Past Activity')
+        FUTURE_ACTIVITY = 'FUTURE_ACTIVITY', _('Future Activity')
+        TRIGGER_ACTIVITY = 'TRIGGER_ACTIVITY', _('Trigger Activity')
+        MILESTONE_ACTIVITY = 'MILESTONE_ACTIVITY', _('Milestone Activity')
+
+        
     # ========== ÉTAPES PAR DÉFAUT ==========
     
     # Étapes par défaut du processus de vente standard
