@@ -5,7 +5,7 @@ from apps.campaign.models.campaign_target import CampaignTarget
 from apps.campaign.models.campaign import Campaign
 from apps.accounts.models import Account, Contact
 from apps.leads.models import Lead
-from apps.opportunities.models import Opportunity
+from apps.opportunities.models import Opportunity, PipelineSubStage
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.client_scope import ClientScopeManager
@@ -22,6 +22,18 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
     target_name = serializers.SerializerMethodField(read_only=True)
     target_details = serializers.SerializerMethodField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    # SubStage Display Fields
+    is_from_substage = serializers.BooleanField(read_only=True)
+    substage_info = serializers.SerializerMethodField(read_only=True)
+    substage_name = serializers.CharField(source='substage.name', read_only=True)
+    substage_type_display = serializers.CharField(source='substage.get_substage_type_display', read_only=True)
+    substage_status = serializers.CharField(source='substage.status', read_only=True)
+    
+    # Context display fields
+    has_context = serializers.SerializerMethodField(read_only=True)
+    stakeholder_count = serializers.SerializerMethodField(read_only=True)
+    context_summary = serializers.SerializerMethodField(read_only=True)
     
     # Write fields with improved error messages
     campaign_id = serializers.PrimaryKeyRelatedField(
@@ -77,6 +89,18 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
         error_messages={
             'does_not_exist': CoreErrorMessages.OBJECT_NOT_FOUND,
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Opportunity ID')
+        }
+    )
+
+    substage_id = serializers.PrimaryKeyRelatedField(
+        queryset=PipelineSubStage.objects.all(),
+        source='substage',
+        write_only=True,
+        required=False,
+        allow_null=True,
+        error_messages={
+            'does_not_exist': CoreErrorMessages.OBJECT_NOT_FOUND,
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='SubStage ID')
         }
     )
     
@@ -169,16 +193,47 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
             return None
         except Exception:
             return None
+        
+    def get_substage_info(self, obj):
+        """Get complete substage information"""
+        return obj.get_substage_info()
+    
+    def get_has_context(self, obj):
+        """Check if target has context information"""
+        return bool(obj.substage_context) or bool(obj.substage_objective)
+    
+    def get_stakeholder_count(self, obj):
+        """Get number of stakeholders from context"""
+        if obj.substage_context and 'stakeholders' in obj.substage_context:
+            return len(obj.substage_context['stakeholders'])
+        return 0
+    
+    def get_context_summary(self, obj):
+        """Get a summary of context for display"""
+        summary = {
+            'has_objective': bool(obj.substage_objective),
+            'objective_preview': obj.substage_objective[:100] + '...' if obj.substage_objective and len(obj.substage_objective) > 100 else obj.substage_objective,
+            'opportunity_name': obj.opportunity_name,
+            'stakeholder_count': self.get_stakeholder_count(obj)
+        }
+        
+        # Add substage type context
+        if obj.substage:
+            summary['substage_type'] = obj.substage.get_substage_type_display()
+            summary['stage_name'] = obj.substage.stage.name if obj.substage.stage else None
+        
+        return summary
     
     def validate(self, data):
         """Validate that exactly one target type is specified and enforce uniqueness constraints"""
         try:
-            # Count how many target types are specified
+            # Count how many target types are specified (including substage)
             target_count = sum([
                 bool(data.get(CONFIG.fields.account)),
                 bool(data.get(CONFIG.fields.contact)),
                 bool(data.get(CONFIG.fields.lead)),
-                bool(data.get(CONFIG.fields.target_opportunity))
+                bool(data.get(CONFIG.fields.target_opportunity)),
+                bool(data.get('substage'))  # TODO: Add CONFIG.fields.substage
             ])
             
             if target_count == 0:
@@ -211,6 +266,13 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     raise StandardizedValidationError(
                         CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign validation failed")
                     )
+            
+            # NEW: Minimal substage validation (non-intrusive)
+            substage = data.get('substage')
+            if substage and not data.get(CONFIG.fields.contact):
+                raise StandardizedValidationError(
+                    "Contact is required when adding target from substage"
+                )
             
             return data
             
@@ -257,6 +319,11 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
             target_opportunity = data.get(CONFIG.fields.target_opportunity)
             if target_opportunity:
                 self._validate_opportunity_target(target_opportunity, campaign, client_id, instance_id)
+            
+            # NEW: Validate client scope and uniqueness for substage
+            substage = data.get('substage')  # TODO: Use CONFIG.fields.substage
+            if substage:
+                self._validate_substage_target(substage, campaign, client_id, instance_id)
                 
         except StandardizedValidationError:
             # Re-raise standardized validation errors
@@ -273,14 +340,14 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
             if str(account.client_id) != str(client_id):
                 raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
             
-            # Check uniqueness - account can only be targeted once per campaign
+            # Check uniqueness - account can only be targeted once per campaign (with some conditions)
             existing = CampaignTarget.objects.filter(
-                 **{
+                **{
                     CONFIG.fields.campaign: campaign,
                     CONFIG.fields.account: account,
-                    f"{CONFIG.fields.contact}__isnull": True,
-                    f"{CONFIG.fields.lead}__isnull": True,
-                    f"{CONFIG.fields.target_opportunity}__isnull": True
+                    CONFIG.fields.contact + '__isnull': True,
+                    CONFIG.fields.lead + '__isnull': True,
+                    CONFIG.fields.target_opportunity + '__isnull': True
                 }
             ).exclude(id=instance_id)
             
@@ -301,7 +368,7 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
         """Validate contact target client scope and uniqueness"""
         try:
             # Check client scope
-            if str(contact.account.client_id) != str(client_id):
+            if str(contact.client_id) != str(client_id):
                 raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
             
             # Check uniqueness - contact can only be targeted once per campaign
@@ -313,10 +380,9 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
             ).exclude(id=instance_id)
             
             if existing.exists():
-                contact_name = f"{contact.first_name} {contact.last_name}".strip()
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(
-                        field=f"Contact Target (contact '{contact_name}' is already targeted by this campaign)"
+                        field=f"Contact Target (contact '{contact.first_name} {contact.last_name}' is already targeted by this campaign)"
                     )
                 )
         except StandardizedValidationError:
@@ -382,6 +448,32 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Opportunity validation failed")
             )
     
+    def _validate_substage_target(self, substage, campaign, client_id, instance_id):
+        """Validate substage target client scope and uniqueness"""
+        try:
+            # Check client scope
+            if str(substage.client_id) != str(client_id):
+                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+            
+            # Check uniqueness - substage can only be targeted once per campaign
+            existing = CampaignTarget.objects.filter(
+                campaign=campaign,
+                substage=substage
+            ).exclude(id=instance_id)
+            
+            if existing.exists():
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"SubStage Target (substage '{substage.name}' is already targeted by this campaign)"
+                    )
+                )
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="SubStage validation failed")
+            )
+    
     def create(self, validated_data):
         """Create a new campaign target with standardized error handling"""
         try:
@@ -391,7 +483,15 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 validated_data['created_by'] = request.user
                 validated_data['updated_by'] = request.user
             
-            return CampaignTarget.objects.create(**validated_data)
+            # Create the target
+            target = CampaignTarget.objects.create(**validated_data)
+            
+            # NEW: Copy substage context if substage is provided (non-intrusive)
+            if target.substage:
+                target.copy_substage_context()
+                target.save()
+            
+            return target
             
         except StandardizedValidationError:
             # Re-raise standardized validation errors
@@ -413,6 +513,10 @@ class CampaignTargetSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # Update the instance
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
+            
+            # NEW: Update substage context if substage changed (non-intrusive)
+            if 'substage' in validated_data and instance.substage:
+                instance.copy_substage_context()
             
             instance.save()
             return instance

@@ -68,6 +68,32 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
         null=True
     )
     
+    substage = models.ForeignKey(
+        'opportunities.PipelineSubStage',
+        on_delete=models.SET_NULL,
+        related_name='campaign_targets',
+        null=True,
+        blank=True,
+        verbose_name=_('Source SubStage'),
+        help_text=_('Pipeline substage that generated this campaign target')
+    )
+    
+    # Copy key data for quick access (avoid JOINs)
+    substage_objective = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_('SubStage Objective'),
+        help_text=_('Objective copied from substage metadata for quick access')
+    )
+    
+    substage_context = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_('SubStage Context'),
+        help_text=_('Additional context from substage (stakeholders, criteria, etc.)')
+    )
+    
+
     # Status tracking
     status = models.CharField(
         max_length=30,
@@ -120,6 +146,8 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
             models.Index(fields=['lead', 'status']),
             models.Index(fields=['target_opportunity', 'status']),
             models.Index(fields=['activities_generated']),
+            models.Index(fields=['substage', 'status']),
+            models.Index(fields=['campaign', 'substage']),
         ]
         constraints = [
             # Ensure unique account per campaign
@@ -1462,3 +1490,59 @@ class CampaignTarget(BaseModelApp, ClientScopeManager.ModelMixin):
                 'error': str(e),
                 'verification_timestamp': timezone.now().isoformat()
             }
+    
+    @property
+    def is_from_substage(self):
+        """Check if this target was generated from a substage"""
+        return self.substage is not None
+    
+    def get_substage_info(self):
+        """Get substage information for context"""
+        if not self.substage:
+            return None
+            
+        return {
+            'id': self.substage.id,
+            'name': self.substage.name,
+            'type': self.substage.substage_type,
+            'status': self.substage.status,
+            'objective': self.substage_objective,
+            'opportunity_name': self.opportunity_name,
+            'context': self.substage_context
+        }
+    
+    def copy_substage_context(self):
+        """Copy context from substage and metadata"""
+        if not self.substage:
+            return
+            
+        # Copy basic info
+        if hasattr(self.substage, 'metadata'):
+            metadata = self.substage.metadata
+            self.substage_objective = metadata.objective or ''
+            
+            # Build context dictionary
+            context = {
+                'stage_name': self.substage.stage.name,
+                'substage_type': self.substage.get_substage_type_display(),
+                'validation_criteria': metadata.validation_criteria,
+                'process_notes': metadata.process_notes,
+                'stakeholders': []
+            }
+            
+            # Add stakeholder info
+            for stakeholder in metadata.stakeholders.all():
+                context['stakeholders'].append({
+                    'id': stakeholder.id,
+                    'name': f"{stakeholder.first_name} {stakeholder.last_name}",
+                    'email': stakeholder.email,
+                    'title': stakeholder.title
+                })
+            
+            self.substage_context = context
+            
+        # Copy opportunity name
+        if self.substage.stage and hasattr(self.substage.stage, 'opportunity_pipeline'):
+            pipeline = self.substage.stage.opportunity_pipeline
+            if pipeline and pipeline.opportunity:
+                self.opportunity_name = pipeline.opportunity.title

@@ -15,12 +15,12 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
     """
     
     # Champs calculés (read-only)
-    is_overdue = serializers.BooleanField(read_only=True)
-    days_overdue = serializers.IntegerField(read_only=True)
-    progress_percentage = serializers.DecimalField(read_only=True, max_digits=5, decimal_places=2)
-    can_be_deleted = serializers.BooleanField(read_only=True)
-    activities_count = serializers.IntegerField(read_only=True)
-    chasing_active = serializers.BooleanField(read_only=True)
+    is_overdue = serializers.SerializerMethodField(read_only=True)
+    days_overdue = serializers.SerializerMethodField(read_only=True)
+    progress_percentage = serializers.SerializerMethodField(read_only=True)
+    can_be_deleted = serializers.SerializerMethodField(read_only=True)
+    activities_count = serializers.SerializerMethodField(read_only=True)
+    chasing_active = serializers.SerializerMethodField(read_only=True)
     
     # Champs pour les relations
     stage_name = serializers.CharField(source='stage.name', read_only=True)
@@ -28,65 +28,87 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     
     # Champs pour les durées calculées
-    actual_duration = serializers.IntegerField(read_only=True)
-    remaining_duration = serializers.IntegerField(read_only=True)
+    actual_duration = serializers.SerializerMethodField(read_only=True)
+    remaining_duration = serializers.SerializerMethodField(read_only=True)
+
+    # Follow-up Campaign Status Fields
+    in_followup_campaign = serializers.SerializerMethodField(read_only=True)
+    followup_campaign_info = serializers.SerializerMethodField(read_only=True)
+    can_add_to_followup = serializers.SerializerMethodField(read_only=True)
+    stakeholder_count = serializers.SerializerMethodField(read_only=True)
+    
+    # Expected completion date calculé
+    expected_completion_date = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = PipelineSubStage
         fields = [
-            'id',
-            'stage',
-            'stage_name',
-            'name',
-            'description',
-            'order',
-            'substage_type',
-            'substage_type_display',
-            'status',
-            'status_display',
+            # Champs de base du modèle (noms corrigés)
+            'id', 'name', 'description', 'order',
+            'substage_type', 'substage_type_display',
+            'status', 'status_display',
             'is_active',
-            'estimated_duration',
-            'actual_duration',
-            'remaining_duration',
-            'started_at',
-            'completed_at',
+            'estimated_duration_days',  # Corrigé
+            'start_date', 'end_date',
+            'actual_start_date', 'actual_end_date',  # Corrigés
+            'notes',
+            
+            # Relations
+            'stage', 'stage_name',
+            'previous_substage', 'next_substage',
+            
+            # Champs calculés
             'expected_completion_date',
-            'is_overdue',
-            'days_overdue',
+            'actual_duration', 'remaining_duration',
+            'is_overdue', 'days_overdue',
             'progress_percentage',
-            'can_be_deleted',
-            'activities_count',
+            'can_be_deleted', 'activities_count',
             'chasing_active',
-            'created_at',
-            'updated_at'
+            
+            # Follow-up campaign fields
+            'in_followup_campaign', 'followup_campaign_info',
+            'can_add_to_followup', 'stakeholder_count',
+            
+            # Timestamps
+            'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id',
-            'stage_name',
-            'substage_type_display',
-            'status_display',
-            'actual_duration',
-            'remaining_duration',
-            'is_overdue',
-            'days_overdue',
-            'progress_percentage',
-            'can_be_deleted',
-            'activities_count',
-            'chasing_active',
-            'created_at',
-            'updated_at'
+            'id', 'stage_name', 'substage_type_display', 'status_display',
+            'actual_duration', 'remaining_duration', 'expected_completion_date',
+            'is_overdue', 'days_overdue', 'progress_percentage',
+            'can_be_deleted', 'activities_count',
+            'in_followup_campaign', 'followup_campaign_info',
+            'can_add_to_followup', 'stakeholder_count',
+            'chasing_active', 'created_at', 'updated_at',
+            'previous_substage', 'next_substage'
         ]
+    
+    def get_expected_completion_date(self, obj):
+        """Calcule la date de fin prévue basée sur start_date + estimated_duration_days"""
+        try:
+            if obj.start_date and obj.estimated_duration_days:
+                from datetime import timedelta
+                return obj.start_date + timedelta(days=obj.estimated_duration_days)
+            elif obj.actual_start_date and obj.estimated_duration_days:
+                from datetime import timedelta
+                return obj.actual_start_date.date() + timedelta(days=obj.estimated_duration_days)
+            return obj.end_date
+        except Exception:
+            return obj.end_date
     
     def get_is_overdue(self, obj):
         """Vérifie si la sous-étape est en retard"""
-        if obj.expected_completion_date and obj.status != PipelineStagesConfig.SubStageStatus.COMPLETED:
-            return timezone.now().date() > obj.expected_completion_date
+        expected_date = self.get_expected_completion_date(obj)
+        if expected_date and obj.status != PipelineStagesConfig.SubStageStatus.COMPLETED:
+            return timezone.now().date() > expected_date
         return False
     
     def get_days_overdue(self, obj):
         """Calcule le nombre de jours de retard"""
         if self.get_is_overdue(obj):
-            return (timezone.now().date() - obj.expected_completion_date).days
+            expected_date = self.get_expected_completion_date(obj)
+            if expected_date:
+                return (timezone.now().date() - expected_date).days
         return 0
     
     def get_progress_percentage(self, obj):
@@ -94,9 +116,9 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
         if obj.status == PipelineStagesConfig.SubStageStatus.COMPLETED:
             return 100.0
         elif obj.status == PipelineStagesConfig.SubStageStatus.IN_PROGRESS:
-            if obj.started_at and obj.estimated_duration:
-                days_elapsed = (timezone.now().date() - obj.started_at.date()).days
-                return min(round((days_elapsed / obj.estimated_duration) * 100, 2), 90.0)
+            if obj.actual_start_date and obj.estimated_duration_days:
+                days_elapsed = (timezone.now().date() - obj.actual_start_date.date()).days
+                return min(round((days_elapsed / obj.estimated_duration_days) * 100, 2), 90.0)
             return 25.0
         elif obj.status == PipelineStagesConfig.SubStageStatus.BLOCKED:
             return 0.0
@@ -105,7 +127,7 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
     def get_can_be_deleted(self, obj):
         """Vérifie si la sous-étape peut être supprimée"""
         # Ne peut pas être supprimée si elle a des activités liées
-        if hasattr(obj, 'activities') and obj.activities.exists():
+        if hasattr(obj, 'direct_activities') and obj.direct_activities.exists():
             return False
         
         # Ne peut pas être supprimée si elle est en cours ou terminée
@@ -117,21 +139,16 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
     
     def get_activities_count(self, obj):
         """Nombre d'activités liées à cette sous-étape"""
-        if hasattr(obj, 'activities'):
-            return obj.activities.count()
+        if hasattr(obj, 'direct_activities'):
+            return obj.direct_activities.count()
         return 0
-    
-    def get_chasing_active(self, obj):
-        """Vérifie si le chasing automatique est actif"""
-        # À implémenter quand le système de chasing sera créé
-        return False
     
     def get_actual_duration(self, obj):
         """Durée réelle en jours"""
-        if obj.started_at and obj.completed_at:
-            return (obj.completed_at.date() - obj.started_at.date()).days
-        elif obj.started_at:
-            return (timezone.now().date() - obj.started_at.date()).days
+        if obj.actual_start_date and obj.actual_end_date:
+            return (obj.actual_end_date.date() - obj.actual_start_date.date()).days
+        elif obj.actual_start_date:
+            return (timezone.now().date() - obj.actual_start_date.date()).days
         return 0
     
     def get_remaining_duration(self, obj):
@@ -139,11 +156,90 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
         if obj.status == PipelineStagesConfig.SubStageStatus.COMPLETED:
             return 0
         
-        if obj.estimated_duration and obj.started_at:
-            days_elapsed = (timezone.now().date() - obj.started_at.date()).days
-            return max(0, obj.estimated_duration - days_elapsed)
+        if obj.estimated_duration_days and obj.actual_start_date:
+            days_elapsed = (timezone.now().date() - obj.actual_start_date.date()).days
+            return max(0, obj.estimated_duration_days - days_elapsed)
         
-        return obj.estimated_duration or 0
+        return obj.estimated_duration_days or 0
+    
+    def get_in_followup_campaign(self, obj):
+        """Check if this substage is already in a follow-up campaign"""
+        try:
+            # Check if there are any campaign targets linked to this substage
+            from apps.campaign.models import CampaignTarget, Campaign
+            return CampaignTarget.objects.filter(
+                substage=obj,
+                campaign__campaign_type=Campaign.CampaignType.FOLLOW_UP,
+                campaign__client_id=obj.client_id
+            ).exists()
+        except Exception:
+            return False
+    
+    def get_followup_campaign_info(self, obj):
+        """Get information about the follow-up campaign if this substage is in one"""
+        try:
+            from apps.campaign.models import CampaignTarget, Campaign
+            
+            campaign_target = CampaignTarget.objects.filter(
+                substage=obj,
+                campaign__campaign_type=Campaign.CampaignType.FOLLOW_UP,
+                campaign__client_id=obj.client_id
+            ).select_related('campaign').first()
+            
+            if campaign_target:
+                return {
+                    'campaign_id': campaign_target.campaign.id,
+                    'campaign_name': campaign_target.campaign.name,
+                    'target_id': campaign_target.id,
+                    'target_status': campaign_target.status,
+                    'added_at': campaign_target.created_at,
+                    'contact_name': f"{campaign_target.contact.first_name} {campaign_target.contact.last_name}" if campaign_target.contact else None
+                }
+            return None
+        except Exception:
+            return None
+    
+    def get_can_add_to_followup(self, obj):
+        """Check if this substage can be added to follow-up campaign"""
+        # Can add if:
+        # 1. Not already in follow-up campaign
+        # 2. Has stakeholders (metadata exists)
+        # 3. Is not completed
+        # 4. Has an opportunity pipeline
+        
+        try:
+            # Check if already in follow-up
+            if self.get_in_followup_campaign(obj):
+                return False
+            
+            # Check if completed
+            if obj.status == PipelineStagesConfig.SubStageStatus.COMPLETED:
+                return False
+            
+            # Check if has stakeholders
+            if hasattr(obj, 'metadata') and obj.metadata.stakeholders.exists():
+                return True
+            
+            # Check if has opportunity pipeline
+            if obj.stage and hasattr(obj.stage, 'opportunity_pipeline'):
+                return True
+            
+            return False
+        except Exception:
+            return False
+    
+    def get_stakeholder_count(self, obj):
+        """Get number of stakeholders for this substage"""
+        try:
+            if hasattr(obj, 'metadata'):
+                return obj.metadata.stakeholders.count()
+            return 0
+        except Exception:
+            return 0
+    
+    def get_chasing_active(self, obj):
+        """Check if chasing is active for this substage"""
+        return self.get_in_followup_campaign(obj)
     
     def validate_name(self, value):
         """Validation du nom de la sous-étape"""
@@ -180,19 +276,19 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
             )
         return value
     
-    def validate_estimated_duration(self, value):
+    def validate_estimated_duration_days(self, value):
         """Validation de la durée estimée"""
         if value is not None and value <= 0:
             raise StandardizedValidationError(
                 OpportunityErrorMessages.SUBSTAGE_DURATION_INVALID,
-                field_name="estimated_duration"
+                field_name="estimated_duration_days"
             )
         
         # Validation des limites raisonnables
         if value is not None and value > 365:
             raise StandardizedValidationError(
                 "Estimated duration cannot exceed 365 days",
-                field_name="estimated_duration"
+                field_name="estimated_duration_days"
             )
         
         return value
@@ -217,29 +313,30 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
                 )
         return value
     
-    def validate_started_at(self, value):
+    def validate_actual_start_date(self, value):
         """Validation de la date de début"""
         if value and value > timezone.now():
             raise StandardizedValidationError(
                 "Start date cannot be in the future",
-                field_name="started_at"
+                field_name="actual_start_date"
             )
         return value
     
-    def validate_completed_at(self, value):
+    def validate_actual_end_date(self, value):
         """Validation de la date de fin"""
         if value and value > timezone.now():
             raise StandardizedValidationError(
                 "Completion date cannot be in the future",
-                field_name="completed_at"
+                field_name="actual_end_date"
             )
         return value
     
-    def validate_expected_completion_date(self, value):
+    def validate_start_date(self, value):
+        """Validation de la date de début prévue"""
+        return value
+    
+    def validate_end_date(self, value):
         """Validation de la date de fin prévue"""
-        if value and value < timezone.now().date():
-            # Permettre les dates passées mais avertir
-            pass
         return value
     
     def validate(self, data):
@@ -251,9 +348,9 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
         name = data.get('name')
         order = data.get('order')
         substage_type = data.get('substage_type', getattr(self.instance, 'substage_type', None))
-        estimated_duration = data.get('estimated_duration', getattr(self.instance, 'estimated_duration', None))
-        started_at = data.get('started_at', getattr(self.instance, 'started_at', None))
-        completed_at = data.get('completed_at', getattr(self.instance, 'completed_at', None))
+        estimated_duration_days = data.get('estimated_duration_days', getattr(self.instance, 'estimated_duration_days', None))
+        actual_start_date = data.get('actual_start_date', getattr(self.instance, 'actual_start_date', None))
+        actual_end_date = data.get('actual_end_date', getattr(self.instance, 'actual_end_date', None))
         status = data.get('status', getattr(self.instance, 'status', None))
         
         # Validation de l'unicité du nom dans l'étape
@@ -277,18 +374,18 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
         # Validation des règles métier selon le type
         if substage_type == PipelineStagesConfig.SubStageType.PROCESS_INTERNE_CLIENT:
             # Les processus internes clients doivent avoir une durée estimée
-            if not estimated_duration:
+            if not estimated_duration_days:
                 raise StandardizedValidationError(
                     "Internal client processes must have an estimated duration",
-                    field_name="estimated_duration"
+                    field_name="estimated_duration_days"
                 )
         
         # Validation des dates
-        if started_at and completed_at:
-            if started_at >= completed_at:
+        if actual_start_date and actual_end_date:
+            if actual_start_date >= actual_end_date:
                 raise StandardizedValidationError(
                     OpportunityErrorMessages.SUBSTAGE_DATE_INVALID,
-                    field_name="completed_at"
+                    field_name="actual_end_date"
                 )
         
         # Validation des transitions d'état
@@ -298,16 +395,16 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
                 self._validate_status_transition(current_status, status)
         
         # Validation de la cohérence statut/dates
-        if status == PipelineStagesConfig.SubStageStatus.COMPLETED and not completed_at:
+        if status == PipelineStagesConfig.SubStageStatus.COMPLETED and not actual_end_date:
             raise StandardizedValidationError(
                 "Completed substages must have a completion date",
-                field_name="completed_at"
+                field_name="actual_end_date"
             )
         
-        if status == PipelineStagesConfig.SubStageStatus.IN_PROGRESS and not started_at:
+        if status == PipelineStagesConfig.SubStageStatus.IN_PROGRESS and not actual_start_date:
             raise StandardizedValidationError(
                 "In-progress substages must have a start date",
-                field_name="started_at"
+                field_name="actual_start_date"
             )
         
         return data
@@ -368,7 +465,7 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
             # Vérifier si la sous-étape peut être modifiée
             if instance.status == PipelineStagesConfig.SubStageStatus.COMPLETED:
                 # Certaines modifications sont interdites pour les sous-étapes terminées
-                restricted_fields = ['stage', 'substage_type', 'estimated_duration']
+                restricted_fields = ['stage', 'substage_type', 'estimated_duration_days']
                 for field in restricted_fields:
                     if field in validated_data:
                         raise StandardizedValidationError(

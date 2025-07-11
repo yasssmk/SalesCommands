@@ -65,6 +65,36 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Activity Owner')
     )
     
+    objectives = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_('Activity Objectives'),
+        help_text=_('Specific objectives or goals for this activity (e.g., from substage)')
+    )
+    
+    context_info = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_('Context Information'),
+        help_text=_('Additional context information (substage details, stakeholder info, etc.)')
+    )
+    
+    substage_name = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name=_('SubStage Name'),
+        help_text=_('Name of the related substage for quick reference')
+    )
+    
+    call_to_action = models.CharField(
+        max_length=500,
+        blank=True,
+        null=True,
+        verbose_name=_('Call to Action'),
+        help_text=_('Clear action the salesperson should take (e.g., "Ask about legal review timeline")')
+    )
+
     # Scheduling information
     scheduled_start = models.DateTimeField(
         null=True,
@@ -153,6 +183,8 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
             models.Index(fields=['status', 'activity_type', 'owner'], name='activity_filter_idx'),
             models.Index(fields=['pipeline_substage'], name='activity_substage_idx'),
             models.Index(fields=['pipeline_substage', 'status'], name='activity_substage_status_idx'),
+            models.Index(fields=['pipeline_substage', 'status']),
+            models.Index(fields=['substage_name']),
         ]
 
     def __str__(self):
@@ -292,3 +324,98 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
                 link_type='PAST_ACTIVITY',
                 user=self.user
             )
+    
+    def set_substage_context(self, substage, campaign_target=None):
+        """Set context from substage and campaign target"""
+        if not substage:
+            return
+            
+        # Set basic substage info
+        self.substage_name = substage.name
+        
+        # Build objectives
+        objectives_parts = []
+        if hasattr(substage, 'metadata') and substage.metadata.objective:
+            objectives_parts.append(f"SubStage Goal: {substage.metadata.objective}")
+        
+        # Add stage context
+        if substage.stage:
+            objectives_parts.append(f"Stage: {substage.stage.name}")
+            
+        # Add opportunity context
+        if substage.stage and hasattr(substage.stage, 'opportunity_pipeline'):
+            pipeline = substage.stage.opportunity_pipeline
+            if pipeline and pipeline.opportunity:
+                objectives_parts.append(f"Opportunity: {pipeline.opportunity.title}")
+        
+        self.objectives = " | ".join(objectives_parts)
+        
+        # Build context info
+        context = {
+            'substage_id': substage.id,
+            'substage_type': substage.get_substage_type_display(),
+            'stage_name': substage.stage.name if substage.stage else None,
+            'stakeholders': [],
+            'validation_criteria': []
+        }
+        
+        # Add stakeholder info from metadata
+        if hasattr(substage, 'metadata'):
+            metadata = substage.metadata
+            
+            # Add stakeholders
+            for stakeholder in metadata.stakeholders.all():
+                context['stakeholders'].append({
+                    'id': stakeholder.id,
+                    'name': f"{stakeholder.first_name} {stakeholder.last_name}",
+                    'title': stakeholder.title,
+                    'email': stakeholder.email
+                })
+            
+            # Add validation criteria
+            if metadata.validation_criteria:
+                context['validation_criteria'] = metadata.validation_criteria
+                
+            # Add process notes
+            if metadata.process_notes:
+                context['process_notes'] = metadata.process_notes
+        
+        # Add campaign target context if provided
+        if campaign_target:
+            context['campaign_target_id'] = campaign_target.id
+            context['campaign_id'] = campaign_target.campaign.id
+            context['campaign_name'] = campaign_target.campaign.name
+            
+        self.context_info = context
+        
+        # Set call to action based on substage type
+        self.set_call_to_action_from_substage(substage)
+    
+    def set_call_to_action_from_substage(self, substage):
+        """Generate appropriate call-to-action based on substage type"""
+        if not substage:
+            return
+            
+        stage_name = substage.stage.name if substage.stage else "process"
+        substage_name = substage.name
+        
+        if substage.substage_type == 'INTERACTION_CLIENT':
+            self.call_to_action = f"Schedule meeting to discuss {substage_name} for {stage_name}"
+        elif substage.substage_type == 'PROCESS_INTERNE_CLIENT':
+            self.call_to_action = f"Follow up on {substage_name} status - ask for timeline update"
+        elif substage.substage_type == 'ACTION_INTERNE':
+            self.call_to_action = f"Update client on progress of {substage_name}"
+        else:
+            self.call_to_action = f"Follow up on {substage_name} for {stage_name}"
+    
+    def get_context_summary(self):
+        """Get a summary of context information for display"""
+        summary = {
+            'has_substage': bool(self.substage_name),
+            'substage_name': self.substage_name,
+            'objectives': self.objectives,
+            'call_to_action': self.call_to_action,
+            'stakeholder_count': len(self.context_info.get('stakeholders', [])) if self.context_info else 0
+        }
+        
+        return summary

@@ -265,12 +265,17 @@ class SerializerConfig:
         'target_opportunity', 'account_id', 'contact_id', 'lead_id',
         'target_opportunity_id', 'target_type', 'target_name', 'target_details',
         'status', 'status_display', 'activities_generated', 'callback_date',
-        'no_answer_count', 'notes', 'linked_opportunity', 'created_at', 'updated_at'
+        'no_answer_count', 'notes', 'linked_opportunity', 'created_at', 'updated_at',
+        'substage_id', 'substage_name', 'substage_type_display','substage_status',
+        'substage_objective','substage_context','opportunity_name','is_from_substage',
+        'substage_info','has_context','stakeholder_count','context_summary'
     ])
     
     target_read_only_fields: List[str] = field(default_factory=lambda: [
         'target_type', 'target_name', 'target_details', 'status_display',
-        'created_at', 'updated_at'
+        'created_at', 'updated_at','substage_name','substage_type_display', 
+        'substage_status','is_from_substage','substage_info','has_context',
+        'stakeholder_count','context_summary'
     ])
     
     target_list_fields: List[str] = field(default_factory=lambda: [

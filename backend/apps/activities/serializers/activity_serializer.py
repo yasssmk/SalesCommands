@@ -115,18 +115,67 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
     previous_activity_info = serializers.SerializerMethodField(read_only=True)
     next_activity_info = serializers.SerializerMethodField(read_only=True)
+
+    # Context Display Fields
+    has_context = serializers.SerializerMethodField(read_only=True)
+    has_substage = serializers.SerializerMethodField(read_only=True)
+    context_summary = serializers.SerializerMethodField(read_only=True)
+    stakeholder_info = serializers.SerializerMethodField(read_only=True)
+    substage_details = serializers.SerializerMethodField(read_only=True)
+    
+    # Pipeline context
+    pipeline_substage_name = serializers.CharField(source='pipeline_substage.name', read_only=True)
+    pipeline_stage_name = serializers.CharField(source='pipeline_substage.stage.name', read_only=True)
+    opportunity_name = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Activity
         fields = [
+            # Champs de base du modèle
             'id', 'title', 'activity_type', 'activity_type_display',
-            'description', 'account', 'account_name', 'contacts', 'contact_ids',
-            'contact_names', 'owner_id', 'owner_email', 'owner_name',
-            'scheduled_end', 'status', 'status_display',  'result', 'notes', 'previous_activity_info', 'next_activity_info',
-            'contact_validation_info','completed_at','outcome_notes', 'opportunity', 'campaign_info', 'sequence_info',
+            'description', 'status', 'status_display', 
+            'scheduled_start', 'scheduled_end', 'completed_at',
+            'outcome_notes', 'objectives', 'context_info', 
+            'substage_name', 'call_to_action',
+            
+            # Relations
+            'account', 'account_name', 
+            'contacts', 'contact_ids', 'contact_names',
+            'owner_id', 'owner_email', 'owner_name',
+            'opportunity',
+            'pipeline_substage',
+            
+            # Informations de séquence et campagne
+            'campaign_info', 'sequence_info',
+            
+            # Résultats et contexte (SerializerMethodField)
+            'result', 'notes', 
+            'previous_activity_info', 'next_activity_info',
+            'contact_validation_info',
+            
+            # Contexte et métadonnées (SerializerMethodField)
+            'has_context', 'has_substage', 'context_summary',
+            'stakeholder_info', 'substage_details',
+            
+            # Informations pipeline (SerializerMethodField)
+            'pipeline_substage_name', 'pipeline_stage_name', 'opportunity_name',
+            
+            # Timestamps
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'completed_at']
+        
+        read_only_fields = [
+            # Champs auto-générés
+            'id', 'created_at', 'updated_at', 'completed_at',
+            
+            # SerializerMethodField (lecture seule)
+            'activity_type_display', 'status_display', 'account_name',
+            'contact_names', 'owner_id', 'owner_email', 'owner_name',
+            'result', 'notes', 'previous_activity_info', 'next_activity_info',
+            'contact_validation_info', 'has_context', 'has_substage', 
+            'context_summary', 'stakeholder_info', 'substage_details',
+            'pipeline_substage_name', 'pipeline_stage_name', 'opportunity_name'
+        ]
     
     def get_activity_type_display(self, obj):
         """Get the display name for activity type"""
@@ -138,52 +187,72 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     
     def get_contact_names(self, obj):
         """Get names of associated contacts"""
-        return [f"{c.first_name} {c.last_name}" for c in obj.contacts.all()]
+        return [c.full_name for c in obj.contacts.all()]
     
     def get_owner_name(self, obj):
         """
         Get owner full name using get_full_name() method
-        ✅ CORRIGÉ : Gestion d'erreur selon les standards de l'application
+        ✅ CORRIGÉ : Utilise la méthode du modèle User
         """
         if not obj.owner:
             return None
         
         try:
-            # ✅ LOGIQUE SIMPLIFIÉE : Construction robuste du nom
-            owner = obj.owner
-            
-            # Construire le nom à partir de first_name et last_name
-            name_parts = []
-            if hasattr(owner, 'first_name') and owner.first_name:
-                name_parts.append(owner.first_name.strip())
-            if hasattr(owner, 'last_name') and owner.last_name:
-                name_parts.append(owner.last_name.strip())
-            
-            # Si on a au moins un nom, l'utiliser
-            if name_parts:
-                return ' '.join(name_parts)
-            
-            # ✅ FALLBACK STANDARD : Si pas de nom, essayer get_full_name() si disponible
-            if hasattr(owner, 'get_full_name'):
-                try:
-                    full_name = owner.get_full_name()
-                    # Éviter de retourner l'email si get_full_name() fait un fallback
-                    if full_name and full_name != owner.email:
-                        return full_name
-                except Exception:
-                    # Si get_full_name() échoue, continuer vers le fallback final
-                    pass
-            
-            # ✅ FALLBACK FINAL : Retourner l'email si pas d'autre option
-            return owner.email
+            # Utiliser la méthode get_full_name() du modèle User
+            full_name = obj.owner.get_full_name()
+            return full_name if full_name else obj.owner.email
             
         except Exception as e:
-            # ✅ GESTION D'ERREUR STANDARDISÉE : Lever une exception appropriée
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(
-                    detail=f"Failed to get owner name for activity {obj.id}: {str(e)}"
-                )
-            )
+            # Gestion d'erreur simplifiée pour MVP
+            return obj.owner.email if obj.owner else None
+        
+    
+    def get_has_context(self, obj):
+        """Check if activity has context information"""
+        return bool(obj.context_info) or bool(obj.objectives) or bool(obj.substage_name)
+    
+    def get_has_substage(self, obj):
+        """Check if activity is linked to a substage"""
+        return bool(obj.pipeline_substage) or bool(obj.substage_name)
+    
+    def get_context_summary(self, obj):
+        """Get a summary of context information for display"""
+        return obj.get_context_summary()
+    
+    def get_stakeholder_info(self, obj):
+        """Get stakeholder information from context"""
+        if obj.context_info and 'stakeholders' in obj.context_info:
+            return obj.context_info['stakeholders']
+        return []
+    
+    def get_substage_details(self, obj):
+        """Get detailed substage information"""
+        if not obj.context_info:
+            return None
+            
+        return {
+            'substage_id': obj.context_info.get('substage_id'),
+            'substage_type': obj.context_info.get('substage_type'),
+            'stage_name': obj.context_info.get('stage_name'),
+            'validation_criteria': obj.context_info.get('validation_criteria', []),
+            'process_notes': obj.context_info.get('process_notes'),
+            'campaign_info': {
+                'campaign_id': obj.context_info.get('campaign_id'),
+                'campaign_name': obj.context_info.get('campaign_name'),
+                'campaign_target_id': obj.context_info.get('campaign_target_id')
+            } if obj.context_info.get('campaign_id') else None
+        }
+    
+    def get_opportunity_name(self, obj):
+        """Get opportunity name from pipeline substage"""
+        try:
+            if obj.pipeline_substage and obj.pipeline_substage.stage:
+                pipeline = obj.pipeline_substage.stage.opportunity_pipeline
+                if pipeline and pipeline.opportunity:
+                    return pipeline.opportunity.title
+            return None
+        except Exception:
+            return None
     
     
     def validate(self, data):
@@ -224,10 +293,12 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         
         # Add contacts if provided
         if contact_ids:
+            # Utiliser la méthode ClientScope correcte
+            client_id = self._get_client_id_from_context()
             contacts = Contact.objects.filter(
                 id__in=contact_ids,
                 account=activity.account,
-                client_id=self.get_client_id()
+                client_id=client_id
             )
             activity.contacts.set(contacts)
         
