@@ -1193,6 +1193,8 @@ class CampaignResultService:
         """
         return cls._cancel_contact_sequence(activity)
     
+    
+    
     @classmethod
     def update_campaign_target_status_for_business_result(cls, campaign_target: CampaignTarget, 
                                                         business_result_type: str, user=None, 

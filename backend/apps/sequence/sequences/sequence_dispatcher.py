@@ -3,6 +3,7 @@ from typing import Dict, Type, Optional, Tuple
 from .base_sequence import Sequence
 from .chasing_sequence import ChasingSequence
 from .renewal_sequence import RenewalSequence
+from .follow_up_sequence import FollowUpSequence  # Assuming this is implemented
 
 
 class SequenceDispatcher:
@@ -20,14 +21,14 @@ class SequenceDispatcher:
     SEQUENCE_CHOICES = [
         (CHASING, 'Chasing'),
         (RENEWAL, 'Contract Renewal'),
-        (FOLLOW_UP, 'Opportunity Follow-up'),
+        (FOLLOW_UP, 'Follow-up'),
     ]
     
     # Mapping of sequence types to their implementing classes
     SEQUENCE_CLASS_MAP = {
         CHASING: ChasingSequence,
         RENEWAL: RenewalSequence,
-        # FOLLOW_UP: FollowUpSequence,  # To be implemented
+        FOLLOW_UP: FollowUpSequence
     }
     
     @classmethod

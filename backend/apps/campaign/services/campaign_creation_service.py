@@ -54,6 +54,19 @@ class CampaignCreationService:
                 client_id = campaign_data.get('client_id')
                 if not client_id:
                     raise StandardizedValidationError(CoreErrorMessages.CLIENT_ID_REQUIRED)
+                
+                sequence_type = campaign_data.get('sequence_type')
+                if sequence_type == 'FOLLOW_UP':
+                    existing_followup = cls._get_existing_followup_campaign(client_id)
+                    if existing_followup:
+                        # Retourner la campaign existante avec message adapté
+                        return cls._return_existing_followup_response(
+                            existing_followup,
+                            target_accounts,
+                            target_contacts,
+                            target_leads,
+                            target_opportunities
+                        )
                                 
                 # Utiliser le serializer au lieu de création directe
                 # Préparer le payload pour le serializer
@@ -634,4 +647,96 @@ class CampaignCreationService:
         except Exception as e:
             raise StandardizedValidationError(
                 f"Failed to create campaign objective: {str(e)}"
+            )
+    
+    @classmethod
+    def _get_existing_followup_campaign(cls, client_id: str) -> Optional[Campaign]:
+        """
+        Vérifie s'il existe déjà une campaign FOLLOW_UP pour ce client
+        
+        Args:
+            client_id: ID du client
+            
+        Returns:
+            Campaign existante ou None
+        """
+        try:
+            # Import local pour éviter circularité
+            from apps.campaign.models import Campaign
+            
+            return Campaign.objects.filter(
+                sequence_type='FOLLOW_UP',
+                campaign_type=Campaign.CampaignType.FOLLOW_UP,
+                client_id=client_id
+            ).first()
+            
+        except Exception:
+            return None
+    
+    @classmethod
+    def _return_existing_followup_response(cls, existing_campaign: Campaign,
+                                         target_accounts: List[int] = None,
+                                         target_contacts: List[int] = None,
+                                         target_leads: List[int] = None,
+                                         target_opportunities: List[int] = None) -> Response:
+        """
+        Retourne une réponse pour une campaign FOLLOW_UP existante
+        Avec option d'ajouter de nouveaux targets si fournis
+        
+        Args:
+            existing_campaign: Campaign FOLLOW_UP existante
+            target_accounts: Nouveaux accounts à ajouter (optionnel)
+            target_contacts: Nouveaux contacts à ajouter (optionnel)
+            target_leads: Nouveaux leads à ajouter (optionnel)
+            target_opportunities: Nouvelles opportunities à ajouter (optionnel)
+            
+        Returns:
+            Response: Réponse standardisée
+        """
+        try:
+            # Ajouter de nouveaux targets si fournis
+            new_targets_created = 0
+            if any([target_accounts, target_contacts, target_leads, target_opportunities]):
+                new_targets_created = cls._create_campaign_targets(
+                    existing_campaign, 
+                    target_accounts, 
+                    target_contacts,
+                    target_leads,
+                    target_opportunities
+                )
+            
+            # Compter les targets totaux existants
+            total_targets = existing_campaign.targets.count()
+            
+            response_data = {
+                'campaign_id': existing_campaign.id,
+                'campaign_name': existing_campaign.name,
+                'existing_campaign': True,
+                'targets_created': new_targets_created,
+                'total_targets': total_targets,
+                'campaign_type': existing_campaign.campaign_type,
+                'sequence_type': existing_campaign.sequence_type,
+                'campaign_status': existing_campaign.status,
+                'created_at': existing_campaign.created_at.isoformat()
+            }
+            
+            if new_targets_created > 0:
+                message = f"Follow-up campaign '{existing_campaign.name}' already exists. Added {new_targets_created} new targets."
+            else:
+                message = f"Follow-up campaign '{existing_campaign.name}' already exists and is ready to use."
+            
+            return StandardizedSuccessResponse.success(
+                message=message,
+                data=response_data,
+                meta={
+                    'operation': 'followup_campaign_reused',
+                    'existing_campaign': True,
+                    'new_targets_added': new_targets_created,
+                    'total_targets': total_targets
+                }
+            )
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                f"Failed to handle existing follow-up campaign: {str(e)}"
             )
