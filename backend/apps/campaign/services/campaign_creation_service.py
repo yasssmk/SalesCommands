@@ -740,3 +740,82 @@ class CampaignCreationService:
             raise StandardizedValidationError(
                 f"Failed to handle existing follow-up campaign: {str(e)}"
             )
+    
+
+    @classmethod
+    def add_contacts_to_followup_campaign(cls, campaign: Campaign, contact_ids: List[int], 
+                                         substage_context: Dict = None) -> Response:
+        """
+        Ajoute des contacts à une campaign follow-up existante
+        
+        Args:
+            campaign: Campaign follow-up existante
+            contact_ids: Liste des IDs contacts à ajouter
+            substage_context: Contexte substage pour les nouveaux targets
+            
+        Returns:
+            Response: Résultat de l'ajout des contacts
+        """
+        try:
+            # Import local pour éviter circularité
+            from .campaign_target_service import CampaignTargetService
+            
+            # Valider que c'est bien une follow-up campaign
+            if campaign.campaign_type != Campaign.CampaignType.FOLLOW_UP:
+                raise StandardizedValidationError(
+                    f"Campaign '{campaign.name}' is not a follow-up campaign"
+                )
+            
+            # Utiliser CampaignTargetService existant pour créer les targets
+            targets_created = 0
+            new_targets = []
+            
+            with transaction.atomic():
+                for contact_id in contact_ids:
+                    # Vérifier si le contact n'est pas déjà target de cette campaign
+                    existing_target = CampaignTarget.objects.filter(
+                        campaign=campaign,
+                        contact_id=contact_id
+                    ).first()
+                    
+                    if not existing_target:
+                        # Créer le nouveau target avec contexte substage
+                        target_data = {
+                            'campaign': campaign.id,
+                            'contact': contact_id,
+                            'status': CampaignTarget.Status.PENDING
+                        }
+                        
+                        if substage_context:
+                            target_data.update({
+                                'substage': substage_context.get('substage_id'),
+                                'substage_objective': substage_context.get('objective'),
+                                'substage_context': substage_context
+                            })
+                        
+                        # Utiliser le service existant
+                        target = CampaignTarget.objects.create(**target_data)
+                        new_targets.append(target)
+                        targets_created += 1
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Added {targets_created} contacts to follow-up campaign '{campaign.name}'",
+                data={
+                    'campaign_id': campaign.id,
+                    'campaign_name': campaign.name,
+                    'targets_added': targets_created,
+                    'total_targets': campaign.targets.count(),
+                    'new_target_ids': [target.id for target in new_targets]
+                },
+                meta={
+                    'operation': 'add_contacts_to_followup_campaign',
+                    'targets_created': targets_created
+                }
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                f"Failed to add contacts to follow-up campaign: {str(e)}"
+            )

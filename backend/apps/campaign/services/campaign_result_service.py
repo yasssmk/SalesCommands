@@ -1272,5 +1272,373 @@ class CampaignResultService:
             }
 
 
-    
-    
+    @classmethod
+    def cancel_substage_targets(cls, substage_id: int, client_id: str, user=None, notes: str = None) -> Response:
+        """
+        Annule toutes les séquences des targets d'un substage spécifique
+        RÉUTILISE _cancel_contact_sequence() existant
+        
+        Args:
+            substage_id: ID du substage à annuler
+            client_id: ID du client
+            user: Utilisateur effectuant l'action
+            notes: Notes optionnelles
+            
+        Returns:
+            Response: Résultat standardisé avec détails des annulations
+        """
+        try:
+            return cls._process_substage_targets(
+                substage_id=substage_id,
+                client_id=client_id,
+                action_type='cancel',
+                user=user,
+                notes=notes
+            )
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+            )
+
+    @classmethod
+    def complete_substage_targets(cls, substage_id: int, client_id: str, user=None, notes: str = None) -> Response:
+        """
+        Complète toutes les séquences des targets d'un substage spécifique
+        RÉUTILISE _cancel_contact_sequence() pour nettoyer les activités restantes
+        
+        Args:
+            substage_id: ID du substage à compléter
+            client_id: ID du client
+            user: Utilisateur effectuant l'action
+            notes: Notes optionnelles
+            
+        Returns:
+            Response: Résultat standardisé avec détails des complétions
+        """
+        try:
+            return cls._process_substage_targets(
+                substage_id=substage_id,
+                client_id=client_id,
+                action_type='complete',
+                user=user,
+                notes=notes
+            )
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+            )
+
+    @classmethod
+    def _process_substage_targets(cls, substage_id: int, client_id: str, action_type: str, 
+                                 user=None, notes: str = None) -> Response:
+        """
+        Méthode privée qui factorise la logique commune entre cancel et complete
+        
+        Args:
+            substage_id: ID du substage
+            client_id: ID du client
+            action_type: 'cancel' ou 'complete'
+            user: Utilisateur effectuant l'action
+            notes: Notes optionnelles
+            
+        Returns:
+            Response: Résultat standardisé
+        """
+        # Import local pour éviter circularité  
+        from apps.opportunities.models import PipelineSubStage
+        
+        with transaction.atomic():
+            # 1. Valider que le substage existe
+            try:
+                substage = PipelineSubStage.objects.get(id=substage_id, client_id=client_id)
+            except PipelineSubStage.DoesNotExist:
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
+                )
+            
+            # 2. Trouver tous les CampaignTarget liés à ce substage
+            targets = CampaignTarget.objects.filter(
+                substage=substage,
+                campaign__campaign_type=Campaign.CampaignType.FOLLOW_UP,
+                client_id=client_id
+            ).select_related('campaign', 'contact')
+            
+            if not targets.exists():
+                operation_verb = 'cancel' if action_type == 'cancel' else 'complete'
+                return StandardizedSuccessResponse.success(
+                    message=f"SubStage '{substage.name}' has no active follow-up targets to {operation_verb}",
+                    data={
+                        'substage_id': substage.id,
+                        'substage_name': substage.name,
+                        'targets_processed': 0,
+                        'total_activities_cancelled': 0,
+                        'target_results': []
+                    },
+                    meta={
+                        'operation': f'{action_type}_substage_targets',
+                        'targets_found': 0
+                    }
+                )
+            
+            # 3. Traiter chaque target
+            total_cancelled = 0
+            targets_updated = 0
+            target_results = []
+            target_status = CampaignTarget.Status.STOPPED if action_type == 'cancel' else CampaignTarget.Status.COMPLETED
+            
+            for target in targets:
+                # Trouver une activité active de ce target pour utiliser _cancel_contact_sequence
+                activity = Activity.objects.filter(
+                    campaign_info__campaign_target=target,
+                    status__in=[Activity.Status.PLANNED, Activity.Status.IN_PROGRESS]
+                ).first()
+                
+                cancelled_count = 0
+                target_processed = False
+                
+                if activity:
+                    # ✅ RÉUTILISER la méthode existante _cancel_contact_sequence
+                    cancelled_count = cls._cancel_contact_sequence(activity)
+                    target_processed = True
+                else:
+                    # Fallback : gérer les activités plannées directement
+                    planned_activities = Activity.objects.filter(
+                        campaign_info__campaign_target=target,
+                        status=Activity.Status.PLANNED
+                    )
+                    cancelled_count = planned_activities.count()
+                    if cancelled_count > 0:
+                        planned_activities.update(status=Activity.Status.CANCELLED)
+                        target_processed = True
+                    else:
+                        # Pas d'activités à traiter, mais on peut quand même changer le statut
+                        target_processed = True
+                
+                total_cancelled += cancelled_count
+                
+                # Mettre à jour le statut du target
+                target_status_updated = False
+                if target_processed:
+                    target.status = target_status
+                    target.save()
+                    targets_updated += 1
+                    target_status_updated = True
+                
+                target_results.append({
+                    'target_id': target.id,
+                    'contact_name': f"{target.contact.first_name} {target.contact.last_name}" if target.contact else "Unknown",
+                    'contact_email': target.contact.email if target.contact else None,
+                    'activities_cancelled': cancelled_count,
+                    'target_status_updated': target_status_updated,
+                    'target_status': target.status
+                })
+            
+            # 4. Construire la réponse selon l'action
+            action_verb = 'Cancelled' if action_type == 'cancel' else 'Completed'
+            action_past = 'stopped' if action_type == 'cancel' else 'completed'
+            
+            return StandardizedSuccessResponse.success(
+                message=f"{action_verb} substage sequences for '{substage.name}' - {targets_updated} targets {action_past}, {total_cancelled} activities cancelled",
+                data={
+                    'substage_id': substage.id,
+                    'substage_name': substage.name,
+                    'targets_processed': len(targets),
+                    'targets_updated': targets_updated,
+                    'total_activities_cancelled': total_cancelled,
+                    'target_results': target_results
+                },
+                meta={
+                    'operation': f'{action_type}_substage_targets',
+                    'targets_found': len(targets),
+                    'activities_cancelled': total_cancelled
+                }
+            )
+
+    @classmethod
+    def get_target_followup_progress(cls, target_type: str, target_id: int, client_id: str) -> Response:
+        """
+        Récupère la progression détaillée d'un target dans les campaigns follow-up
+        GÉNÉRALISÉ pour tous types de targets (substage, contact, account, lead, opportunity)
+        
+        Args:
+            target_type: Type de target ('substage', 'contact', 'account', 'lead', 'opportunity')
+            target_id: ID du target
+            client_id: ID du client
+            
+        Returns:
+            Response: Statut et progression détaillée du target
+        """
+        try:
+            # 1. Valider le type de target
+            valid_target_types = ['substage', 'contact', 'account', 'lead', 'opportunity']
+            if target_type not in valid_target_types:
+                raise StandardizedValidationError(
+                    CampaignErrorMessages.TARGET_INVALID_TYPE.format(target_type=target_type)
+                )
+            
+            # 2. Construire le filtre selon le type de target
+            filter_kwargs = {
+                'campaign__campaign_type': Campaign.CampaignType.FOLLOW_UP,
+                'client_id': client_id
+            }
+            
+            target_name = "Unknown"
+            
+            if target_type == 'substage':
+                # Import local pour éviter circularité
+                from apps.opportunities.models import PipelineSubStage
+                try:
+                    substage = PipelineSubStage.objects.get(id=target_id, client_id=client_id)
+                    target_name = substage.name
+                    filter_kwargs['substage'] = substage
+                except PipelineSubStage.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
+                    )
+            elif target_type == 'contact':
+                from apps.accounts.models import Contact
+                try:
+                    contact = Contact.objects.get(id=target_id, client_id=client_id)
+                    target_name = f"{contact.first_name} {contact.last_name}"
+                    filter_kwargs['contact'] = contact
+                except Contact.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
+                    )
+            elif target_type == 'account':
+                from apps.accounts.models import Account
+                try:
+                    account = Account.objects.get(id=target_id, client_id=client_id)
+                    target_name = account.company_name
+                    filter_kwargs['account'] = account
+                except Account.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
+                    )
+            elif target_type == 'lead':
+                from apps.leads.models import Lead
+                try:
+                    lead = Lead.objects.get(id=target_id, client_id=client_id)
+                    target_name = f"{lead.first_name} {lead.last_name}"
+                    filter_kwargs['lead'] = lead
+                except Lead.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
+                    )
+            elif target_type == 'opportunity':
+                from apps.opportunities.models import Opportunity
+                try:
+                    opportunity = Opportunity.objects.get(id=target_id, client_id=client_id)
+                    target_name = opportunity.title
+                    filter_kwargs['target_opportunity'] = opportunity
+                except Opportunity.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
+                    )
+            
+            # 3. Trouver tous les CampaignTarget correspondants
+            targets = CampaignTarget.objects.filter(**filter_kwargs).select_related('campaign', 'contact')
+            
+            if not targets.exists():
+                return StandardizedSuccessResponse.success(
+                    message=f"{target_type.title()} '{target_name}' is not in any follow-up campaign",
+                    data={
+                        'target_type': target_type,
+                        'target_id': target_id,
+                        'target_name': target_name,
+                        'in_followup_campaign': False,
+                        'progress_percentage': 0,
+                        'targets': []
+                    },
+                    meta={
+                        'operation': 'get_target_followup_progress',
+                        'targets_found': 0
+                    }
+                )
+            
+            # 4. Calculer la progression pour chaque target
+            campaign = targets.first().campaign
+            targets_status = []
+            total_progress = 0
+            
+            for target in targets:
+                # Compter les activités pour ce target
+                all_activities = Activity.objects.filter(campaign_info__campaign_target=target)
+                completed_activities = all_activities.filter(status=Activity.Status.COMPLETED)
+                planned_activities = all_activities.filter(status=Activity.Status.PLANNED)
+                
+                # Calculer le pourcentage de progression
+                total_activities_count = all_activities.count()
+                completed_count = completed_activities.count()
+                progress_percentage = (completed_count / total_activities_count * 100) if total_activities_count > 0 else 0
+                
+                total_progress += progress_percentage
+                
+                # Prochaine activité et dernière activité
+                next_activity = planned_activities.order_by('scheduled_date').first()
+                last_activity = completed_activities.order_by('-completed_at').first()
+                
+                # Déterminer le nom du contact selon le type de target
+                contact_name = "Unknown"
+                contact_email = None
+                if target.contact:
+                    contact_name = f"{target.contact.first_name} {target.contact.last_name}"
+                    contact_email = target.contact.email
+                elif target_type == 'lead' and target.lead:
+                    contact_name = f"{target.lead.first_name} {target.lead.last_name}"
+                    contact_email = target.lead.email
+                
+                targets_status.append({
+                    'target_id': target.id,
+                    'contact_name': contact_name,
+                    'contact_email': contact_email,
+                    'target_status': target.status,
+                    'progress_percentage': round(progress_percentage, 1),
+                    'total_activities': total_activities_count,
+                    'completed_activities': completed_count,
+                    'remaining_activities': planned_activities.count(),
+                    'next_activity': {
+                        'id': next_activity.id,
+                        'type': next_activity.activity_type,
+                        'scheduled_date': next_activity.scheduled_date.isoformat() if next_activity.scheduled_date else None
+                    } if next_activity else None,
+                    'last_activity': {
+                        'id': last_activity.id,
+                        'type': last_activity.activity_type,
+                        'completed_at': last_activity.completed_at.isoformat() if last_activity.completed_at else None
+                    } if last_activity else None
+                })
+            
+            # 5. Calculer la progression moyenne
+            average_progress = total_progress / len(targets) if targets else 0
+            
+            return StandardizedSuccessResponse.success(
+                message=f"Retrieved {target_type} '{target_name}' follow-up progress",
+                data={
+                    'target_type': target_type,
+                    'target_id': target_id,
+                    'target_name': target_name,
+                    'in_followup_campaign': True,
+                    'campaign_id': campaign.id,
+                    'campaign_name': campaign.name,
+                    'progress_percentage': round(average_progress, 1),
+                    'targets_count': len(targets),
+                    'targets': targets_status
+                },
+                meta={
+                    'operation': 'get_target_followup_progress',
+                    'targets_found': len(targets),
+                    'average_progress': round(average_progress, 1)
+                }
+            )
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CampaignErrorMessages.RESULT_PROCESSING_FAILED.format(reason=str(e))
+            )
