@@ -10,6 +10,12 @@ class PipelineStagesConfig:
     """
     
     # ========== CONSTANTES STATUS ET TYPES ==========
+
+    class TemplateType(models.TextChoices):
+        DEFAULT = 'DEFAULT', _('Default')
+        CUSTOM = 'CUSTOM', _('Custom')
+        RENEWAL = 'RENEWAL', _('Renewal')
+
     
     class StageStatus(models.TextChoices):
         ACTIVE = 'ACTIVE', _('Active')

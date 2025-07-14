@@ -5,13 +5,39 @@ from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, OpportunityErrorMessages
 from apps.opportunities.models import PipelineTemplate
+from apps.opportunities.config.pipeline_stages import PipelineStagesConfig
 
 
 class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Serializer pour les templates de pipeline avec validation d'unicité
     """
+    name = serializers.CharField(
+        max_length=200,
+        required=False,
+        allow_blank=True,
+        error_messages={
+            'max_length': CoreErrorMessages.INVALID_FIELD.format(field='Template Name cannot exceed 200 characters')
+        }
+    )
     
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        error_messages={
+            'max_length': CoreErrorMessages.INVALID_FIELD.format(field='Description cannot exceed 1000 characters')
+        }
+    )
+    
+    template_type = serializers.ChoiceField(
+        choices=PipelineStagesConfig.TemplateType.choices,
+        default=PipelineStagesConfig.TemplateType.DEFAULT,
+        error_messages={
+            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Template Type'),
+            'invalid_choice': 'Invalid template type. Choose from: DEFAULT, CUSTOM, RENEWAL'
+        }
+    )
+
     # Champs calculés (read-only)
     stages_count = serializers.IntegerField(read_only=True)
     is_in_use = serializers.BooleanField(read_only=True)
@@ -24,7 +50,7 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
             'id',
             'name',
             'description',
-            'order',
+            'template_type',
             'is_active',
             'is_default',
             'stages_count',
@@ -63,6 +89,7 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
     
     def validate_name(self, value):
         """Validation de l'unicité du nom dans le client"""
+        
         if not value or not value.strip():
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD,
@@ -95,12 +122,12 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
         
         return value
     
-    def validate_order(self, value):
-        """Validation de l'ordre"""
-        if value is not None and value < 0:
+    def validate_template_type(self, value):
+        """Validation du type de template"""
+        if value not in [choice[0] for choice in PipelineStagesConfig.TemplateType.choices]:
             raise StandardizedValidationError(
-                "Order must be a positive number",
-                field_name="order"
+                f"Invalid template type '{value}'. Available types: {', '.join([choice[0] for choice in PipelineStagesConfig.TemplateType.choices])}",
+                field_name="template_type"
             )
         return value
     
@@ -108,6 +135,8 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
         """Validation du statut par défaut"""
         if value is True:
             client_id = self._get_client_id_from_context()
+
+            template_type = self.initial_data.get('template_type', PipelineStagesConfig.TemplateType.DEFAULT)
             
             # Vérifier qu'il n'y a pas déjà un template par défaut
             existing_default = PipelineTemplate.objects.filter(
@@ -126,9 +155,31 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
     
     def validate(self, data):
         """Validation générale des données"""
+
+        if 'client_id' not in data:
+                client_id = self._get_client_id_from_context()
+                data['client_id'] = client_id
+        
+
         data = super().validate(data)
+
+        name = data.get('name')
+        template_type = data.get('template_type', PipelineStagesConfig.TemplateType.DEFAULT)
+        
+        # Si pas de nom fourni, créer un nom par défaut selon le type
+        if not name or not name.strip():
+            if template_type == 'DEFAULT':
+                data['name'] = "Default Sales Pipeline"
+            elif template_type == 'RENEWAL': 
+                data['name'] = "Renewal Pipeline"
+            elif template_type == 'CUSTOM':
+                data['name'] = "Custom Pipeline"
+            else:
+                # Fallback si type inconnu
+                data['name'] = f"Pipeline {template_type}"
         
         # Vérifier la cohérence des statuts
+        
         is_active = data.get('is_active', getattr(self.instance, 'is_active', True))
         is_default = data.get('is_default', getattr(self.instance, 'is_default', False))
         
@@ -150,15 +201,15 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
                     ),
                     field_name="is_active"
                 )
-        
+
         return data
     
     def create(self, validated_data):
         """Création d'un nouveau template"""
         try:
             # Ajouter le client_id automatiquement
-            validated_data['client_id'] = self._get_client_id_from_context()
-            
+            # validated_data['client_id'] = self._get_client_id_from_context()
+            print("Creating Pipeline Template with data:", validated_data)
             # Créer le template
             template = PipelineTemplate.objects.create(**validated_data)
             
@@ -202,5 +253,6 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
         representation['is_in_use'] = self.get_is_in_use(instance)
         representation['can_be_deleted'] = self.get_can_be_deleted(instance)
         representation['opportunities_count'] = self.get_opportunities_count(instance)
+        representation['template_type_display'] = instance.get_template_type_display()
         
         return representation

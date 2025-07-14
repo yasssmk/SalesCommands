@@ -19,7 +19,7 @@ from apps.opportunities.serializers import (
 from apps.opportunities.services.pipeline_template_service import PipelineTemplateService
 
 
-class PipelineTemplateViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
+class PipelineTemplateViewSet(BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints pour la gestion des templates de pipeline et leurs stages
     """
@@ -29,8 +29,8 @@ class PipelineTemplateViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewset
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['is_active', 'is_default']
     search_fields = ['name', 'description']
-    ordering_fields = ['order', 'name', 'created_at']
-    ordering = ['order', 'name']
+    ordering_fields = ['name', 'created_at']
+    ordering = [ 'name']
     
     def get_queryset(self):
         """Get templates for the current client with annotations"""
@@ -94,62 +94,51 @@ class PipelineTemplateViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewset
     
     def retrieve(self, request, *args, **kwargs):
         """
-        Récupère un template avec tous ses stages
+        Récupère un template avec ses étapes en utilisant le service
         """
         try:
+            # get_object() applique automatiquement le ClientScope
             instance = self.get_object()
-            serializer = self.get_serializer(instance)
             
-            # Récupérer les stages du template
-            stages = instance.stages.filter(is_active=True).order_by('order')
-            stages_serializer = PipelineStageSerializer(stages, many=True)
+            # Utiliser le service pour récupérer les données complètes
+            template_data = PipelineTemplateService.get_template_with_stages(
+                template_id=instance.id
+            )
             
             return Response({
                 'success': True,
-                'data': {
-                    'template': serializer.data,
-                    'stages': stages_serializer.data,
-                    'stages_count': stages.count(),
-                    'is_in_use': instance.opportunity_pipelines.exists()
-                }
+                'data': template_data
             })
-            
-        except Exception as e:
-            raise StandardizedValidationError(
-                OpportunityErrorMessages.TEMPLATE_NOT_FOUND
-            )
-    
-    def create(self, request, *args, **kwargs):
-        """
-        Crée un nouveau template
-        """
-        try:
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            
-            # Utiliser le service pour la création
-            template = PipelineTemplateService.create_template(
-                client_id=self.get_client_id(),
-                user=request.user,
-                **serializer.validated_data
-            )
-            
-            return Response({
-                'success': True,
-                'message': f'Template "{template.name}" created successfully',
-                'data': {
-                    'template_id': template.id,
-                    'template_name': template.name,
-                    'is_default': template.is_default
-                }
-            }, status=status.HTTP_201_CREATED)
             
         except StandardizedValidationError:
             raise
         except Exception as e:
             raise StandardizedValidationError(
-                OpportunityErrorMessages.TEMPLATE_CREATION_FAILED.format(reason=str(e))
+                OpportunityErrorMessages.TEMPLATE_NOT_FOUND
             )
+        
+    def create(self, request, *args, **kwargs):
+        """
+        Crée un nouveau template
+        """
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        template = serializer.save()
+        
+        return Response({
+            'success': True,
+            'message': f'Template "{template.name}" created successfully',
+            'data': {
+                'template_id': template.id,
+                'template_name': template.name,
+                "template_type": template.template_type,
+                'is_default': template.is_default,
+                'stages_count': template.stages.filter(is_active=True).count()
+            }
+        }, status=status.HTTP_201_CREATED)
+            
     
     def update(self, request, *args, **kwargs):
         """
@@ -191,27 +180,32 @@ class PipelineTemplateViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewset
     @action(detail=True, methods=['get'], url_path='stages')
     def list_stages(self, request, pk=None):
         """
-        GET /pipeline-templates/{id}/stages/
-        Liste tous les stages d'un template
+        Liste les étapes d'un template spécifique (utilise aussi le service)
         """
         try:
-            template = self.get_object()
-            stages = template.stages.filter(is_active=True).order_by('order')
-            serializer = PipelineStageSerializer(stages, many=True)
+            # get_object() applique automatiquement le ClientScope
+            instance = self.get_object()
+            
+            # Utiliser le service pour récupérer les données
+            template_data = PipelineTemplateService.get_template_with_stages(
+                template_id=instance.id
+            )
             
             return Response({
                 'success': True,
                 'data': {
-                    'template_id': template.id,
-                    'template_name': template.name,
-                    'stages': serializer.data,
-                    'stages_count': stages.count()
+                    'template_id': instance.id,
+                    'template_name': instance.name,
+                    'stages': template_data['stages'],
+                    'stages_count': template_data['stages_count']
                 }
             })
             
+        except StandardizedValidationError:
+            raise
         except Exception as e:
             raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Stages list failed: {str(e)}")
+                OpportunityErrorMessages.TEMPLATE_NOT_FOUND
             )
     
     @action(detail=True, methods=['post'], url_path='stages')
@@ -314,70 +308,71 @@ class PipelineTemplateViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewset
     @action(detail=True, methods=['post'], url_path='duplicate')
     def duplicate(self, request, pk=None):
         """
-        POST /pipeline-templates/{id}/duplicate/
-        Duplique un template avec tous ses stages
+        Duplique un template en utilisant le service refactorisé
         """
         try:
+            # get_object() applique automatiquement le ClientScope
             source_template = self.get_object()
             
             # Récupérer le nouveau nom
-            new_name = request.data.get('name', f"{source_template.name} (Copy)")
-            new_description = request.data.get('description', f"Copy of {source_template.description or source_template.name}")
-            
-            # Vérifier unicité du nom
-            if PipelineTemplate.objects.filter(
-                name=new_name,
-                client_id=self.get_client_id()
-            ).exists():
+            new_name = request.data.get('name')
+            if not new_name:
                 raise StandardizedValidationError(
-                    OpportunityErrorMessages.TEMPLATE_ALREADY_EXISTS
+                    "name is required for template duplication"
                 )
             
             with transaction.atomic():
-                # Créer le nouveau template
-                new_template = PipelineTemplate.objects.create(
-                    name=new_name,
-                    description=new_description,
-                    order=source_template.order,
-                    is_active=True,
-                    is_default=False,  # Les copies ne sont jamais par défaut
-                    client_id=self.get_client_id(),
-                    created_by=request.user,
-                    updated_by=request.user
-                )
+                # Préparer les données du nouveau template
+                template_data = {
+                    'name': new_name,
+                    'description': f"Copy of {source_template.name}",
+                    'template_type': source_template.template_type,  # Garder le même type
+                    'is_default': False,  # Les copies ne sont jamais par défaut
+                    'order': source_template.order + 1,
+                    'is_active': True
+                }
                 
-                # Dupliquer tous les stages
-                stages_created = 0
-                for stage in source_template.stages.filter(is_active=True).order_by('order'):
+                # Créer le nouveau template avec le serializer (qui a le contexte)
+                serializer = self.get_serializer(data=template_data)
+                serializer.is_valid(raise_exception=True)
+                new_template = serializer.save()
+                
+                # Dupliquer les étapes manuellement (pas les étapes par défaut du type)
+                source_stages = source_template.stages.filter(is_active=True).order_by('order')
+                
+                for source_stage in source_stages:
+                    # Créer les étapes directement (pas besoin de serializer pour ça)
+                    from ..models.pipeline_stage import PipelineStage
                     PipelineStage.objects.create(
                         template=new_template,
-                        name=stage.name,
-                        description=stage.description,
-                        order=stage.order,
+                        name=source_stage.name,
+                        description=source_stage.description,
+                        order=source_stage.order,
                         is_active=True,
-                        estimated_duration=stage.estimated_duration,
-                        client_id=self.get_client_id(),
-                        created_by=request.user,
-                        updated_by=request.user
+                        client_id=self.get_client_id(),  # Contexte de la vue
+                        user=request.user
                     )
-                    stages_created += 1
-                
-                return Response({
-                    'success': True,
-                    'message': f'Template "{source_template.name}" duplicated successfully',
-                    'data': {
-                        'new_template_id': new_template.id,
-                        'new_template_name': new_template.name,
-                        'source_template_id': source_template.id,
-                        'stages_copied': stages_created
-                    }
-                }, status=status.HTTP_201_CREATED)
-                
+            
+            # Calculer le nombre d'étapes copiées
+            stages_count = new_template.stages.filter(is_active=True).count()
+            
+            return Response({
+                'success': True,
+                'message': f'Template duplicated successfully as "{new_name}"',
+                'data': {
+                    'source_template_id': source_template.id,
+                    'source_template_name': source_template.name,
+                    'new_template_id': new_template.id,
+                    'new_template_name': new_template.name,
+                    'stages_copied': stages_count
+                }
+            }, status=status.HTTP_201_CREATED)
+            
         except StandardizedValidationError:
             raise
         except Exception as e:
             raise StandardizedValidationError(
-                OpportunityErrorMessages.TEMPLATE_DUPLICATION_FAILED.format(reason=str(e))
+                OpportunityErrorMessages.TEMPLATE_CREATION_FAILED.format(reason=str(e))
             )
     
     @action(detail=True, methods=['post'], url_path='set-as-default')

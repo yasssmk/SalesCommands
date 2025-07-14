@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import transaction
+from django.db.models import Q
 from core.apps_shared_methods import BaseAPIView
 from apps.core_apps.models import StandardDepartment
 from ..models import Contact

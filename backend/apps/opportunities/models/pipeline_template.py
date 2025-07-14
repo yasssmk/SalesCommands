@@ -4,6 +4,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
+from ..config.pipeline_stages import PipelineStagesConfig
 
 
 class PipelineTemplate(BaseModelApp, ClientScopeManager.ModelMixin):
@@ -25,12 +26,14 @@ class PipelineTemplate(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_('Description of the pipeline template')
     )
     
-    order = models.PositiveIntegerField(
-        default=0,
-        verbose_name=_('Order'),
-        help_text=_('Display order for this template')
+    template_type = models.CharField(
+        max_length=20,
+        choices=PipelineStagesConfig.TemplateType.choices,
+        default=PipelineStagesConfig.TemplateType.DEFAULT,
+        verbose_name=_('Template Type'),
+        help_text=_('Type of template that determines the default stages')
     )
-    
+
     is_active = models.BooleanField(
         default=True,
         verbose_name=_('Is Active'),
@@ -45,12 +48,12 @@ class PipelineTemplate(BaseModelApp, ClientScopeManager.ModelMixin):
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=['name'],
-        index_fields=['order', 'is_active', 'is_default']
+        index_fields=['is_active', 'is_default', 'template_type']
     )):
         db_table = 'pipeline_templates'
         verbose_name = _('Pipeline Template')
         verbose_name_plural = _('Pipeline Templates')
-        ordering = ['order', 'name']
+        ordering = ['name', 'template_type']
 
     def __str__(self):
         return f"{self.name}"
@@ -59,6 +62,7 @@ class PipelineTemplate(BaseModelApp, ClientScopeManager.ModelMixin):
         """
         Sauvegarde standard - plusieurs templates par défaut autorisés
         """
+  
         super().save(*args, **kwargs)
 
     @classmethod
@@ -76,43 +80,33 @@ class PipelineTemplate(BaseModelApp, ClientScopeManager.ModelMixin):
         
         return query.first()
 
-    @classmethod
-    def create_default_template(cls, client_id, user=None, template_type='default'):
+    def create_stages_from_type(self):
         """
-        Crée un template par défaut en utilisant la configuration centralisée
+        Crée les étapes par défaut selon le template_type
+        Appelé après la création du template
         """
-        from ..config.pipeline_stages import PipelineStagesConfig
-        
-        if template_type == 'renewal':
-            stages = PipelineStagesConfig.get_renewal_stages()
-            name = "Renewal Pipeline"
-            description = "Template pour les renouvellements de contrat"
-        else:
-            stages = PipelineStagesConfig.get_default_stages()
-            name = "Default Sales Pipeline"
-            description = "Template par défaut avec les 5 étapes standard du processus de vente"
-        
-        template = cls.objects.create(
-            name=name,
-            description=description,
-            order=0,
-            is_active=True,
-            is_default=True,
-            client_id=client_id,
-            user=user
-        )
-        
-        # Créer les étapes du template
         from .pipeline_stage import PipelineStage
+        
+        # Récupérer les étapes selon le type
+        if self.template_type == PipelineStagesConfig.TemplateType.DEFAULT:
+            stages = PipelineStagesConfig.get_default_stages()
+        elif self.template_type == PipelineStagesConfig.TemplateType.RENEWAL:
+            stages = PipelineStagesConfig.get_renewal_stages()
+        else:
+            # Pour CUSTOM, ne pas créer d'étapes automatiquement
+            return 0
+        
+        created_count = 0
         for stage_name, stage_description, stage_order in stages:
             PipelineStage.objects.create(
-                template=template,
+                template=self,
                 name=stage_name,
                 description=stage_description,
                 order=stage_order,
                 is_active=True,
-                client_id=client_id,
-                user=user
+                client_id=self.client_id,
+                user=self.user
             )
+            created_count += 1
         
-        return template
+        return created_count
