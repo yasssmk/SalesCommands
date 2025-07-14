@@ -4,6 +4,9 @@ from django.urls import path
 from .views.opportunity_views import OpportunityViewSet
 from .views.opportunity_financial_views import OpportunityLineItemViewSet, OpportunityFinancialSummaryViewSet
 from .views.opportunity_tracking_views import OpportunitySourceViewSet, OpportunityActivityViewSet
+from .views.pipeline_template_views import PipelineTemplateViewSet
+from apps.campaign.views.campaign_views import CampaignViewSet
+from .views.pipeline_views import PipelineViewSet
 
 urlpatterns = [
     # Opportunity CRUD operations
@@ -125,4 +128,114 @@ urlpatterns = [
     path('activities/opportunity-timeline/', OpportunityActivityViewSet.as_view({
         'get': 'opportunity_timeline'
     }), name='opportunity-activity-timeline'),
+
+    # =========================================================================
+    # PIPELINE TEMPLATES - Gestion des templates et de leurs stages
+    # =========================================================================
+    
+    # Pipeline Templates CRUD operations
+    path('pipeline-templates/', PipelineTemplateViewSet.as_view({
+        'get': 'list',
+        'post': 'create'
+    }), name='pipeline-template-list-create'),
+    
+    path('pipeline-templates/<int:pk>/', PipelineTemplateViewSet.as_view({
+        'get': 'retrieve',
+        'put': 'update',
+        'patch': 'partial_update',
+        'delete': 'destroy'
+    }), name='pipeline-template-detail'),
+    
+    # Pipeline Template collections
+    path('pipeline-templates/choices/', PipelineTemplateViewSet.as_view({
+        'get': 'choices'
+    }), name='pipeline-template-choices'),
+    
+    # Pipeline Template actions
+    path('pipeline-templates/<int:pk>/duplicate/', PipelineTemplateViewSet.as_view({
+        'post': 'duplicate'
+    }), name='pipeline-template-duplicate'),
+    
+    path('pipeline-templates/<int:pk>/set-as-default/', PipelineTemplateViewSet.as_view({
+        'post': 'set_as_default'
+    }), name='pipeline-template-set-default'),
+    
+    # Pipeline Template Stages management
+    path('pipeline-templates/<int:pk>/stages/', PipelineTemplateViewSet.as_view({
+        'get': 'list_stages',
+        'post': 'add_stage'
+    }), name='pipeline-template-stages'),
+    
+    path('pipeline-templates/<int:pk>/stages/<int:stage_id>/', PipelineTemplateViewSet.as_view({
+        'put': 'update_stage',
+        'delete': 'remove_stage'
+    }), name='pipeline-template-stage-detail'),
+
+    # =========================================================================
+    # OPPORTUNITY PIPELINES - Gestion des pipelines d'opportunité et substages
+    # =========================================================================
+    
+    # Pipeline Management - Core operations
+    path('<int:opportunity_id>/pipeline/', PipelineViewSet.as_view({
+        'get': 'retrieve_pipeline',
+        'put': 'update_pipeline'
+    }), name='opportunity-pipeline-detail'),
+    
+    path('<int:opportunity_id>/pipeline/initialize/', PipelineViewSet.as_view({
+        'post': 'initialize_pipeline'
+    }), name='opportunity-pipeline-initialize'),
+    
+    path('<int:opportunity_id>/pipeline/overview/', PipelineViewSet.as_view({
+        'get': 'pipeline_overview'
+    }), name='opportunity-pipeline-overview'),
+    
+    # SubStages Management
+    path('<int:opportunity_id>/pipeline/substages/', PipelineViewSet.as_view({
+        'get': 'list_substages',
+        'post': 'add_substage'
+    }), name='opportunity-pipeline-substages'),
+    
+    path('<int:opportunity_id>/pipeline/substages/<int:substage_id>/', PipelineViewSet.as_view({
+        'put': 'update_substage',
+        'delete': 'remove_substage'
+    }), name='opportunity-pipeline-substage-detail'),
+    
+    # SubStage Status Management
+    path('<int:opportunity_id>/pipeline/substages/<int:substage_id>/start/', PipelineViewSet.as_view({
+        'post': 'start_substage'
+    }), name='opportunity-pipeline-substage-start'),
+    
+    path('<int:opportunity_id>/pipeline/substages/<int:substage_id>/complete/', PipelineViewSet.as_view({
+        'post': 'complete_substage'
+    }), name='opportunity-pipeline-substage-complete'),
+    
+    # =========================================================================
+    # INTÉGRATION FOLLOW-UP - Via SubStageFollowUpService
+    # =========================================================================
+    
+    # Campaign Integration (via SubStageFollowUpService)
+    path('<int:opportunity_id>/pipeline/substages/<int:substage_id>/campaigns/', PipelineViewSet.as_view({
+        'get': 'list_substage_campaigns'
+    }), name='opportunity-pipeline-substage-campaigns'),
+    
+    path('<int:opportunity_id>/pipeline/substages/<int:substage_id>/add-to-followup/', PipelineViewSet.as_view({
+        'post': 'add_substage_to_followup'
+    }), name='opportunity-pipeline-substage-add-followup'),
+    
+    path('<int:opportunity_id>/pipeline/substages/<int:substage_id>/remove-from-followup/', PipelineViewSet.as_view({
+        'delete': 'remove_substage_from_followup'
+    }), name='opportunity-pipeline-substage-remove-followup'),
+    
+    path('<int:opportunity_id>/pipeline/substages/<int:substage_id>/complete-followup/', PipelineViewSet.as_view({
+        'post': 'complete_substage_followup'
+    }), name='opportunity-pipeline-substage-complete-followup'),
+    
+    path('<int:opportunity_id>/pipeline/substages/<int:substage_id>/followup-status/', PipelineViewSet.as_view({
+        'get': 'get_substage_followup_status'
+    }), name='opportunity-pipeline-substage-followup-status'),
+    
+    # Pipeline Activities
+    path('<int:opportunity_id>/pipeline/activities/', PipelineViewSet.as_view({
+        'get': 'pipeline_activities'
+    }), name='opportunity-pipeline-activities'),
 ]
