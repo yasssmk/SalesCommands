@@ -101,16 +101,14 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
         
         # Validation de la longueur
         if len(value) < 3:
-            raise StandardizedValidationError(
-                "Template name must be at least 3 characters long",
-                field_name="name"
-            )
+            raise StandardizedValidationError({
+                "name": CoreErrorMessages.INVALID_FIELD.format(field="Template name (minimum 3 characters)")
+            })
         
         if len(value) > 200:
-            raise StandardizedValidationError(
-                "Template name cannot exceed 200 characters",
-                field_name="name"
-            )
+            raise StandardizedValidationError({
+                "name": CoreErrorMessages.INVALID_FIELD.format(field="Template name (maximum 200 characters)")
+            })
         
         # Utiliser la méthode ClientScopeManager pour l'unicité
         self.validate_client_scoped_uniqueness(
@@ -125,11 +123,31 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
     def validate_template_type(self, value):
         """Validation du type de template"""
         if value not in [choice[0] for choice in PipelineStagesConfig.TemplateType.choices]:
-            raise StandardizedValidationError(
-                f"Invalid template type '{value}'. Available types: {', '.join([choice[0] for choice in PipelineStagesConfig.TemplateType.choices])}",
-                field_name="template_type"
-            )
+            raise StandardizedValidationError({
+                "template_type": CoreErrorMessages.INVALID_FIELD.format(
+                    field=f"Template type"
+                )
+            })
         return value
+    
+    def _generate_unique_name(self, base_name, template_type):
+        """
+        Génère un nom unique en ajoutant un numéro si nécessaire
+        """
+        client_id = self._get_client_id_from_context()
+        
+        # Compter les templates existants avec le même nom de base et type
+        existing_count = PipelineTemplate.objects.filter(
+            client_id=client_id,
+            template_type=template_type,
+            name__startswith=base_name
+        ).count()
+        
+        if existing_count == 0:
+            return base_name
+        else:
+            # Si des templates existent déjà, ajouter le numéro
+            return f"{base_name} {existing_count + 1}"
     
     def validate_is_default(self, value):
         """Validation du statut par défaut"""
@@ -146,42 +164,56 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
             ).exclude(id=self.instance.id if self.instance else None).first()
             
             if existing_default:
-                raise StandardizedValidationError(
-                    f"Template '{existing_default.name}' is already set as default. Only one default template is allowed per client.",
-                    field_name="is_default"
-                )
+                raise StandardizedValidationError({
+                    "is_default": CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Default template ('{existing_default.name}' is already set as default)"
+                    )
+                })
         
         return value
     
     def validate(self, data):
-        """Validation générale des données"""
-
-        if 'client_id' not in data:
-                client_id = self._get_client_id_from_context()
-                data['client_id'] = client_id
-        
-
+        """Validation avec logique intelligente de nommage et is_default"""
         data = super().validate(data)
-
-        name = data.get('name')
-        template_type = data.get('template_type', PipelineStagesConfig.TemplateType.DEFAULT)
         
-        # Si pas de nom fourni, créer un nom par défaut selon le type
+        client_id = self._get_client_id_from_context()
+        template_type = data.get('template_type')
+        name = data.get('name')
+        
+        # ===== LOGIQUE 1: Nom automatique intelligent si pas fourni =====
         if not name or not name.strip():
             if template_type == 'DEFAULT':
-                data['name'] = "Default Sales Pipeline"
+                base_name = "Default Sales Pipeline"
             elif template_type == 'RENEWAL': 
-                data['name'] = "Renewal Pipeline"
+                base_name = "Renewal Pipeline"
             elif template_type == 'CUSTOM':
-                data['name'] = "Custom Pipeline"
+                base_name = "Custom Pipeline"
             else:
-                # Fallback si type inconnu
-                data['name'] = f"Pipeline {template_type}"
+                base_name = f"Pipeline {template_type}"
+            
+            # Générer un nom unique
+            data['name'] = self._generate_unique_name(base_name, template_type)
         
-        # Vérifier la cohérence des statuts
+        # ===== LOGIQUE 2: is_default automatique si aucun template existe =====
+        is_default = data.get('is_default')
         
+        # Si is_default n'est pas explicitement défini, vérifier s'il faut le mettre automatiquement
+        if is_default is None:
+            existing_templates_count = PipelineTemplate.objects.filter(
+                client_id=client_id,
+                is_active=True
+            ).count()
+
+            # Si aucun template actif n'existe, ce template devient automatiquement le default
+            if existing_templates_count == 0:
+                data['is_default'] = True
+            else:
+                # Sinon, DEFAULT type devient default automatiquement, autres non
+                data['is_default'] = False
+        
+        # ===== LOGIQUE 3: Validation cohérence =====
         is_active = data.get('is_active', getattr(self.instance, 'is_active', True))
-        is_default = data.get('is_default', getattr(self.instance, 'is_default', False))
+        is_default = data.get('is_default', False)
         
         # Un template par défaut doit être actif
         if is_default and not is_active:
@@ -190,18 +222,22 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
                 field_name="is_active"
             )
         
-        # Validation des permissions pour les templates en cours d'utilisation
-        if self.instance and self.instance.opportunity_pipelines.exists():
-            # Vérifier si on essaie de désactiver un template en cours d'utilisation
-            if not is_active:
-                raise StandardizedValidationError(
-                    OpportunityErrorMessages.TEMPLATE_IN_USE.format(
-                        template_name=self.instance.name,
-                        pipelines_count=self.instance.opportunity_pipelines.count()
-                    ),
-                    field_name="is_active"
-                )
-
+        # ===== LOGIQUE 4: Vérification unicité des defaults par type =====
+        if is_default:
+            existing_default = PipelineTemplate.objects.filter(
+                client_id=client_id,
+                template_type=template_type,
+                is_default=True,
+                is_active=True
+            ).exclude(id=self.instance.id if self.instance else None).first()
+            
+            if existing_default:
+                raise StandardizedValidationError({
+                    "is_default": CoreErrorMessages.INVALID_FIELD.format(
+                        field=f"Default {template_type} template ('{existing_default.name}' is already set as default)"
+                    )
+                })
+        
         return data
     
     def create(self, validated_data):
@@ -209,7 +245,7 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
         try:
             # Ajouter le client_id automatiquement
             # validated_data['client_id'] = self._get_client_id_from_context()
-            print("Creating Pipeline Template with data:", validated_data)
+
             # Créer le template
             template = PipelineTemplate.objects.create(**validated_data)
             

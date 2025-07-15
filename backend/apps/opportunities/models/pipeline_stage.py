@@ -151,15 +151,18 @@ class PipelineStage(BaseModelApp, ClientScopeManager.ModelMixin):
         """
         Sauvegarde avec gestion automatique des ordres
         """
+        skip_linked_list_update = kwargs.pop('skip_linked_list_update', False)
+
         self.clean()
         
-        # Gestion automatique des ordres avant sauvegarde
-        self._handle_order_conflicts()
+        if not skip_linked_list_update:
+            self._handle_order_conflicts()
         
         super().save(*args, **kwargs)
         
-        # Mise à jour des relations previous/next après sauvegarde
-        self._update_linked_list()
+        # Mise à jour des relations previous/next après sauvegarde (seulement si pas de skip)
+        if not skip_linked_list_update:
+            self._update_linked_list()
 
     def _handle_order_conflicts(self):
         """
@@ -189,7 +192,7 @@ class PipelineStage(BaseModelApp, ClientScopeManager.ModelMixin):
 
     def _update_linked_list(self):
         """
-        Met à jour les relations previous/next stage
+        Met à jour les relations previous/next stage avec protection contre la récursion
         """
         # Déterminer le contexte (template ou opportunité)
         filter_kwargs = {'client_id': self.client_id}
@@ -198,22 +201,30 @@ class PipelineStage(BaseModelApp, ClientScopeManager.ModelMixin):
         elif self.opportunity_pipeline:
             filter_kwargs['opportunity_pipeline'] = self.opportunity_pipeline
         
-        # Récupérer tous les stages ordonnés
+        # Récupérer tous les stages du même contexte ordonnés
         all_stages = PipelineStage.objects.filter(**filter_kwargs).order_by('order')
         
-        # Mettre à jour les relations
-        previous_stage = None
-        for stage in all_stages:
-            stage.previous_stage = previous_stage
-            if previous_stage:
-                previous_stage.next_stage = stage
-                previous_stage.save(update_fields=['next_stage'])
-            previous_stage = stage
+        # Mettre à jour les relations - VERSION OPTIMISÉE
+        stages_list = list(all_stages)
         
-        # Sauvegarder le dernier stage
-        if previous_stage:
-            previous_stage.next_stage = None
-            previous_stage.save(update_fields=['next_stage'])
+        for i, stage in enumerate(stages_list):
+            # Définir previous_stage
+            new_previous = stages_list[i - 1] if i > 0 else None
+            # Définir next_stage  
+            new_next = stages_list[i + 1] if i < len(stages_list) - 1 else None
+            
+            # Sauvegarder seulement si les relations ont changé
+            changes = {}
+            if stage.previous_stage != new_previous:
+                changes['previous_stage'] = new_previous
+            if stage.next_stage != new_next:
+                changes['next_stage'] = new_next
+            
+            # Sauvegarder avec skip_linked_list_update pour éviter la récursion
+            if changes:
+                for field, value in changes.items():
+                    setattr(stage, field, value)
+                stage.save(update_fields=list(changes.keys()), skip_linked_list_update=True)
 
     def get_next_stage(self):
         """

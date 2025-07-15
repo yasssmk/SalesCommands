@@ -15,25 +15,102 @@ class PipelineTemplateService:
     Scalable avec dispatch pattern.
     """
     
-    @classmethod
-    def create_template(cls, template_data: dict) -> 'PipelineTemplate':
+    @classmethod  
+    def create_template_with_stages(cls, validated_data: dict, request, client_id: str) -> 'PipelineTemplate':
         """
-        Crée un template selon le type spécifié (dispatch pattern)
+        Crée un template avec ses stages par défaut selon le template_type
         
         Args:
-            template_type: 'default' ou 'renewal'
-            client_id: ID du client (passé depuis la vue avec self.get_client_id())
-            user: Utilisateur créateur
-        """
-        serializer = PipelineTemplateSerializer(data=template_data)
-        if not serializer.is_valid():
-            raise StandardizedValidationError(
-                f"Template validation failed: {serializer.errors}"
-            )
+            validated_data: Données validées du serializer (contient client_id automatiquement)
         
-        template = serializer.save()
-        return template
+        Returns:
+            PipelineTemplate: L'instance créée avec ses étapes
+        """
+
+        with transaction.atomic():
+            # Créer le template avec les données validées
+            template = PipelineTemplate(**validated_data)
+            # Sauvegarder avec client_id et user (pattern BaseModelApp)
+            template.save(client_id=client_id, user=request.user)
+            
+            # Créer les stages selon le template_type
+            stages_created = cls._create_stages_for_template(template, request)
+            
+            return template
     
+    @classmethod
+    def _create_stages_for_template(cls, template: 'PipelineTemplate', request) -> int:
+        """
+        Crée les étapes par défaut selon le template_type
+        Méthode privée réutilisable
+        """
+        from ..models.pipeline_stage import PipelineStage
+        
+        stages_data = []
+        
+        # Récupérer les stages selon le template_type
+        if template.template_type == PipelineStagesConfig.TemplateType.DEFAULT:
+            stages_data = PipelineStagesConfig.get_default_stages()
+        elif template.template_type == PipelineStagesConfig.TemplateType.RENEWAL:
+            stages_data = PipelineStagesConfig.get_renewal_stages()
+        # Pour CUSTOM, pas de stages automatiques
+        
+        # Créer tous les stages d'abord (sans linked list)
+        created_stages = []
+        for stage_name, stage_description, stage_order in stages_data:
+            # Créer le stage avec les champs normaux
+            stage = PipelineStage(
+                template=template,
+                name=stage_name,
+                description=stage_description,
+                order=stage_order,
+                is_active=True
+            )
+            
+            # Sauvegarder en évitant la mise à jour de linked list
+            stage.save(client_id=template.client_id, user=request.user, skip_linked_list_update=True)
+            created_stages.append(stage)
+        
+        # Maintenant mettre à jour la linked list pour tous les stages en une seule fois
+        if created_stages:
+            cls._update_template_linked_list(template)
+        
+        return len(created_stages)
+        
+    @classmethod
+    def _update_template_linked_list(cls, template: 'PipelineTemplate'):
+        """
+        Met à jour la linked list pour tous les stages d'un template
+        Méthode optimisée qui évite la récursion
+        """
+        from ..models.pipeline_stage import PipelineStage
+        
+        # Récupérer tous les stages du template ordonnés
+        stages = PipelineStage.objects.filter(
+            template=template,
+            is_active=True,
+            client_id=template.client_id
+        ).order_by('order')
+        
+        # Mettre à jour les relations previous/next en une seule passe
+        stages_list = list(stages)
+        
+        for i, stage in enumerate(stages_list):
+            # Définir previous_stage
+            if i > 0:
+                stage.previous_stage = stages_list[i - 1]
+            else:
+                stage.previous_stage = None
+            
+            # Définir next_stage
+            if i < len(stages_list) - 1:
+                stage.next_stage = stages_list[i + 1]
+            else:
+                stage.next_stage = None
+            
+            # Sauvegarder avec skip_linked_list_update pour éviter la récursion
+            stage.save(update_fields=['previous_stage', 'next_stage'], skip_linked_list_update=True)
+            
     @classmethod
     def get_template_with_stages(cls, template_id: int) -> dict:
         """
@@ -139,118 +216,3 @@ class PipelineTemplateService:
                 OpportunityErrorMessages.TEMPLATE_CREATION_FAILED.format(reason=str(e))
             )
 
-    
-    # # ===== MÉTHODES PRIVÉES (Dispatch) =====
-    
-    # @classmethod
-    # def _create_default_template(cls, custom_name: str = None) -> 'PipelineTemplate':
-    #     """
-    #     Crée le template par défaut hardcodé
-    #     """
-    #     try:
-    #         from ..serializers.pipeline_template_serializer import PipelineTemplateSerializer
-            
-    #         # Nom par défaut ou personnalisé
-    #         template_name = custom_name if custom_name else "Default Sales Pipeline"
-            
-    #         # Données du template
-    #         template_data = {
-    #             'name': template_name,
-    #             'description': "Template par défaut avec les 5 étapes standard",
-    #             'is_default': True,
-    #             'order': 0,
-    #             'is_active': True
-    #         }
-            
-    #         # Utiliser le serializer qui gère automatiquement le ClientScope
-    #         serializer = PipelineTemplateSerializer(data=template_data)
-    #         if not serializer.is_valid():
-    #             raise StandardizedValidationError(
-    #                 f"Template validation failed: {serializer.errors}"
-    #             )
-            
-    #         # Créer le template
-    #         template = serializer.save()
-            
-    #         # Créer les étapes par défaut
-    #         stages = PipelineStagesConfig.get_default_stages()
-    #         cls._create_stages_for_template(template, stages)
-            
-    #         return template
-            
-    #     except StandardizedValidationError:
-    #         raise
-    #     except Exception as e:
-    #         raise StandardizedValidationError(
-    #             OpportunityErrorMessages.TEMPLATE_CREATION_FAILED.format(reason=str(e))
-    #         )
-
-    # @classmethod
-    # def _create_renewal_template(cls, custom_name: str = None) -> 'PipelineTemplate':
-    #     """
-    #     Crée le template de renouvellement hardcodé
-    #     """
-    #     try:
-    #         from ..serializers.pipeline_template_serializer import PipelineTemplateSerializer
-            
-    #         # Nom par défaut ou personnalisé
-    #         template_name = custom_name if custom_name else "Renewal Pipeline"
-            
-    #         # Données du template
-    #         template_data = {
-    #             'name': template_name,
-    #             'description': "Template pour les renouvellements de contrat",
-    #             'is_default': False,
-    #             'order': 1,
-    #             'is_active': True
-    #         }
-            
-    #         # Utiliser le serializer qui gère automatiquement le ClientScope
-    #         serializer = PipelineTemplateSerializer(data=template_data)
-    #         if not serializer.is_valid():
-    #             raise StandardizedValidationError(
-    #                 f"Template validation failed: {serializer.errors}"
-    #             )
-            
-    #         # Créer le template
-    #         template = serializer.save()
-            
-    #         # Créer les étapes de renouvellement
-    #         stages = PipelineStagesConfig.get_renewal_stages()
-    #         cls._create_stages_for_template(template, stages)
-            
-    #         return template
-            
-    #     except StandardizedValidationError:
-    #         raise
-    #     except Exception as e:
-    #         raise StandardizedValidationError(
-    #             OpportunityErrorMessages.TEMPLATE_CREATION_FAILED.format(reason=str(e))
-    #         )
-
-    # @classmethod
-    # def _create_stages_for_template(cls, template: 'PipelineTemplate', stages_data: list) -> int:
-    #     """
-    #     Crée les étapes pour un template (réutilisable)
-    #     Utilise aussi le ClientScope automatiquement via le serializer
-    #     """
-    #     from ..serializers.pipeline_stage_serializer import PipelineStageSerializer
-        
-    #     created_count = 0
-        
-    #     for stage_name, stage_description, stage_order in stages_data:
-    #         stage_data = {
-    #             'template': template.id,
-    #             'name': stage_name,
-    #             'description': stage_description,
-    #             'order': stage_order,
-    #             'is_active': True
-    #         }
-            
-    #         # Utiliser le serializer pour la cohérence
-    #         serializer = PipelineStageSerializer(data=stage_data)
-    #         if serializer.is_valid():
-    #             serializer.save()
-    #             created_count += 1
-        
-    #     return created_count

@@ -80,33 +80,36 @@ class PipelineTemplate(BaseModelApp, ClientScopeManager.ModelMixin):
         
         return query.first()
 
-    def create_stages_from_type(self):
+    def mark_as_custom_if_modified(self):
         """
-        Crée les étapes par défaut selon le template_type
-        Appelé après la création du template
+        Marque le template comme CUSTOM si il était DEFAULT ou RENEWAL et qu'il est modifié
+        
+        Args:
+            modification_type: Type de modification pour le logging
         """
-        from .pipeline_stage import PipelineStage
+        if self.template_type in [PipelineStagesConfig.TemplateType.DEFAULT, PipelineStagesConfig.TemplateType.RENEWAL]:
+            # Sauvegarder l'ancien type pour le logging
+            old_type = self.template_type
+            
+            # Marquer comme CUSTOM
+            self.template_type = PipelineStagesConfig.TemplateType.CUSTOM
+            
+            # Modifier le nom pour refléter le changement si nécessaire
+            if not self.name.endswith("(Custom)"):
+                self.name = f"{self.name} (Custom)"
+            
+            # Sauvegarder les changements
+            self.save(update_fields=['template_type', 'name'])
+            
+    
+    def should_convert_to_custom(self):
+        """
+        Vérifie si le template devrait être converti en CUSTOM
         
-        # Récupérer les étapes selon le type
-        if self.template_type == PipelineStagesConfig.TemplateType.DEFAULT:
-            stages = PipelineStagesConfig.get_default_stages()
-        elif self.template_type == PipelineStagesConfig.TemplateType.RENEWAL:
-            stages = PipelineStagesConfig.get_renewal_stages()
-        else:
-            # Pour CUSTOM, ne pas créer d'étapes automatiquement
-            return 0
-        
-        created_count = 0
-        for stage_name, stage_description, stage_order in stages:
-            PipelineStage.objects.create(
-                template=self,
-                name=stage_name,
-                description=stage_description,
-                order=stage_order,
-                is_active=True,
-                client_id=self.client_id,
-                user=self.user
-            )
-            created_count += 1
-        
-        return created_count
+        Returns:
+            bool: True si le template devrait être converti
+        """
+        return self.template_type in [
+            PipelineStagesConfig.TemplateType.DEFAULT, 
+            PipelineStagesConfig.TemplateType.RENEWAL
+        ]
