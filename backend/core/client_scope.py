@@ -101,7 +101,12 @@ class ClientScopeManager:
                         filter_kwargs[field] = validation_data.get(field)
                     else:
                         # For text fields, use case-insensitive lookup
-                        filter_kwargs[f"{field}__iexact"] = validation_data.get(field)
+                        if isinstance(model_field, (models.CharField, models.TextField, models.SlugField)):
+                            # For text fields, use case-insensitive lookup
+                            filter_kwargs[f"{field}__iexact"] = validation_data.get(field)
+                        else:
+                            # For numeric, date, boolean, and other fields, use exact lookup
+                            filter_kwargs[field] = validation_data.get(field)
                         
             duplicate_exists = model.objects.filter(**filter_kwargs).exclude(
                 pk=instance.pk if instance else None
