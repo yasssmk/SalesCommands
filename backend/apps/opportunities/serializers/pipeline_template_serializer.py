@@ -4,7 +4,7 @@ from rest_framework import serializers
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, OpportunityErrorMessages
-from apps.opportunities.models import PipelineTemplate
+from apps.opportunities.models import PipelineTemplate, Opportunity
 from apps.opportunities.config.pipeline_stages import PipelineStagesConfig
 
 
@@ -12,6 +12,17 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
     """
     Serializer pour les templates de pipeline avec validation d'unicité
     """
+
+    opportunity = serializers.PrimaryKeyRelatedField(
+        queryset=Opportunity.objects.all(),
+        required=True,
+        error_messages={
+            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Opportunity'),
+            'does_not_exist': CoreErrorMessages.OBJECT_NOT_FOUND,
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Opportunity ID must be a valid integer')
+        }
+    )
+
     name = serializers.CharField(
         max_length=200,
         required=False,
@@ -38,87 +49,103 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
         }
     )
 
-    # Champs calculés (read-only)
+
+    # Champs calculés pour accès rapide aux informations contextuelles
+    account_id = serializers.SerializerMethodField(read_only=True)
+    product= serializers.SerializerMethodField(read_only=True)
     stages_count = serializers.IntegerField(read_only=True)
-    is_in_use = serializers.BooleanField(read_only=True)
-    can_be_deleted = serializers.BooleanField(read_only=True)
-    opportunities_count = serializers.IntegerField(read_only=True)
+
+    # Champs pour les relations (read-only)
+    opportunity_title = serializers.CharField(source='opportunity.title', read_only=True)
+    opportunity_status = serializers.CharField(source='opportunity.status', read_only=True)
+    account_name = serializers.CharField(source='opportunity.account.company_name', read_only=True)
+
     
     class Meta:
         model = PipelineTemplate
         fields = [
-            'id',
-            'name',
-            'description',
-            'template_type',
-            'is_active',
-            'is_default',
-            'stages_count',
-            'is_in_use',
-            'can_be_deleted',
-            'opportunities_count',
-            'created_at',
-            'updated_at'
-        ]
+                'id',
+                'opportunity',
+                'opportunity_title',
+                'opportunity_status',
+                'name',
+                'description',
+                'template_type',
+                'stages_count',
+                'is_default',
+                'account_id',
+                'product_id',
+                'account_name',
+                'created_at',
+                'updated_at'
+            ]
         read_only_fields = [
-            'id',
-            'stages_count',
-            'is_in_use',
-            'can_be_deleted',
-            'opportunities_count',
-            'created_at',
-            'updated_at'
-        ]
+                'id',
+                'opportunity_title',
+                'opportunity_status',
+                'account_id',
+                'product_id',
+                'account_name',
+                'created_at',
+                'updated_at'
+            ]
+    
+    def get_account_id(self, obj):
+        """
+        Retourne l'ID du compte associé à l'opportunité
+        Permet d'identifier rapidement le compte lié à ce processus
+        """
+        if obj.opportunity and obj.opportunity.account:
+            return obj.opportunity.account.id
+        return None
+    
+    def get_products(self, obj):
+        """
+        Retourne la liste des produits de l'opportunité
+        Format: [{"id": 1, "name": "Product Name"}, ...]
+        """
+        if not obj.opportunity:
+            return []
+        
+        # Récupérer les line_items de l'opportunité
+        line_items = obj.opportunity.line_items.select_related('product').all()
+        
+        if not line_items.exists():
+            return []
+        
+        # Construire la liste des produits uniques
+        products = []
+        seen_product_ids = set()
+        
+        for line_item in line_items:
+            if line_item.product and line_item.product.id not in seen_product_ids:
+                products.append({
+                    "id": line_item.product.id,
+                    "name": line_item.product.product_name
+                })
+                seen_product_ids.add(line_item.product.id)
+        
+        return products
     
     def get_stages_count(self, obj):
-        """Nombre d'étapes actives dans ce template"""
-        return obj.stages.filter(is_active=True).count()
+        """
+        Retourne le nombre d'étapes dans ce template
+        """
+        return obj.stages.count() if obj.stages else 0
     
-    def get_is_in_use(self, obj):
-        """Vérifie si le template est utilisé par des opportunités"""
-        return obj.opportunity_pipelines.exists()
-    
-    def get_can_be_deleted(self, obj):
-        """Vérifie si le template peut être supprimé"""
-        # Ne peut pas être supprimé s'il est utilisé par des opportunités
-        return not obj.opportunity_pipelines.exists()
-    
-    def get_opportunities_count(self, obj):
-        """Nombre d'opportunités utilisant ce template"""
-        return obj.opportunity_pipelines.count()
-    
-    def validate_name(self, value):
-        """Validation de l'unicité du nom dans le client"""
+    def generate_default_name(cls, opportunity):
+        """
+        Génère un nom par défaut pour le template basé sur l'opportunité
+        Format: "Buying Process for {account.name}" ou "Renewal Process for {account.name}"
+        """
         
-        if not value or not value.strip():
-            raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD,
-                field_name="name"
-            )
+        # Détermine le type de processus
+        if opportunity.opportunity_type == opportunity.OpportunityType.RENEWAL:
+            process_type = "Renewal Process"
+        else:
+            process_type = "Buying Process"
         
-        # Nettoyer le nom
-        value = value.strip()
-        
-        # Validation de la longueur
-        if len(value) < 3:
-            raise StandardizedValidationError({
-                "name": CoreErrorMessages.INVALID_FIELD.format(field="Template name (minimum 3 characters)")
-            })
-        
-        if len(value) > 200:
-            raise StandardizedValidationError({
-                "name": CoreErrorMessages.INVALID_FIELD.format(field="Template name (maximum 200 characters)")
-            })
-        
-        # Utiliser la méthode ClientScopeManager pour l'unicité
-        self.validate_client_scoped_uniqueness(
-            data={'name': value},
-            unique_fields=['name'],
-            model_class=PipelineTemplate,
-            error_message=OpportunityErrorMessages.TEMPLATE_ALREADY_EXISTS
-        )
-        
-        return value
+        return f"{process_type} for {opportunity.account.company_name}"
     
     def validate_template_type(self, value):
         """Validation du type de template"""
@@ -130,165 +157,78 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
             })
         return value
     
-    def _generate_unique_name(self, base_name, template_type):
-        """
-        Génère un nom unique en ajoutant un numéro si nécessaire
-        """
-        client_id = self._get_client_id_from_context()
-        
-        # Compter les templates existants avec le même nom de base et type
-        existing_count = PipelineTemplate.objects.filter(
-            client_id=client_id,
-            template_type=template_type,
-            name__startswith=base_name
-        ).count()
-        
-        if existing_count == 0:
-            return base_name
-        else:
-            # Si des templates existent déjà, ajouter le numéro
-            return f"{base_name} {existing_count + 1}"
-    
-    def validate_is_default(self, value):
-        """Validation du statut par défaut"""
-        if value is True:
-            client_id = self._get_client_id_from_context()
-
-            template_type = self.initial_data.get('template_type', PipelineStagesConfig.TemplateType.DEFAULT)
-            
-            # Vérifier qu'il n'y a pas déjà un template par défaut
-            existing_default = PipelineTemplate.objects.filter(
-                client_id=client_id,
-                is_default=True,
-                is_active=True
-            ).exclude(id=self.instance.id if self.instance else None).first()
-            
-            if existing_default:
-                raise StandardizedValidationError({
-                    "is_default": CoreErrorMessages.INVALID_FIELD.format(
-                        field=f"Default template ('{existing_default.name}' is already set as default)"
-                    )
-                })
-        
+    def validate_name(self, value):
+        """Validation du nom du template avec génération automatique"""
+        # Si pas de nom fourni, on générera automatiquement dans validate()
+        if value and value.strip():
+            return value.strip()
         return value
     
+    def validate_opportunity(self, value):
+        """Validation de l'opportunité selon le pattern du projet"""
+        if value:
+            client_id = self._get_client_id_from_context()
+            if str(value.client_id) != str(client_id):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.PERMISSION_DENIED,
+                    field_name="opportunity"
+                )
+        return value
+    
+    def _unique_constraint(self, data):
+        """
+        Contrainte d'unicité : un seul template par opportunité
+        """
+        opportunity = data.get('opportunity', getattr(self.instance, 'opportunity', None))
+        
+        if opportunity:
+            self.validate_client_scoped_uniqueness(
+                data={'opportunity': opportunity.id},
+                unique_fields=['opportunity'],
+                model_class=PipelineTemplate,
+            )
+
     def validate(self, data):
-        """Validation avec logique intelligente de nommage et is_default"""
+        """Validation générale des données"""
         data = super().validate(data)
         
-        client_id = self._get_client_id_from_context()
-        template_type = data.get('template_type')
+        # Validation d'unicité avec la méthode standard
+        self._unique_constraint(data)
+        
+        # Génération automatique du nom si pas fourni
+        opportunity = data.get('opportunity', getattr(self.instance, 'opportunity', None))
         name = data.get('name')
         
-        # ===== LOGIQUE 1: Nom automatique intelligent si pas fourni =====
         if not name or not name.strip():
-            if template_type == 'DEFAULT':
-                base_name = "Default Sales Pipeline"
-            elif template_type == 'RENEWAL': 
-                base_name = "Renewal Pipeline"
-            elif template_type == 'CUSTOM':
-                base_name = "Custom Pipeline"
+            if opportunity:
+                data['name'] = self.generate_default_name(opportunity)
             else:
-                base_name = f"Pipeline {template_type}"
-            
-            # Générer un nom unique
-            data['name'] = self._generate_unique_name(base_name, template_type)
-        
-        # ===== LOGIQUE 2: is_default automatique si aucun template existe =====
-        is_default = data.get('is_default')
-        
-        # Si is_default n'est pas explicitement défini, vérifier s'il faut le mettre automatiquement
-        if is_default is None:
-            existing_templates_count = PipelineTemplate.objects.filter(
-                client_id=client_id,
-                is_active=True
-            ).count()
-
-            # Si aucun template actif n'existe, ce template devient automatiquement le default
-            if existing_templates_count == 0:
-                data['is_default'] = True
-            else:
-                # Sinon, DEFAULT type devient default automatiquement, autres non
-                data['is_default'] = False
-        
-        # ===== LOGIQUE 3: Validation cohérence =====
-        is_active = data.get('is_active', getattr(self.instance, 'is_active', True))
-        is_default = data.get('is_default', False)
-        
-        # Un template par défaut doit être actif
-        if is_default and not is_active:
-            raise StandardizedValidationError(
-                "A default template must be active",
-                field_name="is_active"
-            )
-        
-        # ===== LOGIQUE 4: Vérification unicité des defaults par type =====
-        if is_default:
-            existing_default = PipelineTemplate.objects.filter(
-                client_id=client_id,
-                template_type=template_type,
-                is_default=True,
-                is_active=True
-            ).exclude(id=self.instance.id if self.instance else None).first()
-            
-            if existing_default:
-                raise StandardizedValidationError({
-                    "is_default": CoreErrorMessages.INVALID_FIELD.format(
-                        field=f"Default {template_type} template ('{existing_default.name}' is already set as default)"
-                    )
-                })
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='Template Name'),
+                    field_name="name"
+                )
         
         return data
     
     def create(self, validated_data):
-        """Création d'un nouveau template"""
-        try:
-            # Ajouter le client_id automatiquement
-            # validated_data['client_id'] = self._get_client_id_from_context()
-
-            # Créer le template
-            template = PipelineTemplate.objects.create(**validated_data)
-            
-            return template
-            
-        except Exception as e:
-            raise StandardizedValidationError(
-                OpportunityErrorMessages.TEMPLATE_CREATION_FAILED.format(reason=str(e))
-            )
+        """Création avec client_id automatique"""
+        # Hériter du client_id de l'opportunité
+        if 'opportunity' in validated_data and validated_data['opportunity']:
+            validated_data['client_id'] = validated_data['opportunity'].client_id
+        else:
+            validated_data['client_id'] = self._get_client_id_from_context()
+        
+        return super().create(validated_data)
     
     def update(self, instance, validated_data):
-        """Mise à jour d'un template existant"""
-        try:
-            # Vérifier les permissions
-            client_id = self._get_client_id_from_context()
-            if str(instance.client_id) != str(client_id):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED
-                )
-            
-            # Mettre à jour l'instance
-            for attr, value in validated_data.items():
-                setattr(instance, attr, value)
-            
-            instance.save()
-            return instance
-            
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
+        """Mise à jour avec validation de cohérence"""
+        # Vérifier les permissions
+        client_id = self._get_client_id_from_context()
+        if str(instance.client_id) != str(client_id):
             raise StandardizedValidationError(
-                OpportunityErrorMessages.TEMPLATE_UPDATE_FAILED.format(reason=str(e))
+                CoreErrorMessages.PERMISSION_DENIED
             )
+        
+        return super().update(instance, validated_data)
     
-    def to_representation(self, instance):
-        """Enrichir la représentation avec des données calculées"""
-        representation = super().to_representation(instance)
-        
-        # Ajouter les champs calculés
-        representation['stages_count'] = self.get_stages_count(instance)
-        representation['is_in_use'] = self.get_is_in_use(instance)
-        representation['can_be_deleted'] = self.get_can_be_deleted(instance)
-        representation['opportunities_count'] = self.get_opportunities_count(instance)
-        representation['template_type_display'] = instance.get_template_type_display()
-        
-        return representation
+  

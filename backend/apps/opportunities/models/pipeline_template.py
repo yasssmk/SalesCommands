@@ -7,12 +7,20 @@ from apps.core_apps.models import BaseModelApp
 from ..config.pipeline_stages import PipelineStagesConfig
 
 
+
 class PipelineTemplate(BaseModelApp, ClientScopeManager.ModelMixin):
     """
     Template de pipeline de vente avec les étapes par défaut.
     Sert de base pour créer des pipelines personnalisés par opportunité.
     """
-    
+    opportunity = models.ForeignKey(
+        'opportunities.Opportunity',
+        on_delete=models.CASCADE,
+        related_name='pipeline_templates',
+        verbose_name=_('Opportunity'),
+        help_text=_('Opportunity this pipeline template belongs to')
+    )
+
     name = models.CharField(
         max_length=200,
         verbose_name=_('Template Name'),
@@ -34,11 +42,6 @@ class PipelineTemplate(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_('Type of template that determines the default stages')
     )
 
-    is_active = models.BooleanField(
-        default=True,
-        verbose_name=_('Is Active'),
-        help_text=_('Whether this template is available for use')
-    )
     
     is_default = models.BooleanField(
         default=False,
@@ -47,35 +50,39 @@ class PipelineTemplate(BaseModelApp, ClientScopeManager.ModelMixin):
     )
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
-        unique_fields=['name'],
-        index_fields=['is_active', 'is_default', 'template_type']
+        unique_fields=['opportunity', 'name'],
+        index_fields=[ 'is_default', 'template_type', 'opportunity']
     )):
         db_table = 'pipeline_templates'
         verbose_name = _('Pipeline Template')
         verbose_name_plural = _('Pipeline Templates')
-        ordering = ['name', 'template_type']
+        ordering = ['opportunity', 'name', 'template_type']
 
     def __str__(self):
-        return f"{self.name}"
+        return f"{self.opportunity.title} - {self.name}"
 
     def save(self, *args, **kwargs):
         """
         Sauvegarde standard - plusieurs templates par défaut autorisés
         """
-  
+        if self.opportunity and not self.client_id:
+                    self.client_id = self.opportunity.client_id
+                
         super().save(*args, **kwargs)
-
+        
     @classmethod
-    def get_default_template(cls, client_id, context=None):
+    def get_default_template(cls, opportunity, context=None):
         """
         Retourne un template par défaut pour un client donné
         Le contexte peut être utilisé pour différencier les départements/branches
         """
-        query = cls.objects.filter(client_id=client_id, is_default=True, is_active=True)
+        query = cls.objects.filter(
+            opportunity=opportunity,
+            is_default=True, 
+        )
         
         if context:
             # Possibilité d'ajouter un filtrage par contexte (département, branche, etc.)
-            # Pour le moment, on retourne le premier trouvé
             pass
         
         return query.first()
@@ -113,3 +120,21 @@ class PipelineTemplate(BaseModelApp, ClientScopeManager.ModelMixin):
             PipelineStagesConfig.TemplateType.DEFAULT, 
             PipelineStagesConfig.TemplateType.RENEWAL
         ]
+    
+    @classmethod
+    def create_default_for_opportunity(cls, opportunity, user=None):
+        """
+        Crée un template par défaut pour une opportunité donnée
+        """
+        template = cls.objects.create(
+            opportunity=opportunity,
+            name=f"Pipeline Process - {opportunity.title}",
+            description="Default pipeline process for this opportunity",
+            template_type=PipelineStagesConfig.TemplateType.DEFAULT,
+            is_default=True,
+            client_id=opportunity.client_id,
+            created_by=user,
+            updated_by=user
+        )
+        
+        return template

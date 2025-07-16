@@ -27,7 +27,7 @@ class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
     
     template = models.ForeignKey(
         'PipelineTemplate',
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name='opportunity_pipelines',
         verbose_name=_('Pipeline Template'),
         help_text=_('Template used to create this pipeline')
