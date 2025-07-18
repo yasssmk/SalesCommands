@@ -303,8 +303,22 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
             )
         
         stage_name = stage.name
-        stage.is_active = False  # Soft delete
-        stage.save()
+        deleted_order = stage.order
+        with transaction.atomic():
+                # Soft delete du stage
+                stage.is_active = False
+                stage.save()
+                
+                # ✅ CORRECTION : Décrémenter l'ordre des stages suivants
+                following_stages = template.stages.filter(
+                    order__gt=deleted_order,
+                    is_active=True,
+                    client_id=self.get_client_id()
+                )
+                    
+                for following_stage in following_stages:
+                    following_stage.order -= 1  # ✅ Décrémente au lieu d'incrémenter
+                    following_stage.save(update_fields=['order'])
         
         return Response({
             'success': True,
@@ -472,8 +486,23 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
             )
         
         substage_name = substage.name
-        substage.is_active = False  # Soft delete
-        substage.save()
+        deleted_order = substage.order
+        
+        with transaction.atomic():
+            # Soft delete de la substage
+            substage.is_active = False
+            substage.save()
+            
+            # ✅ CORRECTION : Décrémenter l'ordre des substages suivantes
+            following_substages = stage.substages.filter(
+                order__gt=deleted_order,
+                is_active=True,
+                client_id=self.get_client_id()
+            )
+            
+            for following_substage in following_substages:
+                following_substage.order -= 1  # ✅ Décrémente au lieu d'incrémenter
+                following_substage.save(update_fields=['order'])
         
         return Response({
             'success': True,
