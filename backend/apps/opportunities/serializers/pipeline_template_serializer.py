@@ -52,7 +52,7 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
 
     # Champs calculés pour accès rapide aux informations contextuelles
     account_id = serializers.SerializerMethodField(read_only=True)
-    product= serializers.SerializerMethodField(read_only=True)
+    products= serializers.SerializerMethodField(read_only=True)
     stages_count = serializers.IntegerField(read_only=True)
 
     # Champs pour les relations (read-only)
@@ -74,7 +74,7 @@ class PipelineTemplateSerializer(ClientScopeManager.SerializerMixin, serializers
                 'stages_count',
                 'is_default',
                 'account_id',
-                'product_id',
+                'products',
                 'account_name',
                 'created_at',
                 'updated_at'

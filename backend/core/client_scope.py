@@ -63,6 +63,11 @@ class ClientScopeManager:
 
         def _get_client_id_from_context(self):
             """Helper to get client_id from request context"""
+
+            direct_client_id = self.context.get('client_id')
+            if direct_client_id:
+                return direct_client_id
+        
             request = self.context.get("request")
             if not request or not request.auth:
                 raise StandardizedAuthenticationFailed(CoreErrorMessages.AUTH_REQUIRED)

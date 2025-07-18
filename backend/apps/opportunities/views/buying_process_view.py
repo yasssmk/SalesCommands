@@ -101,6 +101,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         """
         Récupère un template avec ses étapes en utilisant le service
         """
+
         # get_object() applique automatiquement le ClientScope
         instance = self.get_object()
         
@@ -113,6 +114,8 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
             'success': True,
             'data': template_data
         })
+    
+
         
     def create(self, request, *args, **kwargs):
         """
@@ -147,6 +150,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         """
         Met à jour un template existant
         """
+
         instance = self.get_object()
         partial = kwargs.pop('partial', False)
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
@@ -162,10 +166,13 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
             'data': serializer.data
         })
     
+
+    
     def destroy(self, request, *args, **kwargs):
         """
         Supprime un template (validation obsolète "template utilisé" supprimée)
         """
+
         instance = self.get_object()
         
         template_name = instance.name
@@ -175,6 +182,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
             'success': True,
             'message': f'Template "{template_name}" deleted successfully'
         }, status=status.HTTP_204_NO_CONTENT)
+        
 
     # ===== GESTION DES STAGES =====
     
@@ -207,6 +215,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         POST /pipeline-templates/{id}/stages/
         Ajoute un nouveau stage au template
         """
+
         template = self.get_object()
         
         # Préparer les données pour le stage
@@ -344,7 +353,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         Ajoute une nouvelle substage au stage
         """
         template = self.get_object()
-        
+
         # Récupérer le stage
         try:
             stage = template.stages.get(id=stage_id, client_id=self.get_client_id())
@@ -353,18 +362,20 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
                 OpportunityErrorMessages.STAGE_NOT_FOUND
             )
         
+
         # Préparer les données pour la substage
         substage_data = request.data.copy()
         substage_data['stage'] = stage.id
         substage_data['client_id'] = self.get_client_id()
-        
+
         # Calculer l'ordre automatiquement si non fourni
         if 'order' not in substage_data:
             last_order = stage.substages.aggregate(
                 max_order=Max('order')
             )['max_order'] or 0
             substage_data['order'] = last_order + 1
-        
+
+
         # Utiliser le service pour créer la substage
         substage = SubstageService.create_substage_with_metadata(
             validated_data=substage_data,

@@ -386,6 +386,13 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             print(f"\nStandardizedValidationError Details: {exc.detail}")
         
         print("="*50 + "\n")
+
+        from django.http import Http404
+        if isinstance(exc, Http404):
+            return Response(
+                StandardizedValidationError._format_detail(CoreErrorMessages.OBJECT_NOT_FOUND),
+                status=status.HTTP_404_NOT_FOUND
+            )
         
         # Regular exception handling
         if isinstance(exc, ParseError):

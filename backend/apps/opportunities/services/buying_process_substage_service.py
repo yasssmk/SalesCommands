@@ -84,38 +84,32 @@ class SubstageService:
         Returns:
             PipelineSubStage: Instance créée
         """
-        try:
-            # ✅ Import différé pour éviter l'import circulaire
-            from ..serializers.pipeline_substage_serializer import PipelineSubStageSerializer
-            from ..models.substage_metadata import SubStageMetadata
-            
-            with transaction.atomic():
-                # Créer la substage
-                substage_serializer = PipelineSubStageSerializer(
-                    data=validated_data,
-                    context={'client_id': client_id}
-                )
-                substage_serializer.is_valid(raise_exception=True)
-                substage = substage_serializer.save(
-                    client_id=client_id,
-                    created_by=user,
-                    updated_by=user
-                )
-                
-                # Créer les métadonnées si fournies
-                if metadata_data:
-                    cls._create_substage_metadata(substage, metadata_data, user, client_id)
-                
-                return substage
-                
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(
-                    detail=f"Failed to create substage: {str(e)}"
-                )
+
+        # ✅ Import différé pour éviter l'import circulaire
+        from ..serializers.pipeline_substage_serializer import PipelineSubStageSerializer
+        from ..models.substage_metadata import SubStageMetadata
+        
+        with transaction.atomic():
+            # Créer la substage
+            substage_serializer = PipelineSubStageSerializer(
+                data=validated_data,
+                context={'client_id': client_id}
             )
+            substage_serializer.is_valid(raise_exception=True)
+
+            substage = substage_serializer.save(
+                client_id=client_id,
+                created_by=user,
+                updated_by=user
+            )
+            
+            # Créer les métadonnées si fournies
+            if metadata_data:
+                cls._create_substage_metadata(substage, metadata_data, user, client_id)
+            
+            return substage
+                
+
     
     @classmethod
     def update_substage_with_metadata(cls, substage: 'PipelineSubStage', substage_data: dict,
@@ -133,35 +127,28 @@ class SubstageService:
         Returns:
             PipelineSubStage: Instance mise à jour
         """
-        try:
-            # ✅ Import différé pour éviter l'import circulaire
-            from ..serializers.pipeline_substage_serializer import PipelineSubStageSerializer
-            
-            with transaction.atomic():
-                # Mettre à jour la substage
-                substage_serializer = PipelineSubStageSerializer(
-                    substage,
-                    data=substage_data,
-                    partial=True,
-                    context={'client_id': client_id}
-                )
-                substage_serializer.is_valid(raise_exception=True)
-                updated_substage = substage_serializer.save(updated_by=user)
-                
-                # Mettre à jour les métadonnées si fournies
-                if metadata_data:
-                    cls._update_substage_metadata(updated_substage, metadata_data, user, client_id)
-                
-                return updated_substage
-                
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(
-                    detail=f"Failed to update substage: {str(e)}"
-                )
+
+        # ✅ Import différé pour éviter l'import circulaire
+        from ..serializers.pipeline_substage_serializer import PipelineSubStageSerializer
+        
+        with transaction.atomic():
+            # Mettre à jour la substage
+            substage_serializer = PipelineSubStageSerializer(
+                substage,
+                data=substage_data,
+                partial=True,
+                context={'client_id': client_id}
             )
+            substage_serializer.is_valid(raise_exception=True)
+            updated_substage = substage_serializer.save(updated_by=user)
+            
+            # Mettre à jour les métadonnées si fournies
+            if metadata_data:
+                cls._update_substage_metadata(updated_substage, metadata_data, user, client_id)
+            
+            return updated_substage
+                
+
     
     @classmethod
     def _create_substage_metadata(cls, substage: 'PipelineSubStage', metadata_data: dict, 

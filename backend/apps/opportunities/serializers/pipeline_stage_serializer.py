@@ -202,25 +202,6 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
                     error_message=OpportunityErrorMessages.STAGE_NAME_DUPLICATE.format(stage_name=name)
                 )
         
-        # Validation de l'unicité de l'ordre dans le contexte
-        order = data.get('order')
-        if order is not None:
-            if template:
-                # Vérifier l'unicité dans le template
-                self.validate_client_scoped_uniqueness(
-                    data={'template': template.id, 'order': order},
-                    unique_fields=['template', 'order'],
-                    model_class=PipelineStage,
-                    error_message=OpportunityErrorMessages.STAGE_ORDER_CONFLICT.format(order=order)
-                )
-            elif opportunity_pipeline:
-                # Vérifier l'unicité dans le pipeline d'opportunité
-                self.validate_client_scoped_uniqueness(
-                    data={'opportunity_pipeline': opportunity_pipeline.id, 'order': order},
-                    unique_fields=['opportunity_pipeline', 'order'],
-                    model_class=PipelineStage,
-                    error_message=OpportunityErrorMessages.STAGE_ORDER_CONFLICT.format(order=order)
-                )
         
         # Validation des transitions d'état
         if self.instance:

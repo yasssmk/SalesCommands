@@ -6,6 +6,7 @@ from django.utils import timezone
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
 from ..config.pipeline_stages import PipelineStagesConfig
+from .pipeline_stage import PipelineStage
 
 
 class PipelineSubStage(BaseModelApp, ClientScopeManager.ModelMixin):
@@ -146,100 +147,157 @@ class PipelineSubStage(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name_plural = _('Pipeline SubStages')
         ordering = ['stage', 'order', 'name']
 
-    def __str__(self):
-        return f"{self.stage} - {self.name}"
-
     def save(self, *args, **kwargs):
         """
-        Sauvegarde avec gestion automatique des ordres
+        ✅ CORRECTION FINALE : Sauvegarde simple pour MVP
         """
-        # Gestion automatique des ordres avant sauvegarde
-        self._handle_order_conflicts()
+        # ✅ Validation de base
+        self.clean()
         
+        # ✅ Gestion basique des ordres sans conflits automatiques
+        if not self.order:
+            # Calculer l'ordre suivant seulement si pas spécifié
+            from django.db.models import Max
+            
+            # Déterminer le contexte (template ou opportunité)
+            filter_kwargs = {'client_id': self.client_id}
+            if self.template_id:
+                filter_kwargs['template_id'] = self.template_id
+            elif hasattr(self, 'opportunity_pipeline_id') and self.opportunity_pipeline_id:
+                filter_kwargs['opportunity_pipeline_id'] = self.opportunity_pipeline_id
+            
+            max_order = PipelineStage.objects.filter(**filter_kwargs).aggregate(
+                Max('order')
+            )['order__max'] or 0
+            self.order = max_order + 1
+        
+        # ✅ Sauvegarde simple sans linked list automatique
         super().save(*args, **kwargs)
-        
-        # Mise à jour des relations previous/next après sauvegarde
-        self._update_linked_list()
 
     def _handle_order_conflicts(self):
         """
-        Gère automatiquement les conflits d'ordre en décalant les substages existants
+        ✅ MVP : Désactivé - On gère les ordres manuellement
         """
-        if not self.order:
-            return
-        
-        # Trouver les substages qui ont un ordre >= au nouveau substage dans le même stage
-        conflicting_substages = PipelineSubStage.objects.filter(
-            stage=self.stage,
-            order__gte=self.order,
-            client_id=self.client_id
-        ).exclude(pk=self.pk)
-        
-        if conflicting_substages.exists():
-            # Décaler tous les substages conflictuels
-            for substage in conflicting_substages:
-                substage.order += 1
-                substage.save(update_fields=['order'])
+        pass
 
     def _update_linked_list(self):
         """
-        Met à jour les relations previous/next substage
+        ✅ MVP : Désactivé - Trop complexe pour un MVP
         """
-        # Récupérer tous les substages du même stage ordonnés
-        all_substages = PipelineSubStage.objects.filter(
-            stage=self.stage,
-            client_id=self.client_id
-        ).order_by('order')
-        
-        # Mettre à jour les relations
-        previous_substage = None
-        for substage in all_substages:
-            substage.previous_substage = previous_substage
-            if previous_substage:
-                previous_substage.next_substage = substage
-                previous_substage.save(update_fields=['next_substage'])
-            previous_substage = substage
-        
-        # Sauvegarder le dernier substage
-        if previous_substage:
-            previous_substage.next_substage = None
-            previous_substage.save(update_fields=['next_substage'])
+        pass
 
-    def get_next_substage(self):
+    def get_next_stage(self):
         """
-        Récupère le substage suivant (performance optimisée)
+        ✅ Récupération du stage suivant via requête simple
         """
-        return self.next_substage
+        # Déterminer le contexte (template ou opportunité)
+        filter_kwargs = {'client_id': self.client_id}
+        if self.template:
+            filter_kwargs['template'] = self.template
+        elif self.opportunity_pipeline:
+            filter_kwargs['opportunity_pipeline'] = self.opportunity_pipeline
+        else:
+            return None
+        
+        return PipelineStage.objects.filter(
+            order__gt=self.order,
+            is_active=True,
+            **filter_kwargs
+        ).order_by('order').first()
 
-    def get_previous_substage(self):
+    def get_previous_stage(self):
         """
-        Récupère le substage précédent (performance optimisée)
+        ✅ Récupération du stage précédent via requête simple
         """
-        return self.previous_substage
+        # Déterminer le contexte (template ou opportunité)
+        filter_kwargs = {'client_id': self.client_id}
+        if self.template:
+            filter_kwargs['template'] = self.template
+        elif self.opportunity_pipeline:
+            filter_kwargs['opportunity_pipeline'] = self.opportunity_pipeline
+        else:
+            return None
+            
+        return PipelineStage.objects.filter(
+            order__lt=self.order,
+            is_active=True,
+            **filter_kwargs
+        ).order_by('-order').first()
+
+    @classmethod
+    def create_from_template(cls, template_stage, opportunity_pipeline, user=None):
+        """
+        ✅ MVP : Création simplifiée depuis template
+        """
+        new_stage = cls.objects.create(
+            opportunity_pipeline=opportunity_pipeline,
+            name=template_stage.name,
+            description=template_stage.description,
+            order=template_stage.order,
+            is_active=template_stage.is_active,
+            estimated_duration=template_stage.estimated_duration,
+            status=cls.StageStatus.ACTIVE,
+            client_id=opportunity_pipeline.client_id,
+            created_by=user,
+            updated_by=user
+        )
+        
+        # ✅ MVP : Pas de gestion automatique des linked lists
+        return new_stage
+
+    @classmethod
+    def reorder_stages(cls, stages_with_new_orders, context_filter):
+        """
+        ✅ MVP : Réordonnement en batch simple
+        """
+        for stage_id, new_order in stages_with_new_orders:
+            cls.objects.filter(
+                id=stage_id, 
+                **context_filter
+            ).update(order=new_order)
+
+    def insert_at_position(self, new_order):
+        """
+        ✅ MVP : Insertion simple - conflits gérés manuellement côté frontend
+        """
+        self.order = new_order
+        self.save()
 
     def mark_as_started(self):
         """
-        Marque le substage comme commencé
+        ✅ Marque l'étape comme commencée
         """
-        if not self.actual_start_date:
-            self.actual_start_date = timezone.now()
-            self.status = self.SubStageStatus.IN_PROGRESS
-            self.save(update_fields=['actual_start_date', 'status'])
+        if self.is_opportunity_stage and not self.started_at:
+            from django.utils import timezone
+            self.started_at = timezone.now()
+            self.status = self.StageStatus.ACTIVE
+            self.save(update_fields=['started_at', 'status'])
 
     def mark_as_completed(self):
         """
-        Marque le substage comme terminé
+        ✅ Marque l'étape comme terminée
         """
-        self.actual_end_date = timezone.now()
-        self.status = self.SubStageStatus.COMPLETED
-        self.save(update_fields=['actual_end_date', 'status'])
+        if self.is_opportunity_stage:
+            from django.utils import timezone
+            self.completed_at = timezone.now()
+            self.status = self.StageStatus.COMPLETED
+            self.save(update_fields=['completed_at', 'status'])
+
+    def mark_as_skipped(self):
+        """
+        ✅ Marque l'étape comme ignorée
+        """
+        if self.is_opportunity_stage:
+            self.status = self.StageStatus.SKIPPED
+            self.save(update_fields=['status'])
 
     def mark_as_blocked(self):
         """
-        Marque le substage comme bloqué
+        ✅ Marque l'étape comme bloquée
         """
-        self.status = self.SubStageStatus.BLOCKED
-        self.save(update_fields=['status'])
+        if self.is_opportunity_stage:
+            self.status = self.StageStatus.BLOCKED
+            self.save(update_fields=['status'])
 
     def mark_as_not_started(self):
         """

@@ -153,7 +153,7 @@ urlpatterns = [
     }), name='buying-process-stages'),
     
     path('buying-processes/<int:pk>/stages/<int:stage_id>/', BuyingProcessViewSet.as_view({
-        'put': 'update_stage',
+        'patch': 'update_stage',
         'delete': 'remove_stage'
     }), name='buying-process-stage-detail'),
 
@@ -164,7 +164,7 @@ urlpatterns = [
     }), name='buying-process-substages'),
     
     path('buying-processes/<int:pk>/stages/<int:stage_id>/substages/<int:substage_id>/', BuyingProcessViewSet.as_view({
-        'put': 'update_substage',
+        'patch': 'update_substage',
         'delete': 'remove_substage'
     }), name='buying-process-substage-detail'),
 
