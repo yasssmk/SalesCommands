@@ -549,3 +549,142 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
             'success': True,
             'data': overview_data
         })
+    
+    #  ===== ACTIVITY INTEGRATION - Gestion des activités liées aux substages =====
+
+    @action(detail=False, methods=['post'], url_path='opportunity/(?P<opportunity_id>[^/.]+)/substages/(?P<substage_id>[^/.]+)/link-activity')
+    def link_activity_to_substage(self, request, opportunity_id=None, substage_id=None):
+        """
+        POST /buying-processes/opportunity/{opportunity_id}/substages/{substage_id}/link-activity/
+        Lie une activité existante à un substage
+        """
+        with transaction.atomic():
+            # Import du service
+            from ..services.activity_substage_service import ActivitySubStageService
+            
+            # Validation des données
+            activity_id = request.data.get('activity_id')
+            if not activity_id:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='activity_id')
+                )
+            
+            # Créer la liaison
+            link = ActivitySubStageService.link_existing_activity(
+                substage_id=int(substage_id),
+                activity_id=int(activity_id),
+                user=request.user,
+                client_id=self.get_client_id()
+            )
+            
+            # Sérialiser le résultat
+            from ..serializers.substage_activity_serializer import SubStageActivitySerializer
+            serializer = SubStageActivitySerializer(link, context={'client_id': self.get_client_id()})
+            
+            return Response({
+                'success': True,
+                'message': f'Activity linked to substage successfully',
+                'data': serializer.data
+            })
+    
+    @action(detail=False, methods=['post'], url_path='opportunity/(?P<opportunity_id>[^/.]+)/substages/(?P<substage_id>[^/.]+)/create-activity')
+    def create_activity_for_substage(self, request, opportunity_id=None, substage_id=None):
+        """
+        POST /buying-processes/opportunity/{opportunity_id}/substages/{substage_id}/create-activity/
+        Crée une nouvelle activité et la lie automatiquement au substage
+        """
+        try:
+            with transaction.atomic():
+                # Import du service
+                from ..services.activity_substage_service import ActivitySubStageService
+                
+                # Validation des données requises
+                required_fields = ['title', 'activity_type']
+                for field in required_fields:
+                    if not request.data.get(field):
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.REQUIRED_FIELD.format(field=field)
+                        )
+                
+                # Créer l'activité et la liaison
+                result = ActivitySubStageService.create_activity_for_substage(
+                    substage_id=int(substage_id),
+                    activity_data=request.data,
+                    user=request.user,
+                    client_id=self.get_client_id()
+                )
+                
+                # Sérialiser les résultats
+                from ..serializers.substage_activity_serializer import SubStageActivitySerializer
+                from apps.activities.serializers import ActivitySerializer
+                
+                link_serializer = SubStageActivitySerializer(
+                    result['link'], 
+                    context={'client_id': self.get_client_id()}
+                )
+                activity_serializer = ActivitySerializer(
+                    result['activity'],
+                    context={'client_id': self.get_client_id()}
+                )
+                
+                return Response({
+                    'success': True,
+                    'message': f'Activity created and linked to substage successfully',
+                    'data': {
+                        'activity': activity_serializer.data,
+                        'link': link_serializer.data
+                    }
+                })
+                
+        except ValueError:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="ID values must be integers")
+            )
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Failed to create activity: {str(e)}")
+            )
+    
+    @action(detail=False, methods=['delete'], url_path='opportunity/(?P<opportunity_id>[^/.]+)/substages/(?P<substage_id>[^/.]+)/activities/(?P<activity_id>[^/.]+)')
+    def unlink_activity_from_substage(self, request, opportunity_id=None, substage_id=None, activity_id=None):
+        """
+        DELETE /buying-processes/opportunity/{opportunity_id}/substages/{substage_id}/activities/{activity_id}/
+        Supprime la liaison entre un substage et une activité
+        """
+        with transaction.atomic():
+            # Import du service
+            from ..services.activity_substage_service import ActivitySubStageService
+            
+            # Supprimer la liaison
+            ActivitySubStageService.unlink_activity(
+                substage_id=int(substage_id),
+                activity_id=int(activity_id),
+                client_id=self.get_client_id()
+            )
+            
+            return Response({
+                'success': True,
+                'message': f'Activity unlinked from substage successfully'
+            })
+    
+    @action(detail=False, methods=['get'], url_path='opportunity/(?P<opportunity_id>[^/.]+)/substages/(?P<substage_id>[^/.]+)/timeline')
+    def get_substage_timeline(self, request, opportunity_id=None, substage_id=None):
+        """
+        GET /buying-processes/opportunity/{opportunity_id}/substages/{substage_id}/timeline/
+        Récupère la timeline des activités liées à un substage
+        """
+        # Import du service
+        from ..services.activity_substage_service import ActivitySubStageService
+        
+        # Récupérer la timeline
+        timeline_data = ActivitySubStageService.get_substage_timeline(
+            substage_id=int(substage_id),
+            client_id=self.get_client_id()
+        )
+        
+        return Response({
+            'success': True,
+            'data': timeline_data
+        })

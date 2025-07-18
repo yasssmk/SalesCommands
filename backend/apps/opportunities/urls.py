@@ -173,6 +173,29 @@ urlpatterns = [
         'get': 'opportunity_overview'
     }), name='buying-process-opportunity-overview'),
 
+    # =========================================================================
+    # SUBSTAGE ACTIVITIES - Gestion des activités liées aux substages
+    # =========================================================================
+    
+    # ✅ Link existing activity to substage
+    path('buying-processes/opportunity/<int:opportunity_id>/substages/<int:substage_id>/link-activity/', BuyingProcessViewSet.as_view({
+        'post': 'link_activity_to_substage'
+    }), name='buying-process-substage-link-activity'),
+    
+    # ✅ Create new activity for substage
+    path('buying-processes/opportunity/<int:opportunity_id>/substages/<int:substage_id>/create-activity/', BuyingProcessViewSet.as_view({
+        'post': 'create_activity_for_substage'
+    }), name='buying-process-substage-create-activity'),
+    
+    # ✅ Unlink activity from substage
+    path('buying-processes/opportunity/<int:opportunity_id>/substages/<int:substage_id>/activities/<int:activity_id>/', BuyingProcessViewSet.as_view({
+        'delete': 'unlink_activity_from_substage'
+    }), name='buying-process-substage-unlink-activity'),
+    
+    # ✅ Get substage activities timeline
+    path('buying-processes/opportunity/<int:opportunity_id>/substages/<int:substage_id>/timeline/', BuyingProcessViewSet.as_view({
+        'get': 'get_substage_timeline'
+    }), name='buying-process-substage-timeline'),
 
    
 
