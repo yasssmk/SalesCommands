@@ -283,17 +283,23 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     
     def create(self, validated_data):
         """Create activity with optional contacts"""
-        contact_ids = validated_data.pop('contact_ids', [])
+
+        if 'user' in validated_data:
+            validated_data['owner'] = validated_data.pop('user')
         
-        # Set owner to current user if not provided
+        # ✅ OWNER PAR DÉFAUT (sécurité)
         if 'owner' not in validated_data and self.context.get('request'):
             validated_data['owner'] = self.context['request'].user
         
+        # ✅ GESTION DES CONTACTS (garde l'existant)
+        contact_ids = validated_data.pop('contact_ids', [])
+        
+        # ✅ CRÉATION (ViewSet passe client_id, BaseModelApp gère automatiquement)
         activity = super().create(validated_data)
         
-        # Add contacts if provided
+        # ✅ LIAISON DES CONTACTS (garde l'existant)
         if contact_ids:
-            # Utiliser la méthode ClientScope correcte
+            from apps.accounts.models import Contact
             client_id = self._get_client_id_from_context()
             contacts = Contact.objects.filter(
                 id__in=contact_ids,

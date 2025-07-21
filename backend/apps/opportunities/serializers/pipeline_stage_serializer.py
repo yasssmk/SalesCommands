@@ -257,7 +257,9 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             
         except Exception as e:
             raise StandardizedValidationError(
-                f"Stage creation failed: {str(e)}"
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Stage creation failed: {str(e)}"
+                ),
             )
     
     def update(self, instance, validated_data):
@@ -288,11 +290,11 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             instance.save()
             return instance
             
-        except StandardizedValidationError:
-            raise
         except Exception as e:
             raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
                 f"Stage update failed: {str(e)}"
+                ),
             )
     
     def to_representation(self, instance):

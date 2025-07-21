@@ -1,416 +1,396 @@
 # apps/activities/views.py
 from rest_framework.views import APIView
+from rest_framework import viewsets, status, filters
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework.decorators import action
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from datetime import datetime, timedelta
-
 from core.exceptions import StandardizedValidationError
 from core.apps_shared_methods import BaseAPIView
 from core.error_messages import CoreErrorMessages, ActivityErrorMessages
-from apps.accounts.models import Account, Contact
-from apps.opportunities.models import Opportunity
-
-from ..models import Activity, ActivitySequence, ActivityCampaign
+from ..models import Activity, ActivitySequence
 from ..serializers import (
     ActivitySerializer,
     ActivityWithCampaignSerializer,
     ActivityCompletionSerializer,
-    ActivitySequenceSerializer
 )
 
 
-class ActivityAPIView(BaseAPIView):
-    """
-    API View for Activity management with sequence and campaign handling.
-    """
+class ActivityViewSet(BaseAPIView, viewsets.ModelViewSet):
+    """API endpoints for managing activities"""
     
-    queryset = Activity.objects.select_related(
-        'account',
-        'owner', 
-        'opportunity',
-        'previous_activity',
-        'next_activity'
-    ).prefetch_related(
-        'contacts',
-        'sequence_info',
-        'campaign_info'
-    )
-    
+    queryset = Activity.objects.all()
     serializer_class = ActivitySerializer
-    entity_name = 'activity'
-
-    mass_update_allowed_fields = {
-        'status', 'activity_type', 'owner_id', 'scheduled_start', 'scheduled_end'
-    }
+    entity_name = 'activity'  
+    
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = [
+        'activity_type', 'status', 'owner', 'account', 
+        'campaign_info__campaign', 'sequence_info__source_type'
+    ]
+    search_fields = ['title', 'description', 'account__company_name']
+    ordering_fields = ['scheduled_start', 'created_at', 'title']
+    ordering = ['scheduled_start']
 
     def get_queryset(self):
+
         """Extend base queryset with activity-specific filtering"""
-        queryset = super().get_queryset()
-        
-        # Basic filtering
-        filter_mappings = {
-            'owner_ids': 'owner_id__in',
-            'account_ids': 'account_id__in',
-            'statuses': 'status__in',
-            'activity_types': 'activity_type__in',
-            'opportunity_ids': 'opportunity_id__in'
-        }
-        
-        try:
-            for param, field in filter_mappings.items():
-                values = self.request.query_params.get(param)
-                if values:
-                    filter_list = [v.strip() for v in values.split(',')]
-                    queryset = queryset.filter(**{field: filter_list})
-            
-            # Date filtering
-            start_date = self.request.query_params.get('start_date')
-            end_date = self.request.query_params.get('end_date')
-            
-            if start_date:
-                try:
-                    start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-                    queryset = queryset.filter(scheduled_start__gte=start_date)
-                except ValueError:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_DATA.format(detail="Invalid start_date format")
-                    )
-            
-            if end_date:
-                try:
-                    end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                    queryset = queryset.filter(scheduled_start__lte=end_date)
-                except ValueError:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_DATA.format(detail="Invalid end_date format")
-                    )
-            
-            # Sequence filtering
-            sequence_position = self.request.query_params.get('sequence_position')
-            if sequence_position:
-                queryset = queryset.filter(sequence_info__sequence_position=sequence_position)
-            
-            sequence_outcome = self.request.query_params.get('sequence_outcome')
-            if sequence_outcome:
-                queryset = queryset.filter(sequence_info__sequence_outcome=sequence_outcome)
-            
-            # Campaign filtering
-            campaign_ids = self.request.query_params.get('campaign_ids')
-            if campaign_ids:
-                campaign_list = [v.strip() for v in campaign_ids.split(',')]
-                queryset = queryset.filter(campaign_info__campaign_id__in=campaign_list)
-            
-            # Status filtering shortcuts
-            overdue = self.request.query_params.get('overdue')
-            if overdue and overdue.lower() == 'true':
-                queryset = queryset.filter(
-                    status__in=[Activity.Status.PLANNED, Activity.Status.IN_PROGRESS],
-                    scheduled_start__lt=timezone.now()
-                )
-            
-            upcoming = self.request.query_params.get('upcoming')
-            if upcoming and upcoming.lower() == 'true':
-                next_days = int(self.request.query_params.get('upcoming_days', 7))
-                end_time = timezone.now() + timedelta(days=next_days)
-                queryset = queryset.filter(
-                    status__in=[Activity.Status.PLANNED, Activity.Status.IN_PROGRESS],
-                    scheduled_start__range=[timezone.now(), end_time]
-                )
-                    
-        except ValueError as e:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FILTER.format(detail=str(e))
-            )
-            
-        return queryset
+        queryset = Activity.objects.all()
+    
+        # ✅ Apply client scoping (obligatoire)
+        queryset = self.filter_queryset_by_client(queryset)
 
-    def get_serializer_context(self):
-        """Add filter parameters to serializer context"""
-        context = super().get_serializer_context()
+        queryset = queryset.select_related(
+            'account', 'owner', 'opportunity',
+            'campaign_info__campaign', 'campaign_info__campaign_target',
+            'sequence_info'
+        ).prefetch_related('contacts')
         
-        # Set 'many' flag for serializer context
-        context['many'] = getattr(self, '_is_list_request', False)
+        # ✅ Additional filters
+        # Filter by current user's activities if requested
+        my_activities = self.request.query_params.get('my_activities', None)
+        if my_activities and my_activities.lower() == 'true':
+            queryset = queryset.filter(owner=self.request.user)
         
-        return context
-
-    def get_serializer_class(self):
-        """Return appropriate serializer based on request"""
-        # Check if this is a completion request
-        if hasattr(self, '_is_complete_action') and self._is_complete_action:
-            return ActivityCompletionSerializer
-        elif self.request.method == 'POST' and self.request.data and 'campaign_id' in self.request.data:
-            return ActivityWithCampaignSerializer
-        return self.serializer_class
-
-    def dispatch(self, request, *args, **kwargs):
-        """Custom dispatch to handle different endpoints"""
-        # Check if this is a custom action endpoint
-        path = request.path.split('/')
+        # Filter by today's activities if requested
+        today = self.request.query_params.get('today', None)
+        if today and today.lower() == 'true':
+            today_date = timezone.now().date()
+            queryset = queryset.filter(scheduled_start__date=today_date)
         
-        # Path will contain segments like ['', 'api', 'activities', '1', 'complete', '']
-        if len(path) > 4:
-            endpoint_type = path[4]  # Get the endpoint type
+        # Filter by pending activities
+        pending = self.request.query_params.get('pending', None)
+        if pending and pending.lower() == 'true':
+            queryset = queryset.filter(status=Activity.Status.PLANNED)
             
-            if endpoint_type == 'complete':
-                if request.method == 'POST':
-                    self._is_complete_action = True
-                    return self.complete(request, *args, **kwargs)
-            
-            elif endpoint_type == 'increment_call_attempts':
-                if request.method == 'POST':
-                    return self.increment_call_attempts(request, *args, **kwargs)
+        # Sequence filtering
+        sequence_position = self.request.query_params.get('sequence_position')
+        if sequence_position:
+            queryset = queryset.filter(sequence_info__sequence_position=sequence_position)
         
-        # Check for collection endpoints (no pk in kwargs)
-        if 'pk' not in kwargs:
-            endpoint = path[-2] if len(path) > 2 else ''
-            self._is_list_request = True
-            
-            if endpoint == 'my_activities':
-                if request.method == 'GET':
-                    return self.my_activities(request, *args, **kwargs)
-            
-            elif endpoint == 'overdue':
-                if request.method == 'GET':
-                    return self.overdue(request, *args, **kwargs)
-            
-            elif endpoint == 'upcoming':
-                if request.method == 'GET':
-                    return self.upcoming(request, *args, **kwargs)
-            
-            elif endpoint == 'sequence_activities':
-                if request.method == 'GET':
-                    return self.sequence_activities(request, *args, **kwargs)
+        sequence_outcome = self.request.query_params.get('sequence_outcome')
+        if sequence_outcome:
+            queryset = queryset.filter(sequence_info__sequence_outcome=sequence_outcome)
         
-        # Default to standard dispatch
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_object(self):
-        """Get a single object with client scope validation"""
-        pk = self.kwargs.get('pk')
-        if not pk:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        # Campaign filtering
+        campaign_ids = self.request.query_params.get('campaign_ids')
+        if campaign_ids:
+            campaign_list = [v.strip() for v in campaign_ids.split(',')]
+            queryset = queryset.filter(campaign_info__campaign_id__in=campaign_list)
         
-        objects = self.get_objects([pk])
-        if not objects.exists():
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-        
-        return objects.first()
-
-    def complete(self, request, pk=None):
-        """
-        Complete an activity with outcome information.
-        
-        POST /api/activities/{id}/complete/
-        """
-        try:
-            activity = self.get_object()
-            
-            # Validate activity can be completed
-            if activity.status == Activity.Status.COMPLETED:
-                raise StandardizedValidationError(
-                    ActivityErrorMessages.ACTIVITY_ALREADY_COMPLETED
-                )
-            
-            # Validate completion data
-            serializer = ActivityCompletionSerializer(data=request.data)
-            if not serializer.is_valid():
-                raise StandardizedValidationError(serializer.errors)
-            
-            completion_data = serializer.validated_data
-            
-            with transaction.atomic():
-                # Mark activity as completed
-                activity.complete(
-                    outcome_notes=completion_data.get('outcome_notes'),
-                    save=False
-                )
-                
-                # Handle campaign-specific outcomes
-                if hasattr(activity, 'campaign_info') and activity.campaign_info:
-                    campaign_info = activity.campaign_info
-                    if completion_data.get('meeting_scheduled'):
-                        campaign_info.meeting_scheduled = True
-                        campaign_info.save()
-                    
-                    if completion_data.get('opportunity_created'):
-                        campaign_info.opportunity_created = True
-                        campaign_info.save()
-                
-                # Handle sequence-specific outcomes
-                if hasattr(activity, 'sequence_info') and activity.sequence_info:
-                    sequence_info = activity.sequence_info
-                    sequence_outcome = completion_data.get('sequence_outcome')
-                    callback_date = completion_data.get('callback_requested_date')
-                    
-                    if sequence_outcome:
-                        sequence_info.set_outcome(
-                            outcome=sequence_outcome,
-                            notes=completion_data.get('outcome_notes'),
-                            callback_date=callback_date,
-                            save=True
-                        )
-                
-                activity.save()
-            
-            # Return updated activity
-            response_serializer = self.serializer_class(activity)
-            return Response(response_serializer.data)
-            
-        except Exception as e:
-            return self.handle_exception(e)
-
-    def increment_call_attempts(self, request, pk=None):
-        """
-        Increment call attempts for sequence activities.
-        
-        POST /api/activities/{id}/increment_call_attempts/
-        """
-        try:
-            activity = self.get_object()
-            
-            # Validate activity has sequence info and is a call
-            if not hasattr(activity, 'sequence_info') or not activity.sequence_info:
-                raise StandardizedValidationError(
-                    "Activity is not part of a sequence"
-                )
-            
-            if activity.activity_type != Activity.ActivityType.CALL:
-                raise StandardizedValidationError(
-                    "Only call activities can have call attempts incremented"
-                )
-            
-            sequence_info = activity.sequence_info
-            attempts = sequence_info.increment_call_attempts()
-            
-            return Response({
-                'call_attempts': attempts,
-                'max_attempts_reached': attempts >= 3,
-                'activity_completed': activity.status == Activity.Status.COMPLETED
-            })
-            
-        except Exception as e:
-            return self.handle_exception(e)
-
-    def my_activities(self, request):
-        """
-        Get activities assigned to the current user.
-        
-        GET /api/activities/my_activities/
-        """
-        try:
-            # Filter by current user
-            queryset = self.get_queryset().filter(owner=request.user)
-            
-            # Apply pagination
-            page = self.paginate_queryset(queryset)
-            if page is not None:
-                serializer = self.serializer_class(page, many=True)
-                return self.get_paginated_response(serializer.data)
-            
-            serializer = self.serializer_class(queryset, many=True)
-            return Response(serializer.data)
-            
-        except Exception as e:
-            return self.handle_exception(e)
-
-    def overdue(self, request):
-        """
-        Get overdue activities.
-        
-        GET /api/activities/overdue/
-        """
-        try:
-            # Filter overdue activities
-            queryset = self.get_queryset().filter(
+        # Status filtering shortcuts
+        overdue = self.request.query_params.get('overdue')
+        if overdue and overdue.lower() == 'true':
+            queryset = queryset.filter(
                 status__in=[Activity.Status.PLANNED, Activity.Status.IN_PROGRESS],
                 scheduled_start__lt=timezone.now()
             )
-            
-            # Apply pagination
-            page = self.paginate_queryset(queryset)
-            if page is not None:
-                serializer = self.serializer_class(page, many=True)
-                return self.get_paginated_response(serializer.data)
-            
-            serializer = self.serializer_class(queryset, many=True)
-            return Response(serializer.data)
-            
-        except Exception as e:
-            return self.handle_exception(e)
-
-    def upcoming(self, request):
-        """
-        Get upcoming activities.
         
-        GET /api/activities/upcoming/
-        """
-        try:
-            # Get number of days to look ahead
-            days = int(request.query_params.get('days', 7))
-            end_time = timezone.now() + timedelta(days=days)
-            
-            # Filter upcoming activities
-            queryset = self.get_queryset().filter(
+        upcoming = self.request.query_params.get('upcoming')
+        if upcoming and upcoming.lower() == 'true':
+            next_days = int(self.request.query_params.get('upcoming_days', 7))
+            end_time = timezone.now() + timedelta(days=next_days)
+            queryset = queryset.filter(
                 status__in=[Activity.Status.PLANNED, Activity.Status.IN_PROGRESS],
                 scheduled_start__range=[timezone.now(), end_time]
-            ).order_by('scheduled_start')
-            
-            # Apply pagination
-            page = self.paginate_queryset(queryset)
-            if page is not None:
-                serializer = self.serializer_class(page, many=True)
-                return self.get_paginated_response(serializer.data)
-            
-            serializer = self.serializer_class(queryset, many=True)
-            return Response(serializer.data)
-            
-        except Exception as e:
-            return self.handle_exception(e)
+            )
+        
+        return queryset
 
+    def get_serializer_context(self):
+        """Add client_id to serializer context"""
+        context = super().get_serializer_context()
+        context['client_id'] = self.get_client_id()
+        return context
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action"""
+        if self.action == 'complete':
+            return ActivityCompletionSerializer
+        elif self.action == 'create' and self.request.data.get('campaign_id'):
+            return ActivityWithCampaignSerializer
+        return self.serializer_class
+
+    def list(self, request, *args, **kwargs):
+        """
+        List activities with additional filtering options
+        """
+
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Apply pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+        
+
+    
+    def create(self, request, *args, **kwargs):
+        """
+        Create a new activity with validation
+        """
+        client_id = self.get_client_id()
+            
+        # Valider les données
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # ✅ BaseAPIView handles client_id and user automatically
+        activity = serializer.save(client_id=client_id, user=request.user)
+        
+        return Response({
+            'success': True,
+            'message': f'Activity "{activity.title}" created successfully',
+            'data': {
+                'activity_id': activity.id,
+                'title': activity.title,
+                'activity_type': activity.activity_type,
+                'status': activity.status,
+                'owner': activity.owner.get_full_name() if activity.owner else None,
+                'scheduled_start': activity.scheduled_start
+            }
+        }, status=status.HTTP_201_CREATED)  
+
+    
+    def update(self, request, *args, **kwargs):
+        """
+        Met à jour une activité existante
+        """
+        instance = self.get_object()
+        partial = kwargs.pop('partial', False)
+        
+        # ✅ Validate ownership
+        if instance.owner != self.request.user:
+            raise StandardizedValidationError(
+                ActivityErrorMessages.PERMISSION_DENIED
+            )
+        
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        
+        serializer.save(user=request.user)
+        
+        return Response({
+            'success': True,
+            'message': f'Activity "{instance.title}" updated successfully',
+            'data': serializer.data
+        })
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        Supprime une activité
+        """
+        instance = self.get_object()
+        
+        # ✅ Validate ownership
+        if instance.owner != self.request.user:
+            raise StandardizedValidationError(
+                ActivityErrorMessages.PERMISSION_DENIED
+            )
+        
+        activity_title = instance.title
+        instance.delete()
+        
+        return Response({
+            'success': True,
+            'message': f'Activity "{activity_title}" deleted successfully'
+        }, status=status.HTTP_204_NO_CONTENT)
+            
+
+    
+    @action(detail=True, methods=['post'])
+    def complete(self, request, pk=None):
+        """
+        Complete an activity with outcome tracking
+        """
+        activity = self.get_object()
+        
+        # ✅ Validate ownership
+        if activity.owner != self.request.user:
+            raise StandardizedValidationError(
+                ActivityErrorMessages.PERMISSION_DENIED
+            )
+        
+        # ✅ Check if already completed
+        if activity.status == Activity.Status.COMPLETED:
+            raise StandardizedValidationError(
+                ActivityErrorMessages.ACTIVITY_ALREADY_COMPLETED
+            )
+        
+        # ✅ Use completion serializer
+        serializer = ActivityCompletionSerializer(
+            activity, 
+            data=request.data, 
+            partial=True,
+            context=self.get_serializer_context()
+        )
+        serializer.is_valid(raise_exception=True)
+        
+        # ✅ Complete the activity
+        with transaction.atomic():
+            activity = serializer.save(
+                status=Activity.Status.COMPLETED,
+                completed_at=timezone.now(),
+                user=request.user
+            )
+        
+        return Response({
+            'success': True,
+            'message': f'Activity "{activity.title}" completed successfully',
+            'data': {
+                'activity_id': activity.id,
+                'title': activity.title,
+                'status': activity.status,
+                'completed_at': activity.completed_at
+            }
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'])
+    def increment_call_attempts(self, request, pk=None):
+        """
+        Increment call attempts for sequence activities
+        """
+        activity = self.get_object()
+        
+        # ✅ Validate ownership
+        if activity.owner != self.request.user:
+            raise StandardizedValidationError(
+                ActivityErrorMessages.PERMISSION_DENIED
+            )
+        
+        # ✅ Check if activity has sequence info
+        if not hasattr(activity, 'sequence_info'):
+            raise StandardizedValidationError(
+                ActivityErrorMessages.ACTIVITY_INVALID_STATE.format(
+                    current_state="Activity is not part of a sequence"
+                )
+            )
+        
+        # ✅ Increment call attempts
+        sequence_info = activity.sequence_info
+        sequence_info.call_attempts += 1
+        sequence_info.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Call attempts incremented successfully',
+            'data': {
+                'call_attempts': sequence_info.call_attempts,
+                'can_attempt_call': sequence_info.call_attempts < 3
+            }
+        })
+    
+    @action(detail=False, methods=['get'])
+    def my_activities(self, request):
+        """
+        Get current user's activities
+        """
+        queryset = self.get_queryset().filter(owner=request.user)
+        queryset = self.filter_queryset(queryset)
+        
+        # Apply pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def overdue(self, request):
+        """
+        Get overdue activities
+        """
+        now = timezone.now()
+        queryset = self.get_queryset().filter(
+            status__in=[Activity.Status.PLANNED, Activity.Status.IN_PROGRESS],
+            scheduled_start__lt=now
+        ).order_by('scheduled_start')
+        
+        # Apply pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def upcoming(self, request):
+        """
+        Get upcoming activities
+        """
+        # Get number of days to look ahead
+        days = int(request.query_params.get('days', 7))
+        end_time = timezone.now() + timedelta(days=days)
+        
+        queryset = self.get_queryset().filter(
+            status__in=[Activity.Status.PLANNED, Activity.Status.IN_PROGRESS],
+            scheduled_start__range=[timezone.now(), end_time]
+        ).order_by('scheduled_start')
+        
+        # Apply pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
     def sequence_activities(self, request):
         """
-        Get activities that are part of sequences.
-        
-        GET /api/activities/sequence_activities/
+        Get activities that are part of sequences
         """
-        try:
-            # Filter sequence activities
-            queryset = self.get_queryset().filter(
-                sequence_info__isnull=False
-            ).select_related('sequence_info')
-            
-            # Optional filtering by sequence type or position
-            sequence_type = request.query_params.get('sequence_type')
-            if sequence_type:
-                queryset = queryset.filter(sequence_info__sequence_type=sequence_type)
-            
-            sequence_position = request.query_params.get('sequence_position')
-            if sequence_position:
-                queryset = queryset.filter(sequence_info__sequence_position=sequence_position)
-            
-            # Apply pagination
-            page = self.paginate_queryset(queryset)
-            if page is not None:
-                serializer = self.serializer_class(page, many=True)
-                return self.get_paginated_response(serializer.data)
-            
-            serializer = self.serializer_class(queryset, many=True)
-            return Response(serializer.data)
-            
-        except Exception as e:
-            return self.handle_exception(e)
+        queryset = self.get_queryset().filter(
+            sequence_info__isnull=False
+        ).select_related('sequence_info')
+        
+        # Optional filtering by sequence type or position
+        sequence_type = request.query_params.get('sequence_type')
+        if sequence_type:
+            queryset = queryset.filter(sequence_info__sequence_type=sequence_type)
+        
+        sequence_position = request.query_params.get('sequence_position')
+        if sequence_position:
+            queryset = queryset.filter(sequence_info__sequence_position=sequence_position)
+        
+        # Apply pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 
-class ActivityChoicesView(APIView):
+class ActivityChoicesView(BaseAPIView):
     """
     API endpoint for retrieving activity type and status choices.
     No client scoping needed as these are global choices.
     """
-    def get(self, request):
-        return Response({
+    
+    # ✅ Attributs requis pour BaseAPIView
+    queryset = Activity.objects.none()  # Pas de queryset nécessaire pour les choices
+    serializer_class = ActivitySerializer  # Requis même si pas utilisé
+    entity_name = 'activity_choices'
+    
+    def get(self, request, *args, **kwargs):
+        """
+        Return available choices for activity fields
+        """
+        choices = {
             'activity_types': [
                 {'value': choice[0], 'label': choice[1]} 
                 for choice in Activity.ActivityType.choices
@@ -418,13 +398,6 @@ class ActivityChoicesView(APIView):
             'statuses': [
                 {'value': choice[0], 'label': choice[1]} 
                 for choice in Activity.Status.choices
-            ],
-            'sequence_outcomes': [
-                {'value': choice[0], 'label': choice[1]} 
-                for choice in ActivitySequence.SequenceOutcome.choices
-            ],
-            'source_types': [
-                {'value': choice[0], 'label': choice[1]} 
-                for choice in ActivitySequence.SourceType.choices
             ]
-        })
+        }
+        return Response(choices)
