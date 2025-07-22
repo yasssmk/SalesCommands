@@ -220,7 +220,8 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
             ))
         
         if self.pipeline_substage and self.status == 'COMPLETED':
-            self._process_pipeline_completion()
+            from django.utils import timezone
+            self.completed_at = timezone.now()
         
 
         super().save(*args, **kwargs)
@@ -267,119 +268,6 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
         
         return self
     
-    def link_to_substage(self, substage):
-        """
-        Lie cette activité à une sous-étape de pipeline - VERSION CORRIGÉE
-        """
-        # Setter le substage directement
-        self.pipeline_substage = substage
-        self.save(update_fields=['pipeline_substage'])
-        
-        from apps.opportunities.models import SubStageActivity
-        
-        # Vérifier si la liaison existe déjà
-        link, created = SubStageActivity.objects.get_or_create(
-            substage=substage,
-            activity=self,
-            client_id=self.client_id,
-            defaults={
-                'created_by': getattr(self, '_created_by_user', None),
-            }
-        )
-        
-        return link
-
-    def unlink_from_substage(self):
-        """
-        Supprime la liaison avec la sous-étape - VERSION CORRIGÉE
-        """
-        if self.pipeline_substage:
-            # ✅ SIMPLIFIÉ: Supprimer directement la liaison
-            from apps.opportunities.models import SubStageActivity
-            SubStageActivity.objects.filter(
-                substage=self.pipeline_substage,
-                activity=self,
-                client_id=self.client_id
-            ).delete()
-            
-            # Nettoyer le champ pipeline_substage
-            self.pipeline_substage = None
-            self.save(update_fields=['pipeline_substage'])
-
-    def _process_pipeline_completion(self):
-        """
-        Traite la completion de l'activité dans le contexte du pipeline - VERSION CORRIGÉE
-        """
-        if not self.pipeline_substage:
-            return
-        
-        # ✅ CORRIGÉ: Créer ou mettre à jour la liaison simplement
-        from apps.opportunities.models import SubStageActivity
-        try:
-            link = SubStageActivity.objects.get(
-                substage=self.pipeline_substage,
-                activity=self,
-                client_id=self.client_id
-            )
-            # La liaison existe déjà, pas besoin de modification spéciale
-            
-        except SubStageActivity.DoesNotExist:
-            # ✅ CORRIGÉ: Créer la liaison si elle n'existe pas
-            SubStageActivity.objects.create(
-                substage=self.pipeline_substage,
-                activity=self,
-                client_id=self.client_id,
-                created_by=getattr(self, '_created_by_user', None)
-            )
-        
-        # ✅ OPTIONAL: Notifier le pipeline de la completion (simplifié)
-        try:
-            if self.opportunity and hasattr(self.opportunity, 'pipeline'):
-                # Le pipeline peut réagir à la completion
-                # Mais pour MVP, on garde ça simple
-                pass
-        except Exception as e:
-            print(f"Failed to process pipeline completion for activity: {str(e)}", self.id)
-            # Ne pas faire échouer la completion si notification échoue
-            pass
-
-    def get_pipeline_context(self):
-        """
-        Récupère le contexte pipeline de cette activité - VERSION CORRIGÉE
-        """
-        if not self.pipeline_substage:
-            return None
-        
-        # ✅ CORRIGÉ: Utiliser la méthode helper pour récupérer l'opportunity
-        substage_opportunity = self._get_substage_opportunity()
-        if not substage_opportunity:
-            return None
-        
-        # Récupérer le pipeline depuis l'opportunity
-        pipeline = getattr(substage_opportunity, 'pipeline', None)
-        
-        context = {
-            'substage_id': self.pipeline_substage.id,
-            'substage_name': self.pipeline_substage.name,
-            'stage_id': self.pipeline_substage.stage.id,
-            'stage_name': self.pipeline_substage.stage.name,
-            'opportunity_id': substage_opportunity.id,
-            'opportunity_title': substage_opportunity.title,
-        }
-        
-        # Ajouter les infos de template/pipeline selon le contexte
-        stage = self.pipeline_substage.stage
-        if hasattr(stage, 'template') and stage.template:
-            context.update({
-                'template_id': stage.template.id,
-                'template_name': stage.template.name,
-            })
-        elif hasattr(stage, 'opportunity_pipeline') and stage.opportunity_pipeline:
-            context.update({
-                'pipeline_id': stage.opportunity_pipeline.id,
-            })
-        
-        return context
     
     @property
     def is_pipeline_activity(self):
@@ -390,7 +278,12 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
     
         
     def set_substage_context(self, substage, campaign_target=None):
-        """Set context from substage and campaign target - VERSION SIMPLIFIÉE"""
+        """
+        ✅ GARDER - Set context from substage and campaign target (version MVP simplifiée)
+        
+        Cette méthode enrichit l'activité avec le contexte du substage.
+        Elle ne gère pas la liaison DB (ça c'est dans ActivitySubStageService).
+        """
         if not substage:
             return
             
@@ -398,31 +291,25 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
         self.substage_name = substage.name
         self.pipeline_substage = substage
         
-        # ✅ SIMPLIFIÉ: Auto-set opportunity (sera fait dans save())
-        if not self.opportunity:
-            substage_opportunity = self._get_substage_opportunity()
-            if substage_opportunity:
-                self.opportunity = substage_opportunity
-        
-        # Build objectives - SIMPLIFIÉ car opportunity est maintenant disponible
+        # Build objectives - version MVP simplifiée
         objectives_parts = []
-        if hasattr(substage, 'metadata') and substage.metadata.objective:
+        if hasattr(substage, 'metadata') and substage.metadata and substage.metadata.objective:
             objectives_parts.append(f"SubStage Goal: {substage.metadata.objective}")
         
         # Add stage context
         if substage.stage:
             objectives_parts.append(f"Stage: {substage.stage.name}")
             
-        # Add opportunity context - SIMPLIFIÉ
+        # Add opportunity context - direct depuis self.opportunity
         if self.opportunity:
             objectives_parts.append(f"Opportunity: {self.opportunity.title}")
         
-        self.objectives = " | ".join(objectives_parts)
+        self.objectives = " | ".join(objectives_parts) if objectives_parts else ""
         
-        # Build context info - SIMPLIFIÉ
+        # Build context info - version MVP
         context = {
             'substage_id': substage.id,
-            'substage_type': substage.get_substage_type_display(),
+            'substage_type': substage.get_substage_type_display() if hasattr(substage, 'get_substage_type_display') else substage.substage_type,
             'stage_name': substage.stage.name if substage.stage else None,
             'opportunity_id': self.opportunity.id if self.opportunity else None,
             'opportunity_title': self.opportunity.title if self.opportunity else None,
@@ -430,63 +317,98 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
             'validation_criteria': []
         }
         
-        # Add stakeholder info from metadata
-        if hasattr(substage, 'metadata'):
-            metadata = substage.metadata
-            
-            # Add stakeholders
-            for stakeholder in metadata.stakeholders.all():
-                context['stakeholders'].append({
-                    'id': stakeholder.id,
-                    'name': f"{stakeholder.first_name} {stakeholder.last_name}",
-                    'title': stakeholder.title,
-                    'email': stakeholder.email
-                })
-            
-            # Add validation criteria
-            if metadata.validation_criteria:
-                context['validation_criteria'] = metadata.validation_criteria
+        # Add stakeholder info from metadata (avec protection MVP)
+        try:
+            if hasattr(substage, 'metadata') and substage.metadata:
+                metadata = substage.metadata
                 
-            # Add process notes
-            if metadata.process_notes:
-                context['process_notes'] = metadata.process_notes
+                # Add stakeholders
+                if hasattr(metadata, 'stakeholders'):
+                    for stakeholder in metadata.stakeholders.all():
+                        context['stakeholders'].append({
+                            'id': stakeholder.id,
+                            'name': f"{stakeholder.first_name} {stakeholder.last_name}",
+                            'title': stakeholder.title or "",
+                            'email': stakeholder.email or ""
+                        })
+                
+                # Add validation criteria
+                if hasattr(metadata, 'validation_criteria') and metadata.validation_criteria:
+                    context['validation_criteria'] = metadata.validation_criteria
+                    
+                # Add process notes
+                if hasattr(metadata, 'process_notes') and metadata.process_notes:
+                    context['process_notes'] = metadata.process_notes
+        except Exception:
+            # Fail silently pour MVP - pas de crash si metadata incomplète
+            pass
         
         # Add campaign target context if provided
         if campaign_target:
-            context['campaign_target_id'] = campaign_target.id
-            context['campaign_id'] = campaign_target.campaign.id
-            context['campaign_name'] = campaign_target.campaign.name
-            
+            try:
+                context['campaign_target_id'] = campaign_target.id
+                context['campaign_id'] = campaign_target.campaign.id
+                context['campaign_name'] = campaign_target.campaign.name
+            except Exception:
+                # Fail silently pour MVP
+                pass
+                
         self.context_info = context
         
         # Set call to action based on substage type
         self.set_call_to_action_from_substage(substage)
-    
+
     def set_call_to_action_from_substage(self, substage):
-        """Generate appropriate call-to-action based on substage type"""
+        """
+        ✅ GARDER - Generate appropriate call-to-action based on substage type
+        
+        Méthode utilitaire simple pour l'UX - pas de logique DB complexe.
+        """
         if not substage:
             return
             
         stage_name = substage.stage.name if substage.stage else "process"
         substage_name = substage.name
+        substage_type = getattr(substage, 'substage_type', 'UNKNOWN')
         
-        if substage.substage_type == 'INTERACTION_CLIENT':
+        # Mapping simple pour MVP
+        if substage_type == 'INTERACTION_CLIENT':
             self.call_to_action = f"Schedule meeting to discuss {substage_name} for {stage_name}"
-        elif substage.substage_type == 'PROCESS_INTERNE_CLIENT':
+        elif substage_type == 'PROCESS_INTERNE_CLIENT':
             self.call_to_action = f"Follow up on {substage_name} status - ask for timeline update"
-        elif substage.substage_type == 'ACTION_INTERNE':
+        elif substage_type == 'ACTION_INTERNE':
             self.call_to_action = f"Update client on progress of {substage_name}"
         else:
             self.call_to_action = f"Follow up on {substage_name} for {stage_name}"
-    
+
     def get_context_summary(self):
-        """Get a summary of context information for display"""
-        summary = {
-            'has_substage': bool(self.substage_name),
-            'substage_name': self.substage_name,
-            'objectives': self.objectives,
-            'call_to_action': self.call_to_action,
-            'stakeholder_count': len(self.context_info.get('stakeholders', [])) if self.context_info else 0
-        }
+        """
+        ✅ GARDER - Get a summary of context information for display
         
-        return summary
+        Méthode utilitaire pour l'UI - retourne un résumé du contexte.
+        """
+        try:
+            stakeholder_count = 0
+            if self.context_info and isinstance(self.context_info, dict):
+                stakeholders = self.context_info.get('stakeholders', [])
+                if isinstance(stakeholders, list):
+                    stakeholder_count = len(stakeholders)
+            
+            summary = {
+                'has_substage': bool(self.substage_name),
+                'substage_name': self.substage_name or "",
+                'objectives': self.objectives or "",
+                'call_to_action': self.call_to_action or "",
+                'stakeholder_count': stakeholder_count
+            }
+            
+            return summary
+        except Exception:
+            # Fail silently pour MVP - retourner une structure vide
+            return {
+                'has_substage': False,
+                'substage_name': "",
+                'objectives': "",
+                'call_to_action': "",
+                'stakeholder_count': 0
+            }

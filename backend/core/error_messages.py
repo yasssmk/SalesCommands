@@ -327,3 +327,11 @@ class OpportunityErrorMessages:
     CAPACITY_EXCEEDED = _("Pipeline capacity exceeded: maximum {max_pipelines} concurrent pipelines allowed")
     STAKEHOLDER_UNAVAILABLE = _("Required stakeholder not available: {stakeholder}")
     DEPARTMENT_OVERLOADED = _("Department '{department}' is overloaded with pipeline activities")
+
+    ACTIVITY_ALREADY_LINKED = _("Activity is already linked to another substage")
+    SUBSTAGE_OPPORTUNITY_NOT_FOUND = _("Cannot determine opportunity for substage")
+    
+    # Messages existants qui doivent être présents :
+    ACTIVITY_LINK_FAILED = _("Failed to link activity to substage: {reason}")
+    ACTIVITY_OPPORTUNITY_MISMATCH = _("Activity does not belong to the opportunity associated with this substage")
+    SUBSTAGE_NOT_FOUND = _("SubStage not found or not accessible")

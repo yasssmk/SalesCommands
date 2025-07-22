@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Any
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
 from core.exceptions import StandardizedValidationError
-from core.error_messages import OpportunityErrorMessages
+from core.error_messages import OpportunityErrorMessages, CoreErrorMessages
 from ..config.pipeline_stages import PipelineStagesConfig
 
 
@@ -397,7 +397,9 @@ class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
         if self.current_substage and self.current_stage:
             if self.current_substage.stage != self.current_stage:
                 raise StandardizedValidationError(
-                    OpportunityErrorMessages.INCONSISTENT_STAGE_SUBSTAGE
+                    CoreErrorMessages.INVALID_REQUEST.format(
+                        reason=_("Current substage must belong to the current stage")
+                    ),
                 )
         
         # Mise à jour du client_id depuis l'opportunité
