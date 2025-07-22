@@ -61,7 +61,7 @@ class SubStageActivity(BaseModelApp, ClientScopeManager.ModelMixin):
         
         if self.substage and self.activity:
             # Récupérer l'opportunity du substage
-            substage_opportunity = self.substage.stage.opportunity_pipeline.opportunity
+            substage_opportunity = self.substage.stage.template.opportunity
             
             # Vérifier que l'activité appartient à la même opportunity
             if self.activity.opportunity != substage_opportunity:
@@ -77,7 +77,7 @@ class SubStageActivity(BaseModelApp, ClientScopeManager.ModelMixin):
     @property
     def opportunity(self):
         """Retourne l'opportunity associée via le substage"""
-        return self.substage.stage.opportunity_pipeline.opportunity
+        return self.substage.stage.template.opportunity
 
     @property
     def timeline_position(self):

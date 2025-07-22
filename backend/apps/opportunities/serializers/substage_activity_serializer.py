@@ -62,7 +62,7 @@ class SubStageActivitySerializer(ClientScopeManager.SerializerMixin, serializers
         
         if substage and activity:
             # Récupérer l'opportunity du substage
-            substage_opportunity = substage.stage.opportunity_pipeline.opportunity
+            substage_opportunity = substage.stage.template.opportunity
             
             # Vérifier que l'activité appartient à la même opportunity
             if activity.opportunity != substage_opportunity:
@@ -77,7 +77,7 @@ class SubStageActivitySerializer(ClientScopeManager.SerializerMixin, serializers
         Création avec gestion d'erreurs
         """
         try:
-            validated_data['client_id'] = self.get_client_id()
+            validated_data['client_id'] = self._get_client_id_from_context()
             return super().create(validated_data)
         except Exception as e:
             raise StandardizedValidationError(

@@ -35,7 +35,7 @@ class CoreErrorMessages:
     
     # Generic
     UNEXPECTED_ERROR = _("An unexpected error occurred: {detail}")
-    INVALID_REQUEST = _("Invalid request format")
+    INVALID_REQUEST = _("Invalid request format: {reason}")
     OBJECT_IN_USE = _("Cannot delete {fields} as it is in use")
 
     # AI Service Related
@@ -237,6 +237,7 @@ class OpportunityErrorMessages:
     PIPELINE_INVALID_STATE = _("Pipeline is in invalid state for this operation: {current_state}")
     PIPELINE_COMPLETION_FAILED = _("Pipeline completion failed: {reason}")
     PIPELINE_CREATION_FAILED = _("Pipeline creation failed: {reason}")
+    PIPELINE_UPDATE_FAILED = _("Pipeline update failed: {reason}")
     PIPELINE_CUSTOMIZATION_FAILED = _("Pipeline customization failed: {reason}")
     PIPELINE_NO_STAGES = _("Pipeline must have at least one stage")
     PIPELINE_INVALID_CURRENT_STAGE = _("Current stage does not belong to this pipeline")
@@ -274,6 +275,7 @@ class OpportunityErrorMessages:
     ACTIVITY_LINK_FAILED = _("Failed to link activity to substage: {reason}")
     ACTIVITY_NOT_IN_PIPELINE = _("Activity does not belong to this pipeline")
     ACTIVITY_SUBSTAGE_MISMATCH = _("Activity belongs to a different substage")
+    ACTIVITY_OPPORTUNITY_MISMATCH = _("Activity does not belong to the opportunity associated with this substage")
     OPPORTUNITY_NOT_FOUND = _("Opportunity not found or not accessible")
     OPPORTUNITY_CLOSED = _("Cannot modify pipeline: opportunity is closed")
     

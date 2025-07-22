@@ -1,392 +1,403 @@
 # backend/apps/opportunities/serializers/opportunity_pipeline_serializer.py
 
 from rest_framework import serializers
-from django.utils import timezone
+from decimal import Decimal
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, OpportunityErrorMessages
-from apps.opportunities.models import OpportunityPipeline, Opportunity, PipelineTemplate, PipelineStage
+from apps.opportunities.models import OpportunityPipeline, Opportunity, PipelineStage, PipelineSubStage
 from apps.opportunities.config.pipeline_stages import PipelineStagesConfig
 
 
 class OpportunityPipelineSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
-    Serializer pour les pipelines d'opportunité avec validation d'unicité et de cohérence
+    Serializer pour les pipelines d'opportunité avec validation et calculs dynamiques
     """
     
-    # Champs calculés (read-only)
-    progress_percentage = serializers.DecimalField(read_only=True, max_digits=5, decimal_places=2)
-    estimated_completion_date = serializers.DateField(read_only=True)
-    is_overdue = serializers.BooleanField(read_only=True)
-    days_overdue = serializers.IntegerField(read_only=True)
-    active_substages_count = serializers.IntegerField(read_only=True)
-    completed_substages_count = serializers.IntegerField(read_only=True)
-    total_substages_count = serializers.IntegerField(read_only=True)
-    can_be_deleted = serializers.BooleanField(read_only=True)
+    # ===== RELATIONS AVEC VALIDATION =====
     
-    # Champs pour les relations
-    opportunity_title = serializers.CharField(source='opportunity.title', read_only=True)
-    opportunity_status = serializers.CharField(source='opportunity.status', read_only=True)
-    template_name = serializers.CharField(source='template.name', read_only=True)
-    current_stage_name = serializers.CharField(source='current_stage.name', read_only=True)
+    opportunity = serializers.PrimaryKeyRelatedField(
+        queryset=Opportunity.objects.all(),
+        required=True,
+        error_messages={
+            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Opportunity'),
+            'does_not_exist': CoreErrorMessages.OBJECT_NOT_FOUND,
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Opportunity ID must be a valid integer')
+        }
+    )
+    
+    current_stage = serializers.PrimaryKeyRelatedField(
+        queryset=PipelineStage.objects.all(),
+        required=False,
+        allow_null=True,
+        error_messages={
+            'does_not_exist': OpportunityErrorMessages.STAGE_NOT_FOUND,
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Stage ID must be a valid integer')
+        }
+    )
+    
+    current_substage = serializers.PrimaryKeyRelatedField(
+        queryset=PipelineSubStage.objects.all(),
+        required=False,
+        allow_null=True,
+        error_messages={
+            'does_not_exist': OpportunityErrorMessages.SUBSTAGE_NOT_FOUND,
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='SubStage ID must be a valid integer')
+        }
+    )
+    
+    # ===== CHAMPS AVEC VALIDATION =====
+    
+    status = serializers.ChoiceField(
+        choices=PipelineStagesConfig.PipelineStatus.choices,
+        default=PipelineStagesConfig.PipelineStatus.ACTIVE,
+        error_messages={
+            'invalid_choice': OpportunityErrorMessages.PIPELINE_INVALID_STATE.format(
+                current_state='{invalid_choice}'
+            )
+        }
+    )
+    
+    expected_close_date = serializers.DateField(
+        required=False,
+        allow_null=True,
+        error_messages={
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Expected close date must be a valid date')
+        }
+    )
+    
+    customization_notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=1000,
+        error_messages={
+            'max_length': CoreErrorMessages.INVALID_FIELD.format(
+                field='Customization notes cannot exceed 1000 characters'
+            )
+        }
+    )
+    
+    # ===== CHAMPS CALCULÉS (READ-ONLY) =====
+    
+    # Métriques de progression
+    progress_percentage = serializers.SerializerMethodField()
+    days_since_started = serializers.SerializerMethodField()
+    days_until_expected_close = serializers.SerializerMethodField()
+    
+    # Comptages
+    total_stages_count = serializers.SerializerMethodField()
+    completed_stages_count = serializers.SerializerMethodField()
+    total_substages_count = serializers.SerializerMethodField()
+    completed_substages_count = serializers.SerializerMethodField()
+    
+    # Statut et santé
+    is_pipeline_overdue = serializers.SerializerMethodField()
+    overdue_summary = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     
-    # Champs pour les contacts
+    # Position courante avec détection
+    current_position = serializers.SerializerMethodField()
+    
+    # ===== CHAMPS POUR LES RELATIONS =====
+    
+    opportunity_title = serializers.CharField(source='opportunity.title', read_only=True)
+    opportunity_status = serializers.CharField(source='opportunity.status', read_only=True)
+    current_stage_name = serializers.CharField(source='current_stage.name', read_only=True)
+    current_substage_name = serializers.CharField(source='current_substage.name', read_only=True)
+    
+    # Informations du deal owner
     deal_owner_name = serializers.CharField(source='opportunity.deal_owner.get_full_name', read_only=True)
     primary_contact_name = serializers.CharField(source='opportunity.contact.get_full_name', read_only=True)
     
     class Meta:
         model = OpportunityPipeline
         fields = [
+            # Relations principales
             'id',
             'opportunity',
             'opportunity_title',
             'opportunity_status',
-            'template',
-            'template_name',
             'current_stage',
             'current_stage_name',
+            'current_substage',
+            'current_substage_name',
+            
+            # Statut et tracking
             'status',
             'status_display',
+            'is_customized',
+            'customization_notes',
+            
+            # Dates importantes
             'started_at',
             'last_updated',
             'completed_at',
-            'total_stages',
-            'completed_stages',
+            'expected_close_date',
+            'actual_duration_days',
+            
+            # Métriques calculées
             'progress_percentage',
-            'estimated_completion_date',
-            'is_overdue',
-            'days_overdue',
-            'active_substages_count',
-            'completed_substages_count',
+            'days_since_started',
+            'days_until_expected_close',
+            'total_stages_count',
+            'completed_stages_count',
             'total_substages_count',
-            'can_be_deleted',
+            'completed_substages_count',
+            
+            # Santé et statut
+            'is_pipeline_overdue',
+            'overdue_summary',
+            'current_position',
+            
+            # Informations relationnelles
             'deal_owner_name',
             'primary_contact_name',
-            'is_customized',
-            'customization_notes',
+            
+            # Timestamps
             'created_at',
             'updated_at'
         ]
+        
         read_only_fields = [
+            # Champs auto-générés
             'id',
+            'created_at',
+            'updated_at',
+            'last_updated',
+            'actual_duration_days',
+            
+            # Champs calculés (SerializerMethodField)
+            'progress_percentage',
+            'days_since_started',
+            'days_until_expected_close',
+            'total_stages_count',
+            'completed_stages_count',
+            'total_substages_count',
+            'completed_substages_count',
+            'is_pipeline_overdue',
+            'overdue_summary',
+            'current_position',
+            
+            # Informations relationnelles
             'opportunity_title',
             'opportunity_status',
-            'template_name',
             'current_stage_name',
+            'current_substage_name',
             'status_display',
-            'last_updated',
-            'completed_at',
-            'total_stages',
-            'completed_stages',
-            'progress_percentage',
-            'estimated_completion_date',
-            'is_overdue',
-            'days_overdue',
-            'active_substages_count',
-            'completed_substages_count',
-            'total_substages_count',
-            'can_be_deleted',
             'deal_owner_name',
-            'primary_contact_name',
-            'created_at',
-            'updated_at'
+            'primary_contact_name'
         ]
-    
+
+    # ===== MÉTHODES DE CALCUL (SerializerMethodField) =====
+
     def get_progress_percentage(self, obj):
         """Calcule le pourcentage de progression du pipeline"""
-        if obj.status == PipelineStagesConfig.PipelineStatus.COMPLETED:
-            return 100.0
-        elif obj.status == PipelineStagesConfig.PipelineStatus.ACTIVE:
-            if obj.total_stages > 0:
-                return round((obj.completed_stages / obj.total_stages) * 100, 2)
-            return 0.0
-        else:
-            return 0.0
-    
-    def get_estimated_completion_date(self, obj):
-        """Calcule la date de fin estimée basée sur les sous-étapes"""
-        if obj.status == PipelineStagesConfig.PipelineStatus.COMPLETED:
-            return obj.completed_at.date() if obj.completed_at else None
-        
-        # Calculer basé sur les sous-étapes restantes
-        active_substages = obj.get_active_substages()
-        if active_substages:
-            max_expected_date = None
-            for substage in active_substages:
-                if substage.expected_completion_date:
-                    if not max_expected_date or substage.expected_completion_date > max_expected_date:
-                        max_expected_date = substage.expected_completion_date
-            return max_expected_date
-        
-        return None
-    
-    def get_is_overdue(self, obj):
-        """Vérifie si le pipeline est en retard"""
-        estimated_date = self.get_estimated_completion_date(obj)
-        if estimated_date and obj.status == PipelineStagesConfig.PipelineStatus.ACTIVE:
-            return timezone.now().date() > estimated_date
-        return False
-    
-    def get_days_overdue(self, obj):
-        """Calcule le nombre de jours de retard"""
-        if self.get_is_overdue(obj):
-            estimated_date = self.get_estimated_completion_date(obj)
-            if estimated_date:
-                return (timezone.now().date() - estimated_date).days
-        return 0
-    
-    def get_active_substages_count(self, obj):
-        """Nombre de sous-étapes actives"""
-        return sum(stage.substages.filter(
-            is_active=True,
-            status__in=[
-                PipelineStagesConfig.SubStageStatus.NOT_STARTED,
-                PipelineStagesConfig.SubStageStatus.IN_PROGRESS
-            ]
-        ).count() for stage in obj.stages.filter(is_active=True))
-    
-    def get_completed_substages_count(self, obj):
-        """Nombre de sous-étapes terminées"""
-        return sum(stage.substages.filter(
-            is_active=True,
-            status=PipelineStagesConfig.SubStageStatus.COMPLETED
-        ).count() for stage in obj.stages.filter(is_active=True))
-    
-    def get_total_substages_count(self, obj):
-        """Nombre total de sous-étapes"""
-        return sum(stage.substages.filter(is_active=True).count() 
-                  for stage in obj.stages.filter(is_active=True))
-    
-    def get_can_be_deleted(self, obj):
-        """Vérifie si le pipeline peut être supprimé"""
-        # Ne peut pas être supprimé s'il a des activités liées
-        if obj.stages.filter(substages__activities__isnull=False).exists():
-            return False
-        
-        # Ne peut pas être supprimé s'il est en cours depuis plus de 7 jours
-        if obj.status == PipelineStagesConfig.PipelineStatus.ACTIVE:
-            days_active = (timezone.now() - obj.started_at).days
-            if days_active > 7:
-                return False
-        
-        return True
-    
-    def validate_opportunity(self, value):
-        """Validation de l'opportunité"""
-        if value:
-            client_id = self._get_client_id_from_context()
-            if str(value.client_id) != str(client_id):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED,
-                    field_name="opportunity"
-                )
-            
-            # Vérifier que l'opportunité n'a pas déjà un pipeline
-            if not self.instance and hasattr(value, 'pipeline'):
-                raise StandardizedValidationError(
-                    OpportunityErrorMessages.PIPELINE_ALREADY_EXISTS,
-                    field_name="opportunity"
-                )
-            
-            # Vérifier que l'opportunité n'est pas fermée
-            if value.status in [Opportunity.OpportunityStatus.WON, Opportunity.OpportunityStatus.LOST]:
-                raise StandardizedValidationError(
-                    OpportunityErrorMessages.OPPORTUNITY_CLOSED,
-                    field_name="opportunity"
-                )
-        
-        return value
-    
-    def validate_template(self, value):
-        """Validation du template"""
-        if value:
-            client_id = self._get_client_id_from_context()
-            if str(value.client_id) != str(client_id):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED,
-                    field_name="template"
-                )
-            
-            # Vérifier que le template est actif
-            if not value.is_active:
-                raise StandardizedValidationError(
-                    "Cannot use inactive template",
-                    field_name="template"
-                )
-        
-        return value
-    
-    def validate_current_stage(self, value):
-        """Validation de l'étape courante"""
-        if value:
-            client_id = self._get_client_id_from_context()
-            if str(value.client_id) != str(client_id):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED,
-                    field_name="current_stage"
-                )
-            
-            # Vérifier que l'étape appartient à ce pipeline
-            if self.instance and value.opportunity_pipeline != self.instance:
-                raise StandardizedValidationError(
-                    OpportunityErrorMessages.PIPELINE_INVALID_CURRENT_STAGE,
-                    field_name="current_stage"
-                )
-        
-        return value
-    
-    def validate(self, data):
-        """Validation générale des données"""
-        data = super().validate(data)
-        
-        # Vérifier la cohérence opportunity-template
-        opportunity = data.get('opportunity', getattr(self.instance, 'opportunity', None))
-        template = data.get('template', getattr(self.instance, 'template', None))
-        
-        if opportunity and template:
-            # Vérifier que l'opportunité et le template appartiennent au même client
-            if opportunity.client_id != template.client_id:
-                raise StandardizedValidationError(
-                    "Opportunity and template must belong to the same client",
-                    field_name="template"
-                )
-        
-        # Validation des transitions d'état
-        if self.instance:
-            current_status = self.instance.status
-            new_status = data.get('status', current_status)
-            
-            if current_status != new_status:
-                self._validate_status_transition(current_status, new_status)
-        
-        # Validation de l'unicité : une opportunité = un pipeline
-        if opportunity and not self.instance:
-            existing_pipeline = OpportunityPipeline.objects.filter(
-                opportunity=opportunity,
-                client_id=self._get_client_id_from_context()
-            ).first()
-            
-            if existing_pipeline:
-                raise StandardizedValidationError(
-                    OpportunityErrorMessages.PIPELINE_ALREADY_EXISTS,
-                    field_name="opportunity"
-                )
-        
-        return data
-    
-    def _validate_status_transition(self, current_status, new_status):
-        """Valide les transitions d'état autorisées"""
-        allowed_transitions = {
-            PipelineStagesConfig.PipelineStatus.ACTIVE: [
-                PipelineStagesConfig.PipelineStatus.COMPLETED,
-                PipelineStagesConfig.PipelineStatus.PAUSED,
-                PipelineStagesConfig.PipelineStatus.CANCELLED,
-                PipelineStagesConfig.PipelineStatus.FAILED
-            ],
-            PipelineStagesConfig.PipelineStatus.PAUSED: [
-                PipelineStagesConfig.PipelineStatus.ACTIVE,
-                PipelineStagesConfig.PipelineStatus.CANCELLED,
-                PipelineStagesConfig.PipelineStatus.FAILED
-            ],
-            PipelineStagesConfig.PipelineStatus.COMPLETED: [
-                PipelineStagesConfig.PipelineStatus.ACTIVE  # Permettre la réouverture
-            ],
-            PipelineStagesConfig.PipelineStatus.CANCELLED: [
-                PipelineStagesConfig.PipelineStatus.ACTIVE  # Permettre la réactivation
-            ],
-            PipelineStagesConfig.PipelineStatus.FAILED: [
-                PipelineStagesConfig.PipelineStatus.ACTIVE  # Permettre la réactivation
-            ]
-        }
-        
-        if new_status not in allowed_transitions.get(current_status, []):
-            raise StandardizedValidationError(
-                OpportunityErrorMessages.PIPELINE_INVALID_STATE.format(current_state=current_status),
-                field_name="status"
-            )
-    
-    def create(self, validated_data):
-        """Création d'un nouveau pipeline"""
         try:
-            # Ajouter le client_id automatiquement
-            validated_data['client_id'] = self._get_client_id_from_context()
+            return float(obj.progress_percentage)
+        except (AttributeError, TypeError):
+            return 0.0
+
+    def get_days_since_started(self, obj):
+        """Nombre de jours depuis le début du pipeline"""
+        try:
+            return obj.days_since_started
+        except (AttributeError, TypeError):
+            return 0
+
+    def get_days_until_expected_close(self, obj):
+        """Nombre de jours jusqu'à la date de clôture prévue"""
+        try:
+            return obj.days_until_expected_close
+        except (AttributeError, TypeError):
+            return None
+
+    def get_total_stages_count(self, obj):
+        """Nombre total d'étapes dans le pipeline"""
+        try:
+            return obj.get_total_stages_count()
+        except (AttributeError, TypeError):
+            return 0
+
+    def get_completed_stages_count(self, obj):
+        """Nombre d'étapes complétées"""
+        try:
+            return obj.get_completed_stages_count()
+        except (AttributeError, TypeError):
+            return 0
+
+    def get_total_substages_count(self, obj):
+        """Nombre total de sous-étapes dans le pipeline"""
+        try:
+            return obj.get_total_substages_count()
+        except (AttributeError, TypeError):
+            return 0
+
+    def get_completed_substages_count(self, obj):
+        """Nombre de sous-étapes complétées"""
+        try:
+            return obj.get_completed_substages_count()
+        except (AttributeError, TypeError):
+            return 0
+
+    def get_is_pipeline_overdue(self, obj):
+        """Détermine si le pipeline global est en retard"""
+        try:
+            return obj.is_pipeline_overdue()
+        except (AttributeError, TypeError):
+            return False
+
+    def get_overdue_summary(self, obj):
+        """Résumé des retards sans détails individuels"""
+        try:
+            return obj.get_overdue_summary()
+        except (AttributeError, TypeError):
+            return {'has_overdue': False, 'count': 0}
+
+    def get_current_position(self, obj):
+        """Position courante avec détection basée sur les activités"""
+        try:
+            return obj.get_current_position()
+        except (AttributeError, TypeError):
+            return {
+                'current_stage': None,
+                'current_substage': None,
+                'detected_from_activities': False
+            }
+
+    # ===== VALIDATION PERSONNALISÉE =====
+
+    def validate(self, data):
+        """
+        Validation de cohérence métier du pipeline
+        L'unicité est gérée par validate_client_scoped_uniqueness
+        """
+        try:
+            # Validation de base avec client scope
+            self.validate_client_id(data.get('opportunity'))
             
-            # Utiliser la méthode de classe pour créer à partir du template
-            opportunity = validated_data['opportunity']
-            template = validated_data['template']
+            # Validation de l'unicité opportunity + client_id (un seul pipeline par opportunité)
+            if 'opportunity' in data:
+                self.validate_client_scoped_uniqueness(
+                    data=data,
+                    unique_fields=['opportunity'],
+                    model_class=OpportunityPipeline,
+                    error_message=OpportunityErrorMessages.PIPELINE_ALREADY_EXISTS
+                )
             
-            # Créer le pipeline via la méthode du modèle
-            pipeline = OpportunityPipeline.create_from_template(
-                opportunity=opportunity,
-                template=template,
-                user=self.context.get('request').user if 'request' in self.context else None
-            )
+            # Validation de cohérence stage/substage
+            current_stage = data.get('current_stage')
+            current_substage = data.get('current_substage')
             
-            # Appliquer les autres champs si fournis
-            for attr, value in validated_data.items():
-                if attr not in ['opportunity', 'template', 'client_id']:
-                    setattr(pipeline, attr, value)
+            if current_substage and current_stage:
+                if current_substage.stage != current_stage:
+                    raise StandardizedValidationError(
+                        OpportunityErrorMessages.INCONSISTENT_STAGE_SUBSTAGE
+                    )
             
-            pipeline.save()
+            # Validation du substage appartient bien au template de l'opportunité
+            if current_substage:
+                opportunity = data.get('opportunity')
+                if opportunity:
+                    template = opportunity.pipeline_templates.first()
+                    if template and current_substage.stage.template != template:
+                        raise StandardizedValidationError(
+                            OpportunityErrorMessages.SUBSTAGE_NOT_FOUND
+                        )
+            
+            # Validation du stage appartient bien au template de l'opportunité
+            if current_stage:
+                opportunity = data.get('opportunity')
+                if opportunity:
+                    template = opportunity.pipeline_templates.first()
+                    if template and current_stage.template != template:
+                        raise StandardizedValidationError(
+                            OpportunityErrorMessages.STAGE_NOT_FOUND
+                        )
+            
+            # Validation de la date de clôture prévue
+            expected_close_date = data.get('expected_close_date')
+            if expected_close_date:
+                from datetime import date
+                if expected_close_date < date.today():
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field='Expected close date cannot be in the past'
+                        )
+                    )
+            
+            return data
+            
+        except serializers.ValidationError as e:
+            raise StandardizedValidationError(e.detail)
+
+    def create(self, validated_data):
+        """
+        Création d'un pipeline avec initialisation automatique
+        L'unicité est validée par validate_client_scoped_uniqueness
+        """
+        try:
+            user = self.context.get('request').user if self.context.get('request') else None
+            
+            # Créer le pipeline (l'unicité a été validée dans validate)
+            pipeline = super().create(validated_data)
+            
+            # Si aucune position courante n'est définie, définir la première étape
+            if not pipeline.current_stage:
+                opportunity = validated_data['opportunity']
+                template = opportunity.pipeline_templates.first()
+                if template:
+                    first_stage = template.stages.filter(is_active=True).order_by('order').first()
+                    if first_stage:
+                        pipeline.current_stage = first_stage
+                        # Définir la première substage si disponible
+                        first_substage = first_stage.substages.filter(is_active=True).order_by('order').first()
+                        if first_substage:
+                            pipeline.current_substage = first_substage
+                        pipeline.save(user=user)
+            
             return pipeline
             
         except Exception as e:
+            if isinstance(e, StandardizedValidationError):
+                raise
             raise StandardizedValidationError(
                 OpportunityErrorMessages.PIPELINE_CREATION_FAILED.format(reason=str(e))
             )
-    
+
     def update(self, instance, validated_data):
-        """Mise à jour d'un pipeline existant"""
+        """
+        Mise à jour d'un pipeline avec validation des transitions
+        """
         try:
-            # Vérifier les permissions
-            client_id = self._get_client_id_from_context()
-            if str(instance.client_id) != str(client_id):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED
-                )
+            user = self.context.get('request').user if self.context.get('request') else None
             
-            # Vérifier si le pipeline peut être modifié
-            if instance.status == PipelineStagesConfig.PipelineStatus.COMPLETED:
-                # Certaines modifications sont interdites pour les pipelines terminés
-                restricted_fields = ['opportunity', 'template']
-                for field in restricted_fields:
-                    if field in validated_data:
-                        raise StandardizedValidationError(
-                            f"Cannot modify {field} on completed pipeline",
-                            field_name=field
-                        )
+            # Marquer comme personnalisé si des changements sont apportés
+            if any(field in validated_data for field in ['current_stage', 'current_substage']):
+                validated_data['is_customized'] = True
             
-            # Marquer comme personnalisé si modification des étapes
-            if any(field in validated_data for field in ['current_stage', 'customization_notes']):
-                instance.mark_as_customized()
+            # Mise à jour standard
+            pipeline = super().update(instance, validated_data)
             
-            # Mettre à jour l'instance
-            for attr, value in validated_data.items():
-                setattr(instance, attr, value)
+            # Recalculer la date de fin prévue si nécessaire
+            if 'current_stage' in validated_data or 'current_substage' in validated_data:
+                pipeline._update_expected_completion()
             
-            instance.save()
-            return instance
+            return pipeline
             
-        except StandardizedValidationError:
-            raise
         except Exception as e:
+            if isinstance(e, StandardizedValidationError):
+                raise
             raise StandardizedValidationError(
-                OpportunityErrorMessages.PIPELINE_CUSTOMIZATION_FAILED.format(reason=str(e))
+                OpportunityErrorMessages.PIPELINE_UPDATE_FAILED.format(reason=str(e))
             )
-    
-    def to_representation(self, instance):
-        """Enrichir la représentation avec des données calculées"""
-        representation = super().to_representation(instance)
-        
-        # Ajouter les champs calculés
-        representation['progress_percentage'] = self.get_progress_percentage(instance)
-        representation['estimated_completion_date'] = self.get_estimated_completion_date(instance)
-        representation['is_overdue'] = self.get_is_overdue(instance)
-        representation['days_overdue'] = self.get_days_overdue(instance)
-        representation['active_substages_count'] = self.get_active_substages_count(instance)
-        representation['completed_substages_count'] = self.get_completed_substages_count(instance)
-        representation['total_substages_count'] = self.get_total_substages_count(instance)
-        representation['can_be_deleted'] = self.get_can_be_deleted(instance)
-        
-        return representation
+
+    # ===== MÉTHODES UTILITAIRES =====
+
+    def get_serializer_context(self):
+        """Contexte pour les opérations de sérialisation"""
+        context = super().get_serializer_context() if hasattr(super(), 'get_serializer_context') else {}
+        context.update({
+            'include_calculations': True,
+            'optimize_queries': True
+        })
+        return context

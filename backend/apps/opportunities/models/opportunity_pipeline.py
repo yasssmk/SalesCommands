@@ -1,22 +1,39 @@
 # backend/apps/opportunities/models/opportunity_pipeline.py
 
-from django.db import models
+from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from decimal import Decimal
+from datetime import date, timedelta
+from typing import List, Dict, Optional, Any
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
+from core.exceptions import StandardizedValidationError
+from core.error_messages import OpportunityErrorMessages
 from ..config.pipeline_stages import PipelineStagesConfig
 
 
 class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
     """
-    Instance de pipeline liée à une opportunité spécifique.
-    Représente l'état actuel du processus de vente pour cette opportunité.
+    Tracker intelligent pour l'état et la progression d'un pipeline d'opportunité.
+    
+    Responsabilités LIMITÉES (processus de vente non-linéaire):
+    - Observation et tracking de la position courante
+    - Détection intelligente de l'avancement basée sur les activités
+    - Métriques globales et vue d'ensemble
+    - Accès centralisé aux métadonnées de tous les substages
+    
+    PHILOSOPHIE:
+    - Pas d'avancement automatique (processus non-linéaire)
+    - Détection: activité créée dans substage = position probable
+    - Avancement manuel par l'utilisateur lors d'organisation de RDV
+    - Mapping complet qualification → closing
     """
     
     PipelineStatus = PipelineStagesConfig.PipelineStatus
     
-    # Relations principales
+    # ===== RELATIONS PRINCIPALES =====
+    
     opportunity = models.OneToOneField(
         'opportunities.Opportunity',
         on_delete=models.CASCADE,
@@ -25,17 +42,8 @@ class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_('Opportunity this pipeline belongs to')
     )
     
-    template = models.ForeignKey(
-        'PipelineTemplate',
-        on_delete=models.CASCADE,
-        related_name='opportunity_pipelines',
-        verbose_name=_('Pipeline Template'),
-        help_text=_('Template used to create this pipeline')
-    )
-    
-    # Étape courante
     current_stage = models.ForeignKey(
-        'PipelineStage',
+        'opportunities.PipelineStage',
         on_delete=models.SET_NULL,
         related_name='current_opportunities',
         null=True,
@@ -44,7 +52,18 @@ class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_('Current stage of this pipeline')
     )
     
-    # Statut du pipeline
+    current_substage = models.ForeignKey(
+        'opportunities.PipelineSubStage',
+        on_delete=models.SET_NULL,
+        related_name='current_opportunities',
+        null=True,
+        blank=True,
+        verbose_name=_('Current SubStage'),
+        help_text=_('Current substage of this pipeline for precise tracking')
+    )
+    
+    # ===== STATUT ET TRACKING =====
+    
     status = models.CharField(
         max_length=20,
         choices=PipelineStatus.choices,
@@ -53,7 +72,8 @@ class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_('Current status of this pipeline')
     )
     
-    # Dates importantes
+    # ===== DATES IMPORTANTES =====
+    
     started_at = models.DateTimeField(
         default=timezone.now,
         verbose_name=_('Started At'),
@@ -73,40 +93,27 @@ class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_('When this pipeline was completed')
     )
     
-    # Métriques de progression
-    total_stages = models.PositiveIntegerField(
-        default=0,
-        verbose_name=_('Total Stages'),
-        help_text=_('Total number of stages in this pipeline')
-    )
-    
-    completed_stages = models.PositiveIntegerField(
-        default=0,
-        verbose_name=_('Completed Stages'),
-        help_text=_('Number of completed stages')
-    )
-    
-    # Durée estimée totale (en jours)
-    estimated_duration_days = models.PositiveIntegerField(
+    expected_close_date = models.DateField(
         null=True,
         blank=True,
-        verbose_name=_('Estimated Duration (days)'),
-        help_text=_('Total estimated duration for this pipeline')
+        verbose_name=_('Expected Close Date'),
+        help_text=_('Calculated expected completion date based on substage durations')
     )
     
-    # Notes et commentaires
-    notes = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name=_('Notes'),
-        help_text=_('Additional notes about this pipeline')
+    # ===== MÉTRIQUES DE TRACKING =====
+    
+    actual_duration_days = models.PositiveIntegerField(
+        default=0,
+        verbose_name=_('Actual Duration (Days)'),
+        help_text=_('Actual number of days since pipeline started')
     )
     
-    # Métadonnées
+    # ===== PERSONNALISATION =====
+    
     is_customized = models.BooleanField(
         default=False,
         verbose_name=_('Is Customized'),
-        help_text=_('Whether this pipeline has been customized from the original template')
+        help_text=_('Whether this pipeline has been customized from the template')
     )
     
     customization_notes = models.TextField(
@@ -118,227 +125,286 @@ class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=[],
-        index_fields=['opportunity', 'template', 'current_stage', 'status']
+        index_fields=['opportunity', 'current_stage', 'current_substage', 'status']
     )):
         db_table = 'opportunity_pipelines'
         verbose_name = _('Opportunity Pipeline')
         verbose_name_plural = _('Opportunity Pipelines')
-        ordering = ['-started_at']
+        ordering = ['-last_updated', 'opportunity__title']
 
     def __str__(self):
-        return f"Pipeline - {self.opportunity.title}"
+        return f"Pipeline: {self.opportunity.title} ({self.get_status_display()})"
 
-    def save(self, *args, **kwargs):
+    # ===== OPTIMISATIONS PREFETCH =====
+
+    @classmethod
+    def get_optimized_queryset(cls):
         """
-        Sauvegarde avec mise à jour automatique des métriques
+        Queryset optimisé avec tous les prefetch nécessaires pour éviter les N+1
         """
-        # Calculer les métriques avant sauvegarde
-        self._update_metrics()
+        return cls.objects.select_related(
+            'opportunity',
+            'opportunity__contact',
+            'opportunity__deal_owner',
+            'current_stage',
+            'current_stage__template',
+            'current_substage',
+            'current_substage__stage'
+        ).prefetch_related(
+            'opportunity__pipeline_templates__stages__substages',
+            'opportunity__pipeline_templates__stages__substages__metadata',
+            'opportunity__pipeline_templates__stages__substages__activities',
+            'opportunity__activities'
+        )
+
+    # ===== PROPRIÉTÉS CALCULÉES - PROGRESSION =====
+
+    @property
+    def progress_percentage(self) -> Decimal:
+        """
+        Calcule le pourcentage de progression du pipeline
+        Basé sur les substages complétées
+        """
+        total_substages = self.get_total_substages_count()
+        if total_substages == 0:
+            return Decimal('0.00')
         
-        super().save(*args, **kwargs)
-
-    def _update_metrics(self):
-        """
-        Met à jour les métriques de progression
-        """
-        # Compter le nombre total d'étapes
-        self.total_stages = self.stages.count()
-        
-        # Compter les étapes terminées
-        self.completed_stages = self.stages.filter(
-            status=PipelineStagesConfig.StageStatus.COMPLETED
-        ).count()
+        completed_substages = self.get_completed_substages_count()
+        return Decimal(completed_substages / total_substages * 100).quantize(Decimal('0.01'))
 
     @property
-    def progress_percentage(self):
-        """
-        Calcule le pourcentage de progression
-        """
-        if self.total_stages == 0:
-            return 0
-        return round((self.completed_stages / self.total_stages) * 100, 1)
-
-    @property
-    def is_completed(self):
-        """
-        Vérifie si le pipeline est terminé
-        """
-        return self.status == self.PipelineStatus.COMPLETED
-
-    @property
-    def is_active(self):
-        """
-        Vérifie si le pipeline est actif
-        """
-        return self.status == self.PipelineStatus.ACTIVE
-
-    @property
-    def days_since_started(self):
-        """
-        Calcule le nombre de jours depuis le début
-        """
+    def days_since_started(self) -> int:
+        """Nombre de jours depuis le début du pipeline"""
         if not self.started_at:
             return 0
         return (timezone.now() - self.started_at).days
 
-    def get_next_stage(self):
-        """
-        Récupère l'étape suivante
-        """
-        if not self.current_stage:
-            return self.stages.filter(is_active=True).order_by('order').first()
-        
-        return self.current_stage.get_next_stage()
-
-    def get_previous_stage(self):
-        """
-        Récupère l'étape précédente
-        """
-        if not self.current_stage:
+    @property
+    def days_until_expected_close(self) -> Optional[int]:
+        """Nombre de jours jusqu'à la date de clôture prévue"""
+        if not self.expected_close_date:
             return None
+        delta = self.expected_close_date - date.today()
+        return delta.days
+
+    # ===== MÉTHODES DE CALCUL - PROGRESSION =====
+
+    def get_total_stages_count(self) -> int:
+        """Compte le nombre total d'étapes dans le pipeline"""
+        template = self.get_pipeline_template()
+        if not template:
+            return 0
+        return template.stages.filter(is_active=True).count()
+
+    def get_completed_stages_count(self) -> int:
+        """Compte le nombre d'étapes complétées"""
+        template = self.get_pipeline_template()
+        if not template:
+            return 0
         
-        return self.current_stage.get_previous_stage()
+        return template.stages.filter(
+            is_active=True,
+            status=PipelineStagesConfig.StageStatus.COMPLETED
+        ).count()
 
-    def move_to_next_stage(self):
-        """
-        Passe à l'étape suivante
-        """
-        if not self.current_stage:
-            # Premier démarrage, aller à la première étape
-            first_stage = self.stages.filter(is_active=True).order_by('order').first()
-            if first_stage:
-                self.current_stage = first_stage
-                first_stage.mark_as_started()
-                self.save(update_fields=['current_stage'])
-                return first_stage
-        else:
-            # Marquer l'étape courante comme terminée
-            self.current_stage.mark_as_completed()
-            
-            # Passer à l'étape suivante
-            next_stage = self.get_next_stage()
-            if next_stage:
-                self.current_stage = next_stage
-                next_stage.mark_as_started()
-                self.save(update_fields=['current_stage'])
-                return next_stage
-            else:
-                # Pas d'étape suivante, pipeline terminé
-                self.mark_as_completed()
-                return None
+    def get_total_substages_count(self) -> int:
+        """Compte le nombre total de sous-étapes dans le pipeline"""
+        template = self.get_pipeline_template()
+        if not template:
+            return 0
+        
+        from .pipeline_substage import PipelineSubStage
+        return PipelineSubStage.objects.filter(
+            stage__template=template,
+            is_active=True
+        ).count()
 
-    def move_to_previous_stage(self):
+    def get_completed_substages_count(self) -> int:
+        """Compte le nombre de sous-étapes complétées"""
+        template = self.get_pipeline_template()
+        if not template:
+            return 0
+        
+        from .pipeline_substage import PipelineSubStage
+        return PipelineSubStage.objects.filter(
+            stage__template=template,
+            is_active=True,
+            status=PipelineStagesConfig.SubStageStatus.COMPLETED
+        ).count()
+
+    # ===== MÉTHODES DE CALCUL - RETARDS GLOBAUX =====
+
+    def is_pipeline_overdue(self) -> bool:
         """
-        Revient à l'étape précédente
+        Détermine si le pipeline global est en retard
+        Délègue aux stages/substages individuels
         """
-        if not self.current_stage:
+        template = self.get_pipeline_template()
+        if not template:
+            return False
+
+        # Vérifier si au moins une substage est en retard
+        from .pipeline_substage import PipelineSubStage
+        overdue_substages = PipelineSubStage.objects.filter(
+            stage__template=template,
+            is_active=True
+        )
+        
+        return any(substage.is_overdue() for substage in overdue_substages)
+
+    def get_overdue_summary(self) -> Dict[str, Any]:
+        """
+        Retourne un résumé des retards sans gérer les détails individuels
+        """
+        template = self.get_pipeline_template()
+        if not template:
+            return {'has_overdue': False, 'count': 0}
+
+        from .pipeline_substage import PipelineSubStage
+        substages = PipelineSubStage.objects.filter(
+            stage__template=template,
+            is_active=True
+        )
+        
+        overdue_count = sum(1 for substage in substages if substage.is_overdue())
+        
+        return {
+            'has_overdue': overdue_count > 0,
+            'overdue_count': overdue_count,
+            'total_active_substages': substages.count()
+        }
+
+    # ===== MÉTHODES DE CALCUL - PRÉDICTIONS =====
+
+    def calculate_expected_completion(self) -> Optional[date]:
+        """
+        Calcule la date de fin prévue basée sur les durées des substages restantes
+        """
+        from .pipeline_substage import PipelineSubStage
+        
+        template = self.get_pipeline_template()
+        if not template:
             return None
-        
-        # Remettre l'étape courante à l'état actif
-        self.current_stage.status = PipelineStagesConfig.StageStatus.ACTIVE
-        self.current_stage.completed_at = None
-        self.current_stage.save(update_fields=['status', 'completed_at'])
-        
-        # Revenir à l'étape précédente
-        previous_stage = self.get_previous_stage()
-        if previous_stage:
-            self.current_stage = previous_stage
-            previous_stage.status = PipelineStagesConfig.StageStatus.ACTIVE
-            previous_stage.completed_at = None
-            previous_stage.save(update_fields=['status', 'completed_at'])
-            self.save(update_fields=['current_stage'])
-            return previous_stage
+
+        # Récupérer les substages non complétées
+        remaining_substages = PipelineSubStage.objects.filter(
+            stage__template=template,
+            is_active=True,
+            status__in=[
+                PipelineStagesConfig.SubStageStatus.NOT_STARTED,
+                PipelineStagesConfig.SubStageStatus.IN_PROGRESS
+            ]
+        )
+
+        total_remaining_days = 0
+        for substage in remaining_substages:
+            if substage.expected_duration_days:
+                total_remaining_days += substage.expected_duration_days
+
+        if total_remaining_days > 0:
+            return date.today() + timedelta(days=total_remaining_days)
         
         return None
 
-    def mark_as_completed(self):
-        """
-        Marque le pipeline comme terminé
-        """
-        self.status = self.PipelineStatus.COMPLETED
-        self.completed_at = timezone.now()
-        self.save(update_fields=['status', 'completed_at'])
+    # ===== DÉTECTION POSITION SIMPLE =====
 
-    def mark_as_paused(self):
+    def get_current_position(self) -> Dict[str, Any]:
         """
-        Met en pause le pipeline
+        Détecte la position courante basée sur les activités IN_PROGRESS
+        Prend celle avec le stage le plus avancé
         """
-        self.status = self.PipelineStatus.PAUSED
-        self.save(update_fields=['status'])
-
-    def mark_as_cancelled(self):
-        """
-        Annule le pipeline
-        """
-        self.status = self.PipelineStatus.CANCELLED
-        self.save(update_fields=['status'])
-
-    def mark_as_failed(self):
-        """
-        Marque le pipeline comme échoué
-        """
-        self.status = self.PipelineStatus.FAILED
-        self.save(update_fields=['status'])
-
-    def resume(self):
-        """
-        Reprend un pipeline en pause
-        """
-        if self.status == self.PipelineStatus.PAUSED:
-            self.status = self.PipelineStatus.ACTIVE
-            self.save(update_fields=['status'])
-
-    def mark_as_customized(self, notes=None):
-        """
-        Marque le pipeline comme personnalisé
-        """
-        self.is_customized = True
-        if notes:
-            self.customization_notes = notes
-        self.save(update_fields=['is_customized', 'customization_notes'])
-
-    @classmethod
-    def create_from_template(cls, opportunity, template, user=None):
-        """
-        Crée un pipeline d'opportunité à partir d'un template
-        """
-        # Créer le pipeline
-        pipeline = cls.objects.create(
-            opportunity=opportunity,
-            template=template,
-            status=cls.PipelineStatus.ACTIVE,
-            client_id=opportunity.client_id,
-            user=user
-        )
+        from .substage_activity import SubStageActivity
         
-        # Créer les étapes à partir du template
-        from .pipeline_stage import PipelineStage
-        template_stages = template.stages.filter(is_active=True).order_by('order')
-        
-        for template_stage in template_stages:
-            PipelineStage.create_from_template(
-                template_stage=template_stage,
-                opportunity_pipeline=pipeline,
-                user=user
-            )
-        
-        # Mettre à jour les métriques
-        pipeline._update_metrics()
-        pipeline.save()
-        
-        return pipeline
+        template = self.get_pipeline_template()
+        if not template:
+            return {
+                'current_stage': self.current_stage.name if self.current_stage else None,
+                'current_substage': self.current_substage.name if self.current_substage else None,
+                'detected_from_activities': False
+            }
 
-    def get_all_stages(self):
-        """
-        Récupère toutes les étapes du pipeline ordonnées
-        """
-        return self.stages.filter(is_active=True).order_by('order')
+        # Filtrer les activités IN_PROGRESS liées aux substages
+        in_progress_activities = SubStageActivity.objects.filter(
+            substage__stage__template=template,
+            activity__status='IN_PROGRESS'
+        ).select_related(
+            'substage', 'substage__stage'
+        ).order_by('-substage__stage__order', '-substage__order')
 
-    def get_current_substages(self):
+        detected_substage = None
+        if in_progress_activities.exists():
+            # Prendre celle avec le stage le plus avancé
+            detected_substage = in_progress_activities.first().substage
+
+        return {
+            'current_stage': self.current_stage.name if self.current_stage else None,
+            'current_substage': self.current_substage.name if self.current_substage else None,
+            'detected_from_activities': detected_substage is not None,
+            'detected_stage': detected_substage.stage.name if detected_substage else None,
+            'detected_substage': detected_substage.name if detected_substage else None
+        }
+
+    # ===== MÉTRIQUES SIMPLES =====
+
+    def get_pipeline_summary(self) -> Dict[str, Any]:
         """
-        Récupère les sous-étapes de l'étape courante
+        Retourne un résumé simple du pipeline
         """
-        if not self.current_stage:
-            return []
+        overdue_summary = self.get_overdue_summary()
+        position = self.get_current_position()
         
-        return self.current_stage.substages.filter(is_active=True).order_by('order')
+        return {
+            'current_position': position,
+            'progress': {
+                'percentage': float(self.progress_percentage),
+                'completed_stages': self.get_completed_stages_count(),
+                'total_stages': self.get_total_stages_count()
+            },
+            'health': {
+                'is_overdue': overdue_summary['has_overdue'],
+                'overdue_count': overdue_summary['overdue_count'],
+                'status': self.status
+            },
+            'timeline': {
+                'days_elapsed': self.days_since_started,
+                'expected_close': self.expected_close_date,
+                'days_until_close': self.days_until_expected_close
+            }
+        }
+
+    # ===== MÉTHODES UTILITAIRES =====
+
+    def get_pipeline_template(self):
+        """Récupère le template du pipeline (via l'opportunité)"""
+        try:
+            return self.opportunity.pipeline_templates.first()
+        except Exception:
+            return None
+
+    def _update_expected_completion(self):
+        """Met à jour la date de fin prévue basée sur le mapping complet"""
+        self.expected_close_date = self.calculate_expected_completion()
+        self.actual_duration_days = self.days_since_started
+        self.save(update_fields=['expected_close_date', 'actual_duration_days'])
+
+    # ===== MÉTHODES DE VALIDATION =====
+
+    def save(self, *args, **kwargs):
+        """
+        Sauvegarde avec validation et mise à jour automatique des métriques
+        """
+        # Validation de cohérence
+        if self.current_substage and self.current_stage:
+            if self.current_substage.stage != self.current_stage:
+                raise StandardizedValidationError(
+                    OpportunityErrorMessages.INCONSISTENT_STAGE_SUBSTAGE
+                )
+        
+        # Mise à jour du client_id depuis l'opportunité
+        if self.opportunity and not self.client_id:
+            self.client_id = self.opportunity.client_id
+        
+        # Mise à jour automatique des métriques
+        self.actual_duration_days = self.days_since_started
+        
+        super().save(*args, **kwargs)

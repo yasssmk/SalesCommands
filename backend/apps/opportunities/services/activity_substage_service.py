@@ -46,10 +46,11 @@ class ActivitySubStageService:
                 
                 # Récupérer le substage
                 try:
-                    substage = PipelineSubStage.objects.get(
-                        id=substage_id, 
-                        client_id=client_id
-                    )
+                    substage = PipelineSubStage.objects.select_related(
+                        'stage__template__opportunity'
+                    ).get(id=substage_id, client_id=client_id)
+                    
+
                 except PipelineSubStage.DoesNotExist:
                     raise StandardizedValidationError(
                         OpportunityErrorMessages.SUBSTAGE_NOT_FOUND
@@ -98,12 +99,7 @@ class ActivitySubStageService:
                         client_id=client_id
                     )
                     return link
-                else:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.VALIDATION_ERROR.format(
-                            errors=link_serializer.errors
-                        )
-                    )
+    
                     
         except StandardizedValidationError:
             raise
@@ -142,7 +138,7 @@ class ActivitySubStageService:
                         OpportunityErrorMessages.SUBSTAGE_NOT_FOUND
                     )
                 
-                opportunity = substage.stage.opportunity_pipeline.opportunity
+                opportunity = substage.stage.template.opportunity
                 
                 # Valider les données d'activité
                 from ..serializers.substage_activity_serializer import SubStageActivityWithNewActivitySerializer

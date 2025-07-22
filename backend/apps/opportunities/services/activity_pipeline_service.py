@@ -46,7 +46,7 @@ class ActivityPipelineService:
                     )
                 
                 # Vérifier que l'activité appartient au bon compte
-                opportunity = substage.stage.opportunity_pipeline.opportunity
+                opportunity = substage.stage.template.opportunity
                 if activity.account != opportunity.account:
                     raise StandardizedValidationError(
                         OpportunityErrorMessages.ACTIVITY_NOT_IN_PIPELINE
@@ -102,7 +102,7 @@ class ActivityPipelineService:
                     )
                 
                 # Récupérer l'opportunité et le compte
-                opportunity = substage.stage.opportunity_pipeline.opportunity
+                opportunity = substage.stage.template.opportunity
                 account = opportunity.account
                 
                 # Créer l'activité
