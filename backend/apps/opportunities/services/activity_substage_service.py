@@ -22,6 +22,30 @@ class ActivitySubStageService:
     """
 
     @classmethod
+    def _get_substage_opportunity(cls, substage):
+        """Helper pour récupérer l'opportunity d'un substage - UNIFIÉ"""
+        try:
+            if not substage or not substage.stage:
+                return None
+                
+            stage = substage.stage
+            
+            # Cas 1: Stage d'instance (opportunity_pipeline)
+            if hasattr(stage, 'opportunity_pipeline') and stage.opportunity_pipeline:
+                return stage.opportunity_pipeline.opportunity
+            
+            # Cas 2: Stage de template
+            elif hasattr(stage, 'template') and stage.template and hasattr(stage.template, 'opportunity'):
+                return stage.template.opportunity
+            
+            return None
+        
+        except:
+            raise StandardizedValidationError(
+                OpportunityErrorMessages.OPPORTUNITY_NOT_FOUND
+            )
+    
+    @classmethod
     def link_existing_activity(cls, substage_id: int, activity_id: int, 
                              user, client_id: str) -> SubStageActivity:
         """
@@ -73,32 +97,41 @@ class ActivitySubStageService:
                     context={'client_id': client_id}
                 )
                 
-                if not create_serializer.is_valid():
+
+                substage_opportunity = cls._get_substage_opportunity(substage)
+                if not substage_opportunity:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.VALIDATION_ERROR.format(
-                            errors=create_serializer.errors
-                        )
+                        "Cannot determine opportunity for substage"
                     )
                 
-                # Créer la liaison avec le serializer principal
-                from ..serializers.substage_activity_serializer import SubStageActivitySerializer
+                # Validation : même opportunity
+                if activity.opportunity and activity.opportunity != substage_opportunity:
+                    raise StandardizedValidationError(
+                        f'Activity belongs to "{activity.opportunity.title}" but substage belongs to "{substage_opportunity.title}"'
+                    )
                 
-                link_data = {
-                    'substage': substage.id,
-                    'activity': activity.id
-                }
+                # Validation : même account
+                if activity.account != substage_opportunity.account:
+                    raise StandardizedValidationError(
+                        "Activity account must match substage opportunity account"
+                    )
                 
-                link_serializer = SubStageActivitySerializer(
-                    data=link_data,
-                    context={'client_id': client_id}
+                # ✅ NOUVEAU: Auto-set opportunity si pas définie
+                if not activity.opportunity:
+                    activity.opportunity = substage_opportunity
+                    activity.save(update_fields=['opportunity'])
+                
+                #  Utiliser la méthode du modèle Activity (plus propre)
+                activity.link_to_substage(substage)
+                
+                # Récupérer la liaison créée
+                link = SubStageActivity.objects.get(
+                    substage=substage,
+                    activity=activity,
+                    client_id=client_id
                 )
                 
-                if link_serializer.is_valid():
-                    link = link_serializer.save(
-                        created_by=user,
-                        client_id=client_id
-                    )
-                    return link
+                return link
     
                     
         except StandardizedValidationError:
@@ -138,62 +171,61 @@ class ActivitySubStageService:
                         OpportunityErrorMessages.SUBSTAGE_NOT_FOUND
                     )
                 
-                opportunity = substage.stage.template.opportunity
+                opportunity = cls._get_substage_opportunity(substage)
                 
-                # Valider les données d'activité
-                from ..serializers.substage_activity_serializer import SubStageActivityWithNewActivitySerializer
-                
-                activity_serializer = SubStageActivityWithNewActivitySerializer(
-                    data=activity_data,
-                    context={'client_id': client_id}
-                )
-                
-                if not activity_serializer.is_valid():
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.VALIDATION_ERROR.format(
-                            errors=activity_serializer.errors
-                        )
-                    )
-                
-                validated_data = activity_serializer.validated_data
-                
-                # Créer l'activité
-                from apps.activities.serializers import ActivitySerializer
-                
-                activity_create_data = {
-                    'title': validated_data['title'],
-                    'description': validated_data.get('description', ''),
-                    'activity_type': validated_data['activity_type'],
-                    'scheduled_start': validated_data.get('scheduled_start'),
-                    'scheduled_end': validated_data.get('scheduled_end'),
-                    'opportunity': opportunity.id,
-                    'owner': validated_data.get('owner_id', user.id)
+                activity_data_clean = {
+                    'title': activity_data.get('title'),
+                    'activity_type': activity_data.get('activity_type'),
+                    'description': activity_data.get('description', ''),
+                    'account': opportunity.account,
+                    'owner': user,
+                    'opportunity': opportunity,  
+                    'pipeline_substage': substage, 
+                    'scheduled_start': activity_data.get('scheduled_start'),
+                    'scheduled_end': activity_data.get('scheduled_end'),
+                    'objectives': activity_data.get('objectives', ''),
+                    'context_info': activity_data.get('context_info', {}),
                 }
                 
+
+                from apps.activities.serializers import ActivitySerializer
+                
                 activity_serializer = ActivitySerializer(
-                    data=activity_create_data,
-                    context={'client_id': client_id}
+                    data=activity_data_clean,
+                    context={'client_id': client_id, 'request': type('Request', (), {'user': user})()}
                 )
                 
-                if activity_serializer.is_valid():
-                    activity = activity_serializer.save(
-                        created_by=user,
-                        client_id=client_id
-                    )
-                else:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.VALIDATION_ERROR.format(
-                            errors=activity_serializer.errors
-                        )
-                    )
                 
-                # Créer la liaison automatiquement
-                link = cls.link_existing_activity(
-                    substage_id=substage_id,
-                    activity_id=activity.id,
-                    user=user,
+                # Créer l'activité (le save() auto-gérera opportunity et pipeline_substage)
+                activity = activity_serializer.save()
+                
+                # ✅ NOUVEAU: Enrichir le contexte avec substage
+                activity.set_substage_context(substage)
+                activity.save()
+                
+                # ✅ SIMPLIFIÉ: Utiliser la méthode du modèle (plus robuste)
+                activity.link_to_substage(substage)
+                
+                # Récupérer la liaison créée
+                link = SubStageActivity.objects.get(
+                    substage=substage,
+                    activity=activity,
                     client_id=client_id
                 )
+                
+                # ✅ NOUVEAU: Gérer les contacts
+                contact_ids = activity_data.get('contact_ids', [])
+                if contact_ids:
+                    from apps.accounts.models import Contact
+                    contacts = Contact.objects.filter(
+                        id__in=contact_ids,
+                        account=opportunity.account,
+                        client_id=client_id
+                    )
+                    activity.contacts.set(contacts)
+                elif opportunity.contact:
+                    # Fallback: contact principal de l'opportunité
+                    activity.contacts.add(opportunity.contact)
                 
                 return {
                     'activity': activity,
@@ -204,7 +236,9 @@ class ActivitySubStageService:
             raise
         except Exception as e:
             raise StandardizedValidationError(
-                OpportunityErrorMessages.ACTIVITY_LINK_FAILED.format(reason=str(e))
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to create activity for substage: {str(e)}"
+                )
             )
 
     @classmethod
@@ -227,19 +261,17 @@ class ActivitySubStageService:
             with transaction.atomic():
                 # Rechercher la liaison
                 try:
-                    link = SubStageActivity.objects.get(
-                        substage_id=substage_id,
-                        activity_id=activity_id,
+                    activity = Activity.objects.get(
+                        id=activity_id,
                         client_id=client_id
                     )
-                except SubStageActivity.DoesNotExist:
+                except Activity.DoesNotExist:
                     raise StandardizedValidationError(
-                        OpportunityErrorMessages.ACTIVITY_NOT_IN_PIPELINE
+                        ActivityErrorMessages.ACTIVITY_NOT_FOUND
                     )
                 
                 # Supprimer la liaison
-                link.delete()
-                return True
+                activity.unlink_from_substage()
                 
         except StandardizedValidationError:
             raise
@@ -294,7 +326,6 @@ class ActivitySubStageService:
                 context={'client_id': client_id}
             )
             
-            # Construire la timeline avec métadonnées
             timeline_data = {
                 'substage': {
                     'id': substage.id,
@@ -305,45 +336,9 @@ class ActivitySubStageService:
                     'estimated_duration_days': substage.estimated_duration_days
                 },
                 'activities_links': links_serializer.data,
-                'activities_count': activity_links.count(),
-                'timeline_summary': {
-                    'earliest_activity': None,
-                    'latest_activity': None,
-                    'activities_before_substage': 0,
-                    'activities_within_substage': 0,
-                    'activities_after_substage': 0,
-                    'activities_without_date': 0
-                }
+                'activities_count': len(links_serializer.data),
+                'timeline_generated_at': timezone.now().isoformat()
             }
-            
-            # Calculer les statistiques de timeline
-            if activity_links.exists():
-                activities_with_dates = [
-                    link.activity for link in activity_links 
-                    if link.activity.scheduled_start
-                ]
-                
-                if activities_with_dates:
-                    timeline_data['timeline_summary']['earliest_activity'] = min(
-                        activities_with_dates, 
-                        key=lambda a: a.scheduled_start
-                    ).scheduled_start
-                    timeline_data['timeline_summary']['latest_activity'] = max(
-                        activities_with_dates, 
-                        key=lambda a: a.scheduled_start
-                    ).scheduled_start
-                
-                # Compter les positions temporelles
-                for link in activity_links:
-                    position = link.timeline_position
-                    if position == 'before_substage':
-                        timeline_data['timeline_summary']['activities_before_substage'] += 1
-                    elif position == 'within_substage':
-                        timeline_data['timeline_summary']['activities_within_substage'] += 1
-                    elif position == 'after_substage':
-                        timeline_data['timeline_summary']['activities_after_substage'] += 1
-                    else:
-                        timeline_data['timeline_summary']['activities_without_date'] += 1
             
             return timeline_data
             

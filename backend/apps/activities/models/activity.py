@@ -203,6 +203,11 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
             except type(self).DoesNotExist:
                 pass
         
+        if self.pipeline_substage and not self.opportunity:
+            substage_opportunity = self._get_substage_opportunity()
+            if substage_opportunity:
+                self.opportunity = substage_opportunity
+        
         # Set completed_at when activity is completed
         if was_completed:
             self.completed_at = timezone.now()
@@ -217,7 +222,25 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
         if self.pipeline_substage and self.status == 'COMPLETED':
             self._process_pipeline_completion()
         
+
         super().save(*args, **kwargs)
+    
+    def _get_substage_opportunity(self):
+        """Helper pour récupérer l'opportunity d'un substage"""
+        if not self.pipeline_substage or not self.pipeline_substage.stage:
+            return None
+            
+        stage = self.pipeline_substage.stage
+        
+        # Cas 1: Stage d'instance
+        if hasattr(stage, 'opportunity_pipeline') and stage.opportunity_pipeline:
+            return stage.opportunity_pipeline.opportunity
+        
+        # Cas 2: Stage de template
+        elif hasattr(stage, 'template') and stage.template and hasattr(stage.template, 'opportunity'):
+            return stage.template.opportunity
+        
+        return None
     
     def complete(self, outcome_notes=None, save=True):
         """Mark activity as completed"""
@@ -246,26 +269,32 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
     
     def link_to_substage(self, substage):
         """
-        Lie cette activité à une sous-étape de pipeline
+        Lie cette activité à une sous-étape de pipeline - VERSION CORRIGÉE
         """
+        # Setter le substage directement
         self.pipeline_substage = substage
         self.save(update_fields=['pipeline_substage'])
         
-        # Créer aussi la liaison dans SubStageActivity
         from apps.opportunities.models import SubStageActivity
-        SubStageActivity.create_link(
+        
+        # Vérifier si la liaison existe déjà
+        link, created = SubStageActivity.objects.get_or_create(
             substage=substage,
             activity=self,
-            link_type='FUTURE_ACTIVITY',
-            user=self.user
+            client_id=self.client_id,
+            defaults={
+                'created_by': getattr(self, '_created_by_user', None),
+            }
         )
-    
+        
+        return link
+
     def unlink_from_substage(self):
         """
-        Supprime la liaison avec la sous-étape
+        Supprime la liaison avec la sous-étape - VERSION CORRIGÉE
         """
         if self.pipeline_substage:
-            # Supprimer la liaison dans SubStageActivity
+            # ✅ SIMPLIFIÉ: Supprimer directement la liaison
             from apps.opportunities.models import SubStageActivity
             SubStageActivity.objects.filter(
                 substage=self.pipeline_substage,
@@ -273,24 +302,84 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
                 client_id=self.client_id
             ).delete()
             
+            # Nettoyer le champ pipeline_substage
             self.pipeline_substage = None
             self.save(update_fields=['pipeline_substage'])
-    
+
+    def _process_pipeline_completion(self):
+        """
+        Traite la completion de l'activité dans le contexte du pipeline - VERSION CORRIGÉE
+        """
+        if not self.pipeline_substage:
+            return
+        
+        # ✅ CORRIGÉ: Créer ou mettre à jour la liaison simplement
+        from apps.opportunities.models import SubStageActivity
+        try:
+            link = SubStageActivity.objects.get(
+                substage=self.pipeline_substage,
+                activity=self,
+                client_id=self.client_id
+            )
+            # La liaison existe déjà, pas besoin de modification spéciale
+            
+        except SubStageActivity.DoesNotExist:
+            # ✅ CORRIGÉ: Créer la liaison si elle n'existe pas
+            SubStageActivity.objects.create(
+                substage=self.pipeline_substage,
+                activity=self,
+                client_id=self.client_id,
+                created_by=getattr(self, '_created_by_user', None)
+            )
+        
+        # ✅ OPTIONAL: Notifier le pipeline de la completion (simplifié)
+        try:
+            if self.opportunity and hasattr(self.opportunity, 'pipeline'):
+                # Le pipeline peut réagir à la completion
+                # Mais pour MVP, on garde ça simple
+                pass
+        except Exception as e:
+            print(f"Failed to process pipeline completion for activity: {str(e)}", self.id)
+            # Ne pas faire échouer la completion si notification échoue
+            pass
+
     def get_pipeline_context(self):
         """
-        Récupère le contexte pipeline de cette activité
+        Récupère le contexte pipeline de cette activité - VERSION CORRIGÉE
         """
         if not self.pipeline_substage:
             return None
         
-        return {
+        # ✅ CORRIGÉ: Utiliser la méthode helper pour récupérer l'opportunity
+        substage_opportunity = self._get_substage_opportunity()
+        if not substage_opportunity:
+            return None
+        
+        # Récupérer le pipeline depuis l'opportunity
+        pipeline = getattr(substage_opportunity, 'pipeline', None)
+        
+        context = {
             'substage_id': self.pipeline_substage.id,
             'substage_name': self.pipeline_substage.name,
             'stage_id': self.pipeline_substage.stage.id,
             'stage_name': self.pipeline_substage.stage.name,
-            'pipeline_id': self.pipeline_substage.stage.opportunity_pipeline.id,
-            'opportunity_id': self.pipeline_substage.stage.opportunity_pipeline.opportunity.id,
+            'opportunity_id': substage_opportunity.id,
+            'opportunity_title': substage_opportunity.title,
         }
+        
+        # Ajouter les infos de template/pipeline selon le contexte
+        stage = self.pipeline_substage.stage
+        if hasattr(stage, 'template') and stage.template:
+            context.update({
+                'template_id': stage.template.id,
+                'template_name': stage.template.name,
+            })
+        elif hasattr(stage, 'opportunity_pipeline') and stage.opportunity_pipeline:
+            context.update({
+                'pipeline_id': stage.opportunity_pipeline.id,
+            })
+        
+        return context
     
     @property
     def is_pipeline_activity(self):
@@ -299,41 +388,23 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
         """
         return self.pipeline_substage is not None
     
-    def _process_pipeline_completion(self):
-        """
-        Traite la completion de l'activité dans le contexte du pipeline
-        Version simplifiée pour MVP
-        """
-        if not self.pipeline_substage:
-            return
         
-        # Mettre à jour la liaison SubStageActivity
-        from apps.opportunities.models import SubStageActivity
-        try:
-            link = SubStageActivity.objects.get(
-                substage=self.pipeline_substage,
-                activity=self,
-                client_id=self.client_id
-            )
-            link.mark_as_completed()
-        except SubStageActivity.DoesNotExist:
-            # Créer la liaison si elle n'existe pas
-            SubStageActivity.create_link(
-                substage=self.pipeline_substage,
-                activity=self,
-                link_type='PAST_ACTIVITY',
-                user=self.user
-            )
-    
     def set_substage_context(self, substage, campaign_target=None):
-        """Set context from substage and campaign target"""
+        """Set context from substage and campaign target - VERSION SIMPLIFIÉE"""
         if not substage:
             return
             
         # Set basic substage info
         self.substage_name = substage.name
+        self.pipeline_substage = substage
         
-        # Build objectives
+        # ✅ SIMPLIFIÉ: Auto-set opportunity (sera fait dans save())
+        if not self.opportunity:
+            substage_opportunity = self._get_substage_opportunity()
+            if substage_opportunity:
+                self.opportunity = substage_opportunity
+        
+        # Build objectives - SIMPLIFIÉ car opportunity est maintenant disponible
         objectives_parts = []
         if hasattr(substage, 'metadata') and substage.metadata.objective:
             objectives_parts.append(f"SubStage Goal: {substage.metadata.objective}")
@@ -342,19 +413,19 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
         if substage.stage:
             objectives_parts.append(f"Stage: {substage.stage.name}")
             
-        # Add opportunity context
-        if substage.stage and hasattr(substage.stage, 'opportunity_pipeline'):
-            pipeline = substage.stage.opportunity_pipeline
-            if pipeline and pipeline.opportunity:
-                objectives_parts.append(f"Opportunity: {pipeline.opportunity.title}")
+        # Add opportunity context - SIMPLIFIÉ
+        if self.opportunity:
+            objectives_parts.append(f"Opportunity: {self.opportunity.title}")
         
         self.objectives = " | ".join(objectives_parts)
         
-        # Build context info
+        # Build context info - SIMPLIFIÉ
         context = {
             'substage_id': substage.id,
             'substage_type': substage.get_substage_type_display(),
             'stage_name': substage.stage.name if substage.stage else None,
+            'opportunity_id': self.opportunity.id if self.opportunity else None,
+            'opportunity_title': self.opportunity.title if self.opportunity else None,
             'stakeholders': [],
             'validation_criteria': []
         }

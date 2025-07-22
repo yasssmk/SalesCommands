@@ -68,6 +68,23 @@ class SubStageActivity(BaseModelApp, ClientScopeManager.ModelMixin):
                 raise ValidationError(
                     _("L'activité doit appartenir à la même opportunité que le substage")
                 )
+    
+    def _get_substage_opportunity(self):
+        """Helper pour récupérer l'opportunity d'un substage - COHÉRENT avec Activity"""
+        if not self.substage or not self.substage.stage:
+            return None
+            
+        stage = self.substage.stage
+        
+        # Cas 1: Stage d'instance (opportunity_pipeline)
+        if hasattr(stage, 'opportunity_pipeline') and stage.opportunity_pipeline:
+            return stage.opportunity_pipeline.opportunity
+        
+        # Cas 2: Stage de template
+        elif hasattr(stage, 'template') and stage.template and hasattr(stage.template, 'opportunity'):
+            return stage.template.opportunity
+        
+        return None
 
     def save(self, *args, **kwargs):
         """Override save pour appeler clean() automatiquement"""

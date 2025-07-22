@@ -244,13 +244,13 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         }
     
     def get_opportunity_name(self, obj):
-        """Get opportunity name from pipeline substage"""
+        """Get opportunity name - SIMPLIFIÉ grâce à la règle de cohérence"""
         try:
-            if obj.pipeline_substage and obj.pipeline_substage.stage:
-                pipeline = obj.pipeline_substage.stage.opportunity_pipeline
-                if pipeline and pipeline.opportunity:
-                    return pipeline.opportunity.title
+
+            if obj.opportunity:
+                return obj.opportunity.title
             return None
+            
         except Exception:
             return None
     
@@ -265,7 +265,8 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             if 'account' in data:
                 account = data['account']
                 self.validate_client_id(account)
-            
+
+
             # Validate scheduled dates
             if 'scheduled_end' in data and 'scheduled_start' in data:
                 if data['scheduled_end'] < data['scheduled_start']:
