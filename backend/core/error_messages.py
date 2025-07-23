@@ -335,3 +335,5 @@ class OpportunityErrorMessages:
     ACTIVITY_LINK_FAILED = _("Failed to link activity to substage: {reason}")
     ACTIVITY_OPPORTUNITY_MISMATCH = _("Activity does not belong to the opportunity associated with this substage")
     SUBSTAGE_NOT_FOUND = _("SubStage not found or not accessible")
+
+    UNIQUE_CONSTRAINT_ACTIVITY_SUBSTAGE = _("An activity already exists for this substage in your organization")

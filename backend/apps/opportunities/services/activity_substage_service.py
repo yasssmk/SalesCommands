@@ -82,34 +82,28 @@ class ActivitySubStageService:
         Raises:
             StandardizedValidationError: Si validation échoue
         """
-        try:
-            with transaction.atomic():
-                # Import différé pour éviter l'import circulaire
-                from ..serializers.substage_activity_serializer import SubStageActivitySerializer
-                
-                # Valider et créer via le serializer (qui fait la validation)
-                data = {
-                    'substage': substage_id,
-                    'activity': activity_id
-                }
-                
-                serializer = SubStageActivitySerializer(
-                    data=data,
-                    context={'client_id': client_id}
-                )
-                serializer.is_valid(raise_exception=True)
-                
-                # Créer la liaison (le serializer gère Activity.pipeline_substage)
-                substage_activity = serializer.save()
-                
-                return substage_activity
-                
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                OpportunityErrorMessages.ACTIVITY_LINK_FAILED.format(reason=str(e))
+
+        with transaction.atomic():
+            # Import différé pour éviter l'import circulaire
+            from ..serializers.substage_activity_serializer import SubStageActivitySerializer
+            
+            # Valider et créer via le serializer (qui fait la validation)
+            data = {
+                'substage': substage_id,
+                'activity': activity_id
+            }
+            
+            serializer = SubStageActivitySerializer(
+            data=data,
+                context={'client_id': client_id}
             )
+            serializer.is_valid(raise_exception=True)
+            
+            # Créer la liaison (le serializer gère Activity.pipeline_substage)
+            substage_activity = serializer.save()
+            
+            return substage_activity
+            
     
     @classmethod
     def unlink_activity(cls, substage_id: int, activity_id: int, client_id: str):
@@ -134,9 +128,7 @@ class ActivitySubStageService:
                         client_id=client_id
                     )
                 except SubStageActivity.DoesNotExist:
-                    raise StandardizedValidationError(
-                        "No link found between this activity and substage"
-                    )
+                    raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
                 
                 # Récupérer l'activité pour nettoyer la liaison directe
                 activity = substage_activity.activity

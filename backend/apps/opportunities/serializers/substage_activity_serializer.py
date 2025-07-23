@@ -20,6 +20,26 @@ class SubStageActivitySerializer(ClientScopeManager.SerializerMixin, serializers
     """
     
     # ===== CHAMPS DISPLAY (READ-ONLY) =====
+
+    substage = serializers.PrimaryKeyRelatedField(
+        queryset=PipelineSubStage.objects.all(),
+        write_only=True,
+        error_messages={
+            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Substage'),
+            'does_not_exist': CoreErrorMessages.OBJECT_NOT_FOUND,
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Substage ID must be a valid integer')
+         }
+    )
+
+    activity = serializers.PrimaryKeyRelatedField(
+        queryset=Activity.objects.all(),
+        write_only=True,
+        error_messages={
+            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Activity'),
+            'does_not_exist': CoreErrorMessages.OBJECT_NOT_FOUND,
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Activity ID must be a valid integer')
+        }
+    )
     
     substage_name = serializers.CharField(source='substage.name', read_only=True)
     substage_status = serializers.CharField(source='substage.status', read_only=True)
@@ -80,7 +100,21 @@ class SubStageActivitySerializer(ClientScopeManager.SerializerMixin, serializers
 
         substage = attrs.get('substage')
         activity = attrs.get('activity')
+
+        client_id = self._get_client_id_from_context()
+            
+        if str(substage.client_id) != str(client_id):
+            raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
         
+        if str(activity.client_id) != str(client_id):
+            raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+        
+        self.validate_client_scoped_uniqueness(
+            data=attrs,
+            unique_fields=['substage'],
+            error_message=OpportunityErrorMessages.UNIQUE_CONSTRAINT_ACTIVITY_SUBSTAGE,
+        )
+    
         if substage and activity:
             # Import du service pour utiliser le helper centralisé
             from ..services.activity_substage_service import ActivitySubStageService
@@ -108,27 +142,44 @@ class SubStageActivitySerializer(ClientScopeManager.SerializerMixin, serializers
         
         return attrs
 
+        
     def validate_substage(self, value):
         """Validation du substage avec client scope"""
         client_id = self._get_client_id_from_context()
         
-        if str(value.client_id) != str(client_id):
-            raise StandardizedValidationError(
-                CoreErrorMessages.CLIENT_MISMATCH
-            )
+        # ✅ NOUVEAU: Gérer le cas où value est un ID (pour compatibilité) ou une instance
+        if isinstance(value, int):
+            # Si c'est un ID, récupérer l'instance avec validation d'existence
+            try:
+                substage = PipelineSubStage.objects.get(id=value, client_id=client_id)
+            except PipelineSubStage.DoesNotExist:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        else:
+            # Si c'est déjà une instance, valider juste le client_id
+            substage = value
+            if str(substage.client_id) != str(client_id):
+                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
         
-        return value
+        return substage
 
     def validate_activity(self, value):
         """Validation de l'activity avec client scope"""
         client_id = self._get_client_id_from_context()
         
-        if str(value.client_id) != str(client_id):
-            raise StandardizedValidationError(
-                CoreErrorMessages.CLIENT_MISMATCH
-            )
+        # ✅ NOUVEAU: Gérer le cas où value est un ID (pour compatibilité) ou une instance
+        if isinstance(value, int):
+            # Si c'est un ID, récupérer l'instance avec validation d'existence
+            try:
+                activity = Activity.objects.get(id=value, client_id=client_id)
+            except Activity.DoesNotExist:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        else:
+            # Si c'est déjà une instance, valider juste le client_id
+            activity = value
+            if str(activity.client_id) != str(client_id):
+                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
         
-        return value
+        return activity
 
     # ===== CRÉATION AVEC LIAISON AUTOMATIQUE =====
 
@@ -140,6 +191,7 @@ class SubStageActivitySerializer(ClientScopeManager.SerializerMixin, serializers
         try:
             # Ajouter client_id
             validated_data['client_id'] = self._get_client_id_from_context()
+            validated_data = self._enrich_validated_data(validated_data, is_update=False)
             
             # Récupérer les objets
             activity = validated_data['activity']
@@ -158,7 +210,8 @@ class SubStageActivitySerializer(ClientScopeManager.SerializerMixin, serializers
             
             # ✅ LIAISON AUTOMATIQUE : Mettre à jour Activity.pipeline_substage
             activity.pipeline_substage = substage
-            activity.save(update_fields=['pipeline_substage'])
+            activity.set_substage_context(substage)
+            activity.save(update_fields=['pipeline_substage', 'substage_name', 'objectives', 'context_info', 'call_to_action'])
             
             return substage_activity
             
@@ -172,11 +225,22 @@ class SubStageActivitySerializer(ClientScopeManager.SerializerMixin, serializers
         Mise à jour avec gestion des liaisons
         """
         try:
-            # Si on change le substage, mettre à jour la liaison directe
+            # ✅ NOUVEAU: Enrichir avec updated_by, updated_at
+            validated_data = self._enrich_validated_data(validated_data, is_update=True)
+            
+            # Si on change le substage, mettre à jour la liaison directe et le contexte
             if 'substage' in validated_data:
                 new_substage = validated_data['substage']
-                instance.activity.pipeline_substage = new_substage
-                instance.activity.save(update_fields=['pipeline_substage'])
+                activity = instance.activity
+                
+                # Mettre à jour la liaison directe
+                activity.pipeline_substage = new_substage
+                
+                # ✅ NOUVEAU: Mettre à jour le contexte avec le nouveau substage
+                activity.set_substage_context(new_substage) 
+                
+                # Sauvegarder les changements sur l'activité
+                activity.save(update_fields=['pipeline_substage', 'substage_name', 'objectives', 'context_info', 'call_to_action'])
             
             return super().update(instance, validated_data)
             
@@ -184,7 +248,7 @@ class SubStageActivitySerializer(ClientScopeManager.SerializerMixin, serializers
             raise StandardizedValidationError(
                 OpportunityErrorMessages.ACTIVITY_LINK_FAILED.format(reason=str(e))
             )
-
+        
     # ===== MÉTHODES HELPER POUR ENRICHISSEMENT =====
 
     def get_opportunity_id(self, obj):

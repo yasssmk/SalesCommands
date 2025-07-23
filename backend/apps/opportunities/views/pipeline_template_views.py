@@ -42,7 +42,6 @@ class PipelineTemplateViewSet(BaseAPIView, viewsets.ModelViewSet):
         # Add annotations for better performance
         queryset = queryset.annotate(
             stages_count=Count('stages', filter=Q(stages__is_active=True)),
-            pipelines_count=Count('opportunity_pipelines')
         ).prefetch_related('stages')
         
         return queryset

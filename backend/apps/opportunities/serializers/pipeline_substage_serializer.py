@@ -48,7 +48,7 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
             'substage_type', 'substage_type_display',
             'status', 'status_display',
             'is_active',
-            'estimated_duration_days',  # Corrigé
+            'estimated_duration_days',  
             'start_date', 'end_date',
             'actual_start_date', 'actual_end_date',  # Corrigés
             'notes',

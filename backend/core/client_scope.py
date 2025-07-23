@@ -118,8 +118,11 @@ class ClientScopeManager:
             ).exists()
 
             if duplicate_exists:
-                field_names = ", ".join(unique_fields)
-                raise StandardizedValidationError(CoreErrorMessages.UNIQUE_CONSTRAINT.format(fields=field_names))
+                if error_message:
+                    raise StandardizedValidationError(error_message)
+                else:
+                    field_names = ", ".join(unique_fields)
+                    raise StandardizedValidationError(CoreErrorMessages.UNIQUE_CONSTRAINT.format(fields=field_names))
             
             return data
 
@@ -132,6 +135,32 @@ class ClientScopeManager:
             current_client = self._get_client_id_from_context()
             if str(obj.client_id) != str(current_client):
                 raise StandardizedPermissionDenied(CoreErrorMessages.CLIENT_MISMATCH)
+
+        def _enrich_validated_data(self, validated_data, is_update=False):
+            """
+            Enrichit automatiquement validated_data avec les champs standards :
+            - created_by, updated_by depuis request.user
+            - created_at, updated_at depuis timezone.now() 
+            """
+            from django.utils import timezone
+            
+            request = self.context.get('request')
+            model = self.Meta.model
+            
+            # Champs utilisateur
+            if request and hasattr(request, 'user'):
+                if not is_update and hasattr(model, 'created_by') and 'created_by' not in validated_data:
+                    validated_data['created_by'] = request.user
+                if hasattr(model, 'updated_by') and 'updated_by' not in validated_data:
+                    validated_data['updated_by'] = request.user
+            
+            # Champs temporels
+            if not is_update and hasattr(model, 'created_at') and 'created_at' not in validated_data:
+                validated_data['created_at'] = timezone.now()
+            if hasattr(model, 'updated_at') and 'updated_at' not in validated_data:
+                validated_data['updated_at'] = timezone.now()
+            
+            return validated_data
         
     class ViewMixin:
         """

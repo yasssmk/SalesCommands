@@ -204,7 +204,8 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
                 pass
         
         if self.pipeline_substage and not self.opportunity:
-            substage_opportunity = self._get_substage_opportunity()
+            from apps.opportunities.services.activity_substage_service import ActivitySubStageService
+            substage_opportunity = ActivitySubStageService.get_substage_opportunity(self.pipeline_substage)
             if substage_opportunity:
                 self.opportunity = substage_opportunity
         
@@ -218,30 +219,11 @@ class Activity(BaseModelApp, ClientScopeManager.ModelMixin):
                 start_date=self.scheduled_start,
                 end_date=self.scheduled_end
             ))
-        
-        if self.pipeline_substage and self.status == 'COMPLETED':
-            from django.utils import timezone
-            self.completed_at = timezone.now()
-        
+          
 
         super().save(*args, **kwargs)
     
-    def _get_substage_opportunity(self):
-        """Helper pour récupérer l'opportunity d'un substage"""
-        if not self.pipeline_substage or not self.pipeline_substage.stage:
-            return None
-            
-        stage = self.pipeline_substage.stage
-        
-        # Cas 1: Stage d'instance
-        if hasattr(stage, 'opportunity_pipeline') and stage.opportunity_pipeline:
-            return stage.opportunity_pipeline.opportunity
-        
-        # Cas 2: Stage de template
-        elif hasattr(stage, 'template') and stage.template and hasattr(stage.template, 'opportunity'):
-            return stage.template.opportunity
-        
-        return None
+
     
     def complete(self, outcome_notes=None, save=True):
         """Mark activity as completed"""
