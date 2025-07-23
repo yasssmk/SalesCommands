@@ -8,20 +8,34 @@ from django.db.models import Q, Count, Sum, Avg
 from django.utils import timezone
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, OpportunityErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from apps.opportunities.models import (
-    Opportunity, OpportunityFinancialSummary, OpportunityLineItem,
-    OpportunitySource, OpportunityActivity, OpportunityHistory
+    Opportunity, OpportunityFinancialSummary, 
+    OpportunitySource, OpportunityActivity, 
 )
 from apps.opportunities.serializers import (
-    OpportunitySerializer, OpportunityListSerializer, OpportunityWithFinancialsSerializer,
-    OpportunityLineItemSerializer, OpportunityFinancialSummarySerializer,
-    OpportunitySourceSerializer, OpportunityActivitySerializer, OpportunityHistorySerializer,
+    OpportunitySerializer, OpportunityListSerializer, OpportunityWithFinancialsSerializer, OpportunityHistorySerializer,
     LeadConversionSerializer
 )
 from apps.leads.models import Lead
 from end_users.models import User
+
+def update_opportunity_overdue_safe(opportunity_id, client_id):
+    """
+    Met à jour les statuts overdue d'une opportunité de façon sécurisée
+    """
+    try:
+        from apps.opportunities.models import PipelineStage, PipelineSubStage
+        PipelineStage.bulk_update_overdue_for_opportunity(opportunity_id, client_id)
+        PipelineSubStage.bulk_update_overdue_for_opportunity(opportunity_id, client_id)
+        return True
+    except Exception as e:
+        StandardizedValidationError(
+            OpportunityErrorMessages.FAILED_TO_UPDATE_OVERDUE_STATUS.format(
+                reason=str(e)
+            )
+        )
 
 
 class OpportunityViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
@@ -117,8 +131,45 @@ class OpportunityViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.Mod
         forecast_category = self.request.query_params.get('forecast_category', None)
         if forecast_category:
             queryset = queryset.filter(financial_summary__forecast_category=forecast_category)
+
+        try:
+            from django.utils import timezone
+            from datetime import timedelta
+            from apps.opportunities.models import OpportunityPipeline
+            
+            # Mettre à jour les opportunités modifiées dans les 3 derniers jours
+            recent_cutoff = timezone.now() - timedelta(days=3)
+            recent_pipelines = OpportunityPipeline.objects.filter(
+                client_id=self.get_client_id(),
+                last_updated__gte=recent_cutoff
+            ).values_list('id', flat=True)[:15]  # Limite à 15 pour les performances
+            
+            for pipeline_id in recent_pipelines:
+                update_opportunity_overdue_safe(pipeline_id, self.get_client_id())
+        except Exception:
+            pass
         
         return queryset
+    
+    def retrieve(self, request, *args, **kwargs):
+        """
+        GET /opportunities/{id}/ avec auto-update overdue
+        """
+        opportunity_id = kwargs.get('pk')
+        if opportunity_id:
+            # Trouver l'opportunity_pipeline_id associé
+            try:
+                from apps.opportunities.models import OpportunityPipeline
+                pipeline = OpportunityPipeline.objects.filter(
+                    opportunity_id=opportunity_id,
+                    client_id=self.get_client_id()
+                ).first()
+                if pipeline:
+                    update_opportunity_overdue_safe(pipeline.id, self.get_client_id())
+            except Exception:
+                pass  # Silencieux
+        
+        return super().retrieve(request, *args, **kwargs)
     
     def perform_create(self, serializer):
         """Create a new opportunity with client scoping"""

@@ -91,6 +91,12 @@ class PipelineStage(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Is Active'),
         help_text=_('Whether this stage is active')
     )
+
+    overdue = models.BooleanField(
+        default=False,
+        verbose_name=_('Is Overdue'),
+        help_text=_('Whether this stage is overdue (automatically calculated)')
+    )
     
     # Dates de progression (pour les instances d'opportunité)
     started_at = models.DateTimeField(
@@ -117,7 +123,7 @@ class PipelineStage(BaseModelApp, ClientScopeManager.ModelMixin):
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
         unique_fields=[],
-        index_fields=['template', 'opportunity_pipeline', 'order', 'status']
+        index_fields=['template', 'opportunity_pipeline', 'order', 'status', 'overdue']
     )):
         db_table = 'pipeline_stages'
         verbose_name = _('Pipeline Stage')
@@ -287,7 +293,45 @@ class PipelineStage(BaseModelApp, ClientScopeManager.ModelMixin):
         if self.is_opportunity_stage:
             self.status = self.StageStatus.BLOCKED
             self.save(update_fields=['status'])
-
+            
+    def update_overdue_status(self):
+        """
+        Met à jour le champ overdue basé sur la logique existante
+        Cette méthode sera appelée lors des requêtes
+        """
+        old_overdue = self.overdue
+        
+        # Logic pour déterminer si le stage est en retard
+        # Pour un stage d'opportunité, on peut vérifier si ses substages sont en retard
+        if self.is_opportunity_stage:
+            # Vérifier si au moins une substage est en retard
+            from .pipeline_substage import PipelineSubStage
+            has_overdue_substages = self.substages.filter(
+                is_active=True
+            ).exists()
+            
+            if has_overdue_substages:
+                # Utiliser la logique du service pour vérifier les retards
+                from ..services.buying_process_substage_service import SubstageService
+                
+                for substage in self.substages.filter(is_active=True):
+                    if SubstageService._is_substage_overdue(substage):
+                        self.overdue = True
+                        break
+                else:
+                    self.overdue = False
+            else:
+                self.overdue = False
+        else:
+            # Pour les templates, pas de retard
+            self.overdue = False
+        
+        # Sauvegarder seulement si le statut a changé
+        if old_overdue != self.overdue:
+            self.save(update_fields=['overdue'])
+        
+        return self.overdue
+    
     @classmethod
     def create_from_template(cls, template_stage, opportunity_pipeline, user=None):
         """
@@ -327,3 +371,185 @@ class PipelineStage(BaseModelApp, ClientScopeManager.ModelMixin):
         old_order = self.order
         self.order = new_order
         self.save()  # La méthode save() gère automatiquement les conflits
+
+    # ===== MÉTHODES DE MISE À JOUR EN BATCH =====
+    
+    @classmethod
+    def bulk_update_overdue_for_opportunity(cls, opportunity_pipeline_id, client_id):
+        """
+        Met à jour le statut overdue de tous les stages d'une opportunité en batch
+        
+        Args:
+            opportunity_pipeline_id: ID de l'OpportunityPipeline
+            client_id: ID du client
+            
+        Returns:
+            dict: Résumé des mises à jour (nombre de stages mis à jour)
+        """
+        from ..services.buying_process_substage_service import SubstageService
+        
+        # Récupérer tous les stages de l'opportunité
+        stages = cls.objects.filter(
+            opportunity_pipeline_id=opportunity_pipeline_id,
+            client_id=client_id,
+            is_active=True
+        ).select_related('opportunity_pipeline').prefetch_related(
+            'substages'
+        )
+        
+        stages_to_update = []
+        updated_count = 0
+        
+        for stage in stages:
+            old_overdue = stage.overdue
+            new_overdue = False
+            
+            # Vérifier si au moins une substage est en retard
+            if stage.substages.filter(is_active=True).exists():
+                for substage in stage.substages.filter(is_active=True):
+                    if SubstageService._is_substage_overdue(substage):
+                        new_overdue = True
+                        break
+            
+            # Ajouter à la liste si le statut a changé
+            if old_overdue != new_overdue:
+                stage.overdue = new_overdue
+                stages_to_update.append(stage)
+                updated_count += 1
+        
+        # Mise à jour en batch si nécessaire
+        if stages_to_update:
+            cls.objects.bulk_update(stages_to_update, ['overdue'])
+        
+        return {
+            'total_stages': stages.count(),
+            'updated_stages': updated_count,
+            'overdue_stages': sum(1 for stage in stages_to_update if stage.overdue)
+        }
+    
+    @classmethod 
+    def bulk_update_overdue_for_client(cls, client_id):
+        """
+        Met à jour le statut overdue de tous les stages d'un client en batch
+        
+        Args:
+            client_id: ID du client
+            
+        Returns:
+            dict: Résumé des mises à jour par opportunité
+        """
+        from django.db.models import Q
+        
+        # Récupérer tous les stages d'opportunité du client
+        stages = cls.objects.filter(
+            client_id=client_id,
+            is_active=True,
+            opportunity_pipeline__isnull=False  # Seulement les stages d'opportunité
+        ).select_related('opportunity_pipeline').prefetch_related(
+            'substages'
+        )
+        
+        # Grouper par opportunité
+        opportunities = {}
+        for stage in stages:
+            opp_id = stage.opportunity_pipeline_id
+            if opp_id not in opportunities:
+                opportunities[opp_id] = []
+            opportunities[opp_id].append(stage)
+        
+        # Mettre à jour chaque opportunité
+        results = {}
+        total_updated = 0
+        
+        for opp_id, opp_stages in opportunities.items():
+            result = cls._bulk_update_stages_list(opp_stages)
+            results[opp_id] = result
+            total_updated += result['updated_stages']
+        
+        return {
+            'total_opportunities': len(opportunities),
+            'total_updated_stages': total_updated,
+            'opportunities_details': results
+        }
+    
+    @classmethod
+    def _bulk_update_stages_list(cls, stages_list):
+        """
+        Méthode utilitaire pour mettre à jour une liste de stages
+        
+        Args:
+            stages_list: Liste des stages à mettre à jour
+            
+        Returns:
+            dict: Résumé des mises à jour
+        """
+        from ..services.buying_process_substage_service import SubstageService
+        
+        stages_to_update = []
+        updated_count = 0
+        
+        for stage in stages_list:
+            old_overdue = stage.overdue
+            new_overdue = False
+            
+            # Vérifier si au moins une substage est en retard
+            if hasattr(stage, 'substages'):
+                active_substages = stage.substages.filter(is_active=True)
+                for substage in active_substages:
+                    if SubstageService._is_substage_overdue(substage):
+                        new_overdue = True
+                        break
+            
+            # Ajouter à la liste si le statut a changé
+            if old_overdue != new_overdue:
+                stage.overdue = new_overdue
+                stages_to_update.append(stage)
+                updated_count += 1
+        
+        # Mise à jour en batch si nécessaire
+        if stages_to_update:
+            cls.objects.bulk_update(stages_to_update, ['overdue'])
+        
+        return {
+            'total_stages': len(stages_list),
+            'updated_stages': updated_count,
+            'overdue_stages': sum(1 for stage in stages_to_update if stage.overdue)
+        }
+    
+    @classmethod
+    def get_overdue_summary_for_client(cls, client_id):
+        """
+        Récupère un résumé des stages en retard pour un client
+        
+        Args:
+            client_id: ID du client
+            
+        Returns:
+            dict: Résumé des retards
+        """
+        stages = cls.objects.filter(
+            client_id=client_id,
+            is_active=True,
+            opportunity_pipeline__isnull=False
+        ).select_related('opportunity_pipeline')
+        
+        total_stages = stages.count()
+        overdue_stages = stages.filter(overdue=True).count()
+        
+        # Grouper par opportunité
+        opportunities_overdue = stages.filter(overdue=True).values_list(
+            'opportunity_pipeline_id', flat=True
+        ).distinct().count()
+        
+        total_opportunities = stages.values_list(
+            'opportunity_pipeline_id', flat=True
+        ).distinct().count()
+        
+        return {
+            'total_stages': total_stages,
+            'overdue_stages': overdue_stages,
+            'overdue_percentage': round((overdue_stages / total_stages * 100), 2) if total_stages > 0 else 0,
+            'total_opportunities': total_opportunities,
+            'opportunities_with_overdue': opportunities_overdue,
+            'opportunities_overdue_percentage': round((opportunities_overdue / total_opportunities * 100), 2) if total_opportunities > 0 else 0
+        }

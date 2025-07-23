@@ -337,3 +337,5 @@ class OpportunityErrorMessages:
     SUBSTAGE_NOT_FOUND = _("SubStage not found or not accessible")
 
     UNIQUE_CONSTRAINT_ACTIVITY_SUBSTAGE = _("An activity already exists for this substage in your organization")
+    FAILED_TO_UPDATE_OVERDUE_STATUS = _("Failed to update overdue status for substage: {reason}")
+    

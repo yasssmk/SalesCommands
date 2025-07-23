@@ -15,8 +15,23 @@ from apps.opportunities.serializers import (
     PipelineTemplateSerializer, PipelineStageSerializer
 )
 from apps.opportunities.services.buying_process_service import BuyingProcessService
-from apps.opportunities.services.buying_process_substage_service import SubstageService 
+from apps.opportunities.services.buying_process_substage_service import SubstageService
 
+def update_opportunity_overdue_safe(opportunity_id, client_id):
+    """
+    Met à jour les statuts overdue d'une opportunité de façon sécurisée
+    """
+    try:
+        from apps.opportunities.models import PipelineStage, PipelineSubStage
+        PipelineStage.bulk_update_overdue_for_opportunity(opportunity_id, client_id)
+        PipelineSubStage.bulk_update_overdue_for_opportunity(opportunity_id, client_id)
+        return True
+    except Exception as e:
+        StandardizedValidationError(
+            OpportunityErrorMessages.FAILED_TO_UPDATE_OVERDUE_STATUS.format(
+                reason=str(e)
+            )
+        )
 
 class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
     """
@@ -39,6 +54,10 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         queryset = queryset.annotate(
             stages_count=Count('stages', filter=Q(stages__is_active=True)),
         ).prefetch_related('stages', 'opportunity')
+
+        opportunity_id = self.kwargs.get('opportunity_id')
+        if opportunity_id:
+            update_opportunity_overdue_safe(opportunity_id, self.get_client_id())
         
         return queryset
     
@@ -518,6 +537,8 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         """
         # Récupérer l'opportunité et son template
         from apps.opportunities.models import Opportunity
+
+        update_opportunity_overdue_safe(opportunity_id, self.get_client_id())
         
         try:
             opportunity = Opportunity.objects.get(
@@ -557,6 +578,8 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         POST /buying-processes/opportunity/{opportunity_id}/substages/{substage_id}/link-activity/
         Lie une activité existante à un substage
         """
+        update_opportunity_overdue_safe(opportunity_id, self.get_client_id())
+
         with transaction.atomic():
             # Import du service
             from ..services.activity_substage_service import ActivitySubStageService
@@ -592,6 +615,8 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         POST /buying-processes/opportunity/{opportunity_id}/substages/{substage_id}/create-activity/
         Crée une nouvelle activité et la lie automatiquement au substage
         """
+        update_opportunity_overdue_safe(opportunity_id, self.get_client_id())
+
         try:
             with transaction.atomic():
                 # Import du service
@@ -652,6 +677,8 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         DELETE /buying-processes/opportunity/{opportunity_id}/substages/{substage_id}/activities/{activity_id}/
         Supprime la liaison entre un substage et une activité
         """
+        update_opportunity_overdue_safe(opportunity_id, self.get_client_id())
+
         with transaction.atomic():
             # Import du service
             from ..services.activity_substage_service import ActivitySubStageService
@@ -674,6 +701,8 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         GET /buying-processes/opportunity/{opportunity_id}/substages/{substage_id}/timeline/
         Récupère la timeline des activités liées à un substage
         """
+        update_opportunity_overdue_safe(opportunity_id, self.get_client_id())
+        
         # Import du service
         from ..services.activity_substage_service import ActivitySubStageService
         
