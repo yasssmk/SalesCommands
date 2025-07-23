@@ -85,6 +85,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     """
     Main serializer for Activity model with optional nested campaign and sequence info
     """
+
     # Nested serializers for related models
     campaign_info = ActivityCampaignSerializer(read_only=True)
     sequence_info = ActivitySequenceSerializer(read_only=True)

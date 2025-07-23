@@ -195,15 +195,42 @@ class ActivitySubStageService:
                     key: value for key, value in activity_data.items() 
                     if hasattr(Activity, key) and key not in ['id', 'created_at', 'updated_at']
                 }
+
+                if 'account' in activity_data_clean:
+                    from apps.accounts.models import Account
+                    try:
+                        account_id = activity_data_clean['account']
+                        account = Account.objects.get(id=account_id, client_id=client_id)
+                        activity_data_clean['account'] = account
+                    except Account.DoesNotExist:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.OBJECT_NOT_FOUND.format(object_name='Account')
+                        )
                 
+                substage_context = cls._build_substage_context(substage, opportunity)
+
                 activity_data_clean.update({
                     'opportunity': opportunity,
                     'pipeline_substage': substage,
                     'owner': user,
-                    'client_id': client_id
+                    'client_id': client_id,
+                    'substage_name': substage.name,
+                    'objectives': substage_context['objectives'],
+                    'context_info': substage_context['context_info'],
+                    'call_to_action': substage_context['call_to_action']
                 })
-                
+
                 # Créer l'activité
+                from apps.activities.serializers.activity_serializer import ActivitySerializer
+                activity_serializer = ActivitySerializer(
+                    data={
+                        **activity_data,
+                        'opportunity': opportunity.id, 
+                        'pipeline_substage': substage.id
+                    },
+                    context={'client_id': client_id}
+                )
+                activity_serializer.is_valid(raise_exception=True)  
                 activity = Activity.objects.create(**activity_data_clean)
                 
                 # Créer la liaison SubStageActivity
@@ -374,3 +401,95 @@ class ActivitySubStageService:
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail=str(e))
             )
+        
+
+    @classmethod
+    def _build_substage_context(cls, substage, opportunity):
+        """
+        Construit le contexte d'un substage pour une activité.
+        
+        Reproduit la logique de Activity.set_substage_context() 
+        mais retourne les données au lieu de modifier l'instance.
+        
+        Args:
+            substage: Instance PipelineSubStage
+            opportunity: Instance Opportunity
+            
+        Returns:
+            dict: Données de contexte
+        """
+        try:
+            # Construire les objectifs
+            objectives_parts = []
+            if hasattr(substage, 'metadata') and substage.metadata and substage.metadata.objective:
+                objectives_parts.append(f"SubStage Goal: {substage.metadata.objective}")
+            
+            # Ajouter contexte stage
+            if substage.stage:
+                objectives_parts.append(f"Stage: {substage.stage.name}")
+                
+            # Ajouter contexte opportunity
+            if opportunity:
+                objectives_parts.append(f"Opportunity: {opportunity.title}")
+            
+            objectives = " | ".join(objectives_parts) if objectives_parts else ""
+            
+            # Construire context_info
+            context_info = {
+                'substage_id': substage.id,
+                'substage_type': getattr(substage, 'substage_type', 'UNKNOWN'),
+                'stage_name': substage.stage.name if substage.stage else None
+            }
+            
+            # Ajouter métadonnées si disponibles
+            if hasattr(substage, 'metadata') and substage.metadata:
+                metadata = substage.metadata
+                context_info.update({
+                    'validation_criteria': metadata.validation_criteria or [],
+                    'process_notes': metadata.process_notes,
+                    'stakeholders': []
+                })
+                
+                # Ajouter stakeholders
+                try:
+                    for stakeholder in metadata.stakeholders.all():
+                        context_info['stakeholders'].append({
+                            'id': stakeholder.id,
+                            'name': f"{stakeholder.first_name} {stakeholder.last_name}",
+                            'email': stakeholder.email,
+                            'title': getattr(stakeholder, 'title', '')
+                        })
+                except Exception:
+                    pass
+            
+            # Construire call_to_action
+            stage_name = substage.stage.name if substage.stage else "process"
+            substage_name = substage.name
+            substage_type = getattr(substage, 'substage_type', 'UNKNOWN')
+            
+            if substage_type == 'INTERACTION_CLIENT':
+                call_to_action = f"Schedule meeting to discuss {substage_name} for {stage_name}"
+            elif substage_type == 'PROCESS_INTERNE_CLIENT':
+                call_to_action = f"Follow up on {substage_name} status - ask for timeline update"
+            elif substage_type == 'ACTION_INTERNE':
+                call_to_action = f"Update client on progress of {substage_name}"
+            else:
+                call_to_action = f"Follow up on {substage_name} for {stage_name}"
+            
+            return {
+                'objectives': objectives,
+                'context_info': context_info,
+                'call_to_action': call_to_action
+            }
+            
+        except Exception:
+            # Retourner contexte par défaut en cas d'erreur
+            return {
+                'objectives': f"SubStage: {substage.name}",
+                'context_info': {
+                    'substage_id': substage.id,
+                    'substage_type': 'UNKNOWN',
+                    'stage_name': substage.stage.name if substage.stage else None
+                },
+                'call_to_action': f"Follow up on {substage.name}"
+            }
