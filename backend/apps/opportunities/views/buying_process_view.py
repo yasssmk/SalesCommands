@@ -201,6 +201,35 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
             'message': f'Template "{template_name}" deleted successfully'
         }, status=status.HTTP_204_NO_CONTENT)
         
+    def get_opportunity(self, opportunity_id):
+        """
+        Récupère une opportunité avec validation du client
+        ✅ COPIE EXACTE de PipelineViewSet.get_opportunity()
+        """
+        try:
+            from apps.opportunities.models import Opportunity
+            return Opportunity.objects.get(
+                id=opportunity_id,
+                client_id=self.get_client_id()
+            )
+        except Opportunity.DoesNotExist:
+            raise StandardizedValidationError(
+                OpportunityErrorMessages.OPPORTUNITY_NOT_FOUND
+            )
+    
+    def get_pipeline(self, opportunity_id):
+        """
+        Récupère le pipeline d'une opportunité avec validation
+        ✅ COPIE EXACTE de PipelineViewSet.get_pipeline()
+        """
+        opportunity = self.get_opportunity(opportunity_id)
+        
+        if not hasattr(opportunity, 'pipeline'):
+            raise StandardizedValidationError(
+                OpportunityErrorMessages.PIPELINE_NOT_FOUND
+            )
+        
+        return opportunity.pipeline
 
     # ===== GESTION DES STAGES =====
     
@@ -702,7 +731,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         Récupère la timeline des activités liées à un substage
         """
         update_opportunity_overdue_safe(opportunity_id, self.get_client_id())
-        
+
         # Import du service
         from ..services.activity_substage_service import ActivitySubStageService
         
@@ -716,3 +745,270 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
             'success': True,
             'data': timeline_data
         })
+
+    # ===== INTÉGRATION CAMPAGNES (via SubStageFollowUpService) =====
+    
+    @action(detail=False, methods=['get'], url_path='(?P<opportunity_id>[^/.]+)/pipeline/substages/(?P<substage_id>[^/.]+)/campaigns')
+    def list_substage_campaigns(self, request, opportunity_id=None, substage_id=None):
+        """
+        GET /opportunities/{id}/pipeline/substages/{substage_id}/campaigns/
+        Liste toutes les campagnes liées à un substage
+        """
+        try:
+            pipeline = self.get_pipeline(int(opportunity_id))
+            
+            # Récupérer le substage
+            try:
+                substage = PipelineSubStage.objects.get(
+                    id=int(substage_id),
+                    stage__opportunity_pipeline=pipeline,
+                    client_id=self.get_client_id()
+                )
+            except PipelineSubStage.DoesNotExist:
+                raise StandardizedValidationError(
+                    OpportunityErrorMessages.SUBSTAGE_NOT_FOUND
+                )
+            
+            # Récupérer les campaign targets liés à ce substage
+            campaign_targets = substage.campaign_targets.select_related(
+                'campaign', 'contact', 'account', 'lead'
+            ).prefetch_related(
+                'campaign__targets'
+            )
+            
+            # Organiser par campagne
+            campaigns_data = {}
+            for target in campaign_targets:
+                campaign = target.campaign
+                campaign_id = campaign.id
+                
+                if campaign_id not in campaigns_data:
+                    campaigns_data[campaign_id] = {
+                        'campaign_id': campaign.id,
+                        'campaign_name': campaign.name,
+                        'campaign_status': campaign.status,
+                        'campaign_type': getattr(campaign, 'campaign_type', None),
+                        'created_at': campaign.created_at,
+                        'targets': [],
+                        'targets_count': 0,
+                        'active_targets': 0
+                    }
+                
+                # Ajouter le target
+                target_info = {
+                    'target_id': target.id,
+                    'status': target.status,
+                    'target_type': target.get_target_type(),
+                    'target_name': target.get_target_name(),
+                    'substage_objective': target.substage_objective,
+                    'has_context': bool(target.substage_context)
+                }
+                
+                campaigns_data[campaign_id]['targets'].append(target_info)
+                campaigns_data[campaign_id]['targets_count'] += 1
+                
+                if target.status in ['PENDING', 'IN_PROGRESS']:
+                    campaigns_data[campaign_id]['active_targets'] += 1
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'substage_id': substage.id,
+                    'substage_name': substage.name,
+                    'campaigns': list(campaigns_data.values()),
+                    'total_campaigns': len(campaigns_data),
+                    'total_targets': sum(c['targets_count'] for c in campaigns_data.values())
+                }
+            })
+            
+        except ValueError:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="ID values must be integers")
+            )
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Campaigns list failed: {str(e)}")
+            )
+    
+    @action(detail=False, methods=['post'], url_path='(?P<opportunity_id>[^/.]+)/pipeline/substages/(?P<substage_id>[^/.]+)/add-to-followup')
+    def add_substage_to_followup(self, request, opportunity_id=None, substage_id=None):
+        """
+        POST /opportunities/{id}/pipeline/substages/{substage_id}/add-to-followup/
+        Ajoute un substage à la campagne follow-up unique via SubStageFollowUpService
+        """
+        try:
+            pipeline = self.get_pipeline(int(opportunity_id))
+            
+            # Vérifier que le substage appartient au pipeline
+            try:
+                substage = PipelineSubStage.objects.get(
+                    id=int(substage_id),
+                    stage__opportunity_pipeline=pipeline,
+                    client_id=self.get_client_id()
+                )
+            except PipelineSubStage.DoesNotExist:
+                raise StandardizedValidationError(
+                    OpportunityErrorMessages.SUBSTAGE_NOT_FOUND
+                )
+            
+            # Utiliser le service existant pour ajouter au follow-up
+            from apps.opportunities.services.substage_followup_service import SubStageFollowUpService
+            
+            response = SubStageFollowUpService.add_substage_to_followup(
+                substage_id=int(substage_id),
+                user=request.user,
+                client_id=self.get_client_id()
+            )
+            
+            return response
+            
+        except ValueError:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="ID values must be integers")
+            )
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Add to follow-up failed: {str(e)}")
+            )
+    
+    @action(detail=False, methods=['delete'], url_path='(?P<opportunity_id>[^/.]+)/pipeline/substages/(?P<substage_id>[^/.]+)/remove-from-followup')
+    def remove_substage_from_followup(self, request, opportunity_id=None, substage_id=None):
+        """
+        DELETE /opportunities/{id}/pipeline/substages/{substage_id}/remove-from-followup/
+        Supprime un substage de la campagne follow-up via SubStageFollowUpService
+        """
+        try:
+            pipeline = self.get_pipeline(int(opportunity_id))
+            
+            # Vérifier que le substage appartient au pipeline
+            try:
+                substage = PipelineSubStage.objects.get(
+                    id=int(substage_id),
+                    stage__opportunity_pipeline=pipeline,
+                    client_id=self.get_client_id()
+                )
+            except PipelineSubStage.DoesNotExist:
+                raise StandardizedValidationError(
+                    OpportunityErrorMessages.SUBSTAGE_NOT_FOUND
+                )
+            
+            # Utiliser le service existant pour supprimer du follow-up
+            from apps.opportunities.services.substage_followup_service import SubStageFollowUpService
+            
+            notes = request.data.get('notes', 'Removed from follow-up via pipeline API')
+            
+            response = SubStageFollowUpService.remove_substage_from_followup(
+                substage_id=int(substage_id),
+                client_id=self.get_client_id(),
+                user=request.user,
+                notes=notes
+            )
+            
+            return response
+            
+        except ValueError:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="ID values must be integers")
+            )
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Remove from follow-up failed: {str(e)}")
+            )
+    
+    @action(detail=False, methods=['post'], url_path='(?P<opportunity_id>[^/.]+)/pipeline/substages/(?P<substage_id>[^/.]+)/complete-followup')
+    def complete_substage_followup(self, request, opportunity_id=None, substage_id=None):
+        """
+        POST /opportunities/{id}/pipeline/substages/{substage_id}/complete-followup/
+        Marque la séquence follow-up d'un substage comme completed
+        
+        Body: {
+            "notes": "Notes de completion"
+        }
+        """
+        try:
+            pipeline = self.get_pipeline(int(opportunity_id))
+            
+            # Vérifier que le substage appartient au pipeline
+            try:
+                substage = PipelineSubStage.objects.get(
+                    id=int(substage_id),
+                    stage__opportunity_pipeline=pipeline,
+                    client_id=self.get_client_id()
+                )
+            except PipelineSubStage.DoesNotExist:
+                raise StandardizedValidationError(
+                    OpportunityErrorMessages.SUBSTAGE_NOT_FOUND
+                )
+            
+            # Utiliser le service existant pour compléter la séquence
+            from apps.opportunities.services.substage_followup_service import SubStageFollowUpService
+            
+            notes = request.data.get('notes', 'Follow-up sequence completed via pipeline API')
+            
+            response = SubStageFollowUpService.complete_substage_sequence(
+                substage_id=int(substage_id),
+                client_id=self.get_client_id(),
+                user=request.user,
+                notes=notes
+            )
+            
+            return response
+            
+        except ValueError:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="ID values must be integers")
+            )
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Complete follow-up failed: {str(e)}")
+            )
+    
+    @action(detail=False, methods=['get'], url_path='(?P<opportunity_id>[^/.]+)/pipeline/substages/(?P<substage_id>[^/.]+)/followup-status')
+    def get_substage_followup_status(self, request, opportunity_id=None, substage_id=None):
+        """
+        GET /opportunities/{id}/pipeline/substages/{substage_id}/followup-status/
+        Récupère le statut détaillé du substage dans la campagne follow-up
+        """
+        try:
+            # pipeline = self.get_pipeline(int(opportunity_id))
+            
+            # # Vérifier que le substage appartient au pipeline
+            # try:
+            #     substage = PipelineSubStage.objects.get(
+            #         id=int(substage_id),
+            #         stage__opportunity_pipeline=pipeline,
+            #         client_id=self.get_client_id()
+            #     )
+            # except PipelineSubStage.DoesNotExist:
+            #     raise StandardizedValidationError(
+            #         OpportunityErrorMessages.SUBSTAGE_NOT_FOUND
+            #     )
+            
+            # Utiliser le service existant pour récupérer le statut
+            from apps.opportunities.services.substage_followup_service import SubStageFollowUpService
+            
+            response = SubStageFollowUpService.get_substage_followup_status(
+                substage_id=int(substage_id),
+                client_id=self.get_client_id()
+            )
+            
+            return response
+            
+        except ValueError:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field="ID values must be integers")
+            )
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Follow-up status failed: {str(e)}")
+            )

@@ -666,7 +666,7 @@ class CampaignCreationService:
             
             return Campaign.objects.filter(
                 sequence_type='FOLLOW_UP',
-                campaign_type=Campaign.CampaignType.FOLLOW_UP,
+                campaign__campaign_typee=Campaign.CampaignType.FOLLOW_UP,
                 client_id=client_id
             ).first()
             
