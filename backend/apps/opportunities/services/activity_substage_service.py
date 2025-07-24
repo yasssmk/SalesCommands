@@ -101,6 +101,9 @@ class ActivitySubStageService:
             
             # Créer la liaison (le serializer gère Activity.pipeline_substage)
             substage_activity = serializer.save()
+
+            if substage_activity.substage:
+                substage_activity.substage.update_stakeholders()
             
             return substage_activity
             
@@ -132,6 +135,7 @@ class ActivitySubStageService:
                 
                 # Récupérer l'activité pour nettoyer la liaison directe
                 activity = substage_activity.activity
+                substage = substage_activity.substage
                 
                 # Supprimer la liaison SubStageActivity
                 substage_activity.delete()
@@ -140,6 +144,9 @@ class ActivitySubStageService:
                 if activity.pipeline_substage and activity.pipeline_substage.id == substage_id:
                     activity.pipeline_substage = None
                     activity.save(update_fields=['pipeline_substage'])
+                
+                if substage:
+                    substage.update_stakeholders()
                 
                 return {
                     'activity_id': activity.id,
@@ -493,3 +500,4 @@ class ActivitySubStageService:
                 },
                 'call_to_action': f"Follow up on {substage.name}"
             }
+    

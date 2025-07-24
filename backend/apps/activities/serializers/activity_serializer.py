@@ -255,7 +255,38 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         except Exception:
             return None
     
-    
+    def validate_contact_ids(self, value):
+        """
+        Valide que tous les contacts existent et appartiennent au bon client.
+        """
+        if not value:
+            return []
+
+        try:
+            client_id = self._get_client_id_from_context()
+            
+            # Vérifier que tous les contacts existent et appartiennent au bon client
+            from apps.accounts.models import Contact
+            contacts = Contact.objects.filter(
+                id__in=value,
+                client_id=client_id
+            )
+            
+            if contacts.count() != len(value):
+                missing_ids = set(value) - set(contacts.values_list('id', flat=True))
+                raise StandardizedValidationError(
+                    CoreErrorMessages.OBJECT_NOT_FOUND.format(
+                        detail=f"Contacts not found: {missing_ids}"
+                    )
+                )
+            
+            return value
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Contact validation failed")
+            )
+        
     def validate(self, data):
         """Validate the activity data"""
         try:
@@ -301,16 +332,110 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         
         # ✅ LIAISON DES CONTACTS (garde l'existant)
         if contact_ids:
-            from apps.accounts.models import Contact
-            client_id = self._get_client_id_from_context()
-            contacts = Contact.objects.filter(
-                id__in=contact_ids,
-                account=activity.account,
-                client_id=client_id
-            )
-            activity.contacts.set(contacts)
+            self._update_activity_contacts(activity, contact_ids)
+            
+            # Si l'activité est déjà liée à des substages, mettre à jour les stakeholders
+            self._update_linked_substages_stakeholders(activity)
         
         return activity
+    
+    def update(self, instance, validated_data):
+        """
+        Mise à jour avec gestion automatique des stakeholders pour les substages liés.
+        
+        Détecte automatiquement les changements de contacts et met à jour 
+        les stakeholders des substages liés via SubStageActivity.
+        """
+        try:
+            # Étape 1 : Récupérer les anciens contacts pour comparaison
+            old_contacts = set(instance.contacts.all())
+            
+            # Étape 2 : Traiter les contact_ids si fournis
+            contact_ids = validated_data.pop('contact_ids', None)
+            if contact_ids is not None:
+                self._update_activity_contacts(instance, contact_ids)
+            
+            # Étape 3 : Effectuer la mise à jour normale (sans les contact_ids)
+            activity = super().update(instance, validated_data)
+            
+            # Étape 4 : Récupérer les nouveaux contacts après mise à jour
+            new_contacts = set(activity.contacts.all())
+            
+            # Étape 5 : Si les contacts ont changé, mettre à jour les substages liés
+            if old_contacts != new_contacts:
+                self._update_linked_substages_stakeholders(activity)
+            
+            return activity
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Activity update failed: {str(e)}"
+                )
+            )
+
+    def _update_activity_contacts(self, activity, contact_ids):
+        """
+        Met à jour les contacts de l'activité en validant l'appartenance au client.
+        """
+        try:
+            client_id = self._get_client_id_from_context()
+            
+            # Valider que tous les contacts existent et appartiennent au bon client
+            from apps.accounts.models import Contact
+            contacts = Contact.objects.filter(
+                id__in=contact_ids,
+                client_id=client_id
+            )
+            
+            if contacts.count() != len(contact_ids):
+                missing_ids = set(contact_ids) - set(contacts.values_list('id', flat=True))
+                raise StandardizedValidationError(
+                    CoreErrorMessages.OBJECT_NOT_FOUND.format(
+                        detail=f"Contacts not found: {missing_ids}"
+                    )
+                )
+            
+            # Mettre à jour les contacts de l'activité
+            activity.contacts.set(contacts)
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to update activity contacts: {str(e)}"
+                )
+            )
+
+    def _update_linked_substages_stakeholders(self, activity):
+        """
+        Met à jour les stakeholders des substages liés à cette activité.
+        
+        Cette méthode :
+        1. Trouve tous les substages liés via SubStageActivity
+        2. Appelle substage.update_stakeholders() pour chaque substage
+        3. Déclenche automatiquement stage.update_stakeholders() (cascade)
+        """
+        try:
+            from apps.opportunities.models import SubStageActivity
+            
+            # Trouver tous les substages liés à cette activité
+            linked_substages = SubStageActivity.objects.filter(
+                activity=activity
+            ).select_related('substage', 'substage__stage')
+            
+            # Appeler update_stakeholders() pour chaque substage lié
+            for substage_activity in linked_substages:
+                if substage_activity.substage:
+                    # Ceci déclenche automatiquement stage.update_stakeholders()
+                    substage_activity.substage.update_stakeholders()
+            
+        except Exception as e:
+            print("Failed to update linked substages stakeholders: ", str(e))
+            pass
     
     def get_result(self, obj):
         """
