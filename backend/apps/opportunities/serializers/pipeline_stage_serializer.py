@@ -76,6 +76,7 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             'is_current',
             'can_be_deleted',
             'progress_percentage',
+            'stakeholders',
             'stakeholders_count',
             'stakeholders_names',
             'created_at',
@@ -307,12 +308,16 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             # Ajouter le client_id automatiquement
             validated_data['client_id'] = self._get_client_id_from_context()
             stakeholders_ids = validated_data.pop('stakeholders_ids', [])
+            stakeholders = validated_data.pop('stakeholders', None)
 
             # Créer l'étape
             stage = PipelineStage.objects.create(**validated_data)
 
             if stakeholders_ids:
                 self._update_stage_stakeholders(stage, stakeholders_ids)
+            elif stakeholders is not None:
+                stakeholder_ids = [s.id if hasattr(s, 'id') else s for s in stakeholders]
+                self._update_stage_stakeholders(stage, stakeholder_ids)
             
             return stage
             
@@ -334,25 +339,20 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
                 )
             
             stakeholders_ids = validated_data.pop('stakeholders_ids', None)
-            stage = super().update(instance, validated_data)
-
-            # Vérifier si l'étape peut être modifiée
-            if instance.substages.filter(is_active=True).exists():
-                # Certaines modifications sont interdites si l'étape a des sous-étapes
-                restricted_fields = ['template', 'opportunity_pipeline']
-                for field in restricted_fields:
-                    if field in validated_data:
-                        raise StandardizedValidationError(
-                            OpportunityErrorMessages.STAGE_HAS_DEPENDENCIES.format(stage_name=instance.name),
-                            field_name=field
-                        )
+            stakeholders = validated_data.pop('stakeholders', None)
             
-            if stakeholders_ids is not None:
-                self._update_stage_stakeholders(stage, stakeholders_ids)
-            
-            # Mettre à jour l'instance
+            # Mise à jour des champs standards
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
+            
+            instance.save()
+            
+            # Gestion des stakeholders
+            if stakeholders_ids is not None:
+                self._update_stage_stakeholders(instance, stakeholders_ids)
+            elif stakeholders is not None:
+                stakeholder_ids = [s.id if hasattr(s, 'id') else s for s in stakeholders]
+                self._update_stage_stakeholders(instance, stakeholder_ids)
             
             instance.save()
             return instance
@@ -378,8 +378,9 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             # Mettre à jour les stakeholders
             stage.stakeholders.set(contacts)
             
-            # Noter : La méthode update_stakeholders() du stage sera appelée 
-            # par les signaux ou manuellement selon l'implémentation
+            if hasattr(stage, 'update_stakeholders'):
+                stage.update_stakeholders()
+            
             
         except Exception as e:
             raise StandardizedValidationError(

@@ -80,7 +80,7 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
         
         # Follow-up campaign fields
         'in_followup_campaign', 'followup_campaign_info',
-        'can_add_to_followup', 'stakeholder_count',  # ⚠️ GARDER stakeholder_count pour rétrocompatibilité
+        'can_add_to_followup', 'stakeholder_count',  
         
         # Timestamps
         'created_at', 'updated_at'
@@ -94,7 +94,7 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
         'can_add_to_followup', 'stakeholder_count',
         'chasing_active', 'created_at', 'updated_at',
         'previous_substage', 'next_substage',
-        # NOUVEAUX CHAMPS READ-ONLY ✅
+        'stakeholders',
         'stakeholders_count', 'stakeholders_names'
     ]
 
@@ -449,12 +449,20 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
             # Ajouter le client_id automatiquement
             validated_data['client_id'] = self._get_client_id_from_context()
             stakeholders_ids = validated_data.pop('stakeholders_ids', [])
+            stakeholders = validated_data.pop('stakeholders', None)
             
             # Créer la sous-étape
             substage = PipelineSubStage.objects.create(**validated_data)
 
             if stakeholders_ids:
                 self._update_substage_stakeholders(substage, stakeholders_ids)
+            elif stakeholders is not None:
+                # 🔧 NOUVEAU : Gérer format stakeholders
+                if stakeholders and hasattr(stakeholders[0], 'id'):
+                    stakeholder_ids = [contact.id for contact in stakeholders]
+                else:
+                    stakeholder_ids = stakeholders
+                self._update_substage_stakeholders(substage, stakeholder_ids)
             
             return substage
             
@@ -474,7 +482,8 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
                 )
             
             stakeholders_ids = validated_data.pop('stakeholders_ids', None)
-            substage = super().update(instance, validated_data)
+            stakeholders = validated_data.pop('stakeholders', None)
+
             
             # Vérifier si la sous-étape peut être modifiée
             if instance.status == PipelineStagesConfig.SubStageStatus.COMPLETED:
@@ -487,22 +496,29 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
                             field_name=field
                         )
                     
-            if stakeholders_ids is not None:
-                self._update_substage_stakeholders(substage, stakeholders_ids)
-            
-            # Mettre à jour l'instance
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
             
             instance.save()
+            
+            # ✅ GESTION DES STAKEHOLDERS (APRÈS la mise à jour principale)
+            if stakeholders_ids is not None:
+                self._update_substage_stakeholders(instance, stakeholders_ids)
+            elif stakeholders is not None:
+                if stakeholders and hasattr(stakeholders[0], 'id'):
+                    stakeholder_ids = [contact.id for contact in stakeholders]
+                else:
+                    stakeholder_ids = stakeholders
+                self._update_substage_stakeholders(instance, stakeholder_ids)
+            
             return instance
             
-        except StandardizedValidationError:
-            raise
         except Exception as e:
             raise StandardizedValidationError(
                 f"SubStage update failed: {str(e)}"
             )
+        
+        
     def _update_substage_stakeholders(self, substage, stakeholders_ids):
         """
         Met à jour les stakeholders d'un substage et déclenche la propagation vers le stage
