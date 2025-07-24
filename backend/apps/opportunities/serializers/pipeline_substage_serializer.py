@@ -21,6 +21,16 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
     can_be_deleted = serializers.SerializerMethodField(read_only=True)
     activities_count = serializers.SerializerMethodField(read_only=True)
     chasing_active = serializers.SerializerMethodField(read_only=True)
+
+    stakeholders_count = serializers.SerializerMethodField(read_only=True)
+    stakeholders_names = serializers.SerializerMethodField(read_only=True)
+    stakeholders_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+        allow_empty=True,
+        help_text='List of contact IDs to assign as stakeholders'
+    )
     
     # Champs pour les relations
     stage_name = serializers.CharField(source='stage.name', read_only=True)
@@ -43,46 +53,51 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
     class Meta:
         model = PipelineSubStage
         fields = [
-            # Champs de base du modèle (noms corrigés)
-            'id', 'name', 'description', 'order',
-            'substage_type', 'substage_type_display',
-            'status', 'status_display',
-            'is_active',
-            'estimated_duration_days',  
-            'start_date', 'end_date',
-            'actual_start_date', 'actual_end_date',  # Corrigés
-            'notes',
-            
-            # Relations
-            'stage', 'stage_name',
-            'previous_substage', 'next_substage',
-            
-            # Champs calculés
-            'expected_completion_date',
-            'actual_duration', 'remaining_duration',
-            'is_overdue', 'days_overdue',
-            'progress_percentage',
-            'can_be_deleted', 'activities_count',
-            'chasing_active',
-            
-            # Follow-up campaign fields
-            'in_followup_campaign', 'followup_campaign_info',
-            'can_add_to_followup', 'stakeholder_count',
-            
-            # Timestamps
-            'created_at', 'updated_at'
-        ]
-        read_only_fields = [
-            'id', 'stage_name', 'substage_type_display', 'status_display',
-            'actual_duration', 'remaining_duration', 'expected_completion_date',
-            'is_overdue', 'days_overdue', 'progress_percentage',
-            'can_be_deleted', 'activities_count',
-            'in_followup_campaign', 'followup_campaign_info',
-            'can_add_to_followup', 'stakeholder_count',
-            'chasing_active', 'created_at', 'updated_at',
-            'previous_substage', 'next_substage'
-        ]
-    
+        # Champs de base du modèle (noms corrigés)
+        'id', 'name', 'description', 'order',
+        'substage_type', 'substage_type_display',
+        'status', 'status_display',
+        'is_active',
+        'estimated_duration_days',  
+        'start_date', 'end_date',
+        'actual_start_date', 'actual_end_date',
+        'notes',
+        
+        # Relations
+        'stage', 'stage_name',
+        'previous_substage', 'next_substage',
+        
+        # NOUVEAUX CHAMPS STAKEHOLDERS ✅
+        'stakeholders', 'stakeholders_count', 'stakeholders_names', 'stakeholders_ids',
+        
+        # Champs calculés
+        'expected_completion_date',
+        'actual_duration', 'remaining_duration',
+        'is_overdue', 'days_overdue',
+        'progress_percentage',
+        'can_be_deleted', 'activities_count',
+        'chasing_active',
+        
+        # Follow-up campaign fields
+        'in_followup_campaign', 'followup_campaign_info',
+        'can_add_to_followup', 'stakeholder_count',  # ⚠️ GARDER stakeholder_count pour rétrocompatibilité
+        
+        # Timestamps
+        'created_at', 'updated_at'
+    ]
+    read_only_fields = [
+        'id', 'stage_name', 'substage_type_display', 'status_display',
+        'actual_duration', 'remaining_duration', 'expected_completion_date',
+        'is_overdue', 'days_overdue', 'progress_percentage',
+        'can_be_deleted', 'activities_count',
+        'in_followup_campaign', 'followup_campaign_info',
+        'can_add_to_followup', 'stakeholder_count',
+        'chasing_active', 'created_at', 'updated_at',
+        'previous_substage', 'next_substage',
+        # NOUVEAUX CHAMPS READ-ONLY ✅
+        'stakeholders_count', 'stakeholders_names'
+    ]
+
     def get_expected_completion_date(self, obj):
         """Calcule la date de fin prévue basée sur start_date + estimated_duration_days"""
         try:
@@ -228,14 +243,6 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
         except Exception:
             return False
     
-    def get_stakeholder_count(self, obj):
-        """Get number of stakeholders for this substage"""
-        try:
-            if hasattr(obj, 'metadata'):
-                return obj.metadata.stakeholders.count()
-            return 0
-        except Exception:
-            return 0
     
     def get_chasing_active(self, obj):
         """Check if chasing is active for this substage"""
@@ -441,9 +448,13 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
         try:
             # Ajouter le client_id automatiquement
             validated_data['client_id'] = self._get_client_id_from_context()
+            stakeholders_ids = validated_data.pop('stakeholders_ids', [])
             
             # Créer la sous-étape
             substage = PipelineSubStage.objects.create(**validated_data)
+
+            if stakeholders_ids:
+                self._update_substage_stakeholders(substage, stakeholders_ids)
             
             return substage
             
@@ -462,6 +473,9 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
                     CoreErrorMessages.PERMISSION_DENIED
                 )
             
+            stakeholders_ids = validated_data.pop('stakeholders_ids', None)
+            substage = super().update(instance, validated_data)
+            
             # Vérifier si la sous-étape peut être modifiée
             if instance.status == PipelineStagesConfig.SubStageStatus.COMPLETED:
                 # Certaines modifications sont interdites pour les sous-étapes terminées
@@ -472,6 +486,9 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
                             OpportunityErrorMessages.SUBSTAGE_ALREADY_COMPLETED.format(substage_name=instance.name),
                             field_name=field
                         )
+                    
+            if stakeholders_ids is not None:
+                self._update_substage_stakeholders(substage, stakeholders_ids)
             
             # Mettre à jour l'instance
             for attr, value in validated_data.items():
@@ -486,7 +503,77 @@ class PipelineSubStageSerializer(ClientScopeManager.SerializerMixin, serializers
             raise StandardizedValidationError(
                 f"SubStage update failed: {str(e)}"
             )
-    
+    def _update_substage_stakeholders(self, substage, stakeholders_ids):
+        """
+        Met à jour les stakeholders d'un substage et déclenche la propagation vers le stage
+        """
+        try:
+            client_id = self._get_client_id_from_context()
+            
+            # Récupérer les contacts
+            from apps.accounts.models import Contact
+            contacts = Contact.objects.filter(
+                id__in=stakeholders_ids,
+                client_id=client_id
+            )
+            
+            # Mettre à jour les stakeholders
+            substage.stakeholders.set(contacts)
+            
+            # Déclencher la mise à jour du stage parent
+            substage.update_stakeholders()
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to update substage stakeholders")
+            )
+        
+    def get_stakeholder_count(self, obj):
+        """Get number of stakeholders for this substage (REMPLACE LA MÉTHODE EXISTANTE)"""
+        return obj.get_stakeholders_count()
+        
+    def get_stakeholders_count(self, obj):
+        """Nombre total de stakeholders dans ce substage"""
+        return obj.get_stakeholders_count()
+
+    def get_stakeholders_names(self, obj):
+        """Liste des noms des stakeholders pour affichage"""
+        return [contact.full_name for contact in obj.get_all_stakeholders()]
+
+    def validate_stakeholders_ids(self, value):
+        """
+        Valide que tous les contacts stakeholders existent et appartiennent au bon client
+        """
+        if not value:
+            return []
+
+        try:
+            client_id = self._get_client_id_from_context()
+            
+            # Vérifier que tous les contacts existent et appartiennent au bon client
+            from apps.accounts.models import Contact
+            contacts = Contact.objects.filter(
+                id__in=value,
+                client_id=client_id
+            )
+            
+            if contacts.count() != len(value):
+                missing_ids = set(value) - set(contacts.values_list('id', flat=True))
+                raise StandardizedValidationError(
+                    CoreErrorMessages.OBJECT_NOT_FOUND.format(
+                        detail=f"Contacts not found: {missing_ids}"
+                    )
+                )
+            
+            return value
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Stakeholder validation failed")
+            )
+        
     def to_representation(self, instance):
         """Enrichir la représentation avec des données calculées"""
         representation = super().to_representation(instance)

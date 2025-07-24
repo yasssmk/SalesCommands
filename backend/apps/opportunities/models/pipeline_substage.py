@@ -7,6 +7,8 @@ from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
 from ..config.pipeline_stages import PipelineStagesConfig
 from .pipeline_stage import PipelineStage
+from django.db import transaction
+from core.error_messages import CoreErrorMessages, OpportunityErrorMessages
 
 
 class PipelineSubStage(BaseModelApp, ClientScopeManager.ModelMixin):
@@ -76,6 +78,14 @@ class PipelineSubStage(BaseModelApp, ClientScopeManager.ModelMixin):
         default=SubStageType.INTERACTION_CLIENT,
         verbose_name=_('SubStage Type'),
         help_text=_('Type of this substage')
+    )
+
+    stakeholders = models.ManyToManyField(
+        'accounts.Contact',
+        blank=True,
+        related_name='pipeline_substages',
+        verbose_name=_('Stakeholders'),
+        help_text=_('Stakeholders directly involved in this substage')
     )
     
     # Statut
@@ -246,6 +256,72 @@ class PipelineSubStage(BaseModelApp, ClientScopeManager.ModelMixin):
             self.save(update_fields=['overdue'])
         
         return self.overdue
+    
+    def update_stakeholders(self):
+        """
+        Met à jour la liste des stakeholders de ce substage en agrégeant
+        les contacts depuis les activités liées.
+        
+        Puis déclenche la mise à jour du stage parent.
+        
+        Cette méthode est appelée automatiquement quand :
+        - Une activité est ajoutée/supprimée de ce substage
+        - Les contacts d'une activité liée sont modifiés
+        - Les stakeholders directs du substage sont modifiés
+        """
+        try:
+            with transaction.atomic():
+                # Récupérer tous les contacts depuis les activités liées
+                all_contacts = set()
+                
+                # 1. Stakeholders directs (déjà dans self.stakeholders)
+                direct_stakeholders = set(self.stakeholders.all())
+                all_contacts.update(direct_stakeholders)
+                
+                # 2. Contacts depuis les activités liées à ce substage
+                from ..models import SubStageActivity
+                
+                substage_activities = SubStageActivity.objects.filter(
+                    substage=self
+                ).select_related('activity')
+                
+                for substage_activity in substage_activities:
+                    if substage_activity.activity:
+                        all_contacts.update(substage_activity.activity.contacts.all())
+                
+                # Mettre à jour les stakeholders du substage (uniquement les ajouts depuis activités)
+                current_stakeholders = set(self.stakeholders.all())
+                new_stakeholders = set(all_contacts)
+                
+                # Ajouter les nouveaux stakeholders depuis les activités
+                to_add = new_stakeholders - current_stakeholders
+                if to_add:
+                    self.stakeholders.add(*to_add)
+                
+                # Note : On ne supprime PAS automatiquement les stakeholders directs
+                # car ils pourraient avoir été ajoutés manuellement
+                
+                # Déclencher la mise à jour du stage parent
+                if self.stage:
+                    self.stage.update_stakeholders()
+                
+                return True
+                
+        except Exception:
+            # Log silencieux pour MVP - pas d'exception levée pour éviter les boucles
+            return False
+
+    def get_all_stakeholders(self):
+        """
+        Retourne tous les stakeholders de ce substage (pour lecture seule).
+        """
+        return self.stakeholders.all()
+
+    def get_stakeholders_count(self):
+        """
+        Retourne le nombre de stakeholders dans ce substage.
+        """
+        return self.stakeholders.count()
 
     @classmethod
     def create_from_template(cls, template_stage, opportunity_pipeline, user=None):

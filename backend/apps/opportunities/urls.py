@@ -197,7 +197,44 @@ urlpatterns = [
         'get': 'get_substage_timeline'
     }), name='buying-process-substage-timeline'),
 
-   
+    # =========================================================================
+    # SUBSTAGE FOLLOW-UP MANAGEMENT - Gestion des substages dans les campaigns
+    # =========================================================================
+
+    # ✅ CRUD Follow-up : Lister toutes les campaigns d'un substage
+    path('buying-processes/opportunity/<int:opportunity_id>/substages/<int:substage_id>/campaigns/', 
+        BuyingProcessViewSet.as_view({
+            'get': 'list_substage_campaigns'
+        }), 
+        name='buying-process-substage-campaigns'),
+
+    # ✅ CRUD Follow-up : Ajouter un substage à la campaign follow-up
+    path('buying-processes/opportunity/<int:opportunity_id>/substages/<int:substage_id>/add-to-followup/', 
+        BuyingProcessViewSet.as_view({
+            'post': 'add_substage_to_followup'
+        }), 
+        name='buying-process-substage-add-followup'),
+
+    # ✅ CRUD Follow-up : Retirer un substage de la campaign follow-up
+    path('buying-processes/opportunity/<int:opportunity_id>/substages/<int:substage_id>/remove-from-followup/', 
+        BuyingProcessViewSet.as_view({
+            'delete': 'remove_substage_from_followup'
+        }), 
+        name='buying-process-substage-remove-followup'),
+
+    # ✅ CRUD Follow-up : Compléter le follow-up d'un substage
+    path('buying-processes/opportunity/<int:opportunity_id>/substages/<int:substage_id>/complete-followup/', 
+        BuyingProcessViewSet.as_view({
+            'post': 'complete_substage_followup'
+        }), 
+        name='buying-process-substage-complete-followup'),
+
+    # ✅ CRUD Follow-up : Récupérer le statut follow-up d'un substage
+    path('buying-processes/opportunity/<int:opportunity_id>/substages/<int:substage_id>/followup-status/', 
+        BuyingProcessViewSet.as_view({
+            'get': 'get_substage_followup_status'
+        }), 
+        name='buying-process-substage-followup-status'),
 
     # # =========================================================================
     # # INTÉGRATION FOLLOW-UP - Via SubStageFollowUpService

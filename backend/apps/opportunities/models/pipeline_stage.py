@@ -5,6 +5,10 @@ from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
 from ..config.pipeline_stages import PipelineStagesConfig
+from django.db import transaction
+from django.utils import timezone
+from core.exceptions import StandardizedValidationError
+from core.error_messages import CoreErrorMessages, OpportunityErrorMessages
 
 class PipelineStage(BaseModelApp, ClientScopeManager.ModelMixin):
     """
@@ -96,6 +100,14 @@ class PipelineStage(BaseModelApp, ClientScopeManager.ModelMixin):
         default=False,
         verbose_name=_('Is Overdue'),
         help_text=_('Whether this stage is overdue (automatically calculated)')
+    )
+
+    stakeholders = models.ManyToManyField(
+        'accounts.Contact',
+        blank=True,
+        related_name='pipeline_stages',
+        verbose_name=_('Stakeholders'),
+        help_text=_('Stakeholders involved in this pipeline stage (aggregated from substages)')
     )
     
     # Dates de progression (pour les instances d'opportunité)
@@ -553,3 +565,76 @@ class PipelineStage(BaseModelApp, ClientScopeManager.ModelMixin):
             'opportunities_with_overdue': opportunities_overdue,
             'opportunities_overdue_percentage': round((opportunities_overdue / total_opportunities * 100), 2) if total_opportunities > 0 else 0
         }
+    
+    def update_stakeholders(self):
+        """
+        Met à jour la liste des stakeholders de ce stage en agrégeant
+        tous les stakeholders de ses substages actifs.
+        
+        Cette méthode est appelée automatiquement quand :
+        - Un substage met à jour ses stakeholders
+        - Une activité est ajoutée/supprimée d'un substage
+        - Les stakeholders d'un substage sont modifiés
+        """
+        try:
+            with transaction.atomic():
+                # Récupérer tous les contacts depuis les substages actifs
+                all_contacts = set()
+                
+                # 1. Stakeholders directs depuis les substages
+                for substage in self.substages.filter(is_active=True):
+                    if hasattr(substage, 'stakeholders'):
+                        all_contacts.update(substage.stakeholders.all())
+                
+                # 2. Contacts depuis les activités liées aux substages
+                from apps.activities.models import Activity
+                from ..models import SubStageActivity
+                
+                # Récupérer les activités liées aux substages de ce stage
+                substage_activities = SubStageActivity.objects.filter(
+                    substage__stage=self,
+                    substage__is_active=True
+                ).select_related('activity')
+                
+                for substage_activity in substage_activities:
+                    if substage_activity.activity:
+                        all_contacts.update(substage_activity.activity.contacts.all())
+                
+                # Mettre à jour les stakeholders du stage
+                current_stakeholders = set(self.stakeholders.all())
+                new_stakeholders = set(all_contacts)
+                
+                # Ajouter les nouveaux stakeholders
+                to_add = new_stakeholders - current_stakeholders
+                if to_add:
+                    self.stakeholders.add(*to_add)
+                
+                # Supprimer les stakeholders qui ne sont plus présents
+                to_remove = current_stakeholders - new_stakeholders
+                if to_remove:
+                    self.stakeholders.remove(*to_remove)
+                
+                # Log pour debug (peut être supprimé en production)
+                if to_add or to_remove:
+                    print(f"[DEBUG] Stage '{self.name}' stakeholders updated: +{len(to_add)}, -{len(to_remove)}")
+                
+                return True
+                
+        except Exception as e:
+            StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to update stakeholders for stage: {str(e)}")
+            )
+
+    def get_all_stakeholders(self):
+        """
+        Retourne tous les stakeholders de ce stage (pour lecture seule).
+        Utilise la base de données plutôt que de recalculer.
+        """
+        return self.stakeholders.all()
+
+    def get_stakeholders_count(self):
+        """
+        Retourne le nombre de stakeholders uniques dans ce stage.
+        """
+        return self.stakeholders.count()

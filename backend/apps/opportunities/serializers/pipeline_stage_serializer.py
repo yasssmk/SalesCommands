@@ -22,6 +22,16 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
     # Champs pour les relations
     template_name = serializers.CharField(source='template.name', read_only=True)
     opportunity_title = serializers.CharField(source='opportunity_pipeline.opportunity.title', read_only=True)
+
+    stakeholders_count = serializers.SerializerMethodField(read_only=True)
+    stakeholders_names = serializers.SerializerMethodField(read_only=True)
+    stakeholders_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+        allow_empty=True,
+        help_text='List of contact IDs to assign as stakeholders'
+    )
     
     class Meta:
         model = PipelineStage
@@ -37,9 +47,18 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             'status',
             'status_display',
             'is_active',
+            'overdue',
             'started_at',
             'completed_at',
             'estimated_duration',
+            
+            # NOUVEAUX CHAMPS : Stakeholders
+            'stakeholders',
+            'stakeholders_count',
+            'stakeholders_names',
+            'stakeholders_ids',
+            
+            # Champs calculés existants
             'substages_count',
             'is_current',
             'can_be_deleted',
@@ -52,10 +71,13 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             'template_name',
             'opportunity_title',
             'status_display',
+            'overdue',
             'substages_count',
             'is_current',
             'can_be_deleted',
             'progress_percentage',
+            'stakeholders_count',
+            'stakeholders_names',
             'created_at',
             'updated_at'
         ]
@@ -162,6 +184,41 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
                 )
         return value
     
+    def get_stakeholders_count(self, obj):
+        """Nombre total de stakeholders dans ce stage"""
+        return obj.get_stakeholders_count()
+
+    def get_stakeholders_names(self, obj):
+        """Liste des noms des stakeholders pour affichage"""
+        return [contact.full_name for contact in obj.get_all_stakeholders()]
+
+    def validate_stakeholders_ids(self, value):
+        """
+        Valide que tous les contacts stakeholders existent et appartiennent au bon client
+        """
+        if not value:
+            return []
+
+        try:
+            from apps.accounts.models import Contact
+            contacts = Contact.objects.filter(
+                id__in=value,
+                client_id=self.context['request'].user.client_id
+            )
+            
+            if contacts.count() != len(value):
+                missing_ids = set(value) - set(contacts.values_list('id', flat=True))
+                raise StandardizedValidationError(
+                    CoreErrorMessages.OBJECT_NOT_FOUND
+                )
+            
+            return value
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Stakeholder validation failed")
+            )
+    
     def validate(self, data):
         """Validation générale des données"""
         data = super().validate(data)
@@ -249,9 +306,13 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
         try:
             # Ajouter le client_id automatiquement
             validated_data['client_id'] = self._get_client_id_from_context()
-            
+            stakeholders_ids = validated_data.pop('stakeholders_ids', [])
+
             # Créer l'étape
             stage = PipelineStage.objects.create(**validated_data)
+
+            if stakeholders_ids:
+                self._update_stage_stakeholders(stage, stakeholders_ids)
             
             return stage
             
@@ -272,6 +333,9 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
                     CoreErrorMessages.PERMISSION_DENIED
                 )
             
+            stakeholders_ids = validated_data.pop('stakeholders_ids', None)
+            stage = super().update(instance, validated_data)
+
             # Vérifier si l'étape peut être modifiée
             if instance.substages.filter(is_active=True).exists():
                 # Certaines modifications sont interdites si l'étape a des sous-étapes
@@ -282,6 +346,9 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
                             OpportunityErrorMessages.STAGE_HAS_DEPENDENCIES.format(stage_name=instance.name),
                             field_name=field
                         )
+            
+            if stakeholders_ids is not None:
+                self._update_stage_stakeholders(stage, stakeholders_ids)
             
             # Mettre à jour l'instance
             for attr, value in validated_data.items():
@@ -297,6 +364,28 @@ class PipelineStageSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
                 ),
             )
     
+    def _update_stage_stakeholders(self, stage, stakeholders_ids):
+        """
+        Met à jour les stakeholders d'un stage et déclenche la propagation
+        """
+        try:
+            from apps.accounts.models import Contact
+            contacts = Contact.objects.filter(
+                id__in=stakeholders_ids,
+                client_id=self.context['request'].user.client_id
+            )
+            
+            # Mettre à jour les stakeholders
+            stage.stakeholders.set(contacts)
+            
+            # Noter : La méthode update_stakeholders() du stage sera appelée 
+            # par les signaux ou manuellement selon l'implémentation
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Failed to update stage stakeholders")
+            )
+        
     def to_representation(self, instance):
         """Enrichir la représentation avec des données calculées"""
         representation = super().to_representation(instance)
