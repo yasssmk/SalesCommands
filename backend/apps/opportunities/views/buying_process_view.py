@@ -787,7 +787,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
                         'campaign_id': campaign.id,
                         'campaign_name': campaign.name,
                         'campaign_status': campaign.status,
-                        'campaign_type': getattr(campaign, 'campaign_type', None),
+                        'sequence_type': getattr(campaign, 'sequence_type', None),
                         'created_at': campaign.created_at,
                         'targets': [],
                         'targets_count': 0,

@@ -603,7 +603,7 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             
             # Don't allow modifications to completed/cancelled campaigns
             if current_status in CONFIG.validation.forbidden_states:
-                forbidden_fields = {'name', 'description', 'start_date', 'end_date', 'campaign_type', 'sequence_type'}
+                forbidden_fields = {'name', 'description', 'start_date', 'end_date', 'sequence_type'}
                 modified_fields = forbidden_fields & set(data.keys())
                 
                 if modified_fields:

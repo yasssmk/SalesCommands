@@ -59,7 +59,6 @@ class SubStageFollowUpService:
                 campaign_data = {
                     'name': cls.FOLLOWUP_CAMPAIGN_NAME,
                     'description': 'Automatic follow-up campaign for pipeline substages',
-                    'campaign_type': 'FOLLOW_UP',  # Sera converti en enum dans le service
                     'sequence_type': 'FOLLOW_UP',
                     'start_date': date.today(),
                     'end_date': date.today() + timedelta(days=365),

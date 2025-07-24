@@ -28,6 +28,7 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         verbose_name=_('Campaign Name')
     )
     
+
     description = models.TextField(
         blank=True,
         null=True,
@@ -55,12 +56,12 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
     
     # Add this field to establish the M2M relationship
     stakeholders = models.ManyToManyField(
-    'end_users.User',
-    through='campaign.CampaignStakeholder',
-    through_fields=('campaign', 'user'),  # Specify which fields to use
-    related_name='participated_campaigns',  # Change related_name to avoid clash
-    verbose_name=_('Stakeholders')
-)
+        'end_users.User',
+        through='campaign.CampaignStakeholder',
+        through_fields=('campaign', 'user'),  # Specify which fields to use
+        related_name='participated_campaigns',  # Change related_name to avoid clash
+        verbose_name=_('Stakeholders')
+    )
     
     start_date = models.DateField(
         verbose_name=_('Start Date')
@@ -88,6 +89,7 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         indexes = [
             models.Index(fields=['owner', 'start_date']),
             models.Index(fields=['sequence_type']),
+            models.Index(fields=['campaign_type']),
         ]
 
     def __str__(self):

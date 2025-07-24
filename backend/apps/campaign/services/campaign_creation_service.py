@@ -714,7 +714,6 @@ class CampaignCreationService:
                 'existing_campaign': True,
                 'targets_created': new_targets_created,
                 'total_targets': total_targets,
-                'campaign_type': existing_campaign.campaign_type,
                 'sequence_type': existing_campaign.sequence_type,
                 'campaign_status': existing_campaign.status,
                 'created_at': existing_campaign.created_at.isoformat()
@@ -761,7 +760,7 @@ class CampaignCreationService:
             from .campaign_target_service import CampaignTargetService
             
             # Valider que c'est bien une follow-up campaign
-            if campaign.campaign_type != Campaign.CampaignType.FOLLOW_UP:
+            if campaign.sequence_type != Campaign.CampaignType.FOLLOW_UP:
                 raise StandardizedValidationError(
                     f"Campaign '{campaign.name}' is not a follow-up campaign"
                 )

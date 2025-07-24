@@ -975,7 +975,7 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
         dashboard_data['campaign_info'] = {
             'id': campaign.id,
             'name': campaign.name,
-            'sequence_type': campaign.sequence_type,  # ✅ CORRIGÉ: campaign_type → sequence_type
+            'sequence_type': campaign.sequence_type,  
             'sequence_type_display': self._get_safe_sequence_type_display(campaign),  # ✅ UTILISE HELPER
             'status': campaign.status,
             'start_date': campaign.start_date.isoformat(),

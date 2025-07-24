@@ -1479,12 +1479,13 @@ class CampaignResultService:
                 raise StandardizedValidationError(
                     CampaignErrorMessages.TARGET_INVALID_TYPE.format(target_type=target_type)
                 )
-            
+
             # 2. Construire le filtre selon le type de target
             filter_kwargs = {
-                'campaign__campaign_type': Campaign.CampaignType.FOLLOW_UP,
+                'campaign__sequence_type': 'FOLLOW_UP',
                 'client_id': client_id
             }
+            
             
             target_name = "Unknown"
             
@@ -1539,10 +1540,11 @@ class CampaignResultService:
                     raise StandardizedValidationError(
                         CampaignErrorMessages.TARGET_NOT_FOUND_IN_CAMPAIGN
                     )
-            
+
+            print(filter_kwargs)
             # 3. Trouver tous les CampaignTarget correspondants
             targets = CampaignTarget.objects.filter(**filter_kwargs).select_related('campaign', 'contact')
-            
+
             if not targets.exists():
                 return StandardizedSuccessResponse.success(
                     message=f"{target_type.title()} '{target_name}' is not in any follow-up campaign",
