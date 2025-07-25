@@ -136,10 +136,6 @@ class CampaignViewSet(BaseAPIView, CampaignPermissionMixin, viewsets.ModelViewSe
 
     def _apply_campaign_attribute_filters(self, queryset):
         """CONSERVÉ - Logique métier nécessaire"""
-        # Filter by campaign type
-        # campaign_type = self.request.query_params.get('campaign_type')
-        # if campaign_type:
-        #     queryset = queryset.filter(campaign_type=campaign_type)
         
         # Filter by status
         campaign_status = self.request.query_params.get(CONFIG.queries.status)

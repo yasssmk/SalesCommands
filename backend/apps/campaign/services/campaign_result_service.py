@@ -1363,7 +1363,7 @@ class CampaignResultService:
             # 2. Trouver tous les CampaignTarget liés à ce substage
             targets = CampaignTarget.objects.filter(
                 substage=substage,
-                campaign__campaign_type=Campaign.CampaignType.FOLLOW_UP,
+                campaign__sequence_type=Campaign.CampaignType.FOLLOW_UP,
                 client_id=client_id
             ).select_related('campaign', 'contact')
             
@@ -1581,7 +1581,7 @@ class CampaignResultService:
                 total_progress += progress_percentage
                 
                 # Prochaine activité et dernière activité
-                next_activity = planned_activities.order_by('scheduled_date').first()
+                next_activity = planned_activities.order_by('scheduled_start').first()
                 last_activity = completed_activities.order_by('-completed_at').first()
                 
                 # Déterminer le nom du contact selon le type de target
@@ -1606,7 +1606,7 @@ class CampaignResultService:
                     'next_activity': {
                         'id': next_activity.id,
                         'type': next_activity.activity_type,
-                        'scheduled_date': next_activity.scheduled_date.isoformat() if next_activity.scheduled_date else None
+                        'scheduled_date': next_activity.scheduled_start.isoformat() if next_activity.scheduled_start else None
                     } if next_activity else None,
                     'last_activity': {
                         'id': last_activity.id,

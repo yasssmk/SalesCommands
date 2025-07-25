@@ -89,7 +89,6 @@ class Campaign(BaseModelApp, ClientScopeManager.ModelMixin):
         indexes = [
             models.Index(fields=['owner', 'start_date']),
             models.Index(fields=['sequence_type']),
-            models.Index(fields=['campaign_type']),
         ]
 
     def __str__(self):

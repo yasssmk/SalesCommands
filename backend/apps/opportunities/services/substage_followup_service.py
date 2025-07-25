@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 from apps.opportunities.models import PipelineSubStage
 from core.exceptions import StandardizedValidationError
-from core.error_messages import OpportunityErrorMessages
+from core.error_messages import OpportunityErrorMessages, CoreErrorMessages
 from apps.campaign.utils.standardized_responses import StandardizedSuccessResponse
 
 
@@ -52,6 +52,7 @@ class SubStageFollowUpService:
                     raise StandardizedValidationError(
                         f"SubStage '{substage.name}' has no stakeholders. Add stakeholders before adding to follow-up."
                     )
+
                 
                 # 4. ✅ DÉLÉGATION : Utiliser CampaignCreationService pour gérer la campaign
                 from apps.campaign.services.campaign_creation_service import CampaignCreationService
@@ -63,6 +64,7 @@ class SubStageFollowUpService:
                     'start_date': date.today(),
                     'end_date': date.today() + timedelta(days=365),
                     'status': 'ACTIVE',
+                    'owner': user.id,
                     'client_id': client_id
                 }
                 
@@ -241,7 +243,7 @@ class SubStageFollowUpService:
         from apps.campaign.models import CampaignTarget, Campaign
         return CampaignTarget.objects.filter(
             substage=substage,
-            campaign__campaign_type=Campaign.CampaignType.FOLLOW_UP,
+            campaign__sequence_type=Campaign.CampaignType.FOLLOW_UP,
             client_id=substage.client_id
         ).exists()
     
@@ -292,7 +294,7 @@ class SubStageFollowUpService:
         
         CampaignTarget.objects.filter(
             substage_id=substage_id,
-            campaign__campaign_type=Campaign.CampaignType.FOLLOW_UP,
+            campaign__sequence_type=Campaign.CampaignType.FOLLOW_UP,
             client_id=client_id
         ).delete()
     

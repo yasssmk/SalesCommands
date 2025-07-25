@@ -755,13 +755,13 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         Liste toutes les campagnes liées à un substage
         """
         try:
-            pipeline = self.get_pipeline(int(opportunity_id))
+            # pipeline = self.get_pipeline(int(opportunity_id))
             
             # Récupérer le substage
             try:
                 substage = PipelineSubStage.objects.get(
                     id=int(substage_id),
-                    stage__opportunity_pipeline=pipeline,
+                    # stage__opportunity_pipeline=pipeline,
                     client_id=self.get_client_id()
                 )
             except PipelineSubStage.DoesNotExist:
@@ -799,7 +799,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
                     'target_id': target.id,
                     'status': target.status,
                     'target_type': target.get_target_type(),
-                    'target_name': target.get_target_name(),
+                    # 'target_name': target.get_target_name(),
                     'substage_objective': target.substage_objective,
                     'has_context': bool(target.substage_context)
                 }
@@ -839,13 +839,13 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         Ajoute un substage à la campagne follow-up unique via SubStageFollowUpService
         """
         try:
-            pipeline = self.get_pipeline(int(opportunity_id))
+            # pipeline = self.get_pipeline(int(opportunity_id))
             
             # Vérifier que le substage appartient au pipeline
             try:
                 substage = PipelineSubStage.objects.get(
                     id=int(substage_id),
-                    stage__opportunity_pipeline=pipeline,
+                    # stage__opportunity_pipeline=pipeline,
                     client_id=self.get_client_id()
                 )
             except PipelineSubStage.DoesNotExist:
@@ -882,13 +882,13 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         Supprime un substage de la campagne follow-up via SubStageFollowUpService
         """
         try:
-            pipeline = self.get_pipeline(int(opportunity_id))
+            # pipeline = self.get_pipeline(int(opportunity_id))
             
             # Vérifier que le substage appartient au pipeline
             try:
                 substage = PipelineSubStage.objects.get(
                     id=int(substage_id),
-                    stage__opportunity_pipeline=pipeline,
+                    # stage__opportunity_pipeline=pipeline,
                     client_id=self.get_client_id()
                 )
             except PipelineSubStage.DoesNotExist:
@@ -932,13 +932,13 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         }
         """
         try:
-            pipeline = self.get_pipeline(int(opportunity_id))
+            # pipeline = self.get_pipeline(int(opportunity_id))
             
             # Vérifier que le substage appartient au pipeline
             try:
                 substage = PipelineSubStage.objects.get(
                     id=int(substage_id),
-                    stage__opportunity_pipeline=pipeline,
+                    # stage__opportunity_pipeline=pipeline,
                     client_id=self.get_client_id()
                 )
             except PipelineSubStage.DoesNotExist:

@@ -81,12 +81,19 @@ class CampaignCreationService:
                 from apps.campaign.serializers.campaign_serializer import CampaignSerializer
 
                 # Créer un contexte minimal pour le serializer
-                context = {'request': request}  
+                context = {
+                    'request': request,
+                    'client_id': client_id 
+                } 
+                
                 # Valider et créer via le serializer
+                print(f"Creating campaign with data: {serializer_data}")
+                print(f'Context for serializer: {context}')
                 serializer = CampaignSerializer(data=serializer_data, context=context)
-
+                print("22")
                 if not serializer.is_valid():
                     # Convertir les erreurs du serializer en StandardizedValidationError
+                    print(f"Campaign serializer errors: {serializer.errors}")
                     error_messages = []
                     for field, errors in serializer.errors.items():
                         if isinstance(errors, list):

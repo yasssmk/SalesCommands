@@ -83,7 +83,7 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         allow_blank=True,
         error_messages={
             'max_length': CoreErrorMessages.INVALID_FIELD.format(
-                field=f'Description (maximum {CONFIG.limits.max_description_length,} characters)'
+                field=f'Description (maximum {CONFIG.limits.max_description_length} characters)'
             )
         }
     )
@@ -333,27 +333,6 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 CoreErrorMessages.INVALID_FIELD.format(field="Objective data")
             )
 
-    # def validate_campaign_type(self, value):
-    #     """Validate campaign type"""
-    #     try:
-    #         # Ensure campaign type is valid
-    #         valid_types = [choice[0] for choice in Campaign.CampaignType.choices]
-    #         if value not in valid_types:
-    #             raise StandardizedValidationError(
-    #                 CoreErrorMessages.INVALID_FIELD.format(
-    #                     field=f"Campaign type (must be one of: {', '.join(valid_types)})"
-    #                 )
-    #             )
-            
-    #         return value
-            
-    #     except StandardizedValidationError:
-    #         raise
-    #     except Exception as e:
-    #         raise StandardizedValidationError(
-    #             CoreErrorMessages.INVALID_FIELD.format(field="Campaign type")
-    #         )
-
     def validate_sequence_type(self, value):
         """Validation sequence_type"""
         if value is None:
@@ -464,15 +443,9 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                     )
             
             # === VALIDATION CAMPAIGN TYPE vs SEQUENCE TYPE (existante) ===
-            # campaign_type = data.get('campaign_type', self.instance.campaign_type if self.instance else None)
+
             sequence_type = data.get('sequence_type', self.instance.sequence_type if self.instance else None)
-            
-            # if campaign_type == Campaign.CampaignType.CALL_LIST and sequence_type is not None:
-            #     raise StandardizedValidationError(
-            #         CoreErrorMessages.INVALID_FIELD.format(
-            #             field="Sequence Type (Call List campaigns cannot have automated sequences)"
-            #         )
-            #     )
+
             
             # === NOUVELLE : VALIDATION OBJECTIVE vs CAMPAIGN TYPE ===
             objective_data = data.get('objective')
@@ -524,7 +497,7 @@ class CampaignSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 raise StandardizedValidationError(str(e.detail))
         except Exception as e:
             raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Campaign validation failed")
+                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Campaign validation failed: {str(e)}")
             )
 
     def _validate_objective_consistency(self, objective_data, sequence_type):
