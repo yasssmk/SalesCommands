@@ -112,14 +112,15 @@ WSGI_APPLICATION = 'salescommands.wsgi.application'
 
 # Database
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql_psycopg2",
-        "NAME": env('DATABASE_NAME'),
-        "USER": env('DATABASE_USERNAME'),
-        "PASSWORD": env('DATABASE_PASSWORD'),
-        "HOST": env('DATABASE_HOSTNAME'),
-        "PORT": env('DATABASE_PORT')
-    }
+    # "default": {
+    #     "ENGINE": "django.db.backends.postgresql_psycopg2",
+    #     "NAME": env('DATABASE_NAME'),
+    #     "USER": env('DATABASE_USERNAME'),
+    #     "PASSWORD": env('DATABASE_PASSWORD'),
+    #     "HOST": env('DATABASE_HOSTNAME'),
+    #     "PORT": env('DATABASE_PORT')
+    # }
+     'default': env.db()
 }
 
 # CACHES = {
