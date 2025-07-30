@@ -11,52 +11,106 @@ class OpportunityPipelineService:
     Service pour l'orchestration des pipelines d'opportunité.
     Centralise toute la logique métier et les calculs de pipeline.
     """
-    
+
+
     @classmethod
-    def get_complete_pipeline_overview(cls, opportunity_id: int, client_id: str) -> Response:
+    def create_opportunity_pipeline(cls, template, request):
         """
-        Récupère une vue d'ensemble complète du pipeline avec toutes les métadonnées
+        Crée un OpportunityPipeline à partir d'un template créé
         
         Args:
-            opportunity_id: ID de l'opportunité
-            client_id: ID du client
+            template: Le PipelineTemplate déjà créé avec ses stages
+            request: Request pour user et context
             
         Returns:
-            Response: Vue d'ensemble complète du pipeline
+            OpportunityPipeline: Le pipeline créé et initialisé
         """
         try:
             # Import différé pour éviter les imports circulaires
             from ..serializers.opportunity_pipeline_serializer import OpportunityPipelineSerializer
             
-            # Récupérer le pipeline avec optimisations
-            pipeline = cls._get_pipeline_optimized(opportunity_id, client_id)
-            
-            # Sérialiser le pipeline avec tous les calculs
-            pipeline_serializer = OpportunityPipelineSerializer(pipeline)
-            
-            # Récupérer toutes les substages avec métadonnées
-            all_substages = pipeline.get_all_substages_with_metadata()
-            
-            # Récupérer le résumé du pipeline
-            pipeline_summary = pipeline.get_pipeline_summary()
-            
-            return Response({
-                'success': True,
-                'data': {
-                    'pipeline': pipeline_serializer.data,
-                    'all_substages': all_substages,
-                    'summary': pipeline_summary,
-                    'total_substages': len(all_substages),
-                    'substages_by_stage': cls._group_substages_by_stage(all_substages)
+            with transaction.atomic():
+                # Préparer les données pour le pipeline
+                pipeline_data = {
+                    'opportunity': template.opportunity.id,
+                    'status': 'ACTIVE'
                 }
-            })
-            
+                
+                # Créer le pipeline via le serializer
+                serializer = OpportunityPipelineSerializer(
+                    data=pipeline_data,
+                    context={'request': request}
+                )
+                
+                serializer.is_valid(raise_exception=True)
+                pipeline = serializer.save()
+                
+                # Initialiser current_stage au premier stage du template
+                first_stage = template.stages.filter(is_active=True).order_by('order').first()
+                if first_stage:
+                    pipeline.current_stage = first_stage
+                    
+                    # Initialiser current_substage au premier substage du premier stage
+                    first_substage = first_stage.substages.filter(is_active=True).order_by('order').first()
+                    if first_substage:
+                        pipeline.current_substage = first_substage
+                    
+                    pipeline.save(update_fields=['current_stage', 'current_substage'])
+                
+                return pipeline
+                
         except StandardizedValidationError:
             raise
         except Exception as e:
             raise StandardizedValidationError(
-                OpportunityErrorMessages.PIPELINE_OVERVIEW_FAILED.format(reason=str(e))
+                OpportunityErrorMessages.PIPELINE_CREATION_FAILED.format(reason=str(e))
             )
+        
+        @classmethod
+        def get_complete_pipeline_overview(cls, opportunity_id: int, client_id: str) -> Response:
+            """
+            Récupère une vue d'ensemble complète du pipeline avec toutes les métadonnées
+            
+            Args:
+                opportunity_id: ID de l'opportunité
+                client_id: ID du client
+                
+            Returns:
+                Response: Vue d'ensemble complète du pipeline
+            """
+            try:
+                # Import différé pour éviter les imports circulaires
+                from ..serializers.opportunity_pipeline_serializer import OpportunityPipelineSerializer
+                
+                # Récupérer le pipeline avec optimisations
+                pipeline = cls._get_pipeline_optimized(opportunity_id, client_id)
+                
+                # Sérialiser le pipeline avec tous les calculs
+                pipeline_serializer = OpportunityPipelineSerializer(pipeline)
+                
+                # Récupérer toutes les substages avec métadonnées
+                all_substages = pipeline.get_all_substages_with_metadata()
+                
+                # Récupérer le résumé du pipeline
+                pipeline_summary = pipeline.get_pipeline_summary()
+                
+                return Response({
+                    'success': True,
+                    'data': {
+                        'pipeline': pipeline_serializer.data,
+                        'all_substages': all_substages,
+                        'summary': pipeline_summary,
+                        'total_substages': len(all_substages),
+                        'substages_by_stage': cls._group_substages_by_stage(all_substages)
+                    }
+                })
+                
+            except StandardizedValidationError:
+                raise
+            except Exception as e:
+                raise StandardizedValidationError(
+                    OpportunityErrorMessages.PIPELINE_OVERVIEW_FAILED.format(reason=str(e))
+                )
 
     @classmethod
     def get_pipeline_metrics(cls, opportunity_id: int, client_id: str) -> Response:
@@ -301,6 +355,130 @@ class OpportunityPipelineService:
             raise StandardizedValidationError(
                 OpportunityErrorMessages.POSITION_DETECTION_FAILED.format(reason=str(e))
             )
+    
+    @classmethod
+    def _detect_pipeline_position(cls, pipeline) -> dict:
+        """
+        Détecte la position courante d'un pipeline (même pattern que _is_substage_overdue)
+        
+        Args:
+            pipeline: Instance OpportunityPipeline
+            
+        Returns:
+            dict: {activity_id, substage_id, stage_id} ou None si pas trouvé
+        """
+        try:
+            # Import différé pour éviter les imports circulaires
+            from apps.activities.models import Activity
+            
+            template = pipeline.get_pipeline_template()
+            if not template:
+                return {'activity_id': None, 'substage_id': None, 'stage_id': None}
+
+            # ===== PRIORITÉ 1 : ACTIVITÉS IN_PROGRESS =====
+            in_progress_activities = Activity.objects.filter(
+                opportunity=pipeline.opportunity,
+                status=Activity.Status.IN_PROGRESS,
+                pipeline_substage__isnull=False
+            ).select_related(
+                'pipeline_substage', 
+                'pipeline_substage__stage'
+            ).order_by(
+                'pipeline_substage__stage__order',  # Stage le plus avancé
+                'pipeline_substage__order'           # Substage le plus avancé
+            )
+
+            if in_progress_activities.exists():
+                # Prendre la plus avancée dans le processus
+                most_advanced_activity = in_progress_activities.last()
+                substage = most_advanced_activity.pipeline_substage
+                stage = substage.stage
+                
+                return {
+                    'activity_id': most_advanced_activity.id,
+                    'substage_id': substage.id,
+                    'stage_id': stage.id
+                }
+
+            # ===== PRIORITÉ 2 : DERNIÈRE COMPLETED + NEXT STEP =====
+            last_completed_activity = Activity.objects.filter(
+                opportunity=pipeline.opportunity,
+                status=Activity.Status.COMPLETED,
+                pipeline_substage__isnull=False
+            ).select_related(
+                'pipeline_substage', 
+                'pipeline_substage__stage'
+            ).order_by('-completed_at').first()
+
+            if last_completed_activity:
+                completed_substage = last_completed_activity.pipeline_substage
+                
+                # Chercher le next substage
+                next_substage = cls._find_next_substage_in_template(completed_substage, template)
+                
+                if next_substage:
+                    return {
+                        'activity_id': None,  # Pas d'activité spécifique
+                        'substage_id': next_substage.id,
+                        'stage_id': next_substage.stage.id
+                    }
+
+            # ===== FALLBACK : PREMIÈRE ÉTAPE DU TEMPLATE =====
+            first_stage = template.stages.filter(is_active=True).order_by('order').first()
+            if first_stage:
+                first_substage = first_stage.substages.filter(is_active=True).order_by('order').first()
+                
+                return {
+                    'activity_id': None,
+                    'substage_id': first_substage.id if first_substage else None,
+                    'stage_id': first_stage.id
+                }
+
+            return {'activity_id': None, 'substage_id': None, 'stage_id': None}
+            
+        except Exception:
+            return {'activity_id': None, 'substage_id': None, 'stage_id': None}
+
+
+    @classmethod
+    def _find_next_substage_in_template(cls, current_substage, template):
+        """
+        Trouve le prochain substage selon l'ordre du template
+        
+        Args:
+            current_substage: SubStage actuel
+            template: PipelineTemplate
+            
+        Returns:
+            PipelineSubStage: Prochain substage ou None
+        """
+        try:
+            # 1. Chercher next substage dans le même stage
+            next_in_same_stage = current_substage.stage.substages.filter(
+                is_active=True,
+                order__gt=current_substage.order
+            ).order_by('order').first()
+            
+            if next_in_same_stage:
+                return next_in_same_stage
+            
+            # 2. Sinon, chercher premier substage du stage suivant
+            current_stage = current_substage.stage
+            
+            next_stage = template.stages.filter(
+                is_active=True,
+                order__gt=current_stage.order
+            ).order_by('order').first()
+            
+            if next_stage:
+                return next_stage.substages.filter(
+                    is_active=True
+                ).order_by('order').first()
+            
+            return None
+            
+        except Exception:
+            return None
 
     @classmethod
     def create_pipeline_from_opportunity(cls, opportunity_id: int, client_id: str, user=None) -> Response:

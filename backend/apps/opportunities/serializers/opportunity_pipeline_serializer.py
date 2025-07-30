@@ -78,6 +78,20 @@ class OpportunityPipelineSerializer(ClientScopeManager.SerializerMixin, serializ
     )
     
     # ===== CHAMPS CALCULÉS (READ-ONLY) =====
+
+    # POSITION DÉTECTÉE AUTOMATIQUEMENT 
+    
+    detected_position = serializers.SerializerMethodField(read_only=True)
+    position_last_updated = serializers.DateTimeField(read_only=True)
+    
+    # Champs individuels pour compatibilité
+    detected_activity_id = serializers.IntegerField(source='detected_activity.id', read_only=True)
+    detected_substage_id = serializers.IntegerField(source='detected_substage.id', read_only=True)
+    detected_stage_id = serializers.IntegerField(source='detected_stage.id', read_only=True)
+    
+    detected_activity_title = serializers.CharField(source='detected_activity.title', read_only=True)
+    detected_substage_name = serializers.CharField(source='detected_substage.name', read_only=True)
+    detected_stage_name = serializers.CharField(source='detected_stage.name', read_only=True)
     
     # Métriques de progression
     progress_percentage = serializers.SerializerMethodField()
@@ -134,6 +148,16 @@ class OpportunityPipelineSerializer(ClientScopeManager.SerializerMixin, serializ
             'completed_at',
             'expected_close_date',
             'actual_duration_days',
+
+            # Position détectée automatiquement
+            'detected_position',
+            'position_last_updated',
+            'detected_activity_id',
+            'detected_substage_id', 
+            'detected_stage_id',
+            'detected_activity_title',
+            'detected_substage_name',
+            'detected_stage_name',
             
             # Métriques calculées
             'progress_percentage',
@@ -401,3 +425,32 @@ class OpportunityPipelineSerializer(ClientScopeManager.SerializerMixin, serializ
             'optimize_queries': True
         })
         return context
+    
+    def get_detected_position(self, obj):
+        """Position détectée automatiquement avec métadonnées"""
+        try:
+            return {
+                'activity': {
+                    'id': obj.detected_activity.id if obj.detected_activity else None,
+                    'title': obj.detected_activity.title if obj.detected_activity else None,
+                    'status': obj.detected_activity.status if obj.detected_activity else None
+                },
+                'substage': {
+                    'id': obj.detected_substage.id if obj.detected_substage else None,
+                    'name': obj.detected_substage.name if obj.detected_substage else None,
+                    'order': obj.detected_substage.order if obj.detected_substage else None
+                },
+                'stage': {
+                    'id': obj.detected_stage.id if obj.detected_stage else None,
+                    'name': obj.detected_stage.name if obj.detected_stage else None,
+                    'order': obj.detected_stage.order if obj.detected_stage else None
+                },
+                'last_updated': obj.position_last_updated
+            }
+        except Exception:
+            return {
+                'activity': {'id': None, 'title': None, 'status': None},
+                'substage': {'id': None, 'name': None, 'order': None},
+                'stage': {'id': None, 'name': None, 'order': None},
+                'last_updated': obj.position_last_updated
+            }

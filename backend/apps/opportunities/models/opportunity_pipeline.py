@@ -100,6 +100,44 @@ class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_('Calculated expected completion date based on substage durations')
     )
     
+    # ===== POSITION AUTOMATIQUE  =====
+    
+    detected_activity = models.ForeignKey(
+        'activities.Activity',
+        on_delete=models.SET_NULL,
+        related_name='detected_in_pipelines',
+        null=True,
+        blank=True,
+        verbose_name=_('Detected Activity'),
+        help_text=_('Activity automatically detected as current position')
+    )
+    
+    detected_substage = models.ForeignKey(
+        'opportunities.PipelineSubStage',
+        on_delete=models.SET_NULL,
+        related_name='detected_in_pipelines',
+        null=True,
+        blank=True,
+        verbose_name=_('Detected SubStage'),
+        help_text=_('SubStage automatically detected as current position')
+    )
+    
+    detected_stage = models.ForeignKey(
+        'opportunities.PipelineStage',
+        on_delete=models.SET_NULL,
+        related_name='detected_in_pipelines',
+        null=True,
+        blank=True,
+        verbose_name=_('Detected Stage'),
+        help_text=_('Stage automatically detected as current position')
+    )
+    
+    position_last_updated = models.DateTimeField(
+        auto_now=True,
+        verbose_name=_('Position Last Updated'),
+        help_text=_('When position detection was last run')
+    )
+
     # ===== MÉTRIQUES DE TRACKING =====
     
     actual_duration_days = models.PositiveIntegerField(
@@ -307,42 +345,118 @@ class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
         return None
 
     # ===== DÉTECTION POSITION SIMPLE =====
-
-    def get_current_position(self) -> Dict[str, Any]:
+    
+    @classmethod
+    def bulk_update_position_for_opportunity(cls, opportunity_id: int, client_id: str) -> dict:
         """
-        Détecte la position courante basée sur les activités IN_PROGRESS
-        Prend celle avec le stage le plus avancé
-        """
-        from .substage_activity import SubStageActivity
+        Met à jour la position détectée d'un pipeline d'opportunité (même pattern que overdue)
         
-        template = self.get_pipeline_template()
-        if not template:
+        Args:
+            opportunity_id: ID de l'opportunité
+            client_id: ID du client
+            
+        Returns:
+            dict: Résumé des mises à jour
+        """
+        try:
+            from ..services.opportunity_pipeline_service import OpportunityPipelineService
+            
+            # Récupérer le pipeline de l'opportunité
+            try:
+                pipeline = cls.objects.get(
+                    opportunity_id=opportunity_id,
+                    opportunity__client_id=client_id
+                )
+            except cls.DoesNotExist:
+                return {
+                    'success': False,
+                    'reason': 'Pipeline not found',
+                    'updated': False
+                }
+            
+            # Détecter la nouvelle position
+            detected_position = OpportunityPipelineService._detect_pipeline_position(pipeline)
+            
+            # Vérifier si la position a changé
+            old_activity_id = pipeline.detected_activity.id if pipeline.detected_activity else None
+            old_substage_id = pipeline.detected_substage.id if pipeline.detected_substage else None
+            old_stage_id = pipeline.detected_stage.id if pipeline.detected_stage else None
+            
+            new_activity_id = detected_position['activity_id']
+            new_substage_id = detected_position['substage_id']  
+            new_stage_id = detected_position['stage_id']
+            
+            position_changed = (
+                old_activity_id != new_activity_id or
+                old_substage_id != new_substage_id or
+                old_stage_id != new_stage_id
+            )
+            
+            if position_changed:
+                # Récupérer les instances pour les FK
+                detected_activity = None
+                detected_substage = None
+                detected_stage = None
+                
+                if new_activity_id:
+                    try:
+                        from apps.activities.models import Activity
+                        detected_activity = Activity.objects.get(id=new_activity_id)
+                    except Activity.DoesNotExist:
+                        pass
+                
+                if new_substage_id:
+                    try:
+                        from ..models import PipelineSubStage
+                        detected_substage = PipelineSubStage.objects.get(id=new_substage_id)
+                    except PipelineSubStage.DoesNotExist:
+                        pass
+                        
+                if new_stage_id:
+                    try:
+                        from ..models import PipelineStage
+                        detected_stage = PipelineStage.objects.get(id=new_stage_id)
+                    except PipelineStage.DoesNotExist:
+                        pass
+                
+                # Mettre à jour le pipeline
+                pipeline.detected_activity = detected_activity
+                pipeline.detected_substage = detected_substage
+                pipeline.detected_stage = detected_stage
+                pipeline.save(update_fields=[
+                    'detected_activity', 
+                    'detected_substage', 
+                    'detected_stage', 
+                    'position_last_updated'
+                ])
+                
+                return {
+                    'success': True,
+                    'updated': True,
+                    'old_position': {
+                        'activity_id': old_activity_id,
+                        'substage_id': old_substage_id,
+                        'stage_id': old_stage_id
+                    },
+                    'new_position': {
+                        'activity_id': new_activity_id,
+                        'substage_id': new_substage_id,
+                        'stage_id': new_stage_id
+                    }
+                }
+            else:
+                return {
+                    'success': True,
+                    'updated': False,
+                    'reason': 'Position unchanged'
+                }
+                
+        except Exception as e:
             return {
-                'current_stage': self.current_stage.name if self.current_stage else None,
-                'current_substage': self.current_substage.name if self.current_substage else None,
-                'detected_from_activities': False
+                'success': False,
+                'updated': False,
+                'error': str(e)
             }
-
-        # Filtrer les activités IN_PROGRESS liées aux substages
-        in_progress_activities = SubStageActivity.objects.filter(
-            substage__stage__template=template,
-            activity__status='IN_PROGRESS'
-        ).select_related(
-            'substage', 'substage__stage'
-        ).order_by('-substage__stage__order', '-substage__order')
-
-        detected_substage = None
-        if in_progress_activities.exists():
-            # Prendre celle avec le stage le plus avancé
-            detected_substage = in_progress_activities.first().substage
-
-        return {
-            'current_stage': self.current_stage.name if self.current_stage else None,
-            'current_substage': self.current_substage.name if self.current_substage else None,
-            'detected_from_activities': detected_substage is not None,
-            'detected_stage': detected_substage.stage.name if detected_substage else None,
-            'detected_substage': detected_substage.name if detected_substage else None
-        }
 
     # ===== MÉTRIQUES SIMPLES =====
 

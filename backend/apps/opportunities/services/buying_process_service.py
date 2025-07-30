@@ -34,6 +34,13 @@ class BuyingProcessService:
             
             # Créer les stages selon le template_type
             stages_created = cls._create_stages_for_template(template, request)
+
+            from ..services.opportunity_pipeline_service import OpportunityPipelineService
+        
+            opportunity_pipeline = OpportunityPipelineService.create_opportunity_pipeline(
+                template=template, 
+                request=request
+            )
             
             return template
     

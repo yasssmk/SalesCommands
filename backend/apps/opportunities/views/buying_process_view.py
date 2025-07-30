@@ -33,6 +33,27 @@ def update_opportunity_overdue_safe(opportunity_id, client_id):
             )
         )
 
+# ================== Pipeline opportunity ================================
+
+def update_opportunity_position_safe(opportunity_id, client_id):
+    """
+    Met à jour la position détectée d'une opportunité de façon sécurisée
+    (même pattern que update_opportunity_overdue_safe)
+    """
+    try:
+        from apps.opportunities.models import OpportunityPipeline
+        result = OpportunityPipeline.bulk_update_position_for_opportunity(opportunity_id, client_id)
+        return result['success']
+    except Exception as e:
+        from core.exceptions import StandardizedValidationError
+        from core.error_messages import OpportunityErrorMessages
+        StandardizedValidationError(
+            OpportunityErrorMessages.PIPELINE_UPDATE_FAILED.format(
+                reason=str(e)
+            )
+        )
+        return False
+
 class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints pour la gestion des process de vente et leurs stages
@@ -568,6 +589,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         from apps.opportunities.models import Opportunity
 
         update_opportunity_overdue_safe(opportunity_id, self.get_client_id())
+        update_opportunity_position_safe(opportunity_id, self.get_client_id())
         
         try:
             opportunity = Opportunity.objects.get(
@@ -608,6 +630,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         Lie une activité existante à un substage
         """
         update_opportunity_overdue_safe(opportunity_id, self.get_client_id())
+        update_opportunity_position_safe(opportunity_id, self.get_client_id())
 
         with transaction.atomic():
             # Import du service
@@ -680,6 +703,8 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
                     context={'client_id': self.get_client_id()}
                 )
                 
+                update_opportunity_position_safe(opportunity_id, self.get_client_id())
+                
                 return Response({
                     'success': True,
                     'message': f'Activity created and linked to substage successfully',
@@ -707,6 +732,7 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
         Supprime la liaison entre un substage et une activité
         """
         update_opportunity_overdue_safe(opportunity_id, self.get_client_id())
+        update_opportunity_position_safe(opportunity_id, self.get_client_id())
 
         with transaction.atomic():
             # Import du service
@@ -1012,3 +1038,4 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Follow-up status failed: {str(e)}")
             )
+        
