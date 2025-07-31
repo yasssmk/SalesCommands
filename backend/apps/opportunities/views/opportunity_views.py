@@ -37,6 +37,22 @@ def update_opportunity_overdue_safe(opportunity_id, client_id):
             )
         )
 
+def update_opportunity_position_safe(opportunity_id, client_id):
+    """
+    Met à jour la position détectée d'une opportunité de façon sécurisée
+    """
+    try:
+        from apps.opportunities.models import OpportunityPipeline
+        result = OpportunityPipeline.bulk_update_position_for_opportunity(opportunity_id, client_id)
+        return result['success']
+    except Exception as e:
+        from core.exceptions import StandardizedValidationError
+        from core.error_messages import OpportunityErrorMessages
+        StandardizedValidationError(
+            OpportunityErrorMessages.PIPELINE_UPDATE_FAILED.format(reason=str(e))
+        )
+        return False
+
 
 class OpportunityViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
     """
@@ -166,6 +182,7 @@ class OpportunityViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.Mod
                 ).first()
                 if pipeline:
                     update_opportunity_overdue_safe(pipeline.id, self.get_client_id())
+                    update_opportunity_position_safe(pipeline.opportunity.id, self.get_client_id())
             except Exception:
                 pass  # Silencieux
         
