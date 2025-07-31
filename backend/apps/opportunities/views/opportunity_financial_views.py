@@ -17,7 +17,7 @@ from apps.opportunities.serializers import (
 from apps.products.models import Product, Pricing
 
 
-class OpportunityLineItemViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
+class OpportunityLineItemViewSet(BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing opportunity line items (products)
     """
@@ -53,8 +53,6 @@ class OpportunityLineItemViewSet(BaseAPIView, ClientScopeManager.ViewMixin, view
         client_id = self.get_client_id()
         line_item = serializer.save(client_id=client_id)
         
-        # Update opportunity financials
-        line_item.opportunity.update_financials()
         
         return line_item
     
@@ -69,9 +67,6 @@ class OpportunityLineItemViewSet(BaseAPIView, ClientScopeManager.ViewMixin, view
             raise StandardizedValidationError("You can only update line items for opportunities assigned to you")
         
         line_item = serializer.save()
-        
-        # Update opportunity financials
-        line_item.opportunity.update_financials()
         
         return line_item
     
@@ -89,9 +84,7 @@ class OpportunityLineItemViewSet(BaseAPIView, ClientScopeManager.ViewMixin, view
         
         # Delete the line item
         instance.delete()
-        
-        # Update opportunity financials
-        opportunity_ref.update_financials()
+
     
     @action(detail=False, methods=['get'])
     def available_products(self, request):
@@ -162,9 +155,6 @@ class OpportunityFinancialSummaryViewSet(BaseAPIView, ClientScopeManager.ViewMix
         if opportunity.deal_owner != self.request.user and not self.request.user.has_perm('opportunities.change_opportunity'):
             raise StandardizedValidationError("You can only update financial summaries for opportunities assigned to you")
         
-        # Only allow updating forecast_category and probability
-        if set(serializer.validated_data.keys()) - {'forecast_category', 'probability'}:
-            raise StandardizedValidationError("Only forecast_category and probability can be updated")
         
         summary = serializer.save()
         

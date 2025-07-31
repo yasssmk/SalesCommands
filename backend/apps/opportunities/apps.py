@@ -8,6 +8,6 @@ class OpportunitiesConfig(AppConfig):
     name = 'apps.opportunities'
     verbose_name = "Opportunities"
     
-    # def ready(self):
-    #     """Register signals when app is ready"""
-    #     from .signals import opportunity_signals
+    def ready(self):
+        """Register signals when app is ready"""
+        from .signals import financial_signals

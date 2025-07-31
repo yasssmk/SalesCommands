@@ -66,6 +66,34 @@ class OpportunityLineItemSerializer(ClientScopeManager.SerializerMixin, serializ
         """Get the revenue type (MRR, QRR, ARR, ONE_TIME)"""
         return obj.get_revenue_type()
     
+    def validate_quantity(self, value):
+        if value <= 0:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(
+                field="quantity"
+                )
+            )
+        return value
+    
+    def validate_custom_unit_price(self, value):
+        """✅ AMÉLIORATION: Validation custom_unit_price"""
+        if value is not None and value <= 0:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(
+                field="custom_unit_price"
+                )
+            )
+        return value
+    
+    def validate_discount_percentage(self, value):
+        if value < 0 or value > 100:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(
+                field="discount_percentage"
+                )
+            )
+        return value
+    
     def validate(self, data):
         """Validate line item data"""
         data = super().validate(data)
@@ -78,8 +106,7 @@ class OpportunityLineItemSerializer(ClientScopeManager.SerializerMixin, serializ
             product = data['product']
             if str(product.client_id) != str(client_id):
                 raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED,
-                    field_name="product_id"
+                    CoreErrorMessages.PERMISSION_DENIED
                 )
         
         # Ensure pricing belongs to current client and matches product
@@ -90,13 +117,13 @@ class OpportunityLineItemSerializer(ClientScopeManager.SerializerMixin, serializ
             if str(pricing.client_id) != str(client_id):
                 raise StandardizedValidationError(
                     CoreErrorMessages.PERMISSION_DENIED,
-                    field_name="pricing_id"
                 )
             
             if pricing.product_id != product.id:
                 raise StandardizedValidationError(
-                    "Pricing must belong to the selected product",
-                    field_name="pricing_id"
+                    CoreErrorMessages.INVALID_DATA.format(
+                    detail="Pricing must belong to the selected product"
+                    )
                 )
         
         # Validate opportunity belongs to current client
@@ -105,31 +132,6 @@ class OpportunityLineItemSerializer(ClientScopeManager.SerializerMixin, serializ
             if str(opportunity.client_id) != str(client_id):
                 raise StandardizedValidationError(
                     CoreErrorMessages.PERMISSION_DENIED,
-                    field_name="opportunity"
-                )
-        
-        # Validate custom_unit_price if provided
-        if 'custom_unit_price' in data and data['custom_unit_price'] is not None:
-            if data['custom_unit_price'] <= 0:
-                raise StandardizedValidationError(
-                    "Custom unit price must be greater than zero",
-                    field_name="custom_unit_price"
-                )
-        
-        # Validate discount percentage
-        if 'discount_percentage' in data:
-            if data['discount_percentage'] < 0 or data['discount_percentage'] > 100:
-                raise StandardizedValidationError(
-                    "Discount percentage must be between 0 and 100",
-                    field_name="discount_percentage"
-                )
-        
-        # Validate quantity
-        if 'quantity' in data:
-            if data['quantity'] <= 0:
-                raise StandardizedValidationError(
-                    "Quantity must be greater than zero",
-                    field_name="quantity"
                 )
         
         return data
@@ -138,9 +140,7 @@ class OpportunityLineItemSerializer(ClientScopeManager.SerializerMixin, serializ
         """Create line item and update opportunity financials"""
         # Create the line item
         line_item = super().create(validated_data)
-        
-        # Update opportunity financials
-        line_item.opportunity.update_financials()
+    
         
         return line_item
     
@@ -148,9 +148,6 @@ class OpportunityLineItemSerializer(ClientScopeManager.SerializerMixin, serializ
         """Update line item and recalculate financials"""
         # Update the line item
         line_item = super().update(instance, validated_data)
-        
-        # Update opportunity financials
-        line_item.opportunity.update_financials()
         
         return line_item
 
@@ -198,27 +195,29 @@ class OpportunityFinancialSummarySerializer(ClientScopeManager.SerializerMixin, 
             'created_at',
             'updated_at'
         ]
+
+    def validate_probability(self, value):
+        if value < 0 or value > 100:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_DATA.format(
+                detail="Probability must be between 0 and 100"
+                )
+            )
+        return value
+    
+    def validate_forecast_category(self, value):
+        valid_categories = dict(OpportunityFinancialSummary.ForecastCategory.choices)
+        if value not in valid_categories:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_DATA.format(
+                detail=(f"Invalid forecast category. Must be one of: {', '.join(valid_categories.keys())}")
+                )
+            )
+        return value
     
     def validate(self, data):
         """Validate financial summary data"""
         data = super().validate(data)
-        
-        # Validate probability range
-        if 'probability' in data:
-            if data['probability'] < 0 or data['probability'] > 100:
-                raise StandardizedValidationError(
-                    "Probability must be between 0 and 100",
-                    field_name="probability"
-                )
-        
-        # Validate forecast category is valid
-        if 'forecast_category' in data:
-            valid_categories = dict(OpportunityFinancialSummary.ForecastCategory.choices)
-            if data['forecast_category'] not in valid_categories:
-                raise StandardizedValidationError(
-                    f"Invalid forecast category: must be one of {list(valid_categories.keys())}",
-                    field_name="forecast_category"
-                )
         
         return data
     

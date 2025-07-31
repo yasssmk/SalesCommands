@@ -193,9 +193,6 @@ class OpportunityViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.Mod
         client_id = self.get_client_id()
         opportunity = serializer.save(client_id=client_id, user=self.request.user)
         
-        # Create financial summary if not exists
-        OpportunityFinancialSummary.objects.get_or_create(opportunity=opportunity)
-        
         return opportunity
     
     def perform_update(self, serializer):
@@ -396,8 +393,6 @@ class OpportunityViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.Mod
                 updated_by=request.user
             )
             
-            # Create financial summary
-            OpportunityFinancialSummary.objects.create(opportunity=opportunity)
             
             # Create source tracking
             source = OpportunitySource.from_lead(
