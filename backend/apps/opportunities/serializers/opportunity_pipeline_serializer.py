@@ -280,7 +280,8 @@ class OpportunityPipelineSerializer(ClientScopeManager.SerializerMixin, serializ
     def get_current_position(self, obj):
         """Position courante avec détection basée sur les activités"""
         try:
-            return obj.get_current_position()
+            from ..services.opportunity_pipeline_service import OpportunityPipelineService
+            return OpportunityPipelineService._detect_pipeline_position(obj)
         except (AttributeError, TypeError):
             return {
                 'current_stage': None,

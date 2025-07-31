@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count, Q, Max
 from django.db import transaction
+from django.utils import timezone
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, OpportunityErrorMessages
@@ -1039,3 +1040,62 @@ class BuyingProcessViewSet(BaseAPIView, viewsets.ModelViewSet):
                 CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Follow-up status failed: {str(e)}")
             )
         
+    # ==================== Pipeline Opportunity ===========================
+
+    @action(detail=False, methods=['get'], url_path='opportunity/(?P<opportunity_id>[^/.]+)/pipeline-status')
+    def get_pipeline_status(self, request, opportunity_id=None):
+        """
+        GET /buying-processes/opportunity/{opportunity_id}/pipeline-status/
+        
+        Retourne toutes les informations importantes du pipeline pour une opportunité :
+        - Position actuelle (stage/substage + détection automatique)
+        - Navigation (previous/next steps)  
+        - Métriques de progression complètes
+        - Timing et dates importantes
+        - Alertes et actions suggérées
+        - Résumé exécutif pour dashboard
+        """
+        try:
+            # Validation de l'opportunity_id
+            if not opportunity_id:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='Opportunity ID')
+                )
+            
+            try:
+                opportunity_id_int = int(opportunity_id)
+            except ValueError:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(field="Opportunity ID must be a valid integer")
+                )
+            
+            # Mise à jour sécurisée des statuts avant récupération
+            update_opportunity_overdue_safe(opportunity_id_int, self.get_client_id())
+            update_opportunity_position_safe(opportunity_id_int, self.get_client_id())
+            
+            # Appel direct au service épuré
+            from apps.opportunities.services.opportunity_pipeline_service import OpportunityPipelineService
+            
+            status_data = OpportunityPipelineService.get_pipeline_status(
+                opportunity_id=opportunity_id_int,
+                client_id=self.get_client_id()
+            )
+            
+            return Response({
+                'success': True,
+                'data': status_data,
+                'meta': {
+                    'opportunity_id': opportunity_id_int,
+                    'timestamp': timezone.now().isoformat(),
+                    'client_id': self.get_client_id()
+                }
+            })
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to get pipeline status: {str(e)}"
+                )
+            )

@@ -66,193 +66,193 @@ class OpportunityPipelineService:
                 OpportunityErrorMessages.PIPELINE_CREATION_FAILED.format(reason=str(e))
             )
         
-        @classmethod
-        def get_complete_pipeline_overview(cls, opportunity_id: int, client_id: str) -> Response:
-            """
-            Récupère une vue d'ensemble complète du pipeline avec toutes les métadonnées
+    # @classmethod
+    # def get_complete_pipeline_overview(cls, opportunity_id: int, client_id: str) -> Response:
+    #         """
+    #         Récupère une vue d'ensemble complète du pipeline avec toutes les métadonnées
             
-            Args:
-                opportunity_id: ID de l'opportunité
-                client_id: ID du client
+    #         Args:
+    #             opportunity_id: ID de l'opportunité
+    #             client_id: ID du client
                 
-            Returns:
-                Response: Vue d'ensemble complète du pipeline
-            """
-            try:
-                # Import différé pour éviter les imports circulaires
-                from ..serializers.opportunity_pipeline_serializer import OpportunityPipelineSerializer
+    #         Returns:
+    #             Response: Vue d'ensemble complète du pipeline
+    #         """
+    #         try:
+    #             # Import différé pour éviter les imports circulaires
+    #             from ..serializers.opportunity_pipeline_serializer import OpportunityPipelineSerializer
                 
-                # Récupérer le pipeline avec optimisations
-                pipeline = cls._get_pipeline_optimized(opportunity_id, client_id)
+    #             # Récupérer le pipeline avec optimisations
+    #             pipeline = cls._get_pipeline_optimized(opportunity_id, client_id)
                 
-                # Sérialiser le pipeline avec tous les calculs
-                pipeline_serializer = OpportunityPipelineSerializer(pipeline)
+    #             # Sérialiser le pipeline avec tous les calculs
+    #             pipeline_serializer = OpportunityPipelineSerializer(pipeline)
                 
-                # Récupérer toutes les substages avec métadonnées
-                all_substages = pipeline.get_all_substages_with_metadata()
+    #             # Récupérer toutes les substages avec métadonnées
+    #             all_substages = pipeline.get_all_substages_with_metadata()
                 
-                # Récupérer le résumé du pipeline
-                pipeline_summary = pipeline.get_pipeline_summary()
+    #             # Récupérer le résumé du pipeline
+    #             pipeline_summary = pipeline.get_pipeline_summary()
                 
-                return Response({
-                    'success': True,
-                    'data': {
-                        'pipeline': pipeline_serializer.data,
-                        'all_substages': all_substages,
-                        'summary': pipeline_summary,
-                        'total_substages': len(all_substages),
-                        'substages_by_stage': cls._group_substages_by_stage(all_substages)
-                    }
-                })
+    #             return Response({
+    #                 'success': True,
+    #                 'data': {
+    #                     'pipeline': pipeline_serializer.data,
+    #                     'all_substages': all_substages,
+    #                     'summary': pipeline_summary,
+    #                     'total_substages': len(all_substages),
+    #                     'substages_by_stage': cls._group_substages_by_stage(all_substages)
+    #                 }
+    #             })
                 
-            except StandardizedValidationError:
-                raise
-            except Exception as e:
-                raise StandardizedValidationError(
-                    OpportunityErrorMessages.PIPELINE_OVERVIEW_FAILED.format(reason=str(e))
-                )
+    #         except StandardizedValidationError:
+    #             raise
+    #         except Exception as e:
+    #             raise StandardizedValidationError(
+    #                 OpportunityErrorMessages.PIPELINE_OVERVIEW_FAILED.format(reason=str(e))
+    #             )
 
-    @classmethod
-    def get_pipeline_metrics(cls, opportunity_id: int, client_id: str) -> Response:
-        """
-        Récupère les métriques détaillées du pipeline
+    # @classmethod
+    # def get_pipeline_metrics(cls, opportunity_id: int, client_id: str) -> Response:
+    #     """
+    #     Récupère les métriques détaillées du pipeline
         
-        Args:
-            opportunity_id: ID de l'opportunité
-            client_id: ID du client
+    #     Args:
+    #         opportunity_id: ID de l'opportunité
+    #         client_id: ID du client
             
-        Returns:
-            Response: Métriques complètes du pipeline
-        """
-        try:
-            pipeline = cls._get_pipeline(opportunity_id, client_id)
+    #     Returns:
+    #         Response: Métriques complètes du pipeline
+    #     """
+    #     try:
+    #         pipeline = cls._get_pipeline(opportunity_id, client_id)
             
-            # Calculs des métriques
-            metrics = {
-                'progress': {
-                    'percentage': float(pipeline.progress_percentage),
-                    'completed_stages': pipeline.get_completed_stages_count(),
-                    'total_stages': pipeline.get_total_stages_count(),
-                    'completed_substages': pipeline.get_completed_substages_count(),
-                    'total_substages': pipeline.get_total_substages_count()
-                },
-                'timeline': {
-                    'days_since_started': pipeline.days_since_started,
-                    'expected_close_date': pipeline.expected_close_date,
-                    'days_until_close': pipeline.days_until_expected_close,
-                    'actual_duration_days': pipeline.actual_duration_days
-                },
-                'health': {
-                    'is_overdue': pipeline.is_pipeline_overdue(),
-                    'overdue_summary': pipeline.get_overdue_summary(),
-                    'status': pipeline.status,
-                    'is_customized': pipeline.is_customized
-                },
-                'position': {
-                    'current_position': pipeline.get_current_position(),
-                    'last_updated': pipeline.last_updated
-                }
-            }
+    #         # Calculs des métriques
+    #         metrics = {
+    #             'progress': {
+    #                 'percentage': float(pipeline.progress_percentage),
+    #                 'completed_stages': pipeline.get_completed_stages_count(),
+    #                 'total_stages': pipeline.get_total_stages_count(),
+    #                 'completed_substages': pipeline.get_completed_substages_count(),
+    #                 'total_substages': pipeline.get_total_substages_count()
+    #             },
+    #             'timeline': {
+    #                 'days_since_started': pipeline.days_since_started,
+    #                 'expected_close_date': pipeline.expected_close_date,
+    #                 'days_until_close': pipeline.days_until_expected_close,
+    #                 'actual_duration_days': pipeline.actual_duration_days
+    #             },
+    #             'health': {
+    #                 'is_overdue': pipeline.is_pipeline_overdue(),
+    #                 'overdue_summary': pipeline.get_overdue_summary(),
+    #                 'status': pipeline.status,
+    #                 'is_customized': pipeline.is_customized
+    #             },
+    #             'position': {
+    #                 'current_position': pipeline.get_current_position(),
+    #                 'last_updated': pipeline.last_updated
+    #             }
+    #         }
             
-            return Response({
-                'success': True,
-                'data': {
-                    'opportunity_id': opportunity_id,
-                    'pipeline_id': pipeline.id,
-                    'metrics': metrics
-                }
-            })
+    #         return Response({
+    #             'success': True,
+    #             'data': {
+    #                 'opportunity_id': opportunity_id,
+    #                 'pipeline_id': pipeline.id,
+    #                 'metrics': metrics
+    #             }
+    #         })
             
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                OpportunityErrorMessages.METRICS_CALCULATION_FAILED.format(reason=str(e))
-            )
+    #     except StandardizedValidationError:
+    #         raise
+    #     except Exception as e:
+    #         raise StandardizedValidationError(
+    #             OpportunityErrorMessages.METRICS_CALCULATION_FAILED.format(reason=str(e))
+    #         )
 
-    @classmethod
-    def update_pipeline_position(cls, opportunity_id: int, stage_id: int = None, 
-                               substage_id: int = None, client_id: str = None, user=None) -> Response:
-        """
-        Met à jour manuellement la position du pipeline
+    # @classmethod
+    # def update_pipeline_position(cls, opportunity_id: int, stage_id: int = None, 
+    #                            substage_id: int = None, client_id: str = None, user=None) -> Response:
+    #     """
+    #     Met à jour manuellement la position du pipeline
         
-        Args:
-            opportunity_id: ID de l'opportunité
-            stage_id: ID du stage (optionnel si substage_id fourni)
-            substage_id: ID du substage (optionnel)
-            client_id: ID du client
-            user: Utilisateur effectuant l'action
+    #     Args:
+    #         opportunity_id: ID de l'opportunité
+    #         stage_id: ID du stage (optionnel si substage_id fourni)
+    #         substage_id: ID du substage (optionnel)
+    #         client_id: ID du client
+    #         user: Utilisateur effectuant l'action
             
-        Returns:
-            Response: Confirmation de la mise à jour
-        """
-        try:
-            with transaction.atomic():
-                # Import différé pour éviter les imports circulaires
-                from ..serializers.opportunity_pipeline_serializer import OpportunityPipelineSerializer
+    #     Returns:
+    #         Response: Confirmation de la mise à jour
+    #     """
+    #     try:
+    #         with transaction.atomic():
+    #             # Import différé pour éviter les imports circulaires
+    #             from ..serializers.opportunity_pipeline_serializer import OpportunityPipelineSerializer
                 
-                pipeline = cls._get_pipeline(opportunity_id, client_id)
+    #             pipeline = cls._get_pipeline(opportunity_id, client_id)
                 
-                # Préparer les données de mise à jour
-                update_data = {}
+    #             # Préparer les données de mise à jour
+    #             update_data = {}
                 
-                if substage_id:
-                    # Récupérer et valider le substage
-                    substage = cls._get_substage(substage_id, pipeline, client_id)
-                    update_data['current_substage'] = substage_id
-                    update_data['current_stage'] = substage.stage.id
-                    action_description = f"substage '{substage.name}'"
+    #             if substage_id:
+    #                 # Récupérer et valider le substage
+    #                 substage = cls._get_substage(substage_id, pipeline, client_id)
+    #                 update_data['current_substage'] = substage_id
+    #                 update_data['current_stage'] = substage.stage.id
+    #                 action_description = f"substage '{substage.name}'"
                     
-                elif stage_id:
-                    # Récupérer et valider le stage
-                    stage = cls._get_stage(stage_id, pipeline, client_id)
-                    update_data['current_stage'] = stage_id
-                    # Garder le substage si elle appartient au même stage
-                    if pipeline.current_substage and pipeline.current_substage.stage.id != stage_id:
-                        update_data['current_substage'] = None
-                    action_description = f"stage '{stage.name}'"
-                else:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_FIELD.format(field='Either stage_id or substage_id must be provided')
-                    )
+    #             elif stage_id:
+    #                 # Récupérer et valider le stage
+    #                 stage = cls._get_stage(stage_id, pipeline, client_id)
+    #                 update_data['current_stage'] = stage_id
+    #                 # Garder le substage si elle appartient au même stage
+    #                 if pipeline.current_substage and pipeline.current_substage.stage.id != stage_id:
+    #                     update_data['current_substage'] = None
+    #                 action_description = f"stage '{stage.name}'"
+    #             else:
+    #                 raise StandardizedValidationError(
+    #                     CoreErrorMessages.INVALID_FIELD.format(field='Either stage_id or substage_id must be provided')
+    #                 )
                 
-                # Mettre à jour via le serializer
-                serializer = OpportunityPipelineSerializer(
-                    pipeline, 
-                    data=update_data, 
-                    partial=True,
-                    context={'request': type('Request', (), {'user': user})()}
-                )
+    #             # Mettre à jour via le serializer
+    #             serializer = OpportunityPipelineSerializer(
+    #                 pipeline, 
+    #                 data=update_data, 
+    #                 partial=True,
+    #                 context={'request': type('Request', (), {'user': user})()}
+    #             )
                 
-                if not serializer.is_valid():
-                    raise StandardizedValidationError(serializer.errors)
+    #             if not serializer.is_valid():
+    #                 raise StandardizedValidationError(serializer.errors)
                 
-                updated_pipeline = serializer.save()
+    #             updated_pipeline = serializer.save()
                 
-                return Response({
-                    'success': True,
-                    'message': f'Pipeline position updated to {action_description}',
-                    'data': {
-                        'pipeline_id': updated_pipeline.id,
-                        'current_stage': {
-                            'id': updated_pipeline.current_stage.id if updated_pipeline.current_stage else None,
-                            'name': updated_pipeline.current_stage.name if updated_pipeline.current_stage else None
-                        },
-                        'current_substage': {
-                            'id': updated_pipeline.current_substage.id if updated_pipeline.current_substage else None,
-                            'name': updated_pipeline.current_substage.name if updated_pipeline.current_substage else None
-                        },
-                        'progress_percentage': float(updated_pipeline.progress_percentage),
-                        'last_updated': updated_pipeline.last_updated
-                    }
-                })
+    #             return Response({
+    #                 'success': True,
+    #                 'message': f'Pipeline position updated to {action_description}',
+    #                 'data': {
+    #                     'pipeline_id': updated_pipeline.id,
+    #                     'current_stage': {
+    #                         'id': updated_pipeline.current_stage.id if updated_pipeline.current_stage else None,
+    #                         'name': updated_pipeline.current_stage.name if updated_pipeline.current_stage else None
+    #                     },
+    #                     'current_substage': {
+    #                         'id': updated_pipeline.current_substage.id if updated_pipeline.current_substage else None,
+    #                         'name': updated_pipeline.current_substage.name if updated_pipeline.current_substage else None
+    #                     },
+    #                     'progress_percentage': float(updated_pipeline.progress_percentage),
+    #                     'last_updated': updated_pipeline.last_updated
+    #                 }
+    #             })
                 
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                OpportunityErrorMessages.PIPELINE_UPDATE_FAILED.format(reason=str(e))
-            )
+    #     except StandardizedValidationError:
+    #         raise
+    #     except Exception as e:
+    #         raise StandardizedValidationError(
+    #             OpportunityErrorMessages.PIPELINE_UPDATE_FAILED.format(reason=str(e))
+    #         )
 
     @classmethod
     def get_substages_with_metadata(cls, opportunity_id: int, client_id: str) -> Response:
@@ -301,60 +301,60 @@ class OpportunityPipelineService:
                 OpportunityErrorMessages.SUBSTAGES_RETRIEVAL_FAILED.format(reason=str(e))
             )
 
-    @classmethod
-    def detect_position_from_activities(cls, opportunity_id: int, client_id: str) -> Response:
-        """
-        Détecte la position courante basée sur les activités IN_PROGRESS
+    # @classmethod
+    # def detect_position_from_activities(cls, opportunity_id: int, client_id: str) -> Response:
+    #     """
+    #     Détecte la position courante basée sur les activités IN_PROGRESS
         
-        Args:
-            opportunity_id: ID de l'opportunité
-            client_id: ID du client
+    #     Args:
+    #         opportunity_id: ID de l'opportunité
+    #         client_id: ID du client
             
-        Returns:
-            Response: Position détectée et recommandations
-        """
-        try:
-            pipeline = cls._get_pipeline(opportunity_id, client_id)
+    #     Returns:
+    #         Response: Position détectée et recommandations
+    #     """
+    #     try:
+    #         pipeline = cls._get_pipeline(opportunity_id, client_id)
             
-            # Détection de position
-            current_position = pipeline.get_current_position()
+    #         # Détection de position
+    #         current_position = pipeline.get_current_position()
             
-            # Comparaison avec la position enregistrée
-            position_analysis = {
-                'recorded_position': {
-                    'stage_name': pipeline.current_stage.name if pipeline.current_stage else None,
-                    'substage_name': pipeline.current_substage.name if pipeline.current_substage else None
-                },
-                'detected_position': current_position,
-                'needs_update': False,
-                'recommendation': None
-            }
+    #         # Comparaison avec la position enregistrée
+    #         position_analysis = {
+    #             'recorded_position': {
+    #                 'stage_name': pipeline.current_stage.name if pipeline.current_stage else None,
+    #                 'substage_name': pipeline.current_substage.name if pipeline.current_substage else None
+    #             },
+    #             'detected_position': current_position,
+    #             'needs_update': False,
+    #             'recommendation': None
+    #         }
             
-            # Analyser si une mise à jour est recommandée
-            if current_position['detected_from_activities']:
-                detected_substage = current_position.get('detected_substage')
-                current_substage = position_analysis['recorded_position']['substage_name']
+    #         # Analyser si une mise à jour est recommandée
+    #         if current_position['detected_from_activities']:
+    #             detected_substage = current_position.get('detected_substage')
+    #             current_substage = position_analysis['recorded_position']['substage_name']
                 
-                if detected_substage and detected_substage != current_substage:
-                    position_analysis['needs_update'] = True
-                    position_analysis['recommendation'] = f"Consider updating position to: {detected_substage}"
+    #             if detected_substage and detected_substage != current_substage:
+    #                 position_analysis['needs_update'] = True
+    #                 position_analysis['recommendation'] = f"Consider updating position to: {detected_substage}"
             
-            return Response({
-                'success': True,
-                'data': {
-                    'pipeline_id': pipeline.id,
-                    'opportunity_id': opportunity_id,
-                    'position_analysis': position_analysis,
-                    'last_updated': pipeline.last_updated
-                }
-            })
+    #         return Response({
+    #             'success': True,
+    #             'data': {
+    #                 'pipeline_id': pipeline.id,
+    #                 'opportunity_id': opportunity_id,
+    #                 'position_analysis': position_analysis,
+    #                 'last_updated': pipeline.last_updated
+    #             }
+    #         })
             
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                OpportunityErrorMessages.POSITION_DETECTION_FAILED.format(reason=str(e))
-            )
+    #     except StandardizedValidationError:
+    #         raise
+    #     except Exception as e:
+    #         raise StandardizedValidationError(
+    #             OpportunityErrorMessages.POSITION_DETECTION_FAILED.format(reason=str(e))
+    #         )
     
     @classmethod
     def _detect_pipeline_position(cls, pipeline) -> dict:
@@ -480,78 +480,169 @@ class OpportunityPipelineService:
         except Exception:
             return None
 
+    # @classmethod
+    # def create_pipeline_from_opportunity(cls, opportunity_id: int, client_id: str, user=None) -> Response:
+    #     """
+    #     Crée un nouveau pipeline pour une opportunité
+        
+    #     Args:
+    #         opportunity_id: ID de l'opportunité
+    #         client_id: ID du client
+    #         user: Utilisateur créant le pipeline
+            
+    #     Returns:
+    #         Response: Pipeline créé avec initialisation
+    #     """
+    #     try:
+    #         # Import différé pour éviter les imports circulaires
+    #         from ..models import Opportunity
+    #         from ..serializers.opportunity_pipeline_serializer import OpportunityPipelineSerializer
+            
+    #         # Récupérer l'opportunité
+    #         try:
+    #             opportunity = Opportunity.objects.get(id=opportunity_id, client_id=client_id)
+    #         except Opportunity.DoesNotExist:
+    #             raise StandardizedValidationError(
+    #                 OpportunityErrorMessages.OPPORTUNITY_NOT_FOUND
+    #             )
+            
+    #         # Vérifier qu'un template existe
+    #         if not opportunity.pipeline_templates.exists():
+    #             raise StandardizedValidationError(
+    #                 OpportunityErrorMessages.NO_TEMPLATE_FOUND
+    #             )
+            
+    #         # Créer le pipeline via le serializer
+    #         pipeline_data = {
+    #             'opportunity': opportunity_id,
+    #             'status': 'ACTIVE'
+    #         }
+            
+    #         serializer = OpportunityPipelineSerializer(
+    #             data=pipeline_data,
+    #             context={'request': type('Request', (), {'user': user})()}
+    #         )
+            
+    #         if not serializer.is_valid():
+    #             raise StandardizedValidationError(serializer.errors)
+            
+    #         pipeline = serializer.save()
+            
+    #         return Response({
+    #             'success': True,
+    #             'message': f'Pipeline created for opportunity "{opportunity.title}"',
+    #             'data': {
+    #                 'pipeline_id': pipeline.id,
+    #                 'opportunity_id': opportunity_id,
+    #                 'current_stage': {
+    #                     'id': pipeline.current_stage.id if pipeline.current_stage else None,
+    #                     'name': pipeline.current_stage.name if pipeline.current_stage else None
+    #                 },
+    #                 'current_substage': {
+    #                     'id': pipeline.current_substage.id if pipeline.current_substage else None,
+    #                     'name': pipeline.current_substage.name if pipeline.current_substage else None
+    #                 },
+    #                 'status': pipeline.status,
+    #                 'created_at': pipeline.created_at
+    #             }
+    #         })
+            
+    #     except StandardizedValidationError:
+    #         raise
+    #     except Exception as e:
+    #         raise StandardizedValidationError(
+    #             OpportunityErrorMessages.PIPELINE_CREATION_FAILED.format(reason=str(e))
+    #         )
+
     @classmethod
-    def create_pipeline_from_opportunity(cls, opportunity_id: int, client_id: str, user=None) -> Response:
+    def get_pipeline_status(cls, opportunity_id: int, client_id: str) -> dict:
         """
-        Crée un nouveau pipeline pour une opportunité
+        ✅ MÉTHODE UNIQUE - Remplace get_pipeline_metrics + get_pipeline_status
+        
+        Retourne TOUTES les informations importantes du pipeline :
+        - Métriques complètes (progress, timeline, health, position)  
+        - Navigation (previous/next steps)
+        - Actions suggérées
+        - Executive summary
+        - Format optimisé pour frontend
         
         Args:
             opportunity_id: ID de l'opportunité
             client_id: ID du client
-            user: Utilisateur créant le pipeline
             
         Returns:
-            Response: Pipeline créé avec initialisation
+            dict: Données complètes du statut du pipeline
         """
         try:
-            # Import différé pour éviter les imports circulaires
-            from ..models import Opportunity
-            from ..serializers.opportunity_pipeline_serializer import OpportunityPipelineSerializer
+            pipeline = cls._get_pipeline(opportunity_id, client_id)
             
-            # Récupérer l'opportunité
-            try:
-                opportunity = Opportunity.objects.get(id=opportunity_id, client_id=client_id)
-            except Opportunity.DoesNotExist:
-                raise StandardizedValidationError(
-                    OpportunityErrorMessages.OPPORTUNITY_NOT_FOUND
-                )
-            
-            # Vérifier qu'un template existe
-            if not opportunity.pipeline_templates.exists():
-                raise StandardizedValidationError(
-                    OpportunityErrorMessages.NO_TEMPLATE_FOUND
-                )
-            
-            # Créer le pipeline via le serializer
-            pipeline_data = {
-                'opportunity': opportunity_id,
-                'status': 'ACTIVE'
+            # ===== MÉTRIQUES COMPLÈTES (ex get_pipeline_metrics) =====
+            metrics = {
+                'progress': {
+                    'percentage': float(pipeline.progress_percentage),
+                    'completed_stages': pipeline.get_completed_stages_count(),
+                    'total_stages': pipeline.get_total_stages_count(),
+                    'completed_substages': pipeline.get_completed_substages_count(),
+                    'total_substages': pipeline.get_total_substages_count()
+                },
+                'timeline': {
+                    'days_since_started': pipeline.days_since_started,
+                    'expected_close_date': pipeline.expected_close_date,
+                    'days_until_close': pipeline.days_until_expected_close,
+                    'actual_duration_days': pipeline.actual_duration_days
+                },
+                'health': {
+                    'is_overdue': pipeline.is_pipeline_overdue(),
+                    'overdue_summary': pipeline.get_overdue_summary(),
+                    'status': pipeline.status,
+                    'is_customized': pipeline.is_customized
+                },
+                'position': {
+                    'current_position': pipeline.get_current_position(),
+                    'last_updated': pipeline.last_updated
+                }
             }
             
-            serializer = OpportunityPipelineSerializer(
-                data=pipeline_data,
-                context={'request': type('Request', (), {'user': user})()}
-            )
+            # ===== INFORMATIONS COMPLÉMENTAIRES =====
+            navigation_data = cls._build_navigation_data(pipeline)
+            actions_data = cls._build_suggested_actions(pipeline, metrics)
+            executive_summary = cls._build_executive_summary(metrics, navigation_data, actions_data)
             
-            if not serializer.is_valid():
-                raise StandardizedValidationError(serializer.errors)
-            
-            pipeline = serializer.save()
-            
-            return Response({
-                'success': True,
-                'message': f'Pipeline created for opportunity "{opportunity.title}"',
-                'data': {
-                    'pipeline_id': pipeline.id,
-                    'opportunity_id': opportunity_id,
+            return {
+                'opportunity_id': opportunity_id,
+                'pipeline_id': pipeline.id,
+                
+                # Position actuelle enrichie
+                'current_position': {
                     'current_stage': {
                         'id': pipeline.current_stage.id if pipeline.current_stage else None,
-                        'name': pipeline.current_stage.name if pipeline.current_stage else None
+                        'name': pipeline.current_stage.name if pipeline.current_stage else None,
+                        'order': pipeline.current_stage.order if pipeline.current_stage else None
                     },
                     'current_substage': {
                         'id': pipeline.current_substage.id if pipeline.current_substage else None,
-                        'name': pipeline.current_substage.name if pipeline.current_substage else None
+                        'name': pipeline.current_substage.name if pipeline.current_substage else None,
+                        'order': pipeline.current_substage.order if pipeline.current_substage else None
                     },
-                    'status': pipeline.status,
-                    'created_at': pipeline.created_at
-                }
-            })
+                    'detected_position': metrics['position']['current_position']
+                },
+                
+                # Toutes les métriques
+                'metrics': metrics,
+                
+                # Nouvelles fonctionnalités
+                'navigation': navigation_data,
+                'suggested_actions': actions_data,
+                'executive_summary': executive_summary
+            }
             
         except StandardizedValidationError:
             raise
         except Exception as e:
             raise StandardizedValidationError(
-                OpportunityErrorMessages.PIPELINE_CREATION_FAILED.format(reason=str(e))
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to get pipeline status: {str(e)}"
+                )
             )
 
     # ===== MÉTHODES PRIVÉES =====
@@ -579,112 +670,216 @@ class OpportunityPipelineService:
             )
 
     @classmethod
-    def _get_pipeline_optimized(cls, opportunity_id: int, client_id: str):
+    def _build_navigation_data(cls, pipeline):
         """
-        Récupère le pipeline avec optimisations prefetch
+        Construit les données de navigation (previous/next steps)
         """
-        try:
-            from ..models import OpportunityPipeline
+        navigation = {
+            'previous_steps': [],
+            'next_steps': [],
+            'available_stages': []
+        }
+        
+        if not pipeline.current_stage:
+            return navigation
+        
+        template = pipeline.get_pipeline_template()
+        if not template:
+            return navigation
+        
+        # Récupérer tous les stages ordonnés
+        all_stages = list(template.stages.filter(is_active=True).order_by('order'))
+        current_stage_index = None
+        
+        for i, stage in enumerate(all_stages):
+            if stage.id == pipeline.current_stage.id:
+                current_stage_index = i
+                break
+        
+        if current_stage_index is not None:
+            # Previous stage
+            if current_stage_index > 0:
+                prev_stage = all_stages[current_stage_index - 1]
+                navigation['previous_steps'].append({
+                    'type': 'stage',
+                    'id': prev_stage.id,
+                    'name': prev_stage.name,
+                    'order': prev_stage.order
+                })
             
-            pipeline = OpportunityPipeline.get_optimized_queryset().get(
-                opportunity_id=opportunity_id,
-                opportunity__client_id=client_id
+            # Next stage
+            if current_stage_index < len(all_stages) - 1:
+                next_stage = all_stages[current_stage_index + 1]
+                navigation['next_steps'].append({
+                    'type': 'stage',
+                    'id': next_stage.id,
+                    'name': next_stage.name,
+                    'order': next_stage.order
+                })
+        
+        # Navigation substages dans le stage actuel
+        if pipeline.current_substage:
+            current_substages = list(
+                pipeline.current_stage.substages.filter(is_active=True).order_by('order')
             )
+            current_substage_index = None
             
-            return pipeline
+            for i, substage in enumerate(current_substages):
+                if substage.id == pipeline.current_substage.id:
+                    current_substage_index = i
+                    break
             
-        except OpportunityPipeline.DoesNotExist:
-            raise StandardizedValidationError(
-                OpportunityErrorMessages.PIPELINE_NOT_FOUND
-            )
+            if current_substage_index is not None:
+                # Previous substage
+                if current_substage_index > 0:
+                    prev_substage = current_substages[current_substage_index - 1]
+                    navigation['previous_steps'].insert(0, {
+                        'type': 'substage',
+                        'id': prev_substage.id,
+                        'name': prev_substage.name,
+                        'order': prev_substage.order,
+                        'stage_name': pipeline.current_stage.name
+                    })
+                
+                # Next substage
+                if current_substage_index < len(current_substages) - 1:
+                    next_substage = current_substages[current_substage_index + 1]
+                    navigation['next_steps'].insert(0, {
+                        'type': 'substage',
+                        'id': next_substage.id,
+                        'name': next_substage.name,
+                        'order': next_substage.order,
+                        'stage_name': pipeline.current_stage.name
+                    })
+        
+        # Liste de tous les stages pour navigation rapide
+        navigation['available_stages'] = [
+            {
+                'id': stage.id,
+                'name': stage.name,
+                'order': stage.order,
+                'is_current': stage.id == (pipeline.current_stage.id if pipeline.current_stage else None)
+            }
+            for stage in all_stages
+        ]
+        
+        return navigation
+
+    @classmethod  
+    def _build_suggested_actions(cls, pipeline, metrics):
+        """
+        ✅ MÉTHODE MODIFIÉE - Utilise metrics au lieu de existing_metrics
+        
+        Construit les actions suggérées basées sur l'état actuel
+        """
+        actions = []
+        alerts = []
+        
+        # Alertes basées sur les métriques
+        health = metrics['health']
+        timeline = metrics['timeline']
+        
+        # Alerte de retard
+        if health['is_overdue']:
+            alerts.append({
+                'type': 'overdue',
+                'severity': 'high',
+                'message': f"Pipeline en retard - {health['overdue_summary']['overdue_count']} étapes concernées"
+            })
+            
+            actions.append({
+                'type': 'resolve_overdue',
+                'priority': 'high',
+                'description': "Résoudre les étapes en retard",
+                'count': health['overdue_summary']['overdue_count']
+            })
+        
+        # Alerte de stagnation  
+        if timeline['days_since_started'] > 30:
+            alerts.append({
+                'type': 'stagnation',
+                'severity': 'medium',
+                'message': f"Aucune progression depuis {timeline['days_since_started']} jours"
+            })
+            
+            actions.append({
+                'type': 'advance_pipeline',
+                'priority': 'medium',
+                'description': "Faire progresser le pipeline"
+            })
+        
+        # Actions basées sur la position courante
+        if pipeline.current_substage:
+            actions.append({
+                'type': 'complete_current',
+                'priority': 'high',
+                'description': f"Compléter: {pipeline.current_substage.name}",
+                'substage_id': pipeline.current_substage.id
+            })
+        
+        return {
+            'alerts': alerts,
+            'actions': actions,
+            'summary': {
+                'total_alerts': len(alerts),
+                'high_priority_alerts': len([a for a in alerts if a.get('severity') == 'high']),
+                'total_actions': len(actions),
+                'high_priority_actions': len([a for a in actions if a.get('priority') == 'high'])
+            }
+        }
 
     @classmethod
-    def _get_stage(cls, stage_id: int, pipeline, client_id: str):
+    def _build_executive_summary(cls, metrics, navigation_data, actions_data):
         """
-        Récupère et valide un stage pour le pipeline
+        ✅ MÉTHODE MODIFIÉE - Utilise metrics au lieu de existing_metrics
+        
+        Construit le résumé exécutif pour dashboard
         """
-        try:
-            from ..models import PipelineStage
-            
-            template = pipeline.get_pipeline_template()
-            if not template:
-                raise StandardizedValidationError(
-                    OpportunityErrorMessages.NO_TEMPLATE_FOUND
-                )
-            
-            stage = PipelineStage.objects.get(
-                id=stage_id,
-                template=template,
-                is_active=True,
-                client_id=client_id
-            )
-            
-            return stage
-            
-        except PipelineStage.DoesNotExist:
-            raise StandardizedValidationError(
-                OpportunityErrorMessages.STAGE_NOT_FOUND
-            )
+        progress = metrics['progress']
+        health = metrics['health']
+        timeline = metrics['timeline']
+        
+        # Statut global
+        overall_status = 'on_track'
+        if actions_data['summary']['high_priority_alerts'] > 0:
+            overall_status = 'at_risk'
+        elif health['is_overdue']:
+            overall_status = 'overdue'
+        elif progress['percentage'] > 75:
+            overall_status = 'near_completion'
+        
+        # Score de santé  
+        health_score = 100
+        health_score -= actions_data['summary']['high_priority_alerts'] * 20
+        health_score -= actions_data['summary']['total_alerts'] * 10
+        health_score = max(0, health_score)
+        
+        return {
+            'overall_status': overall_status,
+            'health_score': health_score,
+            'progress_percentage': progress['percentage'],
+            'days_in_pipeline': timeline['days_since_started'],
+            'critical_alerts_count': actions_data['summary']['high_priority_alerts'],
+            'next_milestone': cls._get_next_milestone(progress, navigation_data),
+            'key_metrics': {
+                'stages_completed': f"{progress['completed_stages']}/{progress['total_stages']}",
+                'substages_completed': f"{progress['completed_substages']}/{progress['total_substages']}",  
+                'days_remaining': timeline.get('days_until_close', 'N/A')
+            }
+        }
 
     @classmethod
-    def _get_substage(cls, substage_id: int, pipeline, client_id: str):
+    def _get_next_milestone(cls, progress, navigation_data):
         """
-        Récupère et valide un substage pour le pipeline
+        Détermine le prochain milestone
         """
-        try:
-            from ..models import PipelineSubStage
-            
-            template = pipeline.get_pipeline_template()
-            if not template:
-                raise StandardizedValidationError(
-                    OpportunityErrorMessages.NO_TEMPLATE_FOUND
-                )
-            
-            substage = PipelineSubStage.objects.select_related('stage').get(
-                id=substage_id,
-                stage__template=template,
-                is_active=True,
-                client_id=client_id
-            )
-            
-            return substage
-            
-        except PipelineSubStage.DoesNotExist:
-            raise StandardizedValidationError(
-                OpportunityErrorMessages.SUBSTAGE_NOT_FOUND
-            )
-
-    @classmethod
-    def _group_substages_by_stage(cls, substages_list):
-        """
-        Groupe les substages par stages pour une meilleure organisation
-        """
-        grouped = {}
-        
-        for substage in substages_list:
-            stage_info = substage['stage']
-            stage_id = stage_info['id']
-            
-            if stage_id not in grouped:
-                grouped[stage_id] = {
-                    'stage_info': stage_info,
-                    'substages': []
-                }
-            
-            grouped[stage_id]['substages'].append(substage)
-        
-        # Trier par ordre des stages
-        return dict(sorted(grouped.items(), key=lambda x: x[1]['stage_info']['order']))
-
-    @classmethod
-    def _count_substages_by_type(cls, substages_list):
-        """
-        Compte les substages par type
-        """
-        type_counts = {}
-        
-        for substage in substages_list:
-            substage_type = substage.get('substage_type', 'UNKNOWN')
-            type_counts[substage_type] = type_counts.get(substage_type, 0) + 1
-        
-        return type_counts
+        if progress['completed_stages'] == 0:
+            return "Compléter le premier stage"
+        elif len(navigation_data['next_steps']) > 0:
+            next_step = navigation_data['next_steps'][0]
+            return f"Prochaine étape: {next_step['name']}"
+        elif progress['total_stages'] - progress['completed_stages'] == 1:
+            return "Stage final en cours"
+        else:
+            remaining = progress['total_stages'] - progress['completed_stages']
+            return f"Compléter {remaining} stages restants"

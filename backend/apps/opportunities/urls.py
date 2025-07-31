@@ -236,6 +236,16 @@ urlpatterns = [
         }), 
         name='buying-process-substage-followup-status'),
 
+    # =========================================================================
+    # Pipeline Opportunity
+    # =========================================================================
+    
+    path('buying-processes/opportunity/<int:opportunity_id>/pipeline-status/', 
+    BuyingProcessViewSet.as_view({
+        'get': 'get_pipeline_status'
+    }), 
+    name='buying-process-pipeline-status'),
+
     # # =========================================================================
     # # INTÉGRATION FOLLOW-UP - Via SubStageFollowUpService
     # # =========================================================================

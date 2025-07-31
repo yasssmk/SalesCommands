@@ -501,6 +501,69 @@ class OpportunityPipeline(BaseModelApp, ClientScopeManager.ModelMixin):
         self.actual_duration_days = self.days_since_started
         self.save(update_fields=['expected_close_date', 'actual_duration_days'])
 
+    def get_all_substages_with_metadata(self) -> List[Dict[str, Any]]:
+        """
+        ❌ MÉTHODE MANQUANTE - Appelée par le service
+        
+        Récupère toutes les substages du template avec leurs métadonnées
+        
+        Returns:
+            List[Dict]: Liste de toutes les substages avec métadonnées
+        """
+        template = self.get_pipeline_template()
+        if not template:
+            return []
+        
+        from .pipeline_substage import PipelineSubStage
+        
+        substages = PipelineSubStage.objects.filter(
+            stage__template=template,
+            is_active=True
+        ).select_related(
+            'stage',
+            'metadata'
+        ).prefetch_related(
+            'activities'
+        ).order_by('stage__order', 'order')
+        
+        substages_data = []
+        
+        for substage in substages:
+            # Récupérer les métadonnées si elles existent
+            metadata = {}
+            if hasattr(substage, 'metadata') and substage.metadata:
+                metadata = {
+                    'objective': substage.metadata.objective or '',
+                    'validation_criteria': substage.metadata.validation_criteria or [],
+                    'decision_criteria': substage.metadata.decision_criteria or [],
+                    'process_notes': substage.metadata.process_notes or ''
+                }
+            
+            # Compter les activités liées
+            activity_count = substage.activities.count() if hasattr(substage, 'activities') else 0
+            
+            substages_data.append({
+                'id': substage.id,
+                'name': substage.name,
+                'description': substage.description or '',
+                'order': substage.order,
+                'status': substage.status,
+                'substage_type': getattr(substage, 'substage_type', 'UNKNOWN'),
+                'expected_duration_days': substage.expected_duration_days or 0,
+                'is_current': substage.id == (self.current_substage.id if self.current_substage else None),
+                'stage': {
+                    'id': substage.stage.id,
+                    'name': substage.stage.name,
+                    'order': substage.stage.order
+                },
+                'metadata': metadata,
+                'activity_count': activity_count,
+                'created_at': substage.created_at,
+                'updated_at': substage.updated_at
+            })
+        
+        return substages_data
+
     # ===== MÉTHODES DE VALIDATION =====
 
     def save(self, *args, **kwargs):
