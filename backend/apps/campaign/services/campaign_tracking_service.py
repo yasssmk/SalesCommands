@@ -148,6 +148,60 @@ class CampaignTrackingService:
             pass
     
     @classmethod
+    def update_opportunity_amount(cls, opportunity, campaign: Campaign, old_amount: float, new_amount: float):
+        """
+        Met à jour le pipeline value quand le montant d'une opportunité change
+        VERSION MVP : Appel direct du tracking
+        """
+        # Si pas de campagne, rien à faire
+        if not campaign:
+            return
+        
+        try:
+            # Obtenir le result tracking
+            result_tracking = cls.get_or_create_result_tracking(campaign)
+            
+            # Vérifier que l'opportunité est bien trackée
+            if opportunity.id not in result_tracking.tracked_opportunity_ids:
+                print(f"Opportunity {opportunity.id} not tracked by campaign {campaign.id}")
+                return
+            
+            # Convertir les montants en Decimal
+            from decimal import Decimal
+            old_value = Decimal(str(old_amount)) if old_amount else Decimal('0.00')
+            new_value = Decimal(str(new_amount)) if new_amount else Decimal('0.00')
+            
+            from apps.opportunities.models import Opportunity
+            opp_status = opportunity.status
+            
+            # Si l'opportunité est fermée (WON ou LOST), elle ne doit pas être dans le pipeline
+            if opp_status in [Opportunity.OpportunityStatus.CLOSED_WON, Opportunity.OpportunityStatus.CLOSED_LOST]:
+                # L'opportunité est fermée, elle ne devrait pas compter dans le pipeline
+                # On retire l'ancienne valeur si elle était comptée
+                result_tracking.pipeline_value_created -= old_value
+            else:
+                # L'opportunité est ouverte, on met à jour normalement
+                difference = new_value - old_value
+                result_tracking.pipeline_value_created += difference
+            
+            # S'assurer que la valeur reste positive
+            if result_tracking.pipeline_value_created < 0:
+                result_tracking.pipeline_value_created = Decimal('0.00')
+            
+            # Sauvegarder
+            result_tracking.save()
+            
+            # Auto-validation après modification
+            cls._auto_validate_and_clean(result_tracking, silent=True)
+            
+            print(f"Updated pipeline value for campaign {campaign.id}: Status={opp_status}, Old={old_value}, New={new_value}, Pipeline={result_tracking.pipeline_value_created}")
+            
+        except Exception as e:
+            # Silent fail - ne pas casser la mise à jour de l'opportunité
+            print(f"Failed to update opportunity amount for campaign {campaign.id}: {str(e)}")
+            pass
+    
+    @classmethod
     def track_meeting_scheduled(cls, activity, campaign: Campaign = None):
         """
         Track when a meeting is scheduled from a campaign
