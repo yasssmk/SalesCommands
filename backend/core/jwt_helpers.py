@@ -6,7 +6,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from product_admin.models import ProductAdmin
-from end_users.models import User
+
 from core.error_messages import CoreErrorMessages
 
 class UUIDEncoder:
@@ -47,6 +47,7 @@ class CustomJWTAuthentication(JWTAuthentication):
         """Resolve user model based on the token payload with UUID support"""
         user_id = validated_token.get("user_id")
         origin = validated_token.get("origin")
+        from end_users.models import User
 
         if not user_id or not origin:
             raise InvalidToken("Invalid token payload")

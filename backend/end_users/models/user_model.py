@@ -1,13 +1,12 @@
-# end_users/models.py
+# end_users/models/user_model.py - VERSION CORRIGÉE
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from core.models import BaseModel, CentralizedUserManager
-from core.client_scope import ClientScopeManager
-from apps.core_apps.models import BaseModelApp
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
+from core.constants import CURRENCY
 
 
 class ClientAccount(BaseModel):
@@ -28,6 +27,39 @@ class ClientAccount(BaseModel):
         help_text=_("Maximum number of users allowed for this client.")
     )
 
+    # === CONFIGURATION ANNÉE FISCALE ===
+    
+    fiscal_year_start_month = models.IntegerField(
+        default=1,
+        choices=[(i, f"{i:02d}") for i in range(1, 13)],
+        verbose_name=_('Fiscal Year Start Month'),
+        help_text=_("Month when fiscal year starts (1=January, 2=February, etc.)")
+    )
+    
+    fiscal_year_start_day = models.IntegerField(
+        default=1,
+        choices=[(i, str(i)) for i in range(1, 32)],
+        verbose_name=_('Fiscal Year Start Day'),
+        help_text=_("Day when fiscal year starts")
+    )
+    
+    # === CONFIGURATION BUSINESS ===
+    
+    timezone = models.CharField(
+        max_length=50,
+        default='Europe/Paris',
+        verbose_name=_('Timezone'),
+        help_text=_("Client's business timezone (e.g., 'Europe/Paris', 'America/New_York')")
+    )
+    
+    default_quota_currency = models.CharField(
+        max_length=3,
+        choices=CURRENCY,
+        default='EUR',
+        verbose_name=_('Default Quota Currency'),
+        help_text=_("Default currency for quotas (EUR, USD, GBP, etc.)")
+    )
+
     class Meta:
         db_table = 'client_accounts'
         verbose_name = _('client_account')
@@ -36,11 +68,119 @@ class ClientAccount(BaseModel):
 
     def __str__(self):
         return self.name
+    
+    def get_fiscal_year_dates(self, year=None):
+        """
+        Calcule les dates de début et fin d'année fiscale pour une année donnée.
+        
+        Args:
+            year: Année fiscale (défaut: année courante)
+            
+        Returns:
+            tuple: (fiscal_start_date, fiscal_end_date)
+        """
+        from datetime import date, timedelta
+        import calendar
+        
+        if year is None:
+            year = date.today().year
+        
+        # Date de début année fiscale
+        fiscal_start = date(year, self.fiscal_year_start_month, self.fiscal_year_start_day)
+        
+        # Date de fin année fiscale (un an moins un jour)
+        try:
+            fiscal_end = date(year + 1, self.fiscal_year_start_month, self.fiscal_year_start_day) - timedelta(days=1)
+        except ValueError:
+            # Gérer le cas 29 février dans une année non bissextile
+            fiscal_end = date(year + 1, self.fiscal_year_start_month, 28) - timedelta(days=1)
+        
+        return fiscal_start, fiscal_end
+    
+    def get_current_fiscal_year(self):
+        """
+        Détermine l'année fiscale actuelle basée sur la date d'aujourd'hui.
+        
+        Returns:
+            int: Année fiscale actuelle
+        """
+        from datetime import date
+        
+        today = date.today()
+        fiscal_start, fiscal_end = self.get_fiscal_year_dates(today.year)
+        
+        if today >= fiscal_start:
+            return today.year
+        else:
+            # Si on est avant le début de l'année fiscale, on est dans l'année fiscale précédente
+            return today.year - 1
+    
+    def get_fiscal_quarters(self, fiscal_year=None):
+        """
+        Calcule les 4 trimestres de l'année fiscale.
+        
+        Args:
+            fiscal_year: Année fiscale (défaut: année courante)
+            
+        Returns:
+            list: Liste de tuples (start_date, end_date) pour chaque trimestre
+        """
+        from datetime import date
+        from dateutil.relativedelta import relativedelta
+        
+        if fiscal_year is None:
+            fiscal_year = self.get_current_fiscal_year()
+        
+        fiscal_start, fiscal_end = self.get_fiscal_year_dates(fiscal_year)
+        quarters = []
+        
+        for quarter in range(4):
+            q_start = fiscal_start + relativedelta(months=quarter * 3)
+            q_end = fiscal_start + relativedelta(months=(quarter + 1) * 3) - relativedelta(days=1)
+            
+            # S'assurer qu'on ne dépasse pas la fin de l'année fiscale
+            if q_end > fiscal_end:
+                q_end = fiscal_end
+            
+            quarters.append((q_start, q_end))
+        
+        return quarters
+    
+    def get_fiscal_months(self, fiscal_year=None):
+        """
+        Calcule les 12 mois de l'année fiscale.
+        
+        Args:
+            fiscal_year: Année fiscale (défaut: année courante)
+            
+        Returns:
+            list: Liste de tuples (start_date, end_date) pour chaque mois
+        """
+        from datetime import date
+        from dateutil.relativedelta import relativedelta
+        
+        if fiscal_year is None:
+            fiscal_year = self.get_current_fiscal_year()
+        
+        fiscal_start, fiscal_end = self.get_fiscal_year_dates(fiscal_year)
+        months = []
+        
+        for month in range(12):
+            m_start = fiscal_start + relativedelta(months=month)
+            m_end = fiscal_start + relativedelta(months=month + 1) - relativedelta(days=1)
+            
+            # S'assurer qu'on ne dépasse pas la fin de l'année fiscale
+            if m_end > fiscal_end:
+                m_end = fiscal_end
+            
+            months.append((m_start, m_end))
+        
+        return months
 
 
-class UserRole(BaseModelApp, ClientScopeManager.ModelMixin):
+class UserRole(BaseModel):
     """
-    Rôles utilisateur avec client scoping
+    Rôles utilisateur SANS client scoping pour simplifier
     """
     name = models.CharField(
         max_length=50, 
@@ -59,28 +199,20 @@ class UserRole(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_("Client this role belongs to."),
     )
 
-    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
-        unique_fields=['name'], 
-        index_fields=['name']
-    )):
+    class Meta:
         db_table = 'users_roles'
         verbose_name = _('user_role')
         verbose_name_plural = _('users_roles')
+        unique_together = ('name', 'client_account')
         ordering = ['name']
 
     def __str__(self):
         return f"{self.name} ({self.client_account.name})"
-    
-    def save(self, *args, **kwargs):
-        """Assurer la cohérence client_id avec client_account"""
-        if self.client_account and not self.client_id:
-            self.client_id = self.client_account.id
-        super().save(*args, **kwargs)
 
 
-class Organization(BaseModelApp, ClientScopeManager.ModelMixin):
+class Organization(BaseModel):
     """
-    Organisation avec client scoping
+    Organisation SANS client scoping pour simplifier
     """
     name = models.CharField(
         max_length=100, 
@@ -101,28 +233,20 @@ class Organization(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_("Director or main manager of the organization."),
     )
 
-    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
-        unique_fields=['name'],
-        index_fields=['name', 'manager']
-    )):
+    class Meta:
         db_table = 'organizations'
         verbose_name = _('organization')
         verbose_name_plural = _('organizations')
+        unique_together = ('name', 'client_account')
         ordering = ['name']
 
     def __str__(self):
         return f"{self.name} ({self.client_account.name})"
-    
-    def save(self, *args, **kwargs):
-        """Assurer la cohérence client_id avec client_account"""
-        if self.client_account and not self.client_id:
-            self.client_id = self.client_account.id
-        super().save(*args, **kwargs)
 
 
-class Team(BaseModelApp, ClientScopeManager.ModelMixin):
+class Team(BaseModel):
     """
-    Équipe avec client scoping
+    Équipe SANS client scoping pour simplifier
     """
     name = models.CharField(
         max_length=100, 
@@ -143,32 +267,23 @@ class Team(BaseModelApp, ClientScopeManager.ModelMixin):
         help_text=_("Manager of the team."),
     )
 
-    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
-        unique_fields=['name', 'organization'],
-        index_fields=['organization', 'manager']
-    )):
+    class Meta:
         db_table = 'teams'
         verbose_name = _('team')
         verbose_name_plural = _('teams')
+        unique_together = ('name', 'organization')
         ordering = ['name']
 
     def __str__(self):
         return f"{self.name} ({self.organization.name} - {self.organization.client_account.name})"
-    
-    def save(self, *args, **kwargs):
-        """Assurer la cohérence client_id avec organisation"""
-        if self.organization and not self.client_id:
-            self.client_id = self.organization.client_id
-        super().save(*args, **kwargs)
 
 
-class User(BaseModelApp, ClientScopeManager.ModelMixin, AbstractBaseUser, PermissionsMixin):
+class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     """
-    Utilisateur avec client scoping et patterns standards
+    Utilisateur SANS client scoping complexe pour simplifier
     
     Hérite de :
-    - BaseModelApp : pour client_id, timestamps, created_by, updated_by
-    - ClientScopeManager.ModelMixin : pour les contraintes et indexes client-scoped
+    - BaseModel : pour id, timestamps de base
     - AbstractBaseUser, PermissionsMixin : pour l'authentification Django
     """
     
@@ -275,19 +390,16 @@ class User(BaseModelApp, ClientScopeManager.ModelMixin, AbstractBaseUser, Permis
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
-    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
-        unique_fields=['email'],
-        index_fields=['email', 'team', 'organization', 'role']
-    )):
+    class Meta:
         db_table = 'users'
         verbose_name = _('user')
         verbose_name_plural = _('users')
         ordering = ['-created_at']
         indexes = [
-            # Index spécifiques pour les performances
-            models.Index(fields=['client_id', 'is_active'], name='users_client_active_idx'),
-            models.Index(fields=['client_id', 'team', 'is_active'], name='users_team_active_idx'),
-            models.Index(fields=['client_id', 'organization', 'is_active'], name='users_org_active_idx'),
+            # Index simples pour les performances
+            models.Index(fields=['client_account', 'is_active'], name='users_client_active_idx'),
+            models.Index(fields=['client_account', 'team', 'is_active'], name='users_team_active_idx'),
+            models.Index(fields=['client_account', 'organization', 'is_active'], name='users_org_active_idx'),
         ]
 
     def __str__(self):
@@ -318,10 +430,6 @@ class User(BaseModelApp, ClientScopeManager.ModelMixin, AbstractBaseUser, Permis
         """
         Logique de sauvegarde avec cohérence automatique
         """
-        # Assurer la cohérence client_id
-        if self.client_account and not self.client_id:
-            self.client_id = self.client_account.id
-        
         # Auto-assignment de l'organisation depuis l'équipe
         if self.team and not self.organization:
             self.organization = self.team.organization
@@ -377,7 +485,7 @@ class User(BaseModelApp, ClientScopeManager.ModelMixin, AbstractBaseUser, Permis
         from django.db.models import Q
         
         managed_users = User.objects.filter(
-            client_id=self.client_id
+            client_account=self.client_account
         ).filter(
             Q(team__in=self.managed_teams.all()) |
             Q(organization__in=self.managed_organizations.all())
@@ -391,7 +499,7 @@ class User(BaseModelApp, ClientScopeManager.ModelMixin, AbstractBaseUser, Permis
         Logic métier pour le UserPerformanceService
         """
         # Même client requis
-        if self.client_id != target_user.client_id:
+        if self.client_account != target_user.client_account:
             return False
             
         # L'utilisateur peut toujours voir ses propres performances

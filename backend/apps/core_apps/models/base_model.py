@@ -2,9 +2,9 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 from core.constants import COUNTRIES
+from django.conf import settings
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError, StandardizedPermissionDenied
-from end_users.models import User
 
 
 class BaseModelApp(models.Model):
@@ -19,8 +19,8 @@ class BaseModelApp(models.Model):
         db_index=True,
         editable=False
     )
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="%(class)s_created", blank=True, null=True, verbose_name=_("Created By"))
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="%(class)s_updated", blank=True, null=True, verbose_name=_("Updated By"))
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="%(class)s_created", blank=True, null=True, verbose_name=_("Created By"))
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="%(class)s_updated", blank=True, null=True, verbose_name=_("Updated By"))
 
 
     class Meta:
