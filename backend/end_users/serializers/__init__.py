@@ -7,5 +7,4 @@ __all__ = [
     'OrganizationSerializer',
     'UserListSerializer',
     'UserSerializer'
-
 ]
