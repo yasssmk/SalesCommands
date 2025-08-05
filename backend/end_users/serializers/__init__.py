@@ -1,4 +1,9 @@
 from .user_serializer import ClientAccountSerializer, UserRoleSerializer, TeamSerializer, OrganizationSerializer, UserListSerializer, UserSerializer
+from .sales_quota_serializer import (
+    SalesQuotaSerializer,
+    SalesQuotaSummarySerializer,
+    SalesQuotaListSerializer
+)
 
 __all__ = [
     'ClientAccountSerializer',
@@ -6,5 +11,9 @@ __all__ = [
     'TeamSerializer',
     'OrganizationSerializer',
     'UserListSerializer',
-    'UserSerializer'
+    'UserSerializer',
+
+    'SalesQuotaSerializer', 
+    'SalesQuotaSummarySerializer',
+    'SalesQuotaListSerializer',
 ]

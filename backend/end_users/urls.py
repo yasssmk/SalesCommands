@@ -10,6 +10,8 @@
 
 # end_users/urls.py
 
+# end_users/urls.py
+
 from django.urls import path
 from .views.user_view import (
     # ViewSets
@@ -23,6 +25,7 @@ from .views.user_view import (
     UserLogoutView,
     UserRefreshTokenView
 )
+from .views.sales_quota_views import SalesQuotaViewSet
 
 app_name = 'end_users'
 
@@ -161,6 +164,45 @@ urlpatterns = [
     }), name='user-managed-users-performance'),
     
     # =========================================================================
+    # SALES QUOTAS MANAGEMENT - Gestion des quotas de vente (MVP)
+    # =========================================================================
+    
+    # Sales Quotas CRUD
+    path('sales-quotas/', SalesQuotaViewSet.as_view({
+        'get': 'list',
+        'post': 'create'
+    }), name='sales-quota-list'),
+    
+    path('sales-quotas/<int:pk>/', SalesQuotaViewSet.as_view({
+        'get': 'retrieve',
+        'put': 'update',
+        'patch': 'partial_update',
+        'delete': 'destroy'
+    }), name='sales-quota-detail'),
+    
+    # Sales Quota Actions
+    path('sales-quotas/<int:pk>/performance/', SalesQuotaViewSet.as_view({
+        'get': 'performance'
+    }), name='sales-quota-performance'),
+    
+    path('sales-quotas/team-summary/', SalesQuotaViewSet.as_view({
+        'get': 'team_summary'
+    }), name='sales-quota-team-summary'),
+    
+    path('sales-quotas/my-quotas/', SalesQuotaViewSet.as_view({
+        'get': 'my_quotas'
+    }), name='sales-quota-my-quotas'),
+    
+    # Sales Quota Status Management
+    path('sales-quotas/<int:pk>/activate/', SalesQuotaViewSet.as_view({
+        'patch': 'activate'
+    }), name='sales-quota-activate'),
+    
+    path('sales-quotas/<int:pk>/deactivate/', SalesQuotaViewSet.as_view({
+        'patch': 'deactivate'
+    }), name='sales-quota-deactivate'),
+    
+    # =========================================================================
     # USER COLLECTIONS - Collections et filtres spécialisés
     # =========================================================================
     
@@ -181,6 +223,11 @@ urlpatterns = [
     path('my-team-performance/', UserViewSet.as_view({
         'get': 'team_performance'
     }), name='my-team-performance'),
+    
+    # Raccourcis Sales Quotas
+    path('my-quotas/', SalesQuotaViewSet.as_view({
+        'get': 'my_quotas'
+    }), name='my-quotas'),
     
     # =========================================================================
     # DOCUMENTATION ET METADATA - URLs d'information
@@ -228,17 +275,27 @@ ORGANISATION DES URLs end_users:
 ├── /users/{id}/                     → Détail/Modification utilisateur
 └── /users/managers/                 → Liste managers avec métriques
 
+📁 SALES QUOTAS (Quotas de vente - MVP)
+├── /sales-quotas/                   → Liste/Création quotas
+├── /sales-quotas/{id}/              → Détail/Modification quota
+├── /sales-quotas/{id}/performance/  → Performance détaillée quota
+├── /sales-quotas/team-summary/      → Résumé quotas équipe
+├── /sales-quotas/my-quotas/         → Mes quotas personnels
+├── /sales-quotas/{id}/activate/     → Activer quota
+└── /sales-quotas/{id}/deactivate/   → Désactiver quota
+
 📁 PERFORMANCE INTEGRATION (Sales Plan Foundation)
 ├── /users/{id}/performance/         → Métriques individuelles (période configurable)
 ├── /users/team-performance/         → Performances équipe utilisateur connecté
 ├── /users/{id}/managed-users-performance/ → Performances utilisateurs managés
 ├── /my-performance/                 → Raccourci performances personnelles
-└── /my-team-performance/           → Raccourci performances équipe
+├── /my-team-performance/           → Raccourci performances équipe
+└── /my-quotas/                     → Raccourci mes quotas
 
 PARAMÈTRES QUERYSTRING SUPPORTÉS:
 
 🔍 FILTRES COMMUNS (tous les endpoints list):
-- ?active_only=true/false           → Filtrer utilisateurs actifs uniquement  
+- ?active_only=true/false           → Filtrer éléments actifs uniquement  
 - ?managers_only=true/false         → Filtrer managers uniquement
 - ?search=terme                     → Recherche textuelle
 - ?ordering=field,-field            → Tri (- pour desc)
@@ -248,6 +305,12 @@ PARAMÈTRES QUERYSTRING SUPPORTÉS:
 - ?period_end=YYYY-MM-DD            → Fin période analyse
 - (défaut: mois actuel si non spécifié)
 
+🎯 PARAMÈTRES SALES QUOTAS:
+- ?target_type=CLOSED_WON,PIPELINE  → Filtrer par type d'objectif
+- ?current_period=true              → Quotas de la période courante
+- ?user={id}                        → Quotas d'un utilisateur spécifique
+- ?user__team={id}                  → Quotas d'une équipe
+
 EXEMPLES D'UTILISATION:
 
 📈 RÉCUPÉRER PERFORMANCES UTILISATEUR:
@@ -255,6 +318,18 @@ GET /client/users/123/performance/?period_start=2024-01-01&period_end=2024-01-31
 
 📊 VUE MANAGER - PERFORMANCES ÉQUIPE:
 GET /client/users/456/managed-users-performance/?period_start=2024-01-01&period_end=2024-01-31
+
+🎯 MES QUOTAS ACTIFS:
+GET /client/my-quotas/?active_only=true
+
+🎯 PERFORMANCE D'UN QUOTA:
+GET /client/sales-quotas/789/performance/
+
+🎯 RÉSUMÉ QUOTAS ÉQUIPE:
+GET /client/sales-quotas/team-summary/
+
+🎯 QUOTAS PÉRIODE COURANTE:
+GET /client/sales-quotas/?current_period=true&active_only=true
 
 🏢 HIÉRARCHIE ORGANISATION COMPLÈTE:
 GET /client/organizations/789/hierarchy/
@@ -268,14 +343,19 @@ GET /client/client-accounts/101/stats/
 🔐 MATRICE PERMISSIONS:
 GET /client/roles/permissions-matrix/
 
-INTÉGRATION FUTURE SALES PLAN:
+INTÉGRATION SALES PLAN ACTUELLE:
 
-Les endpoints de performance sont conçus pour s'intégrer parfaitement avec le futur système Sales Plan:
+✅ MVP SALES QUOTAS IMPLÉMENTÉ:
+- Gestion complète des quotas de vente individuels
+- Performance temps réel avec intégration CRM 
+- Support équipes et organisations
+- Calculs optimisés et projections
 
+🚀 ÉVOLUTION FUTURE PHASE 2:
 1. /users/{id}/performance/ → Base pour dashboard Sales Plan individuel
 2. /users/team-performance/ → Base pour dashboard Sales Plan équipe  
 3. /users/{id}/managed-users-performance/ → Base pour vue manager Sales Plan
-4. Les métriques retournées (leads, opportunities, campaigns, meetings) sont les fondations des calculs de quotas
+4. Les quotas serviront de fondation pour SalesPlans avec jalons (milestones)
 
-Cette architecture permet une transition fluide vers les fonctionnalités Sales Plan avancées en Phase 2.
+Cette architecture permet une évolution naturelle vers les fonctionnalités Sales Plan avancées.
 """
