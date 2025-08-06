@@ -184,21 +184,23 @@ class SalesMilestone(BaseModelApp, ClientScopeManager.ModelMixin):
         """
         Met à jour la progression du milestone via UserPerformanceService.
         Calcule current_value et achievement_rate automatiquement.
+        
+        CORRECTION CRITIQUE : Signature et mapping corrigés.
         """
         try:
             # Period jusqu'à la target_date pour calcul progressif
             period_end = min(self.target_date, date.today())
             
-            # Données de performance via service centralisé
+            # ✅ SIGNATURE CORRIGÉE - UserPerformanceService
             performance_data = UserPerformanceService.get_user_complete_performance(
-                user=self.sales_plan.user,
+                user_id=self.sales_plan.user.id,  # ✅ Corrigé : user_id au lieu de user
                 period_start=self.sales_plan.period_start,
                 period_end=period_end,
-                target_type=self._get_performance_metric_key()
+                client_id=self.client_id  # ✅ Ajouté : client_id (via BaseModelApp)
             )
             
-            # Extraction de la valeur selon le type de milestone
-            current_value = self._extract_current_value_from_performance(performance_data)
+            # ✅ EXTRACTION CORRIGÉE selon la vraie structure
+            current_value = self._extract_current_value_from_performance_corrected(performance_data)
             
             # Calcul du taux d'achievement
             achievement_rate = 0
@@ -229,7 +231,8 @@ class SalesMilestone(BaseModelApp, ClientScopeManager.ModelMixin):
                 'status': self.status,
                 'is_achieved': self.is_achieved,
                 'days_remaining': self.days_remaining,
-                'updated_at': self.last_progress_update.isoformat()
+                'updated_at': self.last_progress_update.isoformat(),
+                'success': True
             }
             
         except Exception as e:
@@ -241,11 +244,58 @@ class SalesMilestone(BaseModelApp, ClientScopeManager.ModelMixin):
                 'achievement_rate': float(self.achievement_rate),
                 'status': self.status,
                 'error': str(e),
-                'updated_at': timezone.now().isoformat()
+                'updated_at': timezone.now().isoformat(),
+                'success': False
             }
     
+    def _extract_current_value_from_performance_corrected(self, performance_data: Dict[str, Any]) -> float:
+        """
+        ✅ CORRIGÉ : Extraction selon la vraie structure UserPerformanceService
+        
+        Ancienne version utilisait des clés inexistantes :
+        - performance_data.get('leads_count', 0)  # ❌ N'existe pas
+        - performance_data.get('meetings_count', 0)  # ❌ N'existe pas
+        
+        Nouvelle version utilise la vraie structure :
+        - performance_data['leads']['qualified_count']  # ✅ Existe
+        - performance_data['meetings']['completed_count']  # ✅ Existe
+        """
+        try:
+            if self.milestone_type == self.MilestoneType.LEADS_GENERATED:
+                # ✅ Corrigé : leads.qualified_count au lieu de leads_count
+                return float(performance_data.get('leads', {}).get('qualified_count', 0))
+                
+            elif self.milestone_type == self.MilestoneType.MEETINGS_SECURED:
+                # ✅ Corrigé : meetings.completed_count au lieu de meetings_count
+                return float(performance_data.get('meetings', {}).get('completed_count', 0))
+                
+            elif self.milestone_type == self.MilestoneType.OPPORTUNITIES_CREATED:
+                # ✅ Corrigé : opportunities.created_count au lieu de opportunities_count
+                return float(performance_data.get('opportunities', {}).get('created_count', 0))
+                
+            elif self.milestone_type == self.MilestoneType.PIPELINE_VALUE:
+                # ✅ Corrigé : opportunities.pipeline_value au lieu de pipeline_total
+                return float(performance_data.get('opportunities', {}).get('pipeline_value', 0))
+                
+            elif self.milestone_type == self.MilestoneType.CLOSED_WON:
+                # ✅ Corrigé : opportunities.won_value au lieu de current_performance
+                return float(performance_data.get('opportunities', {}).get('won_value', 0))
+                
+            else:
+                # Pour CUSTOM, on garde la valeur actuelle
+                return float(self.current_value)
+                
+        except (KeyError, TypeError, ValueError) as e:
+            # Log pour debug mais continue avec valeur de fallback
+            print(f"Error extracting milestone value for {self.milestone_type}: {str(e)}")
+            return float(self.current_value)
+    
     def _get_performance_metric_key(self) -> Optional[str]:
-        """Mappe le type de milestone vers la clé de métrique dans UserPerformanceService"""
+        """
+        ✅ SUPPRIMÉ : Cette méthode était utilisée avec l'ancien système
+        Remplacée par _extract_current_value_from_performance_corrected()
+        """
+        # Gardé pour compatibilité mais non utilisé
         mapping = {
             self.MilestoneType.LEADS_GENERATED: 'leads',
             self.MilestoneType.MEETINGS_SECURED: 'meetings', 
@@ -255,22 +305,6 @@ class SalesMilestone(BaseModelApp, ClientScopeManager.ModelMixin):
             self.MilestoneType.CUSTOM: None
         }
         return mapping.get(self.milestone_type)
-    
-    def _extract_current_value_from_performance(self, performance_data: Dict[str, Any]) -> float:
-        """Extrait la valeur actuelle selon le type de milestone"""
-        if self.milestone_type == self.MilestoneType.LEADS_GENERATED:
-            return performance_data.get('leads_count', 0)
-        elif self.milestone_type == self.MilestoneType.MEETINGS_SECURED:
-            return performance_data.get('meetings_count', 0)
-        elif self.milestone_type == self.MilestoneType.OPPORTUNITIES_CREATED:
-            return performance_data.get('opportunities_count', 0)
-        elif self.milestone_type == self.MilestoneType.PIPELINE_VALUE:
-            return performance_data.get('pipeline_total', 0)
-        elif self.milestone_type == self.MilestoneType.CLOSED_WON:
-            return performance_data.get('current_performance', 0)
-        else:
-            # Pour CUSTOM, on garde la valeur actuelle
-            return float(self.current_value)
     
     def _update_status_based_on_date(self):
         """Met à jour le statut basé sur la date cible"""
@@ -300,7 +334,7 @@ class SalesMilestone(BaseModelApp, ClientScopeManager.ModelMixin):
             else:
                 self.status = self.Status.IN_PROGRESS
     
-    # === PROPRIÉTÉS CALCULÉES ===
+    # === PROPRIÉTÉS CALCULÉES (INCHANGÉES) ===
     
     @property
     def is_achieved(self) -> bool:
@@ -332,7 +366,7 @@ class SalesMilestone(BaseModelApp, ClientScopeManager.ModelMixin):
             return Decimal('0')
         return self.gap_to_target / self.days_remaining
     
-    # === MÉTHODES D'ACTION ===
+    # === MÉTHODES D'ACTION (INCHANGÉES) ===
     
     def mark_as_achieved(self, user=None) -> bool:
         """Marque manuellement le milestone comme atteint"""

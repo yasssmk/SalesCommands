@@ -192,8 +192,16 @@ urlpatterns = [
         'patch': 'deactivate'
     }), name='sales-quota-deactivate'),
     
+    path('sales-quotas/<int:pk>/duplicate/', SalesQuotaViewSet.as_view({
+        'post': 'duplicate'
+    }), name='sales-quota-duplicate'),
+    
+    path('sales-quotas/team-performance/', SalesQuotaViewSet.as_view({
+        'get': 'team_performance'
+    }), name='sales-quota-team-performance'),
+    
     # =========================================================================
-    # SALES PLANS MANAGEMENT - Gestion des plans commerciaux avec dashboard
+    # ✅ SALES PLANS MANAGEMENT - Gestion simplifiée MVP (3 actions)
     # =========================================================================
     
     # Sales Plans CRUD
@@ -209,43 +217,32 @@ urlpatterns = [
         'delete': 'destroy'
     }), name='sales-plan-detail'),
     
-    # Sales Plan Dashboard Actions
+    # ✅ ACTIONS SIMPLIFIÉES (3 seulement)
+    
+    # Dashboard complet (remplace planning_analysis supprimé)
     path('sales-plans/<int:pk>/dashboard/', SalesPlanViewSet.as_view({
         'get': 'dashboard'
     }), name='sales-plan-dashboard'),
     
-    path('sales-plans/<int:pk>/planning-analysis/', SalesPlanViewSet.as_view({
-        'get': 'planning_analysis'
-    }), name='sales-plan-planning-analysis'),
-    
-    path('sales-plans/<int:pk>/quick-summary/', SalesPlanViewSet.as_view({
-        'get': 'quick_summary'
-    }), name='sales-plan-quick-summary'),
-    
-    # Sales Plan Multi-User Actions
+    # Plans utilisateur courant
     path('sales-plans/my-plans/', SalesPlanViewSet.as_view({
         'get': 'my_plans'
     }), name='sales-plan-my-plans'),
     
-    path('sales-plans/team-plans/', SalesPlanViewSet.as_view({
-        'get': 'team_plans'
-    }), name='sales-plan-team-plans'),
-    
-    # Sales Plan Management Actions
+    # Gestion statuts (remplace pause/refresh-data supprimés)
     path('sales-plans/<int:pk>/activate/', SalesPlanViewSet.as_view({
         'patch': 'activate'
     }), name='sales-plan-activate'),
     
-    path('sales-plans/<int:pk>/pause/', SalesPlanViewSet.as_view({
-        'patch': 'pause'
-    }), name='sales-plan-pause'),
-    
-    path('sales-plans/<int:pk>/refresh-data/', SalesPlanViewSet.as_view({
-        'post': 'refresh_data'
-    }), name='sales-plan-refresh-data'),
+    # ❌ SUPPRIMÉ (actions trop complexes pour MVP) :
+    # - planning_analysis → Doublonne avec dashboard
+    # - quick_summary → Intégré dans retrieve/dashboard  
+    # - team_plans → Complexité manager non essentielle
+    # - pause → activate() gère tous les statuts
+    # - refresh_data → Signaux automatiques suffisent
     
     # =========================================================================
-    # SALES MILESTONES MANAGEMENT - Gestion des jalons avec tracking automatique
+    # ✅ SALES MILESTONES MANAGEMENT - Gestion simplifiée MVP (2 actions)
     # =========================================================================
     
     # Sales Milestones CRUD
@@ -261,39 +258,30 @@ urlpatterns = [
         'delete': 'destroy'
     }), name='sales-milestone-detail'),
     
-    # Sales Milestone Tracking Actions
+    # ✅ ACTIONS SIMPLIFIÉES (2 seulement)
+    
+    # Force recalcul milestone individuel
     path('sales-milestones/<int:pk>/update-progress/', SalesMilestoneViewSet.as_view({
         'post': 'update_progress'
     }), name='sales-milestone-update-progress'),
     
-    path('sales-milestones/batch-update/', SalesMilestoneViewSet.as_view({
-        'post': 'batch_update'
-    }), name='sales-milestone-batch-update'),
+    # Milestones utilisateur courant
+    path('sales-milestones/my-milestones/', SalesMilestoneViewSet.as_view({
+        'get': 'my_milestones'
+    }), name='sales-milestone-my-milestones'),
     
-    # Sales Milestone Filtering Actions
-    path('sales-milestones/overdue/', SalesMilestoneViewSet.as_view({
-        'get': 'overdue'
-    }), name='sales-milestone-overdue'),
-    
-    path('sales-milestones/upcoming/', SalesMilestoneViewSet.as_view({
-        'get': 'upcoming'
-    }), name='sales-milestone-upcoming'),
-    
-    path('sales-milestones/by-plan/<int:plan_id>/', SalesMilestoneViewSet.as_view({
-        'get': 'by_plan'
-    }), name='sales-milestone-by-plan'),
-    
-    # Sales Milestone Management Actions
-    path('sales-milestones/<int:pk>/mark-achieved/', SalesMilestoneViewSet.as_view({
-        'patch': 'mark_achieved'
-    }), name='sales-milestone-mark-achieved'),
-    
-    path('sales-milestones/<int:pk>/reset-progress/', SalesMilestoneViewSet.as_view({
-        'patch': 'reset_progress'
-    }), name='sales-milestone-reset-progress'),
+    # ❌ SUPPRIMÉ → REMPLACÉ par query params dans list() :
+    # - overdue → GET /sales-milestones/?period=overdue
+    # - upcoming → GET /sales-milestones/?period=upcoming&days=30
+    # - by_plan → GET /sales-milestones/?sales_plan_id=123
+    # 
+    # ❌ SUPPRIMÉ → Logique intégrée dans update() standard :
+    # - batch_update → Boucle API standard côté frontend
+    # - mark_achieved → PATCH /sales-milestones/{id}/ avec status
+    # - reset_progress → PATCH /sales-milestones/{id}/ avec valeurs reset
     
     # =========================================================================
-    # USER COLLECTIONS - Collections et filtres spécialisés
+    # USER COLLECTIONS - Collections et filtres spécialisés (INCHANGÉ)
     # =========================================================================
     
     # Liste des managers avec métriques
@@ -302,7 +290,7 @@ urlpatterns = [
     }), name='user-managers'),
     
     # =========================================================================
-    # ALIASES ET RACCOURCIS - Pour faciliter l'utilisation
+    # ✅ ALIASES ET RACCOURCIS - Cohérents avec simplifications
     # =========================================================================
     
     # Raccourcis vers les éléments les plus utilisés
@@ -314,21 +302,80 @@ urlpatterns = [
         'get': 'team_performance'
     }), name='my-team-performance'),
     
-    # Raccourcis Sales Quotas
+    # Raccourcis Sales Quotas (INCHANGÉ)
     path('my-quotas/', SalesQuotaViewSet.as_view({
         'get': 'my_quotas'
     }), name='my-quotas'),
     
-    # Raccourcis Sales Plans  
+    # ✅ Raccourcis Sales Plans (cohérents avec simplifications)
     path('my-plans/', SalesPlanViewSet.as_view({
         'get': 'my_plans'
     }), name='my-plans'),
     
+    # ✅ NOUVEAU : Raccourci Sales Milestones
+    path('my-milestones/', SalesMilestoneViewSet.as_view({
+        'get': 'my_milestones'
+    }), name='my-milestones'),
+    
     # =========================================================================
-    # DOCUMENTATION ET METADATA - URLs d'information
+    # DOCUMENTATION ET METADATA - URLs d'information (INCHANGÉ)
     # =========================================================================
     
     # Note: Ces endpoints pourraient être ajoutés plus tard pour l'API discovery
     # path('api-info/', APIInfoView.as_view(), name='api-info'),
     # path('endpoints/', EndpointsView.as_view(), name='endpoints'),
+    
+    # =========================================================================
+    # ✅ COMPATIBILITÉ BACKWARD - Redirections temporaires
+    # =========================================================================
+    
+    # Note: Si certaines URLs supprimées sont utilisées par le frontend,
+    # on peut temporairement ajouter des redirections ou des vues de fallback
+    # qui retournent des erreurs explicites avec les nouvelles URLs à utiliser.
+    
+    # Exemple pour migration progressive :
+    # path('sales-plans/<int:pk>/planning-analysis/', 
+    #      RedirectView.as_view(pattern_name='sales-plan-dashboard'), 
+    #      name='sales-plan-planning-analysis-deprecated'),
 ]
+
+# =========================================================================
+# ✅ RÉSUMÉ DES MODIFICATIONS URL
+# =========================================================================
+
+"""
+SALES PLANS - Actions réduites (7 → 3) :
+✅ GARDÉ :
+- dashboard() : Analyse complète
+- my_plans() : Plans utilisateur  
+- activate() : Gestion statuts
+
+❌ SUPPRIMÉ :
+- planning_analysis → dashboard() plus complet
+- quick_summary → Intégré dans retrieve()
+- team_plans → Complexité non MVP
+- pause → activate() gère tous statuts  
+- refresh_data → Signaux automatiques
+
+SALES MILESTONES - Actions réduites (7 → 2) :
+✅ GARDÉ :
+- update_progress() : Force recalcul
+- my_milestones() : Milestones utilisateur (NOUVEAU)
+
+❌ SUPPRIMÉ → Query params :
+- overdue → ?period=overdue
+- upcoming → ?period=upcoming&days=X
+- by_plan → ?sales_plan_id=X
+
+❌ SUPPRIMÉ → Update standard :
+- batch_update → Boucle API frontend
+- mark_achieved → PATCH standard
+- reset_progress → PATCH standard
+
+BÉNÉFICES :
+✅ URLs cohérentes avec ViewSets simplifiés
+✅ API plus prévisible et maintenable
+✅ Logique de filtrage via query params standard
+✅ Moins de complexité pour frontend
+✅ Architecture MVP cohérente
+"""

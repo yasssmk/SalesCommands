@@ -170,27 +170,42 @@ class SalesPlan(BaseModelApp, ClientScopeManager.ModelMixin):
         """
         Calcule l'avancement actuel du plan via UserPerformanceService.
         Retourne données consolidées pour dashboard.
+        
+        CORRECTION CRITIQUE : Signature et mapping corrigés.
         """
         try:
-            # Utilisation du service centralisé existant
+            # ✅ SIGNATURE CORRIGÉE - Utilisation des bons paramètres
             performance_data = UserPerformanceService.get_user_complete_performance(
-                user=self.user,
+                user_id=self.user.id,  # ✅ Corrigé : user_id au lieu de user
                 period_start=self.period_start,
                 period_end=self.period_end,
-                target_type=self.quota.target_type if self.quota else None
+                client_id=self.client_id  # ✅ Ajouté : client_id manquant
             )
             
-            # Extraction des métriques clés
+            # ✅ EXTRACTION CORRIGÉE selon la vraie structure UserPerformanceService
+            current_performance = self._extract_quota_performance_value(performance_data)
+            pipeline_value = self._extract_pipeline_value(performance_data) 
+            leads_count = self._extract_leads_count(performance_data)
+            opportunities_count = self._extract_opportunities_count(performance_data)
+            meetings_count = self._extract_meetings_count(performance_data)
+            
+            # Calcul du taux d'achievement
+            quota_target = float(self.quota.target_value) if self.quota else 0
+            achievement_rate = 0
+            if quota_target > 0:
+                achievement_rate = (current_performance / quota_target) * 100
+            
+            # Assemblage des métriques
             current_progress = {
-                'quota_target': float(self.quota.target_value) if self.quota else 0,
-                'current_value': performance_data.get('current_performance', 0),
-                'achievement_rate': performance_data.get('achievement_rate', 0),
-                'pipeline_value': performance_data.get('pipeline_total', 0),
-                'leads_count': performance_data.get('leads_count', 0),
-                'opportunities_count': performance_data.get('opportunities_count', 0),
-                'meetings_count': performance_data.get('meetings_count', 0),
-                'period_progress': self._calculate_period_progress(),
-                'is_on_track': performance_data.get('is_on_track', False),
+                'quota_target': quota_target,
+                'current_value': current_performance,
+                'achievement_rate': round(achievement_rate, 2),
+                'pipeline_value': pipeline_value,
+                'leads_count': leads_count,
+                'opportunities_count': opportunities_count,
+                'meetings_count': meetings_count,
+                'period_progress': self.calculate_period_progress(),  # ✅ Corrigé : méthode publique
+                'is_on_track': self._is_performance_on_track(achievement_rate),
                 'last_updated': timezone.now().isoformat()
             }
             
@@ -202,19 +217,7 @@ class SalesPlan(BaseModelApp, ClientScopeManager.ModelMixin):
             
         except Exception as e:
             # Fallback sécurisé en cas d'erreur
-            return {
-                'quota_target': float(self.quota.target_value) if self.quota else 0,
-                'current_value': 0,
-                'achievement_rate': 0,
-                'pipeline_value': 0,
-                'leads_count': 0,
-                'opportunities_count': 0,
-                'meetings_count': 0,
-                'period_progress': self._calculate_period_progress(),
-                'is_on_track': False,
-                'error': str(e),
-                'last_updated': timezone.now().isoformat()
-            }
+            return self._get_fallback_progress_data(str(e))
     
     def calculate_gaps(self) -> Dict[str, Any]:
         """
@@ -251,8 +254,95 @@ class SalesPlan(BaseModelApp, ClientScopeManager.ModelMixin):
             'calculated_at': timezone.now().isoformat()
         }
     
-    def _calculate_period_progress(self) -> float:
-        """Calcule le pourcentage d'avancement dans la période"""
+    # === NOUVELLES MÉTHODES D'EXTRACTION (CORRIGÉES) ===
+    
+    def _extract_quota_performance_value(self, performance_data: Dict[str, Any]) -> float:
+        """
+        ✅ CORRIGÉ : Extraction selon la vraie structure et le type de quota
+        """
+        if not self.quota:
+            return 0.0
+        
+        quota_type = self.quota.target_type
+        
+        # Mapping selon la vraie structure UserPerformanceService
+        try:
+            if quota_type == 'closed_won':
+                return float(performance_data.get('opportunities', {}).get('won_value', 0))
+            elif quota_type == 'pipeline':
+                return float(performance_data.get('opportunities', {}).get('pipeline_value', 0))
+            elif quota_type == 'meetings':
+                return float(performance_data.get('meetings', {}).get('completed_count', 0))
+            elif quota_type == 'leads_accepted':
+                return float(performance_data.get('leads', {}).get('qualified_count', 0))
+            elif quota_type == 'opportunities':
+                return float(performance_data.get('opportunities', {}).get('created_count', 0))
+            elif quota_type == 'conversion_rate':
+                return float(performance_data.get('leads', {}).get('conversion_rate_percentage', 0))
+            else:
+                return 0.0
+        except (KeyError, TypeError, ValueError):
+            return 0.0
+    
+    def _extract_pipeline_value(self, performance_data: Dict[str, Any]) -> float:
+        """Extraction de la valeur du pipeline"""
+        try:
+            return float(performance_data.get('opportunities', {}).get('pipeline_value', 0))
+        except (KeyError, TypeError, ValueError):
+            return 0.0
+    
+    def _extract_leads_count(self, performance_data: Dict[str, Any]) -> int:
+        """Extraction du nombre de leads qualifiés"""
+        try:
+            return int(performance_data.get('leads', {}).get('qualified_count', 0))
+        except (KeyError, TypeError, ValueError):
+            return 0
+    
+    def _extract_opportunities_count(self, performance_data: Dict[str, Any]) -> int:
+        """Extraction du nombre d'opportunités créées"""
+        try:
+            return int(performance_data.get('opportunities', {}).get('created_count', 0))
+        except (KeyError, TypeError, ValueError):
+            return 0
+    
+    def _extract_meetings_count(self, performance_data: Dict[str, Any]) -> int:
+        """Extraction du nombre de meetings complétés"""
+        try:
+            return int(performance_data.get('meetings', {}).get('completed_count', 0))
+        except (KeyError, TypeError, ValueError):
+            return 0
+    
+    def _is_performance_on_track(self, achievement_rate: float) -> bool:
+        """Détermine si la performance est sur la bonne voie"""
+        period_progress = self.calculate_period_progress()
+        
+        # Si plus de 80% du temps écoulé, on est plus strict
+        if period_progress > 80:
+            return achievement_rate >= (period_progress - 10)  # Tolérance de 10%
+        else:
+            return achievement_rate >= (period_progress - 20)  # Tolérance de 20%
+    
+    def _get_fallback_progress_data(self, error_message: str) -> Dict[str, Any]:
+        """Données de fallback en cas d'erreur"""
+        return {
+            'quota_target': float(self.quota.target_value) if self.quota else 0,
+            'current_value': 0,
+            'achievement_rate': 0,
+            'pipeline_value': 0,
+            'leads_count': 0,
+            'opportunities_count': 0,
+            'meetings_count': 0,
+            'period_progress': self.calculate_period_progress(),
+            'is_on_track': False,
+            'error': error_message,
+            'last_updated': timezone.now().isoformat()
+        }
+    
+    def calculate_period_progress(self) -> float:
+        """
+        ✅ CORRIGÉ : Méthode rendue PUBLIQUE (suppression underscore)
+        Calcule le pourcentage d'avancement dans la période
+        """
         if not self.period_start or not self.period_end:
             return 0
             
@@ -266,7 +356,7 @@ class SalesPlan(BaseModelApp, ClientScopeManager.ModelMixin):
             elapsed_days = (today - self.period_start).days
             return round((elapsed_days / total_days) * 100, 1)
     
-    # === MÉTHODES D'ÉTAT ===
+    # === MÉTHODES D'ÉTAT (INCHANGÉES) ===
     
     @property
     def is_active(self) -> bool:
@@ -296,7 +386,7 @@ class SalesPlan(BaseModelApp, ClientScopeManager.ModelMixin):
             return 0
         return (self.period_end - self.period_start).days + 1
     
-    # === MÉTHODES D'ACTION ===
+    # === MÉTHODES D'ACTION (INCHANGÉES) ===
     
     def activate(self) -> bool:
         """Active le plan (désactive les autres plans actifs du même utilisateur/quota)"""

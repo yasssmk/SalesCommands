@@ -5,35 +5,46 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from datetime import date, datetime, timedelta
-from django.db.models import Q, Count, Avg
+from django.db.models import Q, Count
 from django.utils import timezone
+from django.db import transaction
 
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
+from core.client_scope import ClientScopeManager
 
 from end_users.models import SalesPlan, SalesMilestone, User
 from end_users.serializers.sales_milestone_serializer import SalesMilestoneSerializer
 
 
-class SalesMilestoneViewSet(BaseAPIView, viewsets.ModelViewSet):
+class SalesMilestoneViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
     """
     API endpoints pour la gestion des Sales Milestones.
     
-    Architecture complète avec :
-    - CRUD standard pour les milestones
-    - Mise à jour automatique du tracking via update_progress()
-    - Actions spécialisées pour monitoring et debug
-    - Intégration avec signaux temps réel
-    - Support filtrage avancé par type, statut, dates
+    ✅ Style cohérent avec SalesQuotaViewSet :
+    - Validation systématique des serializers
+    - Gestion d'erreurs standardisée  
+    - Réponses structurées avec success/message/data
+    - Usage des services pour logique métier
+    - Transactions atomiques
+    - Messages d'erreur cohérents
     
-    Actions principales :
-    - update_progress() : Force recalcul d'un milestone
-    - batch_update() : Mise à jour en lot
-    - overdue() : Liste milestones en retard
-    - upcoming() : Milestones à venir
-    - by_plan() : Tous milestones d'un plan spécifique
+    ✅ SIMPLIFIÉ POUR MVP (7 actions → 2 actions) :
+    - CRUD standard (list/retrieve/create/update/delete)
+    - update_progress() : Force recalcul milestone
+    - my_milestones() : Milestones utilisateur courant
+    
+    ❌ SUPPRIMÉ (trop complexe pour MVP) :
+    - batch_update() : Peut être fait via API standard
+    - overdue() : Filtrage via query params suffisant
+    - upcoming() : Filtrage via query params suffisant
+    - by_plan() : Filtrage via query params suffisant
+    - mark_achieved() : update() standard suffisant
+    - reset_progress() : update() standard suffisant
     """
+    
+    # ✅ Attributs obligatoires (style SalesQuotaViewSet)
     queryset = SalesMilestone.objects.all()
     serializer_class = SalesMilestoneSerializer
     entity_name = 'sales_milestone'
@@ -48,23 +59,19 @@ class SalesMilestoneViewSet(BaseAPIView, viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'target_date', 'achievement_rate', 'target_value']
     ordering = ['target_date']
     
-    def get_serializer_class(self):
-        """Utilise SalesMilestoneSerializer pour toutes les actions"""
-        return SalesMilestoneSerializer
-    
     def get_queryset(self):
-        """QuerySet optimisé avec relations et client scoping"""
-        queryset = SalesMilestone.objects.select_related(
-            'sales_plan', 'sales_plan__user', 'sales_plan__quota',
-            'sales_plan__user__team', 'sales_plan__user__organization'
-        )
+        """✅ QuerySet optimisé avec client scoping (style SalesQuotaViewSet)"""
+        # ✅ Utiliser setup_eager_loading du serializer
+        queryset = SalesMilestoneSerializer.setup_eager_loading(SalesMilestone.objects.all())
         
-        # Client scoping
+        # Apply client scoping
         queryset = self.filter_queryset_by_client(queryset)
         
-        # Filtres pratiques
-        active_plans_only = self.request.query_params.get('active_plans_only')
-        if active_plans_only and active_plans_only.lower() == 'true':
+        # ✅ Filtres simplifiés via query params (remplace actions supprimées)
+        
+        # Filtre plans actifs seulement
+        active_plans_only = self.request.query_params.get('active_plans_only', 'true')
+        if active_plans_only.lower() == 'true':
             queryset = queryset.filter(
                 sales_plan__status__in=[
                     SalesPlan.Status.ACTIVE,
@@ -72,106 +79,317 @@ class SalesMilestoneViewSet(BaseAPIView, viewsets.ModelViewSet):
                 ]
             )
         
-        # Filtre par période
+        # Filtre par période (remplace overdue/upcoming actions)
         period_filter = self.request.query_params.get('period')
         if period_filter:
             today = date.today()
             
-            if period_filter == 'current':
-                # Milestones dans les 90 prochains jours
-                end_date = today + timedelta(days=90)
+            if period_filter == 'overdue':
+                queryset = queryset.filter(
+                    target_date__lt=today,
+                    status__in=[
+                        SalesMilestone.Status.PENDING, 
+                        SalesMilestone.Status.IN_PROGRESS
+                    ]
+                )
+            elif period_filter == 'upcoming':
+                days = int(self.request.query_params.get('days', 30))
+                end_date = today + timedelta(days=min(days, 90))  # Limite 90 jours
+                queryset = queryset.filter(
+                    target_date__gte=today,
+                    target_date__lte=end_date,
+                    status__in=[
+                        SalesMilestone.Status.PENDING,
+                        SalesMilestone.Status.IN_PROGRESS
+                    ]
+                )
+            elif period_filter == 'current':
+                # Milestones dans les 30 prochains jours
+                end_date = today + timedelta(days=30)
                 queryset = queryset.filter(
                     target_date__gte=today,
                     target_date__lte=end_date
                 )
-            elif period_filter == 'overdue':
-                queryset = queryset.filter(
-                    target_date__lt=today,
-                    status__in=['PENDING', 'IN_PROGRESS']
-                )
-            elif period_filter == 'this_month':
-                start_month = today.replace(day=1)
-                if today.month == 12:
-                    end_month = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
-                else:
-                    end_month = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
-                
-                queryset = queryset.filter(
-                    target_date__gte=start_month,
-                    target_date__lte=end_month
+        
+        # Filtre par plan spécifique (remplace by_plan action)
+        plan_id = self.request.query_params.get('sales_plan_id')
+        if plan_id:
+            try:
+                queryset = queryset.filter(sales_plan_id=int(plan_id))
+            except ValueError:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(field="sales_plan_id must be a valid integer")
                 )
         
         return queryset
     
     def get_serializer_context(self):
-        """Ajoute contexte pour les serializers"""
+        """✅ Add client_id to serializer context (style SalesQuotaViewSet)"""
         context = super().get_serializer_context()
         context.update({
             'client_id': self.get_client_id(),
-            # Inclure données de progress pour toutes les actions détaillées
+            # Inclure données de progress pour actions détaillées
             'include_progress_data': self.action in [
-                'retrieve', 'update_progress', 'list', 'overdue', 'upcoming', 'by_plan'
+                'update_progress', 'retrieve', 'list'
             ]
         })
         return context
     
-    def perform_create(self, serializer):
-        """Création avec client_id et validation"""
-        sales_plan = serializer.validated_data.get('sales_plan')
+    def list(self, request, *args, **kwargs):
+        """
+        ✅ Liste tous les milestones avec informations supplémentaires (style SalesQuotaViewSet)
+        """
+        queryset = self.filter_queryset(self.get_queryset())
         
-        # Validation : le milestone doit être dans la période du plan
-        target_date = serializer.validated_data.get('target_date')
-        if target_date and sales_plan:
-            if not (sales_plan.period_start <= target_date <= sales_plan.period_end):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_DATE_RANGE.format(
-                        field="target_date must be within sales plan period"
-                    )
-                )
+        # Filtres additionnels
+        milestone_type = request.query_params.get('milestone_type')
+        search = request.query_params.get('search')
         
-        # Création
-        milestone = serializer.save(client_id=self.get_client_id())
+        if milestone_type:
+            queryset = queryset.filter(milestone_type=milestone_type)
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) | 
+                Q(description__icontains=search) |
+                Q(sales_plan__name__icontains=search) |
+                Q(sales_plan__user__first_name__icontains=search) |
+                Q(sales_plan__user__last_name__icontains=search)
+            )
         
-        # Déclencher calcul initial
-        try:
-            milestone.update_progress()
-        except Exception as e:
-            # Ne pas faire échouer la création si le calcul initial échoue
-            pass
+        page = self.paginate_queryset(queryset)
+        
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        # ✅ Ajouter des stats globales (style SalesQuotaViewSet)
+        today = date.today()
+        stats = {
+            'total_milestones': queryset.count(),
+            'achieved_count': queryset.filter(status=SalesMilestone.Status.ACHIEVED).count(),
+            'overdue_count': queryset.filter(
+                target_date__lt=today,
+                status__in=[SalesMilestone.Status.PENDING, SalesMilestone.Status.IN_PROGRESS]
+            ).count(),
+            'milestone_types': list(queryset.values_list('milestone_type', flat=True).distinct())
+        }
+        
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'meta': {
+                'stats': stats,
+                'filters_applied': {
+                    'milestone_type': milestone_type,
+                    'search': search,
+                    'period': request.query_params.get('period'),
+                    'active_plans_only': request.query_params.get('active_plans_only', 'true'),
+                    'sales_plan_id': request.query_params.get('sales_plan_id')
+                }
+            }
+        })
     
-    def perform_update(self, serializer):
-        """Mise à jour avec recalcul automatique"""
-        milestone = serializer.save()
+    def retrieve(self, request, *args, **kwargs):
+        """
+        ✅ Récupère un milestone avec toutes ses données (style SalesQuotaViewSet)
+        """
+        # get_object() applique automatiquement le ClientScope
+        instance = self.get_object()
         
-        # Si target_value ou target_date modifiés, recalculer
-        if 'target_value' in serializer.validated_data or 'target_date' in serializer.validated_data:
-            try:
-                milestone.update_progress()
-            except Exception as e:
-                # Log erreur mais ne pas faire échouer la mise à jour
-                pass
+        # Utiliser le serializer complet avec progress_data
+        serializer = self.get_serializer(instance)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data
+        })
+    
+    def create(self, request, *args, **kwargs):
+        """
+        ✅ Crée un nouveau milestone (style SalesQuotaViewSet avec validation)
+        """
+        client_id = self.get_client_id()
+        
+        try:
+            with transaction.atomic():
+                # Validation des données
+                serializer = self.get_serializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                
+                # Validation sales_plan
+                sales_plan = serializer.validated_data.get('sales_plan')
+                if not sales_plan:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(field='sales_plan')
+                    )
+                
+                # Vérifier que le sales_plan appartient au même client
+                if sales_plan.client_id != client_id:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field="Sales Plan doesn't belong to this client"
+                        )
+                    )
+                
+                # Validation : target_date dans période du plan
+                target_date = serializer.validated_data.get('target_date')
+                if target_date and sales_plan:
+                    if not (sales_plan.period_start <= target_date <= sales_plan.period_end):
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_DATE_RANGE.format(
+                                start_date=sales_plan.period_start,
+                                end_date=sales_plan.period_end
+                            )
+                        )
+                
+                # Créer le milestone avec client_id
+                milestone = serializer.save(
+                    client_id=client_id,
+                    created_by=request.user
+                )
+                
+                # Déclencher calcul initial
+                try:
+                    milestone.update_progress()
+                except Exception:
+                    # Ne pas faire échouer la création si le calcul initial échoue
+                    pass
+                
+                return Response({
+                    'success': True,
+                    'message': f'Sales Milestone "{milestone.name}" created successfully',
+                    'data': {
+                        'milestone_id': milestone.id,
+                        'milestone_name': milestone.name,
+                        'milestone_type': milestone.milestone_type,
+                        'target_value': float(milestone.target_value),
+                        'target_date': milestone.target_date.isoformat(),
+                        'sales_plan_name': milestone.sales_plan.name,
+                        'status': milestone.status
+                    }
+                }, status=status.HTTP_201_CREATED)
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to create milestone: {str(e)}"
+                )
+            )
+    
+    def update(self, request, *args, **kwargs):
+        """
+        ✅ Met à jour un milestone existant (style SalesQuotaViewSet)
+        """
+        try:
+            with transaction.atomic():
+                instance = self.get_object()
+                partial = kwargs.pop('partial', False)
+                
+                # Validation des données
+                serializer = self.get_serializer(instance, data=request.data, partial=partial)
+                serializer.is_valid(raise_exception=True)
+                
+                # Sauvegarder avec updated_by
+                updated_milestone = serializer.save(updated_by=request.user)
+                
+                # Si target_value ou target_date modifiés, recalculer
+                if 'target_value' in serializer.validated_data or 'target_date' in serializer.validated_data:
+                    try:
+                        updated_milestone.update_progress()
+                        updated_milestone.refresh_from_db()
+                    except Exception:
+                        # Log erreur mais ne pas faire échouer la mise à jour
+                        pass
+                
+                return Response({
+                    'success': True,
+                    'message': f'Sales Milestone "{updated_milestone.name}" updated successfully',
+                    'data': {
+                        'milestone_id': updated_milestone.id,
+                        'milestone_name': updated_milestone.name,
+                        'status': updated_milestone.status,
+                        'achievement_rate': float(updated_milestone.achievement_rate),
+                        'updated_at': updated_milestone.updated_at.isoformat()
+                    }
+                })
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to update milestone: {str(e)}"
+                )
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        ✅ Supprime un milestone (style SalesQuotaViewSet)
+        """
+        try:
+            with transaction.atomic():
+                instance = self.get_object()
+                milestone_name = instance.name
+                
+                # Validation : ne pas supprimer un milestone achieved avec performance
+                if instance.status == SalesMilestone.Status.ACHIEVED and float(instance.achievement_rate) >= 100:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_OPERATION.format(
+                            operation="Cannot delete achieved milestone. Please reset it first if needed."
+                        )
+                    )
+                
+                instance.delete()
+                
+                return Response({
+                    'success': True,
+                    'message': f'Sales Milestone "{milestone_name}" deleted successfully'
+                }, status=status.HTTP_204_NO_CONTENT)
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to delete milestone: {str(e)}"
+                )
+            )
     
     # =====================================================================
-    # ACTIONS SPÉCIALISÉES - TRACKING ET MONITORING
+    # ✅ ACTIONS SIMPLIFIÉES POUR MVP (2 actions seulement)
     # =====================================================================
     
     @action(detail=True, methods=['post'])
     def update_progress(self, request, pk=None):
         """
-        Force la mise à jour du progrès d'un milestone.
+        ✅ Force la mise à jour du progrès d'un milestone (style SalesQuotaViewSet)
         
         POST /sales-milestones/{id}/update-progress/
         
         Déclenche recalcul via UserPerformanceService et met à jour :
-        - current_value
-        - achievement_rate
-        - status
-        - last_progress_update
+        - current_value, achievement_rate, status, last_progress_update
         """
-        milestone = self.get_object()
-        
         try:
-            # Déclencher mise à jour
+            milestone = self.get_object()
+            
+            # Validation de l'ID
+            if not pk:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='Milestone ID')
+                )
+            
+            try:
+                milestone_id_int = int(pk)
+            except ValueError:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(field="Milestone ID must be a valid integer")
+                )
+            
+            # ✅ Déclencher mise à jour via modèle corrigé
             result = milestone.update_progress()
             
             # Recharger pour obtenir données fraîches
@@ -179,14 +397,21 @@ class SalesMilestoneViewSet(BaseAPIView, viewsets.ModelViewSet):
             
             return Response({
                 'success': True,
-                'message': 'Milestone progress updated successfully',
+                'message': f'Milestone "{milestone.name}" progress updated successfully',
                 'data': {
-                    'milestone': SalesMilestoneSerializer(milestone).data,
+                    'milestone': SalesMilestoneSerializer(milestone, context=self.get_serializer_context()).data,
                     'update_result': result
                 },
-                'updated_at': milestone.last_progress_update.isoformat() if milestone.last_progress_update else None
+                'meta': {
+                    'milestone_id': milestone_id_int,
+                    'milestone_name': milestone.name,
+                    'timestamp': timezone.now().isoformat(),
+                    'client_id': self.get_client_id()
+                }
             })
             
+        except StandardizedValidationError:
+            raise
         except Exception as e:
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(
@@ -194,339 +419,61 @@ class SalesMilestoneViewSet(BaseAPIView, viewsets.ModelViewSet):
                 )
             )
     
-    @action(detail=False, methods=['post'])
-    def batch_update(self, request):
-        """
-        Mise à jour en lot de milestones.
-        
-        POST /sales-milestones/batch-update/
-        Body: {
-            "milestone_ids": [1, 2, 3],
-            "user_id": 123,  // Optionnel : tous milestones d'un user
-            "sales_plan_id": 456  // Optionnel : tous milestones d'un plan
-        }
-        
-        Utile pour forcer recalcul après corrections manuelles CRM.
-        """
-        milestone_ids = request.data.get('milestone_ids')
-        user_id = request.data.get('user_id')
-        sales_plan_id = request.data.get('sales_plan_id')
-        
-        # Construire queryset
-        queryset = self.get_queryset()
-        
-        if milestone_ids:
-            queryset = queryset.filter(id__in=milestone_ids)
-        elif user_id:
-            queryset = queryset.filter(sales_plan__user_id=user_id)
-        elif sales_plan_id:
-            queryset = queryset.filter(sales_plan_id=sales_plan_id)
-        else:
-            raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(
-                    field="milestone_ids, user_id, or sales_plan_id"
-                )
-            )
-        
-        # Limite de sécurité
-        if queryset.count() > 100:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_OPERATION.format(
-                    operation="Cannot update more than 100 milestones at once"
-                )
-            )
-        
-        # Effectuer mises à jour
-        updated_count = 0
-        failed_count = 0
-        errors = []
-        
-        for milestone in queryset:
-            try:
-                milestone.update_progress()
-                updated_count += 1
-            except Exception as e:
-                failed_count += 1
-                errors.append({
-                    'milestone_id': milestone.id,
-                    'error': str(e)
-                })
-        
-        return Response({
-            'success': True,
-            'message': f'Batch update completed: {updated_count} updated, {failed_count} failed',
-            'data': {
-                'updated_count': updated_count,
-                'failed_count': failed_count,
-                'errors': errors[:10]  # Limiter les erreurs retournées
-            }
-        })
-    
     @action(detail=False, methods=['get'])
-    def overdue(self, request):
+    def my_milestones(self, request):
         """
-        Liste des milestones en retard.
-        
-        GET /sales-milestones/overdue/
-        GET /sales-milestones/overdue/?user_id=123
-        GET /sales-milestones/overdue/?team_id=456
-        
-        Filtre automatiquement par target_date < today et status non atteint.
-        """
-        queryset = self.get_queryset()
-        today = date.today()
-        
-        # Filtre overdue
-        queryset = queryset.filter(
-            target_date__lt=today,
-            status__in=[
-                SalesMilestone.Status.PENDING,
-                SalesMilestone.Status.IN_PROGRESS
-            ]
-        ).order_by('target_date')
-        
-        # Filtres additionnels
-        user_id = request.query_params.get('user_id')
-        if user_id:
-            queryset = queryset.filter(sales_plan__user_id=user_id)
-        
-        team_id = request.query_params.get('team_id')
-        if team_id:
-            queryset = queryset.filter(sales_plan__user__team_id=team_id)
-        
-        # Paginer
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = SalesMilestoneSerializer(
-                page, 
-                many=True, 
-                context=self.get_serializer_context()
-            )
-            
-            return self.get_paginated_response({
-                'milestones': serializer.data,
-                'summary': {
-                    'total_overdue': queryset.count(),
-                    'avg_days_overdue': self._calculate_avg_days_overdue(queryset),
-                    'most_overdue_date': queryset.first().target_date.isoformat() if queryset.exists() else None
-                }
-            })
-        
-        # Version non paginée
-        serializer = SalesMilestoneSerializer(
-            queryset, 
-            many=True, 
-            context=self.get_serializer_context()
-        )
-        
-        return Response({
-            'success': True,
-            'data': {
-                'milestones': serializer.data,
-                'count': queryset.count()
-            }
-        })
-    
-    @action(detail=False, methods=['get'])
-    def upcoming(self, request):
-        """
-        Milestones à venir dans les prochains jours.
-        
-        GET /sales-milestones/upcoming/?days=30
-        GET /sales-milestones/upcoming/?user_id=123&days=7
-        
-        Par défaut : 30 prochains jours
-        """
-        days = int(request.query_params.get('days', 30))
-        if days > 90:  # Limite de sécurité
-            days = 90
-        
-        today = date.today()
-        end_date = today + timedelta(days=days)
-        
-        queryset = self.get_queryset().filter(
-            target_date__gte=today,
-            target_date__lte=end_date,
-            status__in=[
-                SalesMilestone.Status.PENDING,
-                SalesMilestone.Status.IN_PROGRESS
-            ]
-        ).order_by('target_date')
-        
-        # Filtres additionnels
-        user_id = request.query_params.get('user_id')
-        if user_id:
-            queryset = queryset.filter(sales_plan__user_id=user_id)
-        
-        # Paginer
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = SalesMilestoneSerializer(
-                page, 
-                many=True, 
-                context=self.get_serializer_context()
-            )
-            
-            return self.get_paginated_response({
-                'milestones': serializer.data,
-                'period': f'Next {days} days',
-                'summary': {
-                    'total_upcoming': queryset.count(),
-                    'urgent_count': queryset.filter(target_date__lte=today + timedelta(days=7)).count()
-                }
-            })
-        
-        # Version non paginée
-        serializer = SalesMilestoneSerializer(
-            queryset, 
-            many=True, 
-            context=self.get_serializer_context()
-        )
-        
-        return Response({
-            'success': True,
-            'data': {
-                'milestones': serializer.data,
-                'count': queryset.count(),
-                'period': f'Next {days} days'
-            }
-        })
-    
-    @action(detail=False, methods=['get'], url_path='by-plan/(?P<plan_id>[^/.]+)')
-    def by_plan(self, request, plan_id=None):
-        """
-        Tous les milestones d'un Sales Plan spécifique.
-        
-        GET /sales-milestones/by-plan/{plan_id}/
-        
-        Retourne milestones ordonnés par target_date avec statut d'avancement.
+        ✅ Milestones utilisateur connecté avec pagination (style SalesQuotaViewSet)
         """
         try:
-            # Valider que le plan existe et appartient au client
-            sales_plan = SalesPlan.objects.get(
-                id=plan_id,
-                client_id=self.get_client_id()
-            )
-        except SalesPlan.DoesNotExist:
-            raise StandardizedValidationError(
-                CoreErrorMessages.OBJECT_NOT_FOUND.format(
-                    object="Sales Plan"
-                )
-            )
-        
-        # Récupérer milestones du plan
-        milestones = self.get_queryset().filter(
-            sales_plan_id=plan_id
-        ).order_by('target_date')
-        
-        serializer = SalesMilestoneSerializer(
-            milestones, 
-            many=True, 
-            context=self.get_serializer_context()
-        )
-        
-        # Calculer métriques du plan
-        total_milestones = milestones.count()
-        achieved_count = milestones.filter(status=SalesMilestone.Status.ACHIEVED).count()
-        overdue_count = milestones.filter(
-            target_date__lt=date.today(),
-            status__in=[SalesMilestone.Status.PENDING, SalesMilestone.Status.IN_PROGRESS]
-        ).count()
-        
-        return Response({
-            'success': True,
-            'data': {
-                'sales_plan': {
-                    'id': sales_plan.id,
-                    'name': sales_plan.name,
-                    'status': sales_plan.status
-                },
-                'milestones': serializer.data,
-                'summary': {
-                    'total_milestones': total_milestones,
-                    'achieved_count': achieved_count,
-                    'overdue_count': overdue_count,
-                    'completion_rate': f"{(achieved_count/total_milestones*100):.1f}%" if total_milestones > 0 else "0%"
-                }
+            user_milestones = self.get_queryset().filter(sales_plan__user=request.user)
+            
+            if not user_milestones.exists():
+                return Response({
+                    'success': True,
+                    'data': [],
+                    'message': 'No milestones found for current user'
+                })
+            
+            # Pagination si nécessaire
+            page = self.paginate_queryset(user_milestones)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+            
+            serializer = self.get_serializer(user_milestones, many=True)
+            
+            # Stats utilisateur
+            today = date.today()
+            stats = {
+                'total_milestones': user_milestones.count(),
+                'achieved_count': user_milestones.filter(status=SalesMilestone.Status.ACHIEVED).count(),
+                'overdue_count': user_milestones.filter(
+                    target_date__lt=today,
+                    status__in=[SalesMilestone.Status.PENDING, SalesMilestone.Status.IN_PROGRESS]
+                ).count(),
+                'upcoming_count': user_milestones.filter(
+                    target_date__gte=today,
+                    target_date__lte=today + timedelta(days=7),
+                    status__in=[SalesMilestone.Status.PENDING, SalesMilestone.Status.IN_PROGRESS]
+                ).count()
             }
-        })
-    
-    # =====================================================================
-    # ACTIONS DE GESTION
-    # =====================================================================
-    
-    @action(detail=True, methods=['patch'])
-    def mark_achieved(self, request, pk=None):
-        """
-        Marquer un milestone comme atteint manuellement.
-        
-        PATCH /sales-milestones/{id}/mark-achieved/
-        
-        Utile pour milestones CUSTOM ou corrections manuelles.
-        """
-        milestone = self.get_object()
-        
-        if milestone.status == SalesMilestone.Status.ACHIEVED:
+            
             return Response({
                 'success': True,
-                'message': 'Milestone is already achieved'
+                'data': serializer.data,
+                'meta': {
+                    'user_stats': stats,
+                    'user_info': {
+                        'id': str(request.user.id),
+                        'name': request.user.get_full_name(),
+                        'team': request.user.team.name if request.user.team else None
+                    }
+                }
             })
-        
-        # Marquer comme atteint
-        milestone.status = SalesMilestone.Status.ACHIEVED
-        milestone.achievement_rate = 100.00
-        milestone.last_progress_update = timezone.now()
-        milestone.save()
-        
-        return Response({
-            'success': True,
-            'message': 'Milestone marked as achieved',
-            'data': SalesMilestoneSerializer(milestone).data
-        })
-    
-    @action(detail=True, methods=['patch'])
-    def reset_progress(self, request, pk=None):
-        """
-        Reset le progrès d'un milestone.
-        
-        PATCH /sales-milestones/{id}/reset-progress/
-        
-        Remet à zéro et force recalcul.
-        """
-        milestone = self.get_object()
-        
-        # Reset valeurs
-        milestone.current_value = 0.00
-        milestone.achievement_rate = 0.00
-        milestone.status = SalesMilestone.Status.PENDING
-        milestone.save()
-        
-        # Recalculer
-        try:
-            milestone.update_progress()
-            milestone.refresh_from_db()
-        except Exception:
-            pass  # Ne pas faire échouer si recalcul échoue
-        
-        return Response({
-            'success': True,
-            'message': 'Milestone progress reset and recalculated',
-            'data': SalesMilestoneSerializer(milestone).data
-        })
-    
-    # =====================================================================
-    # MÉTHODES UTILITAIRES PRIVÉES
-    # =====================================================================
-    
-    def _calculate_avg_days_overdue(self, queryset):
-        """Calcule nombre moyen de jours de retard"""
-        today = date.today()
-        total_days = 0
-        count = 0
-        
-        for milestone in queryset:
-            days_overdue = (today - milestone.target_date).days
-            total_days += days_overdue
-            count += 1
-        
-        return round(total_days / count, 1) if count > 0 else 0
+            
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to get user milestones: {str(e)}"
+                )
+            )

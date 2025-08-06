@@ -13,8 +13,10 @@ from end_users.models import SalesQuota, User
 
 class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
-    Serializer pour SalesQuota optimisé à la source.
-    Architecture cache-ready mais performance d'abord dans les méthodes.
+    Serializer COMPLET pour SalesQuota avec performance_data.
+    ✅ CORRIGÉ : Target types, validations, performance optimisée.
+    
+    Usage: retrieve individual, actions performance - acceptable car 1 quota à la fois.
     """
     
     # ===== CHAMPS DISPLAY (READ-ONLY) =====
@@ -24,7 +26,7 @@ class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         read_only=True
     )
     
-    # Informations utilisateur via relations FK
+    # Informations utilisateur via relations FK (optimisées avec select_related)
     user_name = serializers.SerializerMethodField(read_only=True)
     user_email = serializers.SerializerMethodField(read_only=True) 
     team_name = serializers.SerializerMethodField(read_only=True)
@@ -36,7 +38,7 @@ class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.Model
     performance_data = serializers.SerializerMethodField(read_only=True)
     
     # Statut du quota (calculé localement)
-    is_active = serializers.BooleanField(read_only=True)
+    is_active = serializers.SerializerMethodField(read_only=True)
     is_overdue = serializers.SerializerMethodField(read_only=True)
     period_duration_days = serializers.SerializerMethodField(read_only=True)
     period_type = serializers.SerializerMethodField(read_only=True)
@@ -62,11 +64,16 @@ class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             'team_name', 'team_id', 'organization_name', 'organization_id',
             
             # Configuration du quota
-            'target_type', 'target_type_display', 'target_value',
+            'name', 'target_type', 'target_type_display', 'target_value', 'unit',
+            'recurrence_type', 'fiscal_year', 'period_number',
             'period_start', 'period_end', 'period_duration_days', 'period_type',
             
+            # Statut et gestion
+            'status', 'is_active', 'is_overdue', 'is_team_quota',
+            'description', 'assigned_by', 'activation_date',
+            
             # Performance (données consolidées)
-            'performance_data', 'is_active', 'is_overdue',
+            'performance_data',
             
             # Métadonnées
             'created_at', 'updated_at', 'created_by', 'updated_by'
@@ -110,8 +117,8 @@ class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.Model
     
     def get_performance_data(self, obj):
         """
-        UN SEUL appel au service qui retourne toutes les métriques.
-        Architecture cache-ready : point d'entrée unique pour futurs optimisations.
+        ✅ CORRIGÉ : UN SEUL appel au service qui retourne toutes les métriques.
+        Usage acceptable pour retrieve individual (6 requêtes max par quota).
         """
         try:
             from end_users.services.user_performance_service import UserPerformanceService
@@ -143,6 +150,10 @@ class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             }
     
     # ===== MÉTHODES CALCULÉES LOCALES (SANS SERVICE) =====
+    
+    def get_is_active(self, obj):
+        """✅ CORRIGÉ : is_active basé sur status (compatibilité)"""
+        return obj.status == SalesQuota.QuotaStatus.ACTIVE
     
     def get_is_overdue(self, obj):
         """Quota en retard ? (calcul local optimisé)"""
@@ -219,7 +230,7 @@ class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         return value
     
     def validate(self, data):
-        """Validation croisée du quota"""
+        """✅ CORRIGÉ : Validation croisée simplifiée pour MVP"""
         try:
             # Ajouter client_id si absent
             if 'client_id' not in data:
@@ -255,7 +266,7 @@ class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.Model
                         )
                     )
             
-            # Valider l'unicité du quota actif
+            # ✅ MVP : Validation d'unicité simplifiée (un quota actif par user/période)
             user = data.get('user')
             if user and period_start and period_end:
                 client_id = data.get('client_id')
@@ -264,7 +275,7 @@ class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.Model
                 existing_quota_query = SalesQuota.objects.filter(
                     user=user,
                     client_id=client_id,
-                    is_active=True
+                    status='active'  # ✅ CORRIGÉ : utiliser status au lieu de is_active
                 ).filter(
                     # Chevauchement de périodes
                     Q(
@@ -305,8 +316,11 @@ class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.Model
 
 class SalesQuotaSummarySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
-    Serializer simplifié pour nested representations.
-    Aucun appel service - calculs locaux uniquement pour performance.
+    ✅ MVP OPTIMISÉ : Serializer pour listes SANS performance_data.
+    
+    Évite complètement le problème N+1 en utilisant seulement des calculs locaux.
+    Usage: list, team_summary, nested representations.
+    Performance: 1 seule requête SQL pour N quotas.
     """
     
     target_type_display = serializers.CharField(
@@ -318,13 +332,15 @@ class SalesQuotaSummarySerializer(ClientScopeManager.SerializerMixin, serializer
     team_name = serializers.SerializerMethodField(read_only=True)
     performance_status = serializers.SerializerMethodField(read_only=True)
     days_remaining = serializers.SerializerMethodField(read_only=True)
+    is_active = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = SalesQuota
         fields = [
             'id', 'user_name', 'team_name', 'target_type', 'target_type_display',
-            'target_value', 'period_start', 'period_end',
-            'performance_status', 'days_remaining', 'is_active'
+            'target_value', 'unit', 'period_start', 'period_end',
+            'performance_status', 'days_remaining', 'is_active', 'status',
+            'created_at'
         ]
         read_only_fields = fields
     
@@ -336,18 +352,24 @@ class SalesQuotaSummarySerializer(ClientScopeManager.SerializerMixin, serializer
         """Nom équipe (optimisé pour nested)"""
         return obj.user.team.name if obj.user and obj.user.team else None
     
+    def get_is_active(self, obj):
+        """✅ CORRIGÉ : is_active basé sur status"""
+        return obj.status == SalesQuota.QuotaStatus.ACTIVE
+    
     def get_performance_status(self, obj):
-        """Statut simplifié - calcul local sans service"""
+        """✅ Statut simplifié - calcul local sans service (zéro N+1)"""
         today = timezone.now().date()
         if today > obj.period_end:
             return 'overdue'
         elif (obj.period_end - today).days <= 7:
             return 'ending_soon'
-        else:
+        elif obj.status == SalesQuota.QuotaStatus.ACTIVE:
             return 'active'
+        else:
+            return 'inactive'
     
     def get_days_remaining(self, obj):
-        """Jours restants - calcul local optimisé"""
+        """✅ Jours restants - calcul local optimisé (zéro N+1)"""
         today = timezone.now().date()
         if today > obj.period_end:
             return 0
@@ -356,7 +378,7 @@ class SalesQuotaSummarySerializer(ClientScopeManager.SerializerMixin, serializer
 
 class SalesQuotaListSerializer(SalesQuotaSummarySerializer):
     """
-    Serializer pour les listes - hérite de Summary pour cohérence.
+    ✅ Serializer pour les listes - hérite de Summary pour cohérence.
     Ajoute quelques champs supplémentaires calculés localement.
     """
     
@@ -364,11 +386,11 @@ class SalesQuotaListSerializer(SalesQuotaSummarySerializer):
     
     class Meta(SalesQuotaSummarySerializer.Meta):
         fields = SalesQuotaSummarySerializer.Meta.fields + [
-            'period_type', 'created_at'
+            'period_type', 'name', 'description'
         ]
     
     def get_period_type(self, obj):
-        """Type de période - calcul local optimisé"""
+        """Type de période - calcul local optimisé (zéro N+1)"""
         duration = (obj.period_end - obj.period_start).days + 1
         if 28 <= duration <= 31:
             return 'monthly'
@@ -380,12 +402,10 @@ class SalesQuotaListSerializer(SalesQuotaSummarySerializer):
             return 'custom'
 
 
-# ===== SERIALIZER POUR VIEWSETS OPTIMISÉS =====
-
 class SalesQuotaViewSetSerializer(SalesQuotaSerializer):
     """
-    Serializer spécialisé pour les ViewSets avec optimisations QuerySet.
-    Utilisera select_related/prefetch_related au niveau ViewSet.
+    ✅ Serializer spécialisé pour les ViewSets avec optimisations QuerySet.
+    Hérite du serializer complet mais sera utilisé intelligemment par get_serializer_class().
     """
     
     class Meta(SalesQuotaSerializer.Meta):
@@ -395,15 +415,72 @@ class SalesQuotaViewSetSerializer(SalesQuotaSerializer):
     @classmethod
     def get_optimized_queryset(cls):
         """
-        Queryset optimisé pour ce serializer.
-        À utiliser dans les ViewSets pour éviter N+1 queries.
+        ✅ Queryset optimisé pour ce serializer.
+        À utiliser dans les ViewSets pour éviter N+1 queries sur les relations.
         """
         return SalesQuota.objects.select_related(
             'user',
             'user__team', 
             'user__organization',
+            'assigned_by',
             'created_by',
             'updated_by'
         ).prefetch_related(
             # Ajouts futurs si relations M2M nécessaires
         )
+
+
+# ===== SERIALIZERS UTILITAIRES =====
+
+class SalesQuotaCreateSerializer(SalesQuotaSerializer):
+    """
+    ✅ Serializer optimisé pour la création.
+    Simplifie les champs obligatoires pour MVP.
+    """
+    
+    class Meta(SalesQuotaSerializer.Meta):
+        fields = [
+            'user_id', 'name', 'target_type', 'target_value', 
+            'period_start', 'period_end', 'description'
+        ]
+        
+    def create(self, validated_data):
+        """Création avec valeurs par défaut intelligentes"""
+        # Auto-set status à ACTIVE si pas spécifié
+        if 'status' not in validated_data:
+            validated_data['status'] = SalesQuota.QuotaStatus.ACTIVE
+            validated_data['activation_date'] = timezone.now()
+        
+        return super().create(validated_data)
+
+
+class SalesQuotaUpdateSerializer(SalesQuotaSerializer):
+    """
+    ✅ Serializer optimisé pour les updates.
+    Permet de modifier sans casser les validations.
+    """
+    
+    # Rendre user_id optionnel pour les updates
+    user_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.select_related('team', 'organization'),
+        source='user',
+        required=False
+    )
+    
+    class Meta(SalesQuotaSerializer.Meta):
+        # Tous les champs modifiables
+        fields = [
+            'user_id', 'name', 'target_type', 'target_value', 'unit',
+            'period_start', 'period_end', 'status', 'description'
+        ]
+
+
+# ===== EXPORT POUR UTILISATION =====
+__all__ = [
+    'SalesQuotaSerializer',           # Complet avec performance_data
+    'SalesQuotaSummarySerializer',    # MVP optimisé sans N+1
+    'SalesQuotaListSerializer',       # Pour listes avec détails supplémentaires  
+    'SalesQuotaViewSetSerializer',    # Pour ViewSets avec QuerySet optimisé
+    'SalesQuotaCreateSerializer',     # Création simplifiée
+    'SalesQuotaUpdateSerializer'      # Update optimisé
+]

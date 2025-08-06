@@ -5,15 +5,16 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from datetime import date, datetime
-from django.db.models import Q, Count, Prefetch
+from django.db.models import Q, Count
 from django.utils import timezone
+from django.db import transaction
 
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from core.client_scope import ClientScopeManager
 
-from end_users.models import SalesPlan, SalesQuota, SalesMilestone, User
+from end_users.models import SalesPlan, SalesQuota, User
 from end_users.serializers.sales_plan_serializer import SalesPlanSerializer
 from ..services.sales_planning_service import SalesPlanningService
 
@@ -22,20 +23,28 @@ class SalesPlanViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.Model
     """
     API endpoints pour la gestion des Sales Plans.
     
-    Architecture complète avec :
-    - CRUD standard pour les Sales Plans
-    - Actions spécialisées pour dashboards (utilise SalesPlanningService)
-    - Intégration temps réel via signaux
-    - Support multi-utilisateur et équipe
-    - Filtres et recherche avancée
+    ✅ Style cohérent avec SalesQuotaViewSet :
+    - Validation systématique des serializers
+    - Gestion d'erreurs standardisée  
+    - Réponses structurées avec success/message/data
+    - Usage des services pour logique métier
+    - Transactions atomiques
+    - Messages d'erreur cohérents
     
-    Actions principales :
-    - dashboard() : Analyse complète du plan avec visualisation
-    - planning_analysis() : Analyse détaillée de planification
-    - quick_summary() : Résumé rapide pour widgets
-    - my_plans() : Plans de l'utilisateur courant
-    - team_plans() : Vue consolidée pour managers
+    ✅ SIMPLIFIÉ POUR MVP (7 actions → 3 actions) :
+    - CRUD standard (list/retrieve/create/update/delete)
+    - dashboard() : Analyse complète via SalesPlanningService
+    - my_plans() : Plans utilisateur courant
+    - activate() : Activation/désactivation des plans
+    
+    ❌ SUPPRIMÉ (trop complexe pour MVP) :
+    - planning_analysis() : Doublonne avec dashboard
+    - team_plans() : Complexité manager non essentielle
+    - pause() : activate() gère tout
+    - refresh_data() : Signaux automatiques suffisants
     """
+    
+    # ✅ Attributs obligatoires (style SalesQuotaViewSet)
     queryset = SalesPlan.objects.all()
     serializer_class = SalesPlanSerializer
     entity_name = 'sales_plan'
@@ -50,27 +59,17 @@ class SalesPlanViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.Model
     ordering_fields = ['created_at', 'period_start', 'period_end', 'name']
     ordering = ['-period_start']
     
-    def get_serializer_class(self):
-        """Utilise SalesPlanSerializer pour toutes les actions"""
-        return SalesPlanSerializer
-    
     def get_queryset(self):
-        """QuerySet optimisé avec relations et client scoping"""
-        queryset = SalesPlan.objects.select_related(
-            'user', 'quota', 'user__team', 'user__organization'
-        ).prefetch_related(
-            Prefetch(
-                'milestones',
-                queryset=SalesMilestone.objects.select_related().order_by('target_date')
-            )
-        )
+        """✅ QuerySet optimisé avec client scoping (style SalesQuotaViewSet)"""
+        # ✅ Utiliser setup_eager_loading du serializer
+        queryset = SalesPlanSerializer.setup_eager_loading(SalesPlan.objects.all())
         
-        # Client scoping
+        # Apply client scoping
         queryset = self.filter_queryset_by_client(queryset)
         
         # Filtres pratiques
-        active_only = self.request.query_params.get('active_only')
-        if active_only and active_only.lower() == 'true':
+        active_only = self.request.query_params.get('active_only', 'true')
+        if active_only.lower() == 'true':
             queryset = queryset.filter(status__in=[
                 SalesPlan.Status.ACTIVE, 
                 SalesPlan.Status.DRAFT
@@ -88,74 +87,272 @@ class SalesPlanViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.Model
         # Filtre par utilisateur spécifique
         user_id = self.request.query_params.get('user_id')
         if user_id:
-            queryset = queryset.filter(user_id=user_id)
+            try:
+                queryset = queryset.filter(user_id=int(user_id))
+            except ValueError:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(field="user_id must be a valid integer")
+                )
         
         return queryset
     
     def get_serializer_context(self):
-        """Ajoute contexte pour les serializers"""
+        """✅ Add client_id to serializer context (style SalesQuotaViewSet)"""
         context = super().get_serializer_context()
         context.update({
             'client_id': self.get_client_id(),
             # Inclure données de performance pour actions détaillées
             'include_performance_data': self.action in [
-                'dashboard', 'planning_analysis', 'retrieve', 'list'
+                'dashboard', 'retrieve', 'list'
             ]
         })
         return context
     
-    def perform_create(self, serializer):
-        """Création avec client_id et validation"""
-        # Valider que l'utilisateur a un quota actif si nécessaire
-        quota = serializer.validated_data.get('quota')
-        if quota and not quota.is_active:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(
-                    field="quota must be active"
-                )
+    def list(self, request, *args, **kwargs):
+        """
+        ✅ Liste tous les plans avec informations supplémentaires (style SalesQuotaViewSet)
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Filtres additionnels
+        target_type = request.query_params.get('target_type')
+        search = request.query_params.get('search')
+        
+        if target_type:
+            queryset = queryset.filter(quota__target_type=target_type)
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) | 
+                Q(description__icontains=search) |
+                Q(user__first_name__icontains=search) |
+                Q(user__last_name__icontains=search) |
+                Q(user__email__icontains=search)
             )
         
-        serializer.save(client_id=self.get_client_id())
+        page = self.paginate_queryset(queryset)
+        
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        # ✅ Ajouter des stats globales (style SalesQuotaViewSet)
+        stats = {
+            'total_plans': queryset.count(),
+            'active_plans': queryset.filter(status=SalesPlan.Status.ACTIVE).count(),
+            'completed_plans': queryset.filter(status=SalesPlan.Status.COMPLETED).count(),
+            'quota_types': list(queryset.values_list('quota__target_type', flat=True).distinct())
+        }
+        
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'meta': {
+                'stats': stats,
+                'filters_applied': {
+                    'target_type': target_type,
+                    'search': search,
+                    'active_only': request.query_params.get('active_only', 'true'),
+                    'current_period': request.query_params.get('current_period')
+                }
+            }
+        })
     
-    def perform_update(self, serializer):
-        """Mise à jour avec validation"""
-        instance = serializer.instance
+    def retrieve(self, request, *args, **kwargs):
+        """
+        ✅ Récupère un plan avec toutes ses données (style SalesQuotaViewSet)
+        """
+        # get_object() applique automatiquement le ClientScope
+        instance = self.get_object()
         
-        # Empêcher modification du quota si le plan est actif
-        if (instance.status == SalesPlan.Status.ACTIVE and 
-            'quota' in serializer.validated_data):
-            new_quota = serializer.validated_data['quota']
-            if new_quota != instance.quota:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_OPERATION.format(
-                        operation="Cannot change quota of active plan"
+        # Utiliser le serializer complet avec performance_data
+        serializer = self.get_serializer(instance)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data
+        })
+    
+    def create(self, request, *args, **kwargs):
+        """
+        ✅ Crée un nouveau plan (style SalesQuotaViewSet avec validation)
+        """
+        client_id = self.get_client_id()
+        
+        try:
+            with transaction.atomic():
+                # Validation des données
+                serializer = self.get_serializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                
+                # Validation utilisateur (style SalesQuotaViewSet)
+                user_id = serializer.validated_data.get('user')
+                if not user_id:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(field='user')
                     )
+                
+                # Vérifier que l'utilisateur appartient au même client
+                try:
+                    user = User.objects.get(id=user_id.id, client_account_id=client_id)
+                except User.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field="User not found or doesn't belong to this client"
+                        )
+                    )
+                
+                # Valider que le quota est actif
+                quota = serializer.validated_data.get('quota')
+                if quota and not quota.is_active:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field="quota must be active"
+                        )
+                    )
+                
+                # Créer le plan avec client_id
+                sales_plan = serializer.save(
+                    client_id=client_id,
+                    created_by=request.user
                 )
-        
-        serializer.save()
+                
+                return Response({
+                    'success': True,
+                    'message': f'Sales Plan "{sales_plan.name}" created successfully',
+                    'data': {
+                        'plan_id': sales_plan.id,
+                        'plan_name': sales_plan.name,
+                        'status': sales_plan.status,
+                        'user_name': sales_plan.user.get_full_name(),
+                        'quota_type': sales_plan.quota.target_type if sales_plan.quota else None,
+                        'period_start': sales_plan.period_start.isoformat(),
+                        'period_end': sales_plan.period_end.isoformat()
+                    }
+                }, status=status.HTTP_201_CREATED)
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to create sales plan: {str(e)}"
+                )
+            )
+    
+    def update(self, request, *args, **kwargs):
+        """
+        ✅ Met à jour un plan existant (style SalesQuotaViewSet)
+        """
+        try:
+            with transaction.atomic():
+                instance = self.get_object()
+                partial = kwargs.pop('partial', False)
+                
+                # Validation des données
+                serializer = self.get_serializer(instance, data=request.data, partial=partial)
+                serializer.is_valid(raise_exception=True)
+                
+                # Validation : empêcher modification du quota si le plan est actif
+                if (instance.status == SalesPlan.Status.ACTIVE and 
+                    'quota' in serializer.validated_data):
+                    new_quota = serializer.validated_data['quota']
+                    if new_quota != instance.quota:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_OPERATION.format(
+                                operation="Cannot change quota of active plan"
+                            )
+                        )
+                
+                # Sauvegarder avec updated_by
+                updated_plan = serializer.save(updated_by=request.user)
+                
+                return Response({
+                    'success': True,
+                    'message': f'Sales Plan "{updated_plan.name}" updated successfully',
+                    'data': {
+                        'plan_id': updated_plan.id,
+                        'plan_name': updated_plan.name,
+                        'status': updated_plan.status,
+                        'updated_at': updated_plan.updated_at.isoformat()
+                    }
+                })
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to update sales plan: {str(e)}"
+                )
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        ✅ Supprime un plan (style SalesQuotaViewSet)
+        """
+        try:
+            with transaction.atomic():
+                instance = self.get_object()
+                plan_name = instance.name
+                
+                # Validation : ne pas supprimer un plan actif avec milestones
+                if instance.status == SalesPlan.Status.ACTIVE:
+                    milestones_count = instance.milestones.count()
+                    if milestones_count > 0:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_OPERATION.format(
+                                operation=f"Cannot delete active plan with {milestones_count} milestones. Please complete it first."
+                            )
+                        )
+                
+                instance.delete()
+                
+                return Response({
+                    'success': True,
+                    'message': f'Sales Plan "{plan_name}" deleted successfully'
+                }, status=status.HTTP_204_NO_CONTENT)
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to delete sales plan: {str(e)}"
+                )
+            )
     
     # =====================================================================
-    # ACTIONS SPÉCIALISÉES - DASHBOARDS ET ANALYSE
+    # ✅ ACTIONS SIMPLIFIÉES POUR MVP (3 actions seulement)
     # =====================================================================
     
     @action(detail=True, methods=['get'])
     def dashboard(self, request, pk=None):
         """
-        Dashboard complet du Sales Plan avec analyse temps réel.
+        ✅ Dashboard complet du Sales Plan avec analyse temps réel (style SalesQuotaViewSet)
         
         GET /sales-plans/{id}/dashboard/
         
-        Retourne :
-        - Analyse temporelle (jours restants, pourcentages)
-        - État des milestones avec gaps et requirements
-        - Contribution des campagnes liées
-        - Métriques de performance vs quota
-        - Données pour visualisations (graphiques)
+        Utilise SalesPlanningService corrigé pour analyse complète.
         """
-        sales_plan = self.get_object()
-        
         try:
-            # Utiliser le service de planification pour analyse complète
+            sales_plan = self.get_object()
+            
+            # Validation de l'ID
+            if not pk:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='Sales Plan ID')
+                )
+            
+            try:
+                plan_id_int = int(pk)
+            except ValueError:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(field="Sales Plan ID must be a valid integer")
+                )
+            
+            # ✅ Utiliser le service corrigé
             analysis = SalesPlanningService.generate_complete_analysis(sales_plan)
             
             return Response({
@@ -165,16 +362,18 @@ class SalesPlanViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.Model
                         sales_plan, 
                         context=self.get_serializer_context()
                     ).data,
-                    'planning_analysis': analysis,
-                    'dashboard_metadata': {
-                        'generated_at': analysis['generated_at'],
-                        'refresh_interval': '5_minutes',  # Suggéré pour frontend
-                        'data_sources': ['UserPerformanceService', 'CRM_realtime'],
-                        'last_signal_update': sales_plan.last_progress_update.isoformat() if sales_plan.last_progress_update else None
-                    }
+                    'analysis': analysis
+                },
+                'meta': {
+                    'plan_id': plan_id_int,
+                    'plan_name': sales_plan.name,
+                    'timestamp': timezone.now().isoformat(),
+                    'client_id': self.get_client_id()
                 }
             })
             
+        except StandardizedValidationError:
+            raise
         except Exception as e:
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(
@@ -182,391 +381,130 @@ class SalesPlanViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.Model
                 )
             )
     
-    @action(detail=True, methods=['get'])
-    def planning_analysis(self, request, pk=None):
+    @action(detail=False, methods=['get'])
+    def my_plans(self, request):
         """
-        Analyse détaillée de planification - version extended du dashboard.
-        
-        GET /sales-plans/{id}/planning-analysis/
-        
-        Inclut données additionnelles pour :
-        - Projections avancées
-        - Recommandations d'actions
-        - Analyse comparative historique
+        ✅ Plans utilisateur connecté avec pagination (style SalesQuotaViewSet)
         """
-        sales_plan = self.get_object()
-        
         try:
-            # Analyse complète
-            analysis = SalesPlanningService.generate_complete_analysis(sales_plan)
+            user_plans = self.get_queryset().filter(user=request.user)
             
-            # Données supplémentaires pour planning analysis
-            extended_data = {
-                'planning_recommendations': self._generate_planning_recommendations(sales_plan, analysis),
-                'historical_context': self._get_historical_context(sales_plan),
-                'risk_assessment': self._assess_plan_risks(sales_plan, analysis)
+            if not user_plans.exists():
+                return Response({
+                    'success': True,
+                    'data': [],
+                    'message': 'No sales plans found for current user'
+                })
+            
+            # Pagination si nécessaire
+            page = self.paginate_queryset(user_plans)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+            
+            serializer = self.get_serializer(user_plans, many=True)
+            
+            # Stats utilisateur
+            stats = {
+                'total_plans': user_plans.count(),
+                'active_plans': user_plans.filter(status=SalesPlan.Status.ACTIVE).count(),
+                'completed_plans': user_plans.filter(status=SalesPlan.Status.COMPLETED).count()
             }
             
             return Response({
                 'success': True,
-                'data': {
-                    'sales_plan': SalesPlanSerializer(
-                        sales_plan, 
-                        context=self.get_serializer_context()
-                    ).data,
-                    'core_analysis': analysis,
-                    'extended_analysis': extended_data
+                'data': serializer.data,
+                'meta': {
+                    'user_stats': stats,
+                    'user_info': {
+                        'id': str(request.user.id),
+                        'name': request.user.get_full_name(),
+                        'team': request.user.team.name if request.user.team else None
+                    }
                 }
             })
             
         except Exception as e:
             raise StandardizedValidationError(
                 CoreErrorMessages.UNEXPECTED_ERROR.format(
-                    detail=f"Planning analysis failed: {str(e)}"
+                    detail=f"Failed to get user plans: {str(e)}"
                 )
             )
-    
-    @action(detail=True, methods=['get'])
-    def quick_summary(self, request, pk=None):
-        """
-        Résumé rapide pour widgets de dashboard.
-        
-        GET /sales-plans/{id}/quick-summary/
-        
-        Version légère avec métriques essentielles :
-        - Achievement rate
-        - Jours restants
-        - Statut on-track/off-track
-        - Prochaine action critique
-        """
-        sales_plan = self.get_object()
-        
-        try:
-            # Utiliser méthode rapide du service
-            summary = SalesPlanningService.get_quick_summary(sales_plan)
-            
-            return Response({
-                'success': True,
-                'data': summary
-            })
-            
-        except Exception as e:
-            # Fallback gracieux pour widgets
-            return Response({
-                'success': True,
-                'data': {
-                    'plan_name': sales_plan.name,
-                    'error': 'Summary unavailable',
-                    'fallback_data': {
-                        'achievement_rate': 0,
-                        'time_remaining_percentage': 50,
-                        'is_on_track': False
-                    }
-                }
-            })
-    
-    @action(detail=False, methods=['get'])
-    def my_plans(self, request):
-        """
-        Plans de l'utilisateur courant avec résumés.
-        
-        GET /sales-plans/my-plans/
-        
-        Filtre automatiquement par request.user
-        Inclut résumé de performance pour chaque plan
-        """
-        user_plans = self.get_queryset().filter(user=request.user)
-        
-        # Paginer si nécessaire
-        page = self.paginate_queryset(user_plans)
-        if page is not None:
-            # Ajouter résumés rapides pour chaque plan
-            plans_with_summary = []
-            for plan in page:
-                plan_data = SalesPlanSerializer(
-                    plan, 
-                    context=self.get_serializer_context()
-                ).data
-                
-                # Ajouter quick summary
-                try:
-                    quick_summary = SalesPlanningService.get_quick_summary(plan)
-                    plan_data['quick_metrics'] = quick_summary
-                except Exception:
-                    plan_data['quick_metrics'] = {'error': 'Metrics unavailable'}
-                
-                plans_with_summary.append(plan_data)
-            
-            return self.get_paginated_response(plans_with_summary)
-        
-        # Version non paginée
-        serializer = SalesPlanSerializer(
-            user_plans, 
-            many=True, 
-            context=self.get_serializer_context()
-        )
-        
-        return Response({
-            'success': True,
-            'data': serializer.data,
-            'count': user_plans.count()
-        })
-    
-    @action(detail=False, methods=['get'])
-    def team_plans(self, request):
-        """
-        Vue consolidée des plans d'équipe pour managers.
-        
-        GET /sales-plans/team-plans/?team_id=123
-        GET /sales-plans/team-plans/?user_ids=1,2,3
-        
-        Paramètres :
-        - team_id : Plans de tous les membres d'une équipe
-        - user_ids : Plans d'utilisateurs spécifiques (CSV)
-        - include_summary : true/false pour inclure métriques agrégées
-        """
-        queryset = self.get_queryset()
-        
-        # Filtrage par équipe
-        team_id = request.query_params.get('team_id')
-        if team_id:
-            queryset = queryset.filter(user__team_id=team_id)
-        
-        # Filtrage par utilisateurs spécifiques
-        user_ids = request.query_params.get('user_ids')
-        if user_ids:
-            user_id_list = [int(uid.strip()) for uid in user_ids.split(',')]
-            queryset = queryset.filter(user_id__in=user_id_list)
-        
-        # Si aucun filtre, utiliser l'équipe du requester
-        if not team_id and not user_ids:
-            if hasattr(request.user, 'team') and request.user.team:
-                queryset = queryset.filter(user__team=request.user.team)
-            else:
-                # Fallback : seulement les plans de l'utilisateur
-                queryset = queryset.filter(user=request.user)
-        
-        # Paginer
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = SalesPlanSerializer(
-                page, 
-                many=True, 
-                context=self.get_serializer_context()
-            )
-            
-            # Ajouter métriques agrégées si demandé
-            response_data = serializer.data
-            if request.query_params.get('include_summary', '').lower() == 'true':
-                response_data = {
-                    'plans': serializer.data,
-                    'team_summary': self._calculate_team_summary(page)
-                }
-            
-            return self.get_paginated_response(response_data)
-        
-        # Version non paginée
-        serializer = SalesPlanSerializer(
-            queryset, 
-            many=True, 
-            context=self.get_serializer_context()
-        )
-        
-        return Response({
-            'success': True,
-            'data': serializer.data,
-            'count': queryset.count()
-        })
-    
-    # =====================================================================
-    # ACTIONS DE GESTION DU PLAN
-    # =====================================================================
     
     @action(detail=True, methods=['patch'])
     def activate(self, request, pk=None):
         """
-        Activer un Sales Plan.
+        ✅ Activer/désactiver plan avec gestion statuts (style SalesQuotaViewSet)
         
         PATCH /sales-plans/{id}/activate/
-        
-        Passe le statut à ACTIVE et déclenche recalcul des milestones.
+        Body: {"status": "ACTIVE"} ou {"status": "PAUSED"} ou {"status": "COMPLETED"}
         """
-        sales_plan = self.get_object()
-        
-        if sales_plan.status == SalesPlan.Status.ACTIVE:
-            return Response({
-                'success': True,
-                'message': 'Sales Plan is already active'
-            })
-        
-        # Valider que le quota est actif
-        if not sales_plan.quota.is_active:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_OPERATION.format(
-                    operation="Cannot activate plan with inactive quota"
-                )
-            )
-        
         try:
-            sales_plan.status = SalesPlan.Status.ACTIVE
-            sales_plan.save()
-            
-            # Déclencher recalcul des milestones (via signaux automatiques)
-            return Response({
-                'success': True,
-                'message': 'Sales Plan activated successfully',
-                'data': SalesPlanSerializer(sales_plan).data
-            })
-            
-        except Exception as e:
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(
-                    detail=f"Failed to activate plan: {str(e)}"
-                )
-            )
-    
-    @action(detail=True, methods=['patch'])
-    def pause(self, request, pk=None):
-        """
-        Mettre en pause un Sales Plan.
-        
-        PATCH /sales-plans/{id}/pause/
-        """
-        sales_plan = self.get_object()
-        
-        if sales_plan.status == SalesPlan.Status.PAUSED:
-            return Response({
-                'success': True,
-                'message': 'Sales Plan is already paused'
-            })
-        
-        sales_plan.status = SalesPlan.Status.PAUSED
-        sales_plan.save()
-        
-        return Response({
-            'success': True,
-            'message': 'Sales Plan paused successfully',
-            'data': SalesPlanSerializer(sales_plan).data
-        })
-    
-    @action(detail=True, methods=['post'])
-    def refresh_data(self, request, pk=None):
-        """
-        Forcer actualisation des données du plan.
-        
-        POST /sales-plans/{id}/refresh-data/
-        
-        Déclenche manuellement recalcul de tous les milestones.
-        Utile pour debug ou après corrections manuelles.
-        """
-        sales_plan = self.get_object()
-        
-        try:
-            # Déclencher mise à jour manuelle via signaux
-            from end_users.signals import trigger_manual_update_for_user
-            
-            updated_plans = trigger_manual_update_for_user(
-                sales_plan.user.id,
-                reason="manual_refresh_from_api"
-            )
-            
-            return Response({
-                'success': True,
-                'message': f'Data refreshed for {updated_plans} plan(s)',
-                'refresh_timestamp': timezone.now().isoformat()
-            })
-            
-        except Exception as e:
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(
-                    detail=f"Failed to refresh data: {str(e)}"
-                )
-            )
-    
-    # =====================================================================
-    # MÉTHODES UTILITAIRES PRIVÉES
-    # =====================================================================
-    
-    def _generate_planning_recommendations(self, sales_plan, analysis):
-        """Génère recommandations d'actions basées sur l'analyse"""
-        recommendations = []
-        
-        # Analyser les gaps des milestones
-        timeline = analysis.get('timeline_analysis', {}).get('timeline', [])
-        for milestone_data in timeline:
-            if milestone_data.get('gap_value', 0) > 0:
-                gap = milestone_data['gap_value']
-                days_remaining = milestone_data.get('days_to_milestone', 0)
-                daily_pace = milestone_data.get('daily_pace_needed', 0)
+            with transaction.atomic():
+                sales_plan = self.get_object()
                 
-                if days_remaining < 7:
-                    urgency = 'HIGH'
-                elif days_remaining < 30:
-                    urgency = 'MEDIUM'
+                # Validation de l'ID
+                if not pk:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(field='Sales Plan ID')
+                    )
+                
+                try:
+                    plan_id_int = int(pk)
+                except ValueError:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(field="Sales Plan ID must be a valid integer")
+                    )
+                
+                # Récupérer le nouveau statut
+                new_status = request.data.get('status', 'ACTIVE')
+                
+                # Validation du statut
+                valid_statuses = [choice[0] for choice in SalesPlan.Status.choices]
+                if new_status not in valid_statuses:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field=f"status must be one of {valid_statuses}"
+                        )
+                    )
+                
+                # Validation : ne peut activer que si quota actif
+                if new_status == SalesPlan.Status.ACTIVE:
+                    if not sales_plan.quota.is_active:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_OPERATION.format(
+                                operation="Cannot activate plan with inactive quota"
+                            )
+                        )
+                
+                # Appliquer le changement
+                old_status = sales_plan.status
+                sales_plan.status = new_status
+                sales_plan.save(update_fields=['status'])
+                
+                # Message adapté
+                if new_status == old_status:
+                    message = f'Sales Plan "{sales_plan.name}" is already {new_status.lower()}'
                 else:
-                    urgency = 'LOW'
+                    message = f'Sales Plan "{sales_plan.name}" status changed from {old_status} to {new_status}'
                 
-                recommendations.append({
-                    'milestone_name': milestone_data['milestone_name'],
-                    'urgency': urgency,
-                    'gap': gap,
-                    'daily_pace_needed': daily_pace,
-                    'suggested_action': f"Focus on {milestone_data['milestone_type'].lower().replace('_', ' ')}"
+                return Response({
+                    'success': True,
+                    'message': message,
+                    'data': {
+                        'plan_id': sales_plan.id,
+                        'plan_name': sales_plan.name,
+                        'old_status': old_status,
+                        'new_status': new_status,
+                        'updated_at': timezone.now().isoformat()
+                    }
                 })
-        
-        return recommendations
-    
-    def _get_historical_context(self, sales_plan):
-        """Récupère contexte historique pour comparaison"""
-        # Version MVP simple
-        return {
-            'previous_plans_count': SalesPlan.objects.filter(
-                user=sales_plan.user,
-                created_at__lt=sales_plan.created_at
-            ).count(),
-            'user_avg_achievement_rate': 'N/A',  # À implémenter plus tard
-            'team_benchmark': 'N/A'  # À implémenter plus tard
-        }
-    
-    def _assess_plan_risks(self, sales_plan, analysis):
-        """Évalue les risques du plan"""
-        risks = []
-        
-        # Risque temporel
-        time_analysis = analysis.get('time_analysis', {})
-        time_remaining = time_analysis.get('time_remaining_percentage', 100)
-        
-        if time_remaining < 25:
-            risks.append({
-                'type': 'TIME_PRESSURE',
-                'severity': 'HIGH',
-                'description': 'Less than 25% of time remaining'
-            })
-        
-        # Risque de performance
-        quota_analysis = analysis.get('quota_analysis', {})
-        achievement_rate = quota_analysis.get('achievement_rate', 0)
-        
-        if achievement_rate < 50 and time_remaining < 50:
-            risks.append({
-                'type': 'UNDERPERFORMANCE',
-                'severity': 'HIGH',
-                'description': 'Low achievement rate with limited time'
-            })
-        
-        return risks
-    
-    def _calculate_team_summary(self, plans):
-        """Calcule métriques agrégées pour l'équipe"""
-        if not plans:
-            return {}
-        
-        total_plans = len(plans)
-        active_plans = len([p for p in plans if p.status == SalesPlan.Status.ACTIVE])
-        
-        return {
-            'total_plans': total_plans,
-            'active_plans': active_plans,
-            'completion_rate': f"{(active_plans/total_plans*100):.1f}%" if total_plans > 0 else "0%",
-            'team_members': len(set(p.user.id for p in plans))
-        }
+                
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNEXPECTED_ERROR.format(
+                    detail=f"Failed to update plan status: {str(e)}"
+                )
+            )

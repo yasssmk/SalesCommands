@@ -4,6 +4,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from datetime import date, timedelta
+from typing import Dict, Any
 from decimal import Decimal
 from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
@@ -196,6 +197,96 @@ class SalesQuota(BaseModelApp, ClientScopeManager.ModelMixin):
     def __str__(self):
         period_display = self._get_period_display()
         return f"{self.user.get_full_name()}: {self.get_target_type_display()} ({period_display})"
+    
+
+    # === PROPRIÉTÉ POUR COMPATIBILITÉ VIEWSETS ===
+
+    @property
+    def is_active(self) -> bool:
+        """
+        Propriété pour compatibilité avec les ViewSets et Serializers.
+        Un quota est actif si son statut est ACTIVE.
+        """
+        return self.status == self.QuotaStatus.ACTIVE
+
+    @is_active.setter  
+    def is_active(self, value: bool):
+        """
+        Setter pour permettre aux ViewSets de faire quota.is_active = True
+        """
+        if value:
+            self.status = self.QuotaStatus.ACTIVE
+            if not self.activation_date:
+                self.activation_date = timezone.now()
+        else:
+            self.status = self.QuotaStatus.COMPLETED
+
+    # === MÉTHODE POUR COMPATIBILITÉ SERIALIZER ===
+
+    def get_current_progress(self) -> Dict[str, Any]:
+        """
+        Méthode utilisée par les serializers pour récupérer les données de progression.
+        Utilise le UserPerformanceService existant.
+        """
+        try:
+            # Import ici pour éviter les dépendances circulaires
+            from ..services import UserPerformanceService
+            
+            # Récupérer les données de performance
+            performance_data = UserPerformanceService.get_user_complete_performance(
+                user_id=self.user.id,
+                period_start=self.period_start,
+                period_end=self.period_end,
+                client_id=self.client_id
+            )
+            
+            # Extraire la valeur actuelle selon le target_type
+            current_value = self._extract_current_value_from_performance(performance_data)
+            
+            # Calculer les métriques
+            target_value = float(self.target_value)
+            achievement_rate = (current_value / target_value * 100) if target_value > 0 else 0.0
+            
+            return {
+                'target_value': target_value,
+                'current_value': current_value,
+                'achievement_rate': min(100.0, achievement_rate),
+                'gap_value': max(0.0, target_value - current_value),
+                'is_achieved': achievement_rate >= 100.0,
+                'last_updated': timezone.now().isoformat()
+            }
+            
+        except Exception as e:
+            # Fallback sécurisé
+            return {
+                'target_value': float(self.target_value),
+                'current_value': 0.0,
+                'achievement_rate': 0.0,
+                'gap_value': float(self.target_value),
+                'is_achieved': False,
+                'error': str(e),
+                'last_updated': timezone.now().isoformat()
+            }
+
+    def _extract_current_value_from_performance(self, performance_data: Dict) -> float:
+        """
+        Helper pour extraire la valeur selon le target_type
+        """
+        # Mapping des types vers les clés du UserPerformanceService
+        mapping = {
+            'closed_won': lambda data: data.get('opportunities', {}).get('won_value', 0),
+            'pipeline': lambda data: data.get('opportunities', {}).get('pipeline_value', 0), 
+            'meetings': lambda data: data.get('meetings', {}).get('completed_count', 0),
+            'leads_accepted': lambda data: data.get('leads', {}).get('qualified_count', 0),
+            'opportunities': lambda data: data.get('opportunities', {}).get('created_count', 0),
+            'conversion_rate': lambda data: data.get('leads', {}).get('conversion_rate_percentage', 0)
+        }
+        
+        extractor = mapping.get(self.target_type)
+        if extractor:
+            return float(extractor(performance_data))
+        
+        return 0.0
     
     def _get_period_display(self):
         """Génère un affichage lisible de la période"""
@@ -489,6 +580,8 @@ class SalesQuota(BaseModelApp, ClientScopeManager.ModelMixin):
             bool: True si période expirée
         """
         return date.today() > self.period_end
+    
+    
 
     # === MÉTHODES UTILITAIRES ===
     

@@ -820,10 +820,12 @@ class UserPerformanceService:
         """Mapping optimisé target_type → valeur actuelle"""
         try:
             mapping = {
-                'CLOSED_WON': lambda p: float(p.get('opportunities', {}).get('won_value', 0)),
-                'PIPELINE': lambda p: float(p.get('opportunities', {}).get('pipeline_value', 0)),
-                'MEETINGS': lambda p: float(p.get('meetings', {}).get('completed_count', 0)),
-                'LEADS_ACCEPTED': lambda p: float(p.get('leads', {}).get('qualified_count', 0))
+                'closed_won': lambda p: float(p.get('opportunities', {}).get('won_value', 0)),
+                'pipeline': lambda p: float(p.get('opportunities', {}).get('pipeline_value', 0)),
+                'meetings': lambda p: float(p.get('meetings', {}).get('completed_count', 0)),
+                'leads_accepted': lambda p: float(p.get('leads', {}).get('qualified_count', 0)),
+                'opportunities': lambda p: float(p.get('opportunities', {}).get('created_count', 0)),
+                'conversion_rate': lambda p: float(p.get('leads', {}).get('conversion_rate_percentage', 0))
             }
             
             return mapping.get(target_type, lambda p: 0.0)(performance_data)

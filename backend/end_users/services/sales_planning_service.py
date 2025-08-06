@@ -20,28 +20,74 @@ class SalesPlanningService:
     - Timeline flexible avec calculs automatiques previous/next
     - Dimension temporelle complète (jours restants, rythme nécessaire)
     
+    CORRECTIONS CRITIQUES :
+    - Signature UserPerformanceService corrigée
+    - Mapping métriques corrigé selon vraie structure
+    - Extraction des valeurs selon performance_data réelle
+    
     Usage:
         analysis = SalesPlanningService.generate_complete_analysis(sales_plan)
     """
     
-    # === CONFIGURATION GÉNÉRIQUE DES TYPES ===
-    METRIC_MAPPINGS = {
-        # Quota types -> clé dans UserPerformanceService
-        'closed_won': 'closed_won',
-        'pipeline': 'pipeline_value',
-        'meetings': 'meetings_count',
-        'leads_accepted': 'leads_count',
-        
-        # Milestone types -> clé dans UserPerformanceService  
-        'LEADS_GENERATED': 'leads_count',
-        'MEETINGS_SECURED': 'meetings_count',
-        'OPPORTUNITIES_CREATED': 'opportunities_count',
-        'PIPELINE_VALUE': 'pipeline_value',
-        'CLOSED_WON': 'closed_won',
-        'CUSTOM': None  # Géré manuellement
-    }
+    # === CONFIGURATION CORRIGÉE DES TYPES ===
     
-    # Chemins de conversion logiques
+    @classmethod
+    def _get_metric_value_from_performance(
+        cls, 
+        metric_type: str, 
+        performance_data: Dict[str, Any], 
+        custom_logic=None
+    ) -> float:
+        """
+        ✅ NOUVEAU : Extraction unifiée selon la vraie structure UserPerformanceService
+        
+        Remplace l'ancien METRIC_MAPPINGS qui était totalement incorrect.
+        
+        Structure réelle UserPerformanceService :
+        {
+            'leads': {'qualified_count': ..., 'converted_count': ...},
+            'opportunities': {'created_count': ..., 'won_value': ..., 'pipeline_value': ...},
+            'meetings': {'completed_count': ..., 'total_managed': ...},
+            'campaigns': {...}
+        }
+        """
+        if metric_type == 'CUSTOM' and custom_logic:
+            return custom_logic(performance_data)
+        
+        try:
+            # Mapping pour types de quota
+            if metric_type == 'closed_won':
+                return float(performance_data.get('opportunities', {}).get('won_value', 0))
+            elif metric_type == 'pipeline':
+                return float(performance_data.get('opportunities', {}).get('pipeline_value', 0))
+            elif metric_type == 'meetings':
+                return float(performance_data.get('meetings', {}).get('completed_count', 0))
+            elif metric_type == 'leads_accepted':
+                return float(performance_data.get('leads', {}).get('qualified_count', 0))
+            elif metric_type == 'opportunities':
+                return float(performance_data.get('opportunities', {}).get('created_count', 0))
+            elif metric_type == 'conversion_rate':
+                return float(performance_data.get('leads', {}).get('conversion_rate_percentage', 0))
+            
+            # Mapping pour types de milestone
+            elif metric_type == 'LEADS_GENERATED':
+                return float(performance_data.get('leads', {}).get('qualified_count', 0))
+            elif metric_type == 'MEETINGS_SECURED':
+                return float(performance_data.get('meetings', {}).get('completed_count', 0))
+            elif metric_type == 'OPPORTUNITIES_CREATED':
+                return float(performance_data.get('opportunities', {}).get('created_count', 0))
+            elif metric_type == 'PIPELINE_VALUE':
+                return float(performance_data.get('opportunities', {}).get('pipeline_value', 0))
+            elif metric_type == 'CLOSED_WON':
+                return float(performance_data.get('opportunities', {}).get('won_value', 0))
+            
+            else:
+                return 0.0
+                
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return 0.0
+    
+    # Chemins de conversion logiques (inchangé - logique OK)
     CONVERSION_PATHS = [
         ('LEADS_GENERATED', 'MEETINGS_SECURED'),
         ('MEETINGS_SECURED', 'OPPORTUNITIES_CREATED'),
@@ -57,28 +103,31 @@ class SalesPlanningService:
         """
         Génère l'analyse complète du Sales Plan.
         Point d'entrée principal - fonctionne pour toute configuration.
+        
+        ✅ CORRECTION CRITIQUE : Signature UserPerformanceService corrigée
         """
         try:
             # Validation du plan
             cls._validate_sales_plan(sales_plan)
             
-            # Données actuelles (un seul appel)
+            # ✅ SIGNATURE CORRIGÉE - UserPerformanceService
             performance_data = UserPerformanceService.get_user_complete_performance(
-                user=sales_plan.user,
+                user_id=sales_plan.user.id,  # ✅ Corrigé : user_id au lieu de user
                 period_start=sales_plan.period_start,
-                period_end=sales_plan.period_end
+                period_end=sales_plan.period_end,
+                client_id=sales_plan.client_id  # ✅ Ajouté : client_id manquant
             )
             
-            # Analyse temporelle
+            # Analyse temporelle (inchangé - logique OK)
             time_analysis = cls._calculate_time_analysis(sales_plan)
             
-            # Timeline des milestones
+            # Timeline des milestones (corrigé pour utiliser nouveau mapping)
             timeline_analysis = cls._analyze_complete_timeline(sales_plan, performance_data, time_analysis)
             
-            # Contribution des campagnes
+            # Contribution des campagnes (inchangé)
             campaigns_contribution = cls._get_campaigns_contribution(sales_plan)
             
-            # Analyse du quota principal
+            # ✅ ANALYSE QUOTA CORRIGÉE avec nouveau mapping
             quota_analysis = cls._analyze_main_quota(sales_plan, performance_data, time_analysis)
             
             return {
@@ -95,17 +144,16 @@ class SalesPlanningService:
                 'timeline_analysis': timeline_analysis,
                 'campaigns_contribution': campaigns_contribution,
                 'generated_at': timezone.now().isoformat(),
-                'data_source': 'UserPerformanceService'
+                'data_source': 'UserPerformanceService_v2_corrected'  # ✅ Marqueur version corrigée
             }
             
         except Exception as e:
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=str(e))
-            )
+            # ✅ Gestion d'erreur améliorée
+            return cls._get_fallback_analysis(sales_plan, str(e))
     
     @classmethod
     def _validate_sales_plan(cls, sales_plan):
-        """Validation basique du Sales Plan"""
+        """Validation basique du Sales Plan (inchangé)"""
         if not sales_plan:
             raise StandardizedValidationError("Sales Plan is required")
         
@@ -118,7 +166,7 @@ class SalesPlanningService:
     @classmethod
     def _calculate_time_analysis(cls, sales_plan) -> Dict[str, Any]:
         """
-        Calcule l'analyse temporelle complète.
+        Calcule l'analyse temporelle complète. (INCHANGÉ - logique correcte)
         Dimension temps : où on en est, combien reste-t-il, rythme nécessaire.
         """
         today = timezone.now().date()
@@ -164,23 +212,15 @@ class SalesPlanningService:
     @classmethod
     def _get_current_value_generic(cls, metric_type: str, performance_data: Dict[str, Any], custom_logic=None) -> float:
         """
-        Récupère la valeur actuelle pour n'importe quel type de métrique.
-        Logique générique qui s'adapte à tous les objectifs.
+        ✅ MÉTHODE CORRIGÉE : Utilise maintenant le nouveau mapping
+        Ancienne version utilisait METRIC_MAPPINGS incorrect
         """
-        if metric_type == 'CUSTOM' and custom_logic:
-            return custom_logic(performance_data)
-        
-        metric_key = cls.METRIC_MAPPINGS.get(metric_type)
-        if not metric_key:
-            return 0.0
-        
-        value = performance_data.get(metric_key, 0)
-        return float(value) if value is not None else 0.0
+        return cls._get_metric_value_from_performance(metric_type, performance_data, custom_logic)
     
     @classmethod
     def _build_milestone_timeline(cls, sales_plan) -> List[Dict[str, Any]]:
         """
-        Construit la chronologie avec liens previous/next.
+        Construit la chronologie avec liens previous/next. (INCHANGÉ - logique correcte)
         Indépendant du type de milestone - pure logique temporelle.
         """
         milestones = list(sales_plan.milestones.order_by('target_date'))
@@ -205,9 +245,12 @@ class SalesPlanningService:
     @classmethod
     def _calculate_milestone_gap(cls, milestone_info: Dict[str, Any], performance_data: Dict[str, Any], time_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Calcul générique du gap pour chaque milestone avec dimension temporelle.
+        ✅ CORRIGÉ : Calcul générique du gap pour chaque milestone avec dimension temporelle.
+        Utilise maintenant le mapping corrigé.
         """
         milestone = milestone_info['milestone']
+        
+        # ✅ Utilise le nouveau mapping corrigé
         current_value = cls._get_current_value_generic(
             milestone.milestone_type, 
             performance_data
@@ -259,8 +302,8 @@ class SalesPlanningService:
     @classmethod
     def _calculate_next_milestone_requirements(cls, milestone_info: Dict[str, Any], performance_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Calcule ce qu'il faut pour atteindre le prochain milestone.
-        Logique générique basée sur la différence entre milestones.
+        ✅ CORRIGÉ : Calcule ce qu'il faut pour atteindre le prochain milestone.
+        Utilise maintenant le mapping corrigé.
         """
         current_milestone = milestone_info['milestone']
         next_milestone = milestone_info['next']
@@ -268,7 +311,7 @@ class SalesPlanningService:
         if not next_milestone:
             return None  # Pas de prochain milestone
         
-        # Valeurs actuelles
+        # ✅ Valeurs actuelles avec mapping corrigé
         current_value_now = cls._get_current_value_generic(
             current_milestone.milestone_type, 
             performance_data
@@ -317,7 +360,7 @@ class SalesPlanningService:
     @classmethod
     def _analyze_complete_timeline(cls, sales_plan, performance_data: Dict[str, Any], time_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyse complète de la timeline - fonctionne pour toute combinaison d'objectifs.
+        ✅ CORRIGÉ : Analyse complète de la timeline - utilise mapping corrigé.
         """
         # Construction de la timeline
         timeline = cls._build_milestone_timeline(sales_plan)
@@ -333,16 +376,16 @@ class SalesPlanningService:
                 }
             }
         
-        # Analyse de chaque milestone
+        # Analyse de chaque milestone avec mapping corrigé
         timeline_analysis = []
         achieved_count = 0
         overdue_count = 0
         
         for milestone_info in timeline:
-            # Gap analysis avec dimension temporelle
+            # ✅ Gap analysis avec mapping corrigé
             gap_analysis = cls._calculate_milestone_gap(milestone_info, performance_data, time_analysis)
             
-            # Requirements pour le prochain
+            # ✅ Requirements avec mapping corrigé
             next_requirements = cls._calculate_next_milestone_requirements(milestone_info, performance_data)
             
             # Compteurs
@@ -373,9 +416,11 @@ class SalesPlanningService:
     @classmethod
     def _analyze_main_quota(cls, sales_plan, performance_data: Dict[str, Any], time_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyse du quota principal avec dimension temporelle.
+        ✅ CORRIGÉ : Analyse du quota principal avec mapping corrigé.
         """
         quota = sales_plan.quota
+        
+        # ✅ Utilise le mapping corrigé
         current_value = cls._get_current_value_generic(
             quota.target_type, 
             performance_data
@@ -419,7 +464,7 @@ class SalesPlanningService:
     @classmethod
     def _get_campaigns_contribution(cls, sales_plan) -> Dict[str, Any]:
         """
-        Contribution des campagnes - générique pour tous types d'objectifs.
+        Contribution des campagnes - générique pour tous types d'objectifs. (INCHANGÉ)
         """
         try:
             from apps.campaign.models import Campaign
@@ -439,22 +484,21 @@ class SalesPlanningService:
                 
                 for objective in objectives:
                     # Vérifier si l'objectif contribue au quota/milestones
-                    if objective.target_type in cls.METRIC_MAPPINGS:
-                        campaign_data = {
-                            'campaign_name': campaign.name,
-                            'campaign_id': campaign.id,
-                            'objective_type': objective.target_type,
-                            'target_value': float(objective.target_value),
-                            'start_date': campaign.start_date.isoformat(),
-                            'end_date': campaign.end_date.isoformat()
-                        }
-                        campaigns_data.append(campaign_data)
-                        
-                        # Grouper par type pour contribution totale
-                        obj_type = objective.target_type
-                        if obj_type not in contributions_by_type:
-                            contributions_by_type[obj_type] = 0
-                        contributions_by_type[obj_type] += float(objective.target_value)
+                    campaign_data = {
+                        'campaign_name': campaign.name,
+                        'campaign_id': campaign.id,
+                        'objective_type': objective.target_type,
+                        'target_value': float(objective.target_value),
+                        'start_date': campaign.start_date.isoformat(),
+                        'end_date': campaign.end_date.isoformat()
+                    }
+                    campaigns_data.append(campaign_data)
+                    
+                    # Grouper par type pour contribution totale
+                    obj_type = objective.target_type
+                    if obj_type not in contributions_by_type:
+                        contributions_by_type[obj_type] = 0
+                    contributions_by_type[obj_type] += float(objective.target_value)
             
             return {
                 'campaigns_detail': campaigns_data,
@@ -473,7 +517,7 @@ class SalesPlanningService:
     @classmethod
     def _can_calculate_conversion(cls, from_type: str, to_type: str) -> bool:
         """
-        Détermine si on peut calculer un ratio de conversion entre 2 types.
+        Détermine si on peut calculer un ratio de conversion entre 2 types. (INCHANGÉ)
         """
         return (from_type, to_type) in cls.CONVERSION_PATHS
     
@@ -482,13 +526,15 @@ class SalesPlanningService:
     @classmethod
     def get_quick_summary(cls, sales_plan) -> Dict[str, Any]:
         """
-        Résumé rapide pour dashboard - version allégée.
+        ✅ CORRIGÉ : Résumé rapide pour dashboard - signature corrigée.
         """
         try:
+            # ✅ Signature corrigée
             performance_data = UserPerformanceService.get_user_complete_performance(
-                user=sales_plan.user,
+                user_id=sales_plan.user.id,  # ✅ Corrigé
                 period_start=sales_plan.period_start,
-                period_end=sales_plan.period_end
+                period_end=sales_plan.period_end,
+                client_id=sales_plan.client_id  # ✅ Ajouté
             )
             
             time_analysis = cls._calculate_time_analysis(sales_plan)
@@ -500,11 +546,51 @@ class SalesPlanningService:
                 'achievement_rate': quota_analysis['achievement_rate'],
                 'is_on_track': quota_analysis['is_on_track'],
                 'daily_pace_needed': quota_analysis['daily_pace_needed'],
-                'gap_value': quota_analysis['gap_value']
+                'gap_value': quota_analysis['gap_value'],
+                'success': True
             }
             
         except Exception as e:
             return {
                 'error': str(e),
-                'plan_name': sales_plan.name if sales_plan else 'Unknown'
+                'plan_name': sales_plan.name if sales_plan else 'Unknown',
+                'success': False
             }
+    
+    # === NOUVELLES MÉTHODES DE FALLBACK ===
+    
+    @classmethod
+    def _get_fallback_analysis(cls, sales_plan, error_message: str) -> Dict[str, Any]:
+        """
+        ✅ NOUVEAU : Analyse de fallback en cas d'erreur complète
+        """
+        try:
+            time_analysis = cls._calculate_time_analysis(sales_plan)
+        except Exception:
+            time_analysis = {'time_remaining_percentage': 50, 'days_remaining': 0}
+        
+        return {
+            'plan_summary': {
+                'id': sales_plan.id if sales_plan else None,
+                'name': sales_plan.name if sales_plan else 'Unknown',
+                'status': sales_plan.status if sales_plan else 'UNKNOWN',
+                'error': 'Analysis failed'
+            },
+            'time_analysis': time_analysis,
+            'quota_analysis': {
+                'achievement_rate': 0,
+                'is_on_track': False,
+                'gap_value': 0
+            },
+            'timeline_analysis': {
+                'timeline': [],
+                'summary': {'total_milestones': 0}
+            },
+            'campaigns_contribution': {
+                'campaigns_detail': [],
+                'campaigns_count': 0
+            },
+            'error': error_message,
+            'generated_at': timezone.now().isoformat(),
+            'data_source': 'fallback_mode'
+        }
