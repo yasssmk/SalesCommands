@@ -384,9 +384,9 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
         
         # Utiliser UserPerformanceService
         try:
-            from ..services.user_performance_service import UserPerformanceService
+            from ..services.user_performance_service_obsolete import UserPerformanceService
             
-            performance_data = UserPerformanceService.get_user_complete_performance(
+            performance_data = UserPerformanceService.get_user_complete_performance_optimized(
                 user_id=target_user.id,
                 period_start=period_start,
                 period_end=period_end,
@@ -444,9 +444,9 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
         
         # Utiliser UserPerformanceService
         try:
-            from ..services.user_performance_service import UserPerformanceService
+            from ..services.user_performance_service_obsolete import UserPerformanceService
             
-            team_performance = UserPerformanceService.get_team_consolidated_performance(
+            team_performance = UserPerformanceService.get_team_consolidated_performance_optimized(
                 team_user_ids=team_user_ids,
                 period_start=period_start,
                 period_end=period_end,
@@ -520,9 +520,9 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
         
         # Utiliser UserPerformanceService
         try:
-            from ..services.user_performance_service import UserPerformanceService
+            from ..services.user_performance_service_obsolete import UserPerformanceService
             
-            consolidated_performance = UserPerformanceService.get_team_consolidated_performance(
+            consolidated_performance = UserPerformanceService.get_team_consolidated_performance_optimized(
                 team_user_ids=managed_user_ids,
                 period_start=period_start,
                 period_end=period_end,

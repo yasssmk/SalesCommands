@@ -154,7 +154,7 @@ class SalesPlanSerializer(ClientScopeManager.SerializerMixin, serializers.ModelS
         
         try:
             # ✅ SIGNATURE CORRIGÉE - UserPerformanceService
-            performance_data = UserPerformanceService.get_user_complete_performance(
+            performance_data = UserPerformanceService.get_user_complete_performance_optimized(
                 user_id=obj.user.id,  # ✅ Corrigé : user_id au lieu de user
                 period_start=obj.period_start,
                 period_end=obj.period_end,

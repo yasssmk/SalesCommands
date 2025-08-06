@@ -23,7 +23,7 @@ from end_users.serializers.sales_quota_serializer import (
     SalesQuotaCreateSerializer,
     SalesQuotaUpdateSerializer
 )
-from end_users.services.user_performance_service import UserPerformanceService
+from ..services import UserPerformanceService
 
 
 class SalesQuotaViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
@@ -709,7 +709,7 @@ class SalesQuotaViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.Mode
             )
             
             # Appel au service pour performance équipe
-            team_performance = UserPerformanceService.get_team_consolidated_performance(
+            team_performance = UserPerformanceService.get_team_consolidated_performance_optimized(
                 team_user_ids=team_user_ids,
                 period_start=period_data['min_start'],
                 period_end=period_data['max_end'],

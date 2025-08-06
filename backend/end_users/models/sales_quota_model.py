@@ -233,7 +233,7 @@ class SalesQuota(BaseModelApp, ClientScopeManager.ModelMixin):
             from ..services import UserPerformanceService
             
             # Récupérer les données de performance
-            performance_data = UserPerformanceService.get_user_complete_performance(
+            performance_data = UserPerformanceService.get_user_complete_performance_optimized(
                 user_id=self.user.id,
                 period_start=self.period_start,
                 period_end=self.period_end,
@@ -452,7 +452,7 @@ class SalesQuota(BaseModelApp, ClientScopeManager.ModelMixin):
             from end_users.services import UserPerformanceService
             
             # Récupérer les performances sur la période du quota
-            performance_data = UserPerformanceService.get_user_complete_performance(
+            performance_data = UserPerformanceService.get_user_complete_performance_optimized(
                 user_id=self.user.id,
                 period_start=self.period_start,
                 period_end=min(self.period_end, date.today()),  # Ne pas dépasser aujourd'hui

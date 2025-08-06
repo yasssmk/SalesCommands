@@ -175,7 +175,7 @@ class SalesPlan(BaseModelApp, ClientScopeManager.ModelMixin):
         """
         try:
             # ✅ SIGNATURE CORRIGÉE - Utilisation des bons paramètres
-            performance_data = UserPerformanceService.get_user_complete_performance(
+            performance_data = UserPerformanceService.get_user_complete_performance_optimized(
                 user_id=self.user.id,  # ✅ Corrigé : user_id au lieu de user
                 period_start=self.period_start,
                 period_end=self.period_end,

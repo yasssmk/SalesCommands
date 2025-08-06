@@ -192,7 +192,7 @@ class SalesMilestone(BaseModelApp, ClientScopeManager.ModelMixin):
             period_end = min(self.target_date, date.today())
             
             # ✅ SIGNATURE CORRIGÉE - UserPerformanceService
-            performance_data = UserPerformanceService.get_user_complete_performance(
+            performance_data = UserPerformanceService.get_user_complete_performance_optimized(
                 user_id=self.sales_plan.user.id,  # ✅ Corrigé : user_id au lieu de user
                 period_start=self.sales_plan.period_start,
                 period_end=period_end,

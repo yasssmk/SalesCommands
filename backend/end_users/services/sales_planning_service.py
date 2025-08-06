@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Dict, Any, List, Optional, Tuple
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-from .user_performance_service import UserPerformanceService
+from .user_performance_service_obsolete import UserPerformanceService
 
 
 class SalesPlanningService:
@@ -111,7 +111,7 @@ class SalesPlanningService:
             cls._validate_sales_plan(sales_plan)
             
             # ✅ SIGNATURE CORRIGÉE - UserPerformanceService
-            performance_data = UserPerformanceService.get_user_complete_performance(
+            performance_data = UserPerformanceService.get_user_complete_performance_optimized(
                 user_id=sales_plan.user.id,  # ✅ Corrigé : user_id au lieu de user
                 period_start=sales_plan.period_start,
                 period_end=sales_plan.period_end,
@@ -530,7 +530,7 @@ class SalesPlanningService:
         """
         try:
             # ✅ Signature corrigée
-            performance_data = UserPerformanceService.get_user_complete_performance(
+            performance_data = UserPerformanceService.get_user_complete_performance_optimized(
                 user_id=sales_plan.user.id,  # ✅ Corrigé
                 period_start=sales_plan.period_start,
                 period_end=sales_plan.period_end,

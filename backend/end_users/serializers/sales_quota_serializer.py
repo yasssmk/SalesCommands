@@ -121,7 +121,7 @@ class SalesQuotaSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         Usage acceptable pour retrieve individual (6 requêtes max par quota).
         """
         try:
-            from end_users.services.user_performance_service import UserPerformanceService
+            from backend.end_users.services.user_performance_service_obsolete import UserPerformanceService
             
             # Appel unique au service optimisé
             return UserPerformanceService.get_user_quota_performance(
