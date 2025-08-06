@@ -7,4 +7,14 @@ class EndUsersConfig(AppConfig):
     name = 'end_users'
     
     def ready(self):
-        import end_users.signals  # Register signals
+        try:
+            # Import des signaux pour les enregistrer
+            from end_users.signals import sales_plan_signals
+            
+            print("[END_USERS] Sales Plan signals loaded successfully")
+            
+        except ImportError as e:
+            print(f"[END_USERS] Warning: Could not load sales plan signals: {e}")
+        
+        except Exception as e:
+            print(f"[END_USERS] Error loading signals: {e}")

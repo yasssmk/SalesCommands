@@ -11,7 +11,7 @@ from core.client_scope import ClientScopeManager
 from apps.core_apps.models import BaseModelApp
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-from apps.core_apps.services import UserPerformanceService
+from ..services import UserPerformanceService
 
 
 class SalesPlan(BaseModelApp, ClientScopeManager.ModelMixin):
