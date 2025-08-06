@@ -9,7 +9,7 @@ from decimal import Decimal
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-from apps.core_apps.services import UserPerformanceService
+from ..services import UserPerformanceService
 from end_users.models import SalesPlan, SalesQuota, User
 from apps.campaign.models import Campaign
 

@@ -1,16 +1,4 @@
-# from django.urls import path
-# from .views import AdminCreateUserView, UserLoginView, UserLogoutView, UserRefreshTokenView
-
-# urlpatterns = [
-#     path('admin-create/', AdminCreateUserView.as_view(), name='admin_create_user'),
-#     path('login/', UserLoginView.as_view(), name='login'),
-#     path('logout/', UserLogoutView.as_view(), name='logout'),
-
-# ]
-
-# end_users/urls.py
-
-# end_users/urls.py
+# apps/end_users/urls.py
 
 from django.urls import path
 from .views.user_view import (
@@ -26,6 +14,8 @@ from .views.user_view import (
     UserRefreshTokenView
 )
 from .views.sales_quota_views import SalesQuotaViewSet
+from .views.sales_plan_views import SalesPlanViewSet  
+from .views.sales_milestone_views import SalesMilestoneViewSet
 
 app_name = 'end_users'
 
@@ -203,6 +193,106 @@ urlpatterns = [
     }), name='sales-quota-deactivate'),
     
     # =========================================================================
+    # SALES PLANS MANAGEMENT - Gestion des plans commerciaux avec dashboard
+    # =========================================================================
+    
+    # Sales Plans CRUD
+    path('sales-plans/', SalesPlanViewSet.as_view({
+        'get': 'list',
+        'post': 'create'
+    }), name='sales-plan-list'),
+    
+    path('sales-plans/<int:pk>/', SalesPlanViewSet.as_view({
+        'get': 'retrieve',
+        'put': 'update',
+        'patch': 'partial_update',
+        'delete': 'destroy'
+    }), name='sales-plan-detail'),
+    
+    # Sales Plan Dashboard Actions
+    path('sales-plans/<int:pk>/dashboard/', SalesPlanViewSet.as_view({
+        'get': 'dashboard'
+    }), name='sales-plan-dashboard'),
+    
+    path('sales-plans/<int:pk>/planning-analysis/', SalesPlanViewSet.as_view({
+        'get': 'planning_analysis'
+    }), name='sales-plan-planning-analysis'),
+    
+    path('sales-plans/<int:pk>/quick-summary/', SalesPlanViewSet.as_view({
+        'get': 'quick_summary'
+    }), name='sales-plan-quick-summary'),
+    
+    # Sales Plan Multi-User Actions
+    path('sales-plans/my-plans/', SalesPlanViewSet.as_view({
+        'get': 'my_plans'
+    }), name='sales-plan-my-plans'),
+    
+    path('sales-plans/team-plans/', SalesPlanViewSet.as_view({
+        'get': 'team_plans'
+    }), name='sales-plan-team-plans'),
+    
+    # Sales Plan Management Actions
+    path('sales-plans/<int:pk>/activate/', SalesPlanViewSet.as_view({
+        'patch': 'activate'
+    }), name='sales-plan-activate'),
+    
+    path('sales-plans/<int:pk>/pause/', SalesPlanViewSet.as_view({
+        'patch': 'pause'
+    }), name='sales-plan-pause'),
+    
+    path('sales-plans/<int:pk>/refresh-data/', SalesPlanViewSet.as_view({
+        'post': 'refresh_data'
+    }), name='sales-plan-refresh-data'),
+    
+    # =========================================================================
+    # SALES MILESTONES MANAGEMENT - Gestion des jalons avec tracking automatique
+    # =========================================================================
+    
+    # Sales Milestones CRUD
+    path('sales-milestones/', SalesMilestoneViewSet.as_view({
+        'get': 'list',
+        'post': 'create'
+    }), name='sales-milestone-list'),
+    
+    path('sales-milestones/<int:pk>/', SalesMilestoneViewSet.as_view({
+        'get': 'retrieve',
+        'put': 'update',
+        'patch': 'partial_update',
+        'delete': 'destroy'
+    }), name='sales-milestone-detail'),
+    
+    # Sales Milestone Tracking Actions
+    path('sales-milestones/<int:pk>/update-progress/', SalesMilestoneViewSet.as_view({
+        'post': 'update_progress'
+    }), name='sales-milestone-update-progress'),
+    
+    path('sales-milestones/batch-update/', SalesMilestoneViewSet.as_view({
+        'post': 'batch_update'
+    }), name='sales-milestone-batch-update'),
+    
+    # Sales Milestone Filtering Actions
+    path('sales-milestones/overdue/', SalesMilestoneViewSet.as_view({
+        'get': 'overdue'
+    }), name='sales-milestone-overdue'),
+    
+    path('sales-milestones/upcoming/', SalesMilestoneViewSet.as_view({
+        'get': 'upcoming'
+    }), name='sales-milestone-upcoming'),
+    
+    path('sales-milestones/by-plan/<int:plan_id>/', SalesMilestoneViewSet.as_view({
+        'get': 'by_plan'
+    }), name='sales-milestone-by-plan'),
+    
+    # Sales Milestone Management Actions
+    path('sales-milestones/<int:pk>/mark-achieved/', SalesMilestoneViewSet.as_view({
+        'patch': 'mark_achieved'
+    }), name='sales-milestone-mark-achieved'),
+    
+    path('sales-milestones/<int:pk>/reset-progress/', SalesMilestoneViewSet.as_view({
+        'patch': 'reset_progress'
+    }), name='sales-milestone-reset-progress'),
+    
+    # =========================================================================
     # USER COLLECTIONS - Collections et filtres spécialisés
     # =========================================================================
     
@@ -229,6 +319,11 @@ urlpatterns = [
         'get': 'my_quotas'
     }), name='my-quotas'),
     
+    # Raccourcis Sales Plans  
+    path('my-plans/', SalesPlanViewSet.as_view({
+        'get': 'my_plans'
+    }), name='my-plans'),
+    
     # =========================================================================
     # DOCUMENTATION ET METADATA - URLs d'information
     # =========================================================================
@@ -237,125 +332,3 @@ urlpatterns = [
     # path('api-info/', APIInfoView.as_view(), name='api-info'),
     # path('endpoints/', EndpointsView.as_view(), name='endpoints'),
 ]
-
-# =========================================================================
-# URL PATTERNS DOCUMENTATION
-# =========================================================================
-
-"""
-ORGANISATION DES URLs end_users:
-
-📁 AUTHENTIFICATION
-├── /login/                          → Connexion utilisateur
-├── /logout/                         → Déconnexion utilisateur  
-└── /refresh-token/                  → Rafraîchir les tokens
-
-📁 CLIENT ACCOUNTS (Multi-tenant root)
-├── /client-accounts/                → Liste/Création comptes clients
-├── /client-accounts/{id}/           → Détail/Modification compte client
-└── /client-accounts/{id}/stats/     → Statistiques détaillées client
-
-📁 USER ROLES (Permissions)
-├── /roles/                          → Liste/Création rôles
-├── /roles/{id}/                     → Détail/Modification rôle
-└── /roles/permissions-matrix/       → Matrice permissions tous rôles
-
-📁 ORGANIZATIONS (Hiérarchie)
-├── /organizations/                  → Liste/Création organisations
-├── /organizations/{id}/             → Détail/Modification organisation
-└── /organizations/{id}/hierarchy/   → Hiérarchie complète (orgs/équipes/membres)
-
-📁 TEAMS (Équipes)
-├── /teams/                          → Liste/Création équipes
-├── /teams/{id}/                     → Détail/Modification équipe
-└── /teams/{id}/members-performance-summary/ → Résumé performances membres
-
-📁 USERS (Utilisateurs)
-├── /users/                          → Liste/Création utilisateurs
-├── /users/{id}/                     → Détail/Modification utilisateur
-└── /users/managers/                 → Liste managers avec métriques
-
-📁 SALES QUOTAS (Quotas de vente - MVP)
-├── /sales-quotas/                   → Liste/Création quotas
-├── /sales-quotas/{id}/              → Détail/Modification quota
-├── /sales-quotas/{id}/performance/  → Performance détaillée quota
-├── /sales-quotas/team-summary/      → Résumé quotas équipe
-├── /sales-quotas/my-quotas/         → Mes quotas personnels
-├── /sales-quotas/{id}/activate/     → Activer quota
-└── /sales-quotas/{id}/deactivate/   → Désactiver quota
-
-📁 PERFORMANCE INTEGRATION (Sales Plan Foundation)
-├── /users/{id}/performance/         → Métriques individuelles (période configurable)
-├── /users/team-performance/         → Performances équipe utilisateur connecté
-├── /users/{id}/managed-users-performance/ → Performances utilisateurs managés
-├── /my-performance/                 → Raccourci performances personnelles
-├── /my-team-performance/           → Raccourci performances équipe
-└── /my-quotas/                     → Raccourci mes quotas
-
-PARAMÈTRES QUERYSTRING SUPPORTÉS:
-
-🔍 FILTRES COMMUNS (tous les endpoints list):
-- ?active_only=true/false           → Filtrer éléments actifs uniquement  
-- ?managers_only=true/false         → Filtrer managers uniquement
-- ?search=terme                     → Recherche textuelle
-- ?ordering=field,-field            → Tri (- pour desc)
-
-📊 PARAMÈTRES PERFORMANCE:
-- ?period_start=YYYY-MM-DD          → Début période analyse
-- ?period_end=YYYY-MM-DD            → Fin période analyse
-- (défaut: mois actuel si non spécifié)
-
-🎯 PARAMÈTRES SALES QUOTAS:
-- ?target_type=CLOSED_WON,PIPELINE  → Filtrer par type d'objectif
-- ?current_period=true              → Quotas de la période courante
-- ?user={id}                        → Quotas d'un utilisateur spécifique
-- ?user__team={id}                  → Quotas d'une équipe
-
-EXEMPLES D'UTILISATION:
-
-📈 RÉCUPÉRER PERFORMANCES UTILISATEUR:
-GET /client/users/123/performance/?period_start=2024-01-01&period_end=2024-01-31
-
-📊 VUE MANAGER - PERFORMANCES ÉQUIPE:
-GET /client/users/456/managed-users-performance/?period_start=2024-01-01&period_end=2024-01-31
-
-🎯 MES QUOTAS ACTIFS:
-GET /client/my-quotas/?active_only=true
-
-🎯 PERFORMANCE D'UN QUOTA:
-GET /client/sales-quotas/789/performance/
-
-🎯 RÉSUMÉ QUOTAS ÉQUIPE:
-GET /client/sales-quotas/team-summary/
-
-🎯 QUOTAS PÉRIODE COURANTE:
-GET /client/sales-quotas/?current_period=true&active_only=true
-
-🏢 HIÉRARCHIE ORGANISATION COMPLÈTE:
-GET /client/organizations/789/hierarchy/
-
-👥 LISTE MANAGERS AVEC MÉTRIQUES:
-GET /client/users/managers/?active_only=true
-
-📋 STATISTIQUES CLIENT:
-GET /client/client-accounts/101/stats/
-
-🔐 MATRICE PERMISSIONS:
-GET /client/roles/permissions-matrix/
-
-INTÉGRATION SALES PLAN ACTUELLE:
-
-✅ MVP SALES QUOTAS IMPLÉMENTÉ:
-- Gestion complète des quotas de vente individuels
-- Performance temps réel avec intégration CRM 
-- Support équipes et organisations
-- Calculs optimisés et projections
-
-🚀 ÉVOLUTION FUTURE PHASE 2:
-1. /users/{id}/performance/ → Base pour dashboard Sales Plan individuel
-2. /users/team-performance/ → Base pour dashboard Sales Plan équipe  
-3. /users/{id}/managed-users-performance/ → Base pour vue manager Sales Plan
-4. Les quotas serviront de fondation pour SalesPlans avec jalons (milestones)
-
-Cette architecture permet une évolution naturelle vers les fonctionnalités Sales Plan avancées.
-"""

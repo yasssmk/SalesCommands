@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Dict, Any, List, Optional, Tuple
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-from apps.core_apps.services import UserPerformanceService
+from .user_performance_service import UserPerformanceService
 
 
 class SalesPlanningService:
