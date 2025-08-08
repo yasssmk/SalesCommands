@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["./src/*"],
+      "components/*": ["components/*"],
+      "layout/*": ["layout/*"],
+      "hooks/*": ["hooks/*"],
+      "contexts/*": ["contexts/*"],
+      "themes/*": ["themes/*"],
+      "utils/*": ["utils/*"],
+      "sections/*": ["sections/*"],
+      "views/*": ["views/*"],
+      "menu-items/*": ["menu-items/*"],
+      "api/*": ["api/*"],
+      "data/*": ["data/*"],
+      "config": ["config.js"]
+    }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
