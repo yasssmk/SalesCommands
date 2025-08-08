@@ -2,7 +2,7 @@ import PropTypes from 'prop-types';
 import { useState } from 'react';
 
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
@@ -185,7 +185,7 @@ export default function ChatDrawer({ handleDrawerOpen, openChatDrawer, setUser, 
                   <UserAvatar user={{ online_status: status, avatar: 'avatar-1.png', name: 'User 1' }} />
                 </Grid>
                 <Grid item xs zeroMinWidth>
-                  <NextLink href="/apps/profiles/user/personal" passHref legacyBehavior>
+                  <Link href="/apps/profiles/user/personal"  >
                     {user && (
                       <Stack sx={{ cursor: 'pointer', textDecoration: 'none' }}>
                         <Typography variant="h5" color="text.primary">
@@ -196,7 +196,7 @@ export default function ChatDrawer({ handleDrawerOpen, openChatDrawer, setUser, 
                         </Typography>
                       </Stack>
                     )}
-                  </NextLink>
+                  </Link>
                 </Grid>
                 <Grid item>
                   <IconButton onClick={handleClickRightMenu} size="small" color="secondary">

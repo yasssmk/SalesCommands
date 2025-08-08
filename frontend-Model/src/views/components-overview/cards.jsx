@@ -1,5 +1,5 @@
 'use client';
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
@@ -135,9 +135,9 @@ export default function ComponentCard() {
                   <MainCard
                     title="Card Title"
                     secondary={
-                      <NextLink href="/" passHref legacyBehavior>
+                      <Link href="/"  >
                         <Link color="primary">More</Link>
-                      </NextLink>
+                      </Link>
                     }
                   >
                     <Typography variant="h5" color="text.secondary" gutterBottom>
@@ -203,9 +203,9 @@ export default function ComponentCard() {
                     divider={false}
                     content={false}
                     secondary={
-                      <NextLink href="/" passHref legacyBehavior>
+                      <Link href="/"  >
                         <Link color="primary">More</Link>
-                      </NextLink>
+                      </Link>
                     }
                   >
                     <CardTabs activeTab={2} />

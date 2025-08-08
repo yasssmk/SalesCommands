@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 
 // next
 import Image from 'next/legacy/image';
-import NextLink from 'next/link';
+import Link from 'next/link';
 import { signIn } from 'next-auth/react';
 
 // material-ui
@@ -247,13 +247,13 @@ export default function AuthRegister({ providers, csrfToken }) {
               <Grid item xs={12} sx={{ mt: -1 }}>
                 <Typography variant="body2">
                   By Signing up, you agree to our &nbsp;
-                  <NextLink href="/" passHref legacyBehavior>
+                  <Link href="/"  >
                     <Link variant="subtitle2">Terms of Service</Link>
-                  </NextLink>
+                  </Link>
                   &nbsp; and &nbsp;
-                  <NextLink href="/" passHref legacyBehavior>
+                  <Link href="/"  >
                     <Link variant="subtitle2">Privacy Policy</Link>
-                  </NextLink>
+                  </Link>
                 </Typography>
               </Grid>
               {errors.submit && (

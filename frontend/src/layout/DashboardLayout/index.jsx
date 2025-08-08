@@ -19,11 +19,11 @@ import Footer from './Footer';
 import HorizontalBar from './Drawer/HorizontalBar';
 import Loader from 'components/Loader';
 import Breadcrumbs from 'components/@extended/Breadcrumbs';
-import AddCustomer from 'sections/apps/customer/AddCustomer';
+// import AddCustomer from 'sections/apps/customer/AddCustomer';
 
 import { MenuOrientation } from 'config';
 import useConfig from 'hooks/useConfig';
-import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
+// import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 

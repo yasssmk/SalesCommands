@@ -1,5 +1,5 @@
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import CardContent from '@mui/material/CardContent';
@@ -25,9 +25,9 @@ export default function LatestMessages() {
       title="Latest Messages"
       content={false}
       secondary={
-        <NextLink href="#" passHref legacyBehavior>
+        <Link href="#"  >
           <Link color="primary">View all</Link>
-        </NextLink>
+        </Link>
       }
     >
       <CardContent>
@@ -131,9 +131,9 @@ export default function LatestMessages() {
                     <Typography variant="subtitle1">Database backup completed!</Typography>
                     <Typography color="secondary" variant="caption">
                       Download the{' '}
-                      <NextLink href="#" passHref legacyBehavior>
+                      <Link href="#"  >
                         <Link underline="hover">latest backup</Link>
-                      </NextLink>
+                      </Link>
                       .
                     </Typography>
                   </Grid>

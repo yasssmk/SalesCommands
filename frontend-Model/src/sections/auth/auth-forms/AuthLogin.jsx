@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 
 // next
 import Image from 'next/legacy/image';
-import NextLink from 'next/link';
+import Link from 'next/link';
 import { signIn, useSession } from 'next-auth/react';
 
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -192,11 +192,11 @@ export default function AuthLogin({ providers, csrfToken }) {
                     }
                     label={<Typography variant="h6">Keep me sign in</Typography>}
                   />
-                  <NextLink href={session ? '/pages/forget-pass' : '/forget-pass'} passHref legacyBehavior>
+                  <Link href={session ? '/pages/forget-pass' : '/forget-pass'}  >
                     <Link variant="h6" color="text.primary">
                       Forgot Password?
                     </Link>
-                  </NextLink>
+                  </Link>
                 </Stack>
               </Grid>
               {errors.submit && (

@@ -7,11 +7,11 @@ import Drawer from '@mui/material/Drawer';
 
 // project import
 import DrawerHeader from './DrawerHeader';
-import DrawerContent from './DrawerContent';
+// import DrawerContent from './DrawerContent';
 import MiniDrawerStyled from './MiniDrawerStyled';
 
 import { DRAWER_WIDTH } from 'config';
-import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
+// import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 
 export default function MainDrawer({ window }) {
   const { menuMaster } = useGetMenuMaster();
@@ -30,7 +30,7 @@ export default function MainDrawer({ window }) {
       {!downLG ? (
         <MiniDrawerStyled variant="permanent" open={drawerOpen}>
           {drawerHeader}
-          {drawerContent}
+          {/* {drawerContent} */}
         </MiniDrawerStyled>
       ) : (
         <Drawer
@@ -52,7 +52,7 @@ export default function MainDrawer({ window }) {
           }}
         >
           {drawerHeader}
-          {drawerContent}
+          {/* {drawerContent} */}
         </Drawer>
       )}
     </Box>

@@ -1,5 +1,5 @@
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import CardContent from '@mui/material/CardContent';
@@ -26,9 +26,9 @@ export default function TasksCard() {
       title="Tasks"
       content={false}
       secondary={
-        <NextLink href="#" passHref legacyBehavior>
+        <Link href="#"  >
           <Link color="primary">View all</Link>
-        </NextLink>
+        </Link>
       }
     >
       <CardContent>
@@ -112,13 +112,13 @@ export default function TasksCard() {
                   </Grid>
                   <Grid item xs={12}>
                     <Typography variant="body2">
-                      <NextLink href="#" passHref legacyBehavior>
+                      <Link href="#"  >
                         <Link underline="hover">Jenny</Link>
-                      </NextLink>{' '}
+                      </Link>{' '}
                       assign you a task{' '}
-                      <NextLink href="#" passHref legacyBehavior>
+                      <Link href="#"  >
                         <Link underline="hover">Mockup Design</Link>
-                      </NextLink>
+                      </Link>
                       .
                     </Typography>
                   </Grid>

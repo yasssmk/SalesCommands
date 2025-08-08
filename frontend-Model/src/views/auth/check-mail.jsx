@@ -1,6 +1,6 @@
 'use client';
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -34,11 +34,11 @@ export default function CheckMail() {
         </Grid>
         <Grid item xs={12}>
           <AnimateButton>
-            <NextLink href={session ? '/pages/login' : '/login'} passHref legacyBehavior>
+            <Link href={session ? '/pages/login' : '/login'}  >
               <Button disableElevation fullWidth size="large" type="submit" variant="contained" color="primary">
                 Sign in
               </Button>
-            </NextLink>
+            </Link>
           </AnimateButton>
         </Grid>
         <Grid item xs={12}>

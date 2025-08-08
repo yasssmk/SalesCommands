@@ -1,5 +1,5 @@
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import CardMedia from '@mui/material/CardMedia';
@@ -46,9 +46,9 @@ export default function LatestOrder() {
       title="Latest Order"
       content={false}
       secondary={
-        <NextLink href="#" passHref legacyBehavior>
+        <Link href="#"  >
           <Link color="primary">View all</Link>
-        </NextLink>
+        </Link>
       }
     >
       <TableContainer>

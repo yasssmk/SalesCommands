@@ -1,38 +1,27 @@
 'use client';
-import { Box, Typography, Paper } from '@mui/material';
-import SimpleLayout from '../layout/SimpleLayout';
+
+// project import
+import DashboardLayout from '../layout/DashboardLayout';
+import AuthGuard from '../utils/route-guard/AuthGuard';
+
+// Vue temporaire vide
+function DashboardHome() {
+  return (
+    <div>
+      <h1>Dashboard Home - En construction</h1>
+      <p>Cette page utilisera DashboardLayout</p>
+    </div>
+  );
+}
+
+// ==============================|| PAGE RACINE ||============================== //
 
 export default function HomePage() {
   return (
-    <SimpleLayout>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '60vh'
-        }}
-      >
-        <Paper
-          elevation={3}
-          sx={{
-            p: 6,
-            textAlign: 'center',
-            maxWidth: 600,
-            width: '100%'
-          }}
-        >
-          <Typography variant="h2" color="primary" gutterBottom>
-            SalesCommands
-          </Typography>
-          <Typography variant="h5" color="text.secondary" gutterBottom>
-            Votre application est prête !
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
-            Le système de thème Material-UI est configuré et fonctionnel.
-          </Typography>
-        </Paper>
-      </Box>
-    </SimpleLayout>
+    <AuthGuard>
+      <DashboardLayout>
+        <DashboardHome />
+      </DashboardLayout>
+    </AuthGuard>
   );
 }

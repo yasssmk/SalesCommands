@@ -9,7 +9,7 @@ import Container from '@mui/material/Container';
 import Stack from '@mui/material/Stack';
 
 // project imports
-import Navigation from './DrawerContent/Navigation';
+// import Navigation from './DrawerContent/Navigation';
 import useConfig from 'hooks/useConfig';
 
 function ElevationScroll({ children, window }) {

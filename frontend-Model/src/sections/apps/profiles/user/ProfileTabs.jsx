@@ -2,7 +2,7 @@ import PropTypes from 'prop-types';
 import React, { useEffect, useState } from 'react';
 
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
@@ -91,7 +91,7 @@ export default function ProfileTabs({ focusInput }) {
                 horizontal: 'right'
               }}
             >
-              <NextLink href="/apps/profiles/user/personal" passHref legacyBehavior>
+              <Link href="/apps/profiles/user/personal"  >
                 <MenuItem
                   onClick={() => {
                     handleClose();
@@ -102,7 +102,7 @@ export default function ProfileTabs({ focusInput }) {
                 >
                   Edit
                 </MenuItem>
-              </NextLink>
+              </Link>
               <MenuItem onClick={handleClose} disabled>
                 Delete
               </MenuItem>

@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
 import React, { useState } from 'react';
 
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
@@ -98,16 +98,16 @@ export default function Header() {
               }}
               spacing={2}
             >
-              <NextLink href={user ? APP_DEFAULT_PATH : '/login'} passHref legacyBehavior>
+              <Link href={user ? APP_DEFAULT_PATH : '/login'}  >
                 <Link className="header-link" color="white" target="_blank" underline="none">
                   {user ? 'Dashboard' : 'Login'}
                 </Link>
-              </NextLink>
-              <NextLink href="/components-overview/buttons" passHref legacyBehavior>
+              </Link>
+              <Link href="/components-overview/buttons"  >
                 <Link className="header-link" color="white" underline="none">
                   Components
                 </Link>
-              </NextLink>
+              </Link>
               <Link className="header-link" color="white" href="https://codedthemes.gitbook.io/mantis/" target="_blank" underline="none">
                 Documentation
               </Link>
@@ -137,11 +137,11 @@ export default function Header() {
                 <Logo reverse to="/" />
               </Typography>
               <Stack direction="row" spacing={2} alignItems="center">
-                <NextLink href="/components-overview/buttons" passHref legacyBehavior>
+                <Link href="/components-overview/buttons"  >
                   <Button variant="outlined" size="small" color="warning" sx={{ height: 28 }}>
                     All Components
                   </Button>
-                </NextLink>
+                </Link>
                 <IconButton
                   color="secondary"
                   onClick={drawerToggler(true)}

@@ -1,6 +1,5 @@
 'use client';
 import PropTypes from 'prop-types';
-
 import { lazy } from 'react';
 import { usePathname } from 'next/navigation';
 

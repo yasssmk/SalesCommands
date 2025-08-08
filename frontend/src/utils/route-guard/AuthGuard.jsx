@@ -1,37 +1,39 @@
 'use client';
 import PropTypes from 'prop-types';
-
 import { useEffect } from 'react';
-
-// next
 import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
 
 // project-import
 import Loader from 'components/Loader';
+import { useAuth } from 'hooks/useAuth';
 
 // ==============================|| AUTH GUARD ||============================== //
 
 export default function AuthGuard({ children }) {
-  const { data: session, status } = useSession();
   const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuth();
 
   useEffect(() => {
-    const fetchData = async () => {
-      const res = await fetch('/api/auth/protected');
-      const json = await res?.json();
-      if (!json?.protected) {
-        router.push('/login');
-      }
-    };
-    fetchData();
+    // Redirection si pas authentifié
+    if (!isLoading && !isAuthenticated) {
+      router.push('/login');
+    }
+  }, [isAuthenticated, isLoading, router]);
 
-    // eslint-disable-next-line
-  }, [session]);
+  // Affichage du loader pendant la vérification
+  if (isLoading) {
+    return <Loader />;
+  }
 
-  if (status === 'loading' || !session?.user) return <Loader />;
+  // Si pas authentifié, ne rien afficher (redirection en cours)
+  if (!isAuthenticated) {
+    return null;
+  }
 
+  // Si authentifié, afficher le contenu
   return children;
 }
 
-AuthGuard.propTypes = { children: PropTypes.any };
+AuthGuard.propTypes = { 
+  children: PropTypes.any 
+};

@@ -1,5 +1,5 @@
 import PropTypes from 'prop-types';
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 import ButtonBase from '@mui/material/ButtonBase';
 
@@ -11,11 +11,11 @@ import { APP_DEFAULT_PATH } from 'config';
 
 export default function LogoSection({ reverse, isIcon, sx, to }) {
   return (
-    <NextLink href={!to ? APP_DEFAULT_PATH : to} passHref legacyBehavior>
+    <Link href={!to ? APP_DEFAULT_PATH : to}  >
       <ButtonBase disableRipple sx={sx}>
         {isIcon ? <LogoIcon /> : <LogoMain reverse={reverse} />}
       </ButtonBase>
-    </NextLink>
+    </Link>
   );
 }
 

@@ -1,6 +1,6 @@
 // next
 import Image from 'next/image';
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -46,9 +46,9 @@ export default function Error404() {
           <Typography color="text.secondary" align="center" sx={{ width: { xs: '73%', sm: '61%' } }}>
             The page you are looking was moved, removed, renamed, or might never exist!
           </Typography>
-          <NextLink href={APP_DEFAULT_PATH} passHref legacyBehavior>
+          <Link href={APP_DEFAULT_PATH}  >
             <Button variant="contained">Back To Home</Button>
-          </NextLink>
+          </Link>
         </Stack>
       </Grid>
     </Grid>

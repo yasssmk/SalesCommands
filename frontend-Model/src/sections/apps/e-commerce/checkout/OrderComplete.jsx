@@ -1,6 +1,6 @@
 import PropTypes from 'prop-types';
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 import Image from 'next/image';
 
 import Box from '@mui/material/Box';
@@ -66,16 +66,16 @@ export default function OrderComplete({ open }) {
                 (219) 404-5468
               </Typography>
               <Stack direction="row" justifyContent="center" spacing={3}>
-                <NextLink href="/apps/e-commerce/products" passHref legacyBehavior>
+                <Link href="/apps/e-commerce/products"  >
                   <Button variant="outlined" color="secondary" size={downMD ? 'small' : 'medium'}>
                     Continue Shopping
                   </Button>
-                </NextLink>
-                <NextLink href="/apps/e-commerce/products" passHref legacyBehavior>
+                </Link>
+                <Link href="/apps/e-commerce/products"  >
                   <Button variant="contained" color="primary" size={downMD ? 'small' : 'medium'}>
                     Download Invoice
                   </Button>
-                </NextLink>
+                </Link>
               </Stack>
             </Stack>
           </MainCard>

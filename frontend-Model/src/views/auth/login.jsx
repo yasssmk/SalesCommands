@@ -1,7 +1,7 @@
 'use client';
 
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 import { getProviders, getCsrfToken, useSession } from 'next-auth/react';
 
 // material-ui
@@ -25,11 +25,11 @@ export default function SignIn() {
         <Grid item xs={12}>
           <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: { xs: -0.5, sm: 0.5 } }}>
             <Typography variant="h3">Login</Typography>
-            <NextLink href={session ? '/pages/register' : '/register'} passHref legacyBehavior>
+            <Link href={session ? '/pages/register' : '/register'}  >
               <Link variant="body1" color="primary">
                 Don&apos;t have an account?
               </Link>
-            </NextLink>
+            </Link>
           </Stack>
         </Grid>
         <Grid item xs={12}>

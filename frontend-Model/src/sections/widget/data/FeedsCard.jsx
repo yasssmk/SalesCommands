@@ -1,5 +1,5 @@
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -25,9 +25,9 @@ export default function FeedsCard() {
       title="Feeds"
       content={false}
       secondary={
-        <NextLink href="#" passHref legacyBehavior>
+        <Link href="#"  >
           <Link color="primary">View all</Link>
-        </NextLink>
+        </Link>
       }
     >
       <CardContent>

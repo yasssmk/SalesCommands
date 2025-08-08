@@ -1,6 +1,6 @@
 // next
 import Image from 'next/image';
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -117,11 +117,11 @@ export default function DemoBlock() {
                 <Grid item xs={12}>
                   <Box sx={{ display: 'inline-block' }}>
                     <AnimateButton>
-                      <NextLink href="/components-overview/buttons" passHref legacyBehavior>
+                      <Link href="/components-overview/buttons"  >
                         <Button variant="contained" sx={{ my: 2 }} component={Link} target="_blank">
                           View All Components
                         </Button>
-                      </NextLink>
+                      </Link>
                     </AnimateButton>
                   </Box>
                 </Grid>

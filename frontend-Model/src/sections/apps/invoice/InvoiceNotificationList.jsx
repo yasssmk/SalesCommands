@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import Grid from '@mui/material/Grid';
@@ -77,9 +77,9 @@ export default function InvoiceNotificationList() {
             <Grid item xs zeroMinWidth>
               <Typography variant="subtitle1">
                 Johnny sent you an invoice billed{' '}
-                <NextLink href="/" passHref legacyBehavior>
+                <Link href="/"  >
                   <Link underline="hover">$1,000.</Link>
-                </NextLink>
+                </Link>
               </Typography>
               <Typography variant="caption" color="secondary">
                 2 August
@@ -100,9 +100,9 @@ export default function InvoiceNotificationList() {
             <Grid item xs zeroMinWidth>
               <Typography variant="subtitle1">
                 Sent an invoice to Aida Bugg amount of{' '}
-                <NextLink href="/" passHref legacyBehavior>
+                <Link href="/"  >
                   <Link underline="hover">$200.</Link>
-                </NextLink>
+                </Link>
               </Typography>
               <Typography variant="caption" color="secondary">
                 7 hours ago

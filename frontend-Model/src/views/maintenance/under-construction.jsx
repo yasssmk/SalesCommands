@@ -1,6 +1,6 @@
 // next
 import Image from 'next/image';
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -33,9 +33,9 @@ export default function UnderConstruction() {
           <Typography color="text.secondary" align="center" sx={{ width: { xs: '73%', sm: '82%' } }}>
             Hey! Please check out this site later. We are doing some maintenance on it right now.
           </Typography>
-          <NextLink href={APP_DEFAULT_PATH} passHref legacyBehavior>
+          <Link href={APP_DEFAULT_PATH}  >
             <Button variant="contained">Back To Home</Button>
-          </NextLink>
+          </Link>
         </Stack>
       </Grid>
     </Grid>

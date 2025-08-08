@@ -1,7 +1,7 @@
 'use client';
 // next
 import Image from 'next/legacy/image';
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Box from '@mui/material/Box';
@@ -36,11 +36,11 @@ export default function Error() {
           <Typography color="text.secondary" variant="body2" align="center" sx={{ width: { xs: '73%', sm: '70%' }, mt: 1 }}>
             Server error 500. we fixing the problem. please try again at a later stage.
           </Typography>
-          <NextLink href={APP_DEFAULT_PATH} passHref legacyBehavior>
+          <Link href={APP_DEFAULT_PATH}  >
             <Button variant="contained" sx={{ textTransform: 'none', mt: 4 }}>
               Back To Home
             </Button>
-          </NextLink>
+          </Link>
         </Stack>
       </Grid>
     </Grid>

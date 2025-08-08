@@ -1,7 +1,7 @@
 import { sum } from 'lodash';
 
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
@@ -27,7 +27,7 @@ export default function FloatingCart() {
   }
 
   return (
-    <NextLink href="/apps/e-commerce/checkout" passHref legacyBehavior>
+    <Link href="/apps/e-commerce/checkout"  >
       <Fab
         size="large"
         sx={{
@@ -55,6 +55,6 @@ export default function FloatingCart() {
           <ShoppingCartOutlined style={{ color: theme.palette.primary.main, fontSize: '1.5rem' }} />
         </Badge>
       </Fab>
-    </NextLink>
+    </Link>
   );
 }

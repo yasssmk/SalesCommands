@@ -1,5 +1,5 @@
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import Avatar from '@mui/material/Avatar';
@@ -51,9 +51,9 @@ export default function ProjectTable() {
       title="Projects"
       content={false}
       secondary={
-        <NextLink href="#" passHref legacyBehavior>
+        <Link href="#"  >
           <Link color="primary">View all</Link>
-        </NextLink>
+        </Link>
       }
     >
       <TableContainer>

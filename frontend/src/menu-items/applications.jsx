@@ -2,7 +2,7 @@
 import { FormattedMessage } from 'react-intl';
 
 // project-imports
-import { handlerCustomerDialog } from 'api/customer';
+// import { handlerCustomerDialog } from 'api/customer';
 import { NavActionType } from 'config';
 
 // assets

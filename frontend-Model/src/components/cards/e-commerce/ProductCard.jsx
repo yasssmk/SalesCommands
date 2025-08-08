@@ -2,7 +2,7 @@ import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
 
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
@@ -83,11 +83,11 @@ export default function ProductCard({ id, color, name, brand, offer, isStock, im
             }
           }}
         >
-          <NextLink href={`/apps/e-commerce/product-details/${id}`} passHref legacyBehavior>
+          <Link href={`/apps/e-commerce/product-details/${id}`}  >
             <Box sx={{ width: 250, m: 'auto' }}>
               <CardMedia sx={{ cursor: 'pointer', height: 250, textDecoration: 'none', opacity: isStock ? 1 : 0.25 }} image={prodProfile} />
             </Box>
-          </NextLink>
+          </Link>
           <Stack
             direction="row"
             alignItems="center"
@@ -109,7 +109,7 @@ export default function ProductCard({ id, color, name, brand, offer, isStock, im
             <Grid container spacing={2}>
               <Grid item xs={12}>
                 <Stack>
-                  <NextLink href={`/apps/e-commerce/product-details/${id}`} passHref legacyBehavior>
+                  <Link href={`/apps/e-commerce/product-details/${id}`}  >
                     <Typography
                       color="text.primary"
                       variant="h5"
@@ -117,7 +117,7 @@ export default function ProductCard({ id, color, name, brand, offer, isStock, im
                     >
                       {name}
                     </Typography>
-                  </NextLink>
+                  </Link>
                   <Typography variant="h6" color="text.secondary">
                     {brand}
                   </Typography>

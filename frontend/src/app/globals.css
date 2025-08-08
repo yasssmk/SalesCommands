@@ -1,26 +1,15 @@
-@import "tailwindcss";
+/* scroll bar */
+@import 'slick-carousel/slick/slick.css';
+@import 'slick-carousel/slick/slick-theme.css';
+@import 'simplebar-react/dist/simplebar.min.css';
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* apex-chart */
+@import '../../public/assets/third-party/apex-chart.css';
+@import '../../public/assets/third-party/react-table.css';
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* map */
+@import 'mapbox-gl/dist/mapbox-gl.css';
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.css-13ddxbb > * + * {
+  margin: 0 !important;
 }

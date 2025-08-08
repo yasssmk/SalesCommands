@@ -1,5 +1,5 @@
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 import Image from 'next/image';
 
 // material-ui
@@ -97,11 +97,11 @@ export default function HeaderPage() {
                 <Grid container spacing={2} sx={{ justifyContent: { xs: 'center', md: 'flex-start' } }}>
                   <Grid item>
                     <AnimateButton>
-                      <NextLink href="/components-overview/buttons" passHref legacyBehavior>
+                      <Link href="/components-overview/buttons"  >
                         <Button size="large" color="primary" variant="outlined" component={Link} target="_blank">
                           Explore Components
                         </Button>
-                      </NextLink>
+                      </Link>
                     </AnimateButton>
                   </Grid>
                   <Grid item>

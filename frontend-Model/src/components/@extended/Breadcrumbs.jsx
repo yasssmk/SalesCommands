@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
 
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 // material-ui
@@ -110,7 +110,7 @@ export default function Breadcrumbs({
   if (!custom && main && main.type === 'collapse' && main.breadcrumbs === true) {
     CollapseIcon = main.icon ? main.icon : ApartmentOutlined;
     mainContent = (
-      <NextLink href={main.url} passHref legacyBehavior>
+      <Link href={main.url}  >
         <Typography
           variant={window.location.pathname === main.url ? 'subtitle1' : 'h6'}
           sx={{ textDecoration: 'none', cursor: 'pointer' }}
@@ -119,7 +119,7 @@ export default function Breadcrumbs({
           {icons && <CollapseIcon style={iconSX} />}
           {main.title}
         </Typography>
-      </NextLink>
+      </Link>
     );
 
     breadcrumbContent = (
@@ -139,13 +139,13 @@ export default function Breadcrumbs({
         >
           <Grid item>
             <MuiBreadcrumbs aria-label="breadcrumb" maxItems={maxItems || 8} separator={separatorIcon}>
-              <NextLink href="/" passHref legacyBehavior>
+              <Link href="/"  >
                 <Typography color="text.secondary" variant="h6" sx={{ textDecoration: 'none', cursor: 'pointer' }}>
                   {icons && <HomeOutlined style={iconSX} />}
                   {icon && !icons && <HomeFilled style={{ ...iconSX, marginRight: 0 }} />}
                   {(!icon || icons) && 'Home'}
                 </Typography>
-              </NextLink>
+              </Link>
               {mainContent}
             </MuiBreadcrumbs>
           </Grid>
@@ -174,13 +174,13 @@ export default function Breadcrumbs({
 
     let tempContent = (
       <MuiBreadcrumbs aria-label="breadcrumb" maxItems={maxItems || 8} separator={separatorIcon}>
-        <NextLink href="/" passHref legacyBehavior>
+        <Link href="/"  >
           <Typography color="text.secondary" variant="h6" sx={{ textDecoration: 'none', cursor: 'pointer' }}>
             {icons && <HomeOutlined style={iconSX} />}
             {icon && !icons && <HomeFilled style={{ ...iconSX, marginRight: 0 }} />}
             {(!icon || icons) && 'Home'}
           </Typography>
-        </NextLink>
+        </Link>
         {mainContent}
         {itemContent}
       </MuiBreadcrumbs>
@@ -205,9 +205,9 @@ export default function Breadcrumbs({
             );
             if (link.to) {
               breadcrumbLink = (
-                <NextLink key={key} href={link.to} passHref legacyBehavior>
+                <Link key={key} href={link.to}  >
                   {breadcrumbLink}
-                </NextLink>
+                </Link>
               );
             }
             return breadcrumbLink;

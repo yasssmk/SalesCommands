@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
@@ -178,46 +178,46 @@ export default function MegaMenuSection() {
                                 </ListSubheader>
                               }
                             >
-                              <NextLink href="/pages/login" passHref legacyBehavior>
+                              <Link href="/pages/login"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Login" />
                                 </ListItemButton>
-                              </NextLink>
-                              <NextLink href="/pages/register" passHref legacyBehavior>
+                              </Link>
+                              <Link href="/pages/register"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Register" />
                                 </ListItemButton>
-                              </NextLink>
-                              <NextLink href="/pages/reset-pass" passHref legacyBehavior>
+                              </Link>
+                              <Link href="/pages/reset-pass"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Reset Password" />
                                 </ListItemButton>
-                              </NextLink>
-                              <NextLink href="/pages/forget-pass" passHref legacyBehavior>
+                              </Link>
+                              <Link href="/pages/forget-pass"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Forgot Password" />
                                 </ListItemButton>
-                              </NextLink>
-                              <NextLink href="/pages/verify-code" passHref legacyBehavior>
+                              </Link>
+                              <Link href="/pages/verify-code"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Verification Code" />
                                 </ListItemButton>
-                              </NextLink>
+                              </Link>
                             </List>
                           </Grid>
                           <Grid item xs={4}>
@@ -232,54 +232,54 @@ export default function MegaMenuSection() {
                                 </ListSubheader>
                               }
                             >
-                              <NextLink href="/" passHref legacyBehavior>
+                              <Link href="/"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="About us" />
                                 </ListItemButton>
-                              </NextLink>
-                              <NextLink href="/contact-us" passHref legacyBehavior>
+                              </Link>
+                              <Link href="/contact-us"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Contact us" />
                                 </ListItemButton>
-                              </NextLink>
-                              <NextLink href="/pages/pricing" passHref legacyBehavior>
+                              </Link>
+                              <Link href="/pages/pricing"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Pricing" />
                                 </ListItemButton>
-                              </NextLink>
-                              <NextLink href="/apps/profiles/user/payment" passHref legacyBehavior>
+                              </Link>
+                              <Link href="/apps/profiles/user/payment"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Payment" />
                                 </ListItemButton>
-                              </NextLink>
-                              <NextLink href="/pages/under-construction" passHref legacyBehavior>
+                              </Link>
+                              <Link href="/pages/under-construction"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Construction" />
                                 </ListItemButton>
-                              </NextLink>
-                              <NextLink href="/pages/coming-soon" passHref legacyBehavior>
+                              </Link>
+                              <Link href="/pages/coming-soon"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Coming Soon" />
                                 </ListItemButton>
-                              </NextLink>
+                              </Link>
                             </List>
                           </Grid>
                           <Grid item xs={4}>
@@ -294,22 +294,22 @@ export default function MegaMenuSection() {
                                 </ListSubheader>
                               }
                             >
-                              <NextLink href="/404" passHref legacyBehavior>
+                              <Link href="/404"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="404 Error" />
                                 </ListItemButton>
-                              </NextLink>
-                              <NextLink href="/" passHref legacyBehavior>
+                              </Link>
+                              <Link href="/"  >
                                 <ListItemButton disableRipple component={Link} target="_blank">
                                   <ListItemIcon>
                                     <Dot size={7} color="secondary" variant="outlined" />
                                   </ListItemIcon>
                                   <ListItemText primary="Landing" />
                                 </ListItemButton>
-                              </NextLink>
+                              </Link>
                             </List>
                           </Grid>
                         </Grid>

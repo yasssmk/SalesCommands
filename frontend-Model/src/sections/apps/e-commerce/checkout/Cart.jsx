@@ -2,7 +2,7 @@ import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
 
 // next
-import NextLink from 'next/link';
+import Link from 'next/link';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
@@ -171,13 +171,13 @@ export default function Cart({ checkout, onNext, removeProduct, updateQuantity }
             </Grid>
           </MainCard>
           <Grid item sx={{ textAlign: 'right' }}>
-            <NextLink href="/apps/e-commerce/products" passHref legacyBehavior>
+            <Link href="/apps/e-commerce/products"  >
               <Button color="secondary" variant="text" startIcon={<LeftOutlined />}>
                 <Typography variant="h6" color="text.primary">
                   Back to Shopping
                 </Typography>
               </Button>
-            </NextLink>
+            </Link>
           </Grid>
         </Stack>
       </Grid>
