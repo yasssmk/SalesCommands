@@ -49,8 +49,14 @@ export default function ThemeCustomization({ children }) {
     [themeDirection, theme, themeTypography, themeCustomShadows]
   );
 
-  const themes = createTheme(themeOptions);
-  themes.components = componentsOverride(themes);
+  // Créer le thème de base
+  const baseTheme = createTheme(themeOptions);
+  
+  // Créer le thème final avec les overrides
+  const themes = createTheme({
+    ...baseTheme,
+    components: componentsOverride(baseTheme)
+  });
 
   return (
     <NextAppDirEmotionCacheProvider options={{ key: 'mui' }}>
