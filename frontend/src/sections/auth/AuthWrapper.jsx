@@ -36,7 +36,10 @@ export default function AuthWrapper({ children }) {
           </Grid>
         </Grid>
         <Grid item xs={12} sx={{ m: 3, mt: 1 }}>
-          <AuthFooter />
+          {/* <AuthFooter /> */}
+                  <Box textAlign="center">
+            <div style={{ height: '20px' }} />
+          </Box>
         </Grid>
       </Grid>
     </Box>

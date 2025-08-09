@@ -1,8 +1,11 @@
 'use client';
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import PropTypes from 'prop-types';
 
-// material-ui
+import React, { useState } from 'react';
+
+// next
+import Link from 'next/link';
+
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
@@ -14,7 +17,6 @@ import InputLabel from '@mui/material/InputLabel';
 import OutlinedInput from '@mui/material/OutlinedInput';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import Alert from '@mui/material/Alert';
 
 // third party
 import * as Yup from 'yup';
@@ -31,16 +33,14 @@ import { loginUser, storeTokens } from 'api/auth';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
 
-// ==============================|| DJANGO AUTH - LOGIN ||============================== //
+// ============================|| DJANGO AUTH - LOGIN ||============================ //
 
-export default function AuthLogin() {
-  const router = useRouter();
+export default function AuthLogin({ providers, csrfToken }) {
   const downSM = useMediaQuery((theme) => theme.breakpoints.down('sm'));
-  
   const [checked, setChecked] = useState(false);
   const [capsWarning, setCapsWarning] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
+  const [showPassword, setShowPassword] = useState(false);
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
   };
@@ -61,32 +61,27 @@ export default function AuthLogin() {
     <>
       <Formik
         initialValues={{
-          email: '',
-          password: '',
+          email: 'info@codedthemes.com',
+          password: '123456',
           submit: null
         }}
         validationSchema={Yup.object().shape({
-          email: Yup.string()
-            .email('Adresse email invalide')
-            .max(255)
-            .required('L\'email est requis'),
+          email: Yup.string().email('Must be a valid email').max(255).required('Email is required'),
           password: Yup.string()
-            .required('Le mot de passe est requis')
-            .test(
-              'no-leading-trailing-whitespace', 
-              'Le mot de passe ne peut pas commencer ou finir par des espaces', 
-              (value) => value === value?.trim()
-            )
-            .min(6, 'Le mot de passe doit contenir au moins 6 caractères')
+            .required('Password is required')
+            .test('no-leading-trailing-whitespace', 'Password cannot start or end with spaces', (value) => value === value.trim())
+            .max(10, 'Password must be less than 10 characters')
         })}
-        onSubmit={async (values, { setErrors, setSubmitting, setFieldError }) => {
+        onSubmit={async (values, { setErrors, setSubmitting }) => {
+          const trimmedEmail = values.email.trim();
+          
           try {
             setSubmitting(true);
             
-            // Appel API Django via le service séparé
-            const response = await loginUser(values.email, values.password);
+            // Django API call instead of NextAuth
+            const response = await loginUser(trimmedEmail, values.password);
             
-            // Stockage des tokens via le helper
+            // Store tokens
             if (response.access_token || response.token) {
               storeTokens(
                 response.access_token || response.token,
@@ -94,36 +89,22 @@ export default function AuthLogin() {
               );
             }
             
-            // Redirection vers le dashboard
-            router.push('/');
+            // Redirect to dashboard
+            window.location.href = '/';
             
           } catch (error) {
-            console.error('Erreur de connexion:', error);
-            
-            // Gestion des erreurs spécifiques retournées par l'API
-            const errorMessage = error.message.toLowerCase();
-            
-            if (errorMessage.includes('email')) {
-              setFieldError('email', 'Email incorrect');
-            } else if (errorMessage.includes('password') || errorMessage.includes('mot de passe')) {
-              setFieldError('password', 'Mot de passe incorrect');
-            } else if (errorMessage.includes('incorrect') || errorMessage.includes('invalide')) {
-              setErrors({ submit: 'Email ou mot de passe incorrect' });
-            } else {
-              setErrors({ submit: error.message });
-            }
-          } finally {
+            setErrors({ submit: error.message });
             setSubmitting(false);
           }
         }}
       >
         {({ errors, handleBlur, handleChange, handleSubmit, isSubmitting, touched, values }) => (
           <form noValidate onSubmit={handleSubmit}>
+            <input name="csrfToken" type="hidden" defaultValue={csrfToken} />
             <Grid container spacing={3}>
-              {/* Email */}
               <Grid item xs={12}>
                 <Stack spacing={1}>
-                  <InputLabel htmlFor="email-login">Adresse Email</InputLabel>
+                  <InputLabel htmlFor="email-login">Email Address</InputLabel>
                   <OutlinedInput
                     id="email-login"
                     type="email"
@@ -131,7 +112,7 @@ export default function AuthLogin() {
                     name="email"
                     onBlur={handleBlur}
                     onChange={handleChange}
-                    placeholder="Entrez votre adresse email"
+                    placeholder="Enter email address"
                     fullWidth
                     error={Boolean(touched.email && errors.email)}
                   />
@@ -142,11 +123,9 @@ export default function AuthLogin() {
                   </FormHelperText>
                 )}
               </Grid>
-
-              {/* Password */}
               <Grid item xs={12}>
                 <Stack spacing={1}>
-                  <InputLabel htmlFor="password-login">Mot de passe</InputLabel>
+                  <InputLabel htmlFor="password-login">Password</InputLabel>
                   <OutlinedInput
                     fullWidth
                     color={capsWarning ? 'warning' : 'primary'}
@@ -164,7 +143,7 @@ export default function AuthLogin() {
                     endAdornment={
                       <InputAdornment position="end">
                         <IconButton
-                          aria-label="basculer la visibilité du mot de passe"
+                          aria-label="toggle password visibility"
                           onClick={handleClickShowPassword}
                           onMouseDown={handleMouseDownPassword}
                           edge="end"
@@ -174,22 +153,21 @@ export default function AuthLogin() {
                         </IconButton>
                       </InputAdornment>
                     }
-                    placeholder="Entrez votre mot de passe"
+                    placeholder="Enter password"
                   />
+                  {capsWarning && (
+                    <Typography variant="caption" sx={{ color: 'warning.main' }} id="warning-helper-text-password-login">
+                      Caps lock on!
+                    </Typography>
+                  )}
                 </Stack>
                 {touched.password && errors.password && (
                   <FormHelperText error id="standard-weight-helper-text-password-login">
                     {errors.password}
                   </FormHelperText>
                 )}
-                {capsWarning && (
-                  <Typography variant="caption" sx={{ color: 'warning.main' }}>
-                    Attention : Caps Lock est activé
-                  </Typography>
-                )}
               </Grid>
 
-              {/* Remember me */}
               <Grid item xs={12} sx={{ mt: -1 }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
                   <FormControlLabel
@@ -202,34 +180,24 @@ export default function AuthLogin() {
                         size="small"
                       />
                     }
-                    label={<Typography variant="h6">Se souvenir de moi</Typography>}
+                    label={<Typography variant="h6">Keep me sign in</Typography>}
                   />
-                  {/* TODO: Ajouter lien "Mot de passe oublié" plus tard */}
+                  <Link href="/forget-pass" style={{ textDecoration: 'none' }}>
+                    <Typography variant="h6" color="text.primary">
+                      Forgot Password?
+                    </Typography>
+                  </Link>
                 </Stack>
               </Grid>
-
-              {/* Error Message */}
               {errors.submit && (
                 <Grid item xs={12}>
-                  <Alert severity="error">
-                    {errors.submit}
-                  </Alert>
+                  <FormHelperText error>{errors.submit}</FormHelperText>
                 </Grid>
               )}
-
-              {/* Submit Button */}
               <Grid item xs={12}>
                 <AnimateButton>
-                  <Button
-                    disableElevation
-                    disabled={isSubmitting}
-                    fullWidth
-                    size="large"
-                    type="submit"
-                    variant="contained"
-                    color="primary"
-                  >
-                    {isSubmitting ? 'Connexion...' : 'Se connecter'}
+                  <Button disableElevation disabled={isSubmitting} fullWidth size="large" type="submit" variant="contained" color="primary">
+                    Login
                   </Button>
                 </AnimateButton>
               </Grid>
@@ -240,3 +208,5 @@ export default function AuthLogin() {
     </>
   );
 }
+
+AuthLogin.propTypes = { providers: PropTypes.any, csrfToken: PropTypes.any };

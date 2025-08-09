@@ -36,17 +36,15 @@ export default function SignIn() {
     return null;
   }
 
+  // Mock providers and csrfToken for compatibility with model structure
+  const providers = null;
+  const csrfToken = null;
+
   return (
     <AuthWrapper>
       <Grid container spacing={3}>
-        {/* Header with title and registration link */}
         <Grid item xs={12}>
-          <Stack 
-            direction="row" 
-            justifyContent="space-between" 
-            alignItems="baseline" 
-            sx={{ mb: { xs: -0.5, sm: 0.5 } }}
-          >
+          <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: { xs: -0.5, sm: 0.5 } }}>
             <Typography variant="h3">Login</Typography>
             <Link href="/register" style={{ textDecoration: 'none' }}>
               <Typography variant="body1" color="primary" sx={{ cursor: 'pointer' }}>
@@ -55,29 +53,8 @@ export default function SignIn() {
             </Link>
           </Stack>
         </Grid>
-
-        {/* Login form */}
         <Grid item xs={12}>
-          <AuthLogin />
-        </Grid>
-
-        {/* Forgot password link */}
-        <Grid item xs={12}>
-          <Stack direction="row" justifyContent="center" sx={{ mt: 1 }}>
-            <Typography variant="body2" color="secondary">
-              Forgot password? {' '}
-              <Link href="/forgot-password" style={{ textDecoration: 'none' }}>
-                <Typography 
-                  component="span" 
-                  variant="body2" 
-                  color="primary" 
-                  sx={{ cursor: 'pointer' }}
-                >
-                  Reset here
-                </Typography>
-              </Link>
-            </Typography>
-          </Stack>
+          <AuthLogin providers={providers} csrfToken={csrfToken} />
         </Grid>
       </Grid>
     </AuthWrapper>

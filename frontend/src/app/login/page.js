@@ -2,7 +2,7 @@ import SignIn from 'views/auth/login';
 
 // ==============================|| PAGE LOGIN ||============================== //
 
-export default function LoginPage() {
+export default function SignInPage() {
   return <SignIn />;
 }
 
