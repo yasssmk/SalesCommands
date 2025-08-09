@@ -3,7 +3,6 @@ import PropTypes from 'prop-types';
 // material-ui
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid';
-import { useTheme } from '@mui/material/styles';
 
 // project import
 import AuthCard from './AuthCard';
@@ -36,10 +35,7 @@ export default function AuthWrapper({ children }) {
           </Grid>
         </Grid>
         <Grid item xs={12} sx={{ m: 3, mt: 1 }}>
-          {/* <AuthFooter /> */}
-                  <Box textAlign="center">
-            <div style={{ height: '20px' }} />
-          </Box>
+          <AuthFooter />
         </Grid>
       </Grid>
     </Box>

@@ -2,7 +2,6 @@
 import PropTypes from 'prop-types';
 
 import Box from '@mui/material/Box';
-import { useTheme } from '@mui/material/styles';
 
 // project import
 import MainCard from 'components/MainCard';
