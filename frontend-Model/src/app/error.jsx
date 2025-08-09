@@ -1,7 +1,7 @@
 'use client';
 // next
 import Image from 'next/legacy/image';
-import Link from 'next/link';
+import NextLink from 'next/link';
 
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Box from '@mui/material/Box';

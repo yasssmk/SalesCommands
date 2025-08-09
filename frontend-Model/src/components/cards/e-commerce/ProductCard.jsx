@@ -2,7 +2,7 @@ import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
 
 // next
-import Link from 'next/link';
+import NextLink from 'next/link';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';

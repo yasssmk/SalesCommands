@@ -1,6 +1,6 @@
 // next
 import Image from 'next/image';
-import Link from 'next/link';
+import NextLink from 'next/link';
 
 // material-ui
 import Box from '@mui/material/Box';
