@@ -13,7 +13,7 @@ const authAxios = axios.create({
 // ==============================|| AUTH API ENDPOINTS ||============================== //
 
 export const authEndpoints = {
-  login: '/api/auth/login/',
+  login: '/client/login/',
   logout: '/api/auth/logout/',
   refresh: '/api/auth/refresh/',
   me: '/api/auth/me/',
@@ -36,6 +36,7 @@ export const loginUser = async (email, password) => {
       email: email.trim(),
       password,
     });
+
 
     return response.data;
   } catch (error) {
