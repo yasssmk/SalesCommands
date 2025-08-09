@@ -10,7 +10,7 @@ from django.utils import timezone
 from datetime import datetime, date, timedelta
 
 from core.client_scope import ClientScopeManager
-from core.exceptions import StandardizedValidationError
+from core.exceptions import StandardizedValidationError, StandardizedAuthenticationFailed
 from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from core.auth_service import AuthService
@@ -585,6 +585,8 @@ class UserLoginView(BaseAPIView):
         email = request.data.get('email')
         password = request.data.get('password')
 
+        print(request.data)
+
         if not email or not password:
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(field='Email and Password')
@@ -611,6 +613,7 @@ class UserLoginView(BaseAPIView):
                     "role": user.role_name
                 }
             })
+            print(response)
             return response
         except Exception as e:
             raise StandardizedValidationError(str(e))

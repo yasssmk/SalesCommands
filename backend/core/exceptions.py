@@ -75,6 +75,7 @@ class StandardizedAuthenticationFailed(AuthenticationFailed):
     def __init__(self, detail=None):
         formatted_detail = StandardizedValidationError._format_detail(detail)
         super().__init__(formatted_detail)
+    
 
 
 def custom_exception_handler(exc, context):
