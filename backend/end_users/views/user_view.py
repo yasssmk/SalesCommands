@@ -11,7 +11,7 @@ from datetime import datetime, date, timedelta
 
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError, StandardizedAuthenticationFailed
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, AuthErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from core.auth_service import AuthService
 
@@ -615,7 +615,9 @@ class UserLoginView(BaseAPIView):
 
             return response
         except Exception as e:
-            raise StandardizedValidationError(str(e))
+            raise StandardizedAuthenticationFailed(
+                AuthErrorMessages.INVALID_CREDENTIALS
+            )
 
 
 class UserLogoutView(BaseAPIView):
