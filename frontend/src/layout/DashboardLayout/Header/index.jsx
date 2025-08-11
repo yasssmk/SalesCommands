@@ -9,12 +9,13 @@ import Toolbar from '@mui/material/Toolbar';
 
 // project import
 import AppBarStyled from './AppBarStyled';
-// import HeaderContent from './HeaderContent';
+import HeaderContent from './HeaderContent';
 import IconButton from 'components/@extended/IconButton';
 
 import { DRAWER_WIDTH, MINI_DRAWER_WIDTH, MenuOrientation, ThemeMode } from 'config';
 import useConfig from 'hooks/useConfig';
 // import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
+import { useMenuState } from 'hooks/useMenuState';
 
 // assets
 import MenuFoldOutlined from '@ant-design/icons/MenuFoldOutlined';
@@ -27,7 +28,7 @@ export default function Header() {
   const downLG = useMediaQuery(theme.breakpoints.down('lg'));
   const { mode, menuOrientation } = useConfig();
 
-  const { menuMaster } = useGetMenuMaster();
+  const { menuMaster } = useMenuState();
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
 
   const isHorizontal = menuOrientation === MenuOrientation.HORIZONTAL && !downLG;

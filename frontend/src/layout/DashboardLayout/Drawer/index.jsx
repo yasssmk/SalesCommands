@@ -11,10 +11,10 @@ import DrawerHeader from './DrawerHeader';
 import MiniDrawerStyled from './MiniDrawerStyled';
 
 import { DRAWER_WIDTH } from 'config';
-// import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
+import { useMenuState } from 'hooks/useMenuState';
 
 export default function MainDrawer({ window }) {
-  const { menuMaster } = useGetMenuMaster();
+  const { menuMaster } = useMenuState();
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
   const downLG = useMediaQuery((theme) => theme.breakpoints.down('lg'));
 
@@ -22,8 +22,8 @@ export default function MainDrawer({ window }) {
   const container = window !== undefined ? () => window().document.body : undefined;
 
   // header content
-  const drawerContent = useMemo(() => <DrawerContent />, []);
-  const drawerHeader = useMemo(() => <DrawerHeader open={drawerOpen} />, [drawerOpen]);
+  // const drawerContent = useMemo(() => <DrawerContent />, []);
+  // const drawerHeader = useMemo(() => <DrawerHeader open={drawerOpen} />, [drawerOpen]);
 
   return (
     <Box component="nav" sx={{ flexShrink: { md: 0 }, zIndex: 1200 }} aria-label="mailbox folders">
@@ -51,7 +51,7 @@ export default function MainDrawer({ window }) {
             }
           }}
         >
-          {drawerHeader}
+          {/* {drawerHeader} */}
           {/* {drawerContent} */}
         </Drawer>
       )}
