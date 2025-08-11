@@ -585,7 +585,6 @@ class UserLoginView(BaseAPIView):
         email = request.data.get('email')
         password = request.data.get('password')
 
-        print(request.data)
 
         if not email or not password:
             raise StandardizedValidationError(
@@ -613,7 +612,7 @@ class UserLoginView(BaseAPIView):
                     "role": user.role_name
                 }
             })
-            print(response)
+
             return response
         except Exception as e:
             raise StandardizedValidationError(str(e))

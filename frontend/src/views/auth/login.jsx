@@ -15,27 +15,33 @@ import Typography from '@mui/material/Typography';
 import AuthWrapper from 'sections/auth/AuthWrapper';
 import AuthLogin from 'sections/auth/auth-forms/AuthLogin';
 
-// api
-import { isAuthenticated } from 'api/auth';
+// CHANGEMENT: Utiliser le hook useAuth au lieu de isAuthenticated
+import { useAuth } from 'hooks/useAuth';
 
 // ==============================|| LOGIN PAGE ||============================== //
 
 export default function SignIn() {
   const router = useRouter();
+  
+  // CHANGEMENT: Utiliser le hook useAuth
+  const { isAuthenticated, isLoading } = useAuth();
 
   // Check if user is already authenticated
   useEffect(() => {
-    if (isAuthenticated()) {
+    if (!isLoading && isAuthenticated) {
       // Redirect to dashboard if already logged in
       router.push('/');
     }
-  }, [router]);
+  }, [isAuthenticated, isLoading, router]);
 
   // Don't render page if already authenticated (avoid flash)
-  if (isAuthenticated()) {
+  if (isLoading) {
+    return <div>Chargement...</div>; // ou votre composant Loader
+  }
+  
+  if (isAuthenticated) {
     return null;
   }
-
   // Mock providers and csrfToken for compatibility with model structure
   const providers = null;
   const csrfToken = null;

@@ -14,7 +14,7 @@
       "menu-items/*": ["menu-items/*"],
       "api/*": ["api/*"],
       "data/*": ["data/*"],
-      "config": ["config.js"]
+      "config": ["config/theme-config.js"]
     }
   },
   "include": [

@@ -1,26 +1,46 @@
 // utils
 import axios from 'axios';
+import { authConfig, debugLog} from '../config/auth'
+
 
 // ==============================|| AUTH API CONFIGURATION ||============================== //
 
-const authAxios = axios.create({ 
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+const authAxios = axios.create({
+  baseURL: authConfig.API_BASE_URL,
+  timeout: authConfig.REQUEST_TIMEOUT,
   headers: {
     'Content-Type': 'application/json',
-  }
+  },
+  withCredentials: true, // IMPORTANT: Pour envoyer les cookies HTTP-only
 });
 
-// ==============================|| AUTH API ENDPOINTS ||============================== //
+// ==============================|| INTERCEPTORS ||============================== //
 
-export const authEndpoints = {
-  login: '/client/login/',
-  logout: '/api/auth/logout/',
-  refresh: '/api/auth/refresh/',
-  me: '/api/auth/me/',
-  register: '/api/auth/register/',
-  forgotPassword: '/api/auth/forgot-password/',
-  resetPassword: '/api/auth/reset-password/',
-};
+// Intercepteur de réponse pour gérer les erreurs globales
+authAxios.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // Si erreur 401 et ce n'est pas déjà une tentative de refresh
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      
+      try {
+        debugLog('Token expiré, tentative de refresh...');
+        await refreshTokens();
+        return authAxios(originalRequest);
+      } catch (refreshError) {
+        debugLog('Refresh failed, redirection vers login');
+        // Le refresh a échoué, l'utilisateur doit se reconnecter
+        window.location.href = authConfig.PAGES.LOGIN;
+        return Promise.reject(refreshError);
+      }
+    }
+    
+    return Promise.reject(error);
+  }
+);
 
 // ==============================|| AUTH API FUNCTIONS ||============================== //
 
@@ -28,170 +48,211 @@ export const authEndpoints = {
  * Login user with email and password
  * @param {string} email - User email
  * @param {string} password - User password
- * @returns {Promise} Response with tokens and user data
+ * @returns {Promise<Object>} Response with tokens and user data
  */
 export const loginUser = async (email, password) => {
   try {
-    const response = await authAxios.post(authEndpoints.login, {
+    debugLog('Tentative de connexion pour:', email);
+    
+    const response = await authAxios.post(authConfig.ENDPOINTS.LOGIN, {
       email: email.trim(),
       password,
     });
 
-
-    return response.data;
-  } catch (error) {
-    // Gestion d'erreurs spécifiques selon les réponses Django
-    if (error.response?.data?.message) {
-      throw new Error(error.response.data.message);
-    } else if (error.response?.data?.error) {
-      throw new Error(error.response.data.error);
-    } else if (error.response?.data?.non_field_errors) {
-      throw new Error(error.response.data.non_field_errors[0]);
-    } else if (error.response?.status === 401) {
-      throw new Error('Email ou mot de passe incorrect');
-    } else if (error.response?.status === 400) {
-      throw new Error('Données de connexion invalides');
-    } else if (error.response?.status >= 500) {
-      throw new Error('Erreur serveur, veuillez réessayer plus tard');
-    } else {
-      throw new Error('Erreur de connexion au serveur');
-    }
-  }
-};
-
-/**
- * Logout user
- * @param {string} refreshToken - Refresh token
- * @returns {Promise} Logout response
- */
-export const logoutUser = async (refreshToken = null) => {
-  try {
-    const token = localStorage.getItem('access_token');
-    const config = {
-      headers: {
-        'Authorization': token ? `Bearer ${token}` : undefined
-      }
+    debugLog('Connexion réussie:', response.data);
+    
+    // Les tokens sont maintenant dans les cookies HTTP-only
+    // On retourne uniquement les données utilisateur
+    return {
+      success: true,
+      user: response.data.user,
+      message: response.data.message,
     };
-
-    const payload = refreshToken ? { refresh_token: refreshToken } : {};
-    
-    const response = await authAxios.post(authEndpoints.logout, payload, config);
-    
-    // Nettoyer le localStorage
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    
-    return response.data;
   } catch (error) {
-    // Même en cas d'erreur, on nettoie le localStorage
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    throw new Error(error.response?.data?.message || 'Erreur lors de la déconnexion');
+    debugLog('Erreur de connexion:', error);
+    
+    // Gestion d'erreurs spécifiques selon les réponses Django
+    let errorMessage = authConfig.ERROR_MESSAGES.SERVER_ERROR;
+    
+    if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.response?.data?.error) {
+      errorMessage = error.response.data.error;
+    } else if (error.response?.data?.non_field_errors) {
+      errorMessage = error.response.data.non_field_errors[0];
+    } else if (error.response?.status === 401) {
+      errorMessage = authConfig.ERROR_MESSAGES.INVALID_CREDENTIALS;
+    } else if (error.response?.status === 400) {
+      errorMessage = 'Données de connexion invalides';
+    } else if (error.response?.status >= 500) {
+      errorMessage = authConfig.ERROR_MESSAGES.SERVER_ERROR;
+    } else if (error.code === 'NETWORK_ERROR') {
+      errorMessage = authConfig.ERROR_MESSAGES.NETWORK_ERROR;
+    }
+    
+    return {
+      success: false,
+      error: errorMessage,
+    };
   }
 };
 
 /**
- * Refresh access token
- * @param {string} refreshToken - Refresh token
- * @returns {Promise} New access token
+ * Déconnexion utilisateur
+ * @returns {Promise<Object>} Résultat de la déconnexion
  */
-export const refreshAccessToken = async (refreshToken) => {
+export const logoutUser = async () => {
   try {
-    const response = await authAxios.post(authEndpoints.refresh, {
-      refresh_token: refreshToken,
-    });
-
-    return response.data;
+    debugLog('Tentative de déconnexion...');
+    
+    const response = await authAxios.post(authConfig.ENDPOINTS.LOGOUT);
+    
+    debugLog('Déconnexion réussie');
+    
+    // Nettoyer les données locales non-sensibles
+    clearLocalUserData();
+    
+    return {
+      success: true,
+      message: response.data.message || 'Déconnexion réussie',
+    };
   } catch (error) {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    throw new Error('Session expirée, veuillez vous reconnecter');
+    debugLog('Erreur lors de la déconnexion:', error);
+    
+    // Même en cas d'erreur, on nettoie localement
+    clearLocalUserData();
+    
+    return {
+      success: false,
+      error: error.response?.data?.message || 'Erreur lors de la déconnexion',
+    };
   }
 };
 
 /**
- * Get current user info
- * @returns {Promise} User data
+ * Rafraîchir les tokens d'accès
+ * @returns {Promise<Object>} Nouveaux tokens
+ */
+export const refreshTokens = async () => {
+  try {
+    debugLog('Tentative de refresh des tokens...');
+    
+    const response = await authAxios.post(authConfig.ENDPOINTS.REFRESH);
+    
+    debugLog('Tokens rafraîchis avec succès');
+    
+    return {
+      success: true,
+      message: response.data.message || 'Tokens rafraîchis',
+    };
+  } catch (error) {
+    debugLog('Erreur lors du refresh:', error);
+    
+    // En cas d'erreur, nettoyer les données locales
+    clearLocalUserData();
+    
+    throw new Error(authConfig.ERROR_MESSAGES.SESSION_EXPIRED);
+  }
+};
+
+/**
+ * Obtenir les informations de l'utilisateur connecté
+ * @returns {Promise<Object>} Données utilisateur
  */
 export const getCurrentUser = async () => {
   try {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-      throw new Error('Aucun token trouvé');
-    }
-
-    const response = await authAxios.get(authEndpoints.me, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-
-    return response.data;
+    debugLog('Récupération des données utilisateur...');
+    
+    const response = await authAxios.get(authConfig.ENDPOINTS.ME);
+    
+    debugLog('Données utilisateur récupérées:', response.data);
+    
+    return {
+      success: true,
+      user: response.data,
+    };
   } catch (error) {
+    debugLog('Erreur lors de la récupération utilisateur:', error);
+    
     if (error.response?.status === 401) {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      throw new Error('Session expirée');
+      throw new Error(authConfig.ERROR_MESSAGES.SESSION_EXPIRED);
     }
-    throw new Error(error.response?.data?.message || 'Erreur lors de la récupération des données utilisateur');
+    
+    throw new Error(
+      error.response?.data?.message || 
+      'Erreur lors de la récupération des données utilisateur'
+    );
   }
 };
 
 /**
- * Register new user
- * @param {Object} userData - User registration data
- * @returns {Promise} Registration response
+ * Vérifier si l'utilisateur est authentifié
+ * @returns {Promise<boolean>} Statut d'authentification
  */
-export const registerUser = async (userData) => {
+export const checkAuthStatus = async () => {
   try {
-    const response = await authAxios.post(authEndpoints.register, userData);
-    return response.data;
+    await getCurrentUser();
+    return true;
   } catch (error) {
-    if (error.response?.data?.email) {
-      throw new Error('Cette adresse email est déjà utilisée');
-    } else if (error.response?.data?.password) {
-      throw new Error(error.response.data.password[0]);
-    } else if (error.response?.data?.message) {
-      throw new Error(error.response.data.message);
-    } else {
-      throw new Error('Erreur lors de l\'inscription');
-    }
+    debugLog('Utilisateur non authentifié:', error.message);
+    return false;
   }
 };
 
-// ==============================|| AUTH HELPERS ||============================== //
+// ==============================|| HELPER FUNCTIONS ||============================== //
 
 /**
- * Check if user is authenticated
- * @returns {boolean} Authentication status
+ * Nettoyer les données locales non-sensibles
  */
-export const isAuthenticated = () => {
-  if (typeof window === 'undefined') return false;
-  
-  const token = localStorage.getItem('access_token');
-  return !!token;
-};
-
-/**
- * Get stored access token
- * @returns {string|null} Access token
- */
-export const getAccessToken = () => {
-  if (typeof window === 'undefined') return null;
-  
-  return localStorage.getItem('access_token');
-};
-
-/**
- * Store authentication tokens
- * @param {string} accessToken - Access token
- * @param {string} refreshToken - Refresh token (optional)
- */
-export const storeTokens = (accessToken, refreshToken = null) => {
+const clearLocalUserData = () => {
   if (typeof window === 'undefined') return;
   
-  localStorage.setItem('access_token', accessToken);
-  if (refreshToken) {
-    localStorage.setItem('refresh_token', refreshToken);
+  // On garde seulement les préférences utilisateur non-sensibles
+  const preferences = localStorage.getItem(authConfig.STORAGE_KEYS.USER_PREFERENCES);
+  const theme = localStorage.getItem(authConfig.STORAGE_KEYS.THEME);
+  
+  localStorage.clear();
+  
+  // Restaurer les préférences
+  if (preferences) {
+    localStorage.setItem(authConfig.STORAGE_KEYS.USER_PREFERENCES, preferences);
   }
+  if (theme) {
+    localStorage.setItem(authConfig.STORAGE_KEYS.THEME, theme);
+  }
+};
+
+/**
+ * Sauvegarder la route actuelle pour redirection post-login
+ * @param {string} route - Route à sauvegarder
+ */
+export const saveLastRoute = (route) => {
+  if (typeof window === 'undefined') return;
+  
+  localStorage.setItem(authConfig.STORAGE_KEYS.LAST_ROUTE, route);
+};
+
+/**
+ * Récupérer et supprimer la dernière route sauvegardée
+ * @returns {string|null} Dernière route
+ */
+export const getAndClearLastRoute = () => {
+  if (typeof window === 'undefined') return null;
+  
+  const lastRoute = localStorage.getItem(authConfig.STORAGE_KEYS.LAST_ROUTE);
+  localStorage.removeItem(authConfig.STORAGE_KEYS.LAST_ROUTE);
+  
+  return lastRoute;
+};
+
+// ==============================|| EXPORTS ||============================== //
+
+export default {
+  loginUser,
+  logoutUser,
+  refreshTokens,
+  getCurrentUser,
+  checkAuthStatus,
+  saveLastRoute,
+  getAndClearLastRoute,
 };
