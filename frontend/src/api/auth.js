@@ -47,6 +47,29 @@ export const loginUser = async (email, password) => {
 };
 
 /**
+ * ✅ REFRESH TOKENS
+ * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
+ */
+export const refreshTokens = async () => {
+  try {
+    debugLog('Refreshing tokens...');
+    
+    const response = await authAxios.post(authConfig.ENDPOINTS.REFRESH);
+    
+    debugLog('Tokens refreshed successfully');
+    return {
+      success: true,
+      user: response.data.user || response.data,
+    };
+    
+  } catch (error) {
+    debugLog('Token refresh failed:', error.message);
+    const errorMessage = handleApiError(error);
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
  * ✅ LOGOUT USER
  * @returns {Promise<Object>} Response confirmation
  */

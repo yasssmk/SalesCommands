@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ['latin'] });
 
 export const metadata = {
   title: 'SalesCommands - Dashboard App',
-  description: 'DESCRPTION A CHENGER app/layout',
+  description: 'DESCRPTION A CHANGER app/layout',
 };
 
 export default function RootLayout({ children }) {

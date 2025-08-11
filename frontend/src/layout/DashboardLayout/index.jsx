@@ -78,7 +78,7 @@ export default function DashboardLayout({ children }) {
           <Footer />
         </Container>
       </Box>
-      <AddCustomer />
+      {/* <AddCustomer /> */}
     </Stack>
     </QueryClientProvider>
   );
