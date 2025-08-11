@@ -4,6 +4,8 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from core.error_messages import CoreErrorMessages
 from rest_framework.exceptions import ParseError
 
+#TO DO: GESTION DES ERREUR 500
+
 class StandardizedValidationError(ValidationError):
     """Returns 400 Bad Request with a clean error message"""
 

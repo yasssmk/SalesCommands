@@ -1,6 +1,17 @@
 # core/error_messages.py
 from django.utils.translation import gettext_lazy as _
 
+class AuthErrorMessages:
+    AUTH_REQUIRED = _("Authentication required")
+    INVALID_CREDENTIALS = _("Invalid email or password 234")
+    USER_NOT_FOUND = _("No account found with this email address")
+    INVALID_PASSWORD = _("The password you entered is incorrect")
+    ACCOUNT_DISABLED = _("This account has been disabled")
+    LOGIN_FAILED = _("Login failed. Please check your credentials and try again")
+    TOKEN_EXPIRED = _("Your session has expired. Please log in again")
+    TOKEN_INVALID = _("Invalid authentication token")
+
+
 class CoreErrorMessages:
     """Base error messages used across all apps"""
     
