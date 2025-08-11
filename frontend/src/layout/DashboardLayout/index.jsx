@@ -59,8 +59,8 @@ export default function DashboardLayout({ children }) {
   return (
     <QueryClientProvider client={queryClient}>
     <Stack direction="row" width={1}>
-      {/* <Header />
-      {!isHorizontal ? <Drawer /> : <HorizontalBar />} */}
+      <Header />
+      {/* {!isHorizontal ? <Drawer /> : <HorizontalBar />} */}
       <Box component="main" sx={{ width: 'calc(100% - 260px)', flexGrow: 1, p: { xs: 2, sm: 3 } }}>
         <Toolbar sx={{ mt: isHorizontal ? 8 : 'inherit' }} />
         <Container

@@ -6,9 +6,9 @@ import Box from '@mui/material/Box';
 import Drawer from '@mui/material/Drawer';
 
 // project import
-import DrawerHeader from './DrawerHeader';
+// import DrawerHeader from './DrawerHeader';
 // import DrawerContent from './DrawerContent';
-import MiniDrawerStyled from './MiniDrawerStyled';
+// import MiniDrawerStyled from './MiniDrawerStyled';
 
 import { DRAWER_WIDTH } from 'config';
 import { useMenuState } from 'hooks/useMenuState';

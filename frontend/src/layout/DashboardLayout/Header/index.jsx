@@ -14,7 +14,6 @@ import IconButton from 'components/@extended/IconButton';
 
 import { DRAWER_WIDTH, MINI_DRAWER_WIDTH, MenuOrientation, ThemeMode } from 'config';
 import useConfig from 'hooks/useConfig';
-// import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 import { useMenuState } from 'hooks/useMenuState';
 
 // assets
@@ -28,7 +27,7 @@ export default function Header() {
   const downLG = useMediaQuery(theme.breakpoints.down('lg'));
   const { mode, menuOrientation } = useConfig();
 
-  const { menuMaster } = useMenuState();
+  const { menuMaster, handlerDrawerOpen } = useMenuState();
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
 
   const isHorizontal = menuOrientation === MenuOrientation.HORIZONTAL && !downLG;
