@@ -29,8 +29,8 @@ import { Formik } from 'formik';
 import IconButton from 'components/@extended/IconButton';
 import AnimateButton from 'components/@extended/AnimateButton';
 
-// api
-import { loginUser, storeTokens } from 'api/auth';
+//hooks
+import { useAuth } from 'hooks/useAuth';
 
 // assets
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
@@ -60,6 +60,8 @@ export default function AuthLogin({ providers, csrfToken }) {
     }
   };
 
+  const { login } = useAuth();
+
   return (
     <>
       <Formik
@@ -82,7 +84,7 @@ export default function AuthLogin({ providers, csrfToken }) {
             setSubmitting(true);
             
             // Django API call instead of NextAuth
-            const result = await loginUser(trimmedEmail, values.password);
+            const result = await login(trimmedEmail, values.password);
 
               if (!result.success) {
                 setErrors({ submit: result.error });

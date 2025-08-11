@@ -19,9 +19,9 @@ function DashboardHome() {
 export default function HomePage() {
   return (
     <AuthGuard>
-      <DashboardLayout>
+      {/* <DashboardLayout> */}
         <DashboardHome />
-      </DashboardLayout>
+      {/* </DashboardLayout> */}
     </AuthGuard>
   );
 }
