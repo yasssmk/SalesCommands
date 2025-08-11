@@ -490,7 +490,7 @@ class UserPerformanceAccessSerializer(ClientScopeManager.SerializerMixin, serial
         """Valider l'accès aux performances de l'utilisateur cible"""
         request = self.context.get('request')
         if not request or not request.user:
-            raise StandardizedValidationError(CoreErrorMessages.AUTH_REQUIRED)
+            raise StandardizedValidationError(AuthErrorMessages.AUTH_REQUIRED)
         
         # Utiliser la logique métier du modèle
         if not request.user.can_access_user_performance(value):

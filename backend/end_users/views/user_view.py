@@ -591,36 +591,29 @@ class UserLoginView(BaseAPIView):
                 CoreErrorMessages.REQUIRED_FIELD.format(field='Email and Password')
             )
 
-        try:
-            from django.conf import settings
-            auth_service = AuthService(
-                user_model=User,
-                origin='end_users',
-                refresh_lifetime=settings.ROLE_REFRESH_LIFETIMES['end_users'],
-                serializer_class=UserSerializer
-            )
-            
-            response = Response(status=status.HTTP_200_OK)
-            user = auth_service.authenticate_user(email, password, response)
-            response.data.update({
-                "origin": "end_users",
-                "message": "Login successful",
-                "user": {
-                    "id": str(user.id),
-                    "name": user.get_full_name(),
-                    "email": user.email,
-                    "role": user.role_name
-                }
-            })
 
-            return response
-        except Exception as e:
-            raise StandardizedValidationError(
-                AuthErrorMessages.INVALID_CREDENTIALS
-            )
-            # raise StandardizedAuthenticationFailed(
-            #     AuthErrorMessages.INVALID_CREDENTIALS
-            # )
+        from django.conf import settings
+        auth_service = AuthService(
+            user_model=User,
+            origin='end_users',
+            refresh_lifetime=settings.ROLE_REFRESH_LIFETIMES['end_users'],
+            serializer_class=UserSerializer
+        )
+        
+        response = Response(status=status.HTTP_200_OK)
+        user = auth_service.authenticate_user(email, password, response)
+        response.data.update({
+            "origin": "end_users",
+            "message": "Login successful",
+            "user": {
+                "id": str(user.id),
+                "name": user.get_full_name(),
+                "email": user.email,
+                "role": user.role_name
+            }
+        })
+
+        return response
 
 
 class UserLogoutView(BaseAPIView):

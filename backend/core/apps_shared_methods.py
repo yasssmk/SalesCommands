@@ -12,7 +12,7 @@ from core.exceptions import (
     StandardizedPermissionDenied,
     StandardizedAuthenticationFailed,
 )
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, AuthErrorMessages
 from rest_framework.exceptions import ParseError
 import logging
 
@@ -335,7 +335,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         
     #     if isinstance(exc, AuthenticationFailed):
     #         return Response(
-    #             StandardizedValidationError._format_detail(CoreErrorMessages.AUTH_REQUIRED),
+    #             StandardizedValidationError._format_detail(AuthErrorMessages.AUTH_REQUIRED),
     #             status=status.HTTP_401_UNAUTHORIZED
     #         )
 
@@ -406,7 +406,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         
         if isinstance(exc, AuthenticationFailed):
             return Response(
-                StandardizedValidationError._format_detail(CoreErrorMessages.AUTH_REQUIRED),
+                StandardizedValidationError._format_detail(AuthErrorMessages.INVALID_CREDENTIALS),
                 status=status.HTTP_401_UNAUTHORIZED
             )
 

@@ -7,7 +7,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from product_admin.models import ProductAdmin
 
-from core.error_messages import CoreErrorMessages
+from core.error_messages import AuthErrorMessages
 
 class UUIDEncoder:
     @staticmethod
@@ -29,11 +29,11 @@ class CustomJWTAuthentication(JWTAuthentication):
         try:
             return super().authenticate(request)
         except InvalidToken:
-            raise AuthenticationFailed(CoreErrorMessages.AUTH_REQUIRED)
+            raise AuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
         except TokenError:
-            raise AuthenticationFailed(CoreErrorMessages.AUTH_REQUIRED)
+            raise AuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
         except Exception:
-            raise AuthenticationFailed(CoreErrorMessages.AUTH_REQUIRED)
+            raise AuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
         
     def get_validated_token(self, raw_token):
         """Override to use custom token class if needed"""

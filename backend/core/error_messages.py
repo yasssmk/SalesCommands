@@ -3,7 +3,7 @@ from django.utils.translation import gettext_lazy as _
 
 class AuthErrorMessages:
     AUTH_REQUIRED = _("Authentication required")
-    INVALID_CREDENTIALS = _("Invalid email or password 234")
+    INVALID_CREDENTIALS = _("Invalid email or password")
     USER_NOT_FOUND = _("No account found with this email address")
     INVALID_PASSWORD = _("The password you entered is incorrect")
     ACCOUNT_DISABLED = _("This account has been disabled")
@@ -16,7 +16,7 @@ class CoreErrorMessages:
     """Base error messages used across all apps"""
     
     # Authentication & Authorization
-    AUTH_REQUIRED = _("Authentication required")
+    AUTH_REQUIRED = _("Authentication required33")
     CLIENT_ID_REQUIRED = _("Client account required")
     PERMISSION_DENIED = _("You don't have permission to perform this action")
     

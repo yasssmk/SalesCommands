@@ -70,7 +70,7 @@ class ClientScopeManager:
         
             request = self.context.get("request")
             if not request or not request.auth:
-                raise StandardizedAuthenticationFailed(CoreErrorMessages.AUTH_REQUIRED)
+                raise StandardizedAuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
 
             client_id = request.auth.get("client_account")
             if not client_id:
@@ -170,7 +170,7 @@ class ClientScopeManager:
             
             """Get client_id from JWT token"""
             if not self.request.auth:
-                raise StandardizedAuthenticationFailed(CoreErrorMessages.AUTH_REQUIRED)
+                raise StandardizedAuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
 
             origin = self.request.auth.get('origin')
             
