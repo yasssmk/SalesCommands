@@ -75,29 +75,28 @@ export default function AuthLogin({ providers, csrfToken }) {
           password: Yup.string()
             .required('Password is required')
             .test('no-leading-trailing-whitespace', 'Password cannot start or end with spaces', (value) => value === value.trim())
-            .max(100, 'Password must be less than 10 characters')
         })}
-        onSubmit={async (values, { setErrors, setSubmitting }) => {
+      onSubmit={async (values, { setErrors, setSubmitting, setStatus }) => {
+          // ✅ Reset des erreurs précédentes
+          setErrors({});
+          setStatus(null);
+          
           const trimmedEmail = values.email.trim();
           
-          try {
-            setSubmitting(true);
-            
-            // Django API call instead of NextAuth
-            const result = await login(trimmedEmail, values.password);
-
-              if (!result.success) {
-                setErrors({ submit: result.error });
-              }
-              // La redirection vers dashboard est gérée automatiquement par le hook
-              
-            } catch (error) {
-              console.error('Erreur lors de la connexion:', error);
-              setErrors({ submit: error.message || 'Une erreur inattendue s\'est produite' });
-            } finally {
-              setSubmitting(false);
-            }
-            
+          console.log('Attempting login for:', trimmedEmail);
+          
+          // ✅ SIMPLIFIÉ : Appel direct au hook useAuth
+          const result = await login(trimmedEmail, values.password);
+          
+          if (result.success) {
+            console.log('Login successful, redirect will be handled by useAuth');
+            // La redirection est gérée automatiquement par le hook useAuth
+          } else {
+            // ✅ DIRECT : Afficher l'erreur retournée par le hook
+            console.log('Login failed with error:', result.error);
+            setErrors({ submit: result.error || 'Login failed. Please try again.' });
+            setSubmitting(false);
+          }
         }}
       >
         {({ errors, handleBlur, handleChange, handleSubmit, isSubmitting, touched, values }) => (

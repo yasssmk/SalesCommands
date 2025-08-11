@@ -17,31 +17,18 @@ import AuthLogin from 'sections/auth/auth-forms/AuthLogin';
 
 // CHANGEMENT: Utiliser le hook useAuth au lieu de isAuthenticated
 import { useAuth } from 'hooks/useAuth';
+import Loader from 'components/Loader';
 
 // ==============================|| LOGIN PAGE ||============================== //
 
 export default function SignIn() {
-  const router = useRouter();
   
-  // CHANGEMENT: Utiliser le hook useAuth
   const { isAuthenticated, isLoading } = useAuth();
 
-  // Check if user is already authenticated
-  useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      // Redirect to dashboard if already logged in
-      router.push('/');
-    }
-  }, [isAuthenticated, isLoading, router]);
-
-  // Don't render page if already authenticated (avoid flash)
-  if (isLoading) {
-    return <div>Chargement...</div>; // ou votre composant Loader
-  }
-  
   if (isAuthenticated) {
-    return null;
+    return null; 
   }
+
   // Mock providers and csrfToken for compatibility with model structure
   const providers = null;
   const csrfToken = null;

@@ -14,7 +14,7 @@ export const authConfig = {
     LOGIN: '/client/login/',
     LOGOUT: '/client/logout/',
     REFRESH: '/client/refresh-token/',
-    ME: '/api/auth/me/', // à ajuster selon votre backend
+    USER: '/client/user/',
   },
   
   // Pages de redirection
@@ -24,13 +24,11 @@ export const authConfig = {
     HOME: '/',
   },
 
-    // Messages d'erreur personnalisés
-  ERROR_MESSAGES: {
-    NETWORK_ERROR: 'Erreur de connexion. Vérifiez votre connexion internet.',
-    INVALID_CREDENTIALS: 'Email ou mot de passe incorrect.',
-    SESSION_EXPIRED: 'Votre session a expiré. Veuillez vous reconnecter.',
-    SERVER_ERROR: 'Erreur serveur. Veuillez réessayer plus tard.',
-    UNAUTHORIZED: 'Vous n\'êtes pas autorisé à accéder à cette ressource.',
+  // Messages d'erreur personnalisés
+   ERROR_MESSAGES: {
+    NETWORK_ERROR: 'Network error. Please check your connection and try again.',
+    SERVER_ERROR: 'Server Error',
+    UNKNOWN_ERROR: 'Something went wrong. Please try again.'
   },
   
   // Options des cookies (côté serveur, mais pour référence)

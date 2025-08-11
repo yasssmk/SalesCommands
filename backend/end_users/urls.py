@@ -17,7 +17,7 @@ from .views.sales_quota_views import SalesQuotaViewSet
 from .views.sales_plan_views import SalesPlanViewSet  
 from .views.sales_milestone_views import SalesMilestoneViewSet
 
-app_name = 'end_users'
+app_name = 'client'
 
 urlpatterns = [
     

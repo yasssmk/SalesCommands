@@ -615,9 +615,12 @@ class UserLoginView(BaseAPIView):
 
             return response
         except Exception as e:
-            raise StandardizedAuthenticationFailed(
+            raise StandardizedValidationError(
                 AuthErrorMessages.INVALID_CREDENTIALS
             )
+            # raise StandardizedAuthenticationFailed(
+            #     AuthErrorMessages.INVALID_CREDENTIALS
+            # )
 
 
 class UserLogoutView(BaseAPIView):
