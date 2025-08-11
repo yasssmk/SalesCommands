@@ -28,14 +28,14 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // Refs pour les timers et éviter les fuites mémoire
+  // Refs pour éviter les fuites mémoire et doubles initialisations
   const refreshTimerRef = useRef(null);
   const initializationRef = useRef(false);
   
   // ==============================|| HELPER FUNCTIONS ||============================== //
   
   /**
-   * Nettoyer l'état d'authentification
+   * Nettoyer l'état d'authentification (fonction de base)
    */
   const clearAuthState = useCallback(() => {
     setUser(null);
@@ -50,42 +50,10 @@ export function AuthProvider({ children }) {
   }, []);
   
   /**
-   * Définir l'utilisateur authentifié
-   */
-  const setAuthenticatedUser = useCallback((userData) => {
-    setUser(userData);
-    setIsAuthenticated(true);
-    setError(null);
-    
-    // Démarrer le timer de refresh automatique
-    startRefreshTimer();
-  }, []);
-  
-  /**
-   * Démarrer le timer de refresh automatique des tokens
-   */
-  const startRefreshTimer = useCallback(() => {
-    // Nettoyer le timer existant
-    if (refreshTimerRef.current) {
-      clearInterval(refreshTimerRef.current);
-    }
-    
-    refreshTimerRef.current = setInterval(async () => {
-      try {
-        debugLog('Refresh automatique des tokens...');
-        await refreshTokens();
-        debugLog('Refresh automatique réussi');
-      } catch (error) {
-        debugLog('Erreur lors du refresh automatique:', error);
-        handleAuthError(error.message);
-      }
-    }, authConfig.TOKEN_REFRESH_INTERVAL);
-  }, []);
-  
-  /**
-   * Gérer les erreurs d'authentification
+   * Gérer les erreurs d'authentification avec redirection
    */
   const handleAuthError = useCallback((errorMessage) => {
+    debugLog('Gestion erreur auth:', errorMessage);
     setError(errorMessage);
     clearAuthState();
     
@@ -98,50 +66,92 @@ export function AuthProvider({ children }) {
     router.push(authConfig.PAGES.LOGIN);
   }, [pathname, router, clearAuthState]);
   
+  /**
+   * Démarrer le timer de refresh automatique des tokens
+   */
+  const startRefreshTimer = useCallback(() => {
+    // Nettoyer le timer existant
+    if (refreshTimerRef.current) {
+      clearInterval(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+    
+    debugLog('Démarrage du timer de refresh automatique');
+    refreshTimerRef.current = setInterval(async () => {
+      try {
+        debugLog('Refresh automatique des tokens...');
+        await refreshTokens();
+        debugLog('Refresh automatique réussi');
+      } catch (error) {
+        debugLog('Erreur lors du refresh automatique:', error);
+        handleAuthError(error.message);
+      }
+    }, authConfig.TOKEN_REFRESH_INTERVAL);
+  }, [handleAuthError]);
+  
+  /**
+   * Définir l'utilisateur authentifié et démarrer le refresh
+   */
+  const setAuthenticatedUser = useCallback((userData) => {
+    debugLog('Définition utilisateur authentifié:', userData);
+    setUser(userData);
+    setIsAuthenticated(true);
+    setError(null);
+    
+    // Démarrer le timer de refresh automatique
+    startRefreshTimer();
+  }, [startRefreshTimer]);
+  
   // ==============================|| AUTH FUNCTIONS ||============================== //
   
   /**
-   * Connexion utilisateur
+   * Connexion utilisateur avec redirection intelligente
    */
   const login = useCallback(async (email, password) => {
     try {
       setIsLoading(true);
       setError(null);
+      debugLog('Tentative de connexion...');
       
       const result = await loginUser(email, password);
       
       if (result.success) {
         setAuthenticatedUser(result.user);
         
-        // Rediriger vers la dernière route ou le dashboard
-        const lastRoute = getAndClearLastRoute();
-        const redirectTo = lastRoute && lastRoute !== authConfig.PAGES.LOGIN 
-          ? lastRoute 
-          : authConfig.PAGES.DASHBOARD;
-        
-        router.push(redirectTo);
-        
-        return { success: true };
-      } else {
-        setError(result.error);
-        return { success: false, error: result.error };
+         setTimeout(() => {
+            const lastRoute = getAndClearLastRoute();
+            const redirectTo = lastRoute && lastRoute !== authConfig.PAGES.LOGIN 
+              ? lastRoute 
+              : authConfig.PAGES.DASHBOARD;
+            
+            debugLog('Redirection vers:', redirectTo);
+            router.push(redirectTo);
+          }, 100); // Petit délai pour laisser React mettre à jour le state
+          
+          return { success: true };
+        } else {
+          setError(result.error);
+          return { success: false, error: result.error };
+        }
+      } catch (error) {
+        const errorMessage = error.message || authConfig.ERROR_MESSAGES.SERVER_ERROR;
+        debugLog('Erreur de connexion:', errorMessage);
+        setError(errorMessage);
+        return { success: false, error: errorMessage };
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      const errorMessage = error.message || authConfig.ERROR_MESSAGES.SERVER_ERROR;
-      setError(errorMessage);
-      return { success: false, error: errorMessage };
-    } finally {
-      setIsLoading(false);
-    }
-  }, [router, setAuthenticatedUser]);
+    }, [router, setAuthenticatedUser]);
   
   /**
-   * Déconnexion utilisateur
+   * Déconnexion utilisateur avec nettoyage complet
    */
   const logout = useCallback(async () => {
     try {
       setIsLoading(true);
+      debugLog('Tentative de déconnexion...');
       await logoutUser();
+      debugLog('Déconnexion réussie');
     } catch (error) {
       debugLog('Erreur lors de la déconnexion:', error);
     } finally {
@@ -156,9 +166,11 @@ export function AuthProvider({ children }) {
    */
   const refreshUser = useCallback(async () => {
     try {
+      debugLog('Rafraîchissement des données utilisateur...');
       const result = await getCurrentUser();
       if (result.success) {
         setUser(result.user);
+        debugLog('Données utilisateur rafraîchies');
         return result.user;
       }
     } catch (error) {
@@ -191,6 +203,7 @@ export function AuthProvider({ children }) {
   
   /**
    * Initialisation de l'authentification au chargement
+   * Effect optimisé avec dépendances minimales
    */
   useEffect(() => {
     const initializeAuth = async () => {
@@ -229,35 +242,13 @@ export function AuthProvider({ children }) {
     return () => {
       if (refreshTimerRef.current) {
         clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
       }
     };
-  }, [checkAuthStatus, getCurrentUser, setAuthenticatedUser, clearAuthState]);
+  }, [setAuthenticatedUser, clearAuthState]); // Dépendances optimales
   
-  /**
-   * Redirection automatique si non authentifié sur une page protégée
-   */
-  useEffect(() => {
-    // Pages publiques qui ne nécessitent pas d'authentification
-    const publicPages = [
-      authConfig.PAGES.LOGIN,
-      '/register',
-      '/forgot-password',
-      '/reset-password',
-      '/',
-    ];
-    
-    // Si on n'est pas en cours de chargement et pas authentifié
-    if (!isLoading && !isAuthenticated) {
-      // Si on est sur une page protégée
-      if (!publicPages.includes(pathname)) {
-        debugLog('Redirection vers login depuis:', pathname);
-        saveLastRoute(pathname);
-        router.push(authConfig.PAGES.LOGIN);
-      }
-    }
-  }, [isLoading, isAuthenticated, pathname, router]);
   
-  // ==============================|| CONTEXT VALUE ||============================== //
+  // ==============================|| CONTEXT VALUE MEMOIZED ||============================== //
   
   const contextValue = {
     // États
@@ -273,7 +264,7 @@ export function AuthProvider({ children }) {
     checkAuth,
     
     // Utilities
-    clearError: () => setError(null),
+    clearError: useCallback(() => setError(null), []),
   };
   
   return (
@@ -293,10 +284,11 @@ export function useAuth() {
   return context;
 }
 
-// ==============================|| AUTH GUARD HOOK ||============================== //
+// ==============================|| AUTH GUARD HOOK OPTIMISÉ ||============================== //
 
 /**
  * Hook pour protéger les composants qui nécessitent une authentification
+ * Version optimisée avec gestion d'erreur
  */
 export function useRequireAuth() {
   const { isAuthenticated, isLoading, user } = useAuth();

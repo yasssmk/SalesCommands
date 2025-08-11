@@ -4,6 +4,6 @@
     "module": "esnext",
     "baseUrl": "src"
   },
-  "include": ["next-env.d.js", "src/**/*"],
+  "include": ["next-env.d.js", "src/**/*", "../frontend/src/utils/axiosInterceptor.js"],
   "exclude": ["node_modules"]
 }

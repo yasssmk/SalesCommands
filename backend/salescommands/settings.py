@@ -194,12 +194,8 @@ SIMPLE_JWT = {
     'AUTH_COOKIE_SAMESITE': 'Lax',
 }
 
-# Add or update the following settings
-ROLE_REFRESH_LIFETIMES = {
-    'product_admin': timedelta(days=1),
-    'user_admin': timedelta(days=1),
-    'end_users': timedelta(days=7),
-}
+
+
 
 #OPEN AI
 
@@ -234,4 +230,12 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8081",  # Frontend local address
     "http://localhost:3000",          # Next.js local
 ]
+
+CORS_ALLOW_CREDENTIALS = True
+SESSION_COOKIE_HTTPONLY = True
+ROLE_REFRESH_LIFETIMES = {
+    'product_admin': timedelta(days=1),
+    'user_admin': timedelta(days=1),
+    'end_users': timedelta(days=7),
+}
 

@@ -11,16 +11,16 @@ export const authConfig = {
   API_BASE_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
   
   ENDPOINTS: {
-    LOGIN: '/end_users/login/',
-    LOGOUT: '/end_users/logout/',
-    REFRESH: '/end_users/refresh-token/',
+    LOGIN: '/client/login/',
+    LOGOUT: '/client/logout/',
+    REFRESH: '/client/refresh-token/',
     ME: '/api/auth/me/', // à ajuster selon votre backend
   },
   
   // Pages de redirection
   PAGES: {
     LOGIN: '/login',
-    DASHBOARD: '/dashboard', // ou '/dashboardHome' selon votre structure
+    DASHBOARD: '/', // ou '/dashboardHome' selon votre structure
     HOME: '/',
   },
 

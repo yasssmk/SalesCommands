@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
 import { createContext } from 'react';
 
 // project import
-import defaultConfig from 'config';
+import defaultConfig from '.config';
 import useLocalStorage from 'hooks/useLocalStorage';
 
 // initial state

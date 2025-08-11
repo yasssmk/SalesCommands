@@ -22,7 +22,6 @@ export default function AuthGuard({ children, fallback = null, requireAuth = tru
     '/register',
     '/forgot-password',
     '/reset-password',
-    '/',
   ];
 
   useEffect(() => {

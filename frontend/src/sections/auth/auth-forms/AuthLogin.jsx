@@ -64,8 +64,8 @@ export default function AuthLogin({ providers, csrfToken }) {
     <>
       <Formik
         initialValues={{
-          email: 'info@codedthemes.com',
-          password: '123456',
+          email: 'admin@companya.com',
+          password: 'password123',
           submit: null
         }}
         validationSchema={Yup.object().shape({
@@ -82,23 +82,20 @@ export default function AuthLogin({ providers, csrfToken }) {
             setSubmitting(true);
             
             // Django API call instead of NextAuth
-            const response = await loginUser(trimmedEmail, values.password);
-            
-            // Store tokens
-            if (response.access_token || response.token) {
-              storeTokens(
-                response.access_token || response.token,
-                response.refresh_token
-              );
+            const result = await loginUser(trimmedEmail, values.password);
+
+              if (!result.success) {
+                setErrors({ submit: result.error });
+              }
+              // La redirection vers dashboard est gérée automatiquement par le hook
+              
+            } catch (error) {
+              console.error('Erreur lors de la connexion:', error);
+              setErrors({ submit: error.message || 'Une erreur inattendue s\'est produite' });
+            } finally {
+              setSubmitting(false);
             }
             
-            // Redirect to dashboard
-            window.location.href = '/';
-            
-          } catch (error) {
-            setErrors({ submit: error.message });
-            setSubmitting(false);
-          }
         }}
       >
         {({ errors, handleBlur, handleChange, handleSubmit, isSubmitting, touched, values }) => (
