@@ -15,7 +15,7 @@ import StarOutlined from '@ant-design/icons/StarOutlined';
 
 export default function ProductReview({ avatar, date, name, rating, review }) {
   return (
-    <Grid item xs={12}>
+    <Grid xs={12}>
       <Stack direction="row" spacing={1}>
         <Avatar alt={name} src={avatar && `/assets/images/users/${avatar}`} />
         <Stack spacing={2}>

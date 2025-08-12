@@ -102,7 +102,7 @@ export default function ColorScheme() {
     <RadioGroup row aria-label="payment-card" name="payment-card" value={presetColor} onChange={handlePresetColorChange}>
       <Grid container spacing={2} sx={{ ml: 0 }}>
         {colorOptions.map((color, index) => (
-          <Grid item key={index}>
+          <Grid key={index}>
             <FormControlLabel
               control={<Radio value={color.id} sx={{ display: 'none' }} />}
               sx={{ display: 'flex', '& .MuiFormControlLabel-label': { flex: 1 } }}

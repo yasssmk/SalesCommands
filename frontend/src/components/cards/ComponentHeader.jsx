@@ -23,7 +23,7 @@ export default function ComponentHeader({ title, caption, directory, link }) {
       </Stack>
       <Grid container spacing={0.75} sx={{ mt: 1.75 }}>
         {directory && (
-          <Grid item xs={12}>
+          <Grid xs={12}>
             <Typography variant="caption" color="text.secondary">
               <NodeExpandOutlined style={{ marginRight: 10 }} />
               {directory}
@@ -31,7 +31,7 @@ export default function ComponentHeader({ title, caption, directory, link }) {
           </Grid>
         )}
         {link && (
-          <Grid item xs={12}>
+          <Grid xs={12}>
             <Link variant="caption" color="primary" href={link} target="_blank">
               <GlobalOutlined style={{ marginRight: 10 }} />
               {link}

@@ -77,27 +77,25 @@ export default function AuthLogin({ providers, csrfToken }) {
             .test('no-leading-trailing-whitespace', 'Password cannot start or end with spaces', (value) => value === value.trim())
         })}
       onSubmit={async (values, { setErrors, setSubmitting, setStatus }) => {
-          // ✅ Reset des erreurs précédentes
-          setErrors({});
-          setStatus(null);
-          
-          const trimmedEmail = values.email.trim();
-          
-          console.log('Attempting login for:', trimmedEmail);
-          
-          // ✅ SIMPLIFIÉ : Appel direct au hook useAuth
+        setErrors({});
+        setStatus(null);
+
+        const trimmedEmail = values.email.trim();
+        console.log('Attempting login for:', trimmedEmail);
+
+        try {
           const result = await login(trimmedEmail, values.password);
-          
+
           if (result.success) {
             console.log('Login successful, redirect will be handled by useAuth');
-            // La redirection est gérée automatiquement par le hook useAuth
           } else {
-            // ✅ DIRECT : Afficher l'erreur retournée par le hook
             console.log('Login failed with error:', result.error);
             setErrors({ submit: result.error || 'Login failed. Please try again.' });
-            setSubmitting(false);
           }
-        }}
+        } finally {
+          setSubmitting(false);
+        }
+      }}
       >
         {({ errors, handleBlur, handleChange, handleSubmit, isSubmitting, touched, values }) => (
           <form noValidate onSubmit={handleSubmit}>

@@ -46,7 +46,7 @@ export default function ThemeMenuLayout() {
   return (
     <RadioGroup row aria-label="payment-card" name="payment-card" value={menuOrientation} onChange={handleContainerChange}>
       <Grid container spacing={1.75} sx={{ ml: 0 }}>
-        <Grid item>
+        <Grid>
           <FormControlLabel
             control={<Radio value={MenuOrientation.VERTICAL} sx={{ display: 'none' }} />}
             sx={{ display: 'flex', '& .MuiFormControlLabel-label': { flex: 1 } }}
@@ -65,7 +65,7 @@ export default function ThemeMenuLayout() {
             }
           />
         </Grid>
-        <Grid item>
+        <Grid>
           <FormControlLabel
             control={<Radio value={MenuOrientation.HORIZONTAL} sx={{ display: 'none' }} />}
             sx={{ display: 'flex', '& .MuiFormControlLabel-label': { flex: 1 } }}

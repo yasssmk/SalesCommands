@@ -31,7 +31,7 @@ export default function ThemeWidth() {
   return (
     <RadioGroup row aria-label="theme-width" name="theme-width" value={container ? 'true' : 'false'} onChange={handleContainerChange}>
       <Grid container spacing={1.75} sx={{ ml: 0 }}>
-        <Grid item>
+        <Grid>
           <FormControlLabel
             control={<Radio value="false" sx={{ display: 'none' }} />}
             sx={{ display: 'flex', '& .MuiFormControlLabel-label': { flex: 1 } }}
@@ -50,7 +50,7 @@ export default function ThemeWidth() {
             }
           />
         </Grid>
-        <Grid item>
+        <Grid>
           <FormControlLabel
             control={<Radio value="true" sx={{ display: 'none' }} />}
             sx={{ display: 'flex', '& .MuiFormControlLabel-label': { flex: 1 } }}

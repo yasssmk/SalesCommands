@@ -137,7 +137,7 @@ export default function Breadcrumbs({
           alignItems={rightAlign ? 'center' : 'flex-start'}
           spacing={1}
         >
-          <Grid item>
+          <Grid>
             <MuiBreadcrumbs aria-label="breadcrumb" maxItems={maxItems || 8} separator={separatorIcon}>
               <NextLink href="/" passHref legacyBehavior>
                 <Typography color="text.secondary" variant="h6" sx={{ textDecoration: 'none', cursor: 'pointer' }}>
@@ -150,7 +150,7 @@ export default function Breadcrumbs({
             </MuiBreadcrumbs>
           </Grid>
           {title && titleBottom && (
-            <Grid item sx={{ mt: card === false ? 0.25 : 1 }}>
+            <Grid sx={{ mt: card === false ? 0.25 : 1 }}>
               <Typography variant="h2">{main.title}</Typography>
             </Grid>
           )}
@@ -234,13 +234,13 @@ export default function Breadcrumbs({
             spacing={1}
           >
             {title && !titleBottom && (
-              <Grid item>
+              <Grid>
                 <Typography variant="h2">{custom ? heading : item?.title}</Typography>
               </Grid>
             )}
-            <Grid item>{tempContent}</Grid>
+            <Grid>{tempContent}</Grid>
             {title && titleBottom && (
-              <Grid item sx={{ mt: card === false ? 0.25 : 1 }}>
+              <Grid sx={{ mt: card === false ? 0.25 : 1 }}>
                 <Typography variant="h2">{custom ? heading : item?.title}</Typography>
               </Grid>
             )}

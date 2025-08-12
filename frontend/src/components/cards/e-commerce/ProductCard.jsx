@@ -107,7 +107,7 @@ export default function ProductCard({ id, color, name, brand, offer, isStock, im
           <Divider />
           <CardContent sx={{ p: 2 }}>
             <Grid container spacing={2}>
-              <Grid item xs={12}>
+              <Grid xs={12}>
                 <Stack>
                   <NextLink href={`/apps/e-commerce/product-details/${id}`} passHref legacyBehavior>
                     <Typography
@@ -123,7 +123,7 @@ export default function ProductCard({ id, color, name, brand, offer, isStock, im
                   </Typography>
                 </Stack>
               </Grid>
-              <Grid item xs={12}>
+              <Grid xs={12}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-end" flexWrap="wrap" rowGap={1.75}>
                   <Stack>
                     <Stack direction="row" spacing={1} alignItems="center">

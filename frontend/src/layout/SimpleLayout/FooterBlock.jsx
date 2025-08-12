@@ -83,29 +83,29 @@ export default function FooterBlock({ isFull }) {
       <Box sx={{ py: 1.5, bgcolor: mode === ThemeMode.DARK ? 'grey.50' : 'grey.800' }}>
         <Container>
           <Grid container spacing={2}>
-            <Grid item xs={12} sm={8}>
+            <Grid xs={12} sm={8}>
               <Typography variant="subtitle2" color="secondary">
                 © Made with love by Team CodedThemes
               </Typography>
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid xs={12} sm={4}>
               <Grid container spacing={2} alignItems="center" sx={{ justifyContent: 'flex-end' }}>
-                <Grid item>
+                <Grid>
                   <Link href="https://www.instagram.com/codedthemes" underline="none" target="_blank" sx={linkSX}>
                     <InstagramFilled />
                   </Link>
                 </Grid>
-                <Grid item>
+                <Grid>
                   <Link href="https://twitter.com/codedthemes/status/1768163845858603500" underline="none" target="_blank" sx={linkSX}>
                     <TwitterOutlined />
                   </Link>
                 </Grid>
-                <Grid item>
+                <Grid>
                   <Link href="https://in.linkedin.com/company/codedthemes" underline="none" target="_blank" sx={linkSX}>
                     <LinkedinFilled />
                   </Link>
                 </Grid>
-                <Grid item>
+                <Grid>
                   <Link href="https://www.facebook.com/codedthemes/" underline="none" target="_blank" sx={linkSX}>
                     <FacebookFilled />
                   </Link>

@@ -15,7 +15,6 @@ import Notistack from 'components/third-party/Notistack';
 
 import { ConfigProvider } from '../contexts/ConfigContext';
 import { AuthProvider } from '../hooks/useAuth';
-import AuthGuard from 'utils/route-guard/AuthGuard';
 
 // ==============================|| APP - THEME, ROUTER, LOCAL ||============================== //
 

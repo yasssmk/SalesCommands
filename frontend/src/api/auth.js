@@ -12,7 +12,6 @@ import { authConfig, debugLog } from '../config/auth';
  * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
  */
 export const loginUser = async (email, password) => {
-  debugLog('🔐 Login attempt for:', email);
   
   const result = await api.post(authConfig.ENDPOINTS.LOGIN, {
     email,
@@ -40,20 +39,17 @@ export const loginUser = async (email, password) => {
  */
 export const refreshTokens = async () => {
   debugLog('🔄 Refreshing tokens via POST /client/refresh-token/...');
-  console.log('🔄 REFRESH-TOKENS: Making POST request to /client/refresh-token/');
   
   const result = await api.post(authConfig.ENDPOINTS.REFRESH);
   
   if (result.success) {
     debugLog('✅ Tokens refreshed successfully');
-    console.log('✅ REFRESH-TOKENS: POST /client/refresh-token/ successful');
     return {
       success: true,
       user: result.data.user || result.data
     };
   } else {
     debugLog('❌ Token refresh failed:', result.error);
-    console.log('❌ REFRESH-TOKENS: POST /client/refresh-token/ failed:', result.error);
     return {
       success: false,
       error: result.error
@@ -88,7 +84,7 @@ export const logoutUser = async () => {
 };
 
 /**
- * ✅ GET CURRENT USER
+ * ✅ GET CURRENT USER - Fonction centrale pour vérification auth
  * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
  */
 export const getCurrentUser = async () => {
@@ -112,7 +108,7 @@ export const getCurrentUser = async () => {
 };
 
 /**
- * ✅ CHECK AUTH STATUS
+ * ✅ CHECK AUTH STATUS - Fonction originale restaurée
  * @returns {Promise<boolean>} Authentication status
  */
 export const checkAuthStatus = async () => {
@@ -124,8 +120,6 @@ export const checkAuthStatus = async () => {
     return false;
   }
 };
-
-// ==============================|| ROUTE MANAGEMENT ||============================== //
 
 /**
  * ✅ SAVE LAST ROUTE
@@ -155,7 +149,7 @@ export const getAndClearLastRoute = () => {
 // ==============================|| UTILITIES ||============================== //
 
 /**
- * ✅ RESET AUTH STATE - SIMPLIFIÉ (plus de logique complexe)
+ * ✅ RESET AUTH STATE - SIMPLIFIÉ
  */
 export const resetAuthState = () => {
   // Nettoyer autres données auth si nécessaire

@@ -3,91 +3,55 @@
 'use client';
 import PropTypes from 'prop-types';
 import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 // project imports
 import Loader from 'components/Loader';
 import { useAuth } from 'hooks/useAuth';
 import { authConfig, debugLog } from 'config/auth';
-import { getAndClearLastRoute } from 'api/auth';
 
-// ==============================|| PUBLIC GUARD (GUEST GUARD) ||============================== //
+// ==============================|| PUBLIC GUARD - MVP ULTRA-SIMPLE ||============================== //
 
 /**
- * ✅ GUARD POUR PAGES PUBLIQUES - Version Unifiée
+ * ✅ GUARD POUR PAGES PUBLIQUES (login, register, forgot-password)
  * 
- * Utilise le hook useAuth centralisé au lieu de créer son propre context
- * 
- * RESPONSABILITÉS :
- * ✅ Rediriger vers dashboard si utilisateur déjà connecté  
- * ✅ Permettre l'accès aux pages d'auth si non connecté
- * ✅ Afficher loader pendant vérification d'authentification
- * ✅ Gestion d'erreur gracieuse
+ * RESPONSABILITÉ UNIQUE :
+ * - SI utilisateur connecté → redirige vers dashboard "/"
+ * - SINON → affiche la page auth (children)
  * 
  * USAGE :
- * - Wraps app/(auth)/layout.jsx
- * - Utilisé pour login, register, forgot-password
+ * - app/(auth)/layout.jsx → <PublicGuard>{children}</PublicGuard>
  */
-export default function PublicGuard({ children, fallback = null }) {
-  const { isAuthenticated, isLoading, error } = useAuth();
+export default function PublicGuard({ children }) {
+  const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
 
   // ==============================|| AUTO-REDIRECT LOGIC ||============================== //
 
   useEffect(() => {
-    // Si authentifié et sur une page publique, rediriger vers dashboard
+    // Si connecté et sur page publique → rediriger vers dashboard
     if (!isLoading && isAuthenticated) {
-      debugLog('🚀 PublicGuard: User already authenticated, redirecting...');
-      
-      // Récupérer la dernière route visitée ou utiliser dashboard par défaut
-      const lastRoute = getAndClearLastRoute();
-      const redirectPath = lastRoute && lastRoute !== pathname ? lastRoute : authConfig.PAGES.DASHBOARD;
-      
-      debugLog('🚀 PublicGuard: Redirecting to:', redirectPath);
-      
-      // Délai court pour éviter les conflits de navigation
-      setTimeout(() => {
-        router.push(redirectPath);
-      }, 100);
+      debugLog('🚀 PublicGuard: User authenticated, redirecting to dashboard');
+      router.push(authConfig.PAGES.DASHBOARD);
     }
-  }, [isAuthenticated, isLoading, pathname, router]);
+  }, [isLoading, isAuthenticated, router]);
 
-  // ==============================|| LOADING STATE ||============================== //
+  // ==============================|| RENDER LOGIC ||============================== //
 
-  // Afficher loader pendant la vérification d'authentification
+  // Afficher loader pendant vérification auth
   if (isLoading) {
-    debugLog('⏳ PublicGuard: Authentication check in progress...');
-    return fallback || <Loader />;
+    return <Loader />;
   }
 
-  // ==============================|| ERROR STATE ||============================== //
-
-  // Gestion d'erreur gracieuse (permet quand même l'accès aux pages publiques)
-  if (error) {
-    debugLog('⚠️ PublicGuard: Auth error detected, allowing access to public pages:', error);
-    // On permet quand même l'accès aux pages publiques en cas d'erreur auth
-    // Car l'utilisateur pourrait avoir besoin de se reconnecter
-  }
-
-  // ==============================|| AUTHENTICATED STATE ||============================== //
-
-  // Si authentifié, ne pas afficher le contenu (redirection en cours)
+  // Si connecté, on redirige (pas besoin d'afficher children)
   if (isAuthenticated) {
-    debugLog('🔄 PublicGuard: Authenticated user detected, redirect in progress...');
-    return fallback || <Loader />;
+    return null;
   }
 
-  // ==============================|| RENDER PUBLIC CONTENT ||============================== //
-
-  // Afficher les pages publiques pour les utilisateurs non authentifiés
-  debugLog('✅ PublicGuard: Rendering public content for unauthenticated user');
+  // Si pas connecté, afficher la page auth
   return children;
 }
 
 PublicGuard.propTypes = {
-  children: PropTypes.node.isRequired,
-  fallback: PropTypes.node,
+  children: PropTypes.node.isRequired
 };
-
-// Guard simple et efficace - utilise composants existants uniquement

@@ -13,7 +13,7 @@ import CaretDownOutlined from '@ant-design/icons/CaretDownOutlined';
 export default function TableWidgetCard({ color, title, count, percentage, isLoss, children, invoice }) {
   return (
     <Grid container direction="row" spacing={2}>
-      <Grid item md={5}>
+      <Grid md={5}>
         <Stack direction="column" spacing={2}>
           <Typography variant="subtitle1">{title}</Typography>
           <Stack direction="column" spacing={1}>
@@ -27,7 +27,7 @@ export default function TableWidgetCard({ color, title, count, percentage, isLos
           </Stack>
         </Stack>
       </Grid>
-      <Grid item md={7}>
+      <Grid md={7}>
         <Stack direction="column" alignItems="flex-end" justifyContent="space-evenly">
           {percentage && (
             <Stack sx={{ ml: 1.25, pl: 1 }} direction="row" alignItems="center" spacing={1}>

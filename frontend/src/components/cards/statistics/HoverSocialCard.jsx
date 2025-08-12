@@ -41,12 +41,12 @@ export default function HoverSocialCard({ primary, secondary, iconPrimary, color
           {primaryIcon}
         </Box>
         <Grid container spacing={0}>
-          <Grid item xs={12}>
+          <Grid xs={12}>
             <Typography variant="h3" color="inherit">
               {secondary}
             </Typography>
           </Grid>
-          <Grid item xs={12}>
+          <Grid xs={12}>
             <Typography variant="subtitle2" color="inherit">
               {primary}
             </Typography>

@@ -38,10 +38,10 @@ export default function EcommerceMetrix({ primary, secondary, content, iconPrima
     >
       <Box sx={{ px: 4.5, py: 4 }}>
         <Grid container justifyContent="space-between" alignItems="center">
-          <Grid item>
+          <Grid>
             <Typography sx={{ color: '#fff', opacity: 0.23, fontSize: 56, lineHeight: 0 }}>{primaryIcon}</Typography>
           </Grid>
-          <Grid item>
+          <Grid>
             <Stack spacing={1} alignItems="flex-end">
               <Typography variant="h4" color="common.white" sx={{ fontWeight: 500 }}>
                 {primary}

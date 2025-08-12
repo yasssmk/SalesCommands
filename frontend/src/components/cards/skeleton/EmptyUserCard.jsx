@@ -13,7 +13,7 @@ import UserCard from './UserCard';
 export default function EmptyUserCard({ title }) {
   return (
     <Grid container spacing={3}>
-      <Grid item xs={12}>
+      <Grid xs={12}>
         <Box
           sx={{
             p: { xs: 2.5, sm: 6 },
@@ -25,7 +25,7 @@ export default function EmptyUserCard({ title }) {
           }}
         >
           <Grid container direction="column" justifyContent="center" alignItems="center">
-            <Grid item>
+            <Grid>
               <Box sx={{ ml: -9, mb: { xs: -8, sm: -5 } }}>
                 <Box sx={{ position: 'relative' }}>
                   <UserCard />
@@ -35,7 +35,7 @@ export default function EmptyUserCard({ title }) {
                 </Box>
               </Box>
             </Grid>
-            <Grid item>
+            <Grid>
               <Stack spacing={1}>
                 <Typography align="center" variant="h4">
                   {title}

@@ -36,7 +36,7 @@ export default function SignIn() {
   return (
     <AuthWrapper>
       <Grid container spacing={3}>
-        <Grid item xs={12}>
+        <Grid xs={12}>
           <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: { xs: -0.5, sm: 0.5 } }}>
             <Typography variant="h3">Login</Typography>
             <Link href="/register" style={{ textDecoration: 'none' }}>
@@ -46,7 +46,7 @@ export default function SignIn() {
             </Link>
           </Stack>
         </Grid>
-        <Grid item xs={12}>
+        <Grid xs={12}>
           <AuthLogin providers={providers} csrfToken={csrfToken} />
         </Grid>
       </Grid>

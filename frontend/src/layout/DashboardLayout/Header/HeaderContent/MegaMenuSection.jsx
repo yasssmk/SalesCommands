@@ -142,7 +142,7 @@ export default function MegaMenuSection() {
                         </Stack>
                       </Box>
                     </Grid>
-                    <Grid item md={8}>
+                    <Grid md={8}>
                       <Box
                         sx={{
                           p: 4,
@@ -165,7 +165,7 @@ export default function MegaMenuSection() {
                         }}
                       >
                         <Grid container spacing={6}>
-                          <Grid item xs={4}>
+                          <Grid xs={4}>
                             <List
                               component="nav"
                               aria-labelledby="nested-list-user"
@@ -219,7 +219,7 @@ export default function MegaMenuSection() {
                               </Link>
                             </List>
                           </Grid>
-                          <Grid item xs={4}>
+                          <Grid xs={4}>
                             <List
                               component="nav"
                               aria-labelledby="nested-list-user"
@@ -281,7 +281,7 @@ export default function MegaMenuSection() {
                               </Link>
                             </List>
                           </Grid>
-                          <Grid item xs={4}>
+                          <Grid xs={4}>
                             <List
                               component="nav"
                               aria-labelledby="nested-list-user"

@@ -48,7 +48,7 @@ export default function TablePagination({ getPageCount, setPageIndex, setPageSiz
 
   return (
     <Grid spacing={1} container alignItems="center" justifyContent="space-between" sx={{ width: 'auto' }}>
-      <Grid item>
+      <Grid>
         <Stack direction="row" spacing={1} alignItems="center">
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="caption" color="secondary">
@@ -88,7 +88,7 @@ export default function TablePagination({ getPageCount, setPageIndex, setPageSiz
           />
         </Stack>
       </Grid>
-      <Grid item sx={{ mt: { xs: 2, sm: 0 } }}>
+      <Grid sx={{ mt: { xs: 2, sm: 0 } }}>
         <Pagination
           sx={{ '& .MuiPaginationItem-root': { my: 0.5 } }}
           count={getPageCount()}

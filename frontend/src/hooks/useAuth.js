@@ -52,8 +52,6 @@ export function AuthProvider({ children }) {
     debugLog('✅ User authenticated:', userData);
   }, []);
 
-  // ==============================|| AUTO-REDIRECT LOGIC ||============================== //
-
   /**
    * ✅ CLEAR AUTH STATE - Nettoyage complet
    */
@@ -77,7 +75,7 @@ export function AuthProvider({ children }) {
   // ==============================|| AUTO-REFRESH SYSTEM ||============================== //
 
   /**
-   * ✅ REFRESH AUTOMATIQUE - Utilise authConfig.TOKEN_REFRESH_INTERVAL
+   * ✅ START AUTO-REFRESH TIMER - Système original fonctionnel
    */
   const startAutoRefresh = useCallback(() => {
     // Nettoyer l'ancien timer s'il existe
@@ -133,72 +131,45 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  /**
-   * ✅ REDIRECTION AUTOMATIQUE POUR UTILISATEURS DÉJÀ CONNECTÉS
-   * Si user authentifié accède à /login → redirige vers dashboard
-   */
-  useEffect(() => {
-    if (!isLoading && isAuthenticated && pathname === '/login') {
-      debugLog('🚀 User already authenticated, redirecting from /login...');
-      
-      const lastRoute = getAndClearLastRoute();
-      const redirectTo = lastRoute || authConfig.PAGES.DASHBOARD;
-      
-      setTimeout(() => {
-        router.push(redirectTo);
-      }, 100);
-    }
-  }, [isLoading, isAuthenticated, pathname, router]);
 
   // ==============================|| MAIN AUTH FUNCTIONS ||============================== //
 
   /**
-   * ✅ LOGIN FUNCTION
+   * ✅ LOGIN FUNCTION - Version originale fonctionnelle
    */
   const login = useCallback(async (email, password) => {
-    if (isLoading) {
-      return { success: false, error: 'Login already in progress' };
-    }
-
+    // Laisse Formik gérer l'état de soumission; ne touche pas à isLoading ici.
     try {
-      setIsLoading(true);
       setError(null);
       debugLog('🔐 Login attempt for:', email);
 
       const result = await loginUser(email, password);
-      
-      if (result.success) {
-        setAuthenticatedUser(result.user);
-        
-        // Démarrer l'auto-refresh
-        startAutoRefresh();
-        
-        // Redirection avec lastRoute
-        const lastRoute = getAndClearLastRoute();
-        const redirectTo = lastRoute || authConfig.PAGES.DASHBOARD;
-        
-        setTimeout(() => {
-          debugLog('🚀 Login successful, redirecting to:', redirectTo);
-          router.push(redirectTo);
-        }, 100);
-        
-        return { success: true };
-      } else {
+      if (!result.success) {
         setError(result.error);
         return { success: false, error: result.error };
       }
+
+      setAuthenticatedUser(result.user);
+      startAutoRefresh();
+
+      const lastRoute = getAndClearLastRoute();
+      const redirectTo = lastRoute || authConfig.PAGES.DASHBOARD;
+      setTimeout(() => {
+        debugLog('🚀 Login successful, redirecting to:', redirectTo);
+        router.push(redirectTo);
+      }, 100);
+
+      return { success: true };
     } catch (error) {
       const errorMessage = error.message || authConfig.ERROR_MESSAGES.SERVER_ERROR;
       debugLog('❌ Login error:', errorMessage);
       setError(errorMessage);
       return { success: false, error: errorMessage };
-    } finally {
-      setIsLoading(false);
     }
-  }, [router, setAuthenticatedUser, isLoading, startAutoRefresh]);
+  }, [router, setAuthenticatedUser, startAutoRefresh]);
 
   /**
-   * ✅ LOGOUT FUNCTION - Version optimisée
+   * ✅ LOGOUT FUNCTION - Version originale
    */
   const logout = useCallback(async () => {
     if (isLoading) {
@@ -290,50 +261,41 @@ export function AuthProvider({ children }) {
   // ==============================|| INITIALIZATION ||============================== //
 
   /**
-   * ✅ INITIALIZATION EFFECT - Version optimisée
+   * ✅ INITIALIZATION EFFECT - Avec optimisation page publique SEULEMENT
    */
   useEffect(() => {
+    let mounted = true;
+
     const initializeAuth = async () => {
-      // Éviter les doubles initialisations
-      if (initializationRef.current) return;
-      initializationRef.current = true;
-      
       try {
         debugLog('🚀 Initializing authentication...');
-        
-        const isAuth = await checkAuthStatus();
-        
-        if (isAuth) {
-          const result = await getCurrentUser();
-          if (result.success) {
-            setAuthenticatedUser(result.user);
-            
-            // Démarrer l'auto-refresh si utilisateur déjà connecté
-            startAutoRefresh();
-            
-            debugLog('✅ User already authenticated:', result.user);
-          } else {
-            debugLog('❌ Failed to get user data, clearing auth');
-            clearAuthState();
-          }
+        const result = await getCurrentUser(); // un seul appel
+        if (!mounted) return;
+
+        if (result.success) {
+          setAuthenticatedUser(result.user);
+          startAutoRefresh();
+          debugLog('✅ User already authenticated:', result.user);
         } else {
-          debugLog('ℹ️ No authenticated user found');
           clearAuthState();
+          debugLog('ℹ️ No authenticated user found');
         }
       } catch (error) {
         debugLog('❌ Auth initialization error:', error.message);
         clearAuthState();
       } finally {
-        setIsLoading(false);
+        if (mounted) setIsLoading(false);
       }
     };
-    
+
     initializeAuth();
-    
-    // Cleanup
+
+    // Cleanup uniquement à la destruction du provider (pas à chaque navigation)
     return () => {
+      mounted = false;
       stopAutoRefresh();
     };
+    // 🚫 Pas de pathname ici : on initialise une seule fois
   }, [setAuthenticatedUser, clearAuthState, startAutoRefresh, stopAutoRefresh]);
 
   // ==============================|| CONTEXT VALUE ||============================== //
@@ -375,31 +337,5 @@ export function useAuth() {
   }
   return context;
 }
-
-/**
- * ✅ PROTECTED ROUTE HOOK
- */
-export function useRequireAuth() {
-  const { isAuthenticated, isLoading, user } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
-  
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      debugLog('🛡️ Unauthorized access, redirecting to login');
-      saveLastRoute(pathname);
-      router.push(authConfig.PAGES.LOGIN);
-    }
-  }, [isLoading, isAuthenticated, pathname, router]);
-  
-  return {
-    isAuthenticated,
-    isLoading,
-    user,
-    isReady: !isLoading && isAuthenticated,
-  };
-}
-
-
 
 export default useAuth;

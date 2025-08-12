@@ -39,12 +39,12 @@ export default function UserCountCard({ primary, secondary, iconPrimary, color }
       <CardContent>
         <IconWrapper>{primaryIcon}</IconWrapper>
         <Grid container direction="column" justifyContent="center" alignItems="center" spacing={1}>
-          <Grid item sm={12}>
+          <Grid sm={12}>
             <Typography variant="h3" align="center" color="inherit">
               {secondary}
             </Typography>
           </Grid>
-          <Grid item sm={12}>
+          <Grid sm={12}>
             <Typography variant="body1" align="center" color="inherit">
               {primary}
             </Typography>

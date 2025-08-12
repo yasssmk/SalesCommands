@@ -31,7 +31,7 @@ export default function ThemeModeLayout() {
   return (
     <RadioGroup row aria-label="payment-card" name="payment-card" value={mode} onChange={handleModeChange}>
       <Grid container spacing={1.75} sx={{ ml: 0 }}>
-        <Grid item>
+        <Grid>
           <FormControlLabel
             control={<Radio value="light" sx={{ display: 'none' }} />}
             sx={{ display: 'flex', '& .MuiFormControlLabel-label': { flex: 1 } }}
@@ -50,7 +50,7 @@ export default function ThemeModeLayout() {
             }
           />
         </Grid>
-        <Grid item>
+        <Grid>
           <FormControlLabel
             control={<Radio value="dark" sx={{ display: 'none' }} />}
             sx={{ display: 'flex', '& .MuiFormControlLabel-label': { flex: 1 } }}

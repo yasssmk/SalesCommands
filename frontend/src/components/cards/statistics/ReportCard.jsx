@@ -14,7 +14,7 @@ export default function ReportCard({ primary, secondary, iconPrimary, color }) {
   return (
     <MainCard>
       <Grid container justifyContent="space-between" alignItems="center">
-        <Grid item>
+        <Grid>
           <Stack spacing={1}>
             <Typography variant="h4">{primary}</Typography>
             <Typography variant="body1" color="secondary">
@@ -22,7 +22,7 @@ export default function ReportCard({ primary, secondary, iconPrimary, color }) {
             </Typography>
           </Stack>
         </Grid>
-        <Grid item>
+        <Grid>
           <Typography variant="h2" sx={{ color }}>
             {primaryIcon}
           </Typography>

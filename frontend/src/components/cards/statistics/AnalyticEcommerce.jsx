@@ -23,13 +23,13 @@ export default function AnalyticEcommerce({ color = 'primary', title, count, per
           {title}
         </Typography>
         <Grid container alignItems="center">
-          <Grid item>
+          <Grid>
             <Typography variant="h4" color="inherit">
               {count}
             </Typography>
           </Grid>
           {percentage && (
-            <Grid item>
+            <Grid>
               <Chip
                 variant="combined"
                 color={color}

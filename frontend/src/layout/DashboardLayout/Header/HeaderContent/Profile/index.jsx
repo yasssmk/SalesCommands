@@ -151,7 +151,7 @@ export default function Profile() {
                 <MainCard elevation={0} border={false} content={false}>
                   <CardContent sx={{ px: 2.5, pt: 3 }}>
                     <Grid container justifyContent="space-between" alignItems="center">
-                      <Grid item>
+                      <Grid>
                         {user && (
                           <Stack direction="row" spacing={1.25} alignItems="center">
                             <Avatar alt={user.name} src={user.avatar} />
@@ -164,7 +164,7 @@ export default function Profile() {
                           </Stack>
                         )}
                       </Grid>
-                      <Grid item>
+                      <Grid>
                         <Tooltip title="Logout">
                           <IconButton size="large" sx={{ color: 'text.primary' }} onClick={handleLogout}>
                             <LogoutOutlined />

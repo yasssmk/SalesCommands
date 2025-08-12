@@ -15,7 +15,7 @@ export default function RoundIconCard({ primary, secondary, content, iconPrimary
   return (
     <MainCard>
       <Grid container alignItems="center" spacing={0} justifyContent="space-between">
-        <Grid item>
+        <Grid>
           <Stack spacing={1}>
             <Typography variant="h5" color="inherit">
               {primary}
@@ -26,7 +26,7 @@ export default function RoundIconCard({ primary, secondary, content, iconPrimary
             </Typography>
           </Stack>
         </Grid>
-        <Grid item>
+        <Grid>
           <Avatar
             variant="rounded"
             sx={{

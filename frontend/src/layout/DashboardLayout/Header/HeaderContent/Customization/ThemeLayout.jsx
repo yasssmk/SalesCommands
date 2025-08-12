@@ -69,7 +69,7 @@ export default function ThemeLayout() {
   return (
     <RadioGroup row aria-label="payment-card" name="payment-card" value={value} onChange={handleRadioChange}>
       <Grid container spacing={1.75} sx={{ ml: 0 }}>
-        <Grid item>
+        <Grid>
           <FormControlLabel
             value="default"
             control={<Radio sx={{ display: 'none' }} />}
@@ -91,7 +91,7 @@ export default function ThemeLayout() {
         </Grid>
 
         {(menuOrientation === MenuOrientation.VERTICAL || downLG) && (
-          <Grid item>
+          <Grid>
             <FormControlLabel
               value="mini"
               control={<Radio sx={{ display: 'none' }} />}
@@ -113,7 +113,7 @@ export default function ThemeLayout() {
           </Grid>
         )}
 
-        <Grid item>
+        <Grid>
           <FormControlLabel
             value={ThemeDirection.RTL}
             control={<Radio sx={{ display: 'none' }} />}
