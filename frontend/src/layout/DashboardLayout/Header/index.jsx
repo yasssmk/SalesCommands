@@ -39,13 +39,14 @@ export default function Header() {
 
   // common header
   const mainHeader = (
-    <Toolbar>
+    <Toolbar sx={{ flexWrap: 'nowrap' }}>
       {!isHorizontal ? (
         <IconButton
           aria-label="open drawer"
           onClick={() => handlerDrawerOpen(!drawerOpen)}
           edge="start"
           color="secondary"
+          
           variant="light"
           sx={{ color: 'text.primary', bgcolor: drawerOpen ? 'transparent' : iconBackColor, ml: { xs: 0, lg: -2 } }}
         >

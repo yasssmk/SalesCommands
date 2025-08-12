@@ -50,7 +50,7 @@ export default function ThemeCustomization({ children }) {
   );
 
   const themes = createTheme(themeOptions);
-  // themes.components = componentsOverride(themes);
+  themes.components = componentsOverride(themes);
 
   return (
     <NextAppDirEmotionCacheProvider options={{ key: 'mui' }}>

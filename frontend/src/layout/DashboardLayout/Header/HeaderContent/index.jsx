@@ -28,22 +28,38 @@ export default function HeaderContent() {
   // const localization = useMemo(() => <Localization />, []);
   // const megaMenu = useMemo(() => <MegaMenuSection />, []);
 
-  return (
+//   return (
+//     <>
+//       {/* {menuOrientation === MenuOrientation.HORIZONTAL && !downLG && <DrawerHeader open={true} />} */}
+//       {!downLG && <Search />}
+//       {/* {!downLG && megaMenu}
+//       {!downLG && localization} */}
+//       {downLG && <Box sx={{ width: '100%', ml: 1 }} />}
+// {/* 
+//       <Notification />
+//       <Message /> */}
+//       {!downLG && <FullScreen />}
+//       {/* <Customization /> */}
+//       {!downLG && <Profile />}
+//       {/* {downLG && <MobileSection />} */}
+//       {/* Mobile Profile temporaire */}
+//       {downLG && <Profile />}
+//     </>
+//   );
+
+return (
     <>
       {/* {menuOrientation === MenuOrientation.HORIZONTAL && !downLG && <DrawerHeader open={true} />} */}
       {!downLG && <Search />}
-      {/* {!downLG && megaMenu}
-      {!downLG && localization} */}
-      {downLG && <Box sx={{ width: '100%', ml: 1 }} />}
-{/* 
-      <Notification />
-      <Message /> */}
+
+      {/* Spacer mobile: prend l'espace sans forcer une largeur pleine */}
+      {downLG && <Box sx={{ flexGrow: 1, ml: 1 }} />}
+
       {!downLG && <FullScreen />}
-      {/* <Customization /> */}
-      {!downLG && <Profile />}
-      {/* {downLG && <MobileSection />} */}
-      {/* Mobile Profile temporaire */}
-      {downLG && <Profile />}
+
+      {/* Un seul Profile suffit (desktop + mobile) */}
+      <Profile />
     </>
   );
+
 }
