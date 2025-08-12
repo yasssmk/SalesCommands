@@ -2,7 +2,7 @@ import PropTypes from 'prop-types';
 
 // material-ui
 import Box from '@mui/material/Box';
-import Grid from '@mui/material/Grid';
+import Grid from '@mui/material/Unstable_Grid2';
 
 // project import
 import AuthCard from './AuthCard';

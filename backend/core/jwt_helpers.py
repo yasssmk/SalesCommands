@@ -25,15 +25,50 @@ class UUIDEncoder:
 
 class CustomJWTAuthentication(JWTAuthentication):
 
+    # def authenticate(self, request):
+    #     try:
+    #         return super().authenticate(request)
+    #     except InvalidToken:
+    #         raise AuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
+    #     except TokenError:
+    #         raise AuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
+    #     except Exception:
+    #         raise AuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
+
     def authenticate(self, request):
+        """Authenticate using HttpOnly cookies"""
+        raw_token = self.get_raw_token(request)
+        
+        if raw_token is None:
+            return None
+            
         try:
-            return super().authenticate(request)
-        except InvalidToken:
-            raise AuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
-        except TokenError:
+            validated_token = self.get_validated_token(raw_token)
+            user = self.get_user(validated_token)
+            return (user, validated_token)
+        except (InvalidToken, TokenError):
             raise AuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
         except Exception:
             raise AuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
+    
+    def get_raw_token(self, request):
+        """
+        Extracts an unvalidated JSON web token from the given request.
+        Override pour lire les cookies HttpOnly au lieu des headers.
+        """
+        # D'abord essayer de lire depuis les cookies (HttpOnly)
+        raw_token = request.COOKIES.get('access_token')
+        
+        if raw_token is not None:
+            return raw_token
+        
+        # Fallback: utiliser la méthode par défaut (headers Authorization)
+        header = self.get_header(request)
+        if header is None:
+            return None
+
+        raw_token = self.get_raw_token_from_header(header)
+        return raw_token
         
     def get_validated_token(self, raw_token):
         """Override to use custom token class if needed"""

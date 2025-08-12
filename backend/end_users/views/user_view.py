@@ -14,7 +14,7 @@ from core.exceptions import StandardizedValidationError, StandardizedAuthenticat
 from core.error_messages import CoreErrorMessages, AuthErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from core.auth_service import AuthService
-
+from core.jwt_helpers import CustomJWTAuthentication
 from ..models.user_model import ClientAccount, UserRole, Organization, Team, User
 from ..serializers.user_serializer import (
     ClientAccountSerializer,
@@ -615,9 +615,37 @@ class UserLoginView(BaseAPIView):
 
         return response
 
+class UserCurrentView(BaseAPIView):
+    """View to get current authenticated user info."""
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    http_method_names = ['get']
+
+    def get(self, request):
+        """Return current user information"""
+        try:
+            user = request.user
+            serializer = UserSerializer(user)
+            
+            return Response({
+                "success": True,
+                "user": {
+                    "id": str(user.id),
+                    "name": user.get_full_name(),
+                    "email": user.email,
+                    "role": user.role_name if hasattr(user, 'role_name') else None,
+                    "avatar": None,  # Pour compatibilité avec le frontend
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            raise StandardizedValidationError(f"Failed to get user info: {str(e)}")
+
 
 class UserLogoutView(BaseAPIView):
     """View to logout users and clear tokens."""
+    authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):

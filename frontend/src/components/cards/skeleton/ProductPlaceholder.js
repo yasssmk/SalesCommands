@@ -1,6 +1,6 @@
 // material-ui
 import CardContent from '@mui/material/CardContent';
-import Grid from '@mui/material/Grid';
+import Grid from '@mui/material/Unstable_Grid2';
 import Stack from '@mui/material/Stack';
 import Skeleton from '@mui/material/Skeleton';
 

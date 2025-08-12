@@ -11,7 +11,8 @@ from .views.user_view import (
     # Vues d'authentification
     UserLoginView,
     UserLogoutView,
-    UserRefreshTokenView
+    UserRefreshTokenView,
+    UserCurrentView
 )
 from .views.sales_quota_views import SalesQuotaViewSet
 from .views.sales_plan_views import SalesPlanViewSet  
@@ -28,6 +29,7 @@ urlpatterns = [
     path('login/', UserLoginView.as_view(), name='login'),
     path('logout/', UserLogoutView.as_view(), name='logout'),
     path('refresh-token/', UserRefreshTokenView.as_view(), name='refresh-token'),
+    path('user/', UserCurrentView.as_view(), name='current-user'),
     
     # =========================================================================
     # CLIENT ACCOUNTS MANAGEMENT - Niveau root du multi-tenant

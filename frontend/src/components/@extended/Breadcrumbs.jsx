@@ -10,7 +10,7 @@ import { usePathname } from 'next/navigation';
 // material-ui
 import { useTheme } from '@mui/material/styles';
 import Divider from '@mui/material/Divider';
-import Grid from '@mui/material/Grid';
+import Grid from '@mui/material/Unstable_Grid2';
 import Typography from '@mui/material/Typography';
 import MuiBreadcrumbs from '@mui/material/Breadcrumbs';
 

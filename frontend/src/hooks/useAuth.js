@@ -147,19 +147,100 @@ export function AuthProvider({ children }) {
    * Déconnexion utilisateur avec nettoyage complet
    */
   const logout = useCallback(async () => {
+  // 🛡️ Protection contre les appels multiples simultanés
+  if (isLoading) {
+    debugLog('Logout déjà en cours, ignore la demande');
+    return { success: false, error: 'Logout already in progress' };
+  }
+
+  try {
+    setIsLoading(true);
+    setError(null);
+    debugLog('🔓 Début du processus de déconnexion sécurisée...');
+
+    // 🎯 ÉTAPE 1: Appel backend pour invalider les tokens HttpOnly
     try {
-      setIsLoading(true);
-      debugLog('Tentative de déconnexion...');
+      debugLog('📡 Invalidation des tokens côté serveur...');
       await logoutUser();
-      debugLog('Déconnexion réussie');
-    } catch (error) {
-      debugLog('Erreur lors de la déconnexion:', error);
-    } finally {
-      clearAuthState();
-      setIsLoading(false);
-      router.push(authConfig.PAGES.LOGIN);
+      debugLog('✅ Tokens invalidés côté serveur avec succès');
+    } catch (backendError) {
+      // ⚠️ Si le backend échoue, on continue quand même le logout côté client
+      // pour éviter de laisser l'utilisateur "bloqué"
+      debugLog('⚠️ Erreur backend lors du logout (continuer quand même):', backendError.message);
+      
+      // On peut logger l'erreur pour monitoring, mais on ne bloque pas
+      console.warn('[LOGOUT] Backend error (continuing client logout):', backendError);
     }
-  }, [router, clearAuthState]);
+
+    // 🧹 ÉTAPE 2: Nettoyage complet côté client (TOUJOURS exécuté)
+    debugLog('🧹 Nettoyage complet de l\'état client...');
+    
+    // 2a. Nettoyer les timers et refs
+    if (refreshTimerRef.current) {
+      clearInterval(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+      debugLog('⏰ Timer de refresh automatique nettoyé');
+    }
+    
+    // 2b. Nettoyer l'état d'authentification
+    setUser(null);
+    setIsAuthenticated(false);
+    setError(null);
+    debugLog('🗑️ État d\'authentification nettoyé');
+    
+    // 2c. Nettoyer le localStorage des données non-sensibles (si utilisé)
+    try {
+      // Nettoyage sélectif - garder les préférences générales
+      if (typeof window !== 'undefined') {
+        const keysToRemove = [
+          authConfig.STORAGE_KEYS.LAST_ROUTE,
+          // Ajouter d'autres clés spécifiques au user si nécessaire
+        ];
+        
+        keysToRemove.forEach(key => {
+          if (localStorage.getItem(key)) {
+            localStorage.removeItem(key);
+            debugLog(`🗂️ Clé localStorage supprimée: ${key}`);
+          }
+        });
+      }
+    } catch (storageError) {
+      debugLog('⚠️ Erreur lors du nettoyage localStorage:', storageError);
+    }
+
+    // 🚀 ÉTAPE 3: Redirection sécurisée
+    debugLog('🚀 Redirection vers la page de connexion...');
+    
+    // Délai court pour permettre à React de finir ses mises à jour
+    setTimeout(() => {
+      router.push(authConfig.PAGES.LOGIN);
+      debugLog('✅ Déconnexion terminée avec succès');
+    }, 50);
+
+    return { success: true };
+
+  } catch (unexpectedError) {
+    // 🚨 Erreur inattendue - logger pour debug mais continuer le logout
+    debugLog('🚨 Erreur inattendue lors du logout:', unexpectedError);
+    console.error('[LOGOUT] Unexpected error:', unexpectedError);
+    
+    // Forcer le nettoyage même en cas d'erreur
+    setUser(null);
+    setIsAuthenticated(false);
+    setError('Logout completed with warnings');
+    
+    // Redirection forcée
+    router.push(authConfig.PAGES.LOGIN);
+    
+    return { success: false, error: unexpectedError.message };
+    
+  } finally {
+    // 🏁 Toujours nettoyer le loading state
+    setIsLoading(false);
+    debugLog('🏁 Processus de logout terminé');
+  }
+}, [router, isLoading]);
+
   
   /**
    * Rafraîchir les données utilisateur
