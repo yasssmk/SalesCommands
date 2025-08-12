@@ -1,290 +1,296 @@
+// frontend/src/hooks/useAuth.js
+
 'use client';
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+
+// project imports
 import { 
   loginUser, 
   logoutUser, 
   getCurrentUser, 
-  checkAuthStatus, 
   refreshTokens,
-  saveLastRoute,
-  getAndClearLastRoute 
+  checkAuthStatus,
+  saveLastRoute, 
+  getAndClearLastRoute,
+  resetAuthState
 } from '../api/auth';
 import { authConfig, debugLog } from '../config/auth';
 
 // ==============================|| AUTH CONTEXT ||============================== //
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 // ==============================|| AUTH PROVIDER ||============================== //
 
 export function AuthProvider({ children }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  
   // États principaux
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // Refs pour éviter les fuites mémoire et doubles initialisations
-  const refreshTimerRef = useRef(null);
+  // Navigation hooks
+  const router = useRouter();
+  const pathname = usePathname();
+  
+  // Refs pour optimisation
   const initializationRef = useRef(false);
-  
+  const refreshTimerRef = useRef(null);
+  const isRefreshingRef = useRef(false);
+
   // ==============================|| HELPER FUNCTIONS ||============================== //
-  
+
   /**
-   * Nettoyer l'état d'authentification (fonction de base)
+   * ✅ SET AUTHENTICATED USER - Action unifiée
+   */
+  const setAuthenticatedUser = useCallback((userData) => {
+    setUser(userData);
+    setIsAuthenticated(true);
+    setError(null);
+    debugLog('✅ User authenticated:', userData);
+  }, []);
+
+  // ==============================|| AUTO-REDIRECT LOGIC ||============================== //
+
+  /**
+   * ✅ CLEAR AUTH STATE - Nettoyage complet
    */
   const clearAuthState = useCallback(() => {
     setUser(null);
     setIsAuthenticated(false);
     setError(null);
-    
-    // Nettoyer le timer de refresh
-    if (refreshTimerRef.current) {
-      clearInterval(refreshTimerRef.current);
-      refreshTimerRef.current = null;
-    }
+    resetAuthState();
+    debugLog('🧹 Auth state cleared');
   }, []);
-  
+
   /**
-   * Gérer les erreurs d'authentification avec redirection
+   * ✅ HANDLE AUTH ERROR - Gestion centralisée d'erreurs
    */
   const handleAuthError = useCallback((errorMessage) => {
-    debugLog('Gestion erreur auth:', errorMessage);
     setError(errorMessage);
     clearAuthState();
-    
-    // Sauvegarder la route actuelle pour redirection post-login
-    if (pathname !== authConfig.PAGES.LOGIN) {
-      saveLastRoute(pathname);
-    }
-    
-    // Rediriger vers la page de connexion
-    router.push(authConfig.PAGES.LOGIN);
-  }, [pathname, router, clearAuthState]);
-  
+    debugLog('❌ Auth error:', errorMessage);
+  }, [clearAuthState]);
+
+  // ==============================|| AUTO-REFRESH SYSTEM ||============================== //
+
   /**
-   * Démarrer le timer de refresh automatique des tokens
+   * ✅ REFRESH AUTOMATIQUE - Utilise authConfig.TOKEN_REFRESH_INTERVAL
    */
-  const startRefreshTimer = useCallback(() => {
-    // Nettoyer le timer existant
+  const startAutoRefresh = useCallback(() => {
+    // Nettoyer l'ancien timer s'il existe
+    if (refreshTimerRef.current) {
+      clearInterval(refreshTimerRef.current);
+    }
+
+    console.log(`🔄 AUTO-REFRESH: Timer started - refresh every ${authConfig.TOKEN_REFRESH_INTERVAL / (60 * 1000)} minutes`);
+    debugLog(`⏰ Starting auto-refresh timer (${authConfig.TOKEN_REFRESH_INTERVAL}ms)`);
+    
+    refreshTimerRef.current = setInterval(async () => {
+      // Éviter les refreshs multiples simultanés
+      if (isRefreshingRef.current) {
+        console.log('🔄 AUTO-REFRESH: Skipping - refresh already in progress');
+        return;
+      }
+
+      try {
+        isRefreshingRef.current = true;
+        console.log('🔄 AUTO-REFRESH: Starting automatic token refresh...');
+        
+        // ✅ Appel DIRECT à refreshTokens() qui fait POST /client/refresh-token/
+        const result = await refreshTokens();
+        
+        if (result.success) {
+          setUser(result.user);
+          console.log('✅ AUTO-REFRESH: Token refreshed successfully');
+          debugLog('✅ Auto-refresh successful');
+        } else {
+          console.log('❌ AUTO-REFRESH: Failed - ', result.error);
+          debugLog('❌ Auto-refresh failed:', result.error);
+        }
+      } catch (error) {
+        console.log('❌ AUTO-REFRESH: Error - ', error.message);
+        debugLog('❌ Auto-refresh error:', error.message);
+      } finally {
+        isRefreshingRef.current = false;
+      }
+    }, authConfig.TOKEN_REFRESH_INTERVAL);
+    
+  }, []);
+
+  /**
+   * ✅ STOP AUTO-REFRESH TIMER
+   */
+  const stopAutoRefresh = useCallback(() => {
     if (refreshTimerRef.current) {
       clearInterval(refreshTimerRef.current);
       refreshTimerRef.current = null;
+      isRefreshingRef.current = false;
+      console.log('🛑 AUTO-REFRESH: Timer stopped');
+      debugLog('⏰ Auto-refresh timer stopped');
     }
-    
-    debugLog('Démarrage du timer de refresh automatique');
-    refreshTimerRef.current = setInterval(async () => {
-      try {
-        debugLog('Refresh automatique des tokens...');
-        await refreshTokens();
-        debugLog('Refresh automatique réussi');
-      } catch (error) {
-        debugLog('Erreur lors du refresh automatique:', error);
-        handleAuthError(error.message);
-      }
-    }, authConfig.TOKEN_REFRESH_INTERVAL);
-  }, [handleAuthError]);
-  
+  }, []);
+
   /**
-   * Définir l'utilisateur authentifié et démarrer le refresh
+   * ✅ REDIRECTION AUTOMATIQUE POUR UTILISATEURS DÉJÀ CONNECTÉS
+   * Si user authentifié accède à /login → redirige vers dashboard
    */
-  const setAuthenticatedUser = useCallback((userData) => {
-    debugLog('Définition utilisateur authentifié:', userData);
-    setUser(userData);
-    setIsAuthenticated(true);
-    setError(null);
-    
-    // Démarrer le timer de refresh automatique
-    startRefreshTimer();
-  }, [startRefreshTimer]);
-  
-  // ==============================|| AUTH FUNCTIONS ||============================== //
-  
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && pathname === '/login') {
+      debugLog('🚀 User already authenticated, redirecting from /login...');
+      
+      const lastRoute = getAndClearLastRoute();
+      const redirectTo = lastRoute || authConfig.PAGES.DASHBOARD;
+      
+      setTimeout(() => {
+        router.push(redirectTo);
+      }, 100);
+    }
+  }, [isLoading, isAuthenticated, pathname, router]);
+
+  // ==============================|| MAIN AUTH FUNCTIONS ||============================== //
+
   /**
-   * Connexion utilisateur avec redirection intelligente
+   * ✅ LOGIN FUNCTION
    */
   const login = useCallback(async (email, password) => {
+    if (isLoading) {
+      return { success: false, error: 'Login already in progress' };
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      debugLog('Tentative de connexion...');
-      
+      debugLog('🔐 Login attempt for:', email);
+
       const result = await loginUser(email, password);
       
       if (result.success) {
         setAuthenticatedUser(result.user);
         
-         setTimeout(() => {
-            const lastRoute = getAndClearLastRoute();
-            const redirectTo = lastRoute && lastRoute !== authConfig.PAGES.LOGIN 
-              ? lastRoute 
-              : authConfig.PAGES.DASHBOARD;
-            
-            debugLog('Redirection vers:', redirectTo);
-            router.push(redirectTo);
-          }, 100); // Petit délai pour laisser React mettre à jour le state
-          
-          return { success: true };
-        } else {
-          setError(result.error);
-          return { success: false, error: result.error };
-        }
-      } catch (error) {
-        const errorMessage = error.message || authConfig.ERROR_MESSAGES.SERVER_ERROR;
-        debugLog('Erreur de connexion:', errorMessage);
-        setError(errorMessage);
-        return { success: false, error: errorMessage };
-      } finally {
-        setIsLoading(false);
+        // Démarrer l'auto-refresh
+        startAutoRefresh();
+        
+        // Redirection avec lastRoute
+        const lastRoute = getAndClearLastRoute();
+        const redirectTo = lastRoute || authConfig.PAGES.DASHBOARD;
+        
+        setTimeout(() => {
+          debugLog('🚀 Login successful, redirecting to:', redirectTo);
+          router.push(redirectTo);
+        }, 100);
+        
+        return { success: true };
+      } else {
+        setError(result.error);
+        return { success: false, error: result.error };
       }
-    }, [router, setAuthenticatedUser]);
-  
+    } catch (error) {
+      const errorMessage = error.message || authConfig.ERROR_MESSAGES.SERVER_ERROR;
+      debugLog('❌ Login error:', errorMessage);
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [router, setAuthenticatedUser, isLoading, startAutoRefresh]);
+
   /**
-   * Déconnexion utilisateur avec nettoyage complet
+   * ✅ LOGOUT FUNCTION - Version optimisée
    */
   const logout = useCallback(async () => {
-  // 🛡️ Protection contre les appels multiples simultanés
-  if (isLoading) {
-    debugLog('Logout déjà en cours, ignore la demande');
-    return { success: false, error: 'Logout already in progress' };
-  }
-
-  try {
-    setIsLoading(true);
-    setError(null);
-    debugLog('🔓 Début du processus de déconnexion sécurisée...');
-
-    // 🎯 ÉTAPE 1: Appel backend pour invalider les tokens HttpOnly
-    try {
-      debugLog('📡 Invalidation des tokens côté serveur...');
-      await logoutUser();
-      debugLog('✅ Tokens invalidés côté serveur avec succès');
-    } catch (backendError) {
-      // ⚠️ Si le backend échoue, on continue quand même le logout côté client
-      // pour éviter de laisser l'utilisateur "bloqué"
-      debugLog('⚠️ Erreur backend lors du logout (continuer quand même):', backendError.message);
-      
-      // On peut logger l'erreur pour monitoring, mais on ne bloque pas
-      console.warn('[LOGOUT] Backend error (continuing client logout):', backendError);
+    if (isLoading) {
+      debugLog('⚠️ Logout already in progress');
+      return { success: false, error: 'Logout already in progress' };
     }
 
-    // 🧹 ÉTAPE 2: Nettoyage complet côté client (TOUJOURS exécuté)
-    debugLog('🧹 Nettoyage complet de l\'état client...');
-    
-    // 2a. Nettoyer les timers et refs
-    if (refreshTimerRef.current) {
-      clearInterval(refreshTimerRef.current);
-      refreshTimerRef.current = null;
-      debugLog('⏰ Timer de refresh automatique nettoyé');
-    }
-    
-    // 2b. Nettoyer l'état d'authentification
-    setUser(null);
-    setIsAuthenticated(false);
-    setError(null);
-    debugLog('🗑️ État d\'authentification nettoyé');
-    
-    // 2c. Nettoyer le localStorage des données non-sensibles (si utilisé)
     try {
-      // Nettoyage sélectif - garder les préférences générales
-      if (typeof window !== 'undefined') {
-        const keysToRemove = [
-          authConfig.STORAGE_KEYS.LAST_ROUTE,
-          // Ajouter d'autres clés spécifiques au user si nécessaire
-        ];
-        
-        keysToRemove.forEach(key => {
-          if (localStorage.getItem(key)) {
-            localStorage.removeItem(key);
-            debugLog(`🗂️ Clé localStorage supprimée: ${key}`);
-          }
-        });
+      setIsLoading(true);
+      setError(null);
+      debugLog('🚪 Starting logout process...');
+
+      // Étape 1: Appel backend (optionnel, continue même si échoue)
+      try {
+        await logoutUser();
+        debugLog('✅ Server logout successful');
+      } catch (backendError) {
+        debugLog('⚠️ Server logout failed, continuing client logout:', backendError.message);
       }
-    } catch (storageError) {
-      debugLog('⚠️ Erreur lors du nettoyage localStorage:', storageError);
-    }
 
-    // 🚀 ÉTAPE 3: Redirection sécurisée
-    debugLog('🚀 Redirection vers la page de connexion...');
-    
-    // Délai court pour permettre à React de finir ses mises à jour
-    setTimeout(() => {
+      // Étape 2: Nettoyage client (toujours exécuté)
+      stopAutoRefresh();
+      clearAuthState();
+      
+      // Étape 3: Redirection
+      setTimeout(() => {
+        debugLog('🚀 Redirecting to login...');
+        router.push(authConfig.PAGES.LOGIN);
+      }, 50);
+
+      return { success: true };
+    } catch (error) {
+      debugLog('❌ Unexpected logout error:', error.message);
+      
+      // Force logout même en cas d'erreur
+      clearAuthState();
       router.push(authConfig.PAGES.LOGIN);
-      debugLog('✅ Déconnexion terminée avec succès');
-    }, 50);
+      
+      return { success: false, error: error.message };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [router, clearAuthState, isLoading, stopAutoRefresh]);
 
-    return { success: true };
-
-  } catch (unexpectedError) {
-    // 🚨 Erreur inattendue - logger pour debug mais continuer le logout
-    debugLog('🚨 Erreur inattendue lors du logout:', unexpectedError);
-    console.error('[LOGOUT] Unexpected error:', unexpectedError);
-    
-    // Forcer le nettoyage même en cas d'erreur
-    setUser(null);
-    setIsAuthenticated(false);
-    setError('Logout completed with warnings');
-    
-    // Redirection forcée
-    router.push(authConfig.PAGES.LOGIN);
-    
-    return { success: false, error: unexpectedError.message };
-    
-  } finally {
-    // 🏁 Toujours nettoyer le loading state
-    setIsLoading(false);
-    debugLog('🏁 Processus de logout terminé');
-  }
-}, [router, isLoading]);
-
-  
   /**
-   * Rafraîchir les données utilisateur
+   * ✅ REFRESH USER DATA
    */
   const refreshUser = useCallback(async () => {
     try {
-      debugLog('Rafraîchissement des données utilisateur...');
+      debugLog('🔄 Refreshing user data...');
       const result = await getCurrentUser();
+      
       if (result.success) {
         setUser(result.user);
-        debugLog('Données utilisateur rafraîchies');
+        debugLog('✅ User data refreshed');
         return result.user;
+      } else {
+        handleAuthError(result.error);
+        return null;
       }
     } catch (error) {
-      debugLog('Erreur lors du refresh utilisateur:', error);
+      debugLog('❌ Refresh user error:', error.message);
       handleAuthError(error.message);
+      return null;
     }
-  }, [handleAuthError]);
-  
+  }, []);
+
   /**
-   * Vérifier manuellement le statut d'authentification
+   * ✅ CHECK AUTH STATUS
    */
   const checkAuth = useCallback(async () => {
     try {
-      const isAuth = await checkAuthStatus();
-      if (isAuth) {
-        const result = await getCurrentUser();
-        if (result.success) {
-          setAuthenticatedUser(result.user);
-          return true;
-        }
+      const result = await getCurrentUser();
+      
+      if (result.success) {
+        setAuthenticatedUser(result.user);
+        return true;
+      } else {
+        clearAuthState();
+        return false;
       }
-      return false;
     } catch (error) {
-      debugLog('Erreur lors de la vérification auth:', error);
+      debugLog('❌ Check auth error:', error.message);
+      clearAuthState();
       return false;
     }
-  }, [setAuthenticatedUser]);
-  
-  // ==============================|| EFFECTS ||============================== //
-  
+  }, [setAuthenticatedUser, clearAuthState]);
+
+  // ==============================|| INITIALIZATION ||============================== //
+
   /**
-   * Initialisation de l'authentification au chargement
-   * Effect optimisé avec dépendances minimales
+   * ✅ INITIALIZATION EFFECT - Version optimisée
    */
   useEffect(() => {
     const initializeAuth = async () => {
@@ -293,7 +299,7 @@ export function AuthProvider({ children }) {
       initializationRef.current = true;
       
       try {
-        debugLog('Initialisation de l\'authentification...');
+        debugLog('🚀 Initializing authentication...');
         
         const isAuth = await checkAuthStatus();
         
@@ -301,16 +307,21 @@ export function AuthProvider({ children }) {
           const result = await getCurrentUser();
           if (result.success) {
             setAuthenticatedUser(result.user);
-            debugLog('Utilisateur déjà connecté:', result.user);
+            
+            // Démarrer l'auto-refresh si utilisateur déjà connecté
+            startAutoRefresh();
+            
+            debugLog('✅ User already authenticated:', result.user);
           } else {
-            throw new Error('Impossible de récupérer les données utilisateur');
+            debugLog('❌ Failed to get user data, clearing auth');
+            clearAuthState();
           }
         } else {
-          debugLog('Aucun utilisateur connecté');
+          debugLog('ℹ️ No authenticated user found');
           clearAuthState();
         }
       } catch (error) {
-        debugLog('Erreur lors de l\'initialisation:', error);
+        debugLog('❌ Auth initialization error:', error.message);
         clearAuthState();
       } finally {
         setIsLoading(false);
@@ -319,18 +330,14 @@ export function AuthProvider({ children }) {
     
     initializeAuth();
     
-    // Cleanup à la destruction du composant
+    // Cleanup
     return () => {
-      if (refreshTimerRef.current) {
-        clearInterval(refreshTimerRef.current);
-        refreshTimerRef.current = null;
-      }
+      stopAutoRefresh();
     };
-  }, [setAuthenticatedUser, clearAuthState]); // Dépendances optimales
-  
-  
-  // ==============================|| CONTEXT VALUE MEMOIZED ||============================== //
-  
+  }, [setAuthenticatedUser, clearAuthState, startAutoRefresh, stopAutoRefresh]);
+
+  // ==============================|| CONTEXT VALUE ||============================== //
+
   const contextValue = {
     // États
     user,
@@ -346,8 +353,9 @@ export function AuthProvider({ children }) {
     
     // Utilities
     clearError: useCallback(() => setError(null), []),
+    clearAuthState
   };
-  
+
   return (
     <AuthContext.Provider value={contextValue}>
       {children}
@@ -355,21 +363,21 @@ export function AuthProvider({ children }) {
   );
 }
 
-// ==============================|| AUTH HOOK ||============================== //
+// ==============================|| HOOKS ||============================== //
 
+/**
+ * ✅ MAIN AUTH HOOK
+ */
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth doit être utilisé dans un AuthProvider');
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 }
 
-// ==============================|| AUTH GUARD HOOK OPTIMISÉ ||============================== //
-
 /**
- * Hook pour protéger les composants qui nécessitent une authentification
- * Version optimisée avec gestion d'erreur
+ * ✅ PROTECTED ROUTE HOOK
  */
 export function useRequireAuth() {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -378,6 +386,7 @@ export function useRequireAuth() {
   
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
+      debugLog('🛡️ Unauthorized access, redirecting to login');
       saveLastRoute(pathname);
       router.push(authConfig.PAGES.LOGIN);
     }
@@ -390,5 +399,7 @@ export function useRequireAuth() {
     isReady: !isLoading && isAuthenticated,
   };
 }
+
+
 
 export default useAuth;

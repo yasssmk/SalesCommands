@@ -672,6 +672,7 @@ class UserRefreshTokenView(BaseAPIView):
     
     def post(self, request):
         try:
+            print("Refreshing token")
             from django.conf import settings
             auth_service = AuthService(
                 user_model=User,

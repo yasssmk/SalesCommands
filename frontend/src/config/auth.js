@@ -4,7 +4,10 @@
 
 export const authConfig = {
   // Durée de vie des tokens (en millisecondes)
-  TOKEN_REFRESH_INTERVAL: 6 * 60 * 60 * 1000, // 6 heures
+  // TOKEN_REFRESH_INTERVAL: 6 * 60 * 60 * 1000, // 6 heures
+  // TOKEN_REFRESH_THRESHOLD: 5 * 60 * 1000, // 5 minutes avant expiration
+
+  TOKEN_REFRESH_INTERVAL: 2 * 60 * 1000, // 2 minutes pour test
   TOKEN_REFRESH_THRESHOLD: 5 * 60 * 1000, // 5 minutes avant expiration
   
   // Endpoints backend Django

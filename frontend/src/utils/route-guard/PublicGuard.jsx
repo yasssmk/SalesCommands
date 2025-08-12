@@ -1,253 +1,87 @@
+// frontend/src/utils/route-guard/PublicGuard.jsx
+
 'use client';
 import PropTypes from 'prop-types';
-import { useEffect, useState, createContext, useContext, useCallback, useRef } from 'react';
+import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 
 // project imports
 import Loader from 'components/Loader';
+import { useAuth } from 'hooks/useAuth';
 import { authConfig, debugLog } from 'config/auth';
-import { loginUser, logoutUser, getCurrentUser, refreshTokens, getAndClearLastRoute } from 'api/auth';
-
-// ==============================|| AUTH CONTEXT FOR PUBLIC GUARD ||============================== //
-
-const PublicAuthContext = createContext(null);
-
-// ==============================|| PUBLIC AUTH PROVIDER ||============================== //
-
-function PublicAuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const refreshTimerRef = useRef(null);
-  const router = useRouter();
-
-  // ==============================|| HELPERS ||============================== //
-
-  const setAuthenticatedUser = useCallback((userData) => {
-    setUser(userData);
-    setIsAuthenticated(true);
-    setError(null);
-    debugLog('PublicAuth: User authenticated successfully');
-  }, []);
-
-  const clearAuthState = useCallback(() => {
-    setUser(null);
-    setIsAuthenticated(false);
-    setError(null);
-    debugLog('PublicAuth: Auth state cleared');
-  }, []);
-
-  // ==============================|| AUTH ACTIONS ||============================== //
-
-  const login = useCallback(async (email, password) => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await loginUser(email, password);
-      
-      if (response.success) {
-        setAuthenticatedUser(response.user);
-        
-        // Redirection vers la dernière route visitée ou dashboard
-        const lastRoute = getAndClearLastRoute();
-        const redirectPath = lastRoute || authConfig.PAGES.DASHBOARD;
-        router.push(redirectPath);
-        
-        return { success: true };
-      } else {
-        setError(response.error);
-        return { success: false, error: response.error };
-      }
-    } catch (err) {
-      const errorMessage = err.message || 'Login failed';
-      setError(errorMessage);
-      return { success: false, error: errorMessage };
-    } finally {
-      setIsLoading(false);
-    }
-  }, [setAuthenticatedUser, router]);
-
-  const logout = useCallback(async () => {
-    try {
-      await logoutUser();
-    } catch (err) {
-      debugLog('Logout error:', err.message);
-    } finally {
-      clearAuthState();
-      router.push(authConfig.PAGES.LOGIN);
-    }
-  }, [clearAuthState, router]);
-
-  const checkAuth = useCallback(async () => {
-    try {
-      const response = await getCurrentUser();
-      
-      if (response.success) {
-        setAuthenticatedUser(response.user);
-        return true;
-      } else {
-        clearAuthState();
-        return false;
-      }
-    } catch (err) {
-      debugLog('Check auth error:', err.message);
-      clearAuthState();
-      return false;
-    }
-  }, [setAuthenticatedUser, clearAuthState]);
-
-  const refreshUser = useCallback(async () => {
-    try {
-      const response = await refreshTokens();
-      
-      if (response.success) {
-        setAuthenticatedUser(response.user);
-        return true;
-      } else {
-        clearAuthState();
-        return false;
-      }
-    } catch (err) {
-      debugLog('Refresh user error:', err.message);
-      clearAuthState();
-      return false;
-    }
-  }, [setAuthenticatedUser, clearAuthState]);
-
-  // ==============================|| INITIALIZATION ||============================== //
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const initializeAuth = async () => {
-      try {
-        debugLog('PublicAuth: Initializing authentication...');
-        
-        // Vérifier si l'utilisateur est déjà authentifié
-        const isAuth = await checkAuth();
-        
-        if (isMounted) {
-          if (isAuth) {
-            debugLog('PublicAuth: User found, setting up refresh timer');
-            
-            // Configurer le timer de refresh automatique
-            refreshTimerRef.current = setInterval(async () => {
-              await refreshUser();
-            }, 14 * 60 * 1000); // Refresh toutes les 14 minutes
-          }
-          
-          setIsLoading(false);
-        }
-      } catch (err) {
-        if (isMounted) {
-          debugLog('PublicAuth: Initialization error:', err.message);
-          setIsLoading(false);
-        }
-      }
-    };
-
-    initializeAuth();
-
-    return () => {
-      isMounted = false;
-      if (refreshTimerRef.current) {
-        clearInterval(refreshTimerRef.current);
-        refreshTimerRef.current = null;
-      }
-    };
-  }, [checkAuth, refreshUser]);
-
-  // ==============================|| CONTEXT VALUE ||============================== //
-
-  const contextValue = {
-    // États
-    user,
-    isAuthenticated,
-    isLoading,
-    error,
-    
-    // Actions
-    login,
-    logout,
-    refreshUser,
-    checkAuth,
-    
-    // Utilities
-    clearError: useCallback(() => setError(null), []),
-  };
-
-  return (
-    <PublicAuthContext.Provider value={contextValue}>
-      {children}
-    </PublicAuthContext.Provider>
-  );
-}
-
-// ==============================|| PUBLIC AUTH HOOK ||============================== //
-
-function usePublicAuth() {
-  const context = useContext(PublicAuthContext);
-  if (!context) {
-    throw new Error('usePublicAuth must be used within PublicAuthProvider');
-  }
-  return context;
-}
+import { getAndClearLastRoute } from 'api/auth';
 
 // ==============================|| PUBLIC GUARD (GUEST GUARD) ||============================== //
 
 /**
- * Guard pour les pages publiques (login, register, forgot-password)
+ * ✅ GUARD POUR PAGES PUBLIQUES - Version Unifiée
  * 
- * RESPONSABILITÉS MVP :
- * ✅ Fournir le context d'authentification aux pages publiques
- * ✅ Rediriger vers dashboard si déjà connecté
+ * Utilise le hook useAuth centralisé au lieu de créer son propre context
+ * 
+ * RESPONSABILITÉS :
+ * ✅ Rediriger vers dashboard si utilisateur déjà connecté  
  * ✅ Permettre l'accès aux pages d'auth si non connecté
- * ✅ Gérer les états de loading
+ * ✅ Afficher loader pendant vérification d'authentification
+ * ✅ Gestion d'erreur gracieuse
  * 
  * USAGE :
  * - Wraps app/(auth)/layout.jsx
  * - Utilisé pour login, register, forgot-password
  */
 export default function PublicGuard({ children, fallback = null }) {
-  return (
-    <PublicAuthProvider>
-      <PublicGuardLogic fallback={fallback}>
-        {children}
-      </PublicGuardLogic>
-    </PublicAuthProvider>
-  );
-}
-
-function PublicGuardLogic({ children, fallback }) {
-  const { isAuthenticated, isLoading } = usePublicAuth();
+  const { isAuthenticated, isLoading, error } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+
+  // ==============================|| AUTO-REDIRECT LOGIC ||============================== //
 
   useEffect(() => {
     // Si authentifié et sur une page publique, rediriger vers dashboard
     if (!isLoading && isAuthenticated) {
-      debugLog('PublicGuard: User already authenticated, redirecting to dashboard');
+      debugLog('🚀 PublicGuard: User already authenticated, redirecting...');
       
-      // Redirection vers la dernière route ou dashboard
+      // Récupérer la dernière route visitée ou utiliser dashboard par défaut
       const lastRoute = getAndClearLastRoute();
-      const redirectPath = lastRoute || authConfig.PAGES.DASHBOARD;
-      router.push(redirectPath);
+      const redirectPath = lastRoute && lastRoute !== pathname ? lastRoute : authConfig.PAGES.DASHBOARD;
+      
+      debugLog('🚀 PublicGuard: Redirecting to:', redirectPath);
+      
+      // Délai court pour éviter les conflits de navigation
+      setTimeout(() => {
+        router.push(redirectPath);
+      }, 100);
     }
   }, [isAuthenticated, isLoading, pathname, router]);
 
-  // Affichage du loader pendant la vérification
+  // ==============================|| LOADING STATE ||============================== //
+
+  // Afficher loader pendant la vérification d'authentification
   if (isLoading) {
+    debugLog('⏳ PublicGuard: Authentication check in progress...');
     return fallback || <Loader />;
   }
+
+  // ==============================|| ERROR STATE ||============================== //
+
+  // Gestion d'erreur gracieuse (permet quand même l'accès aux pages publiques)
+  if (error) {
+    debugLog('⚠️ PublicGuard: Auth error detected, allowing access to public pages:', error);
+    // On permet quand même l'accès aux pages publiques en cas d'erreur auth
+    // Car l'utilisateur pourrait avoir besoin de se reconnecter
+  }
+
+  // ==============================|| AUTHENTICATED STATE ||============================== //
 
   // Si authentifié, ne pas afficher le contenu (redirection en cours)
   if (isAuthenticated) {
+    debugLog('🔄 PublicGuard: Authenticated user detected, redirect in progress...');
     return fallback || <Loader />;
   }
 
+  // ==============================|| RENDER PUBLIC CONTENT ||============================== //
+
   // Afficher les pages publiques pour les utilisateurs non authentifiés
+  debugLog('✅ PublicGuard: Rendering public content for unauthenticated user');
   return children;
 }
 
@@ -256,11 +90,4 @@ PublicGuard.propTypes = {
   fallback: PropTypes.node,
 };
 
-PublicGuardLogic.propTypes = {
-  children: PropTypes.node.isRequired,
-  fallback: PropTypes.node,
-};
-
-// ==============================|| EXPORT PUBLIC AUTH HOOK ||============================== //
-
-export { usePublicAuth };
+// Guard simple et efficace - utilise composants existants uniquement

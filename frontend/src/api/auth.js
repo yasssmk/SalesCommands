@@ -1,19 +1,7 @@
 // frontend/src/api/auth.js
 
-import axios from 'axios';
+import axiosClient, { api } from '../utils/axiosClient';
 import { authConfig, debugLog } from '../config/auth';
-import { handleApiError } from '../utils/errorHandler';
-
-// ==============================|| AUTH API CONFIGURATION ||============================== //
-
-const authAxios = axios.create({
-  baseURL: authConfig.API_BASE_URL,
-  timeout: authConfig.REQUEST_TIMEOUT,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true, // Pour les cookies HTTP-only
-});
 
 // ==============================|| AUTH API FUNCTIONS ||============================== //
 
@@ -24,48 +12,52 @@ const authAxios = axios.create({
  * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
  */
 export const loginUser = async (email, password) => {
-  try {
-    debugLog('Login attempt for:', email);
-    
-    const response = await authAxios.post(authConfig.ENDPOINTS.LOGIN, {
-      email,
-      password
-    });
-    
-    debugLog('Login successful for:', email);
-    
+  debugLog('🔐 Login attempt for:', email);
+  
+  const result = await api.post(authConfig.ENDPOINTS.LOGIN, {
+    email,
+    password
+  });
+  
+  if (result.success) {
+    debugLog('✅ Login successful for:', email);
     return {
       success: true,
-      user: response.data.user || response.data,
+      user: result.data.user || result.data
     };
-    
-  } catch (error) {
-    debugLog('Login failed:', error.message);
-    const errorMessage = handleApiError(error);
-    return { success: false, error: errorMessage };
+  } else {
+    debugLog('❌ Login failed:', result.error);
+    return {
+      success: false,
+      error: result.error
+    };
   }
 };
 
 /**
- * ✅ REFRESH TOKENS
+ * ✅ REFRESH TOKENS - Appel direct endpoint refresh-token
  * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
  */
 export const refreshTokens = async () => {
-  try {
-    debugLog('Refreshing tokens...');
-    
-    const response = await authAxios.post(authConfig.ENDPOINTS.REFRESH);
-    
-    debugLog('Tokens refreshed successfully');
+  debugLog('🔄 Refreshing tokens via POST /client/refresh-token/...');
+  console.log('🔄 REFRESH-TOKENS: Making POST request to /client/refresh-token/');
+  
+  const result = await api.post(authConfig.ENDPOINTS.REFRESH);
+  
+  if (result.success) {
+    debugLog('✅ Tokens refreshed successfully');
+    console.log('✅ REFRESH-TOKENS: POST /client/refresh-token/ successful');
     return {
       success: true,
-      user: response.data.user || response.data,
+      user: result.data.user || result.data
     };
-    
-  } catch (error) {
-    debugLog('Token refresh failed:', error.message);
-    const errorMessage = handleApiError(error);
-    return { success: false, error: errorMessage };
+  } else {
+    debugLog('❌ Token refresh failed:', result.error);
+    console.log('❌ REFRESH-TOKENS: POST /client/refresh-token/ failed:', result.error);
+    return {
+      success: false,
+      error: result.error
+    };
   }
 };
 
@@ -74,18 +66,24 @@ export const refreshTokens = async () => {
  * @returns {Promise<Object>} Response confirmation
  */
 export const logoutUser = async () => {
+  debugLog('🚪 Logging out user...');
+  
   try {
-    debugLog('Logging out user...');
+    // Appel direct avec axiosClient (pas d'auto-refresh needed)
+    const response = await axiosClient.post(authConfig.ENDPOINTS.LOGOUT);
     
-    const response = await authAxios.post(authConfig.ENDPOINTS.LOGOUT);
-    
-    debugLog('Logout successful');
+    debugLog('✅ Logout successful');
     return response.data;
     
   } catch (error) {
-    debugLog('Logout failed:', error.message);
-    const errorMessage = handleApiError(error);
-    return { success: false, error: errorMessage };
+    debugLog('❌ Logout failed:', error.message);
+    
+    // Même si logout échoue côté serveur, on continue le logout côté client
+    // Car l'utilisateur veut se déconnecter
+    return { 
+      success: true, 
+      message: 'Logged out locally' 
+    };
   }
 };
 
@@ -94,21 +92,22 @@ export const logoutUser = async () => {
  * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
  */
 export const getCurrentUser = async () => {
-  try {
-    debugLog('Getting current user...');
-    
-    const response = await authAxios.get(authConfig.ENDPOINTS.USER);
-    
-    debugLog('Current user retrieved successfully');
+  debugLog('👤 Getting current user...');
+  
+  const result = await api.get(authConfig.ENDPOINTS.USER);
+  
+  if (result.success) {
+    debugLog('✅ Current user retrieved successfully');
     return {
       success: true,
-      user: response.data.user || response.data
+      user: result.data.user || result.data
     };
-    
-  } catch (error) {
-    debugLog('Failed to get current user:', error.message);
-    const errorMessage = handleApiError(error);
-    return { success: false, error: errorMessage };
+  } else {
+    debugLog('❌ Failed to get current user:', result.error);
+    return {
+      success: false,
+      error: result.error
+    };
   }
 };
 
@@ -121,10 +120,12 @@ export const checkAuthStatus = async () => {
     const result = await getCurrentUser();
     return result.success;
   } catch (error) {
-    debugLog('User not authenticated:', error.message);
+    debugLog('❌ User not authenticated:', error.message);
     return false;
   }
 };
+
+// ==============================|| ROUTE MANAGEMENT ||============================== //
 
 /**
  * ✅ SAVE LAST ROUTE
@@ -133,7 +134,7 @@ export const checkAuthStatus = async () => {
 export const saveLastRoute = (route) => {
   if (typeof window === 'undefined') return;
   
-  debugLog('Saving last route:', route);
+  debugLog('💾 Saving last route:', route);
   localStorage.setItem('lastRoute', route);
 };
 
@@ -147,6 +148,20 @@ export const getAndClearLastRoute = () => {
   const lastRoute = localStorage.getItem('lastRoute');
   localStorage.removeItem('lastRoute');
   
-  debugLog('Retrieved and cleared last route:', lastRoute);
+  debugLog('📂 Retrieved and cleared last route:', lastRoute);
   return lastRoute;
+};
+
+// ==============================|| UTILITIES ||============================== //
+
+/**
+ * ✅ RESET AUTH STATE - SIMPLIFIÉ (plus de logique complexe)
+ */
+export const resetAuthState = () => {
+  // Nettoyer autres données auth si nécessaire
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('lastRoute');
+  }
+  
+  debugLog('🧹 Auth state reset');
 };

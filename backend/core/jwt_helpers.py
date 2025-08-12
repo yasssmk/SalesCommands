@@ -119,20 +119,36 @@ class CustomJWTAuthentication(JWTAuthentication):
 class JWTHelpers:
     @staticmethod
     def set_cookie(response, key, value, max_age):
-        """Securely set an HTTP-only cookie."""
+        """Securely set an HTTP-only cookie with environment-specific settings."""
+        # Environment-specific settings
+        is_production = getattr(settings, 'DEBUG', True) is False
+        is_secure = is_production  # Only secure in production
+        
+        # Domain configuration for development
+        domain = None
+        if not is_production:
+            # Allow cookies to work between localhost:3000 and localhost:8000
+            domain = '.localhost' if 'localhost' in getattr(settings, 'ALLOWED_HOSTS', []) else None
+        
         response.set_cookie(
             key,
             value,
             max_age=max_age,
             httponly=True,
-            secure=True,
+            secure=is_secure,  # Only secure in production
             samesite='Lax',
+            domain=domain  # Specified domain for cross-port development
         )
 
     @staticmethod
     def clear_cookie(response, key):
-        """Clear an HTTP-only cookie."""
-        response.delete_cookie(key)
+        """Clear an HTTP-only cookie with same domain settings."""
+        is_production = getattr(settings, 'DEBUG', True) is False
+        domain = None
+        if not is_production:
+            domain = '.localhost' if 'localhost' in getattr(settings, 'ALLOWED_HOSTS', []) else None
+            
+        response.delete_cookie(key, domain=domain)
 
     @staticmethod
     def logout(response):
