@@ -9,8 +9,7 @@
 
 import { useEffect, useMemo, useCallback } from 'react';
 import useSWR, { mutate } from 'swr';
-import { SWR_KEY_MASTER, LS_KEY_DASHBOARD_DRAWER } from 'config/swr'
-
+import { SWR_KEY_MASTER, LS_KEY_DASHBOARD_DRAWER } from 'config/swr';
 
 // État initial compatible avec le modèle
 const INITIAL_MENU_MASTER = {
@@ -25,7 +24,7 @@ const INITIAL_MENU_MASTER = {
 function readPersistedDrawerOpen() {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = localStorage.getItem(LS_KEY_DASHBOARD_DRAWER); // ✅ bonne constante
     if (raw == null) return null;
     return Boolean(JSON.parse(raw));
   } catch {
@@ -36,7 +35,7 @@ function readPersistedDrawerOpen() {
 function writePersistedDrawerOpen(open) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(Boolean(open)));
+    localStorage.setItem(LS_KEY_DASHBOARD_DRAWER, JSON.stringify(Boolean(open))); // ✅ bonne constante
   } catch {
     // ignore
   }
@@ -71,18 +70,19 @@ export function useMenuState() {
   const menuMaster = data || INITIAL_MENU_MASTER;
   const menuMasterLoading = !data; // au premier render avant le seed effect
 
-  // 3) Mutations — mettent à jour tout le monde via SWR + persistance
+  // 🔄 3) Synchroniser automatiquement le localStorage à chaque changement d'état
+  useEffect(() => {
+    writePersistedDrawerOpen(menuMaster.isDashboardDrawerOpened);
+  }, [menuMaster.isDashboardDrawerOpened]);
+
+  // 4) Mutations — mettent à jour tout le monde via SWR
   const setDrawerState = useCallback((open) => {
     mutate(
       SWR_KEY_MASTER,
-      (current) => {
-        const next = {
-          ...(current || INITIAL_MENU_MASTER),
-          isDashboardDrawerOpened: Boolean(open)
-        };
-        writePersistedDrawerOpen(next.isDashboardDrawerOpened);
-        return next;
-      },
+      (current) => ({
+        ...(current || INITIAL_MENU_MASTER),
+        isDashboardDrawerOpened: Boolean(open)
+      }),
       false
     );
   }, []);
@@ -92,9 +92,7 @@ export function useMenuState() {
       SWR_KEY_MASTER,
       (current) => {
         const base = current || INITIAL_MENU_MASTER;
-        const nextOpen = !base.isDashboardDrawerOpened;
-        writePersistedDrawerOpen(nextOpen);
-        return { ...base, isDashboardDrawerOpened: nextOpen };
+        return { ...base, isDashboardDrawerOpened: !base.isDashboardDrawerOpened };
       },
       false
     );
@@ -104,7 +102,7 @@ export function useMenuState() {
   const closeDrawer = useCallback(() => setDrawerState(false), [setDrawerState]);
   const handlerDrawerOpen = useCallback((state) => setDrawerState(state), [setDrawerState]);
 
-  // 4) API exposée
+  // 5) API exposée
   return useMemo(
     () => ({
       // États compatibles
