@@ -28,7 +28,7 @@ import Transitions from 'components/@extended/Transitions';
 
 import { MenuOrientation, ThemeMode } from 'config';
 import useConfig from 'hooks/useConfig';
-import { handlerActiveItem, useGetMenuMaster } from 'api/menu';
+import { useMenuState } from 'hooks/useMenuState';
 
 // assets
 import BorderOutlined from '@ant-design/icons/BorderOutlined';
@@ -74,7 +74,7 @@ const PopperStyled = styled(Popper)(({ theme }) => ({
 
 export default function NavCollapse({ menu, level, parentId, setSelectedItems, selectedItems, setSelectedLevel, selectedLevel }) {
   const theme = useTheme();
-  const { menuMaster } = useGetMenuMaster();
+  const { menuMaster } = useMenuState();
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
 
   const downLG = useMediaQuery(theme.breakpoints.down('lg'));

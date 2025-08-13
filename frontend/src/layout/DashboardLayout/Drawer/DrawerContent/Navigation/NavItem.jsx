@@ -22,12 +22,12 @@ import IconButton from 'components/@extended/IconButton';
 
 import { MenuOrientation, ThemeMode, NavActionType } from 'config';
 import useConfig from 'hooks/useConfig';
-import { handlerHorizontalActiveItem, handlerActiveItem, handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
+import { useMenuState } from 'hooks/useMenuState';
 
 export default function NavItem({ item, level, isParents = false }) {
   const theme = useTheme();
 
-  const { menuMaster } = useGetMenuMaster();
+  const { menuMaster } = useMenuState();
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
   const openItem = menuMaster.openedItem;
 

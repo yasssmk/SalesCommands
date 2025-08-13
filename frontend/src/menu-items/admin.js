@@ -41,7 +41,7 @@ const admin = {
     },
     {
       id: 'team-management', 
-      title: 'Team Management',
+      title: 'Ekip Management',
       type: 'item',
       url: '/admin/teams',
       icon: icons.TeamOutlined,
