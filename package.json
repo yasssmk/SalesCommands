@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@mui/styles": "^6.5.0",
-    "dompurify": "^3.2.3"
+    "dompurify": "^3.2.3",
+    "swr": "^2.3.6"
   }
 }

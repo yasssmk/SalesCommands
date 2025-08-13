@@ -13,7 +13,7 @@ import Toolbar from '@mui/material/Toolbar';
 import Stack from '@mui/material/Stack';
 
 // project import
-// import Drawer from './Drawer';
+import Drawer from './Drawer';
 import Header from './Header';
 import Footer from './Footer';
 import HorizontalBar from './Drawer/HorizontalBar';
@@ -23,7 +23,7 @@ import Breadcrumbs from 'components/@extended/Breadcrumbs';
 
 import { MenuOrientation } from 'config';
 import useConfig from 'hooks/useConfig';
-// import { useMenuState } from 'hooks/useMenuState';
+import { useMenuState } from 'hooks/useMenuState';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -37,7 +37,7 @@ const queryClient = new QueryClient({
 });
 
 export default function DashboardLayout({ children }) {
-  // const { menuMasterLoading } = useMenuState();
+  const { menuMasterLoading } = useMenuState();
   const pathname = usePathname();
   const downXL = useMediaQuery((theme) => theme.breakpoints.down('xl'));
   const downLG = useMediaQuery((theme) => theme.breakpoints.down('lg'));
@@ -54,13 +54,13 @@ export default function DashboardLayout({ children }) {
   //   // eslint-disable-next-line react-hooks/exhaustive-deps
   // }, [downXL]);
 
-  // if (menuMasterLoading) return <Loader />;
+  if (menuMasterLoading) return <Loader />;
 
   return (
     <QueryClientProvider client={queryClient}>
     <Stack direction="row" width={1}>
       <Header />
-      {/* {!isHorizontal ? <Drawer /> : <HorizontalBar />} */}
+      {!isHorizontal ? <Drawer /> : <HorizontalBar />}
       <Box component="main" sx={{ width: 'calc(100% - 260px)', flexGrow: 1, p: { xs: 2, sm: 3 } }}>
         <Toolbar sx={{ mt: isHorizontal ? 8 : 'inherit' }} />
         <Container

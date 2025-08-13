@@ -2,7 +2,7 @@ from rest_framework import views, status
 from rest_framework.response import Response
 from django.db import transaction
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.exceptions import ValidationError as DRFValidationError, PermissionDenied, AuthenticationFailed
+from rest_framework.exceptions import ValidationError as DRFValidationError, PermissionDenied, AuthenticationFailed, NotAuthenticated
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 from django.conf import settings
@@ -407,6 +407,12 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         if isinstance(exc, AuthenticationFailed):
             return Response(
                 StandardizedValidationError._format_detail(AuthErrorMessages.INVALID_CREDENTIALS),
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        if isinstance(exc, NotAuthenticated):
+            return Response(
+                StandardizedValidationError._format_detail(AuthErrorMessages.AUTH_REQUIRED),
                 status=status.HTTP_401_UNAUTHORIZED
             )
 

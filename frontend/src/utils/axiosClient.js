@@ -48,10 +48,9 @@ axiosClient.interceptors.response.use(
     return response;
   },
   (error) => {
-    debugLog(`❌ API Error: ${error.response?.status} ${error.config?.url}`);
-    
-    // ✅ SIMPLE: Laisser toutes les erreurs passer normalement
-    // Le composant qui appelle l'API gère l'erreur avec handleApiError()
+    const status = error?.response?.status;
+    const url = error?.config?.url;
+    debugLog(`❌ API Error: ${status ?? '—'} ${url ?? '—'}`);
     return Promise.reject(error);
   }
 );

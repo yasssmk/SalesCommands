@@ -229,6 +229,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8081",  # Frontend local address
     "http://localhost:3000",          # Next.js local
+    'http://192.168.1.19:3000'
 ]
 
 CORS_ALLOW_CREDENTIALS = True
