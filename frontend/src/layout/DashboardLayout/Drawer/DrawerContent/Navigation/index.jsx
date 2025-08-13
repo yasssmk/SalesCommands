@@ -11,11 +11,11 @@ import Typography from '@mui/material/Typography';
 import NavItem from './NavItem';
 import NavGroup from './NavGroup';
 import menuItem from 'menu-items';
-import { MenuFromAPI } from 'menu-items/dashboard';
+import { useGetMenu } from 'api/menu';
+import { useMenuState } from 'hooks/useMenuState';
 
 import { HORIZONTAL_MAX_ITEM, MenuOrientation } from 'config';
 import useConfig from 'hooks/useConfig';
-import { useGetMenu, useGetMenuMaster } from 'api/menu';
 
 function isFound(arr, str) {
   return arr.items.some((element) => {
@@ -30,8 +30,8 @@ function isFound(arr, str) {
 
 export default function Navigation() {
   const { menuOrientation } = useConfig();
-  const { menuLoading } = useGetMenu();
-  const { menuMaster } = useGetMenuMaster();
+  const { menu, menuLoading } = useGetMenu();
+  const { menuMaster } = useMenuState();
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
   const downLG = useMediaQuery((theme) => theme.breakpoints.down('lg'));
 
@@ -39,16 +39,24 @@ export default function Navigation() {
   const [selectedLevel, setSelectedLevel] = useState(0);
   const [menuItems, setMenuItems] = useState({ items: [] });
 
-  let dashboardMenu = MenuFromAPI();
+
+  // useLayoutEffect(() => {
+  //   if (menuLoading && !isFound(menuItem, 'group-dashboard-loading')) {
+  //     menuItem.items.splice(0, 0, dashboardMenu);
+  //     setMenuItems({ items: [...menuItem.items] });
+  //   } else if (!menuLoading && dashboardMenu?.id !== undefined && !isFound(menuItem, 'group-dashboard')) {
+  //     menuItem.items.splice(0, 1, dashboardMenu);
+  //     setMenuItems({ items: [...menuItem.items] });
+  //   } else {
+  //     setMenuItems({ items: [...menuItem.items] });
+  //   }
+  //   // eslint-disable-next-line
+  // }, [menuLoading]);
 
   useLayoutEffect(() => {
-    if (menuLoading && !isFound(menuItem, 'group-dashboard-loading')) {
-      menuItem.items.splice(0, 0, dashboardMenu);
-      setMenuItems({ items: [...menuItem.items] });
-    } else if (!menuLoading && dashboardMenu?.id !== undefined && !isFound(menuItem, 'group-dashboard')) {
-      menuItem.items.splice(0, 1, dashboardMenu);
-      setMenuItems({ items: [...menuItem.items] });
-    } else {
+    // Pour notre menu statique, on utilise directement menu-items
+    // Pas de logique complexe MenuFromAPI car on n'a pas de serveur
+    if (!menuLoading) {
       setMenuItems({ items: [...menuItem.items] });
     }
     // eslint-disable-next-line

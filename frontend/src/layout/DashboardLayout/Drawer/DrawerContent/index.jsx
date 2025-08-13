@@ -3,7 +3,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 // project import
 // import NavUser from './NavUser';
 // import NavCard from './NavCard';
-// import Navigation from './Navigation';
+import Navigation from './Navigation';
 import SimpleBar from 'components/third-party/SimpleBar';
 import { useMenuState } from 'hooks/useMenuState';
 import Box from '@mui/material/Box';
@@ -29,13 +29,13 @@ export default function DrawerContent() {
           }
         }}
       >
-        {/* <Navigation /> */}
+        <Navigation />
         
         {/* Placeholder pour NavCard future */}
         {drawerOpen && !downLG && (
           <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
             <Typography variant="caption" color="text.disabled">
-              NavCard placeholder
+              NavCard placeholder 93 en force
             </Typography>
           </Box>
         )}
