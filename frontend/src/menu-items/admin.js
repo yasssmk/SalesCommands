@@ -27,7 +27,7 @@ const icons = {
  */
 const admin = {
   id: 'administration',
-  title: 'Administration',
+  title: 'Administration tah le hood',
   type: 'group',
   icon: icons.SettingOutlined,
   children: [

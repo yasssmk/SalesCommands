@@ -27,7 +27,7 @@ import Transitions from 'components/@extended/Transitions';
 
 import { MenuOrientation } from 'config';
 import useConfig from 'hooks/useConfig';
-import { handlerHorizontalActiveItem, useGetMenuMaster } from 'api/menu';
+import { useMenuState } from 'hooks/useMenuState';
 
 // assets
 import DownOutlined from '@ant-design/icons/DownOutlined';
@@ -68,7 +68,7 @@ export default function NavGroup({
   const pathname = usePathname();
 
   const { menuOrientation } = useConfig();
-  const { menuMaster } = useGetMenuMaster();
+  const { menuMaster } = useMenuState();
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
   const selectedID = menuMaster.openedHorizontalItem;
 
