@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.password_validation import validate_password
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, AuthErrorMessages
 from ..models.user_model import ClientAccount, UserRole, Organization, Team, User
 
 

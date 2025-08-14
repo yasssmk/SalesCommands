@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from django.db import transaction
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import ValidationError as DRFValidationError, PermissionDenied, AuthenticationFailed, NotAuthenticated
-from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError, FieldError
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from core.client_scope import ClientScopeManager
@@ -415,6 +415,16 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                 StandardizedValidationError._format_detail(AuthErrorMessages.AUTH_REQUIRED),
                 status=status.HTTP_401_UNAUTHORIZED
             )
+        
+        if isinstance(exc, FieldError):
+            detail = str(exc)  # FieldError n'a qu'un message string
+            return Response(
+                StandardizedValidationError._format_detail(
+                    CoreErrorMessages.INVALID_FIELD.format(field=detail)
+                ),
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
 
         if isinstance(exc, PermissionDenied):
             return Response(

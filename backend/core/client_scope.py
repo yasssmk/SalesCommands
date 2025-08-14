@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, AuthErrorMessages
 from rest_framework.response import Response
 from rest_framework import views, status
 from core.exceptions import (
@@ -194,7 +194,13 @@ class ClientScopeManager:
         def filter_queryset_by_client(self, queryset):
             """Apply client_id filtering with additional validation"""
             client_id = self.get_client_id()
-            filtered_queryset = queryset.filter(client_id=client_id)
+            model = queryset.model
+            if hasattr(model, 'client_account_id'):
+                # end_users models use client_account ForeignKey
+                filtered_queryset = queryset.filter(client_account_id=client_id)
+            elif hasattr(model, 'client_id'):
+                # app models use direct client_id
+                filtered_queryset = queryset.filter(client_id=client_id)
             
             # Add debugging for development
             if settings.DEBUG:

@@ -242,6 +242,10 @@ class Organization(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.client_account.name})"
+    
+    @property
+    def client_id(self):
+        return self.client_account_id
 
 
 class Team(BaseModel):
@@ -276,6 +280,10 @@ class Team(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.organization.name} - {self.organization.client_account.name})"
+    
+    @property
+    def client_id(self):
+        return self.client_account_id
 
 
 class User(BaseModel, AbstractBaseUser, PermissionsMixin):
@@ -443,6 +451,14 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         super().save(*args, **kwargs)
 
     # === MÉTHODES UTILITAIRES ===
+
+    @property
+    def client_id(self):
+        return self.client_account_id
+
+    @client_id.setter
+    def client_id(self, value):
+        self.client_account_id = value
     
     def get_full_name(self):
         """
