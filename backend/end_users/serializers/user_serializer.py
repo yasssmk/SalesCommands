@@ -272,15 +272,6 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         help_text=_('Password must be at least 8 characters long')
     )
     
-    # Relations avec validation client scope
-    client_account = serializers.PrimaryKeyRelatedField(
-        queryset=ClientAccount.objects.all(),
-        error_messages={
-            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Client Account'),
-            'does_not_exist': CoreErrorMessages.OBJECT_NOT_FOUND,
-            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Client Account')
-        }
-    )
     
     role = serializers.PrimaryKeyRelatedField(
         queryset=UserRole.objects.all(),
@@ -311,6 +302,8 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Organization')
         }
     )
+
+    
     
     class Meta:
         model = User
@@ -337,7 +330,7 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         read_only_fields = [
             'created_at', 'updated_at', 'role_name',
             'full_name', 'display_name', 'short_name',
-            'is_manager', 'managed_users_count'
+            'is_manager', 'managed_users_count', 'client_account', 
         ]
         extra_kwargs = {
             'email': {'required': True},
@@ -376,19 +369,6 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                 raise StandardizedValidationError(str(e))
         return value
     
-    def validate_email(self, value):
-        """Validation email unique"""
-        if value:
-            # Vérifier unicité globale (pas par client pour les emails)
-            queryset = User.objects.filter(email=value)
-            if self.instance:
-                queryset = queryset.exclude(id=self.instance.id)
-            
-            if queryset.exists():
-                raise StandardizedValidationError(
-                    _("A user with this email already exists.")
-                )
-        return value
     
     def validate_role(self, value):
         """Valider que le rôle appartient au même client"""
@@ -415,36 +395,85 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         return value
     
     def validate(self, data):
-        """Validation métier croisée"""
-        data = super().validate(data)
-        
-        # Cohérence équipe/organisation
-        team = data.get('team') or (self.instance.team if self.instance else None)
-        organization = data.get('organization') or (self.instance.organization if self.instance else None)
-        
-        if team and organization:
-            if team.organization != organization:
-                raise StandardizedValidationError(
-                    _("Team must belong to the selected organization.")
+        """Complete validation of User data with client scoping"""
+        try:
+            # Call parent validation first  
+            data = super().validate(data)
+            
+            # Get client_id for validations
+            client_id = self._get_client_id_from_context()
+            instance = getattr(self, 'instance', None)
+            
+            # Validate email uniqueness within client scope
+            if 'email' in data:
+                email = data['email']
+                
+                # Check email uniqueness within the client
+                queryset = User.objects.filter(
+                    email=email,
+                    client_account_id=client_id  
                 )
-        
-        # Cohérence rôle/client
-        role = data.get('role') or (self.instance.role if self.instance else None)
-        client_account = data.get('client_account') or (self.instance.client_account if self.instance else None)
-        
-        if role and client_account:
-            if role.client_account != client_account:
+                
+                # Exclude current instance for updates
+                if instance:
+                    queryset = queryset.exclude(id=instance.id)
+                
+                if queryset.exists():
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.UNIQUE_CONSTRAINT.format(fields="email")
+                    )
+            
+            # Cohérence rôle/client
+            role = data.get('role') or (instance.role if instance else None)
+            client_account_id = client_id  # Le client_id du contexte
+            
+            if role and client_account_id:
+                if str(role.client_account_id) != str(client_account_id):
+                    raise StandardizedValidationError(
+                        _("Role must belong to the selected client account.")
+                    )
+            
+            # Cohérence team/organization/client
+            team = data.get('team') or (instance.team if instance else None)
+            organization = data.get('organization') or (instance.organization if instance else None)
+            
+            if team and organization:
+                if team.organization != organization:
+                    raise StandardizedValidationError(
+                        _("Team must belong to the selected organization.")
+                    )
+            
+            if team and str(team.organization.client_account_id) != str(client_account_id):
                 raise StandardizedValidationError(
-                    _("Role must belong to the selected client account.")
+                    CoreErrorMessages.CLIENT_MISMATCH
                 )
+            
+            if organization and str(organization.client_account_id) != str(client_account_id):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.CLIENT_MISMATCH
+                )
+            
+            return data
+            
+        except serializers.ValidationError as e:
+            raise StandardizedValidationError(e.detail)
         
-        return data
-    
     # === CRÉATION ET MISE À JOUR ===
     
     def create(self, validated_data):
         """Création d'utilisateur avec logique métier"""
         password = validated_data.pop('password', None)
+        
+        # Assigner automatiquement le client_account depuis le contexte
+        client_id = self._get_client_id_from_context()
+        if client_id:
+            try:
+                client_account = ClientAccount.objects.get(id=client_id)
+                validated_data['client_account'] = client_account
+            except ClientAccount.DoesNotExist:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(field="Client Account")
+                )
         
         # Utiliser le manager pour la création
         if password:

@@ -62,14 +62,22 @@ class CustomJWTAuthentication(JWTAuthentication):
         if raw_token is not None:
             return raw_token
         
-        # Fallback: utiliser la méthode par défaut (headers Authorization)
+        # Fallback: implémenter la logique des headers Authorization
         header = self.get_header(request)
         if header is None:
             return None
 
-        raw_token = self.get_raw_token_from_header(header)
-        return raw_token
+        # Extraire le token du header (logique de la classe parent)
+        if isinstance(header, str):
+            # Header value est de la forme 'Bearer <token>'
+            parts = header.split()
+            if len(parts) == 2 and parts[0] in self.header_types:
+                return parts[1]
+            elif len(parts) == 1:
+                return parts[0]
         
+        return None
+            
     def get_validated_token(self, raw_token):
         """Override to use custom token class if needed"""
         validated_token = super().get_validated_token(raw_token)
