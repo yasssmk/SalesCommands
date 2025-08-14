@@ -102,27 +102,77 @@ export function useMenuState() {
   const closeDrawer = useCallback(() => setDrawerState(false), [setDrawerState]);
   const handlerDrawerOpen = useCallback((state) => setDrawerState(state), [setDrawerState]);
 
+ // ====== NEW: handlers compatibles modèle ======
+ const handlerActiveItem = useCallback((openedItem) => {
+   mutate(
+     SWR_KEY_MASTER,
+     (current) => ({ ...(current || INITIAL_MENU_MASTER), openedItem }),
+     false
+   );
+ }, []);
+
+ const handlerHorizontalActiveItem = useCallback((openedHorizontalItem) => {
+   mutate(
+     SWR_KEY_MASTER,
+     (current) => ({ ...(current || INITIAL_MENU_MASTER), openedHorizontalItem }),
+     false
+   );
+ }, []);
+
+ const handlerComponentDrawer = useCallback((isComponentDrawerOpened) => {
+   mutate(
+     SWR_KEY_MASTER,
+     (current) => ({ ...(current || INITIAL_MENU_MASTER), isComponentDrawerOpened: Boolean(isComponentDrawerOpened) }),
+     false
+   );
+ }, []);
+
+ const handlerActiveComponent = useCallback((openedComponent) => {
+   mutate(
+     SWR_KEY_MASTER,
+     (current) => ({ ...(current || INITIAL_MENU_MASTER), openedComponent }),
+     false
+   );
+ }, []);
+
+
   // 5) API exposée
   return useMemo(
     () => ({
-      // États compatibles
+      // états
       menuMaster,
       menuMasterLoading,
 
-      // Accès direct pratique
+      // accès pratiques
       drawerOpen: menuMaster.isDashboardDrawerOpened,
       isLoading: menuMasterLoading,
 
-      // Actions
+      // actions drawer
       toggleDrawer,
       openDrawer,
       closeDrawer,
       setDrawerState,
+      handlerDrawerOpen,
 
-      // Compat modèle
-      handlerDrawerOpen
+     // actions compatibles modèle
+     handlerActiveItem,
+     handlerHorizontalActiveItem,
+     handlerComponentDrawer,
+     handlerActiveComponent
     }),
-    [menuMaster, menuMasterLoading, toggleDrawer, openDrawer, closeDrawer, setDrawerState, handlerDrawerOpen]
+    [
+      menuMaster,
+      menuMasterLoading,
+      toggleDrawer,
+      openDrawer,
+      closeDrawer,
+      setDrawerState,
+      handlerDrawerOpen,
+      handlerActiveItem,
+      handlerHorizontalActiveItem,
+      handlerComponentDrawer,
+      handlerActiveComponent
+    ]
   );
 }
 

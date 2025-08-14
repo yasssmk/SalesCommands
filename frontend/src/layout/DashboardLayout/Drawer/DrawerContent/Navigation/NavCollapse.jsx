@@ -74,7 +74,7 @@ const PopperStyled = styled(Popper)(({ theme }) => ({
 
 export default function NavCollapse({ menu, level, parentId, setSelectedItems, selectedItems, setSelectedLevel, selectedLevel }) {
   const theme = useTheme();
-  const { menuMaster } = useMenuState();
+  const { menuMaster, handlerActiveItem } = useMenuState();
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
 
   const downLG = useMediaQuery(theme.breakpoints.down('lg'));

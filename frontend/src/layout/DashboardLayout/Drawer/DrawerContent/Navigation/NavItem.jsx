@@ -27,7 +27,12 @@ import { useMenuState } from 'hooks/useMenuState';
 export default function NavItem({ item, level, isParents = false }) {
   const theme = useTheme();
 
-  const { menuMaster } = useMenuState();
+  const {
+    menuMaster,
+    handlerActiveItem,
+    handlerHorizontalActiveItem,
+    handlerDrawerOpen
+  } = useMenuState();
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
   const openItem = menuMaster.openedItem;
 

@@ -68,7 +68,7 @@ export default function NavGroup({
   const pathname = usePathname();
 
   const { menuOrientation } = useConfig();
-  const { menuMaster } = useMenuState();
+  const { menuMaster, handlerHorizontalActiveItem } = useMenuState();
   const drawerOpen = menuMaster.isDashboardDrawerOpened;
   const selectedID = menuMaster.openedHorizontalItem;
 
