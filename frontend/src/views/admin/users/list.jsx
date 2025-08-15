@@ -211,13 +211,13 @@ export default function UserListPage() {
           }
         }}
       />
-      <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />
       <AlertUserDelete 
         id={userDeleteId} 
         title={selectedUser?.first_name + ' ' + selectedUser?.last_name || 'User'} 
         open={open} 
         handleClose={handleClose} 
       />
+      <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />
     </>
   );
 }

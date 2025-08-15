@@ -34,7 +34,7 @@ import MainCard from 'components/MainCard';
 import ScrollX from 'components/ScrollX';
 import Avatar from 'components/@extended/Avatar';
 import IconButton from 'components/@extended/IconButton';
-import { DebouncedInput, HeaderSort, IndeterminateCheckbox, RowSelection, SelectColumnSorting, TablePagination } from 'components/third-party/react-table';
+import { DebouncedInput, HeaderSort, IndeterminateCheckbox, RowSelection, SelectColumnSorting, TablePagination, CSVExport } from 'components/third-party/react-table';
 
 import ExpandingUserDetail from './ExpandingUserDetail';
 
@@ -88,8 +88,15 @@ function ReactTable({ data, columns, loading, modalToggler }) {
 
   return (
     <MainCard content={false}>
-      <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between" sx={{ padding: 3 }}>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        spacing={2}
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ padding: 2, ...(matchDownSM && { '& .MuiOutlinedInput-root, & .MuiFormControl-root': { width: '100%' } }) }}
+      >
         <DebouncedInput
+          sx={{ backgroundColor: 'red !important' }}
           value={globalFilter ?? ''}
           onFilterChange={(value) => setGlobalFilter(String(value))}
           placeholder={loading ? "Loading..." : `Search ${data.length} records...`}

@@ -37,7 +37,7 @@ export default function UserModal({ open, modalToggler, user }) {
           aria-describedby="modal-user-add-description"
           sx={{
             '& .MuiPaper-root:focus': {
-              outline: 'none'
+              outline: 'none',
             }
           }}
         >
