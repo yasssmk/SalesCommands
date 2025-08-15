@@ -37,7 +37,7 @@ const admin = {
       type: 'item',
       url: '/admin/users',
       icon: icons.UserOutlined,
-      breadcrumbs: false
+      breadcrumbs: true
     },
     {
       id: 'team-management', 

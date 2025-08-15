@@ -132,23 +132,24 @@ export default function NavCollapse({ menu, level, parentId, setSelectedItems, s
     setAnchorEl(null);
   };
 
-  useMemo(() => {
-    if (selected === selectedItems) {
-      if (level === 1) {
-        setOpen(true);
+  useEffect(() => {
+  if (selected === selectedItems) {
+    if (level === 1) {
+      setOpen(true);
+    }
+  } else {
+    if (level === selectedLevel) {
+      setOpen(false);
+      if (!miniMenuOpened && !drawerOpen && !selected) {
+        setSelected(null);
       }
-    } else {
-      if (level === selectedLevel) {
-        setOpen(false);
-        if (!miniMenuOpened && !drawerOpen && !selected) {
-          setSelected(null);
-        }
-        if (drawerOpen) {
-          setSelected(null);
-        }
+      if (drawerOpen) {
+        setSelected(null);
       }
     }
-  }, [selectedItems, level, selected, miniMenuOpened, drawerOpen, selectedLevel]);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [selectedItems, level, selected, miniMenuOpened, drawerOpen, selectedLevel]);
 
   const pathname = usePathname();
 

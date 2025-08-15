@@ -1,14 +1,7 @@
 'use client';
 
-/**
- * Store global (SWR) pour l'état du drawer — sans dépendre de api/menu.
- * - Une seule source de vérité partagée via SWR (clé interne)
- * - Persistance de isDashboardDrawerOpened dans localStorage
- * - API simple/compatible : { menuMaster, menuMasterLoading, handlerDrawerOpen, toggleDrawer, ... }
- */
-
 import { useEffect, useMemo, useCallback } from 'react';
-import useSWR, { mutate } from 'swr';
+import useSWR from 'swr';
 import { SWR_KEY_MASTER, LS_KEY_DASHBOARD_DRAWER } from 'config/swr';
 
 // État initial compatible avec le modèle
@@ -20,11 +13,11 @@ const INITIAL_MENU_MASTER = {
   isComponentDrawerOpened: true
 };
 
-// ===== utils =====
+// --- utils ---
 function readPersistedDrawerOpen() {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(LS_KEY_DASHBOARD_DRAWER); // ✅ bonne constante
+    const raw = localStorage.getItem(LS_KEY_DASHBOARD_DRAWER);
     if (raw == null) return null;
     return Boolean(JSON.parse(raw));
   } catch {
@@ -35,145 +28,124 @@ function readPersistedDrawerOpen() {
 function writePersistedDrawerOpen(open) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(LS_KEY_DASHBOARD_DRAWER, JSON.stringify(Boolean(open))); // ✅ bonne constante
+    localStorage.setItem(LS_KEY_DASHBOARD_DRAWER, JSON.stringify(Boolean(open)));
   } catch {
     // ignore
   }
 }
 
-// ===== hook principal =====
 export function useMenuState() {
-  // 1) Seed le cache SWR si vide (à partir du localStorage)
-  useEffect(() => {
-    mutate(
-      SWR_KEY_MASTER,
-      (current) => {
-        if (current) return current;
-        const persisted = readPersistedDrawerOpen();
-        return {
-          ...INITIAL_MENU_MASTER,
-          isDashboardDrawerOpened:
-            persisted === null ? INITIAL_MENU_MASTER.isDashboardDrawerOpened : persisted
-        };
-      },
-      false // pas de revalidation réseau
-    );
+  // 1) Calculer l’état initial une seule fois (incluant la valeur persistée)
+  const initialMaster = useMemo(() => {
+    const persisted = readPersistedDrawerOpen();
+    return {
+      ...INITIAL_MENU_MASTER,
+      isDashboardDrawerOpened:
+        persisted === null ? INITIAL_MENU_MASTER.isDashboardDrawerOpened : persisted
+    };
   }, []);
 
-  // 2) Lire la valeur depuis SWR (pas de fetcher : on lit uniquement le cache local)
-  const { data } = useSWR(SWR_KEY_MASTER, null, {
-    revalidateIfStale: false,
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false
-  });
+  // 2) Store SWR SANS fetcher, avec fallbackData (== seed propre, aucun setState pendant le mount)
+  const { data: menuMaster, mutate } = useSWR(
+    SWR_KEY_MASTER,
+    null,
+    {
+      fallbackData: initialMaster,
+      revalidateIfStale: false,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false
+    }
+  );
 
-  const menuMaster = data || INITIAL_MENU_MASTER;
-  const menuMasterLoading = !data; // au premier render avant le seed effect
-
-  // 🔄 3) Synchroniser automatiquement le localStorage à chaque changement d'état
+  // 3) Persister automatiquement l’ouverture du drawer
   useEffect(() => {
     writePersistedDrawerOpen(menuMaster.isDashboardDrawerOpened);
   }, [menuMaster.isDashboardDrawerOpened]);
 
-  // 4) Mutations — mettent à jour tout le monde via SWR
-  const setDrawerState = useCallback((open) => {
-    mutate(
-      SWR_KEY_MASTER,
-      (current) => ({
-        ...(current || INITIAL_MENU_MASTER),
-        isDashboardDrawerOpened: Boolean(open)
-      }),
-      false
-    );
-  }, []);
+  // 4) Mutations via le mutate lié au hook (pas le mutate global)
+  const setDrawerState = useCallback(
+    (open) => {
+      mutate(
+        (current) => ({
+          ...(current || INITIAL_MENU_MASTER),
+          isDashboardDrawerOpened: Boolean(open)
+        }),
+        { revalidate: false }
+      );
+    },
+    [mutate]
+  );
 
   const toggleDrawer = useCallback(() => {
     mutate(
-      SWR_KEY_MASTER,
       (current) => {
         const base = current || INITIAL_MENU_MASTER;
         return { ...base, isDashboardDrawerOpened: !base.isDashboardDrawerOpened };
       },
-      false
+      { revalidate: false }
     );
-  }, []);
+  }, [mutate]);
 
   const openDrawer = useCallback(() => setDrawerState(true), [setDrawerState]);
   const closeDrawer = useCallback(() => setDrawerState(false), [setDrawerState]);
   const handlerDrawerOpen = useCallback((state) => setDrawerState(state), [setDrawerState]);
 
- // ====== NEW: handlers compatibles modèle ======
- const handlerActiveItem = useCallback((openedItem) => {
-   mutate(
-     SWR_KEY_MASTER,
-     (current) => ({ ...(current || INITIAL_MENU_MASTER), openedItem }),
-     false
-   );
- }, []);
+  // ===== Handlers "compat modèle" =====
+  const handlerActiveItem = useCallback(
+    (openedItem) => {
+      mutate((c) => ({ ...(c || INITIAL_MENU_MASTER), openedItem }), { revalidate: false });
+    },
+    [mutate]
+  );
 
- const handlerHorizontalActiveItem = useCallback((openedHorizontalItem) => {
-   mutate(
-     SWR_KEY_MASTER,
-     (current) => ({ ...(current || INITIAL_MENU_MASTER), openedHorizontalItem }),
-     false
-   );
- }, []);
+  const handlerHorizontalActiveItem = useCallback(
+    (openedHorizontalItem) => {
+      mutate((c) => ({ ...(c || INITIAL_MENU_MASTER), openedHorizontalItem }), { revalidate: false });
+    },
+    [mutate]
+  );
 
- const handlerComponentDrawer = useCallback((isComponentDrawerOpened) => {
-   mutate(
-     SWR_KEY_MASTER,
-     (current) => ({ ...(current || INITIAL_MENU_MASTER), isComponentDrawerOpened: Boolean(isComponentDrawerOpened) }),
-     false
-   );
- }, []);
+  const handlerComponentDrawer = useCallback(
+    (isComponentDrawerOpened) => {
+      mutate(
+        (c) => ({ ...(c || INITIAL_MENU_MASTER), isComponentDrawerOpened: !!isComponentDrawerOpened }),
+        { revalidate: false }
+      );
+    },
+    [mutate]
+  );
 
- const handlerActiveComponent = useCallback((openedComponent) => {
-   mutate(
-     SWR_KEY_MASTER,
-     (current) => ({ ...(current || INITIAL_MENU_MASTER), openedComponent }),
-     false
-   );
- }, []);
-
+  const handlerActiveComponent = useCallback(
+    (openedComponent) => {
+      mutate((c) => ({ ...(c || INITIAL_MENU_MASTER), openedComponent }), { revalidate: false });
+    },
+    [mutate]
+  );
 
   // 5) API exposée
-  return useMemo(
-    () => ({
-      // états
-      menuMaster,
-      menuMasterLoading,
+  const menuMasterLoading = false; // on a toujours fallbackData
+  return {
+    // états
+    menuMaster,
+    menuMasterLoading,
 
-      // accès pratiques
-      drawerOpen: menuMaster.isDashboardDrawerOpened,
-      isLoading: menuMasterLoading,
+    // accès pratiques
+    drawerOpen: menuMaster.isDashboardDrawerOpened,
+    isLoading: menuMasterLoading,
 
-      // actions drawer
-      toggleDrawer,
-      openDrawer,
-      closeDrawer,
-      setDrawerState,
-      handlerDrawerOpen,
+    // actions drawer
+    toggleDrawer,
+    openDrawer,
+    closeDrawer,
+    setDrawerState,
+    handlerDrawerOpen,
 
-     // actions compatibles modèle
-     handlerActiveItem,
-     handlerHorizontalActiveItem,
-     handlerComponentDrawer,
-     handlerActiveComponent
-    }),
-    [
-      menuMaster,
-      menuMasterLoading,
-      toggleDrawer,
-      openDrawer,
-      closeDrawer,
-      setDrawerState,
-      handlerDrawerOpen,
-      handlerActiveItem,
-      handlerHorizontalActiveItem,
-      handlerComponentDrawer,
-      handlerActiveComponent
-    ]
-  );
+    // actions compatibles modèle
+    handlerActiveItem,
+    handlerHorizontalActiveItem,
+    handlerComponentDrawer,
+    handlerActiveComponent
+  };
 }
 
 export default useMenuState;

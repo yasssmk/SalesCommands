@@ -96,7 +96,7 @@ function ReactTable({ data, columns, loading, modalToggler }) {
         sx={{ padding: 2, ...(matchDownSM && { '& .MuiOutlinedInput-root, & .MuiFormControl-root': { width: '100%' } }) }}
       >
         <DebouncedInput
-          sx={{ backgroundColor: 'red !important' }}
+          
           value={globalFilter ?? ''}
           onFilterChange={(value) => setGlobalFilter(String(value))}
           placeholder={loading ? "Loading..." : `Search ${data.length} records...`}
