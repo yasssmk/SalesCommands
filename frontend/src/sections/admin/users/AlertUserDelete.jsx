@@ -79,3 +79,5 @@ export default function AlertUserDelete({ id, title, open, handleClose }) {
 }
 
 AlertUserDelete.propTypes = { id: PropTypes.number, title: PropTypes.string, open: PropTypes.bool, handleClose: PropTypes.func };
+
+

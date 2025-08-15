@@ -6,6 +6,7 @@ import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
 
 // third-party
 import { PatternFormat } from 'react-number-format';
@@ -67,14 +68,7 @@ export default function UserListPage() {
         )
       },
       {
-        header: '#',
-        accessorKey: 'id',
-        meta: {
-          className: 'cell-center'
-        }
-      },
-      {
-        header: 'User Info',
+        header: 'User Name',
         accessorKey: 'first_name',
         cell: ({ row, getValue }) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
@@ -88,9 +82,6 @@ export default function UserListPage() {
             <Stack spacing={0}>
               <Typography variant="subtitle1">
                 {`${row.original.first_name || ''} ${row.original.last_name || ''}`.trim() || 'No Name'}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {row.original.email}
               </Typography>
             </Stack>
           </Stack>

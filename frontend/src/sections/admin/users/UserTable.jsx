@@ -17,6 +17,7 @@ import TableRow from '@mui/material/TableRow';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Skeleton from '@mui/material/Skeleton';
+import Button from '@mui/material/Button';
 
 // third-party
 import {
@@ -103,24 +104,14 @@ function ReactTable({ data, columns, loading, modalToggler }) {
           disabled={loading}
         />
 
-        <Stack direction="row" alignItems="center" spacing={2}>
+        <Stack direction="row" alignItems="center" spacing={2} sx={{ width: { xs: '100%', sm: 'auto' } }}>
           <SelectColumnSorting 
             {...{ getState: table.getState, getAllColumns: table.getAllColumns, setSorting }} 
             disabled={loading}
           />
-          <IconButton
-            variant="contained"
-            size="large"
-            onClick={modalToggler}
-            disabled={loading}
-            sx={{
-              '& svg': {
-                fontSize: '1.3rem'
-              }
-            }}
-          >
-            <PlusOutlined />
-          </IconButton>
+          <Button variant="contained" startIcon={<PlusOutlined />} onClick={modalToggler} disabled={loading}>
+              Add User
+            </Button>
         </Stack>
       </Stack>
       <ScrollX>
