@@ -129,12 +129,27 @@ urlpatterns = [
         'post': 'create'
     }), name='user-list'),
     
-    path('users/<int:pk>/', UserViewSet.as_view({
+    path('users/<uuid:pk>/', UserViewSet.as_view({
         'get': 'retrieve',
         'put': 'update',
         'patch': 'partial_update',
         'delete': 'destroy'
     }), name='user-detail'),
+
+    # Création en lot
+    path('users/bulk-create/', UserViewSet.as_view({
+        'post': 'bulk_create'
+    }), name='user-bulk-create'),
+
+    # Mise à jour en lot
+    path('users/bulk-update/', UserViewSet.as_view({
+        'patch': 'bulk_update'
+    }), name='user-bulk-update'),
+
+    # Suppression en lot
+    path('users/bulk-delete/', UserViewSet.as_view({
+        'delete': 'bulk_delete'
+    }), name='user-bulk-delete'),
     
     # =========================================================================
     # USER PERFORMANCE INTEGRATION - Intégration UserPerformanceService

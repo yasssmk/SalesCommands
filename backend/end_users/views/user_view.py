@@ -8,7 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Count, Prefetch
 from django.utils import timezone
 from datetime import datetime, date, timedelta
-
+from django.db import transaction
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError, StandardizedAuthenticationFailed
 from core.error_messages import CoreErrorMessages, AuthErrorMessages
@@ -349,6 +349,415 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
             queryset = queryset.filter(is_active=True)
         
         return queryset
+    
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Récupérer un utilisateur spécifique par son ID
+        GET /client/users/{id}/
+        """
+        try:
+            user_id = kwargs.get('pk')
+            user = self.get_queryset().get(id=user_id)
+            
+            # Validation client scoping
+            self.validate_client_id(user)
+            
+            serializer = UserSerializer(user)
+            return Response({
+                'success': True,
+                'data': serializer.data
+            })
+            
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': CoreErrorMessages.OBJECT_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    def partial_update(self, request, *args, **kwargs):
+        """
+        Mise à jour partielle d'un utilisateur (PATCH)
+        PATCH /client/users/{id}/
+        """
+        try:
+            with transaction.atomic():
+                user_id = kwargs.get('pk')
+                user = self.get_queryset().get(id=user_id)
+                
+                # Validation client scoping
+                self.validate_client_id(user)
+                
+                # Validation des permissions
+                self._validate_user_update_permissions(request.user, user)
+                
+                # Serializer avec validation
+                serializer = UserSerializer(
+                    user,
+                    data=request.data,
+                    partial=True,
+                    context={'request': request, 'client_id': self.get_client_id()}
+                )
+                
+                if not serializer.is_valid():
+                    return Response({
+                        'success': False,
+                        'error': CoreErrorMessages.INVALID_DATA.format(detail=serializer.errors)
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Sauvegarder les modifications
+                updated_user = serializer.save(user=request.user)
+                
+                return Response({
+                    'success': True,
+                    'message': f'User "{updated_user.get_full_name()}" updated successfully',
+                    'data': UserSerializer(updated_user).data
+                })
+                
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': CoreErrorMessages.OBJECT_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        Supprimer un utilisateur
+        DELETE /client/users/{id}/
+        """
+        try:
+            with transaction.atomic():
+                user_id = kwargs.get('pk')
+                user = self.get_queryset().get(id=user_id)
+                
+                # Validation client scoping
+                self.validate_client_id(user)
+                
+                # Validation des permissions
+                self._validate_user_delete_permissions(request.user, user)
+                
+                # Vérifications métier avant suppression
+                self._validate_user_deletion(user)
+                
+                user_name = user.get_full_name()
+                user.delete()
+                
+                return Response({
+                    'success': True,
+                    'message': f'User "{user_name}" deleted successfully'
+                }, status=status.HTTP_204_NO_CONTENT)
+                
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': CoreErrorMessages.OBJECT_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    # === OPÉRATIONS BULK ===
+    
+    @action(detail=False, methods=['post'])
+    def bulk_create(self, request):
+        """
+        Création en lot d'utilisateurs
+        POST /client/users/bulk_create/
+        Body: {"users": [user1_data, user2_data, ...]}
+        """
+        try:
+            with transaction.atomic():
+                users_data = request.data.get('users', [])
+                
+                if not users_data or not isinstance(users_data, list):
+                    return Response({
+                        'success': False,
+                        'error': CoreErrorMessages.INVALID_DATA.format(
+                            detail='Users array is required'
+                        )
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                client_id = self.get_client_id()
+                created_users = []
+                errors = []
+                
+                for index, user_data in enumerate(users_data):
+                    try:
+                        serializer = UserSerializer(
+                            data=user_data,
+                            context={'request': request, 'client_id': client_id}
+                        )
+                        
+                        if serializer.is_valid():
+                            user = serializer.save(client_id=client_id, user=request.user)
+                            created_users.append(user)
+                        else:
+                            errors.append({
+                                'index': index,
+                                'email': user_data.get('email'),
+                                'errors': serializer.errors
+                            })
+                    except Exception as e:
+                        errors.append({
+                            'index': index,
+                            'email': user_data.get('email'),
+                            'errors': str(e)
+                        })
+                
+                response_data = {
+                    'success': len(errors) == 0,
+                    'created_count': len(created_users),
+                    'total_requested': len(users_data),
+                    'created_users': [
+                        {
+                            'id': str(user.id),
+                            'email': user.email,
+                            'name': user.get_full_name()
+                        } for user in created_users
+                    ]
+                }
+                
+                if errors:
+                    response_data['errors'] = errors
+                    response_data['message'] = f'Created {len(created_users)} users with {len(errors)} errors'
+                    return Response(response_data, status=status.HTTP_207_MULTI_STATUS)
+                else:
+                    response_data['message'] = f'Successfully created {len(created_users)} users'
+                    return Response(response_data, status=status.HTTP_201_CREATED)
+                    
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    @action(detail=False, methods=['patch'])
+    def bulk_update(self, request):
+        """
+        Mise à jour en lot d'utilisateurs
+        PATCH /client/users/bulk_update/
+        Body: {"updates": [{"id": 1, "data": {...}}, ...]}
+        """
+        try:
+            with transaction.atomic():
+                updates_data = request.data.get('updates', [])
+                
+                if not updates_data or not isinstance(updates_data, list):
+                    return Response({
+                        'success': False,
+                        'error': CoreErrorMessages.INVALID_DATA.format(
+                            detail='Updates array is required'
+                        )
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                updated_users = []
+                errors = []
+                
+                for update_item in updates_data:
+                    try:
+                        user_id = update_item.get('id')
+                        user_data = update_item.get('data', {})
+                        
+                        if not user_id:
+                            errors.append({
+                                'error': 'User ID is required',
+                                'item': update_item
+                            })
+                            continue
+                        
+                        user = self.get_queryset().get(id=user_id)
+                        self.validate_client_id(user)
+                        self._validate_user_update_permissions(request.user, user)
+                        
+                        serializer = UserSerializer(
+                            user,
+                            data=user_data,
+                            partial=True,
+                            context={'request': request, 'client_id': self.get_client_id()}
+                        )
+                        
+                        if serializer.is_valid():
+                            updated_user = serializer.save(user=request.user)
+                            updated_users.append(updated_user)
+                        else:
+                            errors.append({
+                                'user_id': user_id,
+                                'errors': serializer.errors
+                            })
+                            
+                    except User.DoesNotExist:
+                        errors.append({
+                            'user_id': user_id,
+                            'error': 'User not found'
+                        })
+                    except Exception as e:
+                        errors.append({
+                            'user_id': user_id,
+                            'error': str(e)
+                        })
+                
+                response_data = {
+                    'success': len(errors) == 0,
+                    'updated_count': len(updated_users),
+                    'total_requested': len(updates_data),
+                    'updated_users': [
+                        {
+                            'id': str(user.id),
+                            'email': user.email,
+                            'name': user.get_full_name()
+                        } for user in updated_users
+                    ]
+                }
+                
+                if errors:
+                    response_data['errors'] = errors
+                    response_data['message'] = f'Updated {len(updated_users)} users with {len(errors)} errors'
+                    return Response(response_data, status=status.HTTP_207_MULTI_STATUS)
+                else:
+                    response_data['message'] = f'Successfully updated {len(updated_users)} users'
+                    return Response(response_data, status=status.HTTP_200_OK)
+                    
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    @action(detail=False, methods=['delete'])
+    def bulk_delete(self, request):
+        """
+        Suppression en lot d'utilisateurs
+        DELETE /client/users/bulk_delete/
+        Body: {"user_ids": [1, 2, 3, ...]}
+        """
+        try:
+            with transaction.atomic():
+                user_ids = request.data.get('user_ids', [])
+                
+                if not user_ids or not isinstance(user_ids, list):
+                    return Response({
+                        'success': False,
+                        'error': CoreErrorMessages.INVALID_DATA.format(
+                            detail='User IDs array is required'
+                        )
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                deleted_users = []
+                errors = []
+                
+                for user_id in user_ids:
+                    try:
+                        user = self.get_queryset().get(id=user_id)
+                        self.validate_client_id(user)
+                        self._validate_user_delete_permissions(request.user, user)
+                        self._validate_user_deletion(user)
+                        
+                        user_info = {
+                            'id': str(user.id),
+                            'email': user.email,
+                            'name': user.get_full_name()
+                        }
+                        
+                        user.delete()
+                        deleted_users.append(user_info)
+                        
+                    except User.DoesNotExist:
+                        errors.append({
+                            'user_id': user_id,
+                            'error': 'User not found'
+                        })
+                    except Exception as e:
+                        errors.append({
+                            'user_id': user_id,
+                            'error': str(e)
+                        })
+                
+                response_data = {
+                    'success': len(errors) == 0,
+                    'deleted_count': len(deleted_users),
+                    'total_requested': len(user_ids),
+                    'deleted_users': deleted_users
+                }
+                
+                if errors:
+                    response_data['errors'] = errors
+                    response_data['message'] = f'Deleted {len(deleted_users)} users with {len(errors)} errors'
+                    return Response(response_data, status=status.HTTP_207_MULTI_STATUS)
+                else:
+                    response_data['message'] = f'Successfully deleted {len(deleted_users)} users'
+                    return Response(response_data, status=status.HTTP_204_NO_CONTENT)
+                    
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    # === MÉTHODES UTILITAIRES PRIVÉES ===
+    
+    def _validate_user_update_permissions(self, current_user, target_user):
+        """Valider les permissions de mise à jour"""
+        # L'utilisateur peut se modifier lui-même
+        if current_user == target_user:
+            return True
+        
+        # Admin peut modifier tout le monde
+        if current_user.role and current_user.role.name == 'Admin':
+            return True
+        
+        # Manager peut modifier les membres de son équipe
+        if target_user in current_user.get_managed_users():
+            return True
+        
+        raise StandardizedValidationError(
+            CoreErrorMessages.PERMISSION_DENIED
+        )
+    
+    def _validate_user_delete_permissions(self, current_user, target_user):
+        """Valider les permissions de suppression"""
+        # On ne peut pas se supprimer soi-même
+        if current_user == target_user:
+            raise StandardizedValidationError(
+                "You cannot delete your own account"
+            )
+        
+        # Admin peut supprimer tout le monde (sauf lui-même)
+        if current_user.role and current_user.role.name == 'Admin':
+            return True
+        
+        # Manager peut supprimer les membres de son équipe
+        if target_user in current_user.get_managed_users():
+            return True
+        
+        raise StandardizedValidationError(
+            CoreErrorMessages.PERMISSION_DENIED
+        )
+    
+    def _validate_user_deletion(self, user):
+        """Valider si l'utilisateur peut être supprimé"""
+        # Vérifier s'il est manager d'équipes
+        if user.managed_teams.exists():
+            raise StandardizedValidationError(
+                CoreErrorMessages.OBJECT_IN_USE.format(
+                    fields="User is managing teams and cannot be deleted"
+                )
+            )
+        
+        # Vérifier s'il est manager d'organisations
+        if user.managed_organizations.exists():
+            raise StandardizedValidationError(
+                CoreErrorMessages.OBJECT_IN_USE.format(
+                    fields="User is managing organizations and cannot be deleted"
+                )
+            )
+        
+        # Vérifier s'il est le dernier admin du client
+        if user.role and user.role.name == 'Admin':
+            admin_count = User.objects.filter(
+                client_account=user.client_account,
+                role__name='Admin',
+                is_active=True
+            ).count()
+            
+            if admin_count <= 1:
+                raise StandardizedValidationError(
+                    "Cannot delete the last admin of the organization"
+                )
+        
+        return True
     
     @action(detail=True, methods=['get'])
     def performance(self, request, pk=None):
