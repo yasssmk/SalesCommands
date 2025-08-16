@@ -2,6 +2,9 @@
 
 import axiosClient, { api } from '../utils/axiosClient';
 import { authConfig, debugLog } from '../config/auth';
+import useSWR from 'swr';
+
+
 
 // ==============================|| AUTH API FUNCTIONS ||============================== //
 
@@ -106,6 +109,32 @@ export const getCurrentUser = async () => {
     };
   }
 };
+
+export function useGetCurrentUserClient() {
+  const { data, error, isLoading, isValidating } = useSWR(
+    'auth/current-user',
+    async () => {
+      const res = await api.get(authConfig.ENDPOINTS.USER); 
+      if (!res.success) throw new Error(res.error || 'Failed to fetch current user');
+      return res.data.user || res.data;
+    },
+    {
+      revalidateIfStale: false,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false
+    }
+  );
+
+  const user = data || null;
+  return {
+    user,
+    clientId: user?.client_id ?? null,
+    clientName: user?.client_name ?? null,
+    currentUserLoading: isLoading,
+    currentUserError: error,
+    currentUserValidating: isValidating
+  };
+}
 
 /**
  * ✅ CHECK AUTH STATUS - Fonction originale restaurée

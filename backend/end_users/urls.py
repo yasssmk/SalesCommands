@@ -41,7 +41,7 @@ urlpatterns = [
         'post': 'create'
     }), name='client-account-list'),
     
-    path('client-accounts/<int:pk>/', ClientAccountViewSet.as_view({
+    path('client-accounts/<uuid:pk>/', ClientAccountViewSet.as_view({
         'get': 'retrieve',
         'put': 'update',
         'patch': 'partial_update',
@@ -49,7 +49,7 @@ urlpatterns = [
     }), name='client-account-detail'),
     
     # Client Account Actions
-    path('client-accounts/<int:pk>/stats/', ClientAccountViewSet.as_view({
+    path('client-accounts/<uuid:pk>/stats/', ClientAccountViewSet.as_view({
         'get': 'stats'
     }), name='client-account-stats'),
     

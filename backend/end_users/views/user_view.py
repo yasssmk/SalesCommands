@@ -57,8 +57,17 @@ class ClientAccountViewSet(BaseAPIView, viewsets.ModelViewSet):
     def stats(self, request, pk=None):
         """Statistiques détaillées d'un client"""
         client = self.get_object()
+
+        active = client.users.filter(is_active=True).count()
+        max_users = client.max_users or 0
+        left = max(0, max_users - active)
         
         stats = {
+            'seats':{
+                'seats': max_users,
+                'seats_used': active,
+                'seats_left': left,
+            },
             'users': {
                 'total': client.users.count(),
                 'active': client.users.filter(is_active=True).count(),
@@ -97,6 +106,8 @@ class ClientAccountViewSet(BaseAPIView, viewsets.ModelViewSet):
                 'max_users': client.max_users
             }
         })
+
+
 
 
 class UserRoleViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
@@ -828,7 +839,9 @@ class UserCurrentView(BaseAPIView):
                     "name": user.get_full_name(),
                     "email": user.email,
                     "role": user.role_name if hasattr(user, 'role_name') else None,
-                    "avatar": None,  # Pour compatibilité avec le frontend
+                    "avatar": None, 
+                    "client_id": str(user.client_account_id) if user.client_account_id else None,
+                    "client_name": user.client_account.name if getattr(user, "client_account", None) else None,
                 }
             }, status=status.HTTP_200_OK)
             

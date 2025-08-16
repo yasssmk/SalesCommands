@@ -7,6 +7,7 @@ import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
+import Grid from '@mui/material/Grid';
 
 // third-party
 import { PatternFormat } from 'react-number-format';
@@ -19,6 +20,8 @@ import { IndeterminateCheckbox } from 'components/third-party/react-table';
 import UserModal from 'sections/admin/users/UserModal';
 import AlertUserDelete from 'sections/admin/users/AlertUserDelete';
 import UserTable from 'sections/admin/users/UserTable';
+import UserSeatsCard from 'sections/admin/users/UserSeatsCard';
+import SeatsSummary from 'sections/admin/users/SeatsSummary';
 
 import { useGetUsers } from 'api/admin/users';
 
@@ -194,6 +197,11 @@ export default function UserListPage() {
 
   return (
     <>
+       {/* Cards row */}
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <SeatsSummary />
+      </Grid>
+
       <UserTable
         {...{
           data: lists || [],
