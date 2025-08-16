@@ -19,6 +19,16 @@ class CoreErrorMessages:
     AUTH_REQUIRED = _("Authentication required33")
     CLIENT_ID_REQUIRED = _("Client account required")
     PERMISSION_DENIED = _("You don't have permission to perform this action")
+
+    # Admin / User invariants
+    LAST_ADMIN_REQUIRED      = _("There must be at least one admin user in the organization")
+    LAST_ADMIN_ROLE_LOCKED   = _("You cannot change the role or deactivate the last admin user")
+
+    # Seats / Licensing
+    SEAT_LIMIT_REACHED       = _("Active users seat limit reached. Deactivate another user before activating this one")
+
+    # (Optionnel mais recommandé pour uniformiser un message déjà présent)
+    SELF_DELETE_FORBIDDEN    = _("You cannot delete your own account")
     
     # Client Scope
     CLIENT_MISMATCH = _("Object does not belong to your organization")

@@ -1,4 +1,4 @@
-# end_users/models/user_model.py - VERSION CORRIGÉE
+# end_users/models/user_model.py
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -68,6 +68,91 @@ class ClientAccount(BaseModel):
 
     def __str__(self):
         return self.name
+    
+    ADMIN_ROLE_NAME = 'Admin'
+
+    def get_active_users_queryset(self):
+        """Return queryset of active users for this client."""
+        return self.users.filter(is_active=True)
+
+    def count_active_users(self):
+        """Number of active users for seats calculation."""
+        return self.get_active_users_queryset().count()
+
+    def seats_usage(self):
+        """Simple seat usage snapshot."""
+        active = self.count_active_users()
+        maxu = self.max_users or 0
+        return {
+            'active': active,
+            'max': maxu,
+            'available': max(0, maxu - active)
+        }
+
+    def has_available_seat(self):
+        """True if there is at least one available active seat."""
+        maxu = self.max_users or 0
+        # If max_users is 0, consider no seats available
+        return self.count_active_users() < maxu
+
+    def get_admins_queryset(self, active_only=True):
+        """Return queryset of admin users (optionally active-only)."""
+        qs = self.users.filter(role__name=self.ADMIN_ROLE_NAME)
+        return qs.filter(is_active=True) if active_only else qs
+
+    def count_admins(self, active_only=True):
+        """Count admin users (optionally active-only)."""
+        return self.get_admins_queryset(active_only=active_only).count()
+
+    def get_admin_role(self):
+        """Return the Admin role instance for this client or None."""
+        from .user_model import UserRole  # local import to avoid circulars at import time
+        try:
+            return UserRole.objects.get(client_account=self, name=self.ADMIN_ROLE_NAME)
+        except UserRole.DoesNotExist:
+            return None
+
+    def get_or_create_admin_role(self):
+        """Get or create the Admin role for this client."""
+        from .user_model import UserRole
+        role, _ = UserRole.objects.get_or_create(
+            client_account=self,
+            name=self.ADMIN_ROLE_NAME,
+            defaults={'read': True, 'write': True, 'modify': True, 'delete': True}
+        )
+        return role
+
+    def ensure_admin_invariants(self):
+        """
+        Safety net: ensure there is at least one Admin user for this client.
+        - If there is no admin (active or inactive), promote a user to Admin:
+        prefer the most-recent active user; otherwise the most-recent user.
+        - Does nothing if there are no users at all.
+        Returns the promoted user or None.
+        """
+        # No users -> nothing to enforce
+        if not self.users.exists():
+            return None
+
+        # If at least one admin (even inactive) exists, nothing to do
+        if self.count_admins(active_only=False) > 0:
+            return None
+
+        admin_role = self.get_or_create_admin_role()
+
+        # Prefer an active user; else any recent user
+        candidate = self.get_active_users_queryset().order_by('-created_at').first()
+        if candidate is None:
+            candidate = self.users.order_by('-created_at').first()
+
+        if candidate:
+            candidate.role = admin_role
+            candidate.role_name = admin_role.name
+            # keep candidate.is_active as-is; we only ensure role invariants here
+            candidate.save(update_fields=['role', 'role_name', 'updated_at'])
+            return candidate
+
+        return None
     
     def get_fiscal_year_dates(self, year=None):
         """

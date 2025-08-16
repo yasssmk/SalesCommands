@@ -337,8 +337,16 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             'password': {'write_only': True}
         }
     
-    # === MÉTHODES CALCULÉES ===
-    
+    def _get_admin_role(self, client):
+        # Utilise les helpers de ClientAccount (Étape 1)
+        return client.get_or_create_admin_role()
+
+    def _is_last_admin(self, user):
+        client = user.client_account
+        # Dernier admin (tous états, actif ou non) pour éviter perte totale d'admin
+        is_admin = (user.role and user.role.name == client.ADMIN_ROLE_NAME) or (user.role_name == client.ADMIN_ROLE_NAME)
+        return is_admin and client.count_admins(active_only=False) == 1
+        
     def get_role_permissions(self, obj):
         """Permissions du rôle utilisateur"""
         if obj.role:
@@ -464,10 +472,10 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     # === CRÉATION ET MISE À JOUR ===
     
     def create(self, validated_data):
-        """Création d'utilisateur avec logique métier"""
+        """Création d'utilisateur avec logique seats + premier admin"""
         password = validated_data.pop('password', None)
-        
-        # Assigner automatiquement le client_account depuis le contexte
+
+        # Assigner automatiquement le client_account depuis le contexte (déjà existant)
         client_id = self._get_client_id_from_context()
         if client_id:
             try:
@@ -477,30 +485,82 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(field="Client Account")
                 )
-        
-        # Utiliser le manager pour la création
+
+        client = validated_data['client_account']
+
+        # Seats: si demande d'activation et plus de sièges dispo -> forcer inactif
+        want_active = validated_data.get('is_active', True)
+        if want_active and not client.has_available_seat():
+            validated_data['is_active'] = False  # MVP: pas d'erreur, créé inactif
+
+        # Premier user du client -> Admin automatiquement
+        if client.users.count() == 0:
+            admin_role = self._get_admin_role(client)
+            validated_data['role'] = admin_role
+            validated_data['role_name'] = admin_role.name
+            # On laisse is_active tel quel si seat dispo; sinon il restera inactif
+
+        # Création via manager si mot de passe fourni
         if password:
             user = User.objects.create_user(password=password, **validated_data)
         else:
             user = User(**validated_data)
             user.set_unusable_password()
             user.save()
-        
+
+        # Filet: garantir la présence d'un Admin (en cas d'état incohérent)
+        client.ensure_admin_invariants()
         return user
     
     def update(self, instance, validated_data):
-        """Mise à jour avec gestion du mot de passe"""
+        client = instance.client_account
+        admin_role = self._get_admin_role(client)
+
+        # === RÈGLE DERNIER ADMIN ===
+        is_last_admin = self._is_last_admin(instance)
+
+        # Tentative de changement de rôle ?
+        if 'role' in validated_data:
+            new_role = validated_data.get('role')
+            new_is_admin = (new_role and new_role.name == admin_role.name)
+            if is_last_admin and not new_is_admin:
+                # Interdit de retirer/vider le rôle admin au dernier admin
+                raise StandardizedValidationError(CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED)
+
+        # Tentative de désactivation ?
+        if 'is_active' in validated_data:
+            new_active = validated_data.get('is_active')
+            if is_last_admin and new_active is False:
+                # Interdit de désactiver le dernier admin (évite lock-out)
+                raise StandardizedValidationError(CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED)
+
+        # === RÈGLE SEATS À L’ACTIVATION ===
+        if 'is_active' in validated_data and validated_data['is_active'] is True:
+            # Si on était inactif et qu'on veut devenir actif : vérifier places
+            if not instance.is_active:
+                if not client.has_available_seat():
+                    raise StandardizedValidationError(CoreErrorMessages.SEAT_LIMIT_REACHED)
+
+        # Appliquer les autres champs
         password = validated_data.pop('password', None)
-        
-        # Mettre à jour les autres champs
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        
-        # Gérer le mot de passe séparément
+
+        # Gestion du mot de passe
         if password:
             instance.set_password(password)
-        
+
+        # Mettre à jour le cache role_name si rôle modifié
+        if 'role' in validated_data:
+            if instance.role:
+                instance.role_name = instance.role.name
+            else:
+                instance.role_name = None
+
         instance.save()
+
+        # Filet: garantir la présence d'un Admin si besoin
+        client.ensure_admin_invariants()
         return instance
 
 
