@@ -257,39 +257,25 @@ export const updateUser = async (userId, userData) => {
  */
 export const deleteUser = async (userId) => {
   const result = await api.delete(`${endpoints.users}${userId}/`);
-  
+
   if (result.success) {
-    // Update cache optimistically
+    // cache updates identiques à avant
     mutate(
       endpoints.users,
       (currentData) => {
         if (!currentData) return currentData;
-
         const filteredResults = currentData.results.filter((user) => user.id !== userId);
-
-        return {
-          ...currentData,
-          results: filteredResults,
-          count: currentData.count - 1
-        };
+        return { ...currentData, results: filteredResults, count: currentData.count - 1 };
       },
       false
     );
-
-    // Remove from single user cache
     mutate(`${endpoints.users}${userId}/`, undefined, false);
-    
-    // Revalidate to ensure consistency
     mutate(endpoints.users);
-    
-    return {
-      success: true
-    };
+
+    return { success: true, status: result.status ?? 204 };
   } else {
-    return {
-      success: false,
-      error: result.error
-    };
+    // ⬅️ remonter le status pour la couleur du snackbar
+    return { success: false, error: result.error, status: result.status };
   }
 };
 

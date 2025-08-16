@@ -1,4 +1,5 @@
 import PropTypes from 'prop-types';
+import { useState } from 'react';
 // material-ui
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
@@ -19,20 +20,45 @@ import DeleteFilled from '@ant-design/icons/DeleteFilled';
 // ==============================|| User - DELETE ||============================== //
 
 export default function AlertUserDelete({ id, title, open, handleClose }) {
+  const [deleting, setDeleting] = useState(false);
+
   const deletehandler = async () => {
-    await deleteUser (id).then(() => {
+    try {
+      setDeleting(true);
+      const res = await deleteUser(id);
+
+      if (res?.success) {
+        openSnackbar({
+          open: true,
+          message: 'User deleted successfully',
+          anchorOrigin: { vertical: 'top', horizontal: 'right' },
+          variant: 'alert',
+          alert: { color: 'success' }
+        });
+        handleClose?.();
+      } else {
+        // Choix de la couleur: warning si 400, sinon error
+        const color = res?.status === 400 ? 'warning' : 'error';
+        openSnackbar({
+          open: true,
+          message: res?.error || 'Failed to delete user',
+          anchorOrigin: { vertical: 'top', horizontal: 'right' },
+          variant: 'alert',
+          alert: { color }
+        });
+        // on NE ferme PAS la modal en cas d’erreur
+      }
+    } catch (err) {
       openSnackbar({
         open: true,
-        message: 'User deleted successfully',
+        message: err?.message || 'Unexpected error',
         anchorOrigin: { vertical: 'top', horizontal: 'right' },
         variant: 'alert',
-
-        alert: {
-          color: 'success'
-        }
+        alert: { color: 'error' }
       });
-      handleClose();
-    });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
