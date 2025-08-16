@@ -102,8 +102,10 @@ export default function UserListPage() {
             variant="light"
             color={
               getValue() === 'Admin' ? 'error' :
-              getValue() === 'Manager' ? 'warning' :
-              getValue() === 'User' ? 'primary' : 'default'
+              getValue() === 'Team Manager' ? 'warning' :
+              getValue() === 'Direction' ? 'primary' : 
+              getValue() === 'Account Executive' ? 'info' : 
+              getValue() === 'Business Developer' ? 'success' : 'default'
             }
           />
         )

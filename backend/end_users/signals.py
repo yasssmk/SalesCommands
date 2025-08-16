@@ -9,9 +9,9 @@ def create_default_roles(sender, instance, created, **kwargs):
         default_roles = [
             {"name": "Admin", "read": True, "write": True, "modify": True, "delete": True},
             {"name": "Direction", "read": True, "write": False, "modify": True, "delete": False},
-            {"name": "Team_Manager", "read": True, "write": True, "modify": True, "delete": False},
-            {"name": "Account_Executive", "read": True, "write": True, "modify": False, "delete": False},
-            {"name": "BDR", "read": True, "write": True, "modify": False, "delete": False},
+            {"name": "Team Manager", "read": True, "write": True, "modify": True, "delete": False},
+            {"name": "Account Executive", "read": True, "write": True, "modify": False, "delete": False},
+            {"name": "Business Developer", "read": True, "write": True, "modify": False, "delete": False},
         ]
         for role_data in default_roles:
             UserRole.objects.get_or_create(client_account=instance, **role_data)

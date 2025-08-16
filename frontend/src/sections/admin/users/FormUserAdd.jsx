@@ -28,7 +28,7 @@ import * as Yup from 'yup';
 import { useFormik, Form, FormikProvider } from 'formik';
 
 // api hooks
-import { useGetUserRoles, useGetOrganizations, useGetTeams, insertUser } from 'api/admin/users';
+import { useGetUser, useGetUserRoles, useGetOrganizations, useGetTeams, insertUser, updateUser } from 'api/admin/users';
 
 // project imports
 import Avatar from 'components/@extended/Avatar';
@@ -39,18 +39,18 @@ import { openSnackbar } from 'api/snackbar';
 import CameraOutlined from '@ant-design/icons/CameraOutlined';
 
 // ====== FORM VALUES ======
-const getInitialValues = () => ({
-  email: '',
-  first_name: '',
-  last_name: '',
-  password: '', // write-only on creation
-  is_active: true,
-  role: '', // id
-  organization: '', // id
-  team: '' // id
+const buildInitialValues = (user) => ({
+  email: user?.email || '',
+  first_name: user?.first_name || '',
+  last_name: user?.last_name || '',
+  password: '', // write-only; blank keeps current on edit
+  is_active: user?.is_active ?? true,
+  role: user?.role ? String(user.role) : '',
+  organization: user?.organization ? String(user.organization) : '',
+  team: user?.team ? String(user.team) : ''
 });
 
-const UserSchema = Yup.object().shape({
+const CreateSchema = Yup.object().shape({
   email: Yup.string().max(255).required('Email is required').email('Must be a valid email'),
   first_name: Yup.string().max(50),
   last_name: Yup.string().max(50),
@@ -60,26 +60,45 @@ const UserSchema = Yup.object().shape({
   team: Yup.mixed().nullable()
 });
 
+const EditSchema = Yup.object().shape({
+  email: Yup.string().max(255).required('Email is required').email('Must be a valid email'),
+  first_name: Yup.string().max(50),
+  last_name: Yup.string().max(50),
+  // Optional on edit; if provided, must be >= 8
+  password: Yup.string().test('len', 'Must be at least 8 characters', (v) => !v || v.length >= 8),
+  role: Yup.mixed().nullable(),
+  organization: Yup.mixed().nullable(),
+  team: Yup.mixed().nullable()
+});
+
 function sanitizePayload(values) {
   const out = {};
-  // keep primitives only, do not coerce ids -> number (ids may be UUID strings)
-  ['email', 'first_name', 'last_name', 'password', 'is_active'].forEach((k) => {
+  // primitives
+  ['email', 'first_name', 'last_name', 'is_active'].forEach((k) => {
     if (values[k] !== undefined && values[k] !== '') out[k] = values[k];
   });
+  // password only if provided
+  if (values.password) out.password = values.password;
+  // relations (ids kept as-is: could be UUID strings)
   ['role', 'organization', 'team'].forEach((k) => {
     const v = values[k];
-    if (v !== undefined && v !== '' && v !== null) out[k] = v; // keep as-is (string id)
+    if (v !== undefined && v !== '' && v !== null) out[k] = v;
   });
   return out;
 }
 
-// ==============================|| USER ADD - FORM (API CONNECTED) ||============================== //
-export default function FormUserAdd({ closeModal }) {
+// ==============================|| USER ADD / EDIT - FORM (API CONNECTED) ||============================== //
+export default function FormUserAdd({ closeModal, userId, user: initialUser }) {
   const theme = useTheme();
 
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState(undefined);
   const [avatar, setAvatar] = useState(undefined);
+
+  // Load existing user if editing
+  const { user: fetchedUser, userLoading } = useGetUser(userId);
+  const userData = initialUser || fetchedUser;
+  const isEdit = Boolean(userData && userData.id);
 
   useEffect(() => {
     if (selectedImage) {
@@ -92,40 +111,39 @@ export default function FormUserAdd({ closeModal }) {
     setLoading(false);
   }, []);
 
-  // --- Lists from backend (scoped by tenant via axiosClient/api) ---
-  const { roles = [], rolesLoading } = useGetUserRoles();
-  const { organizations: orgs = [], organizationsLoading } = useGetOrganizations();
-  const { teams = [], teamsLoading } = useGetTeams();
-
   const formik = useFormik({
-    initialValues: getInitialValues(),
-    validationSchema: UserSchema,
-    enableReinitialize: false,
+    initialValues: buildInitialValues(userData),
+    validationSchema: isEdit ? EditSchema : CreateSchema,
+    enableReinitialize: true,
     onSubmit: async (values, { setSubmitting }) => {
       try {
         const payload = sanitizePayload(values);
-        const result = await insertUser(payload);
+        let result;
+        if (isEdit) {
+          result = await updateUser(userData.id, payload); // uses PUT in your API helper
+        } else {
+          result = await insertUser(payload);
+        }
+
         if (result.success) {
           openSnackbar({
             open: true,
-            message: 'User created successfully.',
+            message: isEdit ? 'User updated successfully.' : 'User created successfully.',
             variant: 'alert',
             alert: { color: 'success' }
           });
           setSubmitting(false);
           closeModal?.();
         } else {
-          // Show backend error handled by axiosClient/errorHandler
           openSnackbar({
             open: true,
-            message: result.error || 'Failed to create user',
+            message: result.error || (isEdit ? 'Failed to update user' : 'Failed to create user'),
             variant: 'alert',
             alert: { color: 'error' }
           });
           setSubmitting(false);
         }
       } catch (err) {
-        // Fallback: any unexpected error
         openSnackbar({
           open: true,
           message: err?.message || 'Unexpected error',
@@ -139,11 +157,22 @@ export default function FormUserAdd({ closeModal }) {
 
   const { errors, touched, handleSubmit, isSubmitting, getFieldProps, setFieldValue, values } = formik;
 
+  // --- Lists from backend (scoped by tenant via axiosClient/api) ---
+  const { roles = [], rolesLoading } = useGetUserRoles();
+  const { organizations: orgs = [], organizationsLoading } = useGetOrganizations();
+
+  // Fetch teams ONLY when an organization is selected to avoid backend 400s
+  const teamsEnabled = Boolean(values?.organization);
+  const { teams = [], teamsLoading } = useGetTeams(
+    teamsEnabled ? { organization: values.organization } : undefined,
+    teamsEnabled
+  );
+
   const filteredTeams = useMemo(() => {
-    const orgId = values.organization ? String(values.organization) : null;
+    // Backend already filters by organization when enabled; keep a safe fallback
     const base = Array.isArray(teams) ? teams : [];
-    return orgId ? base.filter((t) => String(t.organization) === orgId || String(t.organization?.id) === orgId) : base;
-  }, [teams, values.organization]);
+    return base;
+  }, [teams]);
 
   // Auto-fill organization when team selected (if organization is empty)
   useEffect(() => {
@@ -153,7 +182,7 @@ export default function FormUserAdd({ closeModal }) {
     if (orgId && !values.organization) setFieldValue('organization', String(orgId), false);
   }, [values.team, teams]);
 
-  const anyLoading = loading || rolesLoading || organizationsLoading || teamsLoading;
+  const anyLoading = loading || userLoading || rolesLoading || organizationsLoading || teamsLoading;
 
   if (anyLoading)
     return (
@@ -171,7 +200,7 @@ export default function FormUserAdd({ closeModal }) {
     <>
       <FormikProvider value={formik}>
         <Form autoComplete="off" noValidate onSubmit={handleSubmit}>
-          <DialogTitle>New User</DialogTitle>
+          <DialogTitle>{isEdit ? 'Edit User' : 'New User'}</DialogTitle>
           <Divider />
           <DialogContent sx={{ p: 2.5 }}>
             <Grid container spacing={3}>
@@ -261,12 +290,12 @@ export default function FormUserAdd({ closeModal }) {
                   </Grid>
                   <Grid item xs={12}>
                     <Stack spacing={1}>
-                      <InputLabel htmlFor="user-password">Password</InputLabel>
+                      <InputLabel htmlFor="user-password">{isEdit ? 'Password (optional)' : 'Password'}</InputLabel>
                       <TextField
                         type="password"
                         fullWidth
                         id="user-password"
-                        placeholder="At least 8 characters"
+                        placeholder={isEdit ? 'Leave blank to keep current password' : 'At least 8 characters'}
                         {...getFieldProps('password')}
                         error={Boolean(touched.password && errors.password)}
                         helperText={touched.password && errors.password}
@@ -324,14 +353,21 @@ export default function FormUserAdd({ closeModal }) {
                           onChange={(e) => setFieldValue('organization', e.target.value)}
                           input={<OutlinedInput id="select-user-org" placeholder="Select organization" />}
                           renderValue={(selected) => {
-                            
-                            return <Typography variant="subtitle1" color="text.secondary">Select organization</Typography>;
-
+                            if ((orgs?.length ?? 0) === 0) {
+                              return (
+                                <Typography variant="subtitle1" color="text.secondary">
+                                  No team or organization available
+                                </Typography>
+                              );
+                            }
+                            if (!selected) return <Typography variant="subtitle1">Select organization</Typography>;
+                            const o = orgs?.find((x) => String(x.id) === String(selected));
+                            return <Typography variant="subtitle2">{o?.name || '—'}</Typography>;
                           }}
                         >
                           {(orgs || []).length === 0 ? (
                             <MenuItem disabled>
-                              <Typography color="text.secondary">No organization available</Typography>
+                              <Typography color="text.secondary">No team or organization available</Typography>
                             </MenuItem>
                           ) : (
                             (orgs || []).map((o) => (
@@ -359,7 +395,7 @@ export default function FormUserAdd({ closeModal }) {
                             if (noOrgOrTeam || noTeamsToShow) {
                               return (
                                 <Typography variant="subtitle1" color="text.secondary">
-                                  No team available
+                                  No team or organization available
                                 </Typography>
                               );
                             }
@@ -370,7 +406,7 @@ export default function FormUserAdd({ closeModal }) {
                         >
                           {noOrgOrTeam || noTeamsToShow ? (
                             <MenuItem disabled>
-                              <Typography color="text.secondary">No team available</Typography>
+                              <Typography color="text.secondary">No team or organization available</Typography>
                             </MenuItem>
                           ) : (
                             filteredTeams.map((t) => (
@@ -406,14 +442,14 @@ export default function FormUserAdd({ closeModal }) {
           <Divider />
           <DialogActions sx={{ p: 2.5 }}>
             <Grid container justifyContent="space-between" alignItems="center">
-              <Grid item>{/* creation only */}</Grid>
+              <Grid item>{/* creation/edit only */}</Grid>
               <Grid item>
                 <Stack direction="row" spacing={2} alignItems="center">
                   <Button color="error" onClick={closeModal}>
                     Cancel
                   </Button>
                   <Button type="submit" variant="contained" disabled={isSubmitting}>
-                    Create
+                    {isEdit ? 'Save' : 'Create'}
                   </Button>
                 </Stack>
               </Grid>
@@ -426,5 +462,7 @@ export default function FormUserAdd({ closeModal }) {
 }
 
 FormUserAdd.propTypes = {
-  closeModal: PropTypes.func
+  closeModal: PropTypes.func,
+  userId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  user: PropTypes.object
 };
