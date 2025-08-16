@@ -371,26 +371,29 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     
     
     def validate_role(self, value):
-        """Valider que le rôle appartient au même client"""
+        """Ensure role belongs to the same client"""
         if value:
             client_id = self._get_client_id_from_context()
-            if str(value.client_id) != str(client_id):
+            # ✅ Use client_account_id on the role
+            if str(value.client_account_id) != str(client_id):
                 raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
         return value
-    
+
     def validate_team(self, value):
-        """Valider que l'équipe appartient au même client"""
+        """Ensure team belongs to the same client"""
         if value:
             client_id = self._get_client_id_from_context()
-            if str(value.client_id) != str(client_id):
+            # ✅ Team is scoped through its organization
+            if str(value.organization.client_account_id) != str(client_id):
                 raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
         return value
-    
+
     def validate_organization(self, value):
-        """Valider que l'organisation appartient au même client"""
+        """Ensure organization belongs to the same client"""
         if value:
             client_id = self._get_client_id_from_context()
-            if str(value.client_id) != str(client_id):
+            # ✅ Organization has client_account_id
+            if str(value.client_account_id) != str(client_id):
                 raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
         return value
     

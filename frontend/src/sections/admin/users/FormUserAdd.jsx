@@ -27,7 +27,10 @@ import Typography from '@mui/material/Typography';
 import * as Yup from 'yup';
 import { useFormik, Form, FormikProvider } from 'formik';
 
-// project imports (réutilise tes composants existants)
+// api hooks
+import { useGetUserRoles, useGetOrganizations, useGetTeams, insertUser } from 'api/admin/users';
+
+// project imports
 import Avatar from 'components/@extended/Avatar';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 import { openSnackbar } from 'api/snackbar';
@@ -35,32 +38,12 @@ import { openSnackbar } from 'api/snackbar';
 // assets
 import CameraOutlined from '@ant-design/icons/CameraOutlined';
 
-// ==============================|| DUMMY DATA (rendu uniquement) ||============================== //
-const DUMMY_ROLES = [
-  { id: 1, name: 'Sales Rep' },
-  { id: 2, name: 'Manager' },
-  { id: 3, name: 'Admin' }
-];
-
-const DUMMY_ORGS = [
-  { id: 1, name: 'Sales' },
-  { id: 2, name: 'Marketing' },
-  { id: 3, name: 'Operations' }
-];
-
-const DUMMY_TEAMS = [
-  { id: 1, name: 'Sales Team A', organization: 1 },
-  { id: 2, name: 'Sales Team B', organization: 1 },
-  { id: 3, name: 'Growth', organization: 2 },
-  { id: 4, name: 'Field Ops', organization: 3 }
-];
-
 // ====== FORM VALUES ======
 const getInitialValues = () => ({
   email: '',
   first_name: '',
   last_name: '',
-  password: '', // write-only à la création
+  password: '', // write-only on creation
   is_active: true,
   role: '', // id
   organization: '', // id
@@ -68,22 +51,35 @@ const getInitialValues = () => ({
 });
 
 const UserSchema = Yup.object().shape({
-  email: Yup.string().max(255).required('Email requis').email('Email invalide'),
+  email: Yup.string().max(255).required('Email is required').email('Must be a valid email'),
   first_name: Yup.string().max(50),
   last_name: Yup.string().max(50),
-  password: Yup.string().min(8, 'Au moins 8 caractères').required('Mot de passe requis'),
+  password: Yup.string().min(8, 'Must be at least 8 characters').required('Password is required'),
   role: Yup.mixed().nullable(),
   organization: Yup.mixed().nullable(),
   team: Yup.mixed().nullable()
 });
 
-// ==============================|| USER ADD - FORM (RENDU UNIQUEMENT) ||============================== //
+function sanitizePayload(values) {
+  const out = {};
+  // keep primitives only, do not coerce ids -> number (ids may be UUID strings)
+  ['email', 'first_name', 'last_name', 'password', 'is_active'].forEach((k) => {
+    if (values[k] !== undefined && values[k] !== '') out[k] = values[k];
+  });
+  ['role', 'organization', 'team'].forEach((k) => {
+    const v = values[k];
+    if (v !== undefined && v !== '' && v !== null) out[k] = v; // keep as-is (string id)
+  });
+  return out;
+}
+
+// ==============================|| USER ADD - FORM (API CONNECTED) ||============================== //
 export default function FormUserAdd({ closeModal }) {
   const theme = useTheme();
 
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState(undefined);
-  const [avatar, setAvatar] = useState('/assets/images/users/avatar-1.png');
+  const [avatar, setAvatar] = useState(undefined);
 
   useEffect(() => {
     if (selectedImage) {
@@ -91,40 +87,75 @@ export default function FormUserAdd({ closeModal }) {
     }
   }, [selectedImage]);
 
+  // initial skeleton spinner only
   useEffect(() => {
-    // rendu uniquement : pas d'appels réseau
     setLoading(false);
   }, []);
+
+  // --- Lists from backend (scoped by tenant via axiosClient/api) ---
+  const { roles = [], rolesLoading } = useGetUserRoles();
+  const { organizations: orgs = [], organizationsLoading } = useGetOrganizations();
+  const { teams = [], teamsLoading } = useGetTeams();
 
   const formik = useFormik({
     initialValues: getInitialValues(),
     validationSchema: UserSchema,
     enableReinitialize: false,
-    onSubmit: async (values, { setSubmitting, resetForm }) => {
-      // Rendu uniquement : aucune requête. On affiche juste un snackbar et on logue.
-      // eslint-disable-next-line no-console
-      console.log('[FormUserAdd] Preview submit values:', values);
-      openSnackbar({
-        open: true,
-        message: "Mode aperçu : aucun envoi au backend.",
-        variant: 'alert',
-        alert: { color: 'info' }
-      });
-      setSubmitting(false);
-      // Laisse le formulaire rempli pour démo; si tu veux reset :
-      // resetForm();
-      closeModal?.();
+    onSubmit: async (values, { setSubmitting }) => {
+      try {
+        const payload = sanitizePayload(values);
+        const result = await insertUser(payload);
+        if (result.success) {
+          openSnackbar({
+            open: true,
+            message: 'User created successfully.',
+            variant: 'alert',
+            alert: { color: 'success' }
+          });
+          setSubmitting(false);
+          closeModal?.();
+        } else {
+          // Show backend error handled by axiosClient/errorHandler
+          openSnackbar({
+            open: true,
+            message: result.error || 'Failed to create user',
+            variant: 'alert',
+            alert: { color: 'error' }
+          });
+          setSubmitting(false);
+        }
+      } catch (err) {
+        // Fallback: any unexpected error
+        openSnackbar({
+          open: true,
+          message: err?.message || 'Unexpected error',
+          variant: 'alert',
+          alert: { color: 'error' }
+        });
+        setSubmitting(false);
+      }
     }
   });
 
   const { errors, touched, handleSubmit, isSubmitting, getFieldProps, setFieldValue, values } = formik;
 
   const filteredTeams = useMemo(() => {
-    const orgId = values.organization ? Number(values.organization) : null;
-    return orgId ? DUMMY_TEAMS.filter((t) => t.organization === orgId) : DUMMY_TEAMS;
-  }, [values.organization]);
+    const orgId = values.organization ? String(values.organization) : null;
+    const base = Array.isArray(teams) ? teams : [];
+    return orgId ? base.filter((t) => String(t.organization) === orgId || String(t.organization?.id) === orgId) : base;
+  }, [teams, values.organization]);
 
-  if (loading)
+  // Auto-fill organization when team selected (if organization is empty)
+  useEffect(() => {
+    if (!values.team || !(teams?.length)) return;
+    const t = (teams || []).find((x) => String(x.id) === String(values.team));
+    const orgId = t?.organization?.id ?? t?.organization;
+    if (orgId && !values.organization) setFieldValue('organization', String(orgId), false);
+  }, [values.team, teams]);
+
+  const anyLoading = loading || rolesLoading || organizationsLoading || teamsLoading;
+
+  if (anyLoading)
     return (
       <Box sx={{ p: 5 }}>
         <Stack direction="row" justifyContent="center">
@@ -133,11 +164,14 @@ export default function FormUserAdd({ closeModal }) {
       </Box>
     );
 
+  const noOrgOrTeam = (orgs?.length ?? 0) === 0 && (teams?.length ?? 0) === 0;
+  const noTeamsToShow = (filteredTeams?.length ?? 0) === 0;
+
   return (
     <>
       <FormikProvider value={formik}>
         <Form autoComplete="off" noValidate onSubmit={handleSubmit}>
-          <DialogTitle>Nouvel utilisateur</DialogTitle>
+          <DialogTitle>New User</DialogTitle>
           <Divider />
           <DialogContent sx={{ p: 2.5 }}>
             <Grid container spacing={3}>
@@ -188,11 +222,11 @@ export default function FormUserAdd({ closeModal }) {
                 <Grid container spacing={3}>
                   <Grid item xs={12} sm={6}>
                     <Stack spacing={1}>
-                      <InputLabel htmlFor="user-firstName">Prénom</InputLabel>
+                      <InputLabel htmlFor="user-firstName">First name</InputLabel>
                       <TextField
                         fullWidth
                         id="user-firstName"
-                        placeholder="Prénom"
+                        placeholder="First name"
                         {...getFieldProps('first_name')}
                         error={Boolean(touched.first_name && errors.first_name)}
                         helperText={touched.first_name && errors.first_name}
@@ -201,11 +235,11 @@ export default function FormUserAdd({ closeModal }) {
                   </Grid>
                   <Grid item xs={12} sm={6}>
                     <Stack spacing={1}>
-                      <InputLabel htmlFor="user-lastName">Nom</InputLabel>
+                      <InputLabel htmlFor="user-lastName">Last name</InputLabel>
                       <TextField
                         fullWidth
                         id="user-lastName"
-                        placeholder="Nom"
+                        placeholder="Last name"
                         {...getFieldProps('last_name')}
                         error={Boolean(touched.last_name && errors.last_name)}
                         helperText={touched.last_name && errors.last_name}
@@ -218,7 +252,7 @@ export default function FormUserAdd({ closeModal }) {
                       <TextField
                         fullWidth
                         id="user-email"
-                        placeholder="email@domaine.com"
+                        placeholder="name@company.com"
                         {...getFieldProps('email')}
                         error={Boolean(touched.email && errors.email)}
                         helperText={touched.email && errors.email}
@@ -227,12 +261,12 @@ export default function FormUserAdd({ closeModal }) {
                   </Grid>
                   <Grid item xs={12}>
                     <Stack spacing={1}>
-                      <InputLabel htmlFor="user-password">Mot de passe</InputLabel>
+                      <InputLabel htmlFor="user-password">Password</InputLabel>
                       <TextField
                         type="password"
                         fullWidth
                         id="user-password"
-                        placeholder="Au moins 8 caractères"
+                        placeholder="At least 8 characters"
                         {...getFieldProps('password')}
                         error={Boolean(touched.password && errors.password)}
                         helperText={touched.password && errors.password}
@@ -242,25 +276,38 @@ export default function FormUserAdd({ closeModal }) {
 
                   <Grid item xs={12} sm={6}>
                     <Stack spacing={1}>
-                      <InputLabel htmlFor="user-role">Rôle</InputLabel>
+                      <InputLabel htmlFor="user-role">Role</InputLabel>
                       <FormControl fullWidth>
                         <Select
                           id="user-role"
                           displayEmpty
                           value={values.role}
                           onChange={(e) => setFieldValue('role', e.target.value)}
-                          input={<OutlinedInput id="select-user-role" placeholder="Sélectionner un rôle" />}
+                          input={<OutlinedInput id="select-user-role" placeholder="Select role" />}
                           renderValue={(selected) => {
-                            if (!selected) return <Typography variant="subtitle1">Sélectionner un rôle</Typography>;
-                            const r = DUMMY_ROLES.find((x) => String(x.id) === String(selected));
+                            if ((roles?.length ?? 0) === 0) {
+                              return (
+                                <Typography variant="subtitle1" color="text.secondary">
+                                  No roles available
+                                </Typography>
+                              );
+                            }
+                            if (!selected) return <Typography variant="subtitle1">Select role</Typography>;
+                            const r = roles?.find((x) => String(x.id) === String(selected));
                             return <Typography variant="subtitle2">{r?.name || '—'}</Typography>;
                           }}
                         >
-                          {DUMMY_ROLES.map((r) => (
-                            <MenuItem key={r.id} value={String(r.id)}>
-                              <ListItemText primary={r.name} />
+                          {(roles || []).length === 0 ? (
+                            <MenuItem disabled>
+                              <Typography color="text.secondary">No roles available</Typography>
                             </MenuItem>
-                          ))}
+                          ) : (
+                            (roles || []).map((r) => (
+                              <MenuItem key={r.id} value={String(r.id)}>
+                                <ListItemText primary={r.name} />
+                              </MenuItem>
+                            ))
+                          )}
                         </Select>
                       </FormControl>
                     </Stack>
@@ -268,25 +315,31 @@ export default function FormUserAdd({ closeModal }) {
 
                   <Grid item xs={12} sm={6}>
                     <Stack spacing={1}>
-                      <InputLabel htmlFor="user-organization">Organisation</InputLabel>
+                      <InputLabel htmlFor="user-organization">Organization</InputLabel>
                       <FormControl fullWidth>
                         <Select
                           id="user-organization"
                           displayEmpty
                           value={values.organization}
                           onChange={(e) => setFieldValue('organization', e.target.value)}
-                          input={<OutlinedInput id="select-user-org" placeholder="Sélectionner une organisation" />}
+                          input={<OutlinedInput id="select-user-org" placeholder="Select organization" />}
                           renderValue={(selected) => {
-                            if (!selected) return <Typography variant="subtitle1">Sélectionner une organisation</Typography>;
-                            const o = DUMMY_ORGS.find((x) => String(x.id) === String(selected));
-                            return <Typography variant="subtitle2">{o?.name || '—'}</Typography>;
+                            
+                            return <Typography variant="subtitle1" color="text.secondary">Select organization</Typography>;
+
                           }}
                         >
-                          {DUMMY_ORGS.map((o) => (
-                            <MenuItem key={o.id} value={String(o.id)}>
-                              <ListItemText primary={o.name} />
+                          {(orgs || []).length === 0 ? (
+                            <MenuItem disabled>
+                              <Typography color="text.secondary">No organization available</Typography>
                             </MenuItem>
-                          ))}
+                          ) : (
+                            (orgs || []).map((o) => (
+                              <MenuItem key={o.id} value={String(o.id)}>
+                                <ListItemText primary={o.name} />
+                              </MenuItem>
+                            ))
+                          )}
                         </Select>
                       </FormControl>
                     </Stack>
@@ -294,25 +347,38 @@ export default function FormUserAdd({ closeModal }) {
 
                   <Grid item xs={12}>
                     <Stack spacing={1}>
-                      <InputLabel htmlFor="user-team">Équipe</InputLabel>
+                      <InputLabel htmlFor="user-team">Team</InputLabel>
                       <FormControl fullWidth>
                         <Select
                           id="user-team"
                           displayEmpty
                           value={values.team}
                           onChange={(e) => setFieldValue('team', e.target.value)}
-                          input={<OutlinedInput id="select-user-team" placeholder="Sélectionner une équipe" />}
+                          input={<OutlinedInput id="select-user-team" placeholder="Select team" />}
                           renderValue={(selected) => {
-                            if (!selected) return <Typography variant="subtitle1">Sélectionner une équipe</Typography>;
+                            if (noOrgOrTeam || noTeamsToShow) {
+                              return (
+                                <Typography variant="subtitle1" color="text.secondary">
+                                  No team available
+                                </Typography>
+                              );
+                            }
+                            if (!selected) return <Typography variant="subtitle1">Select team</Typography>;
                             const t = filteredTeams.find((x) => String(x.id) === String(selected));
                             return <Typography variant="subtitle2">{t?.name || '—'}</Typography>;
                           }}
                         >
-                          {filteredTeams.map((t) => (
-                            <MenuItem key={t.id} value={String(t.id)}>
-                              <ListItemText primary={t.name} />
+                          {noOrgOrTeam || noTeamsToShow ? (
+                            <MenuItem disabled>
+                              <Typography color="text.secondary">No team available</Typography>
                             </MenuItem>
-                          ))}
+                          ) : (
+                            filteredTeams.map((t) => (
+                              <MenuItem key={t.id} value={String(t.id)}>
+                                <ListItemText primary={t.name} />
+                              </MenuItem>
+                            ))
+                          )}
                         </Select>
                       </FormControl>
                     </Stack>
@@ -321,9 +387,9 @@ export default function FormUserAdd({ closeModal }) {
                   <Grid item xs={12}>
                     <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                       <Stack spacing={0.5}>
-                        <Typography variant="subtitle1">Compte actif</Typography>
+                        <Typography variant="subtitle1">Active account</Typography>
                         <Typography variant="caption" color="text.secondary">
-                          Autorise la connexion de cet utilisateur
+                          Allows this user to sign in
                         </Typography>
                       </Stack>
                       <FormControlLabel
@@ -340,14 +406,14 @@ export default function FormUserAdd({ closeModal }) {
           <Divider />
           <DialogActions sx={{ p: 2.5 }}>
             <Grid container justifyContent="space-between" alignItems="center">
-              <Grid item>{/* Pas de suppression ici : page dédiée à la création */}</Grid>
+              <Grid item>{/* creation only */}</Grid>
               <Grid item>
                 <Stack direction="row" spacing={2} alignItems="center">
                   <Button color="error" onClick={closeModal}>
-                    Annuler
+                    Cancel
                   </Button>
                   <Button type="submit" variant="contained" disabled={isSubmitting}>
-                    Créer
+                    Create
                   </Button>
                 </Stack>
               </Grid>

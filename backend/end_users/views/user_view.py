@@ -249,7 +249,10 @@ class TeamViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
         queryset = Team.objects.all()
         
         # Apply client scoping
-        queryset = self.filter_queryset_by_client(queryset)
+        client_id = self.get_client_id()
+        if client_id:
+            queryset = queryset.filter(organization__client_account_id=client_id)
+
         
         # Optimiser avec relations
         queryset = queryset.select_related(
