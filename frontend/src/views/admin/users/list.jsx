@@ -25,6 +25,9 @@ import SeatsSummary from 'sections/admin/users/SeatsSummary';
 
 import { useGetUsers } from 'api/admin/users';
 
+// formatting (standardized across the app)
+import { formatDateTime } from 'config/formatters'; 
+
 // assets
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
@@ -48,28 +51,6 @@ export default function UserListPage() {
 
   const columns = useMemo(
     () => [
-      {
-        id: 'select',
-        header: ({ table }) => (
-          <IndeterminateCheckbox
-            {...{
-              checked: table.getIsAllRowsSelected(),
-              indeterminate: table.getIsSomeRowsSelected(),
-              onChange: table.getToggleAllRowsSelectedHandler()
-            }}
-          />
-        ),
-        cell: ({ row }) => (
-          <IndeterminateCheckbox
-            {...{
-              checked: row.getIsSelected(),
-              disabled: !row.getCanSelect(),
-              indeterminate: row.getIsSomeSelected(),
-              onChange: row.getToggleSelectedHandler()
-            }}
-          />
-        )
-      },
       {
         header: 'User Name',
         accessorKey: 'first_name',
@@ -142,6 +123,14 @@ export default function UserListPage() {
             variant="light"
           />
         )
+      },
+            {
+        header: 'Last connection',
+        accessorKey: 'last_login',
+        cell: ({ getValue }) => {
+          const v = getValue();
+          return <Typography variant="body2">{v ? formatDateTime(v) : 'Never'}</Typography>;
+        }
       },
       {
         header: 'Actions',

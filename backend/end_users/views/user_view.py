@@ -374,6 +374,7 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
             self.validate_client_id(user)
             
             serializer = UserSerializer(user)
+            print(serializer.data)
             return Response({
                 'success': True,
                 'data': serializer.data

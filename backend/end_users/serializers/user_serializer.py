@@ -227,7 +227,7 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     team_name = serializers.CharField(source='team.name', read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     is_manager = serializers.SerializerMethodField(read_only=True)
-    
+    last_login = serializers.DateTimeField(read_only=True)
     class Meta:
         model = User
         fields = [
@@ -235,7 +235,7 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'full_name', 'display_name',
             'role_name', 'team_name', 'organization_name',
             'is_active', 'is_manager',
-            'created_at'
+            'created_at', 'last_login'
         ]
         read_only_fields = fields
     
@@ -304,7 +304,6 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     )
 
     
-    
     class Meta:
         model = User
         fields = [
@@ -330,7 +329,7 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         read_only_fields = [
             'created_at', 'updated_at', 'role_name',
             'full_name', 'display_name', 'short_name',
-            'is_manager', 'managed_users_count', 'client_account', 
+            'is_manager', 'managed_users_count', 'client_account', 'last_login'
         ]
         extra_kwargs = {
             'email': {'required': True},
