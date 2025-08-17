@@ -6,7 +6,6 @@ import { useMemo } from 'react';
 // utils
 import axiosClient, { api } from 'utils/axiosClient';
 
-
 // ==============================|| ENDPOINTS ||============================== //
 
 const endpoints = {
@@ -27,6 +26,25 @@ const fetcher = async (url) => {
   throw new Error(result.error || 'Failed to fetch data');
 };
 
+// 🔁 Revalidate ALL user lists (any key that starts with /client/users/)
+export const revalidateUsersLists = () =>
+  mutate((key) => typeof key === 'string' && key.startsWith(endpoints.users));
+
+// 🔁 Revalidate seats for a specific client (when you know the id)
+export const refreshClientSeats = (clientId) => {
+  if (!clientId) return;
+  return mutate(endpoints.clientAccountStats(clientId));
+};
+
+// 🔁 Revalidate ANY seats stats key (pattern-based, works even if clientId is unknown here)
+const revalidateAnyClientSeats = () =>
+  mutate(
+    (key) =>
+      typeof key === 'string' &&
+      key.includes('/client/client-accounts/') &&
+      key.endsWith('/stats/')
+  );
+
 // ==============================|| HOOKS ||============================== //
 
 /**
@@ -34,8 +52,9 @@ const fetcher = async (url) => {
  * Uses Django pagination format with results array
  */
 export function useGetUsers() {
+  const listUrl = endpoints.users;
   const { data, isLoading, error, isValidating } = useSWR(
-    endpoints.users,
+    listUrl,
     fetcher,
     {
       revalidateIfStale: false,
@@ -113,9 +132,9 @@ export function useGetOrganizations() {
 }
 
 /**
- * ✅ GET TEAMS (avec filtres + enabled)
+ * ✅ GET TEAMS (with filters + enabled)
  * @param {Object} filters - ex: { organization: 'uuid' }
- * @param {boolean} enabled - si false, ne fait pas l'appel
+ * @param {boolean} enabled - if false, skip fetch
  */
 export function useGetTeams(filters = {}, enabled = true) {
   const qs = new URLSearchParams(filters || {}).toString();
@@ -167,7 +186,6 @@ export function useGetUserRoles() {
   );
 
   return memoizedValue;
-
 }
 
 /**
@@ -177,7 +195,6 @@ export function useGetUserRoles() {
  * seats_left = seats - seats_used
  */
 export function useGetClientSeats(clientId) {
-  // si le clientId n'est pas encore connu, on ne fetch pas
   const key = clientId ? endpoints.clientAccountStats(clientId) : null;
 
   const { data, isLoading, error, isValidating } = useSWR(
@@ -190,9 +207,7 @@ export function useGetClientSeats(clientId) {
     }
   );
 
-  // data peut être:
-  // - directement { seats: {...}, users: {...}, ... } (si api.get() dégage déjà .data)
-  // - ou { data: { seats: {...}, ... }, client_info: {...} } (réponse back brute)
+  // our api wrapper returns the inner "data", so seats should be directly under data.seats
   const root = data?.seats ? data : data?.data ? data.data : {};
   const s = root?.seats || {};
 
@@ -207,7 +222,7 @@ export function useGetClientSeats(clientId) {
     seatsLoading: isLoading,
     seatsError: error,
     seatsValidating: isValidating,
-    raw: data // pratique pour debugger ponctuellement
+    raw: data
   };
 }
 
@@ -215,106 +230,81 @@ export function useGetClientSeats(clientId) {
 
 /**
  * ✅ CREATE USER
- * @param {Object} userData - User data to create
- * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
  */
 export const insertUser = async (userData) => {
   const result = await api.post(endpoints.users, userData);
 
   if (result.success) {
-    // Update cache optimistically
+    // Optimistic update for users list
     mutate(
       endpoints.users,
       (currentData) => {
         if (!currentData) return { results: [result.data], count: 1 };
-
         return {
           ...currentData,
-          results: [...currentData.results, result.data],
+          results: [...(currentData.results || []), result.data],
           count: (currentData.count || 0) + 1
         };
       },
       false
     );
 
-    // Revalidate to ensure consistency
+    // Revalidate users + seats
     mutate(endpoints.users);
+    revalidateAnyClientSeats();
 
-    return {
-      success: true,
-      user: result.data
-    };
+    return { success: true, user: result.data };
   } else {
-    return {
-      success: false,
-      error: result.error
-    };
+    return { success: false, error: result.error };
   }
 };
 
 /**
  * ✅ UPDATE USER (PATCH)
- * @param {string|number} userId - User ID to update
- * @param {Object} userData - Updated user data (partiel)
- * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
  */
 export const updateUser = async (userId, userData) => {
   const result = await api.patch(`${endpoints.users}${userId}/`, userData);
 
   if (result.success) {
-    // Update cache optimistically
+    // Optimistic update for users list
     mutate(
       endpoints.users,
       (currentData) => {
         if (!currentData) return currentData;
-
-        const updatedResults = (currentData.results || []).map((user) =>
-          user.id === userId ? result.data : user
+        const updatedResults = (currentData.results || []).map((u) =>
+          u.id === userId ? result.data : u
         );
-
-        return {
-          ...currentData,
-          results: updatedResults
-        };
+        return { ...currentData, results: updatedResults };
       },
       false
     );
 
-    // Also update single user cache if exists
+    // Update single user cache if present
     mutate(`${endpoints.users}${userId}/`, result.data, false);
 
-    // Revalidate to ensure consistency
+    // Revalidate users + seats
     mutate(endpoints.users);
+    revalidateAnyClientSeats();
 
-    return {
-      success: true,
-      user: result.data
-    };
+    return { success: true, user: result.data };
   } else {
-    return {
-      success: false,
-      error: result.error
-    };
+    return { success: false, error: result.error };
   }
 };
 
 /**
  * ✅ DELETE USER
- * @param {string|number} userId - User ID to delete
- * @returns {Promise<Object>} {success: boolean, error?: string, status?: number}
  */
 export const deleteUser = async (userId) => {
   const result = await api.delete(`${endpoints.users}${userId}/`);
 
   if (result.success) {
-    // Update cache optimistically
+    // Optimistic update for users list
     mutate(
       endpoints.users,
       (currentData) => {
         if (!currentData) return currentData;
-
-        const filteredResults = (currentData.results || []).filter((user) => user.id !== userId);
-
+        const filteredResults = (currentData.results || []).filter((u) => u.id !== userId);
         return {
           ...currentData,
           results: filteredResults,
@@ -324,11 +314,12 @@ export const deleteUser = async (userId) => {
       false
     );
 
-    // Remove from single user cache
+    // Drop single user cache
     mutate(`${endpoints.users}${userId}/`, undefined, false);
 
-    // Revalidate to ensure consistency
+    // Revalidate users + seats
     mutate(endpoints.users);
+    revalidateAnyClientSeats();
 
     return { success: true, status: result.status ?? 204 };
   } else {
@@ -341,13 +332,10 @@ export const deleteUser = async (userId) => {
 /**
  * ✅ REFRESH USERS LIST
  */
-export const refreshUsers = () => {
-  return mutate(endpoints.users);
-};
+export const refreshUsers = () => mutate(endpoints.users);
 
 /**
  * ✅ FILTER USERS
- * @param {Object} filters - Filter parameters
  */
 export const filterUsers = (filters) => {
   const queryParams = new URLSearchParams(filters).toString();

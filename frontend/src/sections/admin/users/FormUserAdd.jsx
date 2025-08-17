@@ -1,3 +1,5 @@
+// frontend/src/sections/admin/users/FormUserAdd.jsx
+
 import PropTypes from 'prop-types';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -120,7 +122,7 @@ export default function FormUserAdd({ closeModal, userId, user: initialUser }) {
         const payload = sanitizePayload(values);
         let result;
         if (isEdit) {
-          result = await updateUser(userData.id, payload); // uses PUT in your API helper
+          result = await updateUser(userData.id, payload); // uses PATCH in the API helper
         } else {
           result = await insertUser(payload);
         }
@@ -180,7 +182,7 @@ export default function FormUserAdd({ closeModal, userId, user: initialUser }) {
     const t = (teams || []).find((x) => String(x.id) === String(values.team));
     const orgId = t?.organization?.id ?? t?.organization;
     if (orgId && !values.organization) setFieldValue('organization', String(orgId), false);
-  }, [values.team, teams]);
+  }, [values.team, teams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const anyLoading = loading || userLoading || rolesLoading || organizationsLoading || teamsLoading;
 

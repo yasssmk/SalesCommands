@@ -358,9 +358,6 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
                 Q(managed_teams__isnull=False) | Q(managed_organizations__isnull=False)
             ).distinct()
         
-        active_only = self.request.query_params.get('active_only', 'true')
-        if active_only.lower() == 'true':
-            queryset = queryset.filter(is_active=True)
         
         return queryset
     
