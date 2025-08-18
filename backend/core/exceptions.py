@@ -75,6 +75,7 @@ class StandardizedAuthenticationFailed(AuthenticationFailed):
     """Returns 401 Unauthorized with a clean error message"""
 
     def __init__(self, detail=None):
+        print("Oui OUi")
         formatted_detail = StandardizedValidationError._format_detail(detail)
         super().__init__(formatted_detail)
 

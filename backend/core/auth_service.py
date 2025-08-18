@@ -1,5 +1,7 @@
 from django.conf import settings
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
+from .exceptions import StandardizedAuthenticationFailed
+from .error_messages import AuthErrorMessages
 from django.contrib.auth.hashers import check_password
 from django.utils.timezone import now
 from .jwt_helpers import JWTHelpers
@@ -25,6 +27,9 @@ class AuthService:
 
         if not check_password(password, user.password):
             raise AuthenticationFailed("Invalid email or password")
+        
+        if not user.is_active:
+            raise PermissionDenied
         
         # Update last_login
         user.last_login = now()
