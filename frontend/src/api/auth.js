@@ -53,6 +53,9 @@ export const refreshTokens = async () => {
     };
   } else {
     debugLog('❌ Token refresh failed:', result.error);
+    // ✅ Déconnexion forcée / session expirée → on nettoie lastRoute
+    resetAuthState();
+
     return {
       success: false,
       error: result.error
@@ -70,12 +73,18 @@ export const logoutUser = async () => {
   try {
     // Appel direct avec axiosClient (pas d'auto-refresh needed)
     const response = await axiosClient.post(authConfig.ENDPOINTS.LOGOUT);
+
+    // ✅ Nettoyage de lastRoute lors d'un logout explicite
+    resetAuthState();
     
     debugLog('✅ Logout successful');
     return response.data;
     
   } catch (error) {
     debugLog('❌ Logout failed:', error.message);
+
+    // ✅ Même si le serveur échoue, on nettoie côté client
+    resetAuthState();
     
     // Même si logout échoue côté serveur, on continue le logout côté client
     // Car l'utilisateur veut se déconnecter
@@ -103,6 +112,9 @@ export const getCurrentUser = async () => {
     };
   } else {
     debugLog('❌ Failed to get current user:', result.error);
+    // ✅ Session invalide / non authentifié → on nettoie lastRoute
+    resetAuthState();
+    
     return {
       success: false,
       error: result.error

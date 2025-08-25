@@ -293,6 +293,37 @@ export const updateUser = async (userId, userData) => {
 };
 
 /**
+ * ✅ CHANGE USER PASSWORD
+ * @param {string} userId - ID de l'utilisateur
+ * @param {string} password - Nouveau mot de passe
+ * @param {string} passwordConfirm - Confirmation du mot de passe
+ * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
+ */
+export const changePassword = async (userId, password, passwordConfirm) => {
+  const result = await api.patch(`${endpoints.users}${userId}/change-password/`, {
+    password,
+    password_confirm: passwordConfirm
+  });
+
+  if (result.success) {
+    // Pas besoin de mettre à jour le cache car le mot de passe n'est pas visible
+    // Mais on peut forcer un refresh de l'utilisateur pour s'assurer que tout est à jour
+    mutate(`${endpoints.users}${userId}/`);
+    
+    return { 
+      success: true, 
+      message: result.data?.message || 'Password changed successfully',
+      user: result.data?.user 
+    };
+  } else {
+    return { 
+      success: false, 
+      error: result.error || 'Failed to change password' 
+    };
+  }
+};
+
+/**
  * ✅ DELETE USER
  */
 export const deleteUser = async (userId) => {
