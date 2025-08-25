@@ -1,6 +1,7 @@
 # end_users/serializers.py
 
 from rest_framework import serializers
+from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.password_validation import validate_password
 from core.client_scope import ClientScopeManager
@@ -312,7 +313,8 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             'full_name', 'display_name', 'short_name',
             
             # Authentification
-            'password', 'is_active', 'is_staff',
+            'password', 'is_active', 'is_staff', 'is_superuser', 
+            'last_login',
             
             # Relations
             'client_account', 'client_account_name',
@@ -341,10 +343,35 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         return client.get_or_create_admin_role()
 
     def _is_last_admin(self, user):
+        """
+        UPDATED: Check if user is the last superuser instead of last admin role.
+        This prevents lockout by ensuring at least one superuser exists.
+        """
         client = user.client_account
-        # Dernier admin (tous états, actif ou non) pour éviter perte totale d'admin
-        is_admin = (user.role and user.role.name == client.ADMIN_ROLE_NAME) or (user.role_name == client.ADMIN_ROLE_NAME)
-        return is_admin and client.count_admins(active_only=False) == 1
+        # Check if this is the last superuser (active or inactive) to prevent total lockout
+        if user.is_superuser:
+            # Count other superusers besides this one
+            other_superusers = client.users.filter(
+                is_superuser=True
+            ).exclude(id=user.id).count()
+            return other_superusers == 0
+        return False
+    
+    def _is_last_active_admin(self, user):
+        """
+        Check if user is the last ACTIVE superuser.
+        Used for preventing deactivation of the last active superuser.
+        """
+        client = user.client_account
+        # Check if this is the last active superuser
+        if user.is_superuser and user.is_active:
+            # Count other active superusers besides this one
+            other_active_superusers = client.users.filter(
+                is_superuser=True,
+                is_active=True
+            ).exclude(id=user.id).count()
+            return other_active_superusers == 0
+        return False
         
     def get_role_permissions(self, obj):
         """Permissions du rôle utilisateur"""
@@ -512,33 +539,62 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         return user
     
     def update(self, instance, validated_data):
+        """
+        UPDATED: Handle superuser validation instead of admin role validation
+        """
         client = instance.client_account
-        admin_role = self._get_admin_role(client)
 
-        # === RÈGLE DERNIER ADMIN ===
-        is_last_admin = self._is_last_admin(instance)
+        # === RÈGLE DERNIER SUPERUSER ===
+        is_last_superuser = self._is_last_admin(instance)  # Using renamed method
+        is_last_active_superuser = self._is_last_active_admin(instance)
 
-        # Tentative de changement de rôle ?
-        if 'role' in validated_data:
-            new_role = validated_data.get('role')
-            new_is_admin = (new_role and new_role.name == admin_role.name)
-            if is_last_admin and not new_is_admin:
-                # Interdit de retirer/vider le rôle admin au dernier admin
-                raise StandardizedValidationError(CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED)
+        # Tentative de retrait du statut superuser ?
+        if 'is_superuser' in validated_data:
+            new_is_superuser = validated_data.get('is_superuser')
+            if is_last_superuser and new_is_superuser is False:
+                # Interdit de retirer is_superuser au dernier superuser
+                raise StandardizedValidationError(
+                    "Cannot remove superuser status from the last superuser. "
+                    "Promote another user to superuser first."
+                )
 
         # Tentative de désactivation ?
         if 'is_active' in validated_data:
             new_active = validated_data.get('is_active')
-            if is_last_admin and new_active is False:
-                # Interdit de désactiver le dernier admin (évite lock-out)
-                raise StandardizedValidationError(CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED)
+            if is_last_active_superuser and new_active is False:
+                # Interdit de désactiver le dernier superuser actif (évite lock-out)
+                raise StandardizedValidationError(
+                    "Cannot deactivate the last active superuser. "
+                    "Promote another user to superuser first."
+                )
 
-        # === RÈGLE SEATS À L’ACTIVATION ===
+        # === RÈGLE SEATS À L'ACTIVATION ===
         if 'is_active' in validated_data and validated_data['is_active'] is True:
             # Si on était inactif et qu'on veut devenir actif : vérifier places
             if not instance.is_active:
                 if not client.has_available_seat():
                     raise StandardizedValidationError(CoreErrorMessages.SEAT_LIMIT_REACHED)
+
+        # === RÈGLE CHANGEMENT DE RÔLE (gardée pour compatibilité) ===
+        # On garde la logique des rôles car certains users peuvent avoir des rôles sans être superuser
+        admin_role = self._get_admin_role(client)
+        if 'role' in validated_data:
+            new_role = validated_data.get('role')
+            # Si c'est le dernier avec le rôle Admin ET qu'il est superuser, on permet le changement
+            # car superuser a tous les droits anyway
+            old_is_admin_role = (instance.role and instance.role.name == admin_role.name)
+            new_is_admin_role = (new_role and new_role.name == admin_role.name)
+            
+            # Seulement bloquer si on retire le rôle admin à quelqu'un qui n'est PAS superuser
+            # et qui est le dernier admin
+            if old_is_admin_role and not new_is_admin_role and not instance.is_superuser:
+                # Compter les autres admins (par rôle ou superuser)
+                other_admins = client.users.filter(
+                    models.Q(role__name=admin_role.name) | models.Q(is_superuser=True)
+                ).exclude(id=instance.id).count()
+                
+                if other_admins == 0:
+                    raise StandardizedValidationError(CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED)
 
         # Appliquer les autres champs
         password = validated_data.pop('password', None)
@@ -556,12 +612,16 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             else:
                 instance.role_name = None
 
+        # Si on modifie is_superuser, gérer is_staff aussi
+        if 'is_superuser' in validated_data:
+            if validated_data['is_superuser']:
+                instance.is_staff = True  # Superuser devrait avoir accès staff
+
         instance.save()
 
-        # Filet: garantir la présence d'un Admin si besoin
+        # Filet: garantir la présence d'un superuser si besoin
         client.ensure_admin_invariants()
         return instance
-
 
 class UserPerformanceAccessSerializer(ClientScopeManager.SerializerMixin, serializers.Serializer):
     """

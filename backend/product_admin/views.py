@@ -116,15 +116,18 @@ class CreateClientView(APIView):
             admin_data['client_account'] = str(client.id)
 
             # Retrieve the Admin role for the new client (created via signals)
-            try:
-                admin_role = UserRole.objects.get(client_account=client, name="Admin")
-                admin_data['role'] = admin_role.id
-            except UserRole.DoesNotExist:
-                client.delete()  # Rollback the client creation
-                return Response(
-                    {"error": "Admin role not found for the new client."},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+            # try:
+            #     admin_role = UserRole.objects.get(client_account=client, name="Admin")
+            #     admin_data['role'] = admin_role.id
+            # except UserRole.DoesNotExist:
+            #     client.delete()  # Rollback the client creation
+            #     return Response(
+            #         {"error": "Admin role not found for the new client."},
+            #         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            #     )
+
+            admin_data['is_superuser'] = True
+            admin_data['is_staff'] = True  # Also allow Django admin access if needed
 
             user_serializer = UserSerializer(data=admin_data)
             if not user_serializer.is_valid():
@@ -136,13 +139,20 @@ class CreateClientView(APIView):
 
             user = user_serializer.save()
 
+            client.ensure_admin_invariants()
+
             return Response(
-                {
-                    "message": "Client and admin user created successfully.",
-                    "client": client_serializer.data,
-                    "admin": UserSerializer(user).data
-                },
-                status=status.HTTP_201_CREATED,
+                    {
+                        "message": "Client and admin superuser created successfully.",
+                        "client": client_serializer.data,
+                        "admin": UserSerializer(user).data,
+                        "admin_privileges": {
+                            "is_superuser": user.is_superuser,
+                            "is_staff": user.is_staff,
+                            "tenant_scope": "Full rights within their tenant only"
+                        }
+                    },
+                    status=status.HTTP_201_CREATED,
                 )
 
         except PermissionDenied as e:

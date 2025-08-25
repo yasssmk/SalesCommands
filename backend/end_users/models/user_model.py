@@ -104,23 +104,6 @@ class ClientAccount(BaseModel):
         """Count admin users (optionally active-only)."""
         return self.get_admins_queryset(active_only=active_only).count()
 
-    def get_admin_role(self):
-        """Return the Admin role instance for this client or None."""
-        from .user_model import UserRole  # local import to avoid circulars at import time
-        try:
-            return UserRole.objects.get(client_account=self, name=self.ADMIN_ROLE_NAME)
-        except UserRole.DoesNotExist:
-            return None
-
-    def get_or_create_admin_role(self):
-        """Get or create the Admin role for this client."""
-        from .user_model import UserRole
-        role, _ = UserRole.objects.get_or_create(
-            client_account=self,
-            name=self.ADMIN_ROLE_NAME,
-            defaults={'read': True, 'write': True, 'modify': True, 'delete': True}
-        )
-        return role
 
     def ensure_admin_invariants(self):
         """
@@ -134,25 +117,38 @@ class ClientAccount(BaseModel):
         if not self.users.exists():
             return None
 
-        # If at least one admin (even inactive) exists, nothing to do
-        if self.count_admins(active_only=False) > 0:
+        # If at least one superuser exists, nothing to do
+        if self.users.filter(is_superuser=True).exists():
             return None
 
-        admin_role = self.get_or_create_admin_role()
-
+        # Need to promote someone to superuser
         # Prefer an active user; else any recent user
         candidate = self.get_active_users_queryset().order_by('-created_at').first()
         if candidate is None:
             candidate = self.users.order_by('-created_at').first()
 
         if candidate:
-            candidate.role = admin_role
-            candidate.role_name = admin_role.name
-            # keep candidate.is_active as-is; we only ensure role invariants here
-            candidate.save(update_fields=['role', 'role_name', 'updated_at'])
+            # Make them superuser (keep their role as-is)
+            candidate.is_superuser = True
+            candidate.is_staff = True  # Also give staff access for Django admin
+            candidate.save(update_fields=['is_superuser', 'is_staff', 'updated_at'])
+            
+            # Log this important action
+            from django.utils import timezone
+            print(f"[SECURITY] User {candidate.email} promoted to superuser for client {self.name} at {timezone.now()}")
+            
             return candidate
 
         return None
+    
+    def get_superusers_queryset(self, active_only=True):
+        """Return queryset of superuser users (optionally active-only)."""
+        qs = self.users.filter(is_superuser=True)
+        return qs.filter(is_active=True) if active_only else qs
+
+    def count_superusers(self, active_only=True):
+        """Count superuser users (optionally active-only)."""
+        return self.get_superusers_queryset(active_only=active_only).count()
     
     def get_fiscal_year_dates(self, year=None):
         """
