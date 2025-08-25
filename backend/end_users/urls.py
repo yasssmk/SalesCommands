@@ -136,6 +136,10 @@ urlpatterns = [
         'delete': 'destroy'
     }), name='user-detail'),
 
+    path('users/<uuid:pk>/change-password/', UserViewSet.as_view({
+        'patch': 'change_password'
+    }), name='user-change-password'),
+
     # Création en lot
     path('users/bulk-create/', UserViewSet.as_view({
         'post': 'bulk_create'

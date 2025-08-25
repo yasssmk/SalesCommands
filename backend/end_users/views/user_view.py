@@ -437,6 +437,75 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
         except Exception as e:
             return self.handle_exception(e)
     
+    @action(detail=True, methods=['patch'], url_path='change-password')
+    def change_password(self, request, pk=None):
+        """
+        Change le mot de passe d'un utilisateur.
+        PATCH /client/users/{id}/change-password/
+        
+        Permissions:
+        - Admin: peut changer le mot de passe de n'importe quel utilisateur de son client
+        - User: peut seulement changer son propre mot de passe
+        
+        Body:
+        {
+            "password": "new_password",
+            "password_confirm": "new_password"
+        }
+        """
+        try:
+            # Récupérer l'utilisateur cible
+            target_user = self.get_object()
+            
+            # Validation client scoping (vérifie que l'utilisateur appartient au bon client)
+            self.validate_client_id(target_user)
+            
+            # Récupérer l'utilisateur connecté et son rôle
+            current_user = request.user
+            current_role = request.auth.get('role') if request.auth else None
+            
+            # Vérification des permissions
+            if current_role != 'Admin' and str(current_user.id) != str(target_user.id):
+                raise StandardizedValidationError(
+                    "You can only change your own password"
+                )
+            
+            # Import du serializer (à ajouter en haut du fichier si pas déjà fait)
+            from ..serializers.user_serializer import ChangePasswordSerializer
+            
+            # Validation avec le serializer
+            serializer = ChangePasswordSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
+            # Mettre à jour le mot de passe
+            serializer.update_password(target_user, serializer.validated_data)
+            
+            # Logger l'action si nécessaire (optionnel)
+            if current_role == 'Admin' and str(current_user.id) != str(target_user.id):
+                # Admin a changé le mot de passe d'un autre utilisateur
+                print(f"Admin {current_user.email} changed password for {target_user.email}")
+            
+            return Response({
+                'success': True,
+                'message': 'Password changed successfully',
+                'user': {
+                    'id': str(target_user.id),
+                    'email': target_user.email,
+                    'name': target_user.get_full_name()
+                }
+            })
+            
+        except User.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        except StandardizedValidationError:
+            # Re-raise les erreurs de validation déjà formatées
+            raise
+        except Exception as e:
+            # Gestion des erreurs inattendues
+            raise StandardizedValidationError(
+                f"Failed to change password: {str(e)}"
+            )
+    
     def destroy(self, request, *args, **kwargs):
         """
         Supprimer un utilisateur

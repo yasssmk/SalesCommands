@@ -588,3 +588,64 @@ class UserPerformanceAccessSerializer(ClientScopeManager.SerializerMixin, serial
             raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
         
         return value
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """
+    Serializer pour le changement de mot de passe utilisateur.
+    Validation simple : les deux mots de passe doivent être identiques.
+    Pas de règles de complexité selon les specs MVP.
+    """
+    password = serializers.CharField(
+        required=True,
+        write_only=True,
+        style={'input_type': 'password'},
+        min_length=1,  # Au moins 1 caractère, pas de règle de complexité
+        help_text='New password'
+    )
+    
+    password_confirm = serializers.CharField(
+        required=True,
+        write_only=True,
+        style={'input_type': 'password'},
+        help_text='Confirm new password'
+    )
+    
+    def validate(self, attrs):
+        """
+        Validation simple : vérifier que les deux mots de passe sont identiques.
+        """
+        password = attrs.get('password')
+        password_confirm = attrs.get('password_confirm')
+        
+        # Vérification de présence (normalement déjà fait par required=True)
+        if not password or not password_confirm:
+            raise serializers.ValidationError({
+                'password': CoreErrorMessages.REQUIRED_FIELD.format(field='Password'),
+                'password_confirm': CoreErrorMessages.REQUIRED_FIELD.format(field='Password confirmation')
+            })
+        
+        # Vérification d'égalité
+        if password != password_confirm:
+            raise serializers.ValidationError({
+                'password_confirm': 'Passwords do not match'
+            })
+        
+        # On ne retourne que le password (pas besoin de password_confirm après validation)
+        return {
+            'password': password
+        }
+    
+    def update_password(self, user, validated_data):
+        """
+        Méthode helper pour mettre à jour le mot de passe de l'utilisateur.
+        
+        Args:
+            user: Instance User à mettre à jour
+            validated_data: Données validées contenant le nouveau mot de passe
+            
+        Returns:
+            user: L'instance User mise à jour
+        """
+        user.set_password(validated_data['password'])
+        user.save(update_fields=['password', 'updated_at'])
+        return user
