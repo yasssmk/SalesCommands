@@ -500,11 +500,7 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
         except StandardizedValidationError:
             # Re-raise les erreurs de validation déjà formatées
             raise
-        except Exception as e:
-            # Gestion des erreurs inattendues
-            raise StandardizedValidationError(
-                f"Failed to change password: {str(e)}"
-            )
+
     
     def destroy(self, request, *args, **kwargs):
         """

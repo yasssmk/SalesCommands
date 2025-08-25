@@ -620,15 +620,16 @@ class ChangePasswordSerializer(serializers.Serializer):
         # Vérification de présence (normalement déjà fait par required=True)
         if not password or not password_confirm:
             raise serializers.ValidationError({
-                'password': CoreErrorMessages.REQUIRED_FIELD.format(field='Password'),
-                'password_confirm': CoreErrorMessages.REQUIRED_FIELD.format(field='Password confirmation')
+                CoreErrorMessages.REQUIRED_FIELD.format(field='Password'),
+                CoreErrorMessages.REQUIRED_FIELD.format(field='Password confirmation')
             })
         
         # Vérification d'égalité
         if password != password_confirm:
             raise serializers.ValidationError({
-                'password_confirm': 'Passwords do not match'
+                'Passwords do not match'
             })
+        
         
         # On ne retourne que le password (pas besoin de password_confirm après validation)
         return {

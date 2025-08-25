@@ -3,7 +3,7 @@
 'use client';
 
 import PropTypes from 'prop-types';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 // next
 import { useRouter } from 'next/navigation';
@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 // material-ui
 import Button from '@mui/material/Button';
 import FormHelperText from '@mui/material/FormHelperText';
+import FormControl from '@mui/material/FormControl';
 import Grid from '@mui/material/Unstable_Grid2';
 import InputAdornment from '@mui/material/InputAdornment';
 import InputLabel from '@mui/material/InputLabel';
@@ -28,6 +29,7 @@ import IconButton from 'components/@extended/IconButton';
 import AnimateButton from 'components/@extended/AnimateButton';
 import { openSnackbar } from 'api/snackbar';
 import { changePassword } from 'api/admin/users';
+import { strengthColor, strengthIndicator } from 'utils/password-strength';
 
 // assets
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
@@ -40,6 +42,7 @@ export default function AuthChangePassword({ userId, userEmail }) {
   
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [level, setLevel] = useState();
   
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
@@ -48,6 +51,15 @@ export default function AuthChangePassword({ userId, userEmail }) {
   const handleClickShowConfirmPassword = () => {
     setShowConfirmPassword(!showConfirmPassword);
   };
+
+   const updateStrength = (value) => {
+    const temp = strengthIndicator(value);
+    setLevel(strengthColor(temp));
+  };
+
+  useEffect(() => {
+    updateStrength('');
+  }, []);
 
   const handleMouseDownPassword = (event) => {
     event.preventDefault();
@@ -130,7 +142,7 @@ export default function AuthChangePassword({ userId, userEmail }) {
           <Grid container spacing={3}>
             {/* Info utilisateur */}
             {userEmail && (
-              <Grid size={12}>
+              <Grid xs={12}>
                 <Box sx={{ 
                   p: 2, 
                   bgcolor: 'background.paper', 
@@ -149,7 +161,7 @@ export default function AuthChangePassword({ userId, userEmail }) {
             )}
             
             {/* Nouveau mot de passe */}
-            <Grid size={12}>
+            <Grid xs={12}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="password-change">New Password</InputLabel>
                 <OutlinedInput
@@ -160,7 +172,10 @@ export default function AuthChangePassword({ userId, userEmail }) {
                   value={values.password}
                   name="password"
                   onBlur={handleBlur}
-                  onChange={handleChange}
+                  onChange={(e) => {
+                    handleChange(e);
+                    updateStrength(e.target.value);
+                  }}
                   endAdornment={
                     <InputAdornment position="end">
                       <IconButton
@@ -182,10 +197,22 @@ export default function AuthChangePassword({ userId, userEmail }) {
                   {errors.password}
                 </FormHelperText>
               )}
+              <FormControl fullWidth sx={{ mt: 2 }}>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid >
+                    <Box sx={{ bgcolor: level?.color, width: 85, height: 8, borderRadius: '7px' }} />
+                  </Grid>
+                  <Grid >
+                    <Typography variant="subtitle1" fontSize="0.75rem">
+                      {level?.label}
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </FormControl>
             </Grid>
             
             {/* Confirmation du mot de passe */}
-            <Grid size={12}>
+            <Grid xs={12}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="confirm-password-change">Confirm New Password</InputLabel>
                 <OutlinedInput
@@ -222,13 +249,13 @@ export default function AuthChangePassword({ userId, userEmail }) {
 
             {/* Message d'erreur général */}
             {errors.submit && (
-              <Grid size={12}>
+              <Grid xs={12} >
                 <FormHelperText error>{errors.submit}</FormHelperText>
               </Grid>
             )}
             
             {/* Boutons d'action */}
-            <Grid size={12}>
+            <Grid xs={12}>
               <Stack direction="row" spacing={2}>
                 <AnimateButton>
                   <Button 
