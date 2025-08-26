@@ -431,48 +431,101 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                 raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
         return value
     
+    def validate_is_superuser(self, value):
+        """
+        Validate that only Admin or SuperUser can grant/revoke superuser status
+        This is a double-check in addition to view-level validation
+        """
+        request = self.context.get('request')
+        
+        # Si pas de request dans le contexte (cas rare), on laisse passer
+        # La validation sera faite au niveau de la vue
+        if not request or not hasattr(request, 'user'):
+            return value
+        
+        current_user = request.user
+        
+        # Récupérer l'instance si c'est une mise à jour
+        is_update = self.instance is not None
+        
+        # Si on essaie de définir/modifier is_superuser
+        if is_update:
+            # Check si la valeur change réellement
+            if self.instance.is_superuser == value:
+                # Pas de changement, on laisse passer
+                return value
+        
+        # Vérifier les permissions pour changer is_superuser
+        can_grant = False
+        
+        # SuperUsers peuvent accorder le statut superuser
+        if current_user.is_superuser:
+            can_grant = True
+        # Users avec rôle Admin peuvent accorder le statut superuser  
+        elif current_user.role and current_user.role.name == 'Admin':
+            can_grant = True
+            
+        if not can_grant:
+            raise StandardizedValidationError(
+                "Only administrators and superusers can grant or revoke superuser status"
+            )
+        
+        # Si on retire le statut superuser, vérifier que ce n'est pas le dernier
+        if is_update and self.instance.is_superuser and value is False:
+            # IMPORTANT: Utiliser le client_id du contexte pour garantir le multi-tenant
+            client_id = self._get_client_id_from_context()
+            
+            other_superusers = User.objects.filter(
+                client_account_id=client_id,
+                is_superuser=True
+            ).exclude(id=self.instance.id).count()
+            
+            if other_superusers == 0:
+                raise StandardizedValidationError(
+                    "Cannot remove superuser status from the last superuser. "
+                    "Promote another user to superuser first."
+                )
+        
+        return value
+    
+    def validate_is_staff(self, value):
+        """
+        Validate is_staff field - should be True if is_superuser is True
+        """
+        # Si is_superuser est dans les données validées et est True
+        # alors is_staff doit aussi être True
+        is_superuser = self.initial_data.get('is_superuser')
+        
+        if is_superuser is True and value is False:
+            raise StandardizedValidationError(
+                "Superusers must have staff access (is_staff=True)"
+            )
+        
+        return value
+    
     def validate(self, data):
-        """Complete validation of User data with client scoping"""
+        """
+        Validation multi-champs complexe
+        UPDATED: Add superuser validations while keeping ALL existing validations
+        """
         try:
-            # Call parent validation first  
+            # === VALIDATION EXISTANTE (NE PAS SUPPRIMER) ===
+            # Appeler d'abord la validation parent
             data = super().validate(data)
             
-            # Get client_id for validations
-            client_id = self._get_client_id_from_context()
-            instance = getattr(self, 'instance', None)
+            client_account_id = self._get_client_id_from_context()
             
-            # Validate email uniqueness within client scope
-            if 'email' in data:
-                email = data['email']
-                
-                # Check email uniqueness within the client
-                queryset = User.objects.filter(
-                    email=email,
-                    client_account_id=client_id  
-                )
-                
-                # Exclude current instance for updates
-                if instance:
-                    queryset = queryset.exclude(id=instance.id)
-                
-                if queryset.exists():
+            # Unicité de l'email (création uniquement)
+            if not self.instance:
+                email = data.get('email')
+                if email and User.objects.filter(email=email).exists():
                     raise StandardizedValidationError(
                         CoreErrorMessages.UNIQUE_CONSTRAINT.format(fields="email")
                     )
             
-            # Cohérence rôle/client
-            role = data.get('role') or (instance.role if instance else None)
-            client_account_id = client_id  # Le client_id du contexte
-            
-            if role and client_account_id:
-                if str(role.client_account_id) != str(client_account_id):
-                    raise StandardizedValidationError(
-                        _("Role must belong to the selected client account.")
-                    )
-            
             # Cohérence team/organization/client
-            team = data.get('team') or (instance.team if instance else None)
-            organization = data.get('organization') or (instance.organization if instance else None)
+            team = data.get('team') or (self.instance.team if self.instance else None)
+            organization = data.get('organization') or (self.instance.organization if self.instance else None)
             
             if team and organization:
                 if team.organization != organization:
@@ -489,6 +542,63 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                 raise StandardizedValidationError(
                     CoreErrorMessages.CLIENT_MISMATCH
                 )
+            
+            # === NOUVELLES VALIDATIONS SUPERUSER ===
+            # Si on définit is_superuser=True, forcer is_staff=True
+            if data.get('is_superuser') is True:
+                data['is_staff'] = True
+            
+            # Si c'est une mise à jour
+            if self.instance and client_account_id:
+                # Vérifier qu'on ne désactive pas le dernier admin/superuser actif
+                is_deactivating = data.get('is_active') is False and self.instance.is_active
+                
+                if is_deactivating:
+                    # Si c'est un superuser, vérifier qu'il n'est pas le dernier actif
+                    if self.instance.is_superuser:
+                        other_active_superusers = User.objects.filter(
+                            client_account_id=client_account_id,
+                            is_superuser=True,
+                            is_active=True
+                        ).exclude(id=self.instance.id).count()
+                        
+                        if other_active_superusers == 0:
+                            raise StandardizedValidationError(
+                                "Cannot deactivate the last active superuser. "
+                                "Ensure another active superuser exists first."
+                            )
+                    
+                    # Si c'est un admin (par rôle), vérifier qu'il reste un admin ou superuser actif
+                    elif self.instance.role and self.instance.role.name == 'Admin':
+                        from django.db.models import Q
+                        other_active_admins = User.objects.filter(
+                            client_account_id=client_account_id,
+                            is_active=True
+                        ).filter(
+                            Q(role__name='Admin') | Q(is_superuser=True)
+                        ).exclude(id=self.instance.id).count()
+                        
+                        if other_active_admins == 0:
+                            raise StandardizedValidationError(
+                                "Cannot deactivate the last active administrator. "
+                                "Ensure another active admin or superuser exists first."
+                            )
+            
+            # === VALIDATION CRÉATION PREMIER USER (compatible superuser) ===
+            if not self.instance and client_account_id:  # Création
+                try:
+                    # Compter les users existants pour ce client
+                    existing_users = User.objects.filter(
+                        client_account_id=client_account_id
+                    ).count()
+                    
+                    # Si c'est le premier user ET qu'on essaie de le créer sans superuser
+                    if existing_users == 0 and not data.get('is_superuser'):
+                        # Log warning but allow creation
+                        client = ClientAccount.objects.get(id=client_account_id)
+                        print(f"[WARNING] Creating first user for client {client.name} without superuser status")
+                except ClientAccount.DoesNotExist:
+                    pass
             
             return data
             

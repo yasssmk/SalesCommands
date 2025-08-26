@@ -613,3 +613,230 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
             return True
             
         return False
+    
+    def has_admin_rights(self):
+        """
+        Check if user has administrative rights in their tenant.
+        Returns True if user is either:
+        - A superuser (is_superuser=True)
+        - Has Admin role
+        """
+        # Superuser a toujours les droits admin
+        if self.is_superuser:
+            return True
+        
+        # Vérifier le rôle Admin
+        if self.role and self.role.name == 'Admin':
+            return True
+        
+        # Vérifier aussi via role_name (cache)
+        if self.role_name == 'Admin':
+            return True
+        
+        return False
+    
+    def can_grant_superuser(self):
+        """
+        Check if this user can grant or revoke superuser status to others.
+        Only superusers and Admin role users can do this.
+        """
+        return self.has_admin_rights()
+    
+    def can_modify_user(self, target_user):
+        """
+        Check if this user can modify another user's data.
+        
+        Args:
+            target_user: The user to be modified
+            
+        Returns:
+            bool: True if modification is allowed
+        """
+        # Peut modifier ses propres données
+        if self == target_user:
+            return True
+        
+        # Superuser peut modifier tout le monde dans son tenant
+        if self.is_superuser:
+            # Vérifier qu'ils sont dans le même tenant
+            return self.client_account_id == target_user.client_account_id
+        
+        # Admin peut modifier tout le monde dans son tenant
+        if self.role and self.role.name == 'Admin':
+            return self.client_account_id == target_user.client_account_id
+        
+        # Manager peut modifier les membres de son équipe
+        if self.is_manager():
+            return target_user in self.get_managed_users()
+        
+        return False
+    
+    def can_delete_user(self, target_user):
+        """
+        Check if this user can delete another user.
+        
+        Args:
+            target_user: The user to be deleted
+            
+        Returns:
+            bool: True if deletion is allowed
+        """
+        # Personne ne peut se supprimer soi-même
+        if self == target_user:
+            return False
+        
+        # Superuser peut supprimer tout le monde (sauf lui-même) dans son tenant
+        if self.is_superuser:
+            return self.client_account_id == target_user.client_account_id
+        
+        # Admin peut supprimer tout le monde (sauf lui-même) dans son tenant
+        if self.role and self.role.name == 'Admin':
+            return self.client_account_id == target_user.client_account_id
+        
+        # Manager peut supprimer les membres de son équipe
+        if self.is_manager():
+            return target_user in self.get_managed_users()
+        
+        return False
+    
+    def can_view_all_users(self):
+        """
+        Check if this user can view all users in their tenant.
+        """
+        # Superusers et Admins peuvent voir tous les utilisateurs
+        return self.has_admin_rights()
+    
+    def can_manage_roles(self):
+        """
+        Check if this user can manage roles and permissions.
+        """
+        # Seuls les superusers et admins peuvent gérer les rôles
+        return self.has_admin_rights()
+    
+    def can_manage_teams(self):
+        """
+        Check if this user can create/modify/delete teams.
+        """
+        # Superusers et Admins peuvent gérer toutes les équipes
+        if self.has_admin_rights():
+            return True
+        
+        # Les managers peuvent gérer leurs propres équipes
+        return self.managed_teams.exists()
+    
+    def can_manage_organizations(self):
+        """
+        Check if this user can create/modify/delete organizations.
+        """
+        # Superusers et Admins peuvent gérer toutes les organisations
+        if self.has_admin_rights():
+            return True
+        
+        # Les directeurs peuvent gérer leurs propres organisations
+        return self.managed_organizations.exists()
+    
+    def get_permission_level(self):
+        """
+        Get a string representation of the user's permission level.
+        Useful for UI display.
+        
+        Returns:
+            str: Permission level description
+        """
+        if self.is_superuser:
+            return "Superuser (Full Admin)"
+        elif self.role and self.role.name == 'Admin':
+            return "Administrator"
+        elif self.is_manager():
+            if self.managed_organizations.exists():
+                return "Organization Manager"
+            elif self.managed_teams.exists():
+                return "Team Manager"
+        elif self.role:
+            return self.role.name
+        else:
+            return "User"
+    
+    def get_permission_summary(self):
+        """
+        Get a detailed summary of user's permissions.
+        Useful for security audits and UI display.
+        
+        Returns:
+            dict: Detailed permission summary
+        """
+        return {
+            'is_superuser': self.is_superuser,
+            'is_staff': self.is_staff,
+            'has_admin_rights': self.has_admin_rights(),
+            'permission_level': self.get_permission_level(),
+            'role': {
+                'name': self.role.name if self.role else None,
+                'read': self.role.read if self.role else False,
+                'write': self.role.write if self.role else False,
+                'modify': self.role.modify if self.role else False,
+                'delete': self.role.delete if self.role else False,
+            } if self.role else None,
+            'capabilities': {
+                'can_grant_superuser': self.can_grant_superuser(),
+                'can_manage_roles': self.can_manage_roles(),
+                'can_view_all_users': self.can_view_all_users(),
+                'can_manage_teams': self.can_manage_teams(),
+                'can_manage_organizations': self.can_manage_organizations(),
+            },
+            'management': {
+                'is_manager': self.is_manager(),
+                'managed_teams_count': self.managed_teams.count(),
+                'managed_organizations_count': self.managed_organizations.count(),
+                'managed_users_count': self.get_managed_users().count(),
+            }
+        }
+    
+    def ensure_superuser_consistency(self):
+        """
+        Ensure consistency of superuser-related fields.
+        Called after save to maintain data integrity.
+        """
+        updated = False
+        
+        # Si superuser, doit avoir is_staff
+        if self.is_superuser and not self.is_staff:
+            self.is_staff = True
+            updated = True
+        
+        if updated:
+            self.save(update_fields=['is_staff', 'updated_at'])
+    
+    def is_last_superuser(self):
+        """
+        Check if this user is the last superuser in their tenant.
+        """
+        if not self.is_superuser:
+            return False
+        
+        other_superusers = User.objects.filter(
+            client_account_id=self.client_account_id,
+            is_superuser=True
+        ).exclude(id=self.id).count()
+        
+        return other_superusers == 0
+    
+    def is_last_active_admin(self):
+        """
+        Check if this user is the last active admin (superuser OR Admin role).
+        """
+        if not self.is_active:
+            return False
+        
+        if not self.has_admin_rights():
+            return False
+        
+        from django.db.models import Q
+        other_active_admins = User.objects.filter(
+            client_account_id=self.client_account_id,
+            is_active=True
+        ).filter(
+            Q(is_superuser=True) | Q(role__name='Admin')
+        ).exclude(id=self.id).count()
+        
+        return other_active_admins == 0

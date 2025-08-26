@@ -387,6 +387,45 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
             }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return self.handle_exception(e)
+        
+    def create(self, request, *args, **kwargs):
+        """
+        Créer un nouvel utilisateur
+        POST /client/users/
+        
+        Permissions:
+        - Tous les utilisateurs authentifiés peuvent créer des users SANS is_superuser
+        - Seuls Admin et SuperUser peuvent créer des users AVEC is_superuser=True
+        """
+        try:
+            with transaction.atomic():
+                # Validate superuser permission if trying to create a superuser
+                self._validate_superuser_modification(request.user, request.data)
+                
+                # Serializer avec validation
+                serializer = UserSerializer(
+                    data=request.data, 
+                    context={'request': request, 'client_id': self.get_client_id()}
+                )
+                
+                # Validation avec raise_exception=True
+                serializer.is_valid(raise_exception=True)
+                
+                # Créer l'utilisateur
+                user = serializer.save()
+                
+                # Assurer les invariants
+                user.client_account.ensure_admin_invariants()
+                
+                return Response({
+                    'success': True,
+                    'message': f'User "{user.get_full_name()}" created successfully',
+                    'data': UserSerializer(user).data
+                }, status=status.HTTP_201_CREATED)
+                
+        except Exception as e:
+            return self.handle_exception(e)
+
     
     def partial_update(self, request, *args, **kwargs):
         """
@@ -403,6 +442,8 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
                 
                 # Validation des permissions
                 self._validate_user_update_permissions(request.user, user)
+
+                self._validate_superuser_modification(request.user, request.data, user)
                 
                 # Serializer avec validation
                 serializer = UserSerializer(
@@ -412,14 +453,10 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
                     context={'request': request, 'client_id': self.get_client_id()}
                 )
                 
-                if not serializer.is_valid():
-                    return Response({
-                        'success': False,
-                        'error': CoreErrorMessages.INVALID_DATA.format(detail=serializer.errors)
-                    }, status=status.HTTP_400_BAD_REQUEST)
+                serializer.is_valid(raise_exception=True)
                 
                 # Sauvegarder les modifications
-                updated_user = serializer.save(user=request.user)
+                updated_user = serializer.save()
 
                 updated_user.client_account.ensure_admin_invariants()
                 
@@ -553,6 +590,10 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
         if current_user == target_user:
             return True
         
+        # SuperUser peut modifier tout le monde dans son tenant
+        if current_user.is_superuser:
+            return True
+        
         # Admin peut modifier tout le monde
         if current_user.role and current_user.role.name == 'Admin':
             return True
@@ -573,49 +614,92 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
                 "You cannot delete your own account"
             )
         
+        # SuperUser peut supprimer tout le monde (sauf lui-même) dans son tenant
+        if current_user.is_superuser:
+            return True
+        
         # Admin peut supprimer tout le monde (sauf lui-même)
         if current_user.role and current_user.role.name == 'Admin':
             return True
-        
-        # Manager peut supprimer les membres de son équipe
-        if target_user in current_user.get_managed_users():
-            return True
-        
+                
         raise StandardizedValidationError(
             CoreErrorMessages.PERMISSION_DENIED
         )
     
+    def _can_grant_superuser(self, current_user):
+        """
+        Check if the current user can grant/revoke superuser status
+        Only SuperUsers and Admin role users can grant superuser status
+        """
+        # SuperUsers can grant superuser status
+        if current_user.is_superuser:
+            return True
+        
+        # Users with Admin role can grant superuser status
+        if current_user.role and current_user.role.name == 'Admin':
+            return True
+        
+        return False
+    
+    def _validate_superuser_modification(self, current_user, request_data, target_user=None):
+        """
+        Validate if the current user can modify superuser status
+        Called before create or update operations
+        """
+        # Check if trying to set/modify is_superuser
+        if 'is_superuser' in request_data:
+            if not self._can_grant_superuser(current_user):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.PERMISSION_DENIED
+                )
+            
+            # If removing superuser status, check it's not the last one
+            if target_user and target_user.is_superuser and request_data.get('is_superuser') is False:
+                # This will be double-checked in the serializer, but good to check here too
+                client = target_user.client_account
+                other_superusers = client.users.filter(
+                    is_superuser=True
+                ).exclude(id=target_user.id).count()
+                
+                if other_superusers == 0:
+                    raise StandardizedValidationError(
+                        "Cannot remove superuser status from the last superuser. "
+                        "Promote another user to superuser first."
+                    )
+    
     def _validate_user_deletion(self, user):
-        """Valider si l'utilisateur peut être supprimé"""
-        # Vérifier s'il est manager d'équipes
-        if user.managed_teams.exists():
-            raise StandardizedValidationError(
-                CoreErrorMessages.OBJECT_IN_USE.format(
-                    fields="User is managing teams and cannot be deleted"
+        """
+        Valider si l'utilisateur peut être supprimé
+        UPDATED: Prevent deletion of last superuser
+        """
+        client = user.client_account
+        
+        # Check if this is the last superuser
+        if user.is_superuser:
+            other_superusers = client.users.filter(
+                is_superuser=True
+            ).exclude(id=user.id).count()
+            
+            if other_superusers == 0:
+                raise StandardizedValidationError(
+                    "Cannot delete the last superuser. "
+                    "Promote another user to superuser first."
                 )
-            )
-
-        # Vérifier s'il est manager d'organisations
-        if user.managed_organizations.exists():
-            raise StandardizedValidationError(
-                CoreErrorMessages.OBJECT_IN_USE.format(
-                    fields="User is managing organizations and cannot be deleted"
-                )
-            )
-
-        # Vérifier s'il est le dernier admin du client
+        
+        # Ancienne logique pour les rôles (conservée pour compatibilité)
+        # Si c'est le dernier admin ET qu'il n'y a pas de superuser
         if user.role and user.role.name == 'Admin':
-            admin_count = User.objects.filter(
-                client_account=user.client_account,
-                role__name='Admin',
-                is_active=True
-            ).count()
-
-            if admin_count <= 1:
-                # ✅ message standardisé (tu fournis le texte dans CoreErrorMessages)
-                raise StandardizedValidationError(CoreErrorMessages.LAST_ADMIN_REQUIRED)
-
-        return True
+            # Compter les autres admins ou superusers
+            from django.db.models import Q
+            other_admins_or_super = client.users.filter(
+                Q(role__name='Admin') | Q(is_superuser=True)
+            ).exclude(id=user.id).count()
+            
+            if other_admins_or_super == 0:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.LAST_ADMIN_REQUIRED
+                )
+        
     
     @action(detail=True, methods=['get'])
     def performance(self, request, pk=None):
@@ -838,6 +922,191 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
             'data': managers_data,
             'total_managers': len(managers_data)
         })
+    
+    @action(detail=False, methods=['get'], url_path='superusers')
+    def superusers(self, request):
+        """
+        Liste tous les superusers du tenant actuel
+        GET /client/users/superusers/
+        
+        Permissions:
+        - Accessible uniquement aux Admin et SuperUser
+        
+        Returns:
+        - Liste des superusers avec leurs informations
+        - Statistiques sur les superusers du tenant
+        """
+        try:
+            # Vérifier les permissions - seuls Admin et SuperUser peuvent voir cette liste
+            current_user = request.user
+            
+            is_authorized = False
+            if current_user.is_superuser:
+                is_authorized = True
+            elif current_user.role and current_user.role.name == 'Admin':
+                is_authorized = True
+            
+            if not is_authorized:
+                raise StandardizedValidationError(
+                    "Only administrators and superusers can view the superusers list"
+                )
+            
+            # Récupérer le client_id du contexte pour garantir le multi-tenant
+            client_id = self.get_client_id()
+            
+            # Filtrer les superusers du tenant actuel
+            superusers = User.objects.filter(
+                client_account_id=client_id,
+                is_superuser=True
+            ).select_related('role', 'team', 'organization').order_by('-is_active', 'first_name', 'last_name')
+            
+            # Préparer les données détaillées pour chaque superuser
+            superusers_data = []
+            for user in superusers:
+                superusers_data.append({
+                    'id': str(user.id),
+                    'email': user.email,
+                    'name': user.get_full_name(),
+                    'is_active': user.is_active,
+                    'is_staff': user.is_staff,
+                    'role': {
+                        'id': str(user.role.id) if user.role else None,
+                        'name': user.role.name if user.role else None
+                    },
+                    'organization': {
+                        'id': str(user.organization.id) if user.organization else None,
+                        'name': user.organization.name if user.organization else None
+                    },
+                    'team': {
+                        'id': str(user.team.id) if user.team else None,
+                        'name': user.team.name if user.team else None
+                    },
+                    'last_login': user.last_login.isoformat() if user.last_login else None,
+                    'created_at': user.created_at.isoformat(),
+                    'updated_at': user.updated_at.isoformat()
+                })
+            
+            # Calculer les statistiques
+            total_superusers = len(superusers_data)
+            active_superusers = superusers.filter(is_active=True).count()
+            inactive_superusers = total_superusers - active_superusers
+            
+            # Compter aussi les admins par rôle pour comparaison
+            admin_role_users = User.objects.filter(
+                client_account_id=client_id,
+                role__name='Admin',
+                is_active=True
+            ).exclude(is_superuser=True).count()  # Admins qui ne sont PAS superusers
+            
+            return Response({
+                'success': True,
+                'data': superusers_data,
+                'statistics': {
+                    'total_superusers': total_superusers,
+                    'active_superusers': active_superusers,
+                    'inactive_superusers': inactive_superusers,
+                    'admin_role_users_non_super': admin_role_users,
+                    'total_administrators': active_superusers + admin_role_users  # Total avec droits admin
+                },
+                'permissions_info': {
+                    'description': 'Superusers have full administrative rights within this tenant',
+                    'can_grant_superuser': current_user.is_superuser or (current_user.role and current_user.role.name == 'Admin'),
+                    'current_user_is_superuser': current_user.is_superuser
+                }
+            })
+            
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    @action(detail=False, methods=['post'], url_path='grant-superuser')
+    def grant_superuser(self, request):
+        """
+        Accorder le statut superuser à un utilisateur
+        POST /client/users/grant-superuser/
+        
+        Body:
+        {
+            "user_id": "uuid",
+            "grant": true/false  // true pour accorder, false pour retirer
+        }
+        
+        Permissions:
+        - Accessible uniquement aux Admin et SuperUser
+        """
+        try:
+            # Vérifier les permissions
+            if not self._can_grant_superuser(request.user):
+                raise StandardizedValidationError(
+                    "Only administrators and superusers can grant or revoke superuser status"
+                )
+            
+            # Récupérer les paramètres
+            user_id = request.data.get('user_id')
+            grant = request.data.get('grant', True)
+            
+            if not user_id:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='user_id')
+                )
+            
+            # Récupérer l'utilisateur cible
+            client_id = self.get_client_id()
+            try:
+                target_user = User.objects.get(
+                    id=user_id,
+                    client_account_id=client_id
+                )
+            except User.DoesNotExist:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.OBJECT_NOT_FOUND
+                )
+            
+            # Vérifier qu'on ne modifie pas son propre statut
+            if target_user == request.user:
+                raise StandardizedValidationError(
+                    "You cannot modify your own superuser status"
+                )
+            
+            # Si on retire le statut, vérifier que ce n'est pas le dernier
+            if not grant and target_user.is_superuser:
+                other_superusers = User.objects.filter(
+                    client_account_id=client_id,
+                    is_superuser=True
+                ).exclude(id=target_user.id).count()
+                
+                if other_superusers == 0:
+                    raise StandardizedValidationError(
+                        "Cannot remove superuser status from the last superuser"
+                    )
+            
+            # Appliquer le changement
+            with transaction.atomic():
+                target_user.is_superuser = grant
+                if grant:
+                    target_user.is_staff = True  # Superuser doit avoir is_staff
+                target_user.save(update_fields=['is_superuser', 'is_staff', 'updated_at'])
+                
+                # Log l'action
+                action = "granted to" if grant else "revoked from"
+                print(f"[AUDIT] Superuser status {action} {target_user.email} by {request.user.email}")
+                
+                # Assurer les invariants
+                target_user.client_account.ensure_admin_invariants()
+            
+            return Response({
+                'success': True,
+                'message': f"Superuser status {'granted' if grant else 'revoked'} successfully",
+                'user': {
+                    'id': str(target_user.id),
+                    'email': target_user.email,
+                    'name': target_user.get_full_name(),
+                    'is_superuser': target_user.is_superuser,
+                    'is_staff': target_user.is_staff
+                }
+            })
+            
+        except Exception as e:
+            return self.handle_exception(e)
 
 
 # ===== VUES D'AUTHENTIFICATION =====

@@ -136,6 +136,15 @@ urlpatterns = [
         'delete': 'destroy'
     }), name='user-detail'),
 
+    path('users/superusers/', UserViewSet.as_view({
+        'get': 'superusers'
+    }), name='user-superusers'),
+    
+    # Accorder/Retirer le statut superuser
+    path('users/grant-superuser/', UserViewSet.as_view({
+        'post': 'grant_superuser'
+    }), name='user-grant-superuser'),
+
     path('users/<uuid:pk>/change-password/', UserViewSet.as_view({
         'patch': 'change_password'
     }), name='user-change-password'),
