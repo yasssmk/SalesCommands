@@ -71,6 +71,32 @@ class ClientAccount(BaseModel):
     
     ADMIN_ROLE_NAME = 'Admin'
 
+    def get_or_create_admin_role(self):
+        """
+        Get or create the Admin role for this client account.
+        
+        Le rôle Admin devrait normalement être créé par le signal lors de la création
+        du ClientAccount. Cette méthode garantit qu'il existe dans tous les cas.
+        
+        Returns:
+            UserRole: The Admin role instance for this client
+        """
+        from end_users.models import UserRole
+        
+        # Le signal devrait avoir créé le rôle, mais on utilise get_or_create par sécurité
+        admin_role, created = UserRole.objects.get_or_create(
+            client_account=self,
+            name='Admin',  # Nom fixe du rôle Admin
+            defaults={
+                'read': True,
+                'write': True,
+                'modify': True,
+                'delete': True
+            }
+        )
+        
+        return admin_role
+
     def get_active_users_queryset(self):
         """Return queryset of active users for this client."""
         return self.users.filter(is_active=True)

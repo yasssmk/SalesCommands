@@ -33,10 +33,13 @@ import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import { useTheme } from '@mui/material/styles';
+import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
 
 // ==============================|| USER LIST ||============================== //
 
 export default function UserListPage() {
+  const theme = useTheme();
   const { usersLoading, users: lists } = useGetUsers();
 
   const [open, setOpen] = useState(false);

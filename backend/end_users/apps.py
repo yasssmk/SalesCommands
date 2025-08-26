@@ -10,6 +10,7 @@ class EndUsersConfig(AppConfig):
         try:
             # Import des signaux pour les enregistrer
             from end_users.signals import sales_plan_signals
+            import end_users.signals
             
             print("[END_USERS] Sales Plan signals loaded successfully")
             

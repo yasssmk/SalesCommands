@@ -235,7 +235,7 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'id', 'email', 'first_name', 'last_name',
             'full_name', 'display_name',
             'role_name', 'team_name', 'organization_name',
-            'is_active', 'is_manager',
+            'is_active', 'is_manager','is_superuser', 'is_staff',
             'created_at', 'last_login'
         ]
         read_only_fields = fields
