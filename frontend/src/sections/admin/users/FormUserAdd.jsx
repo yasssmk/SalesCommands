@@ -483,6 +483,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import FormLabel from '@mui/material/FormLabel';
 import Grid from '@mui/material/Grid';
 import InputLabel from '@mui/material/InputLabel';
@@ -517,6 +518,7 @@ const buildInitialValues = () => ({
   last_name: '',
   password: '',
   is_active: true,
+  is_superuser: false, 
   role: '',
   organization: '',
   team: ''
@@ -534,7 +536,7 @@ const CreateSchema = Yup.object().shape({
 
 function sanitizePayload(values) {
   const out = {};
-  ['email', 'first_name', 'last_name', 'is_active'].forEach((k) => {
+  ['email', 'first_name', 'last_name', 'is_active', 'is_superuser'].forEach((k) => {
     if (values[k] !== undefined && values[k] !== '') out[k] = values[k];
   });
   if (values.password) out.password = values.password;
@@ -873,6 +875,21 @@ export default function FormUserAdd({ closeModal }) {
                         checked={values.is_active}
                         onChange={(e) => setFieldValue('is_active', e.target.checked)}
                         sx={{ mt: 0 }}
+                      />
+                    </Stack>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                      <Stack spacing={0.5}>
+                        <Typography variant="subtitle1">SuperUser</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Give admin rights to user
+                        </Typography>
+                      </Stack>
+                      <Switch 
+                        checked={values.is_superuser} 
+                        onChange={(e) => setFieldValue('is_superuser', e.target.checked)} 
+                        sx={{ mt: 0 }} 
                       />
                     </Stack>
                   </Grid>

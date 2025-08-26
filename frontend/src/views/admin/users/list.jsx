@@ -94,6 +94,20 @@ export default function UserListPage() {
           />
         )
       },
+           {
+        header: 'SuperUser',
+        accessorKey: 'is_superuser',
+        cell: ({ row }) => (
+          row.original.is_superuser ? (
+            <CheckCircleFilled 
+              style={{ 
+                fontSize: '20px',
+                color: theme.palette.error.light
+              }} 
+            />
+          ) : null
+        )
+      },
       {
         header: 'Organization',
         accessorKey: 'organization',

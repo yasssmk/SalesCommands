@@ -399,6 +399,7 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
         """
         try:
             with transaction.atomic():
+                print(f"Create Requete data: {request.data}")
                 # Validate superuser permission if trying to create a superuser
                 self._validate_superuser_modification(request.user, request.data)
                 
@@ -434,6 +435,7 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
         """
         try:
             with transaction.atomic():
+                print(f"PATCH Requete data: {request.data}")
                 user_id = kwargs.get('pk')
                 user = self.get_queryset().get(id=user_id)
                 

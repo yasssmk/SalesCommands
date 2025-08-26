@@ -47,6 +47,7 @@ const buildInitialValues = (user) => ({
   first_name: user?.first_name || '',
   last_name: user?.last_name || '',
   is_active: user?.is_active ?? true,
+  is_superuser: user?.is_superuser ?? false,
   role: user?.role ? String(user.role) : '',
   organization: user?.organization ? String(user.organization) : '',
   team: user?.team ? String(user.team) : ''
@@ -64,7 +65,7 @@ const EditSchema = Yup.object().shape({
 function sanitizePayload(values) {
   const out = {};
   // do NOT include email (read-only)
-  ['first_name', 'last_name', 'is_active'].forEach((k) => {
+  ['first_name', 'last_name', 'is_active', 'is_superuser'].forEach((k) => {
     if (values[k] !== undefined && values[k] !== '') out[k] = values[k];
   });
   ['role', 'organization', 'team'].forEach((k) => {
@@ -381,7 +382,6 @@ export default function FormUserEdit({ closeModal, userId, user: initialUser, on
                   </Grid>
 
                   <Grid item xs={12}>
-                    <Stack spacing={1}>
                       <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                         <Stack spacing={0.5}>
                           <Typography variant="subtitle1">Active account</Typography>
@@ -389,26 +389,39 @@ export default function FormUserEdit({ closeModal, userId, user: initialUser, on
                             Allows this user to sign in
                           </Typography>
                         </Stack>
-                        <FormControlLabel
-                          control={
-                            <Switch
-                              checked={values.is_active}
-                              onChange={(e) => setFieldValue('is_active', e.target.checked)}
-                              sx={{ mt: 0 }}
-                            />
-                          }
-                          label=""
-                          labelPlacement="start"
-                        />
+                        <Switch 
+                        checked={values.is_active} 
+                        onChange={(e) => setFieldValue('is_active', e.target.checked)} 
+                        sx={{ mt: 0 }} 
+                      />
                       </Stack>
+                  </Grid>
+                  
+                  <Grid item xs={12}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                      <Stack spacing={0.5}>
+                        <Typography variant="subtitle1">SuperUser</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Give admin rights to user
+                        </Typography>
+                      </Stack>
+                      <Switch 
+                        checked={values.is_superuser} 
+                        onChange={(e) => setFieldValue('is_superuser', e.target.checked)} 
+                        sx={{ mt: 0 }} 
+                      />
+                    </Stack>
+                  </Grid>
 
-                      <Link
-                        href={`/users/${String(userData?.id)}/change-password`}
-                        underline="hover"
-                        sx={{ mt: 1, alignSelf: 'flex-start' }}
-                      >
-                        Change user password
-                      </Link>
+                  <Grid item xs={12}>
+                    <Stack spacing={1}>
+                        <Link
+                          href={`/users/${String(userData?.id)}/change-password`}
+                          underline="hover"
+                          sx={{ mt: 1, alignSelf: 'flex-start' }}
+                        >
+                          Change user password
+                        </Link>
                     </Stack>
                   </Grid>
                 </Grid>
