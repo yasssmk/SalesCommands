@@ -46,14 +46,27 @@ export const refreshTokens = async () => {
   const result = await api.post(authConfig.ENDPOINTS.REFRESH);
   
   if (result.success) {
-    debugLog('✅ Tokens refreshed successfully');
+    // Le backend retourne maintenant : {message: "...", user: {...}}
+    const userData = result.data?.user;
+    
+    // Log pour debug
+    if (userData) {
+      debugLog('✅ Tokens refreshed successfully with user data:', {
+        id: userData.id,
+        email: userData.email,
+        role: userData.role?.name
+      });
+    } else {
+      debugLog('⚠️ Tokens refreshed but no user data in response (legacy backend?)');
+    }
+    
     return {
       success: true,
-      user: result.data.user || result.data
+      user: userData || null  // Explicitement null si pas de données (au lieu de undefined)
     };
   } else {
     debugLog('❌ Token refresh failed:', result.error);
-    // ✅ Déconnexion forcée / session expirée → on nettoie lastRoute
+    // ✅ Déconnexion forcée / session expirée → on nettoie
     resetAuthState();
 
     return {

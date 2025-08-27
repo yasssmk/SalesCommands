@@ -75,45 +75,62 @@ export function AuthProvider({ children }) {
    * ✅ START AUTO-REFRESH TIMER - Système original fonctionnel
    */
   const startAutoRefresh = useCallback(() => {
-    // Nettoyer l'ancien timer s'il existe
-    if (refreshTimerRef.current) {
-      clearInterval(refreshTimerRef.current);
+  // Nettoyer l'ancien timer s'il existe
+  if (refreshTimerRef.current) {
+    clearInterval(refreshTimerRef.current);
+  }
+
+  console.log(`🔄 AUTO-REFRESH: Timer started - refresh every ${authConfig.TOKEN_REFRESH_INTERVAL / (60 * 1000)} minutes`);
+  debugLog(`⏰ Starting auto-refresh timer (${authConfig.TOKEN_REFRESH_INTERVAL}ms)`);
+  
+  refreshTimerRef.current = setInterval(async () => {
+    // Éviter les refreshs multiples simultanés
+    if (isRefreshingRef.current) {
+      console.log('🔄 AUTO-REFRESH: Skipping - refresh already in progress');
+      return;
     }
 
-    console.log(`🔄 AUTO-REFRESH: Timer started - refresh every ${authConfig.TOKEN_REFRESH_INTERVAL / (60 * 1000)} minutes`);
-    debugLog(`⏰ Starting auto-refresh timer (${authConfig.TOKEN_REFRESH_INTERVAL}ms)`);
-    
-    refreshTimerRef.current = setInterval(async () => {
-      // Éviter les refreshs multiples simultanés
-      if (isRefreshingRef.current) {
-        console.log('🔄 AUTO-REFRESH: Skipping - refresh already in progress');
-        return;
-      }
-
-      try {
-        isRefreshingRef.current = true;
-        console.log('🔄 AUTO-REFRESH: Starting automatic token refresh...');
-        
-        // ✅ Appel DIRECT à refreshTokens() qui fait POST /client/refresh-token/
-        const result = await refreshTokens();
-        
-        if (result.success) {
+    try {
+      isRefreshingRef.current = true;
+      console.log('🔄 AUTO-REFRESH: Starting automatic token refresh...');
+      
+      // ✅ Appel DIRECT à refreshTokens() qui fait POST /client/refresh-token/
+      const result = await refreshTokens();
+      
+      if (result.success) {
+        // Nouveau : vérifier si on a des données user
+        if (result.user) {
+          // ✅ Backend moderne : retourne les données user
           setUser(result.user);
-          console.log('✅ AUTO-REFRESH: Token refreshed successfully');
-          debugLog('✅ Auto-refresh successful');
+          console.log('✅ AUTO-REFRESH: Token + user data refreshed successfully');
+          debugLog('✅ Auto-refresh successful with user data:', {
+            id: result.user.id,
+            email: result.user.email,
+            role: result.user.role?.name
+          });
         } else {
-          console.log('❌ AUTO-REFRESH: Failed - ', result.error);
-          debugLog('❌ Auto-refresh failed:', result.error);
+          // ⚠️ Backend legacy : pas de données user
+          // Dans ce cas, on garde l'ancien user (ne pas l'écraser avec null)
+          console.log('⚠️ AUTO-REFRESH: Token refreshed but no user data (keeping current user)');
+          debugLog('⚠️ Auto-refresh successful but no user data returned, keeping current user state');
+          // Option : on pourrait faire un appel à getCurrentUser() ici si nécessaire
+          // const userData = await getCurrentUser();
+          // if (userData.success) setUser(userData.user);
         }
-      } catch (error) {
-        console.log('❌ AUTO-REFRESH: Error - ', error.message);
-        debugLog('❌ Auto-refresh error:', error.message);
-      } finally {
-        isRefreshingRef.current = false;
+      } else {
+        console.log('❌ AUTO-REFRESH: Failed - ', result.error);
+        debugLog('❌ Auto-refresh failed:', result.error);
+        // En cas d'échec, clearAuthState est déjà appelé dans refreshTokens()
       }
-    }, authConfig.TOKEN_REFRESH_INTERVAL);
-    
-  }, []);
+    } catch (error) {
+      console.log('❌ AUTO-REFRESH: Error - ', error.message);
+      debugLog('❌ Auto-refresh error:', error.message);
+    } finally {
+      isRefreshingRef.current = false;
+    }
+  }, authConfig.TOKEN_REFRESH_INTERVAL);
+  
+}, []);
 
   /**
    * ✅ STOP AUTO-REFRESH TIMER
@@ -214,24 +231,44 @@ export function AuthProvider({ children }) {
    * ✅ REFRESH USER DATA
    */
   const refreshUser = useCallback(async () => {
-    try {
-      debugLog('🔄 Refreshing user data...');
-      const result = await getCurrentUser();
+  try {
+    debugLog('🔄 Refreshing user data...');
+    
+    // Stratégie 1: Essayer d'abord via refresh token (plus efficace)
+    const refreshResult = await refreshTokens();
+    
+    if (refreshResult.success && refreshResult.user) {
+      // ✅ Le refresh a retourné les données user
+      setUser(refreshResult.user);
+      debugLog('✅ User data refreshed via token refresh');
+      return refreshResult.user;
+    }
+    
+    // Stratégie 2: Si pas de user dans refresh, faire un appel dédié
+    if (refreshResult.success && !refreshResult.user) {
+      debugLog('⚠️ Token refreshed but no user data, fetching separately...');
+      const userResult = await getCurrentUser();
       
-      if (result.success) {
-        setUser(result.user);
-        debugLog('✅ User data refreshed');
-        return result.user;
+      if (userResult.success) {
+        setUser(userResult.user);
+        debugLog('✅ User data fetched separately');
+        return userResult.user;
       } else {
-        handleAuthError(result.error);
+        handleAuthError(userResult.error);
         return null;
       }
-    } catch (error) {
-      debugLog('❌ Refresh user error:', error.message);
-      handleAuthError(error.message);
-      return null;
     }
-  }, []);
+    
+    // Si le refresh a échoué
+    handleAuthError(refreshResult.error);
+    return null;
+    
+  } catch (error) {
+    debugLog('❌ Refresh user error:', error.message);
+    handleAuthError(error.message);
+    return null;
+  }
+}, [handleAuthError]);
 
   /**
    * ✅ CHECK AUTH STATUS

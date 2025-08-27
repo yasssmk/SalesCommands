@@ -77,11 +77,59 @@ class AuthService:
         raise AuthenticationFailed(serializer.errors)
 
     def refresh_tokens(self, request, response):
-        """Refresh user tokens."""
+        """
+        Refresh user tokens and return user data.
+        
+        Returns both new tokens (set as cookies) and complete user data
+        to maintain frontend state consistency during token refresh.
+        
+        Returns:
+            dict: {"message": str, "user": dict} with serialized user data
+        """
         refresh_token = request.COOKIES.get('refresh_token')
         if not refresh_token:
             raise AuthenticationFailed("Refresh token is missing")
-        return JWTHelpers.validate_and_refresh_token(refresh_token, response)
+        
+        # Validate and refresh tokens, get back the user_id
+        token_result = JWTHelpers.validate_and_refresh_token(refresh_token, response)
+        
+        # Retrieve the user from the token's user_id
+        user_id = token_result.get('user_id')
+        if not user_id:
+            raise AuthenticationFailed("Invalid token: no user identifier")
+        
+        # Get the user instance
+        try:
+            # Convert string UUID to actual UUID if needed
+            import uuid
+            if isinstance(user_id, str):
+                user_id = uuid.UUID(user_id)
+            
+            user = self.user_model.objects.get(pk=user_id)
+            
+            if not user.is_active:
+                raise AuthenticationFailed("User account is deactivated")
+            
+            user_data = {
+                "id": str(user.id),
+                "name": user.get_full_name(),  # Same as login/getCurrentUser
+                "email": user.email,
+                "role": user.role_name if hasattr(user, 'role_name') else None,  # Same as login/getCurrentUser
+                "avatar": None,  # Consistent with getCurrentUser
+                "client_id": str(user.client_account_id) if user.client_account_id else None,
+                "client_name": user.client_account.name if getattr(user, "client_account", None) else None,
+        }
+            
+            # Return both message and user data
+            return {
+                "message": "Token refreshed successfully",
+                "user": user_data
+            }
+            
+        except self.user_model.DoesNotExist:
+            raise AuthenticationFailed("User not found")
+        except Exception as e:
+            raise AuthenticationFailed(f"Failed to retrieve user: {str(e)}")
 
     def logout_user(self, request, response):
         """Logout user and clear cookies."""

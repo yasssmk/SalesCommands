@@ -1220,9 +1220,17 @@ class UserRefreshTokenView(BaseAPIView):
                 refresh_lifetime=settings.ROLE_REFRESH_LIFETIMES['end_users'],
                 serializer_class=UserSerializer
             )
+
+             # Create response object first so cookies can be set on it
+            response = Response(status=status.HTTP_200_OK)
             
-            response = Response({"message": "Token refreshed"}, status=status.HTTP_200_OK)
-            auth_service.refresh_tokens(request, response)
+            # refresh_tokens will set cookies on the response and return user data
+            result = auth_service.refresh_tokens(request, response)
+            
+            # Set the enriched data (message + user)
+            response.data = result
+            
             return response
+        
         except Exception as e:
             raise StandardizedValidationError(str(e))

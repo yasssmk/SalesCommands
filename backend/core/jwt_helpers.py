@@ -239,6 +239,10 @@ class JWTHelpers:
                 if origin == 'product_admin'
                 else settings.SIMPLE_JWT['SIGNING_KEY_USER']
             )
+
+            user_id = refresh.get('user_id')
+            if not user_id:
+                raise AuthenticationFailed("Invalid token: missing user identifier")
             
             # Create new tokens preserving UUID handling
             new_access = refresh.access_token
@@ -268,7 +272,8 @@ class JWTHelpers:
             
             return {
                 'access': str(new_access),
-                'refresh': str(new_refresh)
+                'refresh': str(new_refresh),
+                'user_id': user_id 
             }
         except Exception as e:
             raise AuthenticationFailed(f"Token refresh failed: {str(e)}")
