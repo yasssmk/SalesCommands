@@ -162,30 +162,30 @@ export const checkAuthStatus = async () => {
   }
 };
 
-/**
- * ✅ SAVE LAST ROUTE
- * @param {string} route - Route to save
- */
-export const saveLastRoute = (route) => {
-  if (typeof window === 'undefined') return;
+// /**
+//  * ✅ SAVE LAST ROUTE
+//  * @param {string} route - Route to save
+//  */
+// export const saveLastRoute = (route) => {
+//   if (typeof window === 'undefined') return;
   
-  debugLog('💾 Saving last route:', route);
-  localStorage.setItem('lastRoute', route);
-};
+//   debugLog('💾 Saving last route:', route);
+//   localStorage.setItem('lastRoute', route);
+// };
 
-/**
- * ✅ GET AND CLEAR LAST ROUTE
- * @returns {string|null} Last saved route
- */
-export const getAndClearLastRoute = () => {
-  if (typeof window === 'undefined') return null;
+// /**
+//  * ✅ GET AND CLEAR LAST ROUTE
+//  * @returns {string|null} Last saved route
+//  */
+// export const getAndClearLastRoute = () => {
+//   if (typeof window === 'undefined') return null;
   
-  const lastRoute = localStorage.getItem('lastRoute');
-  localStorage.removeItem('lastRoute');
+//   const lastRoute = localStorage.getItem('lastRoute');
+//   localStorage.removeItem('lastRoute');
   
-  debugLog('📂 Retrieved and cleared last route:', lastRoute);
-  return lastRoute;
-};
+//   debugLog('📂 Retrieved and cleared last route:', lastRoute);
+//   return lastRoute;
+// };
 
 // ==============================|| UTILITIES ||============================== //
 
@@ -193,10 +193,13 @@ export const getAndClearLastRoute = () => {
  * ✅ RESET AUTH STATE - SIMPLIFIÉ
  */
 export const resetAuthState = () => {
-  // Nettoyer autres données auth si nécessaire
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('lastRoute');
-  }
+ if (typeof window === 'undefined') return;
   
-  debugLog('🧹 Auth state reset');
+    try {
+      sessionStorage.clear();
+    } catch (e) {
+      debugLog('⚠️ Failed to clear sessionStorage:', e);
+    }
+    
+    debugLog('🧹 Auth state reset complete (UI preferences preserved)');
 };

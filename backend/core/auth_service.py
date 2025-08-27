@@ -86,6 +86,9 @@ class AuthService:
     def logout_user(self, request, response):
         """Logout user and clear cookies."""
         JWTHelpers.logout(response)
+        response['Cache-Control'] = 'no-cache, no-store, must-revalidate, private'
+        response['Pragma'] = 'no-cache'
+        response['Expires'] = '0'
         return {'message': 'Successfully logged out'}
 
     def enforce_permissions(self, request, required_origin):

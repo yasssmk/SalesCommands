@@ -9,7 +9,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Loader from 'components/Loader';
 import { useAuth } from 'hooks/useAuth';
 import { authConfig, debugLog } from 'config/auth';
-import { saveLastRoute } from 'api/auth';
+
 
 // ==============================|| AUTH GUARD - MVP ULTRA-SIMPLE ||============================== //
 
@@ -33,8 +33,7 @@ export default function AuthGuard({ children }) {
   useEffect(() => {
     // Si pas connecté et sur page protégée → sauvegarder route + rediriger vers login
     if (!isLoading && !isAuthenticated) {
-      debugLog('🛡️ AuthGuard: User not authenticated, saving route and redirecting to login');
-      saveLastRoute(pathname);
+      debugLog('🛡️ AuthGuard: User not authenticated, redirecting to login');
       router.push(authConfig.PAGES.LOGIN);
     }
   }, [isLoading, isAuthenticated, pathname, router]);

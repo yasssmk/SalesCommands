@@ -134,9 +134,6 @@ class JWTHelpers:
         
         # Domain configuration for development
         domain = None
-        # if not is_production:
-        #     # Allow cookies to work between localhost:3000 and localhost:8000
-        #     domain = '.localhost' if 'localhost' in getattr(settings, 'ALLOWED_HOSTS', []) else None
         
         response.set_cookie(
             key,
@@ -145,25 +142,49 @@ class JWTHelpers:
             httponly=True,
             secure=is_secure,  # Only secure in production
             samesite='Lax',
-            domain=domain  # Specified domain for cross-port development
+            domain=domain,  # Specified domain for cross-port development
+            path='/'
         )
 
     @staticmethod
     def clear_cookie(response, key):
         """Clear an HTTP-only cookie with same domain settings."""
-        # is_production = getattr(settings, 'DEBUG', True) is False
-        domain = None
-        # if not is_production:
-        #     domain = '.localhost' if 'localhost' in getattr(settings, 'ALLOWED_HOSTS', []) else None
+        is_production = getattr(settings, 'DEBUG', True) is False
+        is_secure = is_production
+
+        response.set_cookie(
+            key=key,
+            value='',  # Valeur vide
+            max_age=0,  # Expire immédiatement
+            expires='Thu, 01 Jan 1970 00:00:00 GMT',  # Date dans le passé
+            httponly=True,  # DOIT matcher le cookie original
+            secure=is_secure,  # DOIT matcher le cookie original
+            samesite='Lax',  # DOIT matcher le cookie original
+            domain=None,  # DOIT matcher le cookie original
+            path='/'  # 🔥 CRITIQUE: DOIT matcher le path original
+        )
+
             
-        response.delete_cookie(key, domain=domain)
+        try:
+            response.delete_cookie(
+                key=key,
+                path='/',  # IMPORTANT: même path que set_cookie
+                domain=None  # IMPORTANT: même domain que set_cookie
+            )
+        except Exception as e:
+            print(f"delete_cookie failed for {key}: {e}")
 
     @staticmethod
     def logout(response):
-        """Clear authentication cookies."""
-        JWTHelpers.clear_cookie(response, 'access_token')
-        JWTHelpers.clear_cookie(response, 'refresh_token')
+        cookies_to_clear = ['access_token', 'refresh_token']
+        
+        for cookie_name in cookies_to_clear:
+            JWTHelpers.clear_cookie(response, cookie_name)
+        
+        # 🔥 MODIFICATION 3: Ajouter un header pour forcer le browser à respecter
+        response['Clear-Site-Data'] = '"cookies"'
 
+        
     @staticmethod
     def generate_token_response(user, origin, refresh_lifetime):
         """Generate tokens with proper UUID handling"""

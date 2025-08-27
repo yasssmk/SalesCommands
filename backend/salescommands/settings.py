@@ -174,27 +174,53 @@ REST_FRAMEWORK = {
 }
 
 
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8081",  # Frontend local address
+    "http://localhost:3000",          # Next.js local
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+# Session Cookie Settings
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = not DEBUG  # True en production seulement
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_AGE = 86400  # 24 heures
+
+# CSRF Cookie Settings  
+CSRF_COOKIE_SECURE = not DEBUG  # True en production seulement
+CSRF_COOKIE_HTTPONLY = False  # False pour permettre JS de le lire (nécessaire pour AJAX)
+CSRF_COOKIE_SAMESITE = 'Lax'
+
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+
     'ALGORITHM': 'HS256',
     'SIGNING_KEY_ADMIN': env('JWT_ADMIN_SECRET_KEY'),
     'SIGNING_KEY_USER': env('JWT_USER_SECRET_KEY'),
     'VERIFYING_KEY': None,
+
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
     'TOKEN_TYPE_CLAIM': 'token_type',
     'JTI_CLAIM': 'jti',
     'TOKEN_USER_CLASS': 'core.jwt_helpers.CustomJWTAuthentication',
+
+    # Cookie settings
     'AUTH_COOKIE': 'access_token',
     'AUTH_COOKIE_SECURE': True,
     'AUTH_COOKIE_HTTP_ONLY': True,
     'AUTH_COOKIE_SAMESITE': 'Lax',
 }
 
-
+ROLE_REFRESH_LIFETIMES = {
+    'product_admin': timedelta(days=1),
+    'user_admin': timedelta(days=1),
+    'end_users': timedelta(days=7),
+}
 
 
 #OPEN AI
@@ -226,17 +252,5 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8081",  # Frontend local address
-    "http://localhost:3000",          # Next.js local
-    'http://192.168.1.19:3000'
-]
 
-CORS_ALLOW_CREDENTIALS = True
-SESSION_COOKIE_HTTPONLY = True
-ROLE_REFRESH_LIFETIMES = {
-    'product_admin': timedelta(days=1),
-    'user_admin': timedelta(days=1),
-    'end_users': timedelta(days=7),
-}
 

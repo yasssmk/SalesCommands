@@ -11,9 +11,6 @@ import {
   logoutUser, 
   getCurrentUser, 
   refreshTokens,
-  checkAuthStatus,
-  saveLastRoute, 
-  getAndClearLastRoute,
   resetAuthState
 } from '../api/auth';
 import { authConfig, debugLog } from '../config/auth';
@@ -152,8 +149,7 @@ export function AuthProvider({ children }) {
       setAuthenticatedUser(result.user);
       startAutoRefresh();
 
-      const lastRoute = getAndClearLastRoute();
-      const redirectTo = lastRoute || authConfig.PAGES.DASHBOARD;
+      const redirectTo = authConfig.PAGES.DASHBOARD;
       setTimeout(() => {
         debugLog('🚀 Login successful, redirecting to:', redirectTo);
         router.push(redirectTo);
