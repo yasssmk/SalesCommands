@@ -80,8 +80,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'core.security_middleware.InputSanitizationMiddleware',
-    'core.middleware.LogRequestHeadersMiddleware',
+    'core.middlewares.security_middleware.InputSanitizationMiddleware',
+    'core.middlewares.middleware.LogRequestHeadersMiddleware',
     'debug_toolbar.middleware.DebugToolbarMiddleware',	
 ]
 
@@ -122,6 +122,30 @@ DATABASES = {
     # }
      'default': env.db()
 }
+
+# ==============================
+# API CACHE CONFIGURATION
+# ==============================
+
+# Préfixes des endpoints API qui doivent avoir les headers no-cache
+API_ENDPOINT_PREFIXES = [
+    '/client/',       # end_users endpoints
+    '/app/',          # app endpoints  
+    '/campaign/',     # campaign endpoints
+    '/leads/',        # leads endpoints
+    '/activities/',   # activities endpoints
+    '/opportunities/', # opportunities endpoints
+    '/signals/',      # signals endpoints
+    '/insights/',     # insights endpoints
+    '/product_admin/', # product admin endpoints
+]
+
+# Headers de sécurité (gérés par SecurityMiddleware de Django)
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_REFERRER_POLICY = 'same-origin'
+
 
 # CACHES = {
 #     'default': {

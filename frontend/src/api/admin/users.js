@@ -2,6 +2,7 @@
 
 import useSWR, { mutate } from 'swr';
 import { useMemo } from 'react';
+import { useAuth } from 'hooks/useAuth';
 
 // utils
 import axiosClient, { api } from 'utils/axiosClient';
@@ -18,7 +19,10 @@ const endpoints = {
 
 // ==============================|| SWR FETCHER ||============================== //
 
-const fetcher = async (url) => {
+const fetcher = async (urlOrTuple) => {
+  // ✅ Support des tuples [url, tenantId] et des URLs simples
+  const url = Array.isArray(urlOrTuple) ? urlOrTuple[0] : urlOrTuple;
+
   const result = await api.get(url);
   if (result.success) {
     return result.data;
@@ -26,24 +30,28 @@ const fetcher = async (url) => {
   throw new Error(result.error || 'Failed to fetch data');
 };
 
-// 🔁 Revalidate ALL user lists (any key that starts with /client/users/)
-export const revalidateUsersLists = () =>
-  mutate((key) => typeof key === 'string' && key.startsWith(endpoints.users));
+// ==============================|| REVALIDATION HELPERS ||============================== //
 
-// 🔁 Revalidate seats for a specific client (when you know the id)
-export const refreshClientSeats = (clientId) => {
-  if (!clientId) return;
-  return mutate(endpoints.clientAccountStats(clientId));
-};
-
-// 🔁 Revalidate ANY seats stats key (pattern-based, works even if clientId is unknown here)
-const revalidateAnyClientSeats = () =>
+/**
+ * ✅ Revalidation ciblée qui matche tuples ET strings
+ */
+const revalidateTargeted = (urlPrefix) => {
   mutate(
-    (key) =>
-      typeof key === 'string' &&
-      key.includes('/client/client-accounts/') &&
-      key.endsWith('/stats/')
+    (key) => {
+      // Matcher les tuples [url, tenantId]
+      if (Array.isArray(key) && key[0] && key[0].startsWith(urlPrefix)) {
+        return true;
+      }
+      // Matcher les strings simples
+      if (typeof key === 'string' && key.startsWith(urlPrefix)) {
+        return true;
+      }
+      return false;
+    },
+    undefined,
+    { revalidate: true }
   );
+};
 
 // ==============================|| HOOKS ||============================== //
 
@@ -52,9 +60,12 @@ const revalidateAnyClientSeats = () =>
  * Uses Django pagination format with results array
  */
 export function useGetUsers() {
-  const listUrl = endpoints.users;
+  const { tenantId } = useAuth();
+
+  const swrKey = tenantId ? [endpoints.users, tenantId] : null;
+
   const { data, isLoading, error, isValidating } = useSWR(
-    listUrl,
+    swrKey,
     fetcher,
     {
       revalidateIfStale: false,
@@ -82,8 +93,14 @@ export function useGetUsers() {
  * ✅ GET SINGLE USER
  */
 export function useGetUser(userId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = userId && tenantId 
+    ? [`${endpoints.users}${userId}/`, tenantId] 
+    : null;
+  
   const { data, isLoading, error, isValidating } = useSWR(
-    userId ? `${endpoints.users}${userId}/` : null,
+    swrKey,
     fetcher,
     {
       revalidateIfStale: false,
@@ -109,8 +126,13 @@ export function useGetUser(userId) {
  * ✅ GET ORGANIZATIONS
  */
 export function useGetOrganizations() {
+  const { tenantId } = useAuth(); 
+  
+  //  Utiliser un tuple
+  const swrKey = tenantId ? [endpoints.organizations, tenantId] : null;
+  
   const { data, isLoading, error } = useSWR(
-    endpoints.organizations,
+    swrKey, 
     fetcher,
     {
       revalidateIfStale: false,
@@ -137,11 +159,16 @@ export function useGetOrganizations() {
  * @param {boolean} enabled - if false, skip fetch
  */
 export function useGetTeams(filters = {}, enabled = true) {
+  const { tenantId } = useAuth(); 
+  
   const qs = new URLSearchParams(filters || {}).toString();
-  const key = enabled ? `${endpoints.teams}${qs ? `?${qs}` : ''}` : null;
+  const url = `${endpoints.teams}${qs ? `?${qs}` : ''}`;
+  
+  // Utiliser un tuple avec tenantId
+  const swrKey = enabled && tenantId ? [url, tenantId] : null;
 
   const { data, isLoading, error } = useSWR(
-    key,
+    swrKey, 
     fetcher,
     {
       revalidateIfStale: false,
@@ -166,8 +193,13 @@ export function useGetTeams(filters = {}, enabled = true) {
  * ✅ GET USER ROLES
  */
 export function useGetUserRoles() {
+  const { tenantId } = useAuth(); 
+  
+  // Utiliser un tuple
+  const swrKey = tenantId ? [endpoints.roles, tenantId] : null;
+  
   const { data, isLoading, error } = useSWR(
-    endpoints.roles,
+    swrKey, 
     fetcher,
     {
       revalidateIfStale: false,
@@ -235,23 +267,9 @@ export const insertUser = async (userData) => {
   const result = await api.post(endpoints.users, userData);
 
   if (result.success) {
-    // Optimistic update for users list
-    mutate(
-      endpoints.users,
-      (currentData) => {
-        if (!currentData) return { results: [result.data], count: 1 };
-        return {
-          ...currentData,
-          results: [...(currentData.results || []), result.data],
-          count: (currentData.count || 0) + 1
-        };
-      },
-      false
-    );
-
-    // Revalidate users + seats
-    mutate(endpoints.users);
-    revalidateAnyClientSeats();
+    // Revalidation ciblée pour users et seats
+    revalidateTargeted(endpoints.users);
+    revalidateTargeted('/client/client-accounts/');
 
     return { success: true, user: result.data };
   } else {
@@ -266,25 +284,10 @@ export const updateUser = async (userId, userData) => {
   const result = await api.patch(`${endpoints.users}${userId}/`, userData);
 
   if (result.success) {
-    // Optimistic update for users list
-    mutate(
-      endpoints.users,
-      (currentData) => {
-        if (!currentData) return currentData;
-        const updatedResults = (currentData.results || []).map((u) =>
-          u.id === userId ? result.data : u
-        );
-        return { ...currentData, results: updatedResults };
-      },
-      false
-    );
-
-    // Update single user cache if present
-    mutate(`${endpoints.users}${userId}/`, result.data, false);
-
-    // Revalidate users + seats
-    mutate(endpoints.users);
-    revalidateAnyClientSeats();
+    // Revalidation ciblée
+    revalidateTargeted(endpoints.users);
+    revalidateTargeted(`${endpoints.users}${userId}/`);
+    revalidateTargeted('/client/client-accounts/');
 
     return { success: true, user: result.data };
   } else {
@@ -306,9 +309,7 @@ export const changePassword = async (userId, password, passwordConfirm) => {
   });
 
   if (result.success) {
-    // Pas besoin de mettre à jour le cache car le mot de passe n'est pas visible
-    // Mais on peut forcer un refresh de l'utilisateur pour s'assurer que tout est à jour
-    mutate(`${endpoints.users}${userId}/`);
+    revalidateTargeted(`${endpoints.users}${userId}/`);
     
     return { 
       success: true, 
@@ -330,33 +331,33 @@ export const deleteUser = async (userId) => {
   const result = await api.delete(`${endpoints.users}${userId}/`);
 
   if (result.success) {
-    // Optimistic update for users list
-    mutate(
-      endpoints.users,
-      (currentData) => {
-        if (!currentData) return currentData;
-        const filteredResults = (currentData.results || []).filter((u) => u.id !== userId);
-        return {
-          ...currentData,
-          results: filteredResults,
-          count: Math.max(0, (currentData.count || 1) - 1)
-        };
-      },
-      false
-    );
-
-    // Drop single user cache
-    mutate(`${endpoints.users}${userId}/`, undefined, false);
-
-    // Revalidate users + seats
-    mutate(endpoints.users);
-    revalidateAnyClientSeats();
-
+   // Revalidation ciblée
+    revalidateTargeted(endpoints.users);
+    revalidateTargeted('/client/client-accounts/');
     return { success: true, status: result.status ?? 204 };
   } else {
     return { success: false, error: result.error, status: result.status };
   }
 };
+
+export const toggleUserStatus = async (userId) => {
+  const result = await api.post(`${endpoints.users}${userId}/toggle-status/`);
+
+  if (result.success) {
+    // Revalidation ciblée
+    revalidateTargeted(endpoints.users);
+    revalidateTargeted(`${endpoints.users}${userId}/`);
+    revalidateTargeted('/client/client-accounts/');
+
+    return { success: true, user: result.data };
+  } else {
+    return { success: false, error: result.error };
+  }
+};
+
+// Export revalidation helpers si besoin ailleurs
+export const revalidateUsersLists = () => revalidateTargeted(endpoints.users);
+export const refreshClientSeats = () => revalidateTargeted('/client/client-accounts/');
 
 // ==============================|| ADDITIONAL OPERATIONS ||============================== //
 

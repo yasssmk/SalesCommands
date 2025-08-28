@@ -46,6 +46,7 @@ export function AuthProvider({ children }) {
     setUser(userData);
     setIsAuthenticated(true);
     setError(null);
+    setIsLoading(false);
     debugLog('✅ User authenticated:', userData);
   }, []);
 
@@ -56,9 +57,11 @@ export function AuthProvider({ children }) {
     setUser(null);
     setIsAuthenticated(false);
     setError(null);
+    setIsLoading(false);
     resetAuthState();
     debugLog('🧹 Auth state cleared');
   }, []);
+
 
   /**
    * ✅ HANDLE AUTH ERROR - Gestion centralisée d'erreurs
@@ -71,80 +74,53 @@ export function AuthProvider({ children }) {
 
   // ==============================|| AUTO-REFRESH SYSTEM ||============================== //
 
-  /**
-   * ✅ START AUTO-REFRESH TIMER - Système original fonctionnel
+   /**
+   * ✅ AUTO-REFRESH TOKENS
    */
-  const startAutoRefresh = useCallback(() => {
-  // Nettoyer l'ancien timer s'il existe
-  if (refreshTimerRef.current) {
-    clearInterval(refreshTimerRef.current);
-  }
-
-  console.log(`🔄 AUTO-REFRESH: Timer started - refresh every ${authConfig.TOKEN_REFRESH_INTERVAL / (60 * 1000)} minutes`);
-  debugLog(`⏰ Starting auto-refresh timer (${authConfig.TOKEN_REFRESH_INTERVAL}ms)`);
-  
-  refreshTimerRef.current = setInterval(async () => {
-    // Éviter les refreshs multiples simultanés
-    if (isRefreshingRef.current) {
-      console.log('🔄 AUTO-REFRESH: Skipping - refresh already in progress');
-      return;
-    }
+  const performTokenRefresh = useCallback(async () => {
+    if (isRefreshingRef.current) return;
 
     try {
       isRefreshingRef.current = true;
-      console.log('🔄 AUTO-REFRESH: Starting automatic token refresh...');
-      
-      // ✅ Appel DIRECT à refreshTokens() qui fait POST /client/refresh-token/
+      debugLog('🔄 Auto-refreshing tokens...');
+
       const result = await refreshTokens();
-      
       if (result.success) {
-        // Nouveau : vérifier si on a des données user
         if (result.user) {
-          // ✅ Backend moderne : retourne les données user
           setUser(result.user);
-          console.log('✅ AUTO-REFRESH: Token + user data refreshed successfully');
-          debugLog('✅ Auto-refresh successful with user data:', {
-            id: result.user.id,
-            email: result.user.email,
-            role: result.user.role?.name
-          });
+          debugLog('✅ Token refresh successful with user data');
         } else {
-          // ⚠️ Backend legacy : pas de données user
-          // Dans ce cas, on garde l'ancien user (ne pas l'écraser avec null)
-          console.log('⚠️ AUTO-REFRESH: Token refreshed but no user data (keeping current user)');
-          debugLog('⚠️ Auto-refresh successful but no user data returned, keeping current user state');
-          // Option : on pourrait faire un appel à getCurrentUser() ici si nécessaire
-          // const userData = await getCurrentUser();
-          // if (userData.success) setUser(userData.user);
+          debugLog('✅ Token refresh successful (no user data)');
         }
       } else {
-        console.log('❌ AUTO-REFRESH: Failed - ', result.error);
-        debugLog('❌ Auto-refresh failed:', result.error);
-        // En cas d'échec, clearAuthState est déjà appelé dans refreshTokens()
+        debugLog('❌ Token refresh failed:', result.error);
+        handleAuthError(result.error);
       }
     } catch (error) {
-      console.log('❌ AUTO-REFRESH: Error - ', error.message);
-      debugLog('❌ Auto-refresh error:', error.message);
+      debugLog('❌ Token refresh error:', error.message);
+      handleAuthError(error.message);
     } finally {
       isRefreshingRef.current = false;
     }
-  }, authConfig.TOKEN_REFRESH_INTERVAL);
-  
-}, []);
+  }, [handleAuthError]);
 
-  /**
-   * ✅ STOP AUTO-REFRESH TIMER
-   */
+  const startAutoRefresh = useCallback(() => {
+    stopAutoRefresh();
+    debugLog('⏰ Starting auto-refresh timer');
+    
+    refreshTimerRef.current = setInterval(
+      performTokenRefresh,
+      authConfig.TOKEN_REFRESH_INTERVAL
+    );
+  }, [performTokenRefresh]);
+
   const stopAutoRefresh = useCallback(() => {
     if (refreshTimerRef.current) {
       clearInterval(refreshTimerRef.current);
       refreshTimerRef.current = null;
-      isRefreshingRef.current = false;
-      console.log('🛑 AUTO-REFRESH: Timer stopped');
-      debugLog('⏰ Auto-refresh timer stopped');
+      debugLog('⏹ Stopped auto-refresh timer');
     }
   }, []);
-
 
   // ==============================|| MAIN AUTH FUNCTIONS ||============================== //
 
@@ -160,17 +136,17 @@ export function AuthProvider({ children }) {
       const result = await loginUser(email, password);
       if (!result.success) {
         setError(result.error);
+        setIsLoading(false);
         return { success: false, error: result.error };
       }
 
       setAuthenticatedUser(result.user);
-      startAutoRefresh();
 
-      const redirectTo = authConfig.PAGES.DASHBOARD;
-      setTimeout(() => {
-        debugLog('🚀 Login successful, redirecting to:', redirectTo);
-        router.push(redirectTo);
-      }, 100);
+      // Hard reload vers le dashboard pour garantir l'isolation
+      debugLog('🚀 Login successful, hard reload to dashboard...');
+      window.location.assign(authConfig.PAGES.DASHBOARD);
+
+      startAutoRefresh();
 
       return { success: true };
     } catch (error) {
@@ -179,7 +155,7 @@ export function AuthProvider({ children }) {
       setError(errorMessage);
       return { success: false, error: errorMessage };
     }
-  }, [router, setAuthenticatedUser, startAutoRefresh]);
+  }, [setAuthenticatedUser, startAutoRefresh]);
 
   /**
    * ✅ LOGOUT FUNCTION - Version originale
@@ -208,10 +184,8 @@ export function AuthProvider({ children }) {
       clearAuthState();
       
       // Étape 3: Redirection
-      setTimeout(() => {
-        debugLog('🚀 Redirecting to login...');
-        router.push(authConfig.PAGES.LOGIN);
-      }, 50);
+      debugLog('🚀 Redirecting to login...');
+      window.location.assign(authConfig.PAGES.LOGIN);
 
       return { success: true };
     } catch (error) {
@@ -219,7 +193,7 @@ export function AuthProvider({ children }) {
       
       // Force logout même en cas d'erreur
       clearAuthState();
-      router.push(authConfig.PAGES.LOGIN);
+      window.location.assign(authConfig.PAGES.LOGIN);
       
       return { success: false, error: error.message };
     } finally {
@@ -339,6 +313,10 @@ export function AuthProvider({ children }) {
     isAuthenticated,
     isLoading,
     error,
+
+     // Exposition explicite du tenantId pour l'isolation
+    tenantId: user?.client_id || null,
+    tenantName: user?.client_name || null,
     
     // Actions
     login,
@@ -348,7 +326,7 @@ export function AuthProvider({ children }) {
     
     // Utilities
     clearError: useCallback(() => setError(null), []),
-    clearAuthState
+    clearAuthState,
   };
 
   return (
