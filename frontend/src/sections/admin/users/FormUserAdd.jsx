@@ -642,10 +642,10 @@ export default function FormUserAdd({ closeModal }) {
   return (
     <>
       <FormikProvider value={formik}>
-        <Form autoComplete="off" noValidate onSubmit={handleSubmit}>
+        <Form autoComplete="off" noValidate onSubmit={handleSubmit}  >
           <DialogTitle>New User</DialogTitle>
           <Divider />
-          <DialogContent sx={{ p: 2.5 }}>
+          <DialogContent sx={{ p: 2.5}}>
             <Grid container spacing={3}>
               <Grid item xs={12} md={3}>
                 <Stack direction="row" justifyContent="center" sx={{ mt: 3 }}>

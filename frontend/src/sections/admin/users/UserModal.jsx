@@ -1,83 +1,6 @@
-// import PropTypes from 'prop-types';
-// import { useMemo } from 'react';
+// 
 
-// // material-ui
-// import Box from '@mui/material/Box';
-// import Modal from '@mui/material/Modal';
-// import Stack from '@mui/material/Stack';
-
-// // project-imports
-// import FormUserAdd from './FormUserAdd';
-// import MainCard from 'components/MainCard';
-// import SimpleBar from 'components/third-party/SimpleBar';
-// import CircularWithPath from 'components/@extended/progress/CircularWithPath';
-
-// import { useGetUsers } from 'api/admin/users';
-
-// // ==============================|| USER ADD / EDIT ||============================== //
-
-// export default function UserModal({ open, modalToggler, user }) {
-//   const { usersLoading: loading } = useGetUsers();
-
-//   const closeModal = () => modalToggler(false);
-
-//   const userForm = useMemo(
-//     () => !loading && <FormUserAdd user={user || null} closeModal={closeModal} />,
-//     // eslint-disable-next-line
-//     [user, loading]
-//   );
-
-//   return (
-//     <>
-//       {open && (
-//         <Modal
-//           open={open}
-//           onClose={closeModal}
-//           aria-labelledby="modal-user-add-label"
-//           aria-describedby="modal-user-add-description"
-//           sx={{
-//             '& .MuiPaper-root:focus': {
-//               outline: 'none',
-//             }
-//           }}
-//         >
-//           <MainCard
-//             sx={{ width: `calc(100% - 48px)`, minWidth: 340, maxWidth: 880, height: 'auto', maxHeight: 'calc(100vh - 48px)' }}
-//             modal
-//             content={false}
-//           >
-//             <SimpleBar
-//               sx={{
-//                 maxHeight: `calc(100vh - 48px)`,
-//                 '& .simplebar-content': {
-//                   display: 'flex',
-//                   flexDirection: 'column'
-//                 }
-//               }}
-//             >
-//               {loading ? (
-//                 <Box sx={{ p: 5 }}>
-//                   <Stack direction="row" justifyContent="center">
-//                     <CircularWithPath />
-//                   </Stack>
-//                 </Box>
-//               ) : (
-//                 userForm
-//               )}
-//             </SimpleBar>
-//           </MainCard>
-//         </Modal>
-//       )}
-//     </>
-//   );
-// }
-
-// UserModal.propTypes = { 
-//   open: PropTypes.bool, 
-//   modalToggler: PropTypes.func, 
-//   user: PropTypes.any 
-// };
-
+'use client';
 import PropTypes from 'prop-types';
 import { useMemo } from 'react';
 
@@ -85,21 +8,18 @@ import { useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Modal from '@mui/material/Modal';
 import Stack from '@mui/material/Stack';
+import { GlobalStyles } from '@mui/system';
 
 // project-imports
 import FormUserAdd from './FormUserAdd';
 import FormUserEdit from './FormUserEdit';
 import MainCard from 'components/MainCard';
-import SimpleBar from 'components/third-party/SimpleBar';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 
 import { useGetUsers } from 'api/admin/users';
 
-// ==============================|| USER ADD / EDIT ||============================== //
-
 export default function UserModal({ open, modalToggler, user }) {
   const { usersLoading: loading } = useGetUsers();
-
   const closeModal = () => modalToggler(false);
 
   const userForm = useMemo(() => {
@@ -117,8 +37,8 @@ export default function UserModal({ open, modalToggler, user }) {
         <Modal
           open={open}
           onClose={closeModal}
-          aria-labelledby="modal-user-add-label"
-          aria-describedby="modal-user-add-description"
+          aria-labelledby="modal-customer-add-label"
+          aria-describedby="modal-customer-add-description"
           sx={{
             '& .MuiPaper-root:focus': { outline: 'none' }
           }}
@@ -134,13 +54,17 @@ export default function UserModal({ open, modalToggler, user }) {
             modal
             content={false}
           >
-            <SimpleBar
+            {/* Conteneur scroll natif (remplace SimpleBar) */}
+            <Box
               sx={{
-                maxHeight: `calc(100vh - 48px)`,
-                '& .simplebar-content': {
-                  display: 'flex',
-                  flexDirection: 'column'
-                }
+                maxHeight: 'calc(100vh - 48px)',
+                overflowY: 'auto',
+                // iOS: inertie du scroll
+                WebkitOverflowScrolling: 'touch',
+                // évite les “rebonds” qui créent des doubles scrollbars
+                overscrollBehavior: 'contain',
+                // si le dernier élément du formulaire a une grosse marge basse
+                '& > :last-child': { marginBottom: 0, paddingBottom: 0 }
               }}
             >
               {loading ? (
@@ -152,7 +76,7 @@ export default function UserModal({ open, modalToggler, user }) {
               ) : (
                 userForm
               )}
-            </SimpleBar>
+            </Box>
           </MainCard>
         </Modal>
       )}

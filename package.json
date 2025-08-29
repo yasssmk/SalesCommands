@@ -6,7 +6,9 @@
     "date-fns": "^3.6.0",
     "dompurify": "^3.2.3",
     "react-csv": "^2.2.2",
+    "react-device-detect": "^2.2.3",
     "react-number-format": "^5.4.4",
+    "simplebar-react": "^3.3.2",
     "swr": "^2.3.6"
   }
 }
