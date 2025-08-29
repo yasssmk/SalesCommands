@@ -185,6 +185,7 @@ export default function UserListPage() {
                   color="error"
                   onClick={(e) => {
                     e.stopPropagation();
+                    setSelectedUser(row.original);
                     setUserDeleteId(row.original.id);
                     setOpen(true);
                   }}
@@ -220,7 +221,7 @@ export default function UserListPage() {
       />
       <AlertUserDelete 
         id={userDeleteId} 
-        title={selectedUser?.first_name + ' ' + selectedUser?.last_name || 'User'} 
+        title={selectedUser?.full_name || 'User'} 
         open={open} 
         handleClose={handleClose} 
       />
