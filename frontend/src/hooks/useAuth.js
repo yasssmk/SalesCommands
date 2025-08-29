@@ -33,14 +33,24 @@ export function AuthProvider({ children }) {
   const pathname = usePathname();
   
   // Refs pour optimisation
-  const initializationRef = useRef(false);
   const refreshTimerRef = useRef(null);
   const isRefreshingRef = useRef(false);
 
   // ==============================|| HELPER FUNCTIONS ||============================== //
 
   /**
-   * ✅ SET AUTHENTICATED USER - Action unifiée
+   * STOP AUTO REFRESH
+   */
+  const stopAutoRefresh = useCallback(() => {
+    if (refreshTimerRef.current) {
+      clearInterval(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+      debugLog('⏹ Stopped auto-refresh timer');
+    }
+  }, []);
+
+  /**
+   * SET AUTHENTICATED USER - Action unifiée
    */
   const setAuthenticatedUser = useCallback((userData) => {
     setUser(userData);
@@ -51,7 +61,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * ✅ CLEAR AUTH STATE - Nettoyage complet
+   * CLEAR AUTH STATE - Nettoyage complet
    */
   const clearAuthState = useCallback(() => {
     setUser(null);
@@ -62,20 +72,21 @@ export function AuthProvider({ children }) {
     debugLog('🧹 Auth state cleared');
   }, []);
 
-
   /**
-   * ✅ HANDLE AUTH ERROR - Gestion centralisée d'erreurs
+   * HANDLE AUTH ERROR - Avec arrêt du timer
    */
   const handleAuthError = useCallback((errorMessage) => {
     setError(errorMessage);
+    setIsLoading(false);
+    stopAutoRefresh(); // ✅ Arrêt du timer en cas d'erreur d'auth
     clearAuthState();
-    debugLog('❌ Auth error:', errorMessage);
-  }, [clearAuthState]);
+    debugLog('❌ Auth error handled:', errorMessage);
+  }, [clearAuthState, stopAutoRefresh]);
 
-  // ==============================|| AUTO-REFRESH SYSTEM ||============================== //
+  // ==============================|| TOKEN REFRESH ||============================== //
 
-   /**
-   * ✅ AUTO-REFRESH TOKENS
+  /**
+   * AUTO-REFRESH TOKENS
    */
   const performTokenRefresh = useCallback(async () => {
     if (isRefreshingRef.current) return;
@@ -112,23 +123,14 @@ export function AuthProvider({ children }) {
       performTokenRefresh,
       authConfig.TOKEN_REFRESH_INTERVAL
     );
-  }, [performTokenRefresh]);
+  }, [performTokenRefresh, stopAutoRefresh]);
 
-  const stopAutoRefresh = useCallback(() => {
-    if (refreshTimerRef.current) {
-      clearInterval(refreshTimerRef.current);
-      refreshTimerRef.current = null;
-      debugLog('⏹ Stopped auto-refresh timer');
-    }
-  }, []);
-
-  // ==============================|| MAIN AUTH FUNCTIONS ||============================== //
+  // ==============================|| AUTH ACTIONS ||============================== //
 
   /**
-   * ✅ LOGIN FUNCTION - Version originale fonctionnelle
+   * LOGIN FUNCTION - Navigation Next + re-hydratation
    */
   const login = useCallback(async (email, password) => {
-    // Laisse Formik gérer l'état de soumission; ne touche pas à isLoading ici.
     try {
       setError(null);
       debugLog('🔐 Login attempt for:', email);
@@ -140,25 +142,26 @@ export function AuthProvider({ children }) {
         return { success: false, error: result.error };
       }
 
+      // Store user
       setAuthenticatedUser(result.user);
-
-      // Hard reload vers le dashboard pour garantir l'isolation
-      debugLog('🚀 Login successful, hard reload to dashboard...');
-      window.location.assign(authConfig.PAGES.DASHBOARD);
-
-      startAutoRefresh();
+      
+      // Navigation Next.js avec re-hydratation
+      debugLog('🚀 Login successful, navigating to dashboard...');
+      router.replace(authConfig.PAGES.DASHBOARD);
+      router.refresh();
 
       return { success: true };
     } catch (error) {
       const errorMessage = error.message || authConfig.ERROR_MESSAGES.SERVER_ERROR;
       debugLog('❌ Login error:', errorMessage);
       setError(errorMessage);
+      setIsLoading(false);
       return { success: false, error: errorMessage };
     }
-  }, [setAuthenticatedUser, startAutoRefresh]);
+  }, [router, setAuthenticatedUser]);
 
   /**
-   * ✅ LOGOUT FUNCTION - Version originale
+   * LOGOUT FUNCTION - Navigation Next + re-hydratation
    */
   const logout = useCallback(async () => {
     if (isLoading) {
@@ -171,7 +174,7 @@ export function AuthProvider({ children }) {
       setError(null);
       debugLog('🚪 Starting logout process...');
 
-      // Étape 1: Appel backend (optionnel, continue même si échoue)
+      // Étape 1: Appel backend
       try {
         await logoutUser();
         debugLog('✅ Server logout successful');
@@ -179,73 +182,66 @@ export function AuthProvider({ children }) {
         debugLog('⚠️ Server logout failed, continuing client logout:', backendError.message);
       }
 
-      // Étape 2: Nettoyage client (toujours exécuté)
+      // Étape 2: Nettoyage client
       stopAutoRefresh();
       clearAuthState();
       
-      // Étape 3: Redirection
+      // Étape 3: Navigation Next.js avec re-hydratation
       debugLog('🚀 Redirecting to login...');
-      window.location.assign(authConfig.PAGES.LOGIN);
+      router.replace(authConfig.PAGES.LOGIN);
+      router.refresh();
 
       return { success: true };
     } catch (error) {
       debugLog('❌ Unexpected logout error:', error.message);
-      
-      // Force logout même en cas d'erreur
       clearAuthState();
-      window.location.assign(authConfig.PAGES.LOGIN);
-      
+      router.replace(authConfig.PAGES.LOGIN);
+      router.refresh();
       return { success: false, error: error.message };
-    } finally {
-      setIsLoading(false);
     }
   }, [router, clearAuthState, isLoading, stopAutoRefresh]);
 
   /**
-   * ✅ REFRESH USER DATA
+   * REFRESH USER DATA
    */
   const refreshUser = useCallback(async () => {
-  try {
-    debugLog('🔄 Refreshing user data...');
-    
-    // Stratégie 1: Essayer d'abord via refresh token (plus efficace)
-    const refreshResult = await refreshTokens();
-    
-    if (refreshResult.success && refreshResult.user) {
-      // ✅ Le refresh a retourné les données user
-      setUser(refreshResult.user);
-      debugLog('✅ User data refreshed via token refresh');
-      return refreshResult.user;
-    }
-    
-    // Stratégie 2: Si pas de user dans refresh, faire un appel dédié
-    if (refreshResult.success && !refreshResult.user) {
-      debugLog('⚠️ Token refreshed but no user data, fetching separately...');
-      const userResult = await getCurrentUser();
+    try {
+      debugLog('🔄 Refreshing user data...');
       
-      if (userResult.success) {
-        setUser(userResult.user);
-        debugLog('✅ User data fetched separately');
-        return userResult.user;
-      } else {
-        handleAuthError(userResult.error);
-        return null;
+      const refreshResult = await refreshTokens();
+      
+      if (refreshResult.success && refreshResult.user) {
+        setUser(refreshResult.user);
+        debugLog('✅ User data refreshed via token refresh');
+        return refreshResult.user;
       }
+      
+      if (refreshResult.success && !refreshResult.user) {
+        debugLog('⚠️ Token refreshed but no user data, fetching separately...');
+        const userResult = await getCurrentUser();
+        
+        if (userResult.success) {
+          setUser(userResult.user);
+          debugLog('✅ User data fetched separately');
+          return userResult.user;
+        } else {
+          handleAuthError(userResult.error);
+          return null;
+        }
+      }
+      
+      handleAuthError(refreshResult.error);
+      return null;
+      
+    } catch (error) {
+      debugLog('❌ Refresh user error:', error.message);
+      handleAuthError(error.message);
+      return null;
     }
-    
-    // Si le refresh a échoué
-    handleAuthError(refreshResult.error);
-    return null;
-    
-  } catch (error) {
-    debugLog('❌ Refresh user error:', error.message);
-    handleAuthError(error.message);
-    return null;
-  }
-}, [handleAuthError]);
+  }, [handleAuthError]);
 
   /**
-   * ✅ CHECK AUTH STATUS
+   * CHECK AUTH STATUS
    */
   const checkAuth = useCallback(async () => {
     try {
@@ -268,15 +264,24 @@ export function AuthProvider({ children }) {
   // ==============================|| INITIALIZATION ||============================== //
 
   /**
-   * ✅ INITIALIZATION EFFECT - Avec optimisation page publique SEULEMENT
+   * INITIALIZATION EFFECT - Skip sur routes publiques
    */
   useEffect(() => {
     let mounted = true;
 
     const initializeAuth = async () => {
+      // Routes publiques où l'auth n'est pas nécessaire
+      const publicRoutes = authConfig.PUBLIC_ROUTES || ['/login', '/register', '/forgot-password'];
+      
+      if (publicRoutes.includes(pathname)) {
+        debugLog('ℹ️ Public route, skipping auth initialization');
+        setIsLoading(false);
+        return;
+      }
+
       try {
         debugLog('🚀 Initializing authentication...');
-        const result = await getCurrentUser(); // un seul appel
+        const result = await getCurrentUser();
         if (!mounted) return;
 
         if (result.success) {
@@ -297,13 +302,11 @@ export function AuthProvider({ children }) {
 
     initializeAuth();
 
-    // Cleanup uniquement à la destruction du provider (pas à chaque navigation)
     return () => {
       mounted = false;
       stopAutoRefresh();
     };
-    // 🚫 Pas de pathname ici : on initialise une seule fois
-  }, [setAuthenticatedUser, clearAuthState, startAutoRefresh, stopAutoRefresh]);
+  }, [pathname, setAuthenticatedUser, clearAuthState, startAutoRefresh, stopAutoRefresh]);
 
   // ==============================|| CONTEXT VALUE ||============================== //
 
@@ -313,8 +316,8 @@ export function AuthProvider({ children }) {
     isAuthenticated,
     isLoading,
     error,
-
-     // Exposition explicite du tenantId pour l'isolation
+    
+    // Exposition explicite du tenantId pour l'isolation
     tenantId: user?.client_id || null,
     tenantName: user?.client_name || null,
     
@@ -326,7 +329,7 @@ export function AuthProvider({ children }) {
     
     // Utilities
     clearError: useCallback(() => setError(null), []),
-    clearAuthState,
+    clearAuthState
   };
 
   return (
@@ -339,7 +342,7 @@ export function AuthProvider({ children }) {
 // ==============================|| HOOKS ||============================== //
 
 /**
- * ✅ MAIN AUTH HOOK
+ * MAIN AUTH HOOK
  */
 export function useAuth() {
   const context = useContext(AuthContext);
