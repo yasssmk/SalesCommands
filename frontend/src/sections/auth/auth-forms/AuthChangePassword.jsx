@@ -39,10 +39,7 @@ import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
 
 export default function AuthChangePassword({ userId, userEmail }) {
   const router = useRouter();
-  console.log('AuthChangePassword received userId:', userId);
-  if (!userId || userId === 'undefined') {
-    return <div>Error: User ID missing</div>;
-  }
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [level, setLevel] = useState();
