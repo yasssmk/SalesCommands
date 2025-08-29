@@ -2,6 +2,7 @@
 
 import PropTypes from 'prop-types';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
@@ -85,6 +86,8 @@ export default function FormUserEdit({ closeModal, userId, user: initialUser, on
 
   const { user: fetchedUser, userLoading } = useGetUser(userId);
   const userData = initialUser || fetchedUser;
+
+  const router = useRouter();
 
   useEffect(() => {
     if (selectedImage) setAvatar(URL.createObjectURL(selectedImage));
@@ -416,9 +419,12 @@ export default function FormUserEdit({ closeModal, userId, user: initialUser, on
                   <Grid item xs={12}>
                     <Stack spacing={1}>
                         <Link
-                          href={`/users/${String(userData?.id)}/change-password`}
-                          underline="hover"
-                          sx={{ mt: 1, alignSelf: 'flex-start' }}
+                        variant="caption"
+                        color="primary"
+                        onClick={() => router.push(`/users/${String(userData?.id)}/change-password`)}
+                        sx={{ cursor: 'pointer', mt: 1, alignSelf: 'flex-start' }}
+                          // href={`/users/${String(userData?.id)}/change-password`}
+                        underline="hover"
                         >
                           Change user password
                         </Link>
