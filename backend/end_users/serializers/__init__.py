@@ -1,4 +1,17 @@
-from .user_serializer import ClientAccountSerializer, UserRoleSerializer, TeamSerializer, OrganizationSerializer, UserListSerializer, UserSerializer, ChangePasswordSerializer
+from .user_serializer import (
+    ClientAccountSerializer, 
+    TeamSerializer, 
+    OrganizationSerializer, 
+    UserListSerializer, 
+    UserSerializer, 
+    ChangePasswordSerializer
+)
+from .role_serializers import (
+    RoleSerializer,
+    RoleUpdateSerializer,
+    RoleListSerializer,
+    RolePermissionsMatrixSerializer
+)
 from .sales_quota_serializer import (
     SalesQuotaSerializer,
     SalesQuotaSummarySerializer,
@@ -6,14 +19,21 @@ from .sales_quota_serializer import (
 )
 
 __all__ = [
+    # User & Client management
     'ClientAccountSerializer',
-    'UserRoleSerializer',
     'TeamSerializer',
     'OrganizationSerializer',
     'UserListSerializer',
     'UserSerializer',
     'ChangePasswordSerializer',
-
+    
+    # Role management (nouveaux serializers)
+    'RoleSerializer',
+    'RoleUpdateSerializer',
+    'RoleListSerializer',
+    'RolePermissionsMatrixSerializer',
+    
+    # Sales management
     'SalesQuotaSerializer', 
     'SalesQuotaSummarySerializer',
     'SalesQuotaListSerializer',

@@ -41,7 +41,7 @@ class CoreErrorMessages:
     INVALID_DATA = _("Invalid data provided: {detail}")
     BATCH_UPDATE_MISSING_ID = _("All items in batch update must have an ID")
     NO_OBJECTS_FOUND = _("No objects were found to process")
-    MASS_UPDATE_INVALID = _("No valid fields provided for update")
+    MASS_UPDATE_INVALID = _("No valid fields provided for update") 
     
     # Field Validation
     REQUIRED_FIELD = _("{field} is required")

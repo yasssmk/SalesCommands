@@ -35,38 +35,38 @@ class ClientAccountSerializer(serializers.ModelSerializer):
         return obj.organizations.count()
 
 
-class UserRoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
-    """
-    Serializer pour UserRole avec client scoping
-    """
-    users_count = serializers.SerializerMethodField(read_only=True)
-    permissions_summary = serializers.SerializerMethodField(read_only=True)
+# class UserRoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+#     """
+#     Serializer pour UserRole avec client scoping
+#     """
+#     users_count = serializers.SerializerMethodField(read_only=True)
+#     permissions_summary = serializers.SerializerMethodField(read_only=True)
     
-    # Relation client_account
-    client_account_name = serializers.CharField(source='client_account.name', read_only=True)
+#     # Relation client_account
+#     client_account_name = serializers.CharField(source='client_account.name', read_only=True)
     
-    class Meta:
-        model = UserRole
-        fields = [
-            'id', 'name', 'read', 'write', 'modify', 'delete',
-            'client_account', 'client_account_name',
-            'users_count', 'permissions_summary',
-            'created_at', 'updated_at'
-        ]
-        read_only_fields = ['created_at', 'updated_at', 'users_count', 'permissions_summary']
+#     class Meta:
+#         model = UserRole
+#         fields = [
+#             'id', 'name', 'read', 'write', 'modify', 'delete',
+#             'client_account', 'client_account_name',
+#             'users_count', 'permissions_summary',
+#             'created_at', 'updated_at'
+#         ]
+#         read_only_fields = ['created_at', 'updated_at', 'users_count', 'permissions_summary']
     
-    def get_users_count(self, obj):
-        """Nombre d'utilisateurs avec ce rôle"""
-        return obj.users.filter(is_active=True).count()
+#     def get_users_count(self, obj):
+#         """Nombre d'utilisateurs avec ce rôle"""
+#         return obj.users.filter(is_active=True).count()
     
-    def get_permissions_summary(self, obj):
-        """Résumé des permissions"""
-        permissions = []
-        if obj.read: permissions.append('read')
-        if obj.write: permissions.append('write') 
-        if obj.modify: permissions.append('modify')
-        if obj.delete: permissions.append('delete')
-        return permissions
+#     def get_permissions_summary(self, obj):
+#         """Résumé des permissions"""
+#         permissions = []
+#         if obj.read: permissions.append('read')
+#         if obj.write: permissions.append('write') 
+#         if obj.modify: permissions.append('modify')
+#         if obj.delete: permissions.append('delete')
+#         return permissions
     
     def validate(self, data):
         """Validation métier"""

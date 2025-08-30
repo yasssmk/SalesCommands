@@ -18,7 +18,6 @@ from core.jwt_helpers import CustomJWTAuthentication
 from ..models.user_model import ClientAccount, UserRole, Organization, Team, User
 from ..serializers.user_serializer import (
     ClientAccountSerializer,
-    UserRoleSerializer,
     OrganizationSerializer,
     TeamSerializer,
     UserSerializer,
@@ -110,57 +109,57 @@ class ClientAccountViewSet(BaseAPIView, viewsets.ModelViewSet):
 
 
 
-class UserRoleViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
-    """
-    API endpoints for managing user roles with client scoping
-    """
-    queryset = UserRole.objects.all()
-    serializer_class = UserRoleSerializer
-    entity_name = 'user_role'
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['read', 'write', 'modify', 'delete']
-    search_fields = ['name']
-    ordering_fields = ['name', 'created_at']
-    ordering = ['name']
+# class UserRoleViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
+#     """
+#     API endpoints for managing user roles with client scoping
+#     """
+#     queryset = UserRole.objects.all()
+#     serializer_class = UserRoleSerializer
+#     entity_name = 'user_role'
+#     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+#     filterset_fields = ['read', 'write', 'modify', 'delete']
+#     search_fields = ['name']
+#     ordering_fields = ['name', 'created_at']
+#     ordering = ['name']
     
-    def get_queryset(self):
-        """Get user roles for the current client with optimized queries"""
-        queryset = UserRole.objects.all()
+#     def get_queryset(self):
+#         """Get user roles for the current client with optimized queries"""
+#         queryset = UserRole.objects.all()
         
-        # Apply client scoping
-        queryset = self.filter_queryset_by_client(queryset)
+#         # Apply client scoping
+#         queryset = self.filter_queryset_by_client(queryset)
         
-        # Optimiser avec relations
-        queryset = queryset.select_related('client_account').prefetch_related(
-            Prefetch('users', queryset=User.objects.filter(is_active=True))
-        )
+#         # Optimiser avec relations
+#         queryset = queryset.select_related('client_account').prefetch_related(
+#             Prefetch('users', queryset=User.objects.filter(is_active=True))
+#         )
         
-        return queryset
+#         return queryset
     
-    @action(detail=False, methods=['get'])
-    def permissions_matrix(self, request):
-        """Matrix des permissions par rôle"""
-        roles = self.get_queryset()
+#     @action(detail=False, methods=['get'])
+#     def permissions_matrix(self, request):
+#         """Matrix des permissions par rôle"""
+#         roles = self.get_queryset()
         
-        matrix = []
-        for role in roles:
-            matrix.append({
-                'id': str(role.id),
-                'name': role.name,
-                'permissions': {
-                    'read': role.read,
-                    'write': role.write,
-                    'modify': role.modify,
-                    'delete': role.delete
-                },
-                'users_count': role.users.filter(is_active=True).count()
-            })
+#         matrix = []
+#         for role in roles:
+#             matrix.append({
+#                 'id': str(role.id),
+#                 'name': role.name,
+#                 'permissions': {
+#                     'read': role.read,
+#                     'write': role.write,
+#                     'modify': role.modify,
+#                     'delete': role.delete
+#                 },
+#                 'users_count': role.users.filter(is_active=True).count()
+#             })
         
-        return Response({
-            'success': True,
-            'data': matrix,
-            'total_roles': len(matrix)
-        })
+#         return Response({
+#             'success': True,
+#             'data': matrix,
+#             'total_roles': len(matrix)
+#         })
 
 
 class OrganizationViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):

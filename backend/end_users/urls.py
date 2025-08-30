@@ -4,7 +4,6 @@ from django.urls import path
 from .views.user_view import (
     # ViewSets
     ClientAccountViewSet,
-    UserRoleViewSet,
     OrganizationViewSet,
     TeamViewSet,
     UserViewSet,
@@ -14,6 +13,7 @@ from .views.user_view import (
     UserRefreshTokenView,
     UserCurrentView
 )
+from .views.role_views import UserRoleViewSet 
 from .views.sales_quota_views import SalesQuotaViewSet
 from .views.sales_plan_views import SalesPlanViewSet  
 from .views.sales_milestone_views import SalesMilestoneViewSet
@@ -63,7 +63,8 @@ urlpatterns = [
         'post': 'create'
     }), name='user-role-list'),
     
-    path('roles/<int:pk>/', UserRoleViewSet.as_view({
+    # CORRECTION CRITIQUE : UUID pk au lieu de int pk
+    path('roles/<uuid:pk>/', UserRoleViewSet.as_view({
         'get': 'retrieve',
         'put': 'update',
         'patch': 'partial_update',
