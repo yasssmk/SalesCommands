@@ -10,7 +10,6 @@ from .role_serializers import (
     RoleSerializer,
     RoleUpdateSerializer,
     RoleListSerializer,
-    RolePermissionsMatrixSerializer
 )
 from .sales_quota_serializer import (
     SalesQuotaSerializer,
@@ -31,7 +30,6 @@ __all__ = [
     'RoleSerializer',
     'RoleUpdateSerializer',
     'RoleListSerializer',
-    'RolePermissionsMatrixSerializer',
     
     # Sales management
     'SalesQuotaSerializer', 
