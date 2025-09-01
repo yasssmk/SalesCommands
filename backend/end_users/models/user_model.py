@@ -297,6 +297,19 @@ class UserRole(BaseModel):
     write = models.BooleanField(default=False)
     modify = models.BooleanField(default=False)
     delete = models.BooleanField(default=False)
+
+    is_admin = models.BooleanField(
+        default=False,
+        help_text="Administrator tier - full client access"
+    )
+    is_manager = models.BooleanField(
+        default=False,
+        help_text="Manager tier - team access"
+    )
+    is_individual = models.BooleanField(
+        default=True,
+        help_text="Individual tier - personal access"
+    )
     
     # Référence vers ClientAccount pour compatibilité
     client_account = models.ForeignKey(
@@ -312,9 +325,49 @@ class UserRole(BaseModel):
         verbose_name_plural = _('users_roles')
         unique_together = ('name', 'client_account')
         ordering = ['name']
+        constraints = [
+            # Assurer qu'exactement un tier est actif
+            models.CheckConstraint(
+                check=(
+                    models.Q(is_admin=True, is_manager=False, is_individual=False) |
+                    models.Q(is_admin=False, is_manager=True, is_individual=False) |
+                    models.Q(is_admin=False, is_manager=False, is_individual=True)
+                ),
+                name='exactly_one_tier_active'
+            )
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.client_account.name})"
+    
+    def save(self, *args, **kwargs):
+        """Auto-detect tier from name if no tier is set."""
+        # Si aucun tier n'est défini, détection automatique
+        if not (self.is_admin or self.is_manager or self.is_individual):
+            name_lower = self.name.lower()
+            if 'admin' in name_lower:
+                self.is_admin = True
+                self.is_individual= False
+                self.is_manager=False
+            elif any(w in name_lower for w in ['manager', 'supervisor', 'lead', 'direction']):
+                self.is_manager = True
+                self.is_admin = False
+                self.is_individual= False
+            else:
+                self.is_individual = True
+                self.is_manager = False
+                self.is_admin = False
+        
+        super().save(*args, **kwargs)
+    
+    def get_tier(self) -> str:
+        """Get the tier as a string."""
+        if self.is_admin:
+            return 'admin'
+        elif self.is_manager:
+            return 'manager'
+        else:
+            return 'individual'
 
 
 class Organization(BaseModel):

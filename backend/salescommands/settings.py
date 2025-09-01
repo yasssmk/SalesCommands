@@ -277,4 +277,71 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
+# ========================================================================
+# PERMISSIONS CONFIGURATION
+# ========================================================================
 
+PERMISSIONS_CONFIG = {
+    # Master kill switch - set to True to enable the permission system globally
+    'GLOBAL_ENABLED': False,  # Start with False for safety
+    
+    # Debug mode - adds permission info to response headers (only in DEBUG=True)
+    'DEBUG': False,
+    
+    # Audit logging - logs all permission checks
+    'AUDIT_ENABLED': False,
+    
+    # Cache timeout for permission decisions (in seconds)
+    'CACHE_TIMEOUT': 300,  # 5 minutes
+    
+    # Logger name for audit logs
+    'AUDIT_LOGGER': 'permissions.audit',
+    
+    # Enable object-level permission checks (more expensive)
+    'ENABLE_OBJECT_PERMISSIONS': False,
+    
+    # Strict mode - if True, any error results in permission denied
+    'STRICT_MODE': False,  # Set to True in production
+    
+    # Module-by-module feature flags
+    # Enable modules one by one for gradual rollout
+    'MODULES': {
+        'accounts': False,      # Account management
+        'contacts': False,      # Contact management  
+        'activities': False,    # Activity tracking
+        'leads': False,         # Lead management
+        'opportunities': False, # Opportunity/deals
+        'campaign': False,      # Campaign management
+        'pipelines': False,     # Buying process/pipelines
+        'templates': False,     # Email/doc templates
+        'users': False,         # User management
+        'products': False,      # Product catalog
+    }
+}
+
+# ========================================================================
+# PERMISSION SYSTEM INITIALIZATION CHECK
+# ========================================================================
+
+# Add this at the end of settings.py to verify configuration on startup
+def check_permission_config():
+    """Validate permission configuration on startup."""
+    if PERMISSIONS_CONFIG.get('GLOBAL_ENABLED'):
+        enabled_modules = [
+            module for module, enabled in PERMISSIONS_CONFIG['MODULES'].items() 
+            if enabled
+        ]
+        if not enabled_modules:
+            import warnings
+            warnings.warn(
+                "Permission system is globally enabled but no modules are activated. "
+                "Enable specific modules in PERMISSIONS_CONFIG['MODULES']."
+            )
+        else:
+            print(f"✓ Permission system enabled for modules: {', '.join(enabled_modules)}")
+    else:
+        print("✓ Permission system is currently DISABLED (GLOBAL_ENABLED=False)")
+
+# Run the check (comment out in production)
+if DEBUG:
+    check_permission_config()

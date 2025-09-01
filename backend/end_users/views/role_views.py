@@ -100,33 +100,34 @@ class UserRoleViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
     def check_admin_permission(self):
         """
         Vérifie que l'utilisateur a les droits admin.
-        Centralise la logique de vérification des permissions.
+        MISE À JOUR : Utilise maintenant is_admin si disponible
         """
         user = self.request.user
         
-        # Utiliser la méthode has_admin_rights() du modèle User
-        # Cette méthode vérifie is_superuser OU role.name == 'Admin'
+        # Méthode 1 : Utiliser has_admin_rights() si elle existe
         if hasattr(user, 'has_admin_rights'):
             if not user.has_admin_rights():
                 raise StandardizedPermissionDenied(
                     CoreErrorMessages.PERMISSION_DENIED + " - Admin rights required"
                 )
         else:
-            # Fallback si la méthode n'existe pas
-            # Vérifier les droits admin manuellement
+            # Méthode 2 : Vérifier directement le tier
             is_admin = False
             
-            # Check superuser status (c'est un attribut, pas une méthode)
+            # Check superuser
             if hasattr(user, 'is_superuser') and user.is_superuser == True:
                 is_admin = True
-            # Check role
+            # NOUVEAU : Check is_admin flag
             elif hasattr(user, 'role') and user.role:
-                if hasattr(user.role, 'name') and user.role.name == 'Admin':
+                if hasattr(user.role, 'is_admin') and user.role.is_admin:
+                    is_admin = True
+                # Fallback sur le nom si is_admin n'existe pas encore
+                elif hasattr(user.role, 'name') and 'admin' in user.role.name.lower():
                     is_admin = True
             
             if not is_admin:
                 raise StandardizedPermissionDenied(
-                    CoreErrorMessages.PERMISSION_DENIED + " - Admin role required"
+                    CoreErrorMessages.PERMISSION_DENIED + " - Admin tier required"
                 )
         
         return True
@@ -471,12 +472,19 @@ class UserRoleViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
     def summary(self, request):
         """
         Résumé global des rôles et permissions du client.
-        Accessible à tous les utilisateurs authentifiés.
+        MISE À JOUR : Inclut maintenant la distribution par tier
         """
         client_id = self.get_client_id()
         
         # Statistiques générales
         roles = UserRole.objects.filter(client_account_id=client_id)
+        
+        # NOUVEAU : Distribution par tier
+        tier_distribution = {
+            'admin': roles.filter(is_admin=True).count(),
+            'manager': roles.filter(is_manager=True).count(),
+            'individual': roles.filter(is_individual=True).count()
+        }
         
         # Compter les utilisateurs par permission
         stats = {
@@ -491,23 +499,34 @@ class UserRoleViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
                 'write': roles.filter(write=True).count(),
                 'modify': roles.filter(modify=True).count(),
                 'delete': roles.filter(delete=True).count()
-            }
+            },
+            # NOUVEAU
+            'tier_distribution': tier_distribution
         }
         
-        # Distribution des rôles
+        # Distribution des rôles avec tier
         role_distribution = roles.annotate(
             active_users=Count('users', filter=Q(users__is_active=True))
-        ).values('name', 'active_users').order_by('-active_users')
+        ).values('name', 'is_admin', 'is_manager', 'is_individual', 'active_users').order_by('-active_users')
         
         # Identifier les rôles critiques
         critical_roles = []
-        admin_role = roles.filter(name='Admin').first()
-        if admin_role:
+        
+        # NOUVEAU : Vérifier les admins par tier au lieu du nom
+        admin_roles = roles.filter(is_admin=True)
+        for admin_role in admin_roles:
             admin_users = admin_role.users.filter(is_active=True).count()
             critical_roles.append({
-                'role': 'Admin',
+                'role': admin_role.name,
+                'tier': 'admin',
                 'active_users': admin_users,
                 'warning': 'Only one admin user' if admin_users == 1 else None
+            })
+        
+        # Avertissement si aucun admin
+        if not admin_roles.exists():
+            critical_roles.append({
+                'warning': 'No admin role defined!'
             })
         
         return Response({
@@ -525,7 +544,7 @@ class UserRoleViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
     def duplicate(self, request, pk=None):
         """
         Dupliquer un rôle existant avec un nouveau nom.
-        Réservé aux administrateurs.
+        MISE À JOUR : Copie aussi les flags de tier
         """
         # Vérifier les permissions admin
         self.check_admin_permission()
@@ -538,21 +557,25 @@ class UserRoleViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelV
                 CoreErrorMessages.REQUIRED_FIELD.format(field="name")
             )
         
-        # Créer le nouveau rôle
+        # Créer le nouveau rôle avec les tiers
         with transaction.atomic():
-            # Le champ 'delete' peut être passé comme paramètre sans problème
             new_role = UserRole.objects.create(
                 client_account=source_role.client_account,
                 name=new_name,
                 read=source_role.read,
                 write=source_role.write,
                 modify=source_role.modify,
-                delete=source_role.delete  # C'est un paramètre, pas un appel de méthode
+                delete=source_role.delete,
+                # NOUVEAU : Copier les flags de tier
+                is_admin=source_role.is_admin,
+                is_manager=source_role.is_manager,
+                is_individual=source_role.is_individual
             )
             
             # Log l'action
             user_email = request.user.email if hasattr(request.user, 'email') else str(request.user)
-            print(f"[AUDIT] Role '{new_role.name}' duplicated from '{source_role.name}' by {user_email}")
+            tier = new_role.get_tier()  # Utiliser la méthode helper
+            print(f"[AUDIT] Role '{new_role.name}' (tier: {tier}) duplicated from '{source_role.name}' by {user_email}")
         
         serializer = RoleSerializer(new_role)
         

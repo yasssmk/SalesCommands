@@ -32,6 +32,8 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     
     users_count = serializers.SerializerMethodField(read_only=True)
     active_users_count = serializers.SerializerMethodField(read_only=True)
+
+    tier = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = UserRole
@@ -39,6 +41,9 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             'id', 'name',
             # Permissions réelles du modèle
             'read', 'write', 'modify', 'delete',
+            #tier
+            'is_admin', 'is_manager', 'is_individual',
+            'tier',
             # Métadonnées
             'client_account', 'client_account_name',
             'users_count', 'active_users_count',
@@ -46,9 +51,19 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         ]
         read_only_fields = [
             'id', 'client_account', 'client_account_name',
-            'users_count', 'active_users_count',
+            'users_count', 'active_users_count','tier',
             'created_at', 'updated_at'
         ]
+    
+    def get_tier(self, obj):
+        """Retourne le tier actif sous forme de string"""
+        if obj.is_admin:
+            return 'admin'
+        elif obj.is_manager:
+            return 'manager'
+        elif obj.is_individual:
+            return 'individual'
+        return 'unknown' 
     
     def get_users_count(self, obj):
         """Nombre total d'utilisateurs avec ce rôle"""
@@ -146,6 +161,49 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             if not self.instance:
                 attrs['client_account_id'] = client_id
             
+            rtier_count = sum([
+                attrs.get('is_admin', False),
+                attrs.get('is_manager', False), 
+                attrs.get('is_individual', False)
+            ])
+            
+            if self.instance:
+                # Pour update, prendre en compte les valeurs existantes
+                tier_count = sum([
+                    attrs.get('is_admin', self.instance.is_admin),
+                    attrs.get('is_manager', self.instance.is_manager),
+                    attrs.get('is_individual', self.instance.is_individual)
+                ])
+            
+            if tier_count == 0:
+                # Auto-détection depuis le nom si aucun tier défini
+                name = attrs.get('name', self.instance.name if self.instance else '')
+                if name:
+                    name_lower = name.lower()
+                    if 'admin' in name_lower:
+                        attrs['is_admin'] = True
+                        attrs['is_manager'] = False
+                        attrs['is_individual'] = False
+                    elif any(w in name_lower for w in ['manager', 'supervisor', 'lead']):
+                        attrs['is_admin'] = False
+                        attrs['is_manager'] = True
+                        attrs['is_individual'] = False
+                    else:
+                        attrs['is_admin'] = False
+                        attrs['is_manager'] = False
+                        attrs['is_individual'] = True
+                else:
+                    # Par défaut : individual
+                    attrs['is_admin'] = False
+                    attrs['is_manager'] = False
+                    attrs['is_individual'] = True
+            elif tier_count > 1:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_DATA.format(
+                        detail="Exactly one tier (is_admin, is_manager, is_individual) must be active"
+                    )
+                )
+            
             return super().validate(attrs)
             
         except StandardizedValidationError:
@@ -229,7 +287,10 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             'read': {'required': False, 'default': True},
             'write': {'required': False, 'default': False},
             'modify': {'required': False, 'default': False},
-            'delete': {'required': False, 'default': False}
+            'delete': {'required': False, 'default': False},
+            'is_admin': {'required': False, 'default': False},
+            'is_manager': {'required': False, 'default': False},
+            'is_individual': {'required': False, 'default': True}
         }
     
     def to_internal_value(self, data):
@@ -301,6 +362,34 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
                     CoreErrorMessages.REQUIRED_FIELD.format(field='name')
                 )
             
+            if not any([attrs.get('is_admin'), attrs.get('is_manager'), attrs.get('is_individual')]):
+                name = attrs.get('name', '').lower()
+                if 'admin' in name:
+                    attrs['is_admin'] = True
+                    attrs['is_manager'] = False
+                    attrs['is_individual'] = False
+                elif any(w in name for w in ['manager', 'supervisor', 'lead']):
+                    attrs['is_admin'] = False
+                    attrs['is_manager'] = True
+                    attrs['is_individual'] = False
+                else:
+                    attrs['is_admin'] = False
+                    attrs['is_manager'] = False
+                    attrs['is_individual'] = True
+            else:
+                # Vérifier qu'exactement un tier est actif
+                tier_count = sum([attrs.get('is_admin', False), 
+                                 attrs.get('is_manager', False),
+                                 attrs.get('is_individual', False)])
+                if tier_count != 1:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_DATA.format(
+                            detail="Exactly one tier must be active"
+                        )
+                    )
+            
+            return attrs
+            
             return attrs
             
         except StandardizedValidationError:
@@ -335,7 +424,10 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             'read': {'required': False},
             'write': {'required': False},
             'modify': {'required': False},
-            'delete': {'required': False}
+            'delete': {'required': False},
+            'is_admin': {'required': False},
+            'is_manager': {'required': False},
+            'is_individual': {'required': False}
         }
     
     def to_internal_value(self, data):
@@ -383,7 +475,36 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             if (current_write or current_modify) and not current_read:
                 attrs['read'] = True
             
+            is_admin = attrs.get('is_admin', instance.is_admin if instance else False)
+            is_manager = attrs.get('is_manager', instance.is_manager if instance else False)
+            is_individual = attrs.get('is_individual', instance.is_individual if instance else False)
+            
+            # Vérifier qu'exactement un tier reste actif
+            tier_count = sum([is_admin, is_manager, is_individual])
+            
+            if tier_count == 0:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_DATA.format(
+                        detail="At least one tier must be active"
+                    )
+                )
+            elif tier_count > 1:
+                # Si plusieurs sont activés, garder le plus élevé
+                if is_admin:
+                    attrs['is_admin'] = True
+                    attrs['is_manager'] = False
+                    attrs['is_individual'] = False
+                elif is_manager:
+                    attrs['is_admin'] = False
+                    attrs['is_manager'] = True
+                    attrs['is_individual'] = False
+                else:
+                    attrs['is_admin'] = False
+                    attrs['is_manager'] = False
+                    attrs['is_individual'] = True
+            
             return super().validate(attrs)
+            
             
         except Exception as e:
             raise StandardizedValidationError(
@@ -399,6 +520,11 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             'write': instance.write,
             'modify': instance.modify,
             'delete': instance.delete,
+            # Tier
+            'is_admin': instance.is_admin,
+            'is_manager': instance.is_manager,
+            'is_individual': instance.is_individual,
+            'tier': instance.get_tier(), 
             # Ajout des champs canoniques
             'create': instance.write,
             'update': instance.modify,
@@ -414,14 +540,27 @@ class RoleListSerializer(serializers.ModelSerializer):
     
     # Compteurs optimisés
     users_count = serializers.IntegerField(read_only=True)
+    tier = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = UserRole
         fields = [
             'id', 'name',
             'read', 'write', 'modify', 'delete',
+            'is_admin', 'is_manager', 'is_individual',
+            'tier',
             'users_count'
         ]
+    
+    def get_tier(self, obj):
+        """Retourne le tier actif"""
+        if obj.is_admin:
+            return 'admin'
+        elif obj.is_manager:
+            return 'manager'
+        elif obj.is_individual:
+            return 'individual'
+        return 'unknown'
     
     def to_representation(self, instance):
         """Ajouter les champs canoniques en sortie"""
