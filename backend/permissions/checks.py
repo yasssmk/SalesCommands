@@ -1,3 +1,4 @@
+# backend/permissions/checks.py
 """
 Permission Checks - Core decision engine for permissions
 
@@ -26,11 +27,10 @@ def resolve_tier(user) -> str:
     """
     Resolve user's tier from their role.
     
-    Strategy (MVP):
-    - Check role name for keywords (admin, manager)
-    - Default to 'individual' if no match
-    
-    Future: Use dedicated tier field on UserRole model
+    Strategy (updated to use dedicated tier fields):
+    1. Check UserRole tier fields (is_admin, is_manager, is_individual)
+    2. Fallback to role name keywords (for backward compatibility)
+    3. Default to 'individual' if no match
     
     Args:
         user: Django User instance
@@ -45,8 +45,17 @@ def resolve_tier(user) -> str:
     if hasattr(user, 'is_superuser') and user.is_superuser:
         return 'admin'
     
-    # Check role name (case-insensitive)
+    # Check role tier fields (NEW - priorité aux champs dédiés)
     if hasattr(user, 'role') and user.role:
+        # Use dedicated tier fields if they exist
+        if hasattr(user.role, 'is_admin') and user.role.is_admin:
+            return 'admin'
+        elif hasattr(user.role, 'is_manager') and user.role.is_manager:
+            return 'manager'
+        elif hasattr(user.role, 'is_individual') and user.role.is_individual:
+            return 'individual'
+        
+        # Fallback to role name detection (for backward compatibility)
         role_name = user.role.name.lower() if user.role.name else ''
         
         # Check for admin keywords
@@ -54,7 +63,7 @@ def resolve_tier(user) -> str:
             return 'admin'
         
         # Check for manager keywords  
-        if any(keyword in role_name for keyword in ['manager', 'supervisor', 'lead']):
+        if any(keyword in role_name for keyword in ['manager', 'supervisor', 'lead', 'direction']):
             return 'manager'
     
     # Default to individual

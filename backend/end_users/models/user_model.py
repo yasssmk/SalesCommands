@@ -287,7 +287,8 @@ class ClientAccount(BaseModel):
 
 class UserRole(BaseModel):
     """
-    Rôles utilisateur SANS client scoping pour simplifier
+    Rôles utilisateur avec gestion explicite des tiers.
+    PAS d'auto-détection dans le modèle - la validation se fait dans les serializers.
     """
     name = models.CharField(
         max_length=50, 
@@ -298,6 +299,7 @@ class UserRole(BaseModel):
     modify = models.BooleanField(default=False)
     delete = models.BooleanField(default=False)
 
+    # Champs de tier - exactement UN doit être True
     is_admin = models.BooleanField(
         default=False,
         help_text="Administrator tier - full client access"
@@ -307,7 +309,7 @@ class UserRole(BaseModel):
         help_text="Manager tier - team access"
     )
     is_individual = models.BooleanField(
-        default=True,
+        default=False,
         help_text="Individual tier - personal access"
     )
     
@@ -338,37 +340,116 @@ class UserRole(BaseModel):
         ]
 
     def __str__(self):
-        return f"{self.name} ({self.client_account.name})"
+        tier = self.get_tier()
+        return f"{self.name} ({tier}) - {self.client_account.name}"
     
     def save(self, *args, **kwargs):
-        """Auto-detect tier from name if no tier is set."""
-        # Si aucun tier n'est défini, détection automatique
-        if not (self.is_admin or self.is_manager or self.is_individual):
-            name_lower = self.name.lower()
-            if 'admin' in name_lower:
-                self.is_admin = True
-                self.is_individual= False
-                self.is_manager=False
-            elif any(w in name_lower for w in ['manager', 'supervisor', 'lead', 'direction']):
-                self.is_manager = True
-                self.is_admin = False
-                self.is_individual= False
-            else:
-                self.is_individual = True
-                self.is_manager = False
-                self.is_admin = False
+        """
+        Save method simplifiée - PAS d'auto-détection des tiers.
+        La validation des tiers se fait dans les serializers.
+        La contrainte DB s'assure qu'exactement un tier est actif.
+        """
+        # Validation basique : au moins un tier doit être actif
+        tier_count = sum([self.is_admin, self.is_manager, self.is_individual])
+        
+        if tier_count == 0:
+            # Si aucun tier n'est défini, forcer individual par défaut
+            # Ceci ne devrait arriver que pour des opérations directes sur le modèle
+            # (bypassing serializers), comme dans les tests ou migrations
+            self.is_individual = True
+            self.is_admin = False
+            self.is_manager = False
+        elif tier_count > 1:
+            # Si plusieurs tiers sont actifs, lever une exception standard
+            active_tiers = []
+            if self.is_admin:
+                active_tiers.append('is_admin')
+            if self.is_manager:
+                active_tiers.append('is_manager')
+            if self.is_individual:
+                active_tiers.append('is_individual')
+            
+            # Utiliser l'exception standard du projet
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_DATA.format(
+                    detail=f"Only one tier can be active. Currently active: {', '.join(active_tiers)}"
+                )
+            )
         
         super().save(*args, **kwargs)
     
     def get_tier(self) -> str:
-        """Get the tier as a string."""
+        """
+        Get the active tier as a string.
+        Returns 'admin', 'manager', or 'individual'.
+        """
         if self.is_admin:
             return 'admin'
         elif self.is_manager:
             return 'manager'
-        else:
+        elif self.is_individual:
             return 'individual'
-
+        else:
+            # Ne devrait jamais arriver grâce à la contrainte DB
+            return 'unknown'
+    
+    def get_permissions_summary(self) -> dict:
+        """
+        Get a summary of permissions for this role.
+        Useful for debugging and display.
+        """
+        return {
+            'tier': self.get_tier(),
+            'permissions': {
+                'read': self.read,
+                'write': self.write,
+                'modify': self.modify,
+                'delete': self.delete,
+            },
+            'tier_flags': {
+                'is_admin': self.is_admin,
+                'is_manager': self.is_manager,
+                'is_individual': self.is_individual,
+            }
+        }
+    
+    def clean(self):
+        """
+        Django model validation.
+        S'assure qu'exactement un tier est actif.
+        Utilise les exceptions standard du projet.
+        """
+        super().clean()
+        
+        tier_count = sum([self.is_admin, self.is_manager, self.is_individual])
+        
+        if tier_count == 0:
+            # Utiliser ValidationError standard de Django pour clean()
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_DATA.format(
+                    detail="At least one tier must be active (is_admin, is_manager, or is_individual)."
+                )
+            )
+        elif tier_count > 1:
+            active_tiers = []
+            if self.is_admin:
+                active_tiers.append('is_admin')
+            if self.is_manager:
+                active_tiers.append('is_manager')
+            if self.is_individual:
+                active_tiers.append('is_individual')
+            
+            # Utiliser ValidationError standard de Django pour clean()
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_DATA.format(
+                    detail=f"Only one tier can be active. Currently active: {', '.join(active_tiers)}"
+                )
+            )
+    
+    @property
+    def client_id(self):
+        """Helper property for client ID access."""
+        return self.client_account_id
 
 class Organization(BaseModel):
     """
