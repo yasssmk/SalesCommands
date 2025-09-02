@@ -273,6 +273,14 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
     module = 'users' 
     permission_classes = [IsAuthenticated, ScopedPermission]
 
+    # ===== DÉCLARATION DES ACTIONS BYPASSED =====
+    # Ces actions gèrent leur propre logique de permissions
+    bypassed_actions = {
+        'change_password',   # Admin: tous, autres: seulement eux-mêmes
+        'grant_superuser',   # Admin seulement
+    }
+    
+
     def get_serializer_class(self):
         """Choisir le serializer selon l'action"""
         if self.action == 'list':
@@ -444,16 +452,25 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         try:
             # Récupérer l'utilisateur cible
             target_user = self.get_object()
-            
+
             # Validation client scoping (vérifie que l'utilisateur appartient au bon client)
             self.validate_client_id(target_user)
             
             # Récupérer l'utilisateur connecté et son rôle
             current_user = request.user
-            current_role = request.auth.get('role') if request.auth else None
+            # current_role = request.auth.get('role') if request.auth else None
             
-            # Vérification des permissions
-            if current_role != 'Admin' and str(current_user.id) != str(target_user.id):
+            # # Vérification des permissions
+            # if current_role != 'Admin' and str(current_user.id) != str(target_user.id):
+            #     raise StandardizedValidationError(
+            #         "You can only change your own password"
+            #     )
+
+            from permissions import resolve_tier
+            tier = resolve_tier(current_user)
+            
+            # Admin peut tout
+            if tier != 'admin' and current_user != target_user:
                 raise StandardizedValidationError(
                     "You can only change your own password"
                 )
@@ -469,7 +486,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
             serializer.update_password(target_user, serializer.validated_data)
             
             # Logger l'action si nécessaire (optionnel)
-            if current_role == 'Admin' and str(current_user.id) != str(target_user.id):
+            if tier != 'admin' and str(current_user.id) != str(target_user.id):
                 # Admin a changé le mot de passe d'un autre utilisateur
                 print(f"Admin {current_user.email} changed password for {target_user.email}")
             
@@ -591,7 +608,8 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         #     return True
         
         # return False
-        return current_user.has_admin_rights()
+        from permissions import resolve_tier
+        return resolve_tier(current_user) == 'admin'
     
     def _validate_superuser_modification(self, current_user, request_data, target_user=None):
         """
@@ -903,9 +921,10 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
             #         "Only administrators and superusers can view the superusers list"
             #     )
 
-            if not current_user.has_admin_rights():
+            from permissions import resolve_tier
+            if resolve_tier(current_user) != 'admin':
                 raise StandardizedValidationError(
-                    "Only administrators and superusers can view the superusers list"
+                    "Only administrators can view the superusers list"
                 )
             
             # Récupérer le client_id du contexte pour garantir le multi-tenant

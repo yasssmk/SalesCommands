@@ -4,15 +4,9 @@ DRF Mixins for Permission System
 This module provides Django REST Framework integration:
 - ScopedPermission: DRF permission class for access control
 - ScopedQuerysetMixin: Automatic queryset filtering by scope
-
-Usage in views:
-    class AccountViewSet(ScopedQuerysetMixin, viewsets.ModelViewSet):
-        permission_classes = [IsAuthenticated, ScopedPermission]
-        module = 'accounts'  # Required
-        queryset = Account.objects.all()
 """
 
-from typing import Optional
+from typing import Optional, Set
 from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.views import APIView
@@ -20,7 +14,7 @@ from django.db.models import QuerySet
 
 from .checks import check_permission, has_permission as check_has_permission, resolve_tier
 from .scoping import apply_scope_filter, build_q
-from .config import is_module_enabled , is_enabled, is_debug_enabled, audit_log
+from .config import is_module_enabled, is_enabled, is_debug_enabled, audit_log
 
 
 class ScopedPermission(permissions.BasePermission):
@@ -30,69 +24,105 @@ class ScopedPermission(permissions.BasePermission):
     Requires the view to have a 'module' attribute defining which
     module it belongs to.
     
+    Supports bypassed actions via 'bypassed_actions' attribute on the view.
+    Actions listed in bypassed_actions will skip permission checks and
+    must implement their own permission logic.
+    
     Example:
         class AccountViewSet(viewsets.ModelViewSet):
             permission_classes = [IsAuthenticated, ScopedPermission]
             module = 'accounts'  # Required!
+            
+            # Optional: actions that bypass the permission system
+            bypassed_actions = {'custom_action', 'special_operation'}
+            
+            @action(detail=True, methods=['post'])
+            def custom_action(self, request, pk=None):
+                # This action handles its own permissions
+                if not request.user.is_staff:
+                    raise PermissionDenied("Staff only")
+                # ... action logic ...
     """
     
-    def has_permission(self, request, view):
-        """Méthode requise par DRF."""
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        """
+        Check if the user has permission to perform the action.
         
-        # DEBUG
-        user = request.user
-        if user and user.is_authenticated:
-            tier = resolve_tier(user)
-            module = getattr(view, 'module', 'UNKNOWN')
-            action = view.action if hasattr(view, 'action') else request.method.lower()
+        Args:
+            request: DRF Request
+            view: View being accessed
             
-            print(f"\n[PERMISSION CHECK]")
-            print(f"User: {user.email}")
-            print(f"Role: {user.role.name if hasattr(user, 'role') and user.role else 'NO_ROLE'}")
-            print(f"Tier: {tier}")
-            print(f"Module: {module}")
-            print(f"Action: {action}")
-        
-        # Si système désactivé, on laisse passer
-        if not is_enabled():
-            print("[PERMISSION] System disabled - ALLOWING")
-            return True
-        
-        # Récupérer le module depuis la vue
-        module = getattr(view, 'module', None)
-        if not module:
-            print("[PERMISSION] No module on view - ALLOWING")
-            return True
-        
-        # Si module pas activé, on laisse passer
-        if not is_module_enabled(module):
-            print(f"[PERMISSION] Module {module} not enabled - ALLOWING")
-            return True
-        
-        # User doit être authentifié
-        if not request.user or not request.user.is_authenticated:
-            print("[PERMISSION] Not authenticated - DENYING")
+        Returns:
+            True if permission granted, False otherwise
+        """
+        # Get user
+        user = request.user
+        if not user or not user.is_authenticated:
+            if is_debug_enabled():
+                print("[PERMISSION] Not authenticated - DENYING")
             return False
         
-        # Récupérer l'action
-        if hasattr(view, 'action'):
-            action = view.action
-        else:
-            # Mapper HTTP method vers action CRUD
+        # Get module from view
+        module = getattr(view, 'module', None)
+        
+        # Get action
+        action = view.action if hasattr(view, 'action') else None
+        if not action:
+            # Map HTTP method to action for non-viewset views
             method_map = {
                 'GET': 'read',
-                'POST': 'create', 
+                'POST': 'create',
                 'PUT': 'update',
                 'PATCH': 'update',
                 'DELETE': 'delete',
             }
             action = method_map.get(request.method, 'read')
         
-        # UTILISER LA FONCTION has_permission de checks.py
-        allowed = check_has_permission(request.user, module, action)
+        # Debug output
+        if is_debug_enabled():
+            tier = resolve_tier(user)
+            print(f"\n[PERMISSION CHECK]")
+            print(f"User: {user.email if hasattr(user, 'email') else user}")
+            print(f"Role: {user.role.name if hasattr(user, 'role') and user.role else 'NO_ROLE'}")
+            print(f"Tier: {tier}")
+            print(f"Module: {module}")
+            print(f"Action: {action}")
         
-        print(f"Result: {'ALLOWED' if allowed else 'DENIED'}")
-        print("[END CHECK]\n")
+        # ===== CHECK FOR BYPASSED ACTIONS =====
+        # If the view declares bypassed actions, let them through
+        bypassed_actions = getattr(view, 'bypassed_actions', set())
+        if action in bypassed_actions:
+            if is_debug_enabled():
+                print(f"[PERMISSION] Action '{action}' is BYPASSED - ALLOWING")
+                print("[END CHECK]\n")
+            return True  # The action method will handle its own permissions
+        
+        # ===== STANDARD PERMISSION CHECKS =====
+        
+        # Skip if permissions system is disabled
+        if not is_enabled():
+            if is_debug_enabled():
+                print("[PERMISSION] System disabled - ALLOWING")
+            return True
+        
+        # Module is required for permission checks
+        if not module:
+            if is_debug_enabled():
+                print("[PERMISSION] No module on view - DENYING for safety")
+            return False  # Deny for safety if no module specified
+        
+        # Skip if module is not enabled
+        if not is_module_enabled(module):
+            if is_debug_enabled():
+                print(f"[PERMISSION] Module {module} not enabled - ALLOWING")
+            return True
+        
+        # Check permission using the registry
+        allowed = check_has_permission(user, module, action)
+        
+        if is_debug_enabled():
+            print(f"Result: {'ALLOWED' if allowed else 'DENIED'}")
+            print("[END CHECK]\n")
         
         return allowed
     
@@ -110,6 +140,14 @@ class ScopedPermission(permissions.BasePermission):
         Returns:
             True if permission granted, False otherwise
         """
+        # Check for bypassed actions
+        action = view.action if hasattr(view, 'action') else None
+        bypassed_actions = getattr(view, 'bypassed_actions', set())
+        if action in bypassed_actions:
+            if is_debug_enabled():
+                print(f"[OBJECT PERMISSION] Action '{action}' is BYPASSED - ALLOWING")
+            return True  # The action handles its own object permissions
+        
         # Skip if permissions system is disabled
         if not is_enabled():
             return True
@@ -124,9 +162,15 @@ class ScopedPermission(permissions.BasePermission):
             return True
         
         # Get the DRF action
-        action = self._get_action(view)
         if not action:
-            return False
+            method_map = {
+                'GET': 'read',
+                'POST': 'create',
+                'PUT': 'update',
+                'PATCH': 'update',
+                'DELETE': 'delete',
+            }
+            action = method_map.get(request.method, 'read')
         
         # Get user's scope
         scope = check_permission(request.user, module, action)
@@ -139,77 +183,55 @@ class ScopedPermission(permissions.BasePermission):
         if scope == 'client':
             return True
         
-        # For team/mine scopes, we need to check ownership
-        # This is a simplified check - the real filtering happens in queryset
-        # Here we just ensure the object would be in the filtered queryset
-        
-        # Build the Q filter for this scope
+        # For team/mine scopes, check if object matches the filter
         q_filter = build_q(module, scope, request.user, action)
-        
-        # Check if this object matches the filter
-        # We need to get the model class and check
         model_class = obj.__class__
         matches = model_class.objects.filter(q_filter, pk=obj.pk).exists()
         
         return matches
-    
-    def _get_action(self, view: APIView) -> Optional[str]:
-        """
-        Get the current DRF action from the view.
-        
-        Args:
-            view: DRF view
-            
-        Returns:
-            Action name or None
-        """
-        # For ViewSets, use the action attribute
-        if hasattr(view, 'action'):
-            return view.action
-        
-        # For APIView, map HTTP method to action
-        if hasattr(view, 'request'):
-            method_map = {
-                'GET': 'read',
-                'POST': 'create',
-                'PUT': 'update',
-                'PATCH': 'update',  # PATCH = UPDATE
-                'DELETE': 'delete',
-            }
-            return method_map.get(view.request.method)
-        
-        return None
 
 
 class ScopedQuerysetMixin:
     """
     Mixin that automatically filters querysets based on permissions.
     
+    Supports bypassed actions that handle their own filtering.
+    
     Add this to your ViewSet before the base class:
     
         class AccountViewSet(ScopedQuerysetMixin, viewsets.ModelViewSet):
             module = 'accounts'  # Required!
             queryset = Account.objects.all()
-    
-    This mixin will automatically filter the queryset in get_queryset()
-    based on the user's permission scope.
+            
+            # Optional: actions that handle their own queryset filtering
+            bypassed_actions = {'special_list'}
     """
     
     # Module name must be set on the view
     module: Optional[str] = None
+    
+    # Actions that bypass permission filtering (optional)
+    bypassed_actions: Set[str] = set()
     
     def get_queryset(self) -> QuerySet:
         """
         Filter queryset based on user's permission scope.
         
         This method is called by DRF to get the base queryset.
-        We filter it based on the user's permissions.
+        We filter it based on the user's permissions unless the
+        action is bypassed.
         
         Returns:
             Filtered queryset
         """
         # Get base queryset from parent
         queryset = super().get_queryset()
+        
+        # Check if this action is bypassed
+        action = self._get_current_action()
+        if action in getattr(self, 'bypassed_actions', set()):
+            # Bypassed actions handle their own filtering
+            return queryset
         
         # Skip if permissions system is disabled
         if not is_enabled():
@@ -224,9 +246,6 @@ class ScopedQuerysetMixin:
         # Skip if module is not enabled
         if not is_module_enabled(module):
             return queryset
-        
-        # Get action for this request
-        action = self._get_current_action()
         
         # Get user from request
         user = self.request.user if hasattr(self, 'request') else None
@@ -260,7 +279,7 @@ class ScopedQuerysetMixin:
                 'GET': 'read',
                 'POST': 'create',
                 'PUT': 'update',
-                'PATCH': 'update',  # PATCH = UPDATE
+                'PATCH': 'update',
                 'DELETE': 'delete',
             }
             return method_map.get(self.request.method, 'read')

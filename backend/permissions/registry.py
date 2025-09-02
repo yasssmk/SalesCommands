@@ -266,8 +266,8 @@ REGISTRY: Dict[Module, Dict[Action, Dict[Tier, Scope]]] = {
         },
         'update': {
             'admin': 'client',      # Admin can update any user
-            'manager': 'team',      # Manager can update team users
-            'individual': 'none',   # Individual cannot updates own profile
+            'manager': 'mine',      # Manager can update team users
+            'individual': 'mine',   # Individual can update own profile
         },
         'delete': {
             'admin': 'client',      # Admin can delete any user

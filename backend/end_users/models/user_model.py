@@ -810,204 +810,202 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
             
         return False
     
-    @deprecated("Use check_permission(user, module, 'read') or resolve_tier(user) == 'admin' instead")
-    def has_admin_rights(self):
-        """
-        Check if user has administrative rights in their tenant.
-        Returns True if user is either:
-        - A superuser (is_superuser=True)
-        - Has Admin role
-        """
-        ###### Migration methods #########
-        try:
-            # Import localement pour éviter l'importation circulaire
-            from permissions import resolve_tier
-            from permissions.config import is_enabled
+    # @deprecated("Use check_permission(user, module, 'read') or resolve_tier(user) == 'admin' instead")
+    # def has_admin_rights(self):
+    #     """
+    #     Check if user has administrative rights in their tenant.
+    #     Returns True if user is either:
+    #     - A superuser (is_superuser=True)
+    #     - Has Admin role
+    #     """
+    #     ###### Migration methods #########
+    #     try:
+    #         # Import localement pour éviter l'importation circulaire
+    #         from permissions import resolve_tier
+    #         from permissions.config import is_enabled
             
-            if is_enabled():
-                tier = resolve_tier(self)
-                return tier == 'admin'
-        except ImportError:
-            # New system not available
-            pass
-        except Exception as e:
-            # Fallback to legacy if new system fails
-            print(f"[WARNING] Permission system check failed: {e}, falling back to legacy")
+    #         if is_enabled():
+    #             tier = resolve_tier(self)
+    #             return tier == 'admin'
+    #     except ImportError:
+    #         # New system not available
+    #         pass
+    #     except Exception as e:
+    #         # Fallback to legacy if new system fails
+    #         print(f"[WARNING] Permission system check failed: {e}, falling back to legacy")
             
 
-        ###############################
+    #     ###############################
 
-        # Superuser a toujours les droits admin
-        if self.is_superuser:
-            return True
+    #     # Superuser a toujours les droits admin
+    #     if self.is_superuser:
+    #         return True
         
-        # Vérifier le rôle Admin
-        if self.role and self.role.name == 'Admin':
-            return True
+    #     # Vérifier le rôle Admin
+    #     if self.role and self.role.name == 'Admin':
+    #         return True
         
-        # Vérifier aussi via role_name (cache)
-        if self.role_name == 'Admin':
-            return True
+    #     # Vérifier aussi via role_name (cache)
+    #     if self.role_name == 'Admin':
+    #         return True
         
-        return False
+    #     return False
     
     def can_grant_superuser(self):
         """
         Check if this user can grant or revoke superuser status to others.
         Only superusers and Admin role users can do this.
         """
-        return self.has_admin_rights()
+        # return self.has_admin_rights()
+        from permissions import resolve_tier
+        return resolve_tier(self) == 'admin'
     
-    @deprecated("Use check_permission(user, 'users', 'update', target_user) instead")
-    def can_modify_user(self, target_user):
-        """
-        Check if this user can modify another user's data.
+    # @deprecated("Use check_permission(user, 'users', 'update', target_user) instead")
+    # def can_modify_user(self, target_user):
+    #     """
+    #     Check if this user can modify another user's data.
         
-        Args:
-            target_user: The user to be modified
+    #     Args:
+    #         target_user: The user to be modified
             
-        Returns:
-            bool: True if modification is allowed
-        """
+    #     Returns:
+    #         bool: True if modification is allowed
+    #     """
 
 
-        ###### Migration methods #########
-        try:
-            # Import localement pour éviter l'importation circulaire
-            from permissions import check_permission
-            from permissions.config import is_enabled
+    #     ###### Migration methods #########
+    #     try:
+    #         # Import localement pour éviter l'importation circulaire
+    #         from permissions import check_permission
+    #         from permissions.config import is_enabled
             
-            if is_enabled():
-                # For users module, check update permission
-                scope = check_permission(self, 'users', 'update')
+    #         if is_enabled():
+    #             # For users module, check update permission
+    #             scope = check_permission(self, 'users', 'update')
                 
-                # Apply scope-based logic
-                if scope == 'none':
-                    return False
-                elif scope == 'client':
-                    # Can modify anyone in same tenant
-                    return self.client_account_id == target_user.client_account_id
-                elif scope == 'team':
-                    # Can modify self or team members
-                    if self == target_user:
-                        return True
-                    return target_user in self.get_managed_users()
-                elif scope == 'mine':
-                    # Can only modify self
-                    return self == target_user
-                else:
-                    return False
+    #             # Apply scope-based logic
+    #             if scope == 'none':
+    #                 return False
+    #             elif scope == 'client':
+    #                 # Can modify anyone in same tenant
+    #                 return self.client_account_id == target_user.client_account_id
+    #             elif scope == 'team':
+    #                 # Can modify self or team members
+    #                 if self == target_user:
+    #                     return True
+    #                 return target_user in self.get_managed_users()
+    #             elif scope == 'mine':
+    #                 # Can only modify self
+    #                 return self == target_user
+    #             else:
+    #                 return False
                     
-        except ImportError:
-            # New system not available
-            pass
-        except Exception as e:
-            # Fallback to legacy if new system fails
-            print(f"[WARNING] Permission check failed: {e}, falling back to legacy")
+    #     except ImportError:
+    #         # New system not available
+    #         pass
+    #     except Exception as e:
+    #         # Fallback to legacy if new system fails
+    #         print(f"[WARNING] Permission check failed: {e}, falling back to legacy")
     
 
-        ###############################
+    #     ###############################
 
 
-        # Peut modifier ses propres données
-        if self == target_user:
-            return True
+    #     # Peut modifier ses propres données
+    #     if self == target_user:
+    #         return True
         
-        # Superuser peut modifier tout le monde dans son tenant
-        if self.is_superuser:
-            # Vérifier qu'ils sont dans le même tenant
-            return self.client_account_id == target_user.client_account_id
+    #     # Superuser peut modifier tout le monde dans son tenant
+    #     if self.is_superuser:
+    #         # Vérifier qu'ils sont dans le même tenant
+    #         return self.client_account_id == target_user.client_account_id
         
-        # Admin peut modifier tout le monde dans son tenant
-        if self.role and self.role.name == 'Admin':
-            return self.client_account_id == target_user.client_account_id
+    #     # Admin peut modifier tout le monde dans son tenant
+    #     if self.role and self.role.name == 'Admin':
+    #         return self.client_account_id == target_user.client_account_id
         
-        # Manager peut modifier les membres de son équipe
-        if self.is_manager():
-            return target_user in self.get_managed_users()
+    #     # Manager peut modifier les membres de son équipe
+    #     if self.is_manager():
+    #         return target_user in self.get_managed_users()
         
-        return False
+    #     return False
     
-    @deprecated("Use check_permission(user, 'users', 'delete', target_user) instead")
-    def can_delete_user(self, target_user):
-        """
-        Check if this user can delete another user.
+    # @deprecated("Use check_permission(user, 'users', 'delete', target_user) instead")
+    # def can_delete_user(self, target_user):
+    #     """
+    #     Check if this user can delete another user.
         
-        Args:
-            target_user: The user to be deleted
+    #     Args:
+    #         target_user: The user to be deleted
             
-        Returns:
-            bool: True if deletion is allowed
-        """
+    #     Returns:
+    #         bool: True if deletion is allowed
+    #     """
         
-        # Personne ne peut se supprimer soi-même
-        if self == target_user:
-            return False
+    #     # Personne ne peut se supprimer soi-même
+    #     if self == target_user:
+    #         return False
         
 
-         ###### Migration methods #########
-        try:
-            # Import localement pour éviter l'importation circulaire
-            from permissions import check_permission
-            from permissions.config import is_enabled
+    #      ###### Migration methods #########
+    #     try:
+    #         # Import localement pour éviter l'importation circulaire
+    #         from permissions import check_permission
+    #         from permissions.config import is_enabled
             
-            if is_enabled():
-                # For users module, check delete permission
-                scope = check_permission(self, 'users', 'delete')
+    #         if is_enabled():
+    #             # For users module, check delete permission
+    #             scope = check_permission(self, 'users', 'delete')
                 
-                # Apply scope-based logic
-                if scope == 'none':
-                    return False
-                elif scope == 'client':
-                    # Can delete anyone in same tenant (except self)
-                    return self.client_account_id == target_user.client_account_id
-                elif scope == 'team':
-                    # Can delete team members (except self)
-                    return target_user in self.get_managed_users()
-                elif scope == 'mine':
-                    # Cannot delete anyone (mine = self, but we can't delete ourselves)
-                    return False
-                else:
-                    return False
+    #             # Apply scope-based logic
+    #             if scope == 'none':
+    #                 return False
+    #             elif scope == 'client':
+    #                 # Can delete anyone in same tenant (except self)
+    #                 return self.client_account_id == target_user.client_account_id
+    #             elif scope == 'team':
+    #                 # Can delete team members (except self)
+    #                 return target_user in self.get_managed_users()
+    #             elif scope == 'mine':
+    #                 # Cannot delete anyone (mine = self, but we can't delete ourselves)
+    #                 return False
+    #             else:
+    #                 return False
                     
-        except ImportError:
-            # New system not available
-            pass
-        except Exception as e:
-            # Fallback to legacy if new system fails
-            print(f"[WARNING] Permission check failed: {e}, falling back to legacy")
+    #     except ImportError:
+    #         # New system not available
+    #         pass
+    #     except Exception as e:
+    #         # Fallback to legacy if new system fails
+    #         print(f"[WARNING] Permission check failed: {e}, falling back to legacy")
         
         
-        ###############################
+    #     ###############################
 
         
-        # Superuser peut supprimer tout le monde (sauf lui-même) dans son tenant
-        if self.is_superuser:
-            return self.client_account_id == target_user.client_account_id
+    #     # Superuser peut supprimer tout le monde (sauf lui-même) dans son tenant
+    #     if self.is_superuser:
+    #         return self.client_account_id == target_user.client_account_id
         
-        # Admin peut supprimer tout le monde (sauf lui-même) dans son tenant
-        if self.role and self.role.name == 'Admin':
-            return self.client_account_id == target_user.client_account_id
+    #     # Admin peut supprimer tout le monde (sauf lui-même) dans son tenant
+    #     if self.role and self.role.name == 'Admin':
+    #         return self.client_account_id == target_user.client_account_id
         
-        # Manager peut supprimer les membres de son équipe
-        if self.is_manager():
-            return target_user in self.get_managed_users()
+    #     # Manager peut supprimer les membres de son équipe
+    #     if self.is_manager():
+    #         return target_user in self.get_managed_users()
         
-        return False
+    #     return False
     
-    def can_view_all_users(self):
-        """
-        Check if this user can view all users in their tenant.
-        """
-        # Superusers et Admins peuvent voir tous les utilisateurs
-        return self.has_admin_rights()
     
     def can_manage_roles(self):
         """
         Check if this user can manage roles and permissions.
         """
         # Seuls les superusers et admins peuvent gérer les rôles
-        return self.has_admin_rights()
+        # return self.has_admin_rights()
+        from permissions import resolve_tier
+        return resolve_tier(self) == 'admin'
     
     def can_manage_teams(self):
         """
