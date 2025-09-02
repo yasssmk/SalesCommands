@@ -19,9 +19,6 @@ from django.conf import settings
 from .registry import get_permission, ACTION_ALIASES
 from .ownership import get_ownership_type
 
-# Get User model
-User = get_user_model()
-
 
 def resolve_tier(user) -> str:
     """

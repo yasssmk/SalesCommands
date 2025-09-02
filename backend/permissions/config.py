@@ -23,7 +23,7 @@ from django.dispatch import receiver
 
 # Default configuration
 DEFAULT_CONFIG = {
-    'GLOBAL_ENABLED': False,  # Master kill switch - set to False for safety
+    'GLOBAL_ENABLED': True,  # Master kill switch - set to False for safety
     'DEBUG': False,  # Enable debug logging
     'AUDIT_ENABLED': False,  # Enable audit logging
     'CACHE_TIMEOUT': 300,  # Cache timeout in seconds (5 minutes)
@@ -36,7 +36,7 @@ DEFAULT_CONFIG = {
         'campaign': False,
         'pipelines': False,
         'templates': False,
-        'users': False,
+        'users': True,
         'products': False,
     },
     'AUDIT_LOGGER': 'permissions.audit',  # Logger name for audit logs

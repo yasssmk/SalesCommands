@@ -16,6 +16,7 @@ from core.apps_shared_methods import BaseAPIView
 from core.auth_service import AuthService
 from core.jwt_helpers import CustomJWTAuthentication
 from ..models.user_model import ClientAccount, UserRole, Organization, Team, User
+from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from ..serializers.user_serializer import (
     ClientAccountSerializer,
     OrganizationSerializer,
@@ -106,60 +107,6 @@ class ClientAccountViewSet(BaseAPIView, viewsets.ModelViewSet):
             }
         })
 
-
-
-
-# class UserRoleViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
-#     """
-#     API endpoints for managing user roles with client scoping
-#     """
-#     queryset = UserRole.objects.all()
-#     serializer_class = UserRoleSerializer
-#     entity_name = 'user_role'
-#     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-#     filterset_fields = ['read', 'write', 'modify', 'delete']
-#     search_fields = ['name']
-#     ordering_fields = ['name', 'created_at']
-#     ordering = ['name']
-    
-#     def get_queryset(self):
-#         """Get user roles for the current client with optimized queries"""
-#         queryset = UserRole.objects.all()
-        
-#         # Apply client scoping
-#         queryset = self.filter_queryset_by_client(queryset)
-        
-#         # Optimiser avec relations
-#         queryset = queryset.select_related('client_account').prefetch_related(
-#             Prefetch('users', queryset=User.objects.filter(is_active=True))
-#         )
-        
-#         return queryset
-    
-#     @action(detail=False, methods=['get'])
-#     def permissions_matrix(self, request):
-#         """Matrix des permissions par rôle"""
-#         roles = self.get_queryset()
-        
-#         matrix = []
-#         for role in roles:
-#             matrix.append({
-#                 'id': str(role.id),
-#                 'name': role.name,
-#                 'permissions': {
-#                     'read': role.read,
-#                     'write': role.write,
-#                     'modify': role.modify,
-#                     'delete': role.delete
-#                 },
-#                 'users_count': role.users.filter(is_active=True).count()
-#             })
-        
-#         return Response({
-#             'success': True,
-#             'data': matrix,
-#             'total_roles': len(matrix)
-#         })
 
 
 class OrganizationViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
@@ -311,7 +258,7 @@ class TeamViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
         })
 
 
-class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
+class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
     """
     API endpoints for managing users with client scoping and performance integration
     """
@@ -322,7 +269,10 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
     search_fields = ['email', 'first_name', 'last_name']
     ordering_fields = ['email', 'first_name', 'last_name', 'created_at']
     ordering = ['first_name', 'last_name']
-    
+    #Permissions
+    module = 'users' 
+    permission_classes = [IsAuthenticated, ScopedPermission]
+
     def get_serializer_class(self):
         """Choisir le serializer selon l'action"""
         if self.action == 'list':
@@ -442,7 +392,7 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
                 self.validate_client_id(user)
                 
                 # Validation des permissions
-                self._validate_user_update_permissions(request.user, user)
+                # self._validate_user_update_permissions(request.user, user)
 
                 self._validate_superuser_modification(request.user, request.data, user)
                 
@@ -557,7 +507,7 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
                 self.validate_client_id(user)
 
                 # Validation des permissions
-                self._validate_user_delete_permissions(request.user, user)
+                # self._validate_user_delete_permissions(request.user, user)
 
                 # Vérifications métier avant suppression
                 self._validate_user_deletion(user)
@@ -585,62 +535,63 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
     
     # === MÉTHODES UTILITAIRES PRIVÉES ===
     
-    def _validate_user_update_permissions(self, current_user, target_user):
-        """Valider les permissions de mise à jour"""
-        # L'utilisateur peut se modifier lui-même
-        if current_user == target_user:
-            return True
+    # def _validate_user_update_permissions(self, current_user, target_user):
+    #     """Valider les permissions de mise à jour"""
+    #     # L'utilisateur peut se modifier lui-même
+    #     if current_user == target_user:
+    #         return True
         
-        # SuperUser peut modifier tout le monde dans son tenant
-        if current_user.is_superuser:
-            return True
+    #     # SuperUser peut modifier tout le monde dans son tenant
+    #     if current_user.is_superuser:
+    #         return True
         
-        # Admin peut modifier tout le monde
-        if current_user.role and current_user.role.name == 'Admin':
-            return True
+    #     # Admin peut modifier tout le monde
+    #     if current_user.role and current_user.role.name == 'Admin':
+    #         return True
         
-        # Manager peut modifier les membres de son équipe
-        if target_user in current_user.get_managed_users():
-            return True
+    #     # Manager peut modifier les membres de son équipe
+    #     if target_user in current_user.get_managed_users():
+    #         return True
         
-        raise StandardizedValidationError(
-            CoreErrorMessages.PERMISSION_DENIED
-        )
+    #     raise StandardizedValidationError(
+    #         CoreErrorMessages.PERMISSION_DENIED
+    #     )
     
-    def _validate_user_delete_permissions(self, current_user, target_user):
-        """Valider les permissions de suppression"""
-        # On ne peut pas se supprimer soi-même
-        if current_user == target_user:
-            raise StandardizedValidationError(
-                "You cannot delete your own account"
-            )
+    # def _validate_user_delete_permissions(self, current_user, target_user):
+    #     """Valider les permissions de suppression"""
+    #     # On ne peut pas se supprimer soi-même
+    #     if current_user == target_user:
+    #         raise StandardizedValidationError(
+    #             "You cannot delete your own account"
+    #         )
         
-        # SuperUser peut supprimer tout le monde (sauf lui-même) dans son tenant
-        if current_user.is_superuser:
-            return True
+    #     # SuperUser peut supprimer tout le monde (sauf lui-même) dans son tenant
+    #     if current_user.is_superuser:
+    #         return True
         
-        # Admin peut supprimer tout le monde (sauf lui-même)
-        if current_user.role and current_user.role.name == 'Admin':
-            return True
+    #     # Admin peut supprimer tout le monde (sauf lui-même)
+    #     if current_user.role and current_user.role.name == 'Admin':
+    #         return True
                 
-        raise StandardizedValidationError(
-            CoreErrorMessages.PERMISSION_DENIED
-        )
+    #     raise StandardizedValidationError(
+    #         CoreErrorMessages.PERMISSION_DENIED
+    #     )
     
     def _can_grant_superuser(self, current_user):
         """
         Check if the current user can grant/revoke superuser status
         Only SuperUsers and Admin role users can grant superuser status
         """
-        # SuperUsers can grant superuser status
-        if current_user.is_superuser:
-            return True
+        # # SuperUsers can grant superuser status
+        # if current_user.is_superuser:
+        #     return True
         
-        # Users with Admin role can grant superuser status
-        if current_user.role and current_user.role.name == 'Admin':
-            return True
+        # # Users with Admin role can grant superuser status
+        # if current_user.role and current_user.role.name == 'Admin':
+        #     return True
         
-        return False
+        # return False
+        return current_user.has_admin_rights()
     
     def _validate_superuser_modification(self, current_user, request_data, target_user=None):
         """
@@ -941,13 +892,18 @@ class UserViewSet(BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewS
             # Vérifier les permissions - seuls Admin et SuperUser peuvent voir cette liste
             current_user = request.user
             
-            is_authorized = False
-            if current_user.is_superuser:
-                is_authorized = True
-            elif current_user.role and current_user.role.name == 'Admin':
-                is_authorized = True
+            # is_authorized = False
+            # if current_user.is_superuser:
+            #     is_authorized = True
+            # elif current_user.role and current_user.role.name == 'Admin':
+            #     is_authorized = True
             
-            if not is_authorized:
+            # if not is_authorized:
+            #     raise StandardizedValidationError(
+            #         "Only administrators and superusers can view the superusers list"
+            #     )
+
+            if not current_user.has_admin_rights():
                 raise StandardizedValidationError(
                     "Only administrators and superusers can view the superusers list"
                 )

@@ -283,13 +283,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 PERMISSIONS_CONFIG = {
     # Master kill switch - set to True to enable the permission system globally
-    'GLOBAL_ENABLED': False,  # Start with False for safety
+    'GLOBAL_ENABLED': True,  # Start with False for safety
     
     # Debug mode - adds permission info to response headers (only in DEBUG=True)
-    'DEBUG': False,
+    'DEBUG': True,
     
     # Audit logging - logs all permission checks
-    'AUDIT_ENABLED': False,
+    'AUDIT_ENABLED': True,
     
     # Cache timeout for permission decisions (in seconds)
     'CACHE_TIMEOUT': 300,  # 5 minutes
@@ -314,7 +314,7 @@ PERMISSIONS_CONFIG = {
         'campaign': False,      # Campaign management
         'pipelines': False,     # Buying process/pipelines
         'templates': False,     # Email/doc templates
-        'users': False,         # User management
+        'users': True,         # User management
         'products': False,      # Product catalog
     }
 }

@@ -18,9 +18,9 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 from django.db.models import QuerySet
 
-from .checks import check_permission, has_permission
+from .checks import check_permission, has_permission as check_has_permission, resolve_tier
 from .scoping import apply_scope_filter, build_q
-from .config import is_module_enabled, is_enabled, is_debug_enabled, audit_log
+from .config import is_module_enabled , is_enabled, is_debug_enabled, audit_log
 
 
 class ScopedPermission(permissions.BasePermission):
@@ -36,41 +36,65 @@ class ScopedPermission(permissions.BasePermission):
             module = 'accounts'  # Required!
     """
     
-    def has_permission(self, request: Request, view: APIView) -> bool:
-        """
-        Check if user has permission to perform the action.
+    def has_permission(self, request, view):
+        """Méthode requise par DRF."""
         
-        This is called before accessing any specific object.
-        
-        Args:
-            request: DRF Request
-            view: View being accessed
+        # DEBUG
+        user = request.user
+        if user and user.is_authenticated:
+            tier = resolve_tier(user)
+            module = getattr(view, 'module', 'UNKNOWN')
+            action = view.action if hasattr(view, 'action') else request.method.lower()
             
-        Returns:
-            True if permission granted, False otherwise
-        """
-        # Skip if permissions system is disabled
+            print(f"\n[PERMISSION CHECK]")
+            print(f"User: {user.email}")
+            print(f"Role: {user.role.name if hasattr(user, 'role') and user.role else 'NO_ROLE'}")
+            print(f"Tier: {tier}")
+            print(f"Module: {module}")
+            print(f"Action: {action}")
+        
+        # Si système désactivé, on laisse passer
         if not is_enabled():
+            print("[PERMISSION] System disabled - ALLOWING")
             return True
         
-        # Get module from view
+        # Récupérer le module depuis la vue
         module = getattr(view, 'module', None)
         if not module:
-            # If no module specified, check if we should default to allow or deny
-            # For safety, we deny by default if module is not specified
-            return False
-        
-        # Skip if module is not enabled
-        if not is_module_enabled(module):
+            print("[PERMISSION] No module on view - ALLOWING")
             return True
         
-        # Get the DRF action
-        action = self._get_action(view)
-        if not action:
+        # Si module pas activé, on laisse passer
+        if not is_module_enabled(module):
+            print(f"[PERMISSION] Module {module} not enabled - ALLOWING")
+            return True
+        
+        # User doit être authentifié
+        if not request.user or not request.user.is_authenticated:
+            print("[PERMISSION] Not authenticated - DENYING")
             return False
         
-        # Check permission
-        return has_permission(request.user, module, action)
+        # Récupérer l'action
+        if hasattr(view, 'action'):
+            action = view.action
+        else:
+            # Mapper HTTP method vers action CRUD
+            method_map = {
+                'GET': 'read',
+                'POST': 'create', 
+                'PUT': 'update',
+                'PATCH': 'update',
+                'DELETE': 'delete',
+            }
+            action = method_map.get(request.method, 'read')
+        
+        # UTILISER LA FONCTION has_permission de checks.py
+        allowed = check_has_permission(request.user, module, action)
+        
+        print(f"Result: {'ALLOWED' if allowed else 'DENIED'}")
+        print("[END CHECK]\n")
+        
+        return allowed
     
     def has_object_permission(self, request: Request, view: APIView, obj) -> bool:
         """
@@ -326,7 +350,7 @@ class BulkPermissionMixin:
         """
         # Check create permission
         module = getattr(self, 'module', None)
-        if module and not has_permission(self.request.user, module, 'create'):
+        if module and not check_has_permission(self.request.user, module, 'create'):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("You don't have permission to create in this module")
         

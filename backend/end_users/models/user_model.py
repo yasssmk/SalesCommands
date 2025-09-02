@@ -9,6 +9,38 @@ from core.error_messages import CoreErrorMessages
 from core.constants import CURRENCY
 
 
+## METHODES MIGRATION VERS USER PERMISSION SCOPING METHODS ##
+
+import warnings
+from functools import wraps
+
+# # Import du nouveau système de permissions (à ajouter après les imports Django)
+# try:
+#     from permissions import check_permission, resolve_tier, has_permission
+#     from permissions.config import is_enabled
+#     PERMISSIONS_SYSTEM_AVAILABLE = True
+# except ImportError:
+#     PERMISSIONS_SYSTEM_AVAILABLE = False
+#     print("[WARNING] New permissions system not available, using legacy methods")
+
+
+def deprecated(message="This method is deprecated"):
+    """Decorator to mark methods as deprecated."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"{func.__name__} is deprecated and will be removed in a future version. {message}",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator    
+
+############################################
+
+
 class ClientAccount(BaseModel):
     """
     Compte client - reste avec BaseModel car c'est le point d'entrée du multi-tenant
@@ -730,10 +762,14 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         """
         Vérifie si l'utilisateur est manager d'équipe ou organisation
         """
-        return (
-            self.managed_teams.exists() or 
-            self.managed_organizations.exists()
-        )
+        if self.role.is_admin:
+            return True
+        
+        else:
+            return (
+                self.managed_teams.exists() or 
+                self.managed_organizations.exists()
+            )
     
     def get_managed_users(self):
         """
@@ -774,6 +810,7 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
             
         return False
     
+    @deprecated("Use check_permission(user, module, 'read') or resolve_tier(user) == 'admin' instead")
     def has_admin_rights(self):
         """
         Check if user has administrative rights in their tenant.
@@ -781,6 +818,25 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         - A superuser (is_superuser=True)
         - Has Admin role
         """
+        ###### Migration methods #########
+        try:
+            # Import localement pour éviter l'importation circulaire
+            from permissions import resolve_tier
+            from permissions.config import is_enabled
+            
+            if is_enabled():
+                tier = resolve_tier(self)
+                return tier == 'admin'
+        except ImportError:
+            # New system not available
+            pass
+        except Exception as e:
+            # Fallback to legacy if new system fails
+            print(f"[WARNING] Permission system check failed: {e}, falling back to legacy")
+            
+
+        ###############################
+
         # Superuser a toujours les droits admin
         if self.is_superuser:
             return True
@@ -802,6 +858,7 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         """
         return self.has_admin_rights()
     
+    @deprecated("Use check_permission(user, 'users', 'update', target_user) instead")
     def can_modify_user(self, target_user):
         """
         Check if this user can modify another user's data.
@@ -812,6 +869,46 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         Returns:
             bool: True if modification is allowed
         """
+
+
+        ###### Migration methods #########
+        try:
+            # Import localement pour éviter l'importation circulaire
+            from permissions import check_permission
+            from permissions.config import is_enabled
+            
+            if is_enabled():
+                # For users module, check update permission
+                scope = check_permission(self, 'users', 'update')
+                
+                # Apply scope-based logic
+                if scope == 'none':
+                    return False
+                elif scope == 'client':
+                    # Can modify anyone in same tenant
+                    return self.client_account_id == target_user.client_account_id
+                elif scope == 'team':
+                    # Can modify self or team members
+                    if self == target_user:
+                        return True
+                    return target_user in self.get_managed_users()
+                elif scope == 'mine':
+                    # Can only modify self
+                    return self == target_user
+                else:
+                    return False
+                    
+        except ImportError:
+            # New system not available
+            pass
+        except Exception as e:
+            # Fallback to legacy if new system fails
+            print(f"[WARNING] Permission check failed: {e}, falling back to legacy")
+    
+
+        ###############################
+
+
         # Peut modifier ses propres données
         if self == target_user:
             return True
@@ -831,6 +928,7 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         
         return False
     
+    @deprecated("Use check_permission(user, 'users', 'delete', target_user) instead")
     def can_delete_user(self, target_user):
         """
         Check if this user can delete another user.
@@ -841,9 +939,47 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         Returns:
             bool: True if deletion is allowed
         """
+        
         # Personne ne peut se supprimer soi-même
         if self == target_user:
             return False
+        
+
+         ###### Migration methods #########
+        try:
+            # Import localement pour éviter l'importation circulaire
+            from permissions import check_permission
+            from permissions.config import is_enabled
+            
+            if is_enabled():
+                # For users module, check delete permission
+                scope = check_permission(self, 'users', 'delete')
+                
+                # Apply scope-based logic
+                if scope == 'none':
+                    return False
+                elif scope == 'client':
+                    # Can delete anyone in same tenant (except self)
+                    return self.client_account_id == target_user.client_account_id
+                elif scope == 'team':
+                    # Can delete team members (except self)
+                    return target_user in self.get_managed_users()
+                elif scope == 'mine':
+                    # Cannot delete anyone (mine = self, but we can't delete ourselves)
+                    return False
+                else:
+                    return False
+                    
+        except ImportError:
+            # New system not available
+            pass
+        except Exception as e:
+            # Fallback to legacy if new system fails
+            print(f"[WARNING] Permission check failed: {e}, falling back to legacy")
+        
+        
+        ###############################
+
         
         # Superuser peut supprimer tout le monde (sauf lui-même) dans son tenant
         if self.is_superuser:
