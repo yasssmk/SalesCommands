@@ -1,11 +1,13 @@
 from .user_serializer import (
-    ClientAccountSerializer, 
-    TeamSerializer, 
-    OrganizationSerializer, 
     UserListSerializer, 
     UserSerializer, 
     ChangePasswordSerializer
 )
+
+from .client_account_serializers import ClientAccountSerializer
+from .organization_serializers import OrganizationSerializer
+from .team_serializers import TeamSerializer
+
 from .role_serializers import (
     RoleSerializer,
     RoleUpdateSerializer,

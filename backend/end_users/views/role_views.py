@@ -13,7 +13,7 @@ from core.exceptions import StandardizedValidationError, StandardizedPermissionD
 from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from core.jwt_helpers import CustomJWTAuthentication
-from ..models.user_model import UserRole, User
+from ..models import UserRole, User
 from ..serializers.role_serializers import (
     RoleSerializer,
     RoleCreateSerializer,

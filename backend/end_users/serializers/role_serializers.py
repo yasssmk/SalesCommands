@@ -1,13 +1,11 @@
 # backend/end_users/serializers/role_serializers.py
 
 from rest_framework import serializers
-from django.db import models
-from django.db.models import Count, Q, Prefetch
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
-from core.exceptions import StandardizedValidationError, StandardizedPermissionDenied
+from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-from ..models.user_model import UserRole, User
+from ..models import UserRole
 
 
 class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -40,12 +38,12 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             'is_admin', 'is_manager', 'is_individual',
             'tier',
             # Métadonnées
-            'client_account', 'client_account_name',
+            'client_id','client_account', 'client_account_name',
             'users_count', 'active_users_count',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'client_account', 'client_account_name',
+            'id', 'client_account', 'client_id', 'client_account_name',
             'users_count', 'active_users_count', 'tier',
             'created_at', 'updated_at'
         ]
@@ -59,6 +57,9 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         elif obj.is_individual:
             return 'individual'
         return 'unknown'
+    
+    def get_client_account(self, obj):
+        return self.client_id
     
     def get_users_count(self, obj):
         """Nombre total d'utilisateurs avec ce rôle"""

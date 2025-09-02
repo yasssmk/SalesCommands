@@ -1,7 +1,7 @@
 # apps/end_users/urls.py
 
 from django.urls import path
-from .views.user_view import (
+from .views import (
     # ViewSets
     ClientAccountViewSet,
     OrganizationViewSet,
