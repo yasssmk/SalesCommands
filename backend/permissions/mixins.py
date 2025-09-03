@@ -48,6 +48,110 @@ class ScopedPermission(permissions.BasePermission):
                 'custom_action': {'crud': 'read', 'scope': 'team_only'},
             }
     """
+    def get_queryset(self) -> QuerySet:
+        """
+        Filter queryset based on user's permission scope.
+        """
+        # Get base queryset from parent
+        queryset = super().get_queryset()
+        
+        # DEBUG: Tracer le contexte d'authentification
+        print(f"[MIXIN DEBUG] ========== ScopedQuerysetMixin ==========")
+        print(f"[MIXIN DEBUG] View: {self.__class__.__name__}")
+        print(f"[MIXIN DEBUG] Action: {getattr(self, 'action', 'unknown')}")
+        print(f"[MIXIN DEBUG] Module: {getattr(self, 'module', 'unknown')}")
+        
+        # Skip if permissions system is disabled
+        if not is_enabled():
+            print(f"[MIXIN DEBUG] Permissions system DISABLED")
+            return queryset
+        
+        # Get module
+        module = getattr(self, 'module', None)
+        if not module:
+            print(f"[MIXIN DEBUG] No module specified - returning empty")
+            print(f"View {self.__class__.__name__} missing 'module' attribute")
+            return queryset.none()
+        
+        # Skip if module is not enabled
+        if not is_module_enabled(module):
+            print(f"[MIXIN DEBUG] Module {module} is DISABLED")
+            return queryset
+        
+        # Get user and context
+        user = self.request.user if hasattr(self, 'request') else None
+        if not user or not user.is_authenticated:
+            print(f"[MIXIN DEBUG] User not authenticated")
+            return queryset.none()
+        
+        print(f"[MIXIN DEBUG] User: {user.email if user else 'None'}")
+        print(f"[MIXIN DEBUG] User.is_superuser: {getattr(user, 'is_superuser', False)}")
+        print(f"[MIXIN DEBUG] User.role: {getattr(user, 'role', 'None')}")
+        
+        # Get auth context
+        from .compat import get_auth_ctx
+        ctx = get_auth_ctx(self.request)
+        
+        print(f"[MIXIN DEBUG] Auth Context:")
+        print(f"[MIXIN DEBUG]   - origin: {ctx.origin}")
+        print(f"[MIXIN DEBUG]   - client_id: {ctx.client_id}")
+        print(f"[MIXIN DEBUG]   - tier: {ctx.tier}")
+        print(f"[MIXIN DEBUG]   - role_name: {ctx.role_name}")
+        print(f"[MIXIN DEBUG]   - is_superuser: {ctx.is_superuser}")
+        
+        client_id = ctx.client_id
+        
+        if client_id:
+            # Apply client filter
+            model = queryset.model
+            
+            print(f"[MIXIN DEBUG] Applying client filter for model: {model.__name__}")
+            
+            if hasattr(model, 'client_account_id'):
+                queryset = queryset.filter(client_account_id=client_id)
+                print(f"[MIXIN DEBUG] Filtered by client_account_id={client_id}")
+            elif hasattr(model, 'client_account'):
+                queryset = queryset.filter(client_account__id=client_id)
+                print(f"[MIXIN DEBUG] Filtered by client_account__id={client_id}")
+            else:
+                print(f"[MIXIN DEBUG] ERROR: Model has no client field!")
+                return queryset.none()
+                
+            print(f"[MIXIN DEBUG] After client filter: {queryset.count()} records")
+        else:
+            print(f"[MIXIN DEBUG] ERROR: No client_id in context")
+            return queryset.none()
+        
+        # Get current action
+        action = self._get_current_action()
+        print(f"[MIXIN DEBUG] Current action: {action}")
+        
+        # Apply scope-based filtering
+        from .checks import check_permission
+        scope = check_permission(user, module, action)
+        print(f"[MIXIN DEBUG] Permission scope: {scope}")
+        
+        if scope == 'none':
+            print(f"[MIXIN DEBUG] Scope is 'none' - returning empty")
+            return queryset.none()
+        elif scope == 'client':
+            print(f"[MIXIN DEBUG] Scope is 'client' - returning all in tenant")
+            # Already filtered by client above
+            pass
+        elif scope == 'team':
+            print(f"[MIXIN DEBUG] Scope is 'team' - filtering by team")
+            if hasattr(user, 'team_id') and user.team_id:
+                queryset = queryset.filter(team_id=user.team_id)
+                print(f"[MIXIN DEBUG] After team filter: {queryset.count()} records")
+        elif scope == 'mine':
+            print(f"[MIXIN DEBUG] Scope is 'mine' - filtering by user")
+            queryset = queryset.filter(id=user.id)
+            print(f"[MIXIN DEBUG] After mine filter: {queryset.count()} records")
+        
+        print(f"[MIXIN DEBUG] Final count: {queryset.count()} records")
+        print(f"[MIXIN DEBUG] ========================================")
+        
+        return queryset
     
     def has_permission(self, request: Request, view: APIView) -> bool:
         """

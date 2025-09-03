@@ -11,6 +11,7 @@ from django.db import transaction
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
+from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
 from ..models import User
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
@@ -21,7 +22,7 @@ from ..serializers.user_serializer import (
 )
 
 
-class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin, viewsets.ModelViewSet):
+class UserViewSet( BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing users with client scoping and performance integration
     """
@@ -32,15 +33,54 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
     search_fields = ['email', 'first_name', 'last_name']
     ordering_fields = ['email', 'first_name', 'last_name', 'created_at']
     ordering = ['first_name', 'last_name']
-    #Permissions
-    module = 'users' 
+    
+    
+    # Security configuration
+    authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsAuthenticated, ScopedPermission]
+    module = 'users'
 
-    # ===== DÉCLARATION DES ACTIONS BYPASSED =====
-    # Ces actions gèrent leur propre logique de permissions
-    bypassed_actions = {
-        'change_password',   # Admin: tous, autres: seulement eux-mêmes
-        'grant_superuser',   # Admin seulement
+    # ===== ACTION POLICIES  =====
+    # Declarative permission configuration for custom actions
+    action_policies = {
+        'change_password': {
+            'crud': 'update',
+            'scope': 'client'  # Autoriser tout le monde, la logique custom dans la méthode fera le filtrage
+            # Admin can change anyone's password, others only their own
+            # This needs custom logic in the method
+        },
+        'grant_superuser': {
+            'crud': 'update',
+            'tier': 'admin',      # Only admin tier can grant superuser
+            'scope': 'client'     # Admin can grant to anyone in client
+        },
+        'revoke_superuser': {
+            'crud': 'update',
+            'tier': 'admin',
+            'scope': 'client'
+        },
+        'activate': {
+            'crud': 'update',
+            'tier': 'admin',      # Only admin can activate users
+            'scope': 'client'     # Admin can activate anyone in client
+        },
+        'deactivate': {
+            'crud': 'update',
+            'tier': 'admin',      # Only admin can deactivate users
+            'scope': 'client'     # Admin can deactivate anyone in client
+        },
+        'performance': {
+            'crud': 'read',
+            'scope': 'client'  # Tout le monde peut accéder, filtrage dans la méthode
+            # All users can see performance (but scoped appropriately)
+            # Custom logic handles scope in the method
+        },
+        'team_performance': {
+            'crud': 'read',
+            'scope': 'client'  # Tout le monde peut accéder, filtrage dans la méthode
+            # All team members can see team performance
+            # Custom logic ensures team membership
+        },
     }
     
 
@@ -52,10 +92,13 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
     
     def get_queryset(self):
         """Get users for the current client with optimized queries"""
-        queryset = User.objects.all()
-        
-        # Apply client scoping
-        queryset = self.filter_queryset_by_client(queryset)
+        queryset = super().get_queryset()
+
+        # Debug pour comprendre ce qui se passe
+        print(f"[DEBUG] Action: {self.action}")
+        print(f"[DEBUG] User tier: {getattr(self.request, '_user_tier', 'unknown')}")
+        print(f"[DEBUG] Queryset count before: {queryset.count()}")
+        print(f"[DEBUG] Queryset count after super: {queryset.count()}")
         
         # Optimiser selon l'action
         if self.action == 'list':
@@ -87,11 +130,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         GET /client/users/{id}/
         """
         try:
-            user_id = kwargs.get('pk')
-            user = self.get_queryset().get(id=user_id)
-            
-            # Validation client scoping
-            self.validate_client_id(user)
+            user = self.get_object() 
             
             serializer = UserSerializer(user)
             print(serializer.data)
@@ -105,8 +144,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
                 'success': False,
                 'error': CoreErrorMessages.OBJECT_NOT_FOUND
             }, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return self.handle_exception(e)
+        
         
     def create(self, request, *args, **kwargs):
         """
@@ -120,14 +158,10 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         try:
             with transaction.atomic():
                 print(f"Create Requete data: {request.data}")
-                # Validate superuser permission if trying to create a superuser
-                self._validate_superuser_modification(request.user, request.data)
+                
                 
                 # Serializer avec validation
-                serializer = UserSerializer(
-                    data=request.data, 
-                    context={'request': request, 'client_id': self.get_client_id()}
-                )
+                serializer = self.get_serializer(data=request.data)
                 
                 # Validation avec raise_exception=True
                 serializer.is_valid(raise_exception=True)
@@ -135,8 +169,6 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
                 # Créer l'utilisateur
                 user = serializer.save()
                 
-                # Assurer les invariants
-                user.client_account.ensure_admin_invariants()
                 
                 return Response({
                     'success': True,
@@ -156,31 +188,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         try:
             with transaction.atomic():
                 print(f"PATCH Requete data: {request.data}")
-                user_id = kwargs.get('pk')
-                user = self.get_queryset().get(id=user_id)
-                
-                # Validation client scoping
-                self.validate_client_id(user)
-                
-                # Validation des permissions
-                # self._validate_user_update_permissions(request.user, user)
-
-                self._validate_superuser_modification(request.user, request.data, user)
+                user = self.get_object()
                 
                 # Serializer avec validation
-                serializer = UserSerializer(
-                    user,
-                    data=request.data,
-                    partial=True,
-                    context={'request': request, 'client_id': self.get_client_id()}
-                )
+                serializer = self.get_serializer(user, data=request.data, partial=True)
                 
                 serializer.is_valid(raise_exception=True)
                 
                 # Sauvegarder les modifications
                 updated_user = serializer.save()
 
-                updated_user.client_account.ensure_admin_invariants()
+            
                 
                 return Response({
                     'success': True,
@@ -213,25 +231,22 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         }
         """
         try:
-            # Récupérer l'utilisateur cible
-            target_user = self.get_object()
-
-            # Validation client scoping (vérifie que l'utilisateur appartient au bon client)
-            self.validate_client_id(target_user)
+            user = self.get_object()
+        
+            # Check if admin or self
+            from permissions.compat import get_auth_ctx
+            ctx = get_auth_ctx(request)
             
-            # Récupérer l'utilisateur connecté et son rôle
-            current_user = request.user
-
-
-            from permissions import resolve_tier
-            tier = resolve_tier(current_user)
-            
+            is_admin = ctx.tier == 'admin'
+            is_self = str(user.id) == str(request.user.id)
+                
             # Admin peut tout
-            if tier != 'admin' and current_user != target_user:
-                raise StandardizedValidationError(
-                    "You can only change your own password"
-                )
-            
+            if not (is_admin or is_self):
+                return Response({
+                    'success': False,
+                    'error': 'You can only change your own password'
+                }, status=status.HTTP_403_FORBIDDEN)
+
             # Import du serializer (à ajouter en haut du fichier si pas déjà fait)
             from ..serializers.user_serializer import ChangePasswordSerializer
             
@@ -240,10 +255,10 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
             serializer.is_valid(raise_exception=True)
             
             # Mettre à jour le mot de passe
-            serializer.update_password(target_user, serializer.validated_data)
+            serializer.update_password(user, serializer.validated_data)
             
             # Logger l'action si nécessaire (optionnel)
-            if tier != 'admin' and str(current_user.id) != str(target_user.id):
+            if is_admin and not is_self:
                 # Admin a changé le mot de passe d'un autre utilisateur
                 print(f"Admin {current_user.email} changed password for {target_user.email}")
             
@@ -259,9 +274,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
             
         except User.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-        except StandardizedValidationError:
-            # Re-raise les erreurs de validation déjà formatées
-            raise
+
 
     
     def destroy(self, request, *args, **kwargs):
@@ -271,8 +284,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         """
         try:
             with transaction.atomic():
-                user_id = kwargs.get('pk')
-                user = self.get_queryset().get(id=user_id)
+                user = self.get_object()
 
                 # Mémoriser le client avant suppression
                 client = user.client_account
@@ -280,8 +292,6 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
                 # Validation client scoping
                 self.validate_client_id(user)
 
-                # Validation des permissions
-                # self._validate_user_delete_permissions(request.user, user)
 
                 # Vérifications métier avant suppression
                 self._validate_user_deletion(user)
@@ -313,8 +323,9 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         Only SuperUsers and Admin role users can grant superuser status
         """
 
-        from permissions import resolve_tier
-        return resolve_tier(current_user) == 'admin'
+        from permissions.compat import get_auth_ctx
+        ctx = get_auth_ctx(self.request)
+        return ctx.tier == 'admin'
     
     def _validate_superuser_modification(self, current_user, request_data, target_user=None):
         """
@@ -385,8 +396,23 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         target_user = self.get_object()
         
         # Vérifier l'accès aux performances
-        if not request.user.can_access_user_performance(target_user):
-            raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
+        from permissions.compat import get_auth_ctx
+        ctx = get_auth_ctx(request)
+        
+        is_admin = ctx.tier == 'admin'
+        is_manager = ctx.tier == 'manager'
+        is_self = str(target_user.id) == str(request.user.id)
+        
+        # Vérifications d'accès
+        if not is_admin:
+            if is_manager:
+                # Manager peut voir son équipe
+                if target_user.team_id != request.user.team_id:
+                    raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
+            elif not is_self:
+                # User normal peut voir seulement lui-même
+                raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
+        
         
         # Paramètres de période
         period_start = request.query_params.get('period_start')
@@ -410,7 +436,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         
         # Utiliser UserPerformanceService
         try:
-            from ..services.user_performance_service_obsolete import UserPerformanceService
+            from ..services.user_performance_service import UserPerformanceService
             
             performance_data = UserPerformanceService.get_user_complete_performance_optimized(
                 user_id=target_user.id,
@@ -435,20 +461,55 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
     def team_performance(self, request):
         """
         Performances consolidées de l'équipe de l'utilisateur connecté
+
+        Permissions:
+        - Admin: peut voir toutes les équipes (avec param team_id)
+        - Manager et membres: peuvent voir leur équipe
         """
         user = request.user
-        
-        if not user.team:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_DATA.format(
-                    detail="User is not assigned to a team"
+
+        # Vérifier les permissions
+        from permissions.compat import get_auth_ctx
+        ctx = get_auth_ctx(request)
+
+        # Gérer le paramètre team_id pour les admins
+        target_team_id = request.query_params.get('team_id')
+        if target_team_id:
+            # Seul admin peut voir d'autres équipes
+            if ctx.tier != 'admin':
+                raise StandardizedValidationError(
+                    "Only administrators can view other teams' performance"
                 )
-            )
-        
-        # Récupérer les membres de l'équipe
-        team_members = user.team.members.filter(is_active=True)
-        team_user_ids = list(team_members.values_list('id', flat=True))
-        
+            # Vérifier que l'équipe existe
+            from ..models import Team
+            try:
+                team = Team.objects.get(id=target_team_id, organization__client_account_id=self.get_client_id())
+                team_members = team.members.filter(is_active=True)
+                team_user_ids = list(team_members.values_list('id', flat=True))
+                team_info = {
+                    'id': str(team.id),
+                    'name': team.name,
+                    'organization': team.organization.name
+                }
+            except Team.DoesNotExist:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        else:
+            # Utiliser l'équipe de l'utilisateur
+            if not user.team:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_DATA.format(
+                        detail="User is not assigned to a team"
+                    )
+                )
+            
+            team_members = user.team.members.filter(is_active=True)
+            team_user_ids = list(team_members.values_list('id', flat=True))
+            team_info = {
+                'id': str(user.team.id),
+                'name': user.team.name,
+                'organization': user.team.organization.name
+            }
+
         # Paramètres de période
         period_start = request.query_params.get('period_start')
         period_end = request.query_params.get('period_end')
@@ -470,7 +531,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         
         # Utiliser UserPerformanceService
         try:
-            from ..services.user_performance_service_obsolete import UserPerformanceService
+            from ..services.user_performance_service import UserPerformanceService
             
             team_performance = UserPerformanceService.get_team_consolidated_performance_optimized(
                 team_user_ids=team_user_ids,
@@ -501,10 +562,18 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         """
         Performances des utilisateurs managés (pour managers)
         """
+
         manager = self.get_object()
-        
+
         # Vérifier que l'utilisateur connecté peut accéder à ces données
-        if not request.user.can_access_user_performance(manager):
+        # Seuls les admins et le manager lui-même peuvent voir
+        from permissions.compat import get_auth_ctx
+        ctx = get_auth_ctx(request)
+        
+        is_admin = ctx.tier == 'admin'
+        is_self = str(manager.id) == str(request.user.id)
+        
+        if not (is_admin or is_self):
             raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
         
         # Récupérer les utilisateurs managés
@@ -612,11 +681,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
         - Statistiques sur les superusers du tenant
         """
         try:
-            # Vérifier les permissions - seuls Admin et SuperUser peuvent voir cette liste
-            current_user = request.user
+             # Vérifier les permissions - seuls Admin et SuperUser peuvent voir cette liste
+            from permissions.compat import get_auth_ctx
+            ctx = get_auth_ctx(request)
             
-            from permissions import resolve_tier
-            if resolve_tier(current_user) != 'admin':
+            if ctx.tier != 'admin':
                 raise StandardizedValidationError(
                     "Only administrators can view the superusers list"
                 )
@@ -678,10 +747,10 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
                     'admin_role_users_non_super': admin_role_users,
                     'total_administrators': active_superusers + admin_role_users  # Total avec droits admin
                 },
-                'permissions_info': {
+               'permissions_info': {
                     'description': 'Superusers have full administrative rights within this tenant',
-                    'can_grant_superuser': current_user.is_superuser or (current_user.role and current_user.role.name == 'Admin'),
-                    'current_user_is_superuser': current_user.is_superuser
+                    'can_grant_superuser': self._can_grant_superuser(request.user),
+                    'current_user_is_superuser': request.user.is_superuser
                 }
             })
             
@@ -689,7 +758,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, ClientScopeManager.ViewMixin
             return self.handle_exception(e)
     
     @action(detail=False, methods=['post'], url_path='grant-superuser')
-    def grant_superuser(self, request):
+    def grant_superuser_action(self, request):  
         """
         Accorder le statut superuser à un utilisateur
         POST /client/users/grant-superuser/

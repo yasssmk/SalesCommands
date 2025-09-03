@@ -134,60 +134,106 @@ def get_auth_ctx(request) -> AuthContext:
     return ctx
 
 
+# def resolve_tier_from_context(ctx: AuthContext, user=None) -> str:
+#     """
+#     Resolve the permission tier from available context.
+    
+#     Priority order:
+#     1. Superuser → 'admin'
+#     2. Role name contains 'admin' → 'admin'
+#     3. Role name contains 'manager' → 'manager'
+#     4. Role with is_admin flag → 'admin'
+#     5. User.role.tier if available
+#     6. Default → 'individual'
+    
+#     Args:
+#         ctx: AuthContext with partial information
+#         user: Django user object (optional)
+        
+#     Returns:
+#         Tier string: 'admin' | 'manager' | 'individual'
+#     """
+#     # Superuser is always admin
+#     if ctx.is_superuser:
+#         return 'admin'
+    
+#     # Check role name (case-insensitive)
+#     if ctx.role_name:
+#         role_lower = ctx.role_name.lower()
+#         if 'admin' in role_lower:
+#             return 'admin'
+#         elif 'manager' in role_lower:
+#             return 'manager'
+    
+#     # Check user.role attributes if available
+#     if user and hasattr(user, 'role'):
+#         role = user.role
+#         if role:
+#             # Check is_admin flag
+#             if hasattr(role, 'is_admin') and role.is_admin:
+#                 return 'admin'
+            
+#             # Check tier attribute
+#             if hasattr(role, 'tier'):
+#                 return role.tier
+            
+#             # Check role name from object
+#             if hasattr(role, 'name'):
+#                 role_name_lower = role.name.lower()
+#                 if 'admin' in role_name_lower:
+#                     return 'admin'
+#                 elif 'manager' in role_name_lower:
+#                     return 'manager'
+    
+#     # Default to individual (least privilege)
+#     return 'individual'
 def resolve_tier_from_context(ctx: AuthContext, user=None) -> str:
     """
     Resolve the permission tier from available context.
-    
-    Priority order:
-    1. Superuser → 'admin'
-    2. Role name contains 'admin' → 'admin'
-    3. Role name contains 'manager' → 'manager'
-    4. Role with is_admin flag → 'admin'
-    5. User.role.tier if available
-    6. Default → 'individual'
-    
-    Args:
-        ctx: AuthContext with partial information
-        user: Django user object (optional)
-        
-    Returns:
-        Tier string: 'admin' | 'manager' | 'individual'
     """
+    print(f"[COMPAT DEBUG] Resolving tier...")
+    print(f"[COMPAT DEBUG]   ctx.is_superuser: {ctx.is_superuser}")
+    print(f"[COMPAT DEBUG]   ctx.role_name: {ctx.role_name}")
+    
     # Superuser is always admin
     if ctx.is_superuser:
+        print(f"[COMPAT DEBUG]   -> Tier: admin (superuser)")
         return 'admin'
     
     # Check role name (case-insensitive)
     if ctx.role_name:
         role_lower = ctx.role_name.lower()
         if 'admin' in role_lower:
+            print(f"[COMPAT DEBUG]   -> Tier: admin (role name)")
             return 'admin'
         elif 'manager' in role_lower:
+            print(f"[COMPAT DEBUG]   -> Tier: manager (role name)")
             return 'manager'
     
     # Check user.role attributes if available
     if user and hasattr(user, 'role'):
+        print(f"[COMPAT DEBUG]   User.role: {user.role}")
         role = user.role
         if role:
             # Check is_admin flag
             if hasattr(role, 'is_admin') and role.is_admin:
+                print(f"[COMPAT DEBUG]   -> Tier: admin (role.is_admin)")
                 return 'admin'
-            
-            # Check tier attribute
-            if hasattr(role, 'tier'):
-                return role.tier
             
             # Check role name from object
             if hasattr(role, 'name'):
                 role_name_lower = role.name.lower()
+                print(f"[COMPAT DEBUG]   Role.name: {role.name}")
                 if 'admin' in role_name_lower:
+                    print(f"[COMPAT DEBUG]   -> Tier: admin (role.name)")
                     return 'admin'
                 elif 'manager' in role_name_lower:
+                    print(f"[COMPAT DEBUG]   -> Tier: manager (role.name)")
                     return 'manager'
     
-    # Default to individual (least privilege)
+    # Default to individual
+    print(f"[COMPAT DEBUG]   -> Tier: individual (default)")
     return 'individual'
-
 
 def get_client_id(request) -> Optional[str]:
     """
