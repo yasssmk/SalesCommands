@@ -6,42 +6,47 @@ This module provides Django REST Framework integration:
 - ScopedQuerysetMixin: Automatic queryset filtering by scope
 """
 
-from typing import Optional, Set
+from typing import Optional, Set, Dict, Any
 from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.views import APIView
-from django.db.models import QuerySet
+from django.db.models import QuerySet, Q
 
 from .checks import check_permission, has_permission as check_has_permission, resolve_tier
 from .scoping import apply_scope_filter, build_q
 from .config import is_module_enabled, is_enabled, is_debug_enabled, audit_log
+from .compat import get_auth_ctx, get_client_id
+from .policies import (
+    resolve_action_policy,
+    check_action_policy_permission,
+    resolve_scope_profile,
+    ScopeProfiles
+)
 
 
 class ScopedPermission(permissions.BasePermission):
     """
     DRF Permission class that checks permissions using our registry.
     
+    Enhanced to support action_policies for declarative custom actions.
+    
     Requires the view to have a 'module' attribute defining which
     module it belongs to.
     
-    Supports bypassed actions via 'bypassed_actions' attribute on the view.
-    Actions listed in bypassed_actions will skip permission checks and
-    must implement their own permission logic.
+    Supports action_policies for declarative permission configuration:
+        action_policies = {
+            'change_password': {'crud': 'update', 'scope': 'self_only'},
+            'grant_superuser': {'crud': 'update', 'tier': 'admin', 'scope': 'client'},
+        }
     
     Example:
         class AccountViewSet(viewsets.ModelViewSet):
             permission_classes = [IsAuthenticated, ScopedPermission]
-            module = 'accounts'  # Required!
+            module = 'accounts'
             
-            # Optional: actions that bypass the permission system
-            bypassed_actions = {'custom_action', 'special_operation'}
-            
-            @action(detail=True, methods=['post'])
-            def custom_action(self, request, pk=None):
-                # This action handles its own permissions
-                if not request.user.is_staff:
-                    raise PermissionDenied("Staff only")
-                # ... action logic ...
+            action_policies = {
+                'custom_action': {'crud': 'read', 'scope': 'team_only'},
+            }
     """
     
     def has_permission(self, request: Request, view: APIView) -> bool:
@@ -64,8 +69,20 @@ class ScopedPermission(permissions.BasePermission):
         
         # Get module from view
         module = getattr(view, 'module', None)
+        if not module:
+            if is_debug_enabled():
+                print(f"View {view.__class__.__name__} missing 'module' attribute")
+            return False
         
-        # Get action
+        # Skip if permissions system is disabled
+        if not is_enabled():
+            return True
+        
+        # Skip if module is not enabled
+        if not is_module_enabled(module):
+            return True
+        
+        # Get the DRF action
         action = view.action if hasattr(view, 'action') else None
         if not action:
             # Map HTTP method to action for non-viewset views
@@ -77,58 +94,33 @@ class ScopedPermission(permissions.BasePermission):
                 'DELETE': 'delete',
             }
             action = method_map.get(request.method, 'read')
+
+        # Check for action_policies first
+        action_policies = getattr(view, 'action_policies', {})
+        if action_policies and action in action_policies:
+            # Use action policy
+            is_permitted, scope = check_action_policy_permission(
+                action_policies, action, request, module
+            )
+            
+            if is_debug_enabled():
+                print(f"[PERMISSION] Action policy for '{action}': permitted={is_permitted}, scope={scope}")
+            
+            return is_permitted
         
+        # Fall back to registry-based check
+        scope = check_permission(user, module, action)
+
         # Debug output
         if is_debug_enabled():
-            tier = resolve_tier(user)
-            print(f"\n[PERMISSION CHECK]")
-            print(f"User: {user.email if hasattr(user, 'email') else user}")
-            print(f"Role: {user.role.name if hasattr(user, 'role') and user.role else 'NO_ROLE'}")
-            print(f"Tier: {tier}")
-            print(f"Module: {module}")
-            print(f"Action: {action}")
+            print(f"[PERMISSION] Registry check: module={module}, action={action}, scope={scope}")
         
-        # ===== CHECK FOR BYPASSED ACTIONS =====
-        # If the view declares bypassed actions, let them through
-        bypassed_actions = getattr(view, 'bypassed_actions', set())
-        if action in bypassed_actions:
-            if is_debug_enabled():
-                print(f"[PERMISSION] Action '{action}' is BYPASSED - ALLOWING")
-                print("[END CHECK]\n")
-            return True  # The action method will handle its own permissions
-        
-        # ===== STANDARD PERMISSION CHECKS =====
-        
-        # Skip if permissions system is disabled
-        if not is_enabled():
-            if is_debug_enabled():
-                print("[PERMISSION] System disabled - ALLOWING")
-            return True
-        
-        # Module is required for permission checks
-        if not module:
-            if is_debug_enabled():
-                print("[PERMISSION] No module on view - DENYING for safety")
-            return False  # Deny for safety if no module specified
-        
-        # Skip if module is not enabled
-        if not is_module_enabled(module):
-            if is_debug_enabled():
-                print(f"[PERMISSION] Module {module} not enabled - ALLOWING")
-            return True
-        
-        # Check permission using the registry
-        allowed = check_has_permission(user, module, action)
-        
-        if is_debug_enabled():
-            print(f"Result: {'ALLOWED' if allowed else 'DENIED'}")
-            print("[END CHECK]\n")
-        
-        return allowed
+        # Deny if no permission
+        return scope != 'none'
     
     def has_object_permission(self, request: Request, view: APIView, obj) -> bool:
         """
-        Check object-level permission.
+        Check object-level permissions.
         
         This is called after has_permission() for retrieve/update/destroy.
         
@@ -140,14 +132,6 @@ class ScopedPermission(permissions.BasePermission):
         Returns:
             True if permission granted, False otherwise
         """
-        # Check for bypassed actions
-        action = view.action if hasattr(view, 'action') else None
-        bypassed_actions = getattr(view, 'bypassed_actions', set())
-        if action in bypassed_actions:
-            if is_debug_enabled():
-                print(f"[OBJECT PERMISSION] Action '{action}' is BYPASSED - ALLOWING")
-            return True  # The action handles its own object permissions
-        
         # Skip if permissions system is disabled
         if not is_enabled():
             return True
@@ -162,6 +146,7 @@ class ScopedPermission(permissions.BasePermission):
             return True
         
         # Get the DRF action
+        action = view.action if hasattr(view, 'action') else None
         if not action:
             method_map = {
                 'GET': 'read',
@@ -172,8 +157,31 @@ class ScopedPermission(permissions.BasePermission):
             }
             action = method_map.get(request.method, 'read')
         
-        # Get user's scope
-        scope = check_permission(request.user, module, action)
+        # Check action_policies for special scopes
+        action_policies = getattr(view, 'action_policies', {})
+        if action_policies and action in action_policies:
+            policy = action_policies[action]
+            scope_spec = policy.get('scope')
+            
+            # Handle self_only specially for object permissions
+            if scope_spec == ScopeProfiles.SELF_ONLY:
+                user = request.user
+                
+                # For users module, check if accessing own record
+                if module == 'users':
+                    return obj.pk == user.pk
+                
+                # For other modules, check ownership
+                if hasattr(obj, 'owner_id'):
+                    return obj.owner_id == user.pk
+                if hasattr(obj, 'created_by_id'):
+                    return obj.created_by_id == user.pk
+                
+                return False
+        
+        # Standard permission check
+        user = request.user
+        scope = check_permission(user, module, action)
         
         # Deny if no permission
         if scope == 'none':
@@ -184,7 +192,7 @@ class ScopedPermission(permissions.BasePermission):
             return True
         
         # For team/mine scopes, check if object matches the filter
-        q_filter = build_q(module, scope, request.user, action)
+        q_filter = build_q(module, scope, user, action)
         model_class = obj.__class__
         matches = model_class.objects.filter(q_filter, pk=obj.pk).exists()
         
@@ -195,43 +203,38 @@ class ScopedQuerysetMixin:
     """
     Mixin that automatically filters querysets based on permissions.
     
-    Supports bypassed actions that handle their own filtering.
+    CRITICAL: Always applies client_account filtering FIRST for security.
+    Then applies scope-based filtering (mine/team/client).
     
-    Add this to your ViewSet before the base class:
+    Add this FIRST in your ViewSet inheritance:
     
-        class AccountViewSet(ScopedQuerysetMixin, viewsets.ModelViewSet):
+        class AccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             module = 'accounts'  # Required!
             queryset = Account.objects.all()
             
-            # Optional: actions that handle their own queryset filtering
-            bypassed_actions = {'special_list'}
+            # Optional: custom actions with policies
+            action_policies = {
+                'my_items': {'crud': 'read', 'scope': 'self_only'}
+            }
     """
     
     # Module name must be set on the view
     module: Optional[str] = None
     
-    # Actions that bypass permission filtering (optional)
-    bypassed_actions: Set[str] = set()
+    # Optional action policies
+    action_policies: Dict[str, Dict[str, Any]] = {}
     
     def get_queryset(self) -> QuerySet:
         """
         Filter queryset based on user's permission scope.
         
-        This method is called by DRF to get the base queryset.
-        We filter it based on the user's permissions unless the
-        action is bypassed.
+        SECURITY: Always applies client_account filter FIRST, then scope filter.
         
         Returns:
             Filtered queryset
         """
         # Get base queryset from parent
         queryset = super().get_queryset()
-        
-        # Check if this action is bypassed
-        action = self._get_current_action()
-        if action in getattr(self, 'bypassed_actions', set()):
-            # Bypassed actions handle their own filtering
-            return queryset
         
         # Skip if permissions system is disabled
         if not is_enabled():
@@ -241,26 +244,97 @@ class ScopedQuerysetMixin:
         module = getattr(self, 'module', None)
         if not module:
             # No module specified - return empty queryset for safety
+            print(f"View {self.__class__.__name__} missing 'module' attribute")
             return queryset.none()
         
         # Skip if module is not enabled
         if not is_module_enabled(module):
             return queryset
         
-        # Get user from request
+        # Get user and context
         user = self.request.user if hasattr(self, 'request') else None
-        if not user:
+        if not user or not user.is_authenticated:
             return queryset.none()
         
-        # Apply scope filter
-        filtered_queryset = apply_scope_filter(
-            queryset,
-            module,
-            action,
-            user
-        )
+        # ====================================================================
+        # CRITICAL: Apply client_account filter FIRST for tenant isolation
+        # ====================================================================
+        ctx = get_auth_ctx(self.request)
+        client_id = ctx.client_id
         
-        return filtered_queryset
+        if client_id:
+            # Determine the client field name for this model
+            model = queryset.model
+            
+            # Try common field names
+            if hasattr(model, 'client_account_id'):
+                queryset = queryset.filter(client_account_id=client_id)
+            elif hasattr(model, 'client_account'):
+                queryset = queryset.filter(client_account__id=client_id)
+            elif hasattr(model, 'client_id'):
+                queryset = queryset.filter(client_id=client_id)
+            elif hasattr(model, 'client'):
+                queryset = queryset.filter(client__id=client_id)
+            else:
+                # Model doesn't have client field - this is a security risk
+                print(f"Model {model.__name__} has no client field for tenant isolation!")
+                # Return empty queryset for safety
+                return queryset.none()
+        else:
+            # No client_id in context - deny all for safety
+            print("No client_id in auth context - denying access")
+            return queryset.none()
+        
+        # ====================================================================
+        # Apply scope-based filtering (after client filtering)
+        # ====================================================================
+        
+        # Get current action
+        action = self._get_current_action()
+        
+        # Check for action_policies with custom scopes
+        action_policies = getattr(self, 'action_policies', {})
+        if action_policies and action in action_policies:
+            policy = action_policies[action]
+            scope_spec = policy.get('scope')
+            
+            # If it's a scope profile, resolve and apply it
+            if scope_spec in [
+                ScopeProfiles.SELF_ONLY,
+                ScopeProfiles.ADMIN_ONLY_CLIENT,
+                ScopeProfiles.TEAM_ONLY,
+                ScopeProfiles.OWNER_ONLY,
+                ScopeProfiles.PUBLIC_READ,
+            ]:
+                crud_action = policy.get('crud', 'read')
+                _, q_filter = resolve_scope_profile(
+                    scope_spec, self.request, module, crud_action
+                )
+                if q_filter:
+                    queryset = queryset.filter(q_filter)
+                else:
+                    return queryset.none()
+            
+            # Standard scope
+            elif scope_spec in ['client', 'team', 'mine', 'none']:
+                if scope_spec == 'none':
+                    return queryset.none()
+                
+                # Build and apply filter for standard scope
+                q_filter = build_q(module, scope_spec, user, action)
+                if q_filter:
+                    queryset = queryset.filter(q_filter)
+        else:
+            # Use registry-based filtering
+            filtered_queryset = apply_scope_filter(
+                queryset,
+                module,
+                action,
+                user
+            )
+            queryset = filtered_queryset
+        
+        return queryset
     
     def _get_current_action(self) -> str:
         """
@@ -306,109 +380,29 @@ class PermissionDebugMixin:
         """
         Add permission debug info to response headers.
         
-        Args:
-            request: DRF Request
-            response: DRF Response
-            
-        Returns:
-            Response with debug headers
+        Only adds headers if debug_permissions is True and DEBUG mode is on.
         """
+        # Call parent
         response = super().finalize_response(request, response, *args, **kwargs)
         
-        # Only add debug info if enabled and in DEBUG mode
-        if self.debug_permissions and hasattr(request, 'user'):
-            from django.conf import settings
-            if settings.DEBUG:
-                from .checks import resolve_tier, get_scope
-                
-                module = getattr(self, 'module', 'unknown')
-                action = getattr(self, 'action', 'unknown')
-                
-                # Add debug headers
-                response['X-Permission-Module'] = module
-                response['X-Permission-Action'] = action
-                response['X-Permission-Tier'] = resolve_tier(request.user)
-                response['X-Permission-Scope'] = get_scope(module, action, resolve_tier(request.user))
-                response['X-Permission-User'] = str(request.user.id) if request.user.is_authenticated else 'anonymous'
+        # Add debug headers if enabled
+        if self.debug_permissions and is_debug_enabled():
+            from .compat import debug_auth_context
+            
+            # Add auth context info
+            auth_debug = debug_auth_context(request)
+            response['X-Auth-Origin'] = auth_debug.get('origin', 'unknown')
+            response['X-Auth-Tier'] = auth_debug.get('tier', 'unknown')
+            response['X-Auth-ClientId'] = auth_debug.get('client_id', 'none')
+            
+            # Add module and action info
+            if hasattr(self, 'module'):
+                response['X-Perm-Module'] = self.module
+            if hasattr(self, 'action'):
+                response['X-Perm-Action'] = self.action
+            
+            # Add applied scope
+            if hasattr(request, '_applied_scope'):
+                response['X-Perm-Scope'] = request._applied_scope
         
         return response
-
-
-class BulkPermissionMixin:
-    """
-    Mixin for handling bulk operations with permissions.
-    
-    Ensures that bulk operations respect permissions for each object.
-    
-    Example:
-        class AccountViewSet(BulkPermissionMixin, viewsets.ModelViewSet):
-            module = 'accounts'
-    """
-    
-    def get_serializer(self, *args, **kwargs):
-        """
-        Override to handle bulk operations with permission checks.
-        
-        Returns:
-            Serializer instance
-        """
-        # Check if this is a bulk operation
-        if isinstance(kwargs.get('data', {}), list):
-            # For bulk operations, we need to check each item
-            # This is handled in the perform_bulk_create/update methods
-            pass
-        
-        return super().get_serializer(*args, **kwargs)
-    
-    def perform_bulk_create(self, serializer):
-        """
-        Perform bulk creation with permission checks.
-        
-        Args:
-            serializer: Serializer with validated data
-        """
-        # Check create permission
-        module = getattr(self, 'module', None)
-        if module and not check_has_permission(self.request.user, module, 'create'):
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("You don't have permission to create in this module")
-        
-        # Perform creation
-        serializer.save()
-    
-    def perform_bulk_update(self, serializer):
-        """
-        Perform bulk update with permission checks.
-        
-        Args:
-            serializer: Serializer with validated data
-        """
-        # For bulk updates, we need to check each object
-        module = getattr(self, 'module', None)
-        if not module:
-            return super().perform_update(serializer)
-        
-        # Get the scope for updates
-        scope = check_permission(self.request.user, module, 'update')
-        if scope == 'none':
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("You don't have permission to update in this module")
-        
-        # For team/mine scopes, verify each object
-        if scope in ['team', 'mine']:
-            # Build filter for accessible objects
-            q_filter = build_q(module, scope, self.request.user, 'update')
-            
-            # Check each instance
-            for instance in serializer.instance:
-                if not instance.__class__.objects.filter(q_filter, pk=instance.pk).exists():
-                    from rest_framework.exceptions import PermissionDenied
-                    raise PermissionDenied(f"You don't have permission to update object {instance.pk}")
-        
-        # Perform update
-        serializer.save()
-
-
-# Compatibility aliases for easier migration
-ScopePermission = ScopedPermission  # Alias
-QuerysetScopeMixin = ScopedQuerysetMixin  # Alias
