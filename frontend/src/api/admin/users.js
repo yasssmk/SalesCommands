@@ -326,7 +326,8 @@ export function useGetOrganization(orgId) {
  */
 export const insertUser = async (userData) => {
   const result = await api.post(endpoints.users, userData);
-
+  
+  console.log(result)
   if (result.success) {
     // ✅ STANDARDISÉ: revalidateByPrefix pour tous les endpoints impactés
     revalidateMultiple([
@@ -336,6 +337,7 @@ export const insertUser = async (userData) => {
 
     return { success: true, user: result.data };
   } else {
+    
     return { success: false, error: result.error };
   }
 };

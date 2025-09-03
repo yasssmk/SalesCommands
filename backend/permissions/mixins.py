@@ -15,7 +15,7 @@ from django.conf import settings
 
 from .checks import check_permission, has_permission
 from .config import is_module_enabled, is_enabled, is_debug_enabled, audit_log
-from .compat import get_auth_ctx, get_client_id
+from .compat import get_auth_ctx, get_client_idA
 from .policies import (
     resolve_action_policy,
     check_action_policy_permission,

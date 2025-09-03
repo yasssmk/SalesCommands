@@ -58,7 +58,7 @@ def get_scope(module: str, action: str, tier: str) -> Scope:
     Args:
         module: Module name (e.g., 'accounts')
         action: CRUD action ('create', 'read', 'update', 'delete')
-        tier: User tier ('admin', 'manager', 'individual')
+        tier: User tier ('admin', 'manager', 'individual')A
         
     Returns:
         Scope ('client', 'team', 'mine', 'none')

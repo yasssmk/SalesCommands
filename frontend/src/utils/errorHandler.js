@@ -14,40 +14,56 @@
  * @param {Error} axiosError - Erreur Axios complète
  * @returns {string} Message d'erreur à afficher
  */
+
 export const handleApiError = (axiosError) => {
-  // Erreur réseau (pas de response)
-  if (!axiosError.response) {
-    return 'Network error. Please check your connection.';
-  }
-  
-  // Erreur serveur 500+
-  if (axiosError.response.status >= 500) {
-    return 'Server Error';
-  }
-  
-  const backendData = axiosError.response.data;
-  
-  // Structure StandardizedValidationError Django : { "error": "message" }
-  if (backendData?.error && typeof backendData.error === 'string') {
-    return backendData.error;
-  }
-  
-  // Structure alternative : { "message": "..." }
-  if (backendData?.message && typeof backendData.message === 'string') {
-    return backendData.message;
-  }
-  
-  // Structure validation détaillée : { "error": { "field": ["messages"] } }
-  if (backendData?.error && typeof backendData.error === 'object') {
-    const firstFieldErrors = Object.values(backendData.error)[0];
-    if (Array.isArray(firstFieldErrors) && firstFieldErrors.length > 0) {
-      return firstFieldErrors[0];
+  // 1) Erreur réseau
+  if (!axiosError?.response) return 'Network error. Please check your connection.';
+
+  const { status, data } = axiosError.response;
+
+  // 2) 500+
+  if (status >= 500) return 'Server Error';
+
+  // 3) DRF/Custom: detail (très courant)
+  if (data?.detail && typeof data.detail === 'string') return data.detail;
+
+  // 4) Ton format standard: { error: "..." }
+  if (typeof data?.error === 'string') return data.error;
+
+  // 5) Ton format standard (array): { error: ["..."] }
+  if (Array.isArray(data?.error) && data.error.length) {
+    const first = data.error[0];
+    if (typeof first === 'string') return first;
+    if (first && typeof first === 'object') {
+      // ex: [{message:"..."}]
+      return first.message || JSON.stringify(first);
     }
   }
-  
-  // Fallback
-  return `Request failed (${axiosError.response.status})`;
+
+  // 6) Ton format alternatif: { message: "..." }
+  if (typeof data?.message === 'string') return data.message;
+
+  // 7) DRF validation dict: { field: ["msg"] , ... }
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const keys = Object.keys(data);
+    if (keys.length) {
+      const firstVal = data[keys[0]];
+      if (Array.isArray(firstVal) && firstVal.length && typeof firstVal[0] === 'string') {
+        return firstVal[0];
+      }
+      if (typeof firstVal === 'string') return firstVal;
+    }
+  }
+
+  // 8) DRF array root: ["msg", ...]
+  if (Array.isArray(data) && data.length) {
+    if (typeof data[0] === 'string') return data[0];
+  }
+
+  // 9) Fallback
+  return `Request failed (${status})`;
 };
+
 
 // ==============================|| FORMIK INTEGRATION ||============================== //
 

@@ -313,7 +313,12 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                     raise StandardizedValidationError(
                         CoreErrorMessages.UNIQUE_CONSTRAINT.format(fields="email")
                     )
-            
+                
+                if not data.get('role'):
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.REQUIRED_FIELD.format(field='role')
+                    )
+                            
             # Cohérence team/organization/client
             team = data.get('team') or (self.instance.team if self.instance else None)
             organization = data.get('organization') or (self.instance.organization if self.instance else None)

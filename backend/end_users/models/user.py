@@ -213,7 +213,11 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         """
         Vérifie si l'utilisateur est manager d'équipe ou organisation
         """
-        if self.role.is_admin:
+        from permissions import resolve_tier
+        user_tier = resolve_tier(self)
+        
+        # Admin peut voir tous les utilisateurs de son client
+        if user_tier == 'manager':
             return True
         
         else:
@@ -239,26 +243,36 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     
     def can_access_user_performance(self, target_user):
         """
-        Vérifie si cet utilisateur peut accéder aux performances d'un autre
-        Logic métier pour le UserPerformanceService
+        Vérifie si cet utilisateur peut accéder aux performances d'un autre.
+        Utilise resolve_tier() au lieu de vérifier le nom du rôle.
+        Logic métier pour le UserPerformanceService.
         """
-        # Même client requis
+        # Même client requis (toujours vérifier en premier)
         if self.client_account != target_user.client_account:
             return False
             
         # L'utilisateur peut toujours voir ses propres performances
         if self == target_user:
             return True
-            
-        # Manager peut voir ses équipes
-        if target_user in self.get_managed_users():
+        
+        # Utiliser resolve_tier pour déterminer les permissions basées sur le tier
+        from permissions import resolve_tier
+        user_tier = resolve_tier(self)
+        
+        # Admin peut voir tous les utilisateurs de son client
+        if user_tier == 'admin':
             return True
             
-        # Ajout de logiques supplémentaires selon les besoins
-        # Ex: Admin peut voir tous les utilisateurs de son client
-        if self.role and self.role.name == 'Admin':
-            return True
-            
+        # Manager peut voir son équipe et les utilisateurs qu'il manage
+        if user_tier == 'manager':
+            # Check si target_user est dans les users managés
+            if target_user in self.get_managed_users():
+                return True
+            # Check si target_user est dans la même équipe
+            if self.team and target_user.team and self.team == target_user.team:
+                return True
+                
+        # Individual ne peut voir que lui-même (déjà traité plus haut)
         return False
     
     
@@ -284,24 +298,40 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     def can_manage_teams(self):
         """
         Check if this user can create/modify/delete teams.
+        Utilise resolve_tier() au lieu de has_admin_rights().
         """
-        # Superusers et Admins peuvent gérer toutes les équipes
-        if self.has_admin_rights():
+        from permissions import resolve_tier
+        user_tier = resolve_tier(self)
+        
+        # Admins peuvent gérer toutes les équipes
+        if user_tier == 'admin':
             return True
         
         # Les managers peuvent gérer leurs propres équipes
-        return self.managed_teams.exists()
+        if user_tier == 'manager':
+            return self.managed_teams.exists()
+        
+        # Individual ne peut pas gérer d'équipes
+        return False
     
     def can_manage_organizations(self):
         """
         Check if this user can create/modify/delete organizations.
+        Utilise resolve_tier() au lieu de has_admin_rights().
         """
-        # Superusers et Admins peuvent gérer toutes les organisations
-        if self.has_admin_rights():
+        from permissions import resolve_tier
+        user_tier = resolve_tier(self)
+        
+        # Admins peuvent gérer toutes les organisations
+        if user_tier == 'admin':
             return True
         
-        # Les directeurs peuvent gérer leurs propres organisations
-        return self.managed_organizations.exists()
+        # Les managers peuvent gérer leurs propres organisations
+        if user_tier == 'manager':
+            return self.managed_organizations.exists()
+        
+        # Individual ne peut pas gérer d'organisations  
+        return False
     
     def get_permission_level(self):
         """

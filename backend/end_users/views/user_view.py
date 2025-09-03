@@ -161,29 +161,26 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         - Tous les utilisateurs authentifiés peuvent créer des users SANS is_superuser
         - Seuls Admin et SuperUser peuvent créer des users AVEC is_superuser=True
         """
-        try:
-            with transaction.atomic():
-                print(f"Create Requete data: {request.data}")
+        with transaction.atomic():
+            print(f"Create Requete data: {request.data}")
+            
+            
+            # Serializer avec validation
+            serializer = self.get_serializer(data=request.data)
+            
+            # Validation avec raise_exception=True
+            serializer.is_valid(raise_exception=True)
+
+            # Créer l'utilisateur
+            user = serializer.save()
+            
+            
+            return Response({
+                'success': True,
+                'message': f'User "{user.get_full_name()}" created successfully',
+                'data': UserSerializer(user).data
+            }, status=status.HTTP_201_CREATED)
                 
-                
-                # Serializer avec validation
-                serializer = self.get_serializer(data=request.data)
-                
-                # Validation avec raise_exception=True
-                serializer.is_valid(raise_exception=True)
-                
-                # Créer l'utilisateur
-                user = serializer.save()
-                
-                
-                return Response({
-                    'success': True,
-                    'message': f'User "{user.get_full_name()}" created successfully',
-                    'data': UserSerializer(user).data
-                }, status=status.HTTP_201_CREATED)
-                
-        except Exception as e:
-            return self.handle_exception(e)
 
     
     def partial_update(self, request, *args, **kwargs):
@@ -265,7 +262,7 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             
             # Logger l'action si nécessaire (optionnel)
             if is_admin and not is_self:
-                # Admin a changé le mot de passe d'un autre utilisateur
+                # Admin a changé le mot de passe d'un autre utilisateurA
                  print(f"Admin {request.user.email} changed password for {user.email}")
             
             return Response({
