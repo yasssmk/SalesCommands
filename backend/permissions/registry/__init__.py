@@ -67,6 +67,15 @@ def get_scope(module: str, action: str, tier: str) -> Scope:
     # Handle PATCH as UPDATE
     if action == 'patch':
         action = 'update'
+
+    if action == 'list':
+        action = 'read'
+    elif action == 'retrieve': 
+        action = 'read'
+    elif action in ['update', 'partial_update']:
+        action = 'update'
+    elif action == 'destroy':
+        action = 'delete'
     
     # Get module permissions
     module_perms = REGISTRY.get(module)

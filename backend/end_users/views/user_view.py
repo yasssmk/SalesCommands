@@ -22,12 +22,14 @@ from ..serializers.user_serializer import (
 )
 
 
-class UserViewSet( BaseAPIView, viewsets.ModelViewSet):
+class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing users with client scoping and performance integration
     """
     queryset = User.objects.all()
+    serializer_class = UserSerializer
     entity_name = 'user'
+
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['is_active', 'role', 'team', 'organization', 'is_staff']
     search_fields = ['email', 'first_name', 'last_name']
@@ -92,7 +94,11 @@ class UserViewSet( BaseAPIView, viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Get users for the current client with optimized queries"""
+        print(f"[UserViewSet] get_queryset called - action: {self.action}")
+
         queryset = super().get_queryset()
+
+        print(f"[UserViewSet] Queryset count after super: {queryset.count()}")
 
         # Debug pour comprendre ce qui se passe
         print(f"[DEBUG] Action: {self.action}")
@@ -260,17 +266,17 @@ class UserViewSet( BaseAPIView, viewsets.ModelViewSet):
             # Logger l'action si nécessaire (optionnel)
             if is_admin and not is_self:
                 # Admin a changé le mot de passe d'un autre utilisateur
-                print(f"Admin {current_user.email} changed password for {target_user.email}")
+                 print(f"Admin {request.user.email} changed password for {user.email}")
             
             return Response({
-                'success': True,
-                'message': 'Password changed successfully',
-                'user': {
-                    'id': str(target_user.id),
-                    'email': target_user.email,
-                    'name': target_user.get_full_name()
-                }
-            })
+            'success': True,
+            'message': 'Password changed successfully',
+            'user': {
+                'id': str(user.id),  
+                'email': user.email,
+                'name': user.get_full_name()
+            }
+        })
             
         except User.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)

@@ -35,6 +35,8 @@ class CustomJWTAuthentication(JWTAuthentication):
     #     except Exception:
     #         raise AuthenticationFailed(AuthErrorMessages.AUTH_REQUIRED)
 
+    header_types = ('Bearer', 'JWT')
+
     def authenticate(self, request):
         """Authenticate using HttpOnly cookies"""
         raw_token = self.get_raw_token(request)
@@ -98,8 +100,10 @@ class CustomJWTAuthentication(JWTAuthentication):
         # Determine user model based on origin
         if origin == "product_admin":
             user_model = ProductAdmin
+            use_select_related = False
         elif origin == "end_users":
             user_model = User
+            use_select_related = True
         else:
             raise InvalidToken("Invalid origin in token")
         
@@ -112,7 +116,9 @@ class CustomJWTAuthentication(JWTAuthentication):
                 raise InvalidToken("Invalid user ID format")
 
         try:
-            user = user_model.objects.get(pk=user_id)
+            if use_select_related:
+                queryset = user_model.objects.select_related('role', 'team', 'organization')
+                user = queryset.get(pk=user_id)
 
             if not user.is_active:
                 raise InvalidToken("User is inactive")

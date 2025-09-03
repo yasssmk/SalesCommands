@@ -61,10 +61,43 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         assert self.paginator is not None
         return self.paginator.get_paginated_response(data)
     
+    # def get_queryset(self):
+    #     """Get base queryset with client filtering"""
+    #     assert self.queryset is not None, "Define queryset in your view"
+    #     queryset = self.queryset.all()
+    #     return self.filter_queryset_by_client(queryset)
+
     def get_queryset(self):
-        """Get base queryset with client filtering"""
-        assert self.queryset is not None, "Define queryset in your view"
-        queryset = self.queryset.all()
+        """
+        Get base queryset with client filtering.
+        
+        IMPORTANT: This method now properly chains with super() to maintain MRO compatibility.
+        This allows mixins like ScopedQuerysetMixin to be called in the proper order.
+        
+        Call chain:
+        1. Mixin (e.g., ScopedQuerysetMixin) calls super() → here
+        2. We call super() → ModelViewSet.get_queryset() 
+        3. ModelViewSet returns self.queryset.all()
+        4. We apply client filter via filter_queryset_by_client()
+        5. Return filtered queryset back up the chain
+        
+        This ensures:
+        - Client filtering is always applied (security)
+        - Mixins can add their own filtering (permissions)
+        - No double filtering or broken chains
+        """
+        # CRITICAL: Call super() to maintain MRO chain
+        # This allows ModelViewSet to provide the base queryset
+        # and other mixins in the chain to execute properly
+        if hasattr(super(), 'get_queryset'):
+            queryset = super().get_queryset()
+        else:
+            # Fallback if no parent provides get_queryset
+            assert self.queryset is not None, "Define queryset in your view"
+            queryset = self.queryset.all()
+        
+        # Apply client-scoped filtering (tenant isolation)
+        # This is the FIRST security filter that must always be applied
         return self.filter_queryset_by_client(queryset)
 
     def get(self, request, *args, **kwargs):
