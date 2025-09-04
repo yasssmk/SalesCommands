@@ -169,66 +169,50 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                 
                 # Si aucun tier n'est défini
                 if tier_count == 0:
-                    # Vérifier si des tiers ont été fournis
-                    tier_fields_provided = any(
-                        field in self.initial_data 
-                        for field in ['is_admin', 'is_manager', 'is_individual']
-                    )
-                    
-                    if tier_fields_provided:
-                        # L'utilisateur a fourni des tiers mais tous à false = ERREUR
                         raise StandardizedValidationError(
                             CoreErrorMessages.INVALID_DATA.format(
                                 detail="At least one tier must be active. "
                                        "Please set one of is_admin, is_manager, or is_individual to true."
                             )
                         )
-                    else:
-                        # FALLBACK uniquement si aucun tier fourni
-                        name = attrs.get('name', '').lower()
-                        if 'admin' in name:
-                            attrs['is_admin'] = True
-                            attrs['is_manager'] = False
-                            attrs['is_individual'] = False
-                        elif any(w in name for w in ['manager', 'supervisor', 'lead', 'direction']):
-                            attrs['is_admin'] = False
-                            attrs['is_manager'] = True
-                            attrs['is_individual'] = False
-                        else:
-                            attrs['is_admin'] = False
-                            attrs['is_manager'] = False
-                            attrs['is_individual'] = True
+                    
             
             # Pour UPDATE (instance existe)
             else:
-                # Calculer l'état final
-                final_is_admin = attrs.get('is_admin', self.instance.is_admin)
-                final_is_manager = attrs.get('is_manager', self.instance.is_manager)
-                final_is_individual = attrs.get('is_individual', self.instance.is_individual)
-                
-                final_tier_count = sum([final_is_admin, final_is_manager, final_is_individual])
-                
-                if final_tier_count == 0:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_DATA.format(
-                            detail="At least one tier must remain active."
-                        )
-                    )
-                elif final_tier_count > 1:
-                    active_tiers = []
-                    if final_is_admin:
-                        active_tiers.append('is_admin')
-                    if final_is_manager:
-                        active_tiers.append('is_manager')
-                    if final_is_individual:
-                        active_tiers.append('is_individual')
+                tier_fields_in_request = []
+                for field in ['is_admin', 'is_manager', 'is_individual']:
+                    if field in attrs:
+                        tier_fields_in_request.append(field)
+                        
+                if tier_fields_in_request:
+                    # Calculer l'état final
+                    final_is_admin = attrs.get('is_admin', self.instance.is_admin)
+                    final_is_manager = attrs.get('is_manager', self.instance.is_manager)
+                    final_is_individual = attrs.get('is_individual', self.instance.is_individual)
                     
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_DATA.format(
-                            detail=f"Only one tier can be active. "
-                                   f"These would be active after update: {', '.join(active_tiers)}"
+                    final_tier_count = sum([final_is_admin, final_is_manager, final_is_individual])
+                    
+                    if final_tier_count == 0:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_DATA.format(
+                                detail="At least one tier must remain active."
+                            )
                         )
-                    )
+                    elif final_tier_count > 1:
+                        active_tiers = []
+                        if final_is_admin:
+                            active_tiers.append('is_admin')
+                        if final_is_manager:
+                            active_tiers.append('is_manager')
+                        if final_is_individual:
+                            active_tiers.append('is_individual')
+                        
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_DATA.format(
+                                detail=f"Only one tier can be active. "
+                                    f"These would be active after update: {', '.join(active_tiers)}"
+                            )
+                        )
             
             # === Validation des permissions logiques ===
             # Si on peut delete, on devrait pouvoir modify
@@ -357,7 +341,7 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         """
         Validation STRICTE pour la création de rôle.
         - Exactement UN tier doit être défini
-        - Pas d'auto-détection, sauf si AUCUN tier n'est fourni
+        - Pas d'auto-détection basée sur le nom
         """
         try:
             # Récupérer le client_id
@@ -370,70 +354,42 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             attrs.setdefault('modify', False)
             attrs.setdefault('delete', False)
             
-            # VALIDATION STRICTE DES TIERS
-            # Vérifier quels tiers ont été explicitement fournis dans la requête
-            tier_fields_in_request = []
-            provided_tiers = {}
+            # VALIDATION STRICTE DES TIERS - PAS DE FALLBACK
+            # Récupérer les valeurs fournies ou False par défaut
+            is_admin = attrs.get('is_admin', False)
+            is_manager = attrs.get('is_manager', False)
+            is_individual = attrs.get('is_individual', False)
             
-            for tier_field in ['is_admin', 'is_manager', 'is_individual']:
-                if tier_field in self.initial_data:
-                    tier_fields_in_request.append(tier_field)
-                    provided_tiers[tier_field] = self.initial_data[tier_field]
+            # Compter combien de tiers sont activés
+            tier_count = sum([is_admin, is_manager, is_individual])
             
-            # Si au moins un tier a été fourni
-            if tier_fields_in_request:
-                # Mettre les valeurs fournies et False pour les autres
-                attrs['is_admin'] = provided_tiers.get('is_admin', False)
-                attrs['is_manager'] = provided_tiers.get('is_manager', False)
-                attrs['is_individual'] = provided_tiers.get('is_individual', False)
-                
-                # Compter combien de tiers sont activés
-                tier_count = sum([attrs['is_admin'], attrs['is_manager'], attrs['is_individual']])
-                
-                # Validation
-                if tier_count == 0:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_DATA.format(
-                            detail="At least one tier must be active. "
-                                   "You provided tier fields but all are set to false. "
-                                   "Please set one of is_admin, is_manager, or is_individual to true."
-                        )
+            # Validation stricte
+            if tier_count == 0:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_DATA.format(
+                        detail="At least one tier must be active for role creation. "
+                            "Please set one of is_admin, is_manager, or is_individual to true."
                     )
-                elif tier_count > 1:
-                    active_tiers = []
-                    if attrs['is_admin']:
-                        active_tiers.append('is_admin')
-                    if attrs['is_manager']:
-                        active_tiers.append('is_manager')
-                    if attrs['is_individual']:
-                        active_tiers.append('is_individual')
-                    
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_DATA.format(
-                            detail=f"Only one tier can be active. You specified: {', '.join(active_tiers)}. "
-                                   f"Please set exactly one of is_admin, is_manager, or is_individual to true."
-                        )
-                    )
-            else:
-                # AUCUN tier fourni - FALLBACK auto-détection basée sur le nom
-                name = attrs.get('name', '').lower()
-                if 'admin' in name:
-                    attrs['is_admin'] = True
-                    attrs['is_manager'] = False
-                    attrs['is_individual'] = False
-                elif any(w in name for w in ['manager', 'supervisor', 'lead', 'direction']):
-                    attrs['is_admin'] = False
-                    attrs['is_manager'] = True
-                    attrs['is_individual'] = False
-                else:
-                    # Par défaut : individual
-                    attrs['is_admin'] = False
-                    attrs['is_manager'] = False
-                    attrs['is_individual'] = True
+                )
+            elif tier_count > 1:
+                active_tiers = []
+                if is_admin:
+                    active_tiers.append('is_admin')
+                if is_manager:
+                    active_tiers.append('is_manager')
+                if is_individual:
+                    active_tiers.append('is_individual')
                 
-                # Log le fallback
-                print(f"[INFO] No tier specified for role '{attrs.get('name')}', auto-detected as: "
-                      f"admin={attrs['is_admin']}, manager={attrs['is_manager']}, individual={attrs['is_individual']}")
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_DATA.format(
+                        detail=f"Only one tier can be active. You specified: {', '.join(active_tiers)}. "
+                            f"Please set exactly one of is_admin, is_manager, or is_individual to true."
+                    )
+                )
+            
+            # Log l'action
+            print(f"[INFO] Creating role '{attrs.get('name')}' with tier: "
+                f"admin={is_admin}, manager={is_manager}, individual={is_individual}")
             
             # Validation cohérence permissions
             if attrs['delete'] and not attrs['modify']:
@@ -541,21 +497,18 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             instance = self.instance
             
             # === VALIDATION DES TIERS ===
-            # Récupérer les valeurs actuelles et nouvelles
+            # Vérifier si des tiers sont fournis dans la requête
             tier_fields_in_request = []
-            if 'is_admin' in self.initial_data:
-                tier_fields_in_request.append('is_admin')
-            if 'is_manager' in self.initial_data:
-                tier_fields_in_request.append('is_manager')
-            if 'is_individual' in self.initial_data:
-                tier_fields_in_request.append('is_individual')
+            for field in ['is_admin', 'is_manager', 'is_individual']:
+                if field in attrs:
+                    tier_fields_in_request.append(field)
             
-            # Si au moins un tier est dans la requête, valider
+            # Si au moins un tier est fourni, valider
             if tier_fields_in_request:
                 # Calculer l'état final après le patch
-                final_is_admin = attrs.get('is_admin', instance.is_admin if instance else False)
-                final_is_manager = attrs.get('is_manager', instance.is_manager if instance else False)
-                final_is_individual = attrs.get('is_individual', instance.is_individual if instance else False)
+                final_is_admin = attrs.get('is_admin', instance.is_admin)
+                final_is_manager = attrs.get('is_manager', instance.is_manager)
+                final_is_individual = attrs.get('is_individual', instance.is_individual)
                 
                 # Compter les tiers actifs dans l'état final
                 final_tier_count = sum([final_is_admin, final_is_manager, final_is_individual])
@@ -565,8 +518,7 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
                     raise StandardizedValidationError(
                         CoreErrorMessages.INVALID_DATA.format(
                             detail="At least one tier must remain active. "
-                                   "You cannot disable all tiers. "
-                                   "Please keep one of is_admin, is_manager, or is_individual as true."
+                                "You cannot disable all tiers."
                         )
                     )
                 elif final_tier_count > 1:
@@ -581,15 +533,15 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
                     raise StandardizedValidationError(
                         CoreErrorMessages.INVALID_DATA.format(
                             detail=f"Only one tier can be active at a time. "
-                                   f"After this update, these would be active: {', '.join(active_tiers)}. "
-                                   f"Please ensure exactly one tier is true."
+                                f"After this update, these would be active: {', '.join(active_tiers)}. "
+                                f"Please ensure exactly one tier is true."
                         )
                     )
                 
-                # Mettre à jour les attrs avec les valeurs finales validées
-                attrs['is_admin'] = final_is_admin
-                attrs['is_manager'] = final_is_manager
-                attrs['is_individual'] = final_is_individual
+                # Log le changement
+                print(f"[INFO] Updating role tiers - Final state: "
+                    f"admin={final_is_admin}, manager={final_is_manager}, "
+                    f"individual={final_is_individual}")
             
             # === VALIDATION DES PERMISSIONS ===
             # Si delete est activé, modify devrait l'être aussi
