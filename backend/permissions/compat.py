@@ -6,6 +6,9 @@ and the permissions system without modifying JWT code.
 
 The adapter extracts a standardized context from JWT claims for use
 by the permission system. No database queries are performed.
+
+IMPORTANT: No tier inference based on role names. Tier is kept for 
+legacy UI compatibility only, not for permission decisions.
 """
 
 from typing import Dict, Any, Optional, List
@@ -22,17 +25,16 @@ class AuthContext:
     Standardized authentication context for permissions.
     
     This is a read-only container that provides a consistent interface
-    regardless of the authentication source.
+    regardless of the authentication source. No inference or DB queries.
     """
     # Core identity
     origin: str = 'unknown'
     user_id: Optional[str] = None
     client_id: Optional[str] = None
     
-    # Role/tier information
-    tier: str = 'individual'  # admin|manager|individual
-    role_id: Optional[str] = None
-    role_name: Optional[str] = None
+    # Roles information (NO TIER INFERENCE)
+    roles: List[Dict[str, Any]] = field(default_factory=list)  # List of role objects/dicts
+    tier: str = 'individual'  # LEGACY UI ONLY - not for decisions
     
     # Team information
     teams: List[str] = field(default_factory=list)
@@ -52,232 +54,121 @@ class AuthContext:
     jti: Optional[str] = None  # JWT ID
     
     def __repr__(self):
-        return f"AuthContext(origin={self.origin}, user_id={self.user_id}, tier={self.tier}, client_id={self.client_id})"
+        return f"AuthContext(origin={self.origin}, user_id={self.user_id}, client_id={self.client_id}, roles={len(self.roles)})"
 
 
 def get_auth_ctx(request) -> AuthContext:
     """
-    Extract standardized auth context from request.
-    
-    ENHANCED: Better error handling and consistent tier resolution.
-    
-    Args:
-        request: Django/DRF request object
-        
-    Returns:
-        AuthContext with extracted information
+    Extract standardized auth context from request WITHOUT database queries.
     """
-    # If a pre-built context exists, use it
-    if hasattr(request, '_auth_ctx_cache') and isinstance(request._auth_ctx_cache, AuthContext):
-        return request._auth_ctx_cache
-    
-    # Build context from available information
     ctx = AuthContext()
     
     # Check if user is authenticated
-    if hasattr(request, 'user') and request.user and not isinstance(request.user, AnonymousUser):
-        ctx.is_authenticated = True
-        user = request.user
-        
-        # Extract user ID
-        if hasattr(user, 'id'):
-            ctx.user_id = str(user.id)
-        
-        # Extract superuser flag
-        if hasattr(user, 'is_superuser'):
-            ctx.is_superuser = bool(user.is_superuser)
-        
-        # Extract role_name directly from user if available
-        if hasattr(user, 'role_name') and user.role_name:
-            ctx.role_name = user.role_name
-    else:
-        user = None
+    if not hasattr(request, 'user') or isinstance(request.user, AnonymousUser):
+        print(f"[COMPAT] Anonymous user - returning empty context")
+        return ctx
     
-    # Extract JWT claims from request.auth (populated by CustomJWTAuthentication)
+    user = request.user
+    ctx.is_authenticated = user.is_authenticated if hasattr(user, 'is_authenticated') else False
+    
+    if not ctx.is_authenticated:
+        print(f"[COMPAT] User not authenticated - returning minimal context")
+        return ctx
+    
+    # PRIORITÉ 1 : Extraire depuis request.auth (validated_token de JWT)
     if hasattr(request, 'auth') and request.auth:
-        auth_data = request.auth
+        # request.auth est un Token object, on veut son payload
+        if hasattr(request.auth, 'payload'):
+            auth_dict = request.auth.payload
+        elif hasattr(request.auth, '__getitem__'):
+            auth_dict = dict(request.auth)
+        else:
+            auth_dict = {}
         
-        # Origin (end_users or product_admin)
-        ctx.origin = auth_data.get('origin', 'end_users')  # Default to end_users
+        if auth_dict:
+            print(f"[COMPAT] Found JWT auth dict with keys: {list(auth_dict.keys())}")
+            
+            # Core fields
+            ctx.origin = auth_dict.get('origin', 'end_users')
+            ctx.user_id = str(auth_dict.get('user_id')) if auth_dict.get('user_id') else None
+            ctx.client_id = str(auth_dict.get('client_account')) if auth_dict.get('client_account') else None
+            
+            # Extract role WITH flags
+            if 'role' in auth_dict:
+                role = auth_dict.get('role')
+                print(f"[COMPAT] Role in JWT: type={type(role)}, value={role}")
+                if isinstance(role, dict):
+                    # Nouveau format avec flags
+                    ctx.roles = [{
+                        'id': str(role.get('id')) if role.get('id') else None,
+                        'name': role.get('name'),
+                        'is_admin': role.get('is_admin', False),
+                        'is_manager': role.get('is_manager', False),
+                        'is_individual': role.get('is_individual', False),
+                    }]
+                    print(f"[COMPAT] Extracted role with flags: {role.get('name')} "
+                          f"(admin={role.get('is_admin')}, manager={role.get('is_manager')}, "
+                          f"individual={role.get('is_individual')})")
+                else:
+                    # Ancien format sans flags
+                    print(f"[COMPAT] WARNING: Old JWT format without role flags")
+                    ctx.roles = []
+            
+            # Teams
+            if 'teams' in auth_dict:
+                ctx.teams = auth_dict.get('teams', [])
+            elif 'team_id' in auth_dict:
+                ctx.team_id = str(auth_dict.get('team_id'))
+                ctx.teams = [ctx.team_id] if ctx.team_id else []
+            
+            # Flags
+            ctx.is_superuser = auth_dict.get('is_superuser', False)
+            ctx.is_impersonating = auth_dict.get('is_impersonating', False)
+            
+            # JWT standard claims
+            ctx.iss = auth_dict.get('iss')
+            ctx.aud = auth_dict.get('aud')
+            ctx.exp = auth_dict.get('exp')
+            ctx.nbf = auth_dict.get('nbf')
+            ctx.iat = auth_dict.get('iat')
+            ctx.jti = auth_dict.get('jti')
+    else:
+        # PRIORITÉ 2 : Fallback sur user object
+        print(f"[COMPAT] No JWT auth, using user object (LIMITED)")
         
-        # Client/tenant ID (critical for multi-tenant isolation)
-        ctx.client_id = auth_data.get('client_account') or auth_data.get('client_id')
+        ctx.user_id = str(user.id) if hasattr(user, 'id') else None
+        ctx.is_superuser = getattr(user, 'is_superuser', False)
         
-        # User ID fallback from JWT
-        if not ctx.user_id:
-            ctx.user_id = auth_data.get('user_id')
+        if hasattr(user, 'client_account_id'):
+            ctx.client_id = str(user.client_account_id)
         
-        # Role information (fallback if not on user object)
-        ctx.role_id = auth_data.get('role_id') or auth_data.get('role')
-        if not ctx.role_name:
-            ctx.role_name = auth_data.get('role_name')
-        
-        # Team information
-        ctx.team_id = auth_data.get('team_id') or auth_data.get('team')
-        if auth_data.get('teams'):
-            ctx.teams = [str(t) for t in auth_data.get('teams', [])]
-        elif ctx.team_id:
-            ctx.teams = [str(ctx.team_id)]
-        
-        # Standard JWT claims
-        ctx.iss = auth_data.get('iss')
-        ctx.aud = auth_data.get('aud')
-        ctx.exp = auth_data.get('exp')
-        ctx.nbf = auth_data.get('nbf')
-        ctx.iat = auth_data.get('iat')
-        ctx.jti = auth_data.get('jti')
-        
-        # Impersonation flag
-        ctx.is_impersonating = bool(auth_data.get('is_impersonating', False))
+        # Extraire le rôle depuis l'objet user SI disponible avec flags
+        if hasattr(user, 'role') and user.role:
+            role = user.role
+            if hasattr(role, 'is_admin'):
+                # Le rôle a les flags
+                ctx.roles = [{
+                    'id': str(role.id) if hasattr(role, 'id') else None,
+                    'name': getattr(role, 'name', 'Unknown'),
+                    'is_admin': getattr(role, 'is_admin', False),
+                    'is_manager': getattr(role, 'is_manager', False),
+                    'is_individual': getattr(role, 'is_individual', False),
+                }]
+                print(f"[COMPAT] Extracted role flags from user object: {role.name} "
+                      f"(admin={role.is_admin}, manager={role.is_manager}, "
+                      f"individual={role.is_individual})")
+            else:
+                print(f"[COMPAT] Role on user object but no flags")
+                ctx.roles = []
     
-    # Derive tier from role or user attributes
-    # Pass the actual user object for better resolution
-    ctx.tier = resolve_tier_from_context(ctx, user)
+    # Set origin if not set
+    if not ctx.origin or ctx.origin == 'unknown':
+        ctx.origin = 'end_users'
     
-    # Cache the context on the request for performance
-    request._auth_ctx_cache = ctx
-    
-    print(f"[COMPAT DEBUG] Final AuthContext: {ctx}")
+    print(f"[COMPAT] Final context: user_id={ctx.user_id}, client_id={ctx.client_id}, "
+          f"roles={len(ctx.roles)}, teams={len(ctx.teams)}, origin={ctx.origin}")
     
     return ctx
-
-
-# def resolve_tier_from_context(ctx: AuthContext, user=None) -> str:
-#     """
-#     Resolve the permission tier from available context.
-    
-#     Priority order:
-#     1. Superuser → 'admin'
-#     2. Role name contains 'admin' → 'admin'
-#     3. Role name contains 'manager' → 'manager'
-#     4. Role with is_admin flag → 'admin'
-#     5. User.role.tier if available
-#     6. Default → 'individual'
-    
-#     Args:
-#         ctx: AuthContext with partial information
-#         user: Django user object (optional)
-        
-#     Returns:
-#         Tier string: 'admin' | 'manager' | 'individual'
-#     """
-#     # Superuser is always admin
-#     if ctx.is_superuser:
-#         return 'admin'
-    
-#     # Check role name (case-insensitive)
-#     if ctx.role_name:
-#         role_lower = ctx.role_name.lower()
-#         if 'admin' in role_lower:
-#             return 'admin'
-#         elif 'manager' in role_lower:
-#             return 'manager'
-    
-#     # Check user.role attributes if available
-#     if user and hasattr(user, 'role'):
-#         role = user.role
-#         if role:
-#             # Check is_admin flag
-#             if hasattr(role, 'is_admin') and role.is_admin:
-#                 return 'admin'
-            
-#             # Check tier attribute
-#             if hasattr(role, 'tier'):
-#                 return role.tier
-            
-#             # Check role name from object
-#             if hasattr(role, 'name'):
-#                 role_name_lower = role.name.lower()
-#                 if 'admin' in role_name_lower:
-#                     return 'admin'
-#                 elif 'manager' in role_name_lower:
-#                     return 'manager'
-    
-#     # Default to individual (least privilege)
-#     return 'individual'
-def resolve_tier_from_context(ctx: AuthContext, user=None) -> str:
-    """
-    Resolve the permission tier from available context.
-    
-    FIXED: Better handling of role attributes and consistent return values.
-    
-    Priority order:
-    1. Superuser → 'admin'
-    2. Role with is_admin flag → 'admin'
-    3. Role with is_manager flag → 'manager' 
-    4. Role with is_individual flag → 'individual'
-    5. Role name contains 'admin' → 'admin'
-    6. Role name contains 'manager' → 'manager'
-    7. Default → 'individual' (never 'unknown')
-    
-    Args:
-        ctx: AuthContext with partial information
-        user: Django user object (optional)
-        
-    Returns:
-        Tier string: 'admin' | 'manager' | 'individual' (NEVER 'unknown')
-    """
-    print(f"[COMPAT DEBUG] === resolve_tier_from_context ===")
-    print(f"[COMPAT DEBUG] ctx.is_superuser: {ctx.is_superuser}")
-    print(f"[COMPAT DEBUG] ctx.role_name: {ctx.role_name}")
-    print(f"[COMPAT DEBUG] user: {user}")
-    
-    # 1. Superuser is always admin
-    if ctx.is_superuser:
-        print(f"[COMPAT DEBUG] -> Tier: admin (superuser flag)")
-        return 'admin'
-    
-    # 2. Check user.role attributes if available (most reliable)
-    if user and hasattr(user, 'role'):
-        role = user.role
-        print(f"[COMPAT DEBUG] User has role attribute: {role}")
-        
-        if role:
-            # Check tier flags on UserRole model
-            if hasattr(role, 'is_admin') and role.is_admin:
-                print(f"[COMPAT DEBUG] -> Tier: admin (role.is_admin=True)")
-                return 'admin'
-            
-            if hasattr(role, 'is_manager') and role.is_manager:
-                print(f"[COMPAT DEBUG] -> Tier: manager (role.is_manager=True)")
-                return 'manager'
-            
-            if hasattr(role, 'is_individual') and role.is_individual:
-                print(f"[COMPAT DEBUG] -> Tier: individual (role.is_individual=True)")
-                return 'individual'
-            
-            # Fallback to role name analysis
-            if hasattr(role, 'name') and role.name:
-                role_name_lower = role.name.lower()
-                print(f"[COMPAT DEBUG] Checking role.name: {role.name}")
-                
-                if 'admin' in role_name_lower:
-                    print(f"[COMPAT DEBUG] -> Tier: admin (role name contains 'admin')")
-                    return 'admin'
-                elif 'manager' in role_name_lower:
-                    print(f"[COMPAT DEBUG] -> Tier: manager (role name contains 'manager')")
-                    return 'manager'
-        else:
-            print(f"[COMPAT DEBUG] User.role is None")
-    else:
-        print(f"[COMPAT DEBUG] User has no role attribute or user is None")
-    
-    # 3. Check role_name from JWT context (fallback)
-    if ctx.role_name:
-        role_lower = ctx.role_name.lower()
-        print(f"[COMPAT DEBUG] Checking ctx.role_name: {ctx.role_name}")
-        
-        if 'admin' in role_lower:
-            print(f"[COMPAT DEBUG] -> Tier: admin (JWT role_name)")
-            return 'admin'
-        elif 'manager' in role_lower:
-            print(f"[COMPAT DEBUG] -> Tier: manager (JWT role_name)")
-            return 'manager'
-    
-    # 4. Default to individual (least privilege, NEVER 'unknown')
-    print(f"[COMPAT DEBUG] -> Tier: individual (default - least privilege)")
-    return 'individual'
-
 
 def get_client_id(request) -> Optional[str]:
     """
@@ -293,44 +184,34 @@ def get_client_id(request) -> Optional[str]:
     return ctx.client_id
 
 
-def get_user_tier(request) -> str:
-    """
-    Quick helper to get user's permission tier.
-    
-    Args:
-        request: Django/DRF request
-        
-    Returns:
-        Tier string: 'admin' | 'manager' | 'individual'
-    """
-    ctx = get_auth_ctx(request)
-    return ctx.tier
-
-
 def is_admin(request) -> bool:
     """
-    Check if the current request is from an admin user.
+    DEPRECATED - Use role flags directly via get_auth_ctx().
     
-    Args:
-        request: Django/DRF request
-        
-    Returns:
-        True if admin tier
+    This checks tier which is legacy. Use ctx.roles[].is_admin instead.
     """
-    return get_user_tier(request) == 'admin'
+    print("[COMPAT] WARNING: is_admin() is deprecated, use role flags from get_auth_ctx()")
+    ctx = get_auth_ctx(request)
+    # Check if any role has is_admin flag
+    for role in ctx.roles:
+        if isinstance(role, dict) and role.get('is_admin'):
+            return True
+    return ctx.is_superuser
 
 
 def is_manager(request) -> bool:
     """
-    Check if the current request is from a manager user.
+    DEPRECATED - Use role flags directly via get_auth_ctx().
     
-    Args:
-        request: Django/DRF request
-        
-    Returns:
-        True if manager tier
+    This checks tier which is legacy. Use ctx.roles[].is_manager instead.
     """
-    return get_user_tier(request) == 'manager'
+    print("[COMPAT] WARNING: is_manager() is deprecated, use role flags from get_auth_ctx()")
+    ctx = get_auth_ctx(request)
+    # Check if any role has is_manager flag
+    for role in ctx.roles:
+        if isinstance(role, dict) and role.get('is_manager'):
+            return True
+    return False
 
 
 def is_end_users_origin(request) -> bool:
@@ -364,9 +245,8 @@ def debug_auth_context(request) -> Dict[str, Any]:
         'origin': ctx.origin,
         'user_id': ctx.user_id,
         'client_id': ctx.client_id,
-        'tier': ctx.tier,
-        'role_id': ctx.role_id,
-        'role_name': ctx.role_name,
+        'tier': ctx.tier,  # LEGACY - UI only
+        'roles': ctx.roles,
         'team_id': ctx.team_id,
         'teams': ctx.teams,
         'is_superuser': ctx.is_superuser,

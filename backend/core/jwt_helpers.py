@@ -209,11 +209,18 @@ class JWTHelpers:
         }
 
         if origin == 'end_users':
-            payload.update({
-                'role': user.role.name if user.role else None,
-                'role_id': UUIDEncoder.encode(user.role.id) if user.role else None,
-                'client_account': UUIDEncoder.encode(user.client_account.id) if user.client_account else None,
-            })
+            if user.role:
+                payload['role'] = {
+                    'id': UUIDEncoder.encode(user.role.id),
+                    'name': user.role.name,
+                    'is_admin': user.role.is_admin,
+                    'is_manager': user.role.is_manager,
+                    'is_individual': user.role.is_individual,
+                }
+            else:
+                payload['role'] = None
+                
+            payload['client_account'] = UUIDEncoder.encode(user.client_account.id) if user.client_account else None
 
         refresh.payload.update(payload)
         refresh.set_exp(lifetime=refresh_lifetime)

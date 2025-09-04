@@ -1,8 +1,8 @@
 """
-Ownership Mapping - Maps canonical keys to actual model fields
+Ownership Map for End Users Module
 
-This module defines the mapping between the 6 canonical ownership keys
-and the actual field names in each Django model.
+Defines the canonical ownership fields used for scope filtering.
+These fields determine how 'mine' and 'team' scopes are applied.
 
 Canonical Keys (exactly 6, no more, no less):
 1. client_account_fk: FK to ClientAccount (always required)
@@ -15,11 +15,10 @@ Canonical Keys (exactly 6, no more, no less):
 Special Cases:
 - ownership=none: Resources with no ownership (templates, products)
 - ownership=account: Resources that inherit from Account (contacts)
-- ownership=opportunity: Resources that inherit from Opportunity (pipelines/buying process)
-  For opportunity inheritance, we use account_fk to point to the opportunity
+- ownership=opportunity: Resources that inherit from Opportunity (pipelines)
 """
 
-from typing import Dict, Optional, Literal
+from typing import Dict, List, Optional, Literal
 
 # Type hints
 OwnershipKey = Literal[
@@ -31,9 +30,10 @@ OwnershipKey = Literal[
     'account_fk',
 ]
 
-# Ownership Map - Module to Field Mappings
-# Use '-' for fields that don't exist
-# Use dot notation for related fields (e.g., 'account.owner')
+# ============================================================================
+# OWNERSHIP MAP - 6 Canonical Keys
+# ============================================================================
+
 OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     
     # ========================================================================
@@ -223,6 +223,7 @@ def resolve_field(module: str, key: str) -> Optional[str]:
         Returns None for '-' entries
     """
     if module not in OWNERSHIP_MAP:
+        print(f"[OWNERSHIP] Module '{module}' not found in ownership map")
         return None
     
     field = OWNERSHIP_MAP[module].get(key, '-')
@@ -262,7 +263,7 @@ def get_parent_module(module: str) -> Optional[str]:
     return None
 
 
-def resolve_inheritance_chain(module: str, key: str) -> list:
+def resolve_inheritance_chain(module: str, key: str) -> List[str]:
     """
     Resolve the full inheritance chain for a field.
     
@@ -278,7 +279,7 @@ def resolve_inheritance_chain(module: str, key: str) -> list:
         
     Example:
         resolve_inheritance_chain('contacts', 'owner_user')
-        => ['account', 'owner']
+        => ['account', 'owner_id']
     """
     field = resolve_field(module, key)
     if not field or '.' not in field:
@@ -359,7 +360,7 @@ def is_ownership_inherited(module: str) -> bool:
     return ownership_type in ['account', 'opportunity']
 
 
-def get_all_owner_fields(module: str) -> list:
+def get_all_owner_fields(module: str) -> List[str]:
     """
     Get all possible owner-related fields for a module.
     
@@ -407,7 +408,72 @@ def has_user_ownership(module: str) -> bool:
     return bool(owner_field and owner_field != '-')
 
 
-# Export everything (MISE À JOUR)
+def get_fallback_scope(module: str, action: str) -> str:
+    """
+    Get the fallback scope when ownership fields are missing.
+    
+    IMPORTANT: For safety, we only fallback to 'client' for READ operations.
+    For write operations without ownership, we deny access ('none').
+    
+    Args:
+        module: Module name
+        action: CRUD action being performed
+        
+    Returns:
+        Fallback scope ('client' for read, 'none' for write)
+    """
+    if action in ['read', 'list', 'retrieve']:
+        # READ-only fallback to client scope
+        print(f"[OWNERSHIP] No ownership fields for {module} - fallback to 'client' for READ")
+        return 'client'
+    else:
+        # Write operations without ownership = deny
+        print(f"[OWNERSHIP] No ownership fields for {module} - DENY for {action}")
+        return 'none'
+
+
+# ============================================================================
+# DOCUMENTATION
+# ============================================================================
+
+"""
+OWNERSHIP MAP USAGE:
+
+The ownership map defines how different models relate to users and teams
+for the purpose of permission scoping.
+
+The 6 canonical keys are:
+
+1. client_account_fk: The foreign key to ClientAccount (tenant isolation)
+2. owner_user: The user who owns this record
+3. owner_team: The team that owns this record  
+4. created_by: The user who created this record
+5. assigned_to_user: The user this record is assigned to
+6. account_fk: Foreign key to Account model (for CRM entities)
+
+SCOPE APPLICATION:
+
+- 'mine' scope: Filters by owner_user, created_by, and assigned_to_user
+- 'team' scope: Filters by owner_team AND includes 'mine' items
+- 'client' scope: No additional filtering beyond tenant
+
+FALLBACK BEHAVIOR:
+
+If a model has no ownership fields defined:
+- READ operations: Fallback to 'client' scope (safe default)
+- WRITE operations: Deny access ('none' scope)
+
+This ensures we fail safely when ownership is unclear.
+
+SPECIAL CASES:
+
+- Roles/Templates/Products: No ownership ('none' type)
+- Contacts: Inherit from Account ('account' type)  
+- Pipelines: Inherit from Opportunity ('opportunity' type)
+- Teams: Use organization.client_account_id for client filtering
+"""
+
+# Export everything
 __all__ = [
     'OWNERSHIP_MAP',
     'OWNERSHIP_TYPES',
@@ -418,10 +484,10 @@ __all__ = [
     'get_client_field',
     'get_owner_field',
     'get_team_field',
-    # Nouvelles fonctions pour scoping
     'is_ownership_none',
     'is_ownership_inherited',
     'get_all_owner_fields',
     'has_team_ownership',
     'has_user_ownership',
+    'get_fallback_scope',
 ]

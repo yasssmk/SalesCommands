@@ -4,6 +4,8 @@ DRF Mixins for Permission System
 This module provides Django REST Framework integration:
 - ScopedPermission: DRF permission class for access control
 - ScopedQuerysetMixin: Automatic queryset filtering by scope
+
+IMPORTANT: Client filtering FIRST, then scope filtering.
 """
 
 from typing import Optional, Set, Dict, Any
@@ -14,8 +16,8 @@ from django.db.models import QuerySet, Q
 from django.conf import settings
 
 from .checks import check_permission, has_permission
-from .config import is_module_enabled, is_enabled, is_debug_enabled, audit_log
-from .compat import get_auth_ctx, get_client_idA
+from .config import is_module_enabled, is_enabled
+from .compat import get_auth_ctx
 from .policies import (
     resolve_action_policy,
     check_action_policy_permission,
@@ -28,7 +30,8 @@ class ScopedPermission(permissions.BasePermission):
     """
     DRF Permission class that checks permissions using our registry.
     
-    Enhanced to support action_policies for declarative custom actions.
+    Uses role flags (is_admin/is_manager/is_individual) for decisions.
+    No tier inference from names.
     
     Requires the view to have a 'module' attribute defining which
     module it belongs to.
@@ -37,10 +40,6 @@ class ScopedPermission(permissions.BasePermission):
         class AccountViewSet(viewsets.ModelViewSet):
             permission_classes = [IsAuthenticated, ScopedPermission]
             module = 'accounts'
-            
-            action_policies = {
-                'custom_action': {'crud': 'read', 'scope': 'team_only'},
-            }
     """
     
     def has_permission(self, request: Request, view: APIView) -> bool:
@@ -56,35 +55,34 @@ class ScopedPermission(permissions.BasePermission):
         """
         # Skip if permissions system is disabled
         if not is_enabled():
+            print(f"[MIXINS] Permissions system disabled - allowing access")
             return True
         
         # Get module from view
         module = getattr(view, 'module', None)
         if not module:
             # No module specified - deny by default
-            # FIX: Use correct audit_log signature
-            user = getattr(request, 'user', None) if hasattr(request, 'user') else None
-            audit_log(
-                action='permission_denied',
-                module='unknown',
-                user=user,
-                scope='none',
-                allowed=False,
-                reason='no_module',
-                view=view.__class__.__name__
-            )
+            print(f"[MIXINS] No module specified on view {view.__class__.__name__} - DENY")
             return False
         
         # Skip if module is not enabled
         if not is_module_enabled(module):
+            print(f"[MIXINS] Module {module} not enabled - allowing access")
             return True
         
         # Get action
         action = self._get_action(view)
         
+        # Normalize PATCH to UPDATE
+        if action == 'patch':
+            action = 'update'
+        
+        print(f"[MIXINS] Permission check for {module}/{action}")
+        
         # Check if this action has a custom policy
         action_policies = getattr(view, 'action_policies', {})
         if action in action_policies:
+            print(f"[MIXINS] Using action policy for {action}")
             # Use action_policies for this specific action
             is_permitted, scope = check_action_policy_permission(
                 action_policies, action, request, module
@@ -97,21 +95,12 @@ class ScopedPermission(permissions.BasePermission):
             return is_permitted
         
         # Standard registry check
-        # The has_permission function in checks.py can handle both request and user
-        # It will extract the user from request if needed
         result = has_permission(request, module, action)
         
         if not result:
-            # FIX: Use correct audit_log signature
-            user = getattr(request, 'user', None) if hasattr(request, 'user') else None
-            audit_log(
-                action='permission_denied',
-                module=module,
-                user=user,
-                scope='none',
-                allowed=False,
-                view_action=action
-            )
+            print(f"[MIXINS] Permission denied for {module}/{action}")
+        else:
+            print(f"[MIXINS] Permission granted for {module}/{action}")
         
         return result
     
@@ -152,7 +141,7 @@ class ScopedPermission(permissions.BasePermission):
                 'retrieve': 'read',
                 'create': 'create',
                 'update': 'update',
-                'partial_update': 'update',
+                'partial_update': 'update',  # PATCH = UPDATE
                 'destroy': 'delete',
             }
             return action_map.get(view.action, view.action)
@@ -163,7 +152,7 @@ class ScopedPermission(permissions.BasePermission):
                 'GET': 'read',
                 'POST': 'create',
                 'PUT': 'update',
-                'PATCH': 'update',
+                'PATCH': 'update',  # PATCH = UPDATE
                 'DELETE': 'delete',
             }
             return method_map.get(view.request.method, 'read')
@@ -176,10 +165,12 @@ class ScopedQuerysetMixin:
     """
     Mixin to automatically filter querysets based on permission scopes.
     
+    CRITICAL: Client filtering FIRST, then scope filtering.
+    
     IMPORTANT: This mixin should be placed FIRST in the inheritance chain
     before BaseAPIView to ensure proper MRO execution.
     
-    The mixin applies scope-based filtering (mine/team/client) AFTER
+    The mixin applies scope-based filtering AFTER
     BaseAPIView has already applied client-level filtering.
     
     Add this FIRST in your ViewSet inheritance:
@@ -187,11 +178,6 @@ class ScopedQuerysetMixin:
         class AccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             module = 'accounts'  # Required!
             queryset = Account.objects.all()
-            
-            # Optional: custom actions with policies
-            action_policies = {
-                'my_items': {'crud': 'read', 'scope': 'self_only'}
-            }
     """
     
     # Module name must be set on the view
@@ -200,225 +186,199 @@ class ScopedQuerysetMixin:
     # Optional action policies
     action_policies: Dict[str, Dict[str, Any]] = {}
     
-    # Debug flag - can be set per view or globally
-    debug_permissions: bool = False
-    
     def get_queryset(self) -> QuerySet:
         """
         Filter queryset based on user's permission scope.
         
-        IMPORTANT: This method chains with super() to maintain proper MRO.
-        It does NOT re-apply client filtering as that's handled by BaseAPIView.
-        
-        Call chain:
-        1. This method is called
-        2. Calls super() → BaseAPIView.get_queryset()
-        3. BaseAPIView applies client filter and returns
-        4. We apply scope filter on top
-        5. Return final filtered queryset
+        CRITICAL: Apply client filter FIRST, then scope filter.
         
         Returns:
             Filtered queryset
         """
-        # FORCE DEBUG ON to see what's happening
-        debug = True  # Always debug for now
-        
-        if debug:
-            print(f"[MIXIN DEBUG] ========== ScopedQuerysetMixin.get_queryset() START ==========")
-            print(f"[MIXIN DEBUG] View: {self.__class__.__name__}")
-            print(f"[MIXIN DEBUG] Action: {getattr(self, 'action', 'unknown')}")
-            print(f"[MIXIN DEBUG] Module: {getattr(self, 'module', 'unknown')}")
+        print(f"[MIXINS] ========== ScopedQuerysetMixin.get_queryset() START ==========")
+        print(f"[MIXINS] View: {self.__class__.__name__}")
+        print(f"[MIXINS] Action: {getattr(self, 'action', 'unknown')}")
+        print(f"[MIXINS] Module: {getattr(self, 'module', 'unknown')}")
         
         # CRITICAL: Call super() to get the base queryset
         # This ensures BaseAPIView applies client filtering first
         queryset = super().get_queryset()
         
-        if debug:
-            print(f"[MIXIN DEBUG] Queryset count after super (client-filtered): {queryset.count()}")
+        print(f"[MIXINS] Queryset count after super (should be client-filtered): {queryset.count()}")
         
         # Skip if permissions system is disabled
         if not is_enabled():
-            if debug:
-                print(f"[MIXIN DEBUG] Permissions system DISABLED - returning queryset as-is")
+            print(f"[MIXINS] Permissions system DISABLED - returning queryset as-is")
             return queryset
         
         # Get module
         module = getattr(self, 'module', None)
         if not module:
-            if debug:
-                print(f"[MIXIN DEBUG] No module specified - returning empty for safety")
-                print(f"View {self.__class__.__name__} missing 'module' attribute")
+            print(f"[MIXINS] No module specified - returning empty for safety")
             return queryset.none()
         
         # Skip if module is not enabled
         if not is_module_enabled(module):
-            if debug:
-                print(f"[MIXIN DEBUG] Module {module} DISABLED - returning queryset as-is")
+            print(f"[MIXINS] Module {module} DISABLED - returning queryset as-is")
             return queryset
         
-        # Get user and context
-        user = self.request.user if hasattr(self, 'request') else None
-        if not user or not user.is_authenticated:
-            if debug:
-                print(f"[MIXIN DEBUG] User not authenticated - returning empty")
-            return queryset.none()
-        
-        # Get auth context
+        # Get auth context (NO DB)
         ctx = get_auth_ctx(self.request)
         
-        if debug:
-            print(f"[MIXIN DEBUG] Auth Context:")
-            print(f"[MIXIN DEBUG]   - origin: {ctx.origin}")
-            print(f"[MIXIN DEBUG]   - client_id: {ctx.client_id}")
-            print(f"[MIXIN DEBUG]   - tier: {ctx.tier}")
-            print(f"[MIXIN DEBUG]   - role_name: {ctx.role_name}")
-            print(f"[MIXIN DEBUG]   - is_superuser: {ctx.is_superuser}")
+        print(f"[MIXINS] Auth context: user_id={ctx.user_id}, client_id={ctx.client_id}, "
+            f"roles={len(ctx.roles)}, teams={len(ctx.teams)}")
         
-        # NOTE: Client filtering already applied by BaseAPIView
-        # We only apply scope-based filtering here
+        # CRITICAL: Ensure client filtering is applied
+        # This should already be done by BaseAPIView, but double-check
+        if ctx.client_id and hasattr(queryset.model, 'client_account_id'):
+            # Apply client filter FIRST (tenant isolation)
+            queryset = queryset.filter(client_account_id=ctx.client_id)
+            print(f"[MIXINS] Applied client filter: client_account_id={ctx.client_id}")
+            print(f"[MIXINS] Queryset count after client filter: {queryset.count()}")
+        elif ctx.client_id:
+            # Try alternate client field names
+            client_fields = ['client_account', 'client_id', 'client']
+            for field in client_fields:
+                if hasattr(queryset.model, field):
+                    filter_kwargs = {f'{field}_id': ctx.client_id}
+                    queryset = queryset.filter(**filter_kwargs)
+                    print(f"[MIXINS] Applied client filter: {field}_id={ctx.client_id}")
+                    print(f"[MIXINS] Queryset count after client filter: {queryset.count()}")
+                    break
+        
+        # Get user and check authentication
+        user = self.request.user if hasattr(self, 'request') else None
+        if not user or not user.is_authenticated:
+            print(f"[MIXINS] User not authenticated - returning empty")
+            return queryset.none()
         
         # Get the action
         action = self._get_action()
-        if debug:
-            print(f"[MIXIN DEBUG] Resolved action: {action}")
         
-        # Check action policies first
+        # Normalize PATCH to UPDATE
+        if action == 'patch':
+            action = 'update'
+            print(f"[MIXINS] Normalized PATCH to UPDATE")
+        
+        print(f"[MIXINS] Resolved action: {action}")
+        
+        # CRITICAL FIX: Check action_policies FIRST for custom actions
         action_policies = getattr(self, 'action_policies', {})
         if action in action_policies:
-            if debug:
-                print(f"[MIXIN DEBUG] Found action policy for {action}")
-            # Resolve the policy
-            crud_action, required_tier, scope_spec = resolve_action_policy(
-                action_policies, action, self.request, module
-            )
+            print(f"[MIXINS] Found action policy for {action} - using policy scope")
+            policy = action_policies[action]
             
-            # Check tier requirement
-            if required_tier:
-                user_tier = ctx.tier
-                tier_levels = {'admin': 3, 'manager': 2, 'individual': 1}
-                
-                if tier_levels.get(user_tier, 0) < tier_levels.get(required_tier, 999):
-                    if debug:
-                        print(f"[MIXIN DEBUG] Tier requirement not met: {user_tier} < {required_tier}")
-                    return queryset.none()
-            
-            # Apply scope from policy
-            if scope_spec:
-                if scope_spec in [ScopeProfiles.SELF_ONLY, ScopeProfiles.TEAM_ONLY, 
-                                   ScopeProfiles.ADMIN_ONLY_CLIENT, ScopeProfiles.OWNER_ONLY]:
-                    # Resolve profile to Q filter
-                    resolved_scope, q_filter = resolve_scope_profile(
-                        scope_spec, self.request, module, crud_action
-                    )
-                    if q_filter:
-                        queryset = queryset.filter(q_filter)
-                        if debug:
-                            print(f"[MIXIN DEBUG] Applied policy scope: {scope_spec} → {resolved_scope}")
-                elif scope_spec in ['client', 'team', 'mine', 'none']:
-                    # Standard scope
-                    queryset = self._apply_standard_scope(queryset, scope_spec, user, ctx, debug)
-        else:
-            if debug:
-                print(f"[MIXIN DEBUG] No action policy, using registry")
-            # Use registry to determine scope
-            # check_permission can handle both user and request objects
-            scope = check_permission(user, module, action)
-            if debug:
-                print(f"[MIXIN DEBUG] Registry returned scope: {scope}")
-            if scope:
-                queryset = self._apply_standard_scope(queryset, scope, user, ctx, debug)
+            # Check if policy has a scope defined
+            if 'scope' in policy:
+                scope = policy['scope']
+                print(f"[MIXINS] Action policy defines scope: {scope}")
             else:
-                if debug:
-                    print(f"[MIXIN DEBUG] No permission for {module}/{action} - returning empty")
-                return queryset.none()
+                # If no scope in policy, use CRUD mapping
+                crud_action = policy.get('crud', 'read')
+                scope = check_permission(self.request, module, crud_action)
+                print(f"[MIXINS] Action policy maps to CRUD: {crud_action}, scope: {scope}")
+        else:
+            # Standard registry lookup for CRUD actions
+            scope = check_permission(self.request, module, action)
+            print(f"[MIXINS] Standard permission check returned scope: {scope}")
         
-        if debug:
-            print(f"[MIXIN DEBUG] Final queryset count: {queryset.count()}")
-            print(f"[MIXIN DEBUG] ========== ScopedQuerysetMixin.get_queryset() END ==========")
-        
-        return queryset
-    
-    def _apply_standard_scope(self, queryset: QuerySet, scope: str, 
-                              user, ctx, debug: bool = False) -> QuerySet:
-        """
-        Apply standard scope filtering (mine/team/client).
-        
-        Args:
-            queryset: Already client-filtered queryset
-            scope: Scope to apply ('mine', 'team', 'client', 'none')
-            user: Current user
-            ctx: Auth context
-            debug: Debug flag
-            
-        Returns:
-            Filtered queryset
-        """
-        if scope == 'none':
-            if debug:
-                print(f"[MIXIN DEBUG] Scope is 'none' - returning empty")
+        if not scope or scope == 'none':
+            print(f"[MIXINS] No permission for {module}/{action} - returning empty")
             return queryset.none()
         
+        print(f"[MIXINS] Permission check returned scope: {scope}")
+        
+        # Apply scope filtering
         if scope == 'client':
-            # Client scope - no additional filter needed
-            # BaseAPIView already filtered by client
-            if debug:
-                print(f"[MIXIN DEBUG] Scope is 'client' - no additional filter needed")
-            return queryset
-        
-        if scope == 'mine':
-            # Personal scope - filter by ownership
-            # For users module, filter by the user's own ID
-            if getattr(self, 'module', None) == 'users':
-                queryset = queryset.filter(pk=user.pk)
-            else:
-                # For other modules, try common ownership fields
-                model = queryset.model
-                if hasattr(model, 'owner'):
-                    queryset = queryset.filter(owner=user)
-                elif hasattr(model, 'created_by'):
-                    queryset = queryset.filter(created_by=user)
-                elif hasattr(model, 'user'):
-                    queryset = queryset.filter(user=user)
-                elif hasattr(model, 'assigned_to'):
-                    queryset = queryset.filter(assigned_to=user)
-            if debug:
-                print(f"[MIXIN DEBUG] Applied 'mine' scope filter")
-        
+            # Client scope - already filtered by client above
+            print(f"[MIXINS] Scope is 'client' - no additional filtering needed")
+            
         elif scope == 'team':
-            # Team scope - filter by team membership
-            if ctx.teams:
-                # For users module, filter by team membership
-                if getattr(self, 'module', None) == 'users':
-                    queryset = queryset.filter(team_id__in=ctx.teams)
-                else:
-                    # For other modules, try common team fields
-                    model = queryset.model
-                    if hasattr(model, 'team'):
-                        queryset = queryset.filter(team_id__in=ctx.teams)
-                    elif hasattr(model, 'owner__team'):
-                        queryset = queryset.filter(owner__team_id__in=ctx.teams)
-                    elif hasattr(model, 'created_by__team'):
-                        queryset = queryset.filter(created_by__team_id__in=ctx.teams)
+            # Team scope - filter by team ownership
+            print(f"[MIXINS] Applying 'team' scope filter")
+            
+            # Build Q filter for team scope
+            q_filter = Q()
+            
+            # Check ownership map for team fields
+            if hasattr(queryset.model, 'owner_team_id') and ctx.teams:
+                q_filter |= Q(owner_team_id__in=ctx.teams)
+                print(f"[MIXINS] Added owner_team filter for teams: {ctx.teams}")
+            
+            # Also include user's own items
+            if hasattr(queryset.model, 'owner_user_id'):
+                q_filter |= Q(owner_user_id=ctx.user_id)
+                print(f"[MIXINS] Added owner_user filter for user: {ctx.user_id}")
+            
+            if hasattr(queryset.model, 'created_by_id'):
+                q_filter |= Q(created_by_id=ctx.user_id)
+                print(f"[MIXINS] Added created_by filter for user: {ctx.user_id}")
+            
+            if hasattr(queryset.model, 'assigned_to_user_id'):
+                q_filter |= Q(assigned_to_user_id=ctx.user_id)
+                print(f"[MIXINS] Added assigned_to_user filter for user: {ctx.user_id}")
+            
+            if q_filter:
+                queryset = queryset.filter(q_filter)
+                print(f"[MIXINS] Applied team scope filter")
             else:
-                # No teams, return empty for team scope
-                if debug:
-                    print(f"[MIXIN DEBUG] User has no teams - returning empty for team scope")
+                print(f"[MIXINS] No team ownership fields found - using client scope")
+            
+        elif scope == 'mine':
+            # Mine scope - filter by user ownership
+            print(f"[MIXINS] Applying 'mine' scope filter")
+            
+            # Build Q filter for mine scope
+            q_filter = Q()
+            
+            # Check ownership map for user fields
+            if hasattr(queryset.model, 'owner_user_id'):
+                q_filter |= Q(owner_user_id=ctx.user_id)
+                print(f"[MIXINS] Added owner_user filter")
+            
+            if hasattr(queryset.model, 'created_by_id'):
+                q_filter |= Q(created_by_id=ctx.user_id)
+                print(f"[MIXINS] Added created_by filter")
+            
+            if hasattr(queryset.model, 'assigned_to_user_id'):
+                q_filter |= Q(assigned_to_user_id=ctx.user_id)
+                print(f"[MIXINS] Added assigned_to_user filter")
+            
+            # Special case for User model - can only see themselves
+            if queryset.model.__name__ == 'User':
+                q_filter = Q(id=ctx.user_id)
+                print(f"[MIXINS] User model - filtering to self only")
+            
+            if q_filter:
+                queryset = queryset.filter(q_filter)
+                print(f"[MIXINS] Applied mine scope filter")
+            else:
+                # No ownership fields - fallback to empty for safety
+                print(f"[MIXINS] No ownership fields found - returning empty for 'mine' scope")
                 return queryset.none()
-            if debug:
-                print(f"[MIXIN DEBUG] Applied 'team' scope filter")
+        
+        print(f"[MIXINS] Final queryset count: {queryset.count()}")
+        print(f"[MIXINS] ========== ScopedQuerysetMixin.get_queryset() END ==========")
         
         return queryset
-    
     def _get_action(self) -> str:
         """
         Get the current action being performed.
         
         Returns:
-            Action name (defaults to 'read' for safety)
+            Action name (defaults to CRUD mapping)
         """
         # For ViewSets, use the action attribute
         if hasattr(self, 'action'):
-            return self.action
+            action_map = {
+                'list': 'read',
+                'retrieve': 'read',
+                'create': 'create',
+                'update': 'update',
+                'partial_update': 'update',  # PATCH = UPDATE
+                'destroy': 'delete',
+            }
+            return action_map.get(self.action, self.action)
         
         # For APIView, check request method
         if hasattr(self, 'request'):
@@ -426,56 +386,10 @@ class ScopedQuerysetMixin:
                 'GET': 'read',
                 'POST': 'create',
                 'PUT': 'update',
-                'PATCH': 'update',
+                'PATCH': 'update',  # PATCH = UPDATE
                 'DELETE': 'delete',
             }
             return method_map.get(self.request.method, 'read')
         
-        # Default to read (most restrictive for queries)
+        # Default to read
         return 'read'
-
-
-class PermissionDebugMixin:
-    """
-    Debug mixin to help understand permission decisions.
-    
-    Add this to your view to get detailed permission info in responses:
-    
-        class AccountViewSet(PermissionDebugMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
-            module = 'accounts'
-            debug_permissions = True  # Enable debug info
-    """
-    
-    # Set to True to include debug info in responses
-    debug_permissions: bool = False
-    
-    def finalize_response(self, request, response, *args, **kwargs):
-        """
-        Add permission debug info to response headers.
-        
-        Only adds headers if debug_permissions is True and DEBUG mode is on.
-        """
-        # Call parent
-        response = super().finalize_response(request, response, *args, **kwargs)
-        
-        # Add debug headers if enabled
-        if self.debug_permissions and is_debug_enabled():
-            from .compat import debug_auth_context
-            
-            # Add auth context info
-            auth_debug = debug_auth_context(request)
-            response['X-Auth-Origin'] = auth_debug.get('origin', 'unknown')
-            response['X-Auth-Tier'] = auth_debug.get('tier', 'unknown')
-            response['X-Auth-ClientId'] = auth_debug.get('client_id', 'none')
-            
-            # Add module and action info
-            if hasattr(self, 'module'):
-                response['X-Perm-Module'] = self.module
-            if hasattr(self, 'action'):
-                response['X-Perm-Action'] = self.action
-            
-            # Add applied scope
-            if hasattr(request, '_applied_scope'):
-                response['X-Perm-Scope'] = request._applied_scope
-        
-        return response

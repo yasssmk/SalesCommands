@@ -22,7 +22,7 @@ from ..serializers.user_serializer import (
 )
 
 
-class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
+class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing users with client scoping and performance integration
     """
@@ -36,13 +36,12 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     ordering_fields = ['email', 'first_name', 'last_name', 'created_at']
     ordering = ['first_name', 'last_name']
     
-    
     # Security configuration
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsAuthenticated, ScopedPermission]
     module = 'users'
 
-    # ===== ACTION POLICIES  =====
+    # ===== ACTION POLICIES =====
     # Declarative permission configuration for custom actions
     action_policies = {
         'change_password': {
@@ -83,9 +82,26 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             # All team members can see team performance
             # Custom logic ensures team membership
         },
+        'managed_users_performance': {
+            'crud': 'read',
+            'scope': 'client'  # Filtrage dans la méthode
+        },
+        'managers': {
+            'crud': 'read',
+            'scope': 'client'  
+        },
+        'superusers': {
+            'crud': 'read',
+            'tier': 'admin',
+            'scope': 'client'
+        },
+        'grant_superuser_action': {
+            'crud': 'update',
+            'tier': 'admin',
+            'scope': 'client'
+        },
     }
     
-
     def get_serializer_class(self):
         """Choisir le serializer selon l'action"""
         if self.action == 'list':
@@ -110,7 +126,7 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         if self.action == 'list':
             # Liste légère
             queryset = queryset.select_related(
-                'team', 'organization', 'role'
+                'team', 'organization', 'role', 'client_account'
             )
         else:
             # Détails complets
@@ -126,7 +142,6 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             queryset = queryset.filter(
                 Q(managed_teams__isnull=False) | Q(managed_organizations__isnull=False)
             ).distinct()
-        
         
         return queryset
     
@@ -151,7 +166,6 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 'error': CoreErrorMessages.OBJECT_NOT_FOUND
             }, status=status.HTTP_404_NOT_FOUND)
         
-        
     def create(self, request, *args, **kwargs):
         """
         Créer un nouvel utilisateur
@@ -164,7 +178,6 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         with transaction.atomic():
             print(f"Create Requete data: {request.data}")
             
-            
             # Serializer avec validation
             serializer = self.get_serializer(data=request.data)
             
@@ -174,14 +187,11 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             # Créer l'utilisateur
             user = serializer.save()
             
-            
             return Response({
                 'success': True,
                 'message': f'User "{user.get_full_name()}" created successfully',
                 'data': UserSerializer(user).data
             }, status=status.HTTP_201_CREATED)
-                
-
     
     def partial_update(self, request, *args, **kwargs):
         """
@@ -200,8 +210,6 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 
                 # Sauvegarder les modifications
                 updated_user = serializer.save()
-
-            
                 
                 return Response({
                     'success': True,
@@ -240,9 +248,16 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             from permissions.compat import get_auth_ctx
             ctx = get_auth_ctx(request)
             
-            is_admin = ctx.tier == 'admin'
+            # Déterminer le tier effectif
+            is_admin = False
+            for role in ctx.roles:
+                if isinstance(role, dict) and role.get('is_admin'):
+                    is_admin = True
+                    break
+            is_admin = is_admin or ctx.is_superuser
+            
             is_self = str(user.id) == str(request.user.id)
-                
+            
             # Admin peut tout
             if not (is_admin or is_self):
                 return Response({
@@ -250,7 +265,7 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     'error': 'You can only change your own password'
                 }, status=status.HTTP_403_FORBIDDEN)
 
-            # Import du serializer (à ajouter en haut du fichier si pas déjà fait)
+            # Import du serializer
             from ..serializers.user_serializer import ChangePasswordSerializer
             
             # Validation avec le serializer
@@ -260,25 +275,22 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             # Mettre à jour le mot de passe
             serializer.update_password(user, serializer.validated_data)
             
-            # Logger l'action si nécessaire (optionnel)
+            # Logger l'action si nécessaire
             if is_admin and not is_self:
-                # Admin a changé le mot de passe d'un autre utilisateurA
-                 print(f"Admin {request.user.email} changed password for {user.email}")
+                print(f"Admin {request.user.email} changed password for {user.email}")
             
             return Response({
-            'success': True,
-            'message': 'Password changed successfully',
-            'user': {
-                'id': str(user.id),  
-                'email': user.email,
-                'name': user.get_full_name()
-            }
-        })
+                'success': True,
+                'message': 'Password changed successfully',
+                'user': {
+                    'id': str(user.id),  
+                    'email': user.email,
+                    'name': user.get_full_name()
+                }
+            })
             
         except User.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-
-
     
     def destroy(self, request, *args, **kwargs):
         """
@@ -295,14 +307,13 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 # Validation client scoping
                 self.validate_client_id(user)
 
-
                 # Vérifications métier avant suppression
                 self._validate_user_deletion(user)
 
                 user_name = user.get_full_name()
                 user.delete()
 
-                # ✅ Filet de sécurité: s'assurer qu'un admin existe toujours
+                # Filet de sécurité: s'assurer qu'un admin existe toujours
                 client.ensure_admin_invariants()
 
                 return Response({
@@ -318,17 +329,19 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         except Exception as e:
             return self.handle_exception(e)
     
-   
-    
     def _can_grant_superuser(self, current_user):
         """
         Check if the current user can grant/revoke superuser status
         Only SuperUsers and Admin role users can grant superuser status
         """
-
         from permissions.compat import get_auth_ctx
         ctx = get_auth_ctx(self.request)
-        return ctx.tier == 'admin'
+        
+        # Check roles for admin flag
+        for role in ctx.roles:
+            if isinstance(role, dict) and role.get('is_admin'):
+                return True
+        return ctx.is_superuser
     
     def _validate_superuser_modification(self, current_user, request_data, target_user=None):
         """
@@ -388,7 +401,6 @@ class UserViewSet( ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 raise StandardizedValidationError(
                     CoreErrorMessages.LAST_ADMIN_REQUIRED
                 )
-        
     
     @action(detail=True, methods=['get'])
     def performance(self, request, pk=None):

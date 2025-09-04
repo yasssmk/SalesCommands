@@ -1,95 +1,163 @@
 """
-Permission Checks - Core permission verification logic
+Permission Checks Module
 
-This module contains the core functions for checking permissions
-based on the registry and user context.
+Core decision engine for the permissions system.
+Determines what scope a user has for a given module/action.
+
+IMPORTANT: No tier inference based on role names.
+Decision based ONLY on explicit role flags (is_admin/is_manager/is_individual).
 """
 
-from typing import Optional, Dict, Any, Union
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AnonymousUser
+from typing import Optional, Union, TYPE_CHECKING
+from django.db.models import Model
+from rest_framework.request import Request
 
-from .registry import get_scope
-from .config import is_module_enabled, is_enabled, audit_log
+from .registry import get_scope as registry_get_scope
+from .config import is_enabled, is_module_enabled
+from .compat import get_auth_ctx, AuthContext
+
+# Type hints only - avoid circular imports
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractBaseUser
 
 
-def check_permission(user_or_request, module: str, action: str, obj=None) -> Optional[str]:
+def check_permission(
+    user_or_request: Union['AbstractBaseUser', Request],
+    module: str,
+    action: str,
+    obj: Optional[Model] = None
+) -> Optional[str]:
     """
-    Check permission and return the allowed scope.
+    Check if a user has permission to perform an action on a module.
     
-    This is the main function for checking permissions. It:
-    1. Verifies the system is enabled
-    2. Checks if the module is enabled
-    3. Gets the user's tier
-    4. Looks up the permission in registry
-    5. Returns the allowed scope or None
+    NO TIER INFERENCE - Decision based on union of role flags only.
     
     Args:
         user_or_request: Django user object OR DRF request object
-        module: Module name (e.g., 'accounts')
-        action: Action name (e.g., 'read', 'create')
+        module: Module name (e.g., 'accounts', 'users')
+        action: Action name (e.g., 'create', 'read', 'update', 'delete')
         obj: Optional object for object-level permissions
         
     Returns:
-        Scope string ('client'|'team'|'mine'|'none') or None if denied
+        Scope string ('client'|'team'|'mine'|'none'|None)
+        None means no permission (same as 'none')
     """
     # Skip if system disabled
     if not is_enabled():
-        return 'client'  # Allow all if system disabled
+        print(f"[CHECKS] Permissions system disabled - allowing access")
+        return 'client'
     
     # Skip if module disabled
     if not is_module_enabled(module):
-        return 'client'  # Allow all if module disabled
+        print(f"[CHECKS] Module {module} not enabled - allowing access")
+        return 'client'
     
-    # Extract user from request if needed
-    if hasattr(user_or_request, 'user'):
-        # It's a request object
-        user = user_or_request.user
+    # Normalize PATCH to UPDATE
+    if action == 'patch':
+        action = 'update'
+        print(f"[CHECKS] Normalized PATCH to UPDATE")
+    
+    # Handle list/retrieve as read
+    if action in ['list', 'retrieve']:
+        action = 'read'
+    elif action == 'partial_update':
+        action = 'update'
+    elif action == 'destroy':
+        action = 'delete'
+    
+    # Get auth context (no DB queries)
+    if isinstance(user_or_request, Request):
+        ctx = get_auth_ctx(user_or_request)
+        user = user_or_request.user if hasattr(user_or_request, 'user') else None
     else:
-        # It's already a user object
+        # Create minimal context from user
         user = user_or_request
+        ctx = AuthContext()
+        ctx.user_id = str(user.id) if user and hasattr(user, 'id') else None
+        ctx.is_authenticated = user.is_authenticated if user and hasattr(user, 'is_authenticated') else False
+        ctx.is_superuser = getattr(user, 'is_superuser', False) if user else False
+        
+        # Try to get roles from user (no DB)
+        if user and hasattr(user, 'role'):
+            role = user.role
+            if role:
+                ctx.roles = [{
+                    'is_admin': getattr(role, 'is_admin', False),
+                    'is_manager': getattr(role, 'is_manager', False),
+                    'is_individual': getattr(role, 'is_individual', False),
+                }]
     
-    # Check authentication
-    if not user or isinstance(user, AnonymousUser):
+    print(f"[CHECKS] Permission check: module={module}, action={action}, "
+          f"user_id={ctx.user_id}, client_id={ctx.client_id}, "
+          f"roles={len(ctx.roles)}, is_superuser={ctx.is_superuser}")
+    
+    # Not authenticated = deny
+    if not ctx.is_authenticated:
+        print(f"[CHECKS] User not authenticated - DENY")
         return None
     
-    # For Django User model compatibility
-    if hasattr(user, 'is_authenticated'):
-        # Check if it's a property or method
-        if callable(user.is_authenticated):
-            if not user.is_authenticated():
-                return None
-        else:
-            if not user.is_authenticated:
-                return None
+    # Determine effective tier from UNION of role flags
+    has_admin = ctx.is_superuser  # Superuser always admin
+    has_manager = False
+    has_individual = False
     
-    # Get user's tier from their role
-    tier = resolve_tier(user)
+    # Check all roles for flags (union/additive)
+    for role in ctx.roles:
+        if isinstance(role, dict):
+            if role.get('is_admin'):
+                has_admin = True
+            if role.get('is_manager'):
+                has_manager = True
+            if role.get('is_individual'):
+                has_individual = True
     
-    # Get permission from registry - using get_scope (correct function name)
-    scope = get_scope(module, action, tier)
+    print(f"[CHECKS] Role union: admin={has_admin}, manager={has_manager}, "
+          f"individual={has_individual}")
     
-    # Audit log the permission check with correct signature
-    audit_log(
-        action='permission_check',
-        module=module,
-        user=user,
-        scope=scope or 'none',
-        allowed=(scope is not None and scope != 'none'),
-        tier=tier,
-        request_action=action
-    )
+    # Determine effective tier (highest privilege wins)
+    if has_admin:
+        effective_tier = 'admin'
+    elif has_manager:
+        effective_tier = 'manager'
+    elif has_individual:
+        effective_tier = 'individual'
+    else:
+        # No valid tier = deny
+        print(f"[CHECKS] No valid tier found - DENY")
+        return None
     
-    # Handle 'none' scope as denial
+    print(f"[CHECKS] Effective tier: {effective_tier}")
+    
+    # Get scope from registry
+    scope = registry_get_scope(module, action, effective_tier)
+    
+    print(f"[CHECKS] Registry returned scope: {scope} for {module}/{action}/{effective_tier}")
+    
+    # Validate scope
+    if scope not in ['client', 'team', 'mine', 'none']:
+        print(f"[CHECKS] Invalid scope '{scope}' - DENY")
+        return None
+    
     if scope == 'none':
+        print(f"[CHECKS] Scope is 'none' - DENY")
         return None
     
+    # Admin scope limited to tenant (never cross-tenant)
+    if effective_tier == 'admin' and scope == 'client':
+        print(f"[CHECKS] Admin scope limited to tenant (client)")
+    
+    print(f"[CHECKS] Final decision: scope={scope}")
     return scope
 
 
-def has_permission(user_or_request, module: str, action: str, obj=None) -> bool:
+def has_permission(
+    user_or_request: Union['AbstractBaseUser', Request],
+    module: str,
+    action: str,
+    obj: Optional[Model] = None
+) -> bool:
     """
-    Check if a user has permission to perform an action.
+    Check if a user has permission (boolean version).
     
     This is a boolean wrapper around check_permission for simpler checks.
     
@@ -106,132 +174,84 @@ def has_permission(user_or_request, module: str, action: str, obj=None) -> bool:
     return scope is not None and scope != 'none'
 
 
-def resolve_tier(user) -> str:
+def get_scope(
+    user_or_request: Union['AbstractBaseUser', Request],
+    module: str,
+    action: str
+) -> Optional[str]:
     """
-    Resolve a user's permission tier.
+    Get the scope for a user's action on a module.
     
-    The tier determines what level of access they have:
-    - admin: Full access to everything in their client
-    - manager: Access to their team's data
-    - individual: Access to their own data only
+    Alias for check_permission for backward compatibility.
+    
+    Args:
+        user_or_request: Django user object OR DRF request object
+        module: Module name
+        action: Action name
+        
+    Returns:
+        Scope string or None
+    """
+    return check_permission(user_or_request, module, action)
+
+
+def resolve_tier(user: 'AbstractBaseUser') -> str:
+    """
+    DEPRECATED - DO NOT USE.
+    
+    This function is kept for backward compatibility only.
+    Use get_auth_ctx() and check role flags directly.
     
     Args:
         user: Django user object
         
     Returns:
-        Tier string ('admin'|'manager'|'individual')
+        'individual' always (least privilege)
     """
-    # Check superuser status
-    if hasattr(user, 'is_superuser') and user.is_superuser:
-        return 'admin'
+    print(f"[CHECKS] WARNING: resolve_tier() is DEPRECATED - use role flags directly")
     
-    # Check user's role
-    if hasattr(user, 'role') and user.role:
-        role = user.role
-        
-        # Check role flags (UserRole model)
-        if hasattr(role, 'is_admin') and role.is_admin:
-            return 'admin'
-        elif hasattr(role, 'is_manager') and role.is_manager:
-            return 'manager'
-        elif hasattr(role, 'is_individual') and role.is_individual:
-            return 'individual'
-        
-        # Fallback to role name analysis
-        if hasattr(role, 'name') and role.name:
-            role_name_lower = role.name.lower()
-            if 'admin' in role_name_lower:
-                return 'admin'
-            elif 'manager' in role_name_lower:
-                return 'manager'
-    
-    # Check cached role_name on user
-    if hasattr(user, 'role_name') and user.role_name:
-        role_name_lower = user.role_name.lower()
-        if 'admin' in role_name_lower:
-            return 'admin'
-        elif 'manager' in role_name_lower:
-            return 'manager'
-    
-    # Default to individual (least privilege)
+    # Return least privilege always
     return 'individual'
 
 
-def check_object_permission(user_or_request, module: str, action: str, obj) -> bool:
+def check_object_permission(
+    user_or_request: Union['AbstractBaseUser', Request],
+    module: str,
+    action: str,
+    obj: Model
+) -> bool:
     """
     Check object-level permissions.
     
     This extends check_permission to handle specific object instances.
+    For now, delegates to check_permission for module-level check.
     
     Args:
         user_or_request: Django user object OR DRF request object
         module: Module name
-        action: Action name  
+        action: Action name
         obj: The object to check permissions for
         
     Returns:
         True if permission granted, False otherwise
     """
-    # Extract user from request if needed
-    if hasattr(user_or_request, 'user'):
-        user = user_or_request.user
-    else:
-        user = user_or_request
+    # First check module-level permission
+    scope = check_permission(user_or_request, module, action, obj)
     
-    # First check general permission
-    scope = check_permission(user, module, action)
-    
-    if not scope or scope == 'none':
+    if scope is None or scope == 'none':
         return False
     
-    # For 'client' scope, user can access any object in their client
-    if scope == 'client':
-        # TODO: Verify object belongs to user's client
-        return True
+    # TODO: Add object-level checks here based on ownership
+    # For now, if they have module permission, they pass
     
-    # For 'team' scope, check team membership
-    if scope == 'team':
-        # Check if object belongs to user's team
-        if hasattr(obj, 'team_id') and hasattr(user, 'team_id'):
-            return obj.team_id == user.team_id
-        elif hasattr(obj, 'owner') and hasattr(obj.owner, 'team_id'):
-            return obj.owner.team_id == user.team_id
-    
-    # For 'mine' scope, check ownership
-    if scope == 'mine':
-        # Check various ownership fields
-        if hasattr(obj, 'owner_id'):
-            return obj.owner_id == user.id
-        elif hasattr(obj, 'owner'):
-            return obj.owner == user
-        elif hasattr(obj, 'created_by_id'):
-            return obj.created_by_id == user.id
-        elif hasattr(obj, 'created_by'):
-            return obj.created_by == user
-        elif hasattr(obj, 'user_id'):
-            return obj.user_id == user.id
-        elif hasattr(obj, 'user'):
-            return obj.user == user
-            
-        # Special case for User model (users can access themselves)
-        if obj.__class__.__name__ == 'User':
-            return obj.id == user.id
-    
-    # Default deny
-    return False
+    return True
 
 
-# Backward compatibility aliases
-def get_user_tier(user) -> str:
-    """
-    Get a user's permission tier.
-    
-    Alias for resolve_tier for backward compatibility.
-    
-    Args:
-        user: Django user object
-        
-    Returns:
-        Tier string
-    """
-    return resolve_tier(user)
+# Backward compatibility exports
+__all__ = [
+    'check_permission',
+    'has_permission',
+    'get_scope',
+    'resolve_tier',  # DEPRECATED
+    'check_object_permission',
+]
