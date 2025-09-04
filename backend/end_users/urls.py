@@ -170,7 +170,7 @@ urlpatterns = [
     # =========================================================================
     
     # Performance individuelle
-    path('users/<int:pk>/performance/', UserViewSet.as_view({
+    path('users/<uuid:pk>/performance/', UserViewSet.as_view({
         'get': 'performance'
     }), name='user-performance'),
     
@@ -180,7 +180,7 @@ urlpatterns = [
     }), name='user-team-performance'),
     
     # Performance des utilisateurs managés (pour managers)
-    path('users/<int:pk>/managed-users-performance/', UserViewSet.as_view({
+    path('users/<uuid:pk>/managed-users-performance/', UserViewSet.as_view({
         'get': 'managed_users_performance'
     }), name='user-managed-users-performance'),
     

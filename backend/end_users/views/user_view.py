@@ -52,22 +52,18 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         },
         'grant_superuser': {
             'crud': 'update',
-            'tier': 'admin',      # Only admin tier can grant superuser
             'scope': 'client'     # Admin can grant to anyone in client
         },
         'revoke_superuser': {
             'crud': 'update',
-            'tier': 'admin',
             'scope': 'client'
         },
         'activate': {
-            'crud': 'update',
-            'tier': 'admin',      # Only admin can activate users
+            'crud': 'update',     # Only admin can activate users
             'scope': 'client'     # Admin can activate anyone in client
         },
         'deactivate': {
             'crud': 'update',
-            'tier': 'admin',      # Only admin can deactivate users
             'scope': 'client'     # Admin can deactivate anyone in client
         },
         'performance': {
@@ -92,12 +88,10 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         },
         'superusers': {
             'crud': 'read',
-            'tier': 'admin',
             'scope': 'client'
         },
-        'grant_superuser_action': {
+        'grant_superuser': {
             'crud': 'update',
-            'tier': 'admin',
             'scope': 'client'
         },
     }
@@ -414,8 +408,16 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         from permissions.compat import get_auth_ctx
         ctx = get_auth_ctx(request)
         
-        is_admin = ctx.tier == 'admin'
-        is_manager = ctx.tier == 'manager'
+        is_admin = False
+        is_manager = False
+        for role in ctx.roles:
+            if isinstance(role, dict):
+                if role.get('is_admin'):
+                    is_admin = True
+                if role.get('is_manager'):
+                    is_manager = True
+        is_admin = is_admin or ctx.is_superuser
+        
         is_self = str(target_user.id) == str(request.user.id)
         
         # Vérifications d'accès
@@ -490,12 +492,18 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # Gérer le paramètre team_id pour les admins
         target_team_id = request.query_params.get('team_id')
         if target_team_id:
-            # Seul admin peut voir d'autres équipes
-            if ctx.tier != 'admin':
+            is_admin = False
+            for role in ctx.roles:
+                if isinstance(role, dict) and role.get('is_admin'):
+                    is_admin = True
+                    break
+            is_admin = is_admin or ctx.is_superuser
+            
+            if not is_admin:
                 raise StandardizedValidationError(
                     "Only administrators can view other teams' performance"
                 )
-            # Vérifier que l'équipe existe
+            
             from ..models import Team
             try:
                 team = Team.objects.get(id=target_team_id, organization__client_account_id=self.get_client_id())
@@ -585,7 +593,13 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         from permissions.compat import get_auth_ctx
         ctx = get_auth_ctx(request)
         
-        is_admin = ctx.tier == 'admin'
+        is_admin = False
+        for role in ctx.roles:
+            if isinstance(role, dict) and role.get('is_admin'):
+                is_admin = True
+                break
+        is_admin = is_admin or ctx.is_superuser
+        
         is_self = str(manager.id) == str(request.user.id)
         
         if not (is_admin or is_self):
@@ -700,17 +714,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             from permissions.compat import get_auth_ctx
             ctx = get_auth_ctx(request)
             
-            if ctx.tier != 'admin':
-                raise StandardizedValidationError(
-                    "Only administrators can view the superusers list"
-                )
-            
             # Récupérer le client_id du contexte pour garantir le multi-tenant
             client_id = self.get_client_id()
             
             # Filtrer les superusers du tenant actuel
-            superusers = User.objects.filter(
-                client_account_id=client_id,
+            superusers = self.get_queryset().filter(
                 is_superuser=True
             ).select_related('role', 'team', 'organization').order_by('-is_active', 'first_name', 'last_name')
             
@@ -746,11 +754,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             inactive_superusers = total_superusers - active_superusers
             
             # Compter aussi les admins par rôle pour comparaison
-            admin_role_users = User.objects.filter(
-                client_account_id=client_id,
+            admin_role_users = self.get_queryset().filter(
                 role__name='Admin',
                 is_active=True
             ).exclude(is_superuser=True).count()  # Admins qui ne sont PAS superusers
+            
             
             return Response({
                 'success': True,
@@ -773,7 +781,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             return self.handle_exception(e)
     
     @action(detail=False, methods=['post'], url_path='grant-superuser')
-    def grant_superuser_action(self, request):  
+    def grant_superuser(self, request):  
         """
         Accorder le statut superuser à un utilisateur
         POST /client/users/grant-superuser/
