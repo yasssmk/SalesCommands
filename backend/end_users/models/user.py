@@ -209,23 +209,50 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         full_name = self.get_full_name()
         return full_name if full_name else self.email
     
+    def has_admin_rights(self):
+        """
+        Check if user has admin rights (either superuser or Admin role).
+        Utilise les flags du rôle pour déterminer les droits admin.
+        """
+        # Superuser a toujours les droits admin
+        if self.is_superuser:
+            return True
+        
+        # Vérifier le flag is_admin du rôle
+        if self.role and hasattr(self.role, 'is_admin'):
+            return self.role.is_admin
+        
+        # Fallback: vérifier le nom du rôle pour compatibilité
+        if self.role and hasattr(self.role, 'name'):
+            return self.role.name == 'Admin'
+        
+        return False
+    
     def is_manager(self):
         """
         Vérifie si l'utilisateur est manager d'équipe ou organisation
         """
-        from permissions import resolve_tier
-        user_tier = resolve_tier(self)
+        # from permissions import resolve_tier
+        # user_tier = resolve_tier(self)
         
-        # Admin peut voir tous les utilisateurs de son client
-        if user_tier == 'manager':
-            return True
+        # # Admin peut voir tous les utilisateurs de son client
+        # if user_tier == 'manager':
+        #     return True
         
-        else:
-            return (
-                self.managed_teams.exists() or 
-                self.managed_organizations.exists()
-            )
-    
+        # else:
+        #     return (
+        #         self.managed_teams.exists() or 
+        #         self.managed_organizations.exists()
+        #     )
+        
+        # Vérifier le flag is_manager du rôle en premier
+        if self.role and hasattr(self.role, 'is_manager'):
+            if self.role.is_manager:
+                return True
+        
+        # Sinon, vérifier s'il manage des équipes ou organisations
+        return self.managed_teams.exists() or self.managed_organizations.exists()
+        
     def get_managed_users(self):
         """
         Retourne tous les utilisateurs managés (équipe + organisation)
@@ -255,22 +282,40 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         if self == target_user:
             return True
         
-        # Utiliser resolve_tier pour déterminer les permissions basées sur le tier
-        from permissions import resolve_tier
-        user_tier = resolve_tier(self)
+        # # Utiliser resolve_tier pour déterminer les permissions basées sur le tier
+        # from permissions import resolve_tier
+        # user_tier = resolve_tier(self)
         
-        # Admin peut voir tous les utilisateurs de son client
-        if user_tier == 'admin':
-            return True
+        # # Admin peut voir tous les utilisateurs de son client
+        # if user_tier == 'admin':
+        #     return True
             
-        # Manager peut voir son équipe et les utilisateurs qu'il manage
-        if user_tier == 'manager':
-            # Check si target_user est dans les users managés
-            if target_user in self.get_managed_users():
+        # # Manager peut voir son équipe et les utilisateurs qu'il manage
+        # if user_tier == 'manager':
+        #     # Check si target_user est dans les users managés
+        #     if target_user in self.get_managed_users():
+        #         return True
+        #     # Check si target_user est dans la même équipe
+        #     if self.team and target_user.team and self.team == target_user.team:
+        #         return True
+            
+        if self.role:
+            # Admin peut voir tous les utilisateurs de son client
+            if hasattr(self.role, 'is_admin') and self.role.is_admin:
                 return True
-            # Check si target_user est dans la même équipe
-            if self.team and target_user.team and self.team == target_user.team:
-                return True
+                
+            # Manager peut voir son équipe et les utilisateurs qu'il manage
+            if hasattr(self.role, 'is_manager') and self.role.is_manager:
+                # Check si target_user est dans les users managés
+                if target_user in self.get_managed_users():
+                    return True
+                # Check si target_user est dans la même équipe
+                if self.team and target_user.team and self.team == target_user.team:
+                    return True
+        
+        # Fallback: vérifier si c'est un superuser
+        if self.is_superuser:
+            return True
                 
         # Individual ne peut voir que lui-même (déjà traité plus haut)
         return False
@@ -281,35 +326,76 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         Check if this user can grant or revoke superuser status to others.
         Only superusers and Admin role users can do this.
         """
-        # return self.has_admin_rights()
-        from permissions import resolve_tier
-        return resolve_tier(self) == 'admin'
+        # # return self.has_admin_rights()
+        # from permissions import resolve_tier
+        # return resolve_tier(self) == 'admin'
+        # Superusers peuvent toujours
+        if self.is_superuser:
+            return True
+        
+        # Vérifier le flag is_admin du rôle
+        if self.role and hasattr(self.role, 'is_admin'):
+            return self.role.is_admin
+        
+        # Fallback: vérifier le nom du rôle pour compatibilité
+        if self.role and hasattr(self.role, 'name'):
+            return self.role.name == 'Admin'
+        
+        return False
     
     
     def can_manage_roles(self):
         """
         Check if this user can manage roles and permissions.
         """
-        # Seuls les superusers et admins peuvent gérer les rôles
-        # return self.has_admin_rights()
-        from permissions import resolve_tier
-        return resolve_tier(self) == 'admin'
+        # # Seuls les superusers et admins peuvent gérer les rôles
+        # # return self.has_admin_rights()
+        # from permissions import resolve_tier
+        # return resolve_tier(self) == 'admin'
+
+        if self.is_superuser:
+            return True
+        
+        # Vérifier le flag is_admin du rôle
+        if self.role and hasattr(self.role, 'is_admin'):
+            return self.role.is_admin
+        
+        # Fallback: vérifier le nom du rôle pour compatibilité
+        if self.role and hasattr(self.role, 'name'):
+            return self.role.name == 'Admin'
+        
+        return False
     
     def can_manage_teams(self):
         """
         Check if this user can create/modify/delete teams.
         Utilise resolve_tier() au lieu de has_admin_rights().
         """
-        from permissions import resolve_tier
-        user_tier = resolve_tier(self)
+        # from permissions import resolve_tier
+        # user_tier = resolve_tier(self)
         
-        # Admins peuvent gérer toutes les équipes
-        if user_tier == 'admin':
+        # # Admins peuvent gérer toutes les équipes
+        # if user_tier == 'admin':
+        #     return True
+        
+        # # Les managers peuvent gérer leurs propres équipes
+        # if user_tier == 'manager':
+        #     return self.managed_teams.exists()
+        
+        # # Individual ne peut pas gérer d'équipes
+        # return False
+        # Superusers peuvent toujours
+        if self.is_superuser:
             return True
         
-        # Les managers peuvent gérer leurs propres équipes
-        if user_tier == 'manager':
-            return self.managed_teams.exists()
+        if self.role:
+            # Admins peuvent gérer toutes les équipes
+            if hasattr(self.role, 'is_admin') and self.role.is_admin:
+                return True
+            
+            # Les managers peuvent gérer leurs propres équipes
+            if hasattr(self.role, 'is_manager') and self.role.is_manager:
+                return self.managed_teams.exists()
         
         # Individual ne peut pas gérer d'équipes
         return False
@@ -319,16 +405,32 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         Check if this user can create/modify/delete organizations.
         Utilise resolve_tier() au lieu de has_admin_rights().
         """
-        from permissions import resolve_tier
-        user_tier = resolve_tier(self)
+        # from permissions import resolve_tier
+        # user_tier = resolve_tier(self)
         
-        # Admins peuvent gérer toutes les organisations
-        if user_tier == 'admin':
+        # # Admins peuvent gérer toutes les organisations
+        # if user_tier == 'admin':
+        #     return True
+        
+        # # Les managers peuvent gérer leurs propres organisations
+        # if user_tier == 'manager':
+        #     return self.managed_organizations.exists()
+        
+        # # Individual ne peut pas gérer d'organisations  
+        # return False
+
+        # Superusers peuvent toujours
+        if self.is_superuser:
             return True
         
-        # Les managers peuvent gérer leurs propres organisations
-        if user_tier == 'manager':
-            return self.managed_organizations.exists()
+        if self.role:
+            # Admins peuvent gérer toutes les organisations
+            if hasattr(self.role, 'is_admin') and self.role.is_admin:
+                return True
+            
+            # Les managers peuvent gérer leurs propres organisations
+            if hasattr(self.role, 'is_manager') and self.role.is_manager:
+                return self.managed_organizations.exists()
         
         # Individual ne peut pas gérer d'organisations  
         return False
