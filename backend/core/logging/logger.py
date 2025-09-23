@@ -81,6 +81,92 @@ def get_request_context() -> Dict[str, Any]:
     
     return context
 
+def ctx_from_request(request) -> Dict:
+    """
+    Construit un contexte de log cohérent depuis la request.
+    Remplit method/path/ip/user_id/client_id/correlation_id/stubs status/duration.
+    """
+    context = {
+        'method': getattr(request, 'method', '-'),
+        'path': getattr(request, 'path', '-'),
+    }
+
+    # user_id
+    user = getattr(request, 'user', None)
+    if user and getattr(user, 'is_authenticated', False):
+        context['user_id'] = str(getattr(user, 'id', '-'))
+    else:
+        context['user_id'] = '-'
+
+    # client_id: plusieurs sources
+    client_id = getattr(request, 'client_id', None)
+    if not client_id:
+        # 1) DRF/JWT: request.auth peut être un dict (payload) ou un objet avec .payload
+        auth = getattr(request, 'auth', None)
+        if isinstance(auth, dict):
+            client_id = auth.get('client_account') or auth.get('client_id')
+        elif hasattr(auth, 'payload') and isinstance(auth.payload, dict):
+            client_id = auth.payload.get('client_account') or auth.payload.get('client_id')
+
+        # 2) payload posé par l’auth (si tu la mets, voir Étape 2)
+        if not client_id and hasattr(request, 'jwt_payload'):
+            payload = getattr(request, 'jwt_payload') or {}
+            if isinstance(payload, dict):
+                client_id = payload.get('client_account') or payload.get('client_id')
+
+        # 3) session éventuelle
+        if not client_id and hasattr(request, 'session'):
+            client_id = request.session.get('client_id')
+
+    context['client_id'] = str(client_id) if client_id else '-'
+
+    # correlation_id (request -> META -> session -> contextvar)
+    correlation_id = '-'
+    if hasattr(request, 'correlation_id'):
+        correlation_id = request.correlation_id
+    elif hasattr(request, 'META') and 'CORRELATION_ID' in request.META:
+        correlation_id = request.META['CORRELATION_ID']
+    else:
+        correlation_id = get_correlation_id()
+    context['correlation_id'] = correlation_id
+
+    # IP
+    context['remote_ip'] = getattr(request, '_client_ip', request.META.get('REMOTE_ADDR', '-'))
+
+    # Champs standardisés pour tes handlers
+    context['status_code'] = '-'
+    context['duration_ms'] = '-'
+
+    return context
+
+
+
+def ctx_from_user(user) -> Dict:
+    """
+    Extract logging context from a Django user object.
+    
+    Useful when you have a user but no request object.
+    
+    Args:
+        user: Django User object
+        
+    Returns:
+        dict: Context dictionary with user_id
+        
+    Usage:
+        logger.info("User action", extra=ctx_from_user(user))
+    """
+    context = {
+        'correlation_id': get_correlation_id(),
+    }
+    
+    if user and hasattr(user, 'id'):
+        context['user_id'] = str(user.id)
+    else:
+        context['user_id'] = '-'
+    
+    return context
+
 
 class ContextualLogger:
     """
@@ -121,38 +207,38 @@ class ContextualLogger:
         return context
     
     def debug(self, msg: str, *args, extra: Optional[Dict] = None, **kwargs):
-        """Log a debug message with context."""
         extra = self._add_context(extra)
+        kwargs.setdefault("stacklevel", 2)
         self._logger.debug(msg, *args, extra=extra, **kwargs)
-    
+
     def info(self, msg: str, *args, extra: Optional[Dict] = None, **kwargs):
-        """Log an info message with context."""
         extra = self._add_context(extra)
+        kwargs.setdefault("stacklevel", 2)
         self._logger.info(msg, *args, extra=extra, **kwargs)
-    
+
     def warning(self, msg: str, *args, extra: Optional[Dict] = None, **kwargs):
-        """Log a warning message with context."""
         extra = self._add_context(extra)
+        kwargs.setdefault("stacklevel", 2)
         self._logger.warning(msg, *args, extra=extra, **kwargs)
-    
+
     def error(self, msg: str, *args, extra: Optional[Dict] = None, **kwargs):
-        """Log an error message with context."""
         extra = self._add_context(extra)
+        kwargs.setdefault("stacklevel", 2)
         self._logger.error(msg, *args, extra=extra, **kwargs)
-    
+
     def critical(self, msg: str, *args, extra: Optional[Dict] = None, **kwargs):
-        """Log a critical message with context."""
         extra = self._add_context(extra)
+        kwargs.setdefault("stacklevel", 2)
         self._logger.critical(msg, *args, extra=extra, **kwargs)
-    
+
     def exception(self, msg: str, *args, extra: Optional[Dict] = None, **kwargs):
-        """Log an exception with context."""
         extra = self._add_context(extra)
+        kwargs.setdefault("stacklevel", 2)
         self._logger.exception(msg, *args, extra=extra, **kwargs)
-    
+
     def log(self, level: int, msg: str, *args, extra: Optional[Dict] = None, **kwargs):
-        """Log a message at a specific level with context."""
         extra = self._add_context(extra)
+        kwargs.setdefault("stacklevel", 2)
         self._logger.log(level, msg, *args, extra=extra, **kwargs)
     
     # Proxy other attributes to the underlying logger

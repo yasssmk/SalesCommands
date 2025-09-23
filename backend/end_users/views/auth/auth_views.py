@@ -1,3 +1,4 @@
+# Modifications dans backend/end_users/views/auth/auth_views.py
 
 from rest_framework import status
 from rest_framework.response import Response
@@ -14,17 +15,9 @@ from ...serializers.user_serializer import (
 )
 import logging
 
-# Import robuste de get_correlation_id
-try:
-    from backend.core.logging.context import get_correlation_id
-except ImportError:
-    try:
-        from core.logging.context import get_correlation_id
-    except ImportError:
-        def get_correlation_id():
-            return '-'
+from core.logging import get_logger, ctx_from_request  
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class UserLoginView(BaseAPIView):
@@ -36,12 +29,18 @@ class UserLoginView(BaseAPIView):
         email = request.data.get('email')
         password = request.data.get('password')
 
-
         if not email or not password:
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(field='Email and Password')
             )
 
+        # Log login attempt (safe extras)
+        ctx = ctx_from_request(request)
+        ctx.update({
+            'email': (email[:3] + '***') if email else '-',
+            'event': 'login_attempt'
+        })
+        logger.info("login_attempt", extra=ctx)
 
         from django.conf import settings
         auth_service = AuthService(
@@ -52,15 +51,19 @@ class UserLoginView(BaseAPIView):
         )
         
         response = Response(status=status.HTTP_200_OK)
+        
+        # Pass request to auth_service for context
         user = auth_service.authenticate_user(email, password, response)
 
-        logger.info("user_login_view_success", extra={
-            'correlation_id': get_correlation_id(),
+        # Log successful login with full context (safe extras)
+        ctx = ctx_from_request(request)
+        ctx.update({
             'user_id': str(user.id),
             'client_id': str(user.client_account_id) if user.client_account_id else '-',
             'origin': 'end_users',
-            'event': 'login_view_success'
+            'event': 'login_success'
         })
+        logger.info("login_success", extra=ctx)
 
         response.data.update({
             "origin": "end_users",
@@ -75,6 +78,7 @@ class UserLoginView(BaseAPIView):
 
         return response
 
+
 class UserCurrentView(BaseAPIView):
     """View to get current authenticated user info."""
     authentication_classes = [CustomJWTAuthentication]
@@ -87,12 +91,9 @@ class UserCurrentView(BaseAPIView):
         try:
             user = request.user
 
-            logger.debug("get_current_user", extra={
-                'correlation_id': get_correlation_id(),
-                'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
-                'client_id': str(user.client_account_id) if user.client_account_id else '-',
-                'event': 'get_current_user'
-            })
+            ctx = ctx_from_request(request)
+            ctx.update({'event': 'get_current_user'})
+            logger.debug("get_current_user", extra=ctx)
             
             serializer = UserSerializer(user)
             
@@ -110,6 +111,12 @@ class UserCurrentView(BaseAPIView):
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
+            ctx = ctx_from_request(request)
+            ctx.update({
+                'error': str(e)[:200],
+                'event': 'get_current_user_failed'
+            })
+            logger.error("get_current_user_failed", extra=ctx)
             raise StandardizedValidationError(f"Failed to get user info: {str(e)}")
 
 
@@ -120,13 +127,9 @@ class UserLogoutView(BaseAPIView):
 
     def post(self, request):
         try:
-
-            logger.info("user_logout_view", extra={
-                'correlation_id': get_correlation_id(),
-                'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
-                'client_id': getattr(request, 'client_id', '-'),
-                'event': 'logout_view'
-            })
+            ctx = ctx_from_request(request)
+            ctx.update({'event': 'logout_attempt'})
+            logger.info("logout_attempt", extra=ctx)
             
             from django.conf import settings
             auth_service = AuthService(
@@ -137,9 +140,23 @@ class UserLogoutView(BaseAPIView):
             )
             
             response = Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
+            
+            # Pass request for context
             auth_service.logout_user(request, response)
+            
+            # Log success after logout
+            ctx = ctx_from_request(request)
+            ctx.update({'event': 'logout_success'})
+            logger.info("logout_success", extra=ctx)
+            
             return response
         except Exception as e:
+            ctx = ctx_from_request(request)
+            ctx.update({
+                'error': str(e)[:200],
+                'event': 'logout_failed'
+            })
+            logger.error("logout_failed", extra=ctx)
             raise StandardizedValidationError(str(e))
 
 
@@ -150,10 +167,9 @@ class UserRefreshTokenView(BaseAPIView):
     
     def post(self, request):
         try:
-            logger.info("token_refresh_view", extra={
-                'correlation_id': get_correlation_id(),
-                'event': 'token_refresh_view'
-            })
+            ctx = ctx_from_request(request)
+            ctx.update({'event': 'token_refresh_attempt'})
+            logger.info("token_refresh_attempt", extra=ctx)
             
             from django.conf import settings
             auth_service = AuthService(
@@ -163,17 +179,19 @@ class UserRefreshTokenView(BaseAPIView):
                 serializer_class=UserSerializer
             )
 
-             # Create response object first so cookies can be set on it
+            # Create response object first so cookies can be set on it
             response = Response(status=status.HTTP_200_OK)
             
-            # refresh_tokens will set cookies on the response and return user data
+            # Pass request for context
             result = auth_service.refresh_tokens(request, response)
 
-            logger.info("token_refresh_view_success", extra={
-                'correlation_id': get_correlation_id(),
+            # Log success with user info
+            ctx = ctx_from_request(request)
+            ctx.update({
                 'user_id': result.get('user', {}).get('id', '-'),
-                'event': 'token_refresh_view_success'
+                'event': 'token_refresh_success'
             })
+            logger.info("token_refresh_success", extra=ctx)
             
             # Set the enriched data (message + user)
             response.data = result
@@ -181,4 +199,10 @@ class UserRefreshTokenView(BaseAPIView):
             return response
         
         except Exception as e:
+            ctx = ctx_from_request(request)
+            ctx.update({
+                'error': str(e)[:200],
+                'event': 'token_refresh_failed'
+            })
+            logger.error("token_refresh_failed", extra=ctx)
             raise StandardizedValidationError(str(e))

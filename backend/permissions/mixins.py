@@ -107,7 +107,7 @@ class ScopedPermission(permissions.BasePermission):
         
         logger.debug("permission_check_start", extra={
             'correlation_id': get_correlation_id(),
-            'module': module,
+            'biz_module': module,
             'action': action,
             'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
             'method': request.method,
@@ -120,7 +120,7 @@ class ScopedPermission(permissions.BasePermission):
         if action in action_policies:
             logger.debug("using_action_policy", extra={
                 'correlation_id': get_correlation_id(),
-                'module': module,
+                'biz_module': module,
                 'action': action,
                 'event': 'permission_check'
             })
@@ -141,7 +141,7 @@ class ScopedPermission(permissions.BasePermission):
         if not result:
             logger.info("permission_denied", extra={
                 'correlation_id': get_correlation_id(),
-                'module': module,
+                'biz_module': module,
                 'action': action,
                 'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
                 'client_id': getattr(request, 'client_id', '-'),
@@ -152,7 +152,7 @@ class ScopedPermission(permissions.BasePermission):
         else:
             logger.debug("permission_granted", extra={
                 'correlation_id': get_correlation_id(),
-                'module': module,
+                'biz_module': module,
                 'action': action,
                 'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
                 'event': 'permission_granted'
@@ -255,7 +255,7 @@ class ScopedQuerysetMixin:
             'correlation_id': get_correlation_id(),
             'view': self.__class__.__name__,
             'action': getattr(self, 'action', 'unknown'),
-            'module': getattr(self, 'module', 'unknown'),
+            'biz_module': getattr(self, 'module', 'unknown'),
             'user_id': str(self.request.user.id) if hasattr(self.request, 'user') and hasattr(self.request.user, 'id') else '-',
             'event': 'queryset_filter'
         })
@@ -292,7 +292,7 @@ class ScopedQuerysetMixin:
         if not is_module_enabled(module):
             logger.debug("module_disabled_in_queryset", extra={
                 'correlation_id': get_correlation_id(),
-                'module': module,
+                'biz_module': module,
                 'event': 'queryset_filter'
             })
             return queryset
@@ -361,7 +361,7 @@ class ScopedQuerysetMixin:
             logger.debug("action_policy_found", extra={
                 'correlation_id': get_correlation_id(),
                 'action': action,
-                'module': module,
+                'biz_module': module,
                 'event': 'queryset_filter'
             })
             policy = action_policies[action]
@@ -391,7 +391,7 @@ class ScopedQuerysetMixin:
             scope = check_permission(self.request, module, action)
             logger.debug("permission_scope_resolved", extra={
                 'correlation_id': get_correlation_id(),
-                'module': module,
+                'biz_module': module,
                 'action': action,
                 'scope': scope,
                 'event': 'queryset_filter'
@@ -400,7 +400,7 @@ class ScopedQuerysetMixin:
         if not scope or scope == 'none':
             logger.info("no_permission_empty_queryset", extra={
                 'correlation_id': get_correlation_id(),
-                'module': module,
+                'biz_module': module,
                 'action': action,
                 'user_id': str(self.request.user.id) if hasattr(self.request, 'user') and hasattr(self.request.user, 'id') else '-',
                 'event': 'permission_denied'
@@ -542,7 +542,7 @@ class ScopedQuerysetMixin:
         
         logger.debug("queryset_final", extra={
             'correlation_id': get_correlation_id(),
-            'module': module,
+            'biz_module': module,
             'action': action,
             'scope': scope if 'scope' in locals() else '-',
             'final_count': queryset.count(),

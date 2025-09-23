@@ -23,18 +23,9 @@ from ..serializers.user_serializer import (
 import logging
 from django.conf import settings
 
-# Import robuste de get_correlation_id
-try:
-    from backend.core.logging.context import get_correlation_id
-except ImportError:
-    try:
-        from core.logging.context import get_correlation_id
-    except ImportError:
-        def get_correlation_id():
-            return '-'
+from core.logging import get_logger, ctx_from_request
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 
 class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
@@ -160,65 +151,51 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         """
         try:
             user = self.get_object()
-
             is_self = str(user.id) == str(request.user.id)
-            logger.info("user_retrieve", extra={
-                'correlation_id': get_correlation_id(),
-                'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
-                'target_user_id': str(user.id),
-                'client_id': getattr(request, 'client_id', '-'),
-                'is_self': is_self,
-                'event': 'user_retrieve'
-            }) 
-            
-            serializer = UserSerializer(user)
 
-            return Response({
-                'success': True,
-                'data': serializer.data
+            ctx = ctx_from_request(request)
+            ctx.update({
+                "target_user_id": str(user.id),
+                "is_self": is_self,
+                "event": "user_retrieve",
             })
-            
+            logger.info("user_retrieve", extra=ctx)
+
+            serializer = UserSerializer(user)
+            return Response({"success": True, "data": serializer.data})
+
         except User.DoesNotExist:
-            return Response({
-                'success': False,
-                'error': CoreErrorMessages.OBJECT_NOT_FOUND
-            }, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         
     def create(self, request, *args, **kwargs):
         """
         Créer un nouvel utilisateur
         POST /client/users/
-        
-        Permissions:
-        - Tous les utilisateurs authentifiés peuvent créer des users SANS is_superuser
-        - Seuls Admin et SuperUser peuvent créer des users AVEC is_superuser=True
         """
         with transaction.atomic():
-            
-            # Serializer avec validation
             serializer = self.get_serializer(data=request.data)
-            
-            # Validation avec raise_exception=True
             serializer.is_valid(raise_exception=True)
-
-            # Créer l'utilisateur
             user = serializer.save()
 
-            logger.info("user_create_success", extra={
-                'correlation_id': get_correlation_id(),
-                'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
-                'client_id': getattr(request, 'client_id', '-'),
-                'new_user_id': str(user.id),
-                'new_user_email': user.email[:3] + '***' if user.email else '-',
-                'new_user_role': str(user.role.id) if user.role else '-',
-                'event': 'user_create'
+            ctx = ctx_from_request(request)
+            ctx.update({
+                "new_user_id": str(user.id),
+                "event": "user_create_success",
             })
-            
-            return Response({
-                'success': True,
-                'message': f'User "{user.get_full_name()}" created successfully',
-                'data': UserSerializer(user).data
-            }, status=status.HTTP_201_CREATED)
+            logger.info("user_create_success", extra=ctx)
+
+            return Response(
+                {
+                    "success": True,
+                    'message': f'User "{user.get_full_name()}" created successfully',
+                    "data": UserSerializer(user).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
     
     def partial_update(self, request, *args, **kwargs):
         """
@@ -227,40 +204,36 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         """
         try:
             with transaction.atomic():
-                print(f"PATCH Requete data: {request.data}")
                 user = self.get_object()
-                
-                # Serializer avec validation
                 serializer = self.get_serializer(user, data=request.data, partial=True)
-                
                 serializer.is_valid(raise_exception=True)
-                
-                # Sauvegarder les modifications
                 updated_user = serializer.save()
 
-                logger.info("user_update_success", extra={
-                    'correlation_id': get_correlation_id(),
-                    'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
-                    'target_user_id': str(user.id),
-                    'client_id': getattr(request, 'client_id', '-'),
-                    'fields_updated': list(request.data.keys()),
-                    'is_self': str(user.id) == str(request.user.id),
-                    'event': 'user_update'
+                changed_fields = sorted([k for k in serializer.validated_data.keys()])
+
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    "target_user_id": str(user.id),
+                    "changed_fields": changed_fields,
+                    "is_self": str(user.id) == str(request.user.id),
+                    "event": "user_update_success",
                 })
-                
+                logger.info("user_update_success", extra=ctx)
+
                 return Response({
-                    'success': True,
+                    "success": True,
                     'message': f'User "{updated_user.get_full_name()}" updated successfully',
-                    'data': UserSerializer(updated_user).data
+                    "data": UserSerializer(updated_user).data,
                 })
-                
+
         except User.DoesNotExist:
-            return Response({
-                'success': False,
-                'error': CoreErrorMessages.OBJECT_NOT_FOUND
-            }, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         except Exception as e:
             return self.handle_exception(e)
+
     
     @action(detail=True, methods=['patch'], url_path='change-password')
     def change_password(self, request, pk=None):
@@ -312,19 +285,16 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             # Mettre à jour le mot de passe
             serializer.update_password(user, serializer.validated_data)
 
-            logger.info("password_change_success", extra={
-                'correlation_id': get_correlation_id(),
-                'actor_user_id': str(request.user.id),
-                'target_user_id': str(user.id),
-                'client_id': getattr(request, 'client_id', '-'),
-                'is_self': is_self,
-                'is_admin': is_admin,
-                'event': 'password_change'
+            ctx = ctx_from_request(request)
+            ctx.update({
+                "actor_user_id": str(request.user.id),
+                "target_user_id": str(user.id),
+                "is_self": is_self,
+                "is_admin": is_admin,
+                "event": "password_change_success",
             })
+            logger.info("password_change_success", extra=ctx)
             
-            # Logger l'action si nécessaire
-            if is_admin and not is_self:
-                logger.info(f"Admin {request.user.email} changed password for {user.email}")
             
             return Response({
                 'success': True,
@@ -360,15 +330,13 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 user_name = user.get_full_name()
                 user.delete()
 
-                logger.info("user_delete_success", extra={
-                    'correlation_id': get_correlation_id(),
-                    'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
-                    'target_user_id': str(user.id),
-                    'target_user_email': user.email[:3] + '***' if user.email else '-',
-                    'client_id': getattr(request, 'client_id', '-'),
-                    'deleted_user_name': user_name,
-                    'event': 'user_delete'
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    "target_user_id": str(user.id),
+                    "deleted_user_name": user_name,
+                    "event": "user_delete_success",
                 })
+                logger.info("user_delete_success", extra=ctx)
 
                 # Filet de sécurité: s'assurer qu'un admin existe toujours
                 client.ensure_admin_invariants()
@@ -470,17 +438,6 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # Vérifier l'accès aux performances
         from permissions.compat import get_auth_ctx
         ctx = get_auth_ctx(request)
-
-        logger.debug("user_performance_access", extra={
-            'correlation_id': get_correlation_id(),
-            'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
-            'target_user_id': str(target_user.id),
-            'client_id': getattr(request, 'client_id', '-'),
-            'is_self': is_self,
-            'period_start': str(period_start),
-            'period_end': str(period_end),
-            'event': 'performance_view'
-        })
         
         is_admin = False
         is_manager = False
@@ -524,6 +481,19 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         detail="Invalid date format. Use YYYY-MM-DD"
                     )
                 )
+        
+        # Log
+
+        ctx = ctx_from_request(request)
+        ctx.update({
+            "target_user_id": str(target_user.id),
+            "is_self": is_self,
+            "period_start": str(period_start),
+            "period_end": str(period_end),
+            "event": "performance_view",
+        })
+        logger.debug("user_performance_access", extra=ctx)
+
         
         # Utiliser UserPerformanceService
         try:
@@ -786,17 +756,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         try:
              # Vérifier les permissions - seuls Admin et SuperUser peuvent voir cette liste
             from permissions.compat import get_auth_ctx
-            ctx = get_auth_ctx(request)
-
-            logger.debug("superusers_list_access", extra={
-                'correlation_id': get_correlation_id(),
-                'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
-                'client_id': client_id,
-                'event': 'superusers_list'
-            })
-            
+            ctx_auth = get_auth_ctx(request)
+            is_admin = any(isinstance(r, dict) and r.get('is_admin') for r in ctx_auth.roles) or ctx_auth.is_superuser
+            if not is_admin:
+                raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
+                
             # Récupérer le client_id du contexte pour garantir le multi-tenant
             client_id = self.get_client_id()
+
+            ctx = ctx_from_request(request)
+            ctx.update({"event": "superusers_list"})
+            logger.debug("superusers_list_access", extra=ctx)
             
             # Filtrer les superusers du tenant actuel
             superusers = self.get_queryset().filter(
@@ -929,18 +899,14 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     target_user.is_staff = True  # Superuser doit avoir is_staff
                 target_user.save(update_fields=['is_superuser', 'is_staff', 'updated_at'])
 
-                logger.info("superuser_status_changed", extra={
-                    'correlation_id': get_correlation_id(),
-                    'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
-                    'target_user_id': str(target_user.id),
-                    'client_id': client_id,
-                    'action': 'granted' if grant else 'revoked',
-                    'event': 'superuser_grant'
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    "target_user_id": str(target_user.id),
+                    "client_id": client_id,
+                    "granted": bool(grant),
+                    "event": "superuser_status_changed",
                 })
-                
-                # Log l'action
-                action = "granted to" if grant else "revoked from"
-                logger.info(f"[AUDIT] Superuser status {action} {target_user.email} by {request.user.email}")
+                logger.info("superuser_status_changed", extra=ctx)
                 
                 # Assurer les invariants
                 target_user.client_account.ensure_admin_invariants()

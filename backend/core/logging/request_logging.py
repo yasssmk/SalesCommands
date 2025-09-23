@@ -134,10 +134,10 @@ class RequestLoggingMiddleware(MiddlewareMixin):
             headers = self._extract_headers(request.META)
             context['headers'] = format_headers_for_logging(headers)
         
-        # Log the request
+        # Log with simple message (details in structured fields)
         logger.log(
             self.request_log_level,
-            f"Request started: {request.method} {request.path}",
+            "request_started",  # Simple, fixed message
             extra=context
         )
     
@@ -189,10 +189,10 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         else:
             log_level = self.request_log_level
         
-        # Log the response
+        # Log with simple message
         logger.log(
             log_level,
-            f"Request completed: {request.method} {request.path} -> {response.status_code} ({duration_ms}ms)",
+            "request_completed",  # Simple, fixed message
             extra=context
         )
         
@@ -235,9 +235,9 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         if hasattr(request, 'client_id'):
             context['client_id'] = str(request.client_id)
         
-        # Log the exception
+        # Log with simple message
         logger.error(
-            f"Request failed: {request.method} {request.path} -> {exception.__class__.__name__}",
+            "request_failed",  # Simple, fixed message
             extra=context,
             exc_info=True if settings.DEBUG else False  # Include traceback in DEBUG
         )

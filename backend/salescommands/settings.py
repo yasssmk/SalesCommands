@@ -358,13 +358,32 @@ import os
 import time
 import logging.handlers
 from pathlib import Path
+import datetime
 
-
-# UTC Formatter to ensure real UTC timestamps
 class UTCFormatter(logging.Formatter):
-    """Formatter that converts timestamp to UTC"""
-    converter = time.gmtime
-
+    """
+    Formatter that converts timestamp to UTC with proper milliseconds.
+    Override formatTime to handle ISO-8601 format correctly.
+    """
+    converter = time.gmtime  # Keep UTC
+    
+    def formatTime(self, record, datefmt=None):
+        """
+        Format time as ISO-8601 with milliseconds in UTC.
+        
+        Args:
+            record: LogRecord instance
+            datefmt: Ignored (we always use ISO format)
+            
+        Returns:
+            str: ISO-8601 formatted timestamp with milliseconds
+        """
+        # Convert timestamp to datetime in UTC
+        dt = datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc)
+        
+        # Format as ISO-8601 with milliseconds, replace +00:00 with Z
+        # timespec='milliseconds' gives us .123 format
+        return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
 # Custom filter for safe logging (sanitization + default values)
 class SafeExtraFilter(logging.Filter):
@@ -485,8 +504,7 @@ LOGGING = {
                 'correlation_id=%(correlation_id)s user_id=%(user_id)s client_id=%(client_id)s '
                 'method=%(method)s path="%(path)s" status=%(status_code)s '
                 'duration_ms=%(duration_ms)s ip=%(remote_ip)s'
-            ),
-            'datefmt': '%Y-%m-%dT%H:%M:%S.%fZ',  # UTC ISO-8601 format with Z
+            )
         }
     },
     

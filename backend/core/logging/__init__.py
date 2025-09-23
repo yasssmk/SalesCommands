@@ -32,25 +32,29 @@ from .logger import (
     log_with_context,
     log_execution,
     ContextualLogger,
+    ctx_from_request,
+    ctx_from_user,
 )
 
 __all__ = [
     # Context management
-    'get_correlation_id',
-    'set_correlation_id',
-    'clear_correlation_id',
-    'get_logging_context',
-    'correlation_context',
+    "get_correlation_id",
+    "set_correlation_id",
+    "clear_correlation_id",
+    "get_logging_context",
+    "correlation_context",
     # Sanitization
-    'mask_email',
-    'mask_header',
-    'scrub_payload',
-    'sanitize_dict',
-    'format_headers_for_logging',
-    'get_safe_error_details',
-    # Logger factory
-    'get_logger',
-    'log_with_context',
-    'log_execution',
-    'ContextualLogger',
+    "mask_email",
+    "mask_header",
+    "scrub_payload",
+    "sanitize_dict",
+    "format_headers_for_logging",
+    "get_safe_error_details",
+    # Logger helpers
+    "get_logger",
+    "log_with_context",
+    "log_execution",
+    "ContextualLogger",
+    "ctx_from_request",
+    "ctx_from_user",
 ]

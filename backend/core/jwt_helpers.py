@@ -46,6 +46,24 @@ class CustomJWTAuthentication(JWTAuthentication):
             
         try:
             validated_token = self.get_validated_token(raw_token)
+
+            payload = getattr(validated_token, "payload", None)
+            if payload is None:
+                # fallback: certains tokens se comportent comme un dict
+                try:
+                    payload = dict(validated_token)
+                except Exception:
+                    payload = {}
+
+            # dispo partout: ctx_from_request pourra le lire
+            request.jwt_payload = payload
+
+            # remplit request.client_id pour les logs
+            client_id = payload.get("client_account") or payload.get("client_id")
+            if client_id:
+                request.client_id = str(client_id)
+
+            
             user = self.get_user(validated_token)
             return (user, validated_token)
         except (InvalidToken, TokenError):
@@ -118,7 +136,10 @@ class CustomJWTAuthentication(JWTAuthentication):
         try:
             if use_select_related:
                 queryset = user_model.objects.select_related('role', 'team', 'organization')
-                user = queryset.get(pk=user_id)
+            else:
+                queryset = user_model.objects
+
+            user = queryset.get(pk=user_id)
 
             if not user.is_active:
                 raise InvalidToken("User is inactive")
