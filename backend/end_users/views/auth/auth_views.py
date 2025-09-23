@@ -12,7 +12,19 @@ from ...models import User
 from ...serializers.user_serializer import (
     UserSerializer
 )
+import logging
 
+# Import robuste de get_correlation_id
+try:
+    from backend.core.logging.context import get_correlation_id
+except ImportError:
+    try:
+        from core.logging.context import get_correlation_id
+    except ImportError:
+        def get_correlation_id():
+            return '-'
+
+logger = logging.getLogger(__name__)
 
 
 class UserLoginView(BaseAPIView):
@@ -41,6 +53,15 @@ class UserLoginView(BaseAPIView):
         
         response = Response(status=status.HTTP_200_OK)
         user = auth_service.authenticate_user(email, password, response)
+
+        logger.info("user_login_view_success", extra={
+            'correlation_id': get_correlation_id(),
+            'user_id': str(user.id),
+            'client_id': str(user.client_account_id) if user.client_account_id else '-',
+            'origin': 'end_users',
+            'event': 'login_view_success'
+        })
+
         response.data.update({
             "origin": "end_users",
             "message": "Login successful",
@@ -65,6 +86,14 @@ class UserCurrentView(BaseAPIView):
         """Return current user information"""
         try:
             user = request.user
+
+            logger.debug("get_current_user", extra={
+                'correlation_id': get_correlation_id(),
+                'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
+                'client_id': str(user.client_account_id) if user.client_account_id else '-',
+                'event': 'get_current_user'
+            })
+            
             serializer = UserSerializer(user)
             
             return Response({
@@ -91,6 +120,14 @@ class UserLogoutView(BaseAPIView):
 
     def post(self, request):
         try:
+
+            logger.info("user_logout_view", extra={
+                'correlation_id': get_correlation_id(),
+                'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
+                'client_id': getattr(request, 'client_id', '-'),
+                'event': 'logout_view'
+            })
+            
             from django.conf import settings
             auth_service = AuthService(
                 user_model=User,
@@ -113,7 +150,11 @@ class UserRefreshTokenView(BaseAPIView):
     
     def post(self, request):
         try:
-            print("Refreshing token")
+            logger.info("token_refresh_view", extra={
+                'correlation_id': get_correlation_id(),
+                'event': 'token_refresh_view'
+            })
+            
             from django.conf import settings
             auth_service = AuthService(
                 user_model=User,
@@ -127,6 +168,12 @@ class UserRefreshTokenView(BaseAPIView):
             
             # refresh_tokens will set cookies on the response and return user data
             result = auth_service.refresh_tokens(request, response)
+
+            logger.info("token_refresh_view_success", extra={
+                'correlation_id': get_correlation_id(),
+                'user_id': result.get('user', {}).get('id', '-'),
+                'event': 'token_refresh_view_success'
+            })
             
             # Set the enriched data (message + user)
             response.data = result

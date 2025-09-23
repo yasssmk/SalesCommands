@@ -15,6 +15,18 @@ from core.exceptions import (
 from core.error_messages import CoreErrorMessages, AuthErrorMessages
 from rest_framework.exceptions import ParseError
 import logging
+from django.conf import settings
+from django.http import Http404  
+
+# Import robuste de get_correlation_id avec double fallback
+try:
+    from backend.core.logging.context import get_correlation_id
+except ImportError:
+    try:
+        from core.logging.context import get_correlation_id
+    except ImportError:
+        def get_correlation_id():
+            return '-'
 
 logger = logging.getLogger(__name__)
 
@@ -391,9 +403,39 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
     #         status=status.HTTP_500_INTERNAL_SERVER_ERROR
     #     )
 
+
     def handle_exception(self, exc):
         """Centralized error handling for all API views"""
+
+        # === Logging structuré ===
+        request = getattr(self, 'request', None)
+        correlation_id = get_correlation_id()
         
+        # Contexte de log sans PII
+        log_context = {
+            'correlation_id': correlation_id,
+            'method': getattr(request, 'method', '-') if request else '-',
+            'path': getattr(request, 'path', '-') if request else '-',
+            'user_id': str(request.user.id) if request and getattr(request, 'user', None) and getattr(request.user, 'is_authenticated', False) else '-',
+            'client_id': getattr(request, 'client_id', '-') if request else '-',
+            'exception_type': exc.__class__.__name__,
+        }
+        
+        # Log selon le type d'exception
+        if isinstance(exc, (DRFValidationError, DjangoValidationError, FieldError, ParseError)):
+            logger.warning("validation_error", extra=log_context, exc_info=settings.DEBUG)
+        elif isinstance(exc, PermissionDenied):
+            logger.warning("permission_denied", extra=log_context)
+        elif isinstance(exc, (AuthenticationFailed, NotAuthenticated)):
+            logger.info("auth_failed", extra=log_context)
+        elif isinstance(exc, Http404):
+            logger.info("not_found", extra=log_context)
+        else:
+            # Erreur inattendue - toujours avec stack trace
+            logger.error("unhandled_exception", extra=log_context, exc_info=True)
+        
+        # === Message d'erreur structuré ===
+
         import traceback
         import sys
         
@@ -420,7 +462,6 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         
         print("="*50 + "\n")
 
-        from django.http import Http404
         if isinstance(exc, Http404):
             return Response(
                 StandardizedValidationError._format_detail(CoreErrorMessages.OBJECT_NOT_FOUND),

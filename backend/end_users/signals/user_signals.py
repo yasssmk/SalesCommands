@@ -3,6 +3,19 @@
 from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from end_users.models import User
+import logging
+
+# Import robuste de get_correlation_id
+try:
+    from backend.core.logging.context import get_correlation_id
+except ImportError:
+    try:
+        from core.logging.context import get_correlation_id
+    except ImportError:
+        def get_correlation_id():
+            return '-'
+
+logger = logging.getLogger(__name__)
 
 @receiver(pre_save, sender=User)
 def sync_admin_role_with_superuser(sender, instance, **kwargs):
@@ -21,10 +34,15 @@ def sync_admin_role_with_superuser(sender, instance, **kwargs):
             instance.is_staff = True  # Pour l'accès Django admin si besoin
             
 
-            print(
-                f"User {instance.email} granted superuser status due to Admin role "
-                f"(client: {instance.client_account.name})"
-            )
+            logger.info("user_granted_superuser_from_admin_role", extra={
+                'correlation_id': get_correlation_id(),
+                'user_id': str(instance.id) if instance.id else '-',
+                'user_email': instance.email[:3] + '***' if instance.email else '-',
+                'client_id': str(instance.client_account_id) if instance.client_account_id else '-',
+                'client_name': instance.client_account.name if instance.client_account else '-',
+                'event': 'user_superuser_sync',
+                'reason': 'admin_role'
+            })
     
     # NOTE : On ne retire PAS is_superuser si on perd le rôle Admin
     # Cela évite les problèmes de permissions et permet d'avoir des superusers
@@ -65,15 +83,25 @@ def ensure_admin_consistency(sender, instance, created, **kwargs):
             delattr(instance, '_skip_signal')
             
 
-            print(
-                f"User {instance.email} assigned Admin role due to superuser status "
-                f"(client: {instance.client_account.name})"
-            )
+            logger.info("user_assigned_admin_role_from_superuser", extra={
+                'correlation_id': get_correlation_id(),
+                'user_id': str(instance.id) if instance.id else '-',
+                'user_email': instance.email[:3] + '***' if instance.email else '-',
+                'client_id': str(instance.client_account_id) if instance.client_account_id else '-',
+                'client_name': instance.client_account.name if instance.client_account else '-',
+                'event': 'user_role_sync',
+                'reason': 'superuser_status'
+            })
             
         except UserRole.DoesNotExist:
             # Le rôle Admin n'existe pas (ne devrait pas arriver)
 
-            print(
-                f"Could not assign Admin role to superuser {instance.email}: "
-                f"Admin role not found for client {instance.client_account.name}"
-            )
+            logger.warning("admin_role_not_found_for_superuser", extra={
+                'correlation_id': get_correlation_id(),
+                'user_id': str(instance.id) if instance.id else '-',
+                'user_email': instance.email[:3] + '***' if instance.email else '-',
+                'client_id': str(instance.client_account_id) if instance.client_account_id else '-',
+                'client_name': instance.client_account.name if instance.client_account else '-',
+                'event': 'user_role_sync_failed',
+                'error': 'admin_role_not_found'
+            })

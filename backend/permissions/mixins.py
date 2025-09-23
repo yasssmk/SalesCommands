@@ -25,6 +25,20 @@ from .policies import (
     ScopeProfiles
 )
 
+import logging
+
+# Import robuste de get_correlation_id
+try:
+    from backend.core.logging.context import get_correlation_id
+except ImportError:
+    try:
+        from core.logging.context import get_correlation_id
+    except ImportError:
+        def get_correlation_id():
+            return '-'
+
+logger = logging.getLogger(__name__)
+
 
 class ScopedPermission(permissions.BasePermission):
     """
@@ -55,19 +69,33 @@ class ScopedPermission(permissions.BasePermission):
         """
         # Skip if permissions system is disabled
         if not is_enabled():
-            print(f"[MIXINS] Permissions system disabled - allowing access")
+            logger.debug("permissions_system_disabled", extra={
+                'correlation_id': get_correlation_id(),
+                'view': view.__class__.__name__,
+                'event': 'permissions_check'
+            })
             return True
         
         # Get module from view
         module = getattr(view, 'module', None)
         if not module:
             # No module specified - deny by default
-            print(f"[MIXINS] No module specified on view {view.__class__.__name__} - DENY")
+            logger.warning("permission_denied_no_module", extra={
+                'correlation_id': get_correlation_id(),
+                'view': view.__class__.__name__,
+                'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
+                'event': 'permission_denied'
+            })
             return False
         
         # Skip if module is not enabled
         if not is_module_enabled(module):
-            print(f"[MIXINS] Module {module} not enabled - allowing access")
+            logger.debug("module_not_enabled", extra={
+                'correlation_id': get_correlation_id(),
+                'module': module,
+                'view': view.__class__.__name__,
+                'event': 'permissions_check'
+            })
             return True
         
         # Get action
@@ -77,12 +105,25 @@ class ScopedPermission(permissions.BasePermission):
         if action == 'patch':
             action = 'update'
         
-        print(f"[MIXINS] Permission check for {module}/{action}")
+        logger.debug("permission_check_start", extra={
+            'correlation_id': get_correlation_id(),
+            'module': module,
+            'action': action,
+            'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
+            'method': request.method,
+            'path': request.path if hasattr(request, 'path') else '-',
+            'event': 'permission_check'
+        })
         
         # Check if this action has a custom policy
         action_policies = getattr(view, 'action_policies', {})
         if action in action_policies:
-            print(f"[MIXINS] Using action policy for {action}")
+            logger.debug("using_action_policy", extra={
+                'correlation_id': get_correlation_id(),
+                'module': module,
+                'action': action,
+                'event': 'permission_check'
+            })
             # Use action_policies for this specific action
             is_permitted, scope = check_action_policy_permission(
                 action_policies, action, request, module
@@ -98,9 +139,24 @@ class ScopedPermission(permissions.BasePermission):
         result = has_permission(request, module, action)
         
         if not result:
-            print(f"[MIXINS] Permission denied for {module}/{action}")
+            logger.info("permission_denied", extra={
+                'correlation_id': get_correlation_id(),
+                'module': module,
+                'action': action,
+                'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
+                'client_id': getattr(request, 'client_id', '-'),
+                'method': request.method,
+                'path': request.path if hasattr(request, 'path') else '-',
+                'event': 'permission_denied'
+            })
         else:
-            print(f"[MIXINS] Permission granted for {module}/{action}")
+            logger.debug("permission_granted", extra={
+                'correlation_id': get_correlation_id(),
+                'module': module,
+                'action': action,
+                'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
+                'event': 'permission_granted'
+            })
         
         return result
     
@@ -195,46 +251,75 @@ class ScopedQuerysetMixin:
         Returns:
             Filtered queryset
         """
-        print(f"[MIXINS] ========== ScopedQuerysetMixin.get_queryset() START ==========")
-        print(f"[MIXINS] View: {self.__class__.__name__}")
-        print(f"[MIXINS] Action: {getattr(self, 'action', 'unknown')}")
-        print(f"[MIXINS] Module: {getattr(self, 'module', 'unknown')}")
+        logger.debug("scoped_queryset_start", extra={
+            'correlation_id': get_correlation_id(),
+            'view': self.__class__.__name__,
+            'action': getattr(self, 'action', 'unknown'),
+            'module': getattr(self, 'module', 'unknown'),
+            'user_id': str(self.request.user.id) if hasattr(self.request, 'user') and hasattr(self.request.user, 'id') else '-',
+            'event': 'queryset_filter'
+        })
         
         # CRITICAL: Call super() to get the base queryset
         # This ensures BaseAPIView applies client filtering first
         queryset = super().get_queryset()
         
-        print(f"[MIXINS] Queryset count after super (should be client-filtered): {queryset.count()}")
+        logger.debug("queryset_after_super", extra={
+            'correlation_id': get_correlation_id(),
+            'count': queryset.count(),
+            'event': 'queryset_filter'
+        })
         
         # Skip if permissions system is disabled
         if not is_enabled():
-            print(f"[MIXINS] Permissions system DISABLED - returning queryset as-is")
+            logger.debug("permissions_disabled_in_queryset", extra={
+                'correlation_id': get_correlation_id(),
+                'event': 'queryset_filter'
+            })
             return queryset
         
         # Get module
         module = getattr(self, 'module', None)
         if not module:
-            print(f"[MIXINS] No module specified - returning empty for safety")
+            logger.warning("no_module_in_queryset", extra={
+                'correlation_id': get_correlation_id(),
+                'view': self.__class__.__name__,
+                'event': 'queryset_filter'
+            })
             return queryset.none()
         
         # Skip if module is not enabled
         if not is_module_enabled(module):
-            print(f"[MIXINS] Module {module} DISABLED - returning queryset as-is")
+            logger.debug("module_disabled_in_queryset", extra={
+                'correlation_id': get_correlation_id(),
+                'module': module,
+                'event': 'queryset_filter'
+            })
             return queryset
         
         # Get auth context (NO DB)
         ctx = get_auth_ctx(self.request)
         
-        print(f"[MIXINS] Auth context: user_id={ctx.user_id}, client_id={ctx.client_id}, "
-            f"roles={len(ctx.roles)}, teams={len(ctx.teams)}")
+        logger.debug("auth_context", extra={
+            'correlation_id': get_correlation_id(),
+            'user_id': ctx.user_id,
+            'client_id': ctx.client_id,
+            'roles_count': len(ctx.roles),
+            'teams_count': len(ctx.teams),
+            'event': 'queryset_filter'
+        })
         
         # CRITICAL: Ensure client filtering is applied
         # This should already be done by BaseAPIView, but double-check
         if ctx.client_id and hasattr(queryset.model, 'client_account_id'):
             # Apply client filter FIRST (tenant isolation)
             queryset = queryset.filter(client_account_id=ctx.client_id)
-            print(f"[MIXINS] Applied client filter: client_account_id={ctx.client_id}")
-            print(f"[MIXINS] Queryset count after client filter: {queryset.count()}")
+            logger.debug("client_filter_applied", extra={
+                'correlation_id': get_correlation_id(),
+                'client_id': ctx.client_id,
+                'count_after': queryset.count(),
+                'event': 'queryset_filter'
+            })
         elif ctx.client_id:
             # Try alternate client field names
             client_fields = ['client_account', 'client_id', 'client']
@@ -242,14 +327,21 @@ class ScopedQuerysetMixin:
                 if hasattr(queryset.model, field):
                     filter_kwargs = {f'{field}_id': ctx.client_id}
                     queryset = queryset.filter(**filter_kwargs)
-                    print(f"[MIXINS] Applied client filter: {field}_id={ctx.client_id}")
-                    print(f"[MIXINS] Queryset count after client filter: {queryset.count()}")
+                    logger.debug("client_filter_applied", extra={
+                        'correlation_id': get_correlation_id(),
+                        'client_id': ctx.client_id,
+                        'count_after': queryset.count(),
+                        'event': 'queryset_filter'
+                    })
                     break
         
         # Get user and check authentication
         user = self.request.user if hasattr(self, 'request') else None
         if not user or not user.is_authenticated:
-            print(f"[MIXINS] User not authenticated - returning empty")
+            logger.warning("unauthenticated_queryset", extra={
+                'correlation_id': get_correlation_id(),
+                'event': 'queryset_filter'
+            })
             return queryset.none()
         
         # Get the action
@@ -258,44 +350,86 @@ class ScopedQuerysetMixin:
         # Normalize PATCH to UPDATE
         if action == 'patch':
             action = 'update'
-            print(f"[MIXINS] Normalized PATCH to UPDATE")
+            logger.debug("normalized_patch_to_update", extra={
+                'correlation_id': get_correlation_id(),
+                'event': 'queryset_filter'
+            })
         
-        print(f"[MIXINS] Resolved action: {action}")
-        
-        # CRITICAL FIX: Check action_policies FIRST for custom actions
+        # Check action_policies FIRST for custom actions
         action_policies = getattr(self, 'action_policies', {})
         if action in action_policies:
-            print(f"[MIXINS] Found action policy for {action} - using policy scope")
+            logger.debug("action_policy_found", extra={
+                'correlation_id': get_correlation_id(),
+                'action': action,
+                'module': module,
+                'event': 'queryset_filter'
+            })
             policy = action_policies[action]
             
             # Check if policy has a scope defined
             if 'scope' in policy:
                 scope = policy['scope']
-                print(f"[MIXINS] Action policy defines scope: {scope}")
+                logger.debug("action_policy_scope", extra={
+                    'correlation_id': get_correlation_id(),
+                    'action': action,
+                    'scope': scope,
+                    'event': 'queryset_filter'
+                })
             else:
                 # If no scope in policy, use CRUD mapping
                 crud_action = policy.get('crud', 'read')
                 scope = check_permission(self.request, module, crud_action)
-                print(f"[MIXINS] Action policy maps to CRUD: {crud_action}, scope: {scope}")
+                logger.debug("action_policy_crud_mapping", extra={
+                    'correlation_id': get_correlation_id(),
+                    'action': action,
+                    'crud_action': crud_action,
+                    'scope': scope,
+                    'event': 'queryset_filter'
+                })
         else:
             # Standard registry lookup for CRUD actions
             scope = check_permission(self.request, module, action)
-            print(f"[MIXINS] Standard permission check returned scope: {scope}")
+            logger.debug("permission_scope_resolved", extra={
+                'correlation_id': get_correlation_id(),
+                'module': module,
+                'action': action,
+                'scope': scope,
+                'event': 'queryset_filter'
+            })
         
         if not scope or scope == 'none':
-            print(f"[MIXINS] No permission for {module}/{action} - returning empty")
+            logger.info("no_permission_empty_queryset", extra={
+                'correlation_id': get_correlation_id(),
+                'module': module,
+                'action': action,
+                'user_id': str(self.request.user.id) if hasattr(self.request, 'user') and hasattr(self.request.user, 'id') else '-',
+                'event': 'permission_denied'
+            })
             return queryset.none()
         
-        print(f"[MIXINS] Permission check returned scope: {scope}")
+        logger.debug("permission_check_returned_scope", extra={
+            'correlation_id': get_correlation_id(),
+            'scope': scope,
+            'event': 'queryset_filter'
+        })
         
         # Apply scope filtering
         if scope == 'client':
             # Client scope - already filtered by client above
-            print(f"[MIXINS] Scope is 'client' - no additional filtering needed")
+            logger.debug("scope_client", extra={
+                'correlation_id': get_correlation_id(),
+                'scope': 'client',
+                'event': 'queryset_filter'
+            })
             
         elif scope == 'team':
             # Team scope - filter by team ownership
-            print(f"[MIXINS] Applying 'team' scope filter")
+            logger.debug("scope_team", extra={
+                'correlation_id': get_correlation_id(),
+                'scope': 'team',
+                'teams': ctx.teams,
+                'event': 'queryset_filter'
+            })
             
             # Build Q filter for team scope
             q_filter = Q()
@@ -303,30 +437,57 @@ class ScopedQuerysetMixin:
             # Check ownership map for team fields
             if hasattr(queryset.model, 'owner_team_id') and ctx.teams:
                 q_filter |= Q(owner_team_id__in=ctx.teams)
-                print(f"[MIXINS] Added owner_team filter for teams: {ctx.teams}")
+                logger.debug("added_owner_team_filter", extra={
+                    'correlation_id': get_correlation_id(),
+                    'teams': ctx.teams,
+                    'event': 'queryset_filter'
+                })
             
             # Also include user's own items
             if hasattr(queryset.model, 'owner_user_id'):
                 q_filter |= Q(owner_user_id=ctx.user_id)
-                print(f"[MIXINS] Added owner_user filter for user: {ctx.user_id}")
+                logger.debug("added_owner_user_filter", extra={
+                    'correlation_id': get_correlation_id(),
+                    'user_id': ctx.user_id,
+                    'event': 'queryset_filter'
+                })
             
             if hasattr(queryset.model, 'created_by_id'):
                 q_filter |= Q(created_by_id=ctx.user_id)
-                print(f"[MIXINS] Added created_by filter for user: {ctx.user_id}")
+                logger.debug("added_created_by_filter", extra={
+                    'correlation_id': get_correlation_id(),
+                    'user_id': ctx.user_id,
+                    'event': 'queryset_filter'
+                })
             
             if hasattr(queryset.model, 'assigned_to_user_id'):
                 q_filter |= Q(assigned_to_user_id=ctx.user_id)
-                print(f"[MIXINS] Added assigned_to_user filter for user: {ctx.user_id}")
+                logger.debug("added_assigned_to_filter", extra={
+                    'correlation_id': get_correlation_id(),
+                    'user_id': ctx.user_id,
+                    'event': 'queryset_filter'
+                })
             
             if q_filter:
                 queryset = queryset.filter(q_filter)
-                print(f"[MIXINS] Applied team scope filter")
+                logger.debug("applied_team_scope_filter", extra={
+                    'correlation_id': get_correlation_id(),
+                    'event': 'queryset_filter'
+                })
             else:
-                print(f"[MIXINS] No team ownership fields found - using client scope")
+                logger.debug("no_team_ownership_fields", extra={
+                    'correlation_id': get_correlation_id(),
+                    'event': 'queryset_filter'
+                })
             
         elif scope == 'mine':
             # Mine scope - filter by user ownership
-            print(f"[MIXINS] Applying 'mine' scope filter")
+            logger.debug("scope_mine", extra={
+                'correlation_id': get_correlation_id(),
+                'scope': 'mine',
+                'user_id': ctx.user_id,
+                'event': 'queryset_filter'
+            })
             
             # Build Q filter for mine scope
             q_filter = Q()
@@ -334,33 +495,62 @@ class ScopedQuerysetMixin:
             # Check ownership map for user fields
             if hasattr(queryset.model, 'owner_user_id'):
                 q_filter |= Q(owner_user_id=ctx.user_id)
-                print(f"[MIXINS] Added owner_user filter")
+                logger.debug("added_owner_user_filter_mine", extra={
+                    'correlation_id': get_correlation_id(),
+                    'user_id': ctx.user_id,
+                    'event': 'queryset_filter'
+                })
             
             if hasattr(queryset.model, 'created_by_id'):
                 q_filter |= Q(created_by_id=ctx.user_id)
-                print(f"[MIXINS] Added created_by filter")
+                logger.debug("added_created_by_filter_mine", extra={
+                    'correlation_id': get_correlation_id(),
+                    'user_id': ctx.user_id,
+                    'event': 'queryset_filter'
+                })
             
             if hasattr(queryset.model, 'assigned_to_user_id'):
                 q_filter |= Q(assigned_to_user_id=ctx.user_id)
-                print(f"[MIXINS] Added assigned_to_user filter")
+                logger.debug("added_assigned_to_filter_mine", extra={
+                    'correlation_id': get_correlation_id(),
+                    'user_id': ctx.user_id,
+                    'event': 'queryset_filter'
+                })
             
             # Special case for User model - can only see themselves
             if queryset.model.__name__ == 'User':
                 q_filter = Q(id=ctx.user_id)
-                print(f"[MIXINS] User model - filtering to self only")
+                logger.debug("user_model_self_only", extra={
+                    'correlation_id': get_correlation_id(),
+                    'user_id': ctx.user_id,
+                    'event': 'queryset_filter'
+                })
             
             if q_filter:
                 queryset = queryset.filter(q_filter)
-                print(f"[MIXINS] Applied mine scope filter")
+                logger.debug("applied_mine_scope_filter", extra={
+                    'correlation_id': get_correlation_id(),
+                    'event': 'queryset_filter'
+                })
             else:
                 # No ownership fields - fallback to empty for safety
-                print(f"[MIXINS] No ownership fields found - returning empty for 'mine' scope")
+                logger.debug("no_ownership_fields_mine_scope", extra={
+                    'correlation_id': get_correlation_id(),
+                    'event': 'queryset_filter'
+                })
                 return queryset.none()
         
-        print(f"[MIXINS] Final queryset count: {queryset.count()}")
-        print(f"[MIXINS] ========== ScopedQuerysetMixin.get_queryset() END ==========")
+        logger.debug("queryset_final", extra={
+            'correlation_id': get_correlation_id(),
+            'module': module,
+            'action': action,
+            'scope': scope if 'scope' in locals() else '-',
+            'final_count': queryset.count(),
+            'event': 'queryset_filter'
+        })
         
         return queryset
+    
     def _get_action(self) -> str:
         """
         Get the current action being performed.

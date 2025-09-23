@@ -20,6 +20,20 @@ from ..serializers.user_serializer import (
     UserListSerializer,
 
 )
+import logging
+from django.conf import settings
+
+# Import robuste de get_correlation_id
+try:
+    from backend.core.logging.context import get_correlation_id
+except ImportError:
+    try:
+        from core.logging.context import get_correlation_id
+    except ImportError:
+        def get_correlation_id():
+            return '-'
+
+logger = logging.getLogger(__name__)
 
 
 class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
@@ -145,10 +159,20 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         GET /client/users/{id}/
         """
         try:
-            user = self.get_object() 
+            user = self.get_object()
+
+            is_self = str(user.id) == str(request.user.id)
+            logger.info("user_retrieve", extra={
+                'correlation_id': get_correlation_id(),
+                'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
+                'target_user_id': str(user.id),
+                'client_id': getattr(request, 'client_id', '-'),
+                'is_self': is_self,
+                'event': 'user_retrieve'
+            }) 
             
             serializer = UserSerializer(user)
-            print(serializer.data)
+
             return Response({
                 'success': True,
                 'data': serializer.data
@@ -170,7 +194,6 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         - Seuls Admin et SuperUser peuvent créer des users AVEC is_superuser=True
         """
         with transaction.atomic():
-            print(f"Create Requete data: {request.data}")
             
             # Serializer avec validation
             serializer = self.get_serializer(data=request.data)
@@ -180,6 +203,16 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
             # Créer l'utilisateur
             user = serializer.save()
+
+            logger.info("user_create_success", extra={
+                'correlation_id': get_correlation_id(),
+                'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
+                'client_id': getattr(request, 'client_id', '-'),
+                'new_user_id': str(user.id),
+                'new_user_email': user.email[:3] + '***' if user.email else '-',
+                'new_user_role': str(user.role.id) if user.role else '-',
+                'event': 'user_create'
+            })
             
             return Response({
                 'success': True,
@@ -204,6 +237,16 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 
                 # Sauvegarder les modifications
                 updated_user = serializer.save()
+
+                logger.info("user_update_success", extra={
+                    'correlation_id': get_correlation_id(),
+                    'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
+                    'target_user_id': str(user.id),
+                    'client_id': getattr(request, 'client_id', '-'),
+                    'fields_updated': list(request.data.keys()),
+                    'is_self': str(user.id) == str(request.user.id),
+                    'event': 'user_update'
+                })
                 
                 return Response({
                     'success': True,
@@ -268,10 +311,20 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             
             # Mettre à jour le mot de passe
             serializer.update_password(user, serializer.validated_data)
+
+            logger.info("password_change_success", extra={
+                'correlation_id': get_correlation_id(),
+                'actor_user_id': str(request.user.id),
+                'target_user_id': str(user.id),
+                'client_id': getattr(request, 'client_id', '-'),
+                'is_self': is_self,
+                'is_admin': is_admin,
+                'event': 'password_change'
+            })
             
             # Logger l'action si nécessaire
             if is_admin and not is_self:
-                print(f"Admin {request.user.email} changed password for {user.email}")
+                logger.info(f"Admin {request.user.email} changed password for {user.email}")
             
             return Response({
                 'success': True,
@@ -306,6 +359,16 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
                 user_name = user.get_full_name()
                 user.delete()
+
+                logger.info("user_delete_success", extra={
+                    'correlation_id': get_correlation_id(),
+                    'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
+                    'target_user_id': str(user.id),
+                    'target_user_email': user.email[:3] + '***' if user.email else '-',
+                    'client_id': getattr(request, 'client_id', '-'),
+                    'deleted_user_name': user_name,
+                    'event': 'user_delete'
+                })
 
                 # Filet de sécurité: s'assurer qu'un admin existe toujours
                 client.ensure_admin_invariants()
@@ -407,6 +470,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # Vérifier l'accès aux performances
         from permissions.compat import get_auth_ctx
         ctx = get_auth_ctx(request)
+
+        logger.debug("user_performance_access", extra={
+            'correlation_id': get_correlation_id(),
+            'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
+            'target_user_id': str(target_user.id),
+            'client_id': getattr(request, 'client_id', '-'),
+            'is_self': is_self,
+            'period_start': str(period_start),
+            'period_end': str(period_end),
+            'event': 'performance_view'
+        })
         
         is_admin = False
         is_manager = False
@@ -713,6 +787,13 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
              # Vérifier les permissions - seuls Admin et SuperUser peuvent voir cette liste
             from permissions.compat import get_auth_ctx
             ctx = get_auth_ctx(request)
+
+            logger.debug("superusers_list_access", extra={
+                'correlation_id': get_correlation_id(),
+                'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
+                'client_id': client_id,
+                'event': 'superusers_list'
+            })
             
             # Récupérer le client_id du contexte pour garantir le multi-tenant
             client_id = self.get_client_id()
@@ -847,10 +928,19 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 if grant:
                     target_user.is_staff = True  # Superuser doit avoir is_staff
                 target_user.save(update_fields=['is_superuser', 'is_staff', 'updated_at'])
+
+                logger.info("superuser_status_changed", extra={
+                    'correlation_id': get_correlation_id(),
+                    'user_id': str(request.user.id) if hasattr(request, 'user') else '-',
+                    'target_user_id': str(target_user.id),
+                    'client_id': client_id,
+                    'action': 'granted' if grant else 'revoked',
+                    'event': 'superuser_grant'
+                })
                 
                 # Log l'action
                 action = "granted to" if grant else "revoked from"
-                print(f"[AUDIT] Superuser status {action} {target_user.email} by {request.user.email}")
+                logger.info(f"[AUDIT] Superuser status {action} {target_user.email} by {request.user.email}")
                 
                 # Assurer les invariants
                 target_user.client_account.ensure_admin_invariants()
