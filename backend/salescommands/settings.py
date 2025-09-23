@@ -72,6 +72,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'core.logging.middlewares.RequestIdMiddleware',
+    'core.logging.request_logging.RequestLoggingMiddleware',
+    
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -345,3 +348,242 @@ def check_permission_config():
 # Run the check (comment out in production)
 if DEBUG:
     check_permission_config()
+
+
+# =========================================================================
+# LOGGING CONFIGURATION - MVP
+# =========================================================================
+
+import os
+import time
+import logging.handlers
+from pathlib import Path
+
+
+# UTC Formatter to ensure real UTC timestamps
+class UTCFormatter(logging.Formatter):
+    """Formatter that converts timestamp to UTC"""
+    converter = time.gmtime
+
+
+# Custom filter for safe logging (sanitization + default values)
+class SafeExtraFilter(logging.Filter):
+    """
+    Filter that:
+    1. Injects default values for missing context keys (avoid KeyError)
+    2. Sanitizes sensitive data (passwords, tokens, emails, etc.)
+    3. Truncates large values to prevent log bloat
+    """
+    
+    # Default values for structured logging keys
+    DEFAULTS = {
+        'correlation_id': '-',
+        'user_id': '-', 
+        'client_id': '-',
+        'method': '-',
+        'path': '-',
+        'status_code': '-',
+        'duration_ms': '-',
+        'remote_ip': '-'
+    }
+    
+    # Sensitive keys to mask (case-insensitive substring match)
+    SENSITIVE_PATTERNS = [
+        'password', 'token', 'authorization', 'cookie', 
+        'secret', 'api_key', 'jwt', 'bearer'
+    ]
+    
+    # Keys containing payloads to fully redact
+    PAYLOAD_KEYS = ['body', 'request_data', 'payload']
+    
+    # Built-in LogRecord attributes to skip
+    BUILTIN_ATTRS = {
+        'name', 'msg', 'args', 'created', 'filename', 'funcName', 
+        'levelname', 'levelno', 'lineno', 'module', 'msecs', 
+        'message', 'pathname', 'process', 'processName', 
+        'relativeCreated', 'stack_info', 'thread', 'threadName', 
+        'exc_info', 'exc_text', 'stack_info', 'getMessage'
+    }
+    
+    def filter(self, record):
+        """Process each log record for safety"""
+        
+        # 1. Inject default values for missing keys
+        for key, default_value in self.DEFAULTS.items():
+            if not hasattr(record, key):
+                setattr(record, key, default_value)
+        
+        # 2. Sanitize all extra attributes (iterate on __dict__ for performance)
+        for attr_name, attr_value in list(record.__dict__.items()):
+            # Skip built-in attributes
+            if attr_name.startswith('_') or attr_name in self.BUILTIN_ATTRS:
+                continue
+            
+            # Skip if None or already a default value
+            if attr_value is None or attr_value in self.DEFAULTS.values():
+                continue
+                
+            # Convert to string for processing
+            attr_value_str = str(attr_value)
+            attr_name_lower = attr_name.lower()
+            
+            # 2a. Redact payload/body completely
+            if any(payload_key in attr_name_lower for payload_key in self.PAYLOAD_KEYS):
+                setattr(record, attr_name, '[PAYLOAD_REDACTED]')
+                continue
+            
+            # 2b. Check for sensitive patterns
+            is_sensitive = any(pattern in attr_name_lower for pattern in self.SENSITIVE_PATTERNS)
+            
+            if is_sensitive:
+                # Mask the value
+                if '@' in attr_value_str and '.' in attr_value_str:
+                    # Email-like value
+                    setattr(record, attr_name, self._mask_email(attr_value_str))
+                else:
+                    # Generic sensitive data
+                    setattr(record, attr_name, '[REDACTED]')
+                continue
+            
+            # 2c. Check value content for emails (even in non-sensitive keys)
+            if '@' in attr_value_str and '.' in attr_value_str and len(attr_value_str) < 100:
+                # Likely an email, mask it
+                setattr(record, attr_name, self._mask_email(attr_value_str))
+                continue
+            
+            # 2d. Truncate large values
+            if len(attr_value_str) > 2000:
+                setattr(record, attr_name, attr_value_str[:2000] + '[TRUNCATED_2000]')
+        
+        return True
+    
+    def _mask_email(self, email):
+        """Mask email keeping domain: j***@domain.com"""
+        try:
+            if '@' in email:
+                local, domain = email.split('@', 1)
+                if len(local) > 0:
+                    masked = local[0] + '***@' + domain
+                    return masked
+            return email
+        except:
+            return '[EMAIL_REDACTED]'
+
+
+# Logging configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    
+    # Formatters
+    'formatters': {
+        'structured': {
+            '()': UTCFormatter,  # Force UTC timestamps
+            'format': (
+                'timestamp=%(asctime)s level=%(levelname)s logger=%(name)s '
+                'msg="%(message)s" file=%(module)s line=%(lineno)d func=%(funcName)s '
+                'correlation_id=%(correlation_id)s user_id=%(user_id)s client_id=%(client_id)s '
+                'method=%(method)s path="%(path)s" status=%(status_code)s '
+                'duration_ms=%(duration_ms)s ip=%(remote_ip)s'
+            ),
+            'datefmt': '%Y-%m-%dT%H:%M:%S.%fZ',  # UTC ISO-8601 format with Z
+        }
+    },
+    
+    # Filters
+    'filters': {
+        'safe_extra': {
+            '()': SafeExtraFilter,
+        }
+    },
+    
+    # Handlers (will be set conditionally below)
+    'handlers': {},
+    
+    # Loggers
+    'loggers': {
+        # Project root logger (catches all backend.* loggers)
+        'backend': {
+            'handlers': [],  # Will be set below
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        
+        # Django system loggers
+        'django': {
+            'handlers': [],  # Will be set below
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': [],  # Will be set below
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'django.server': {
+            'handlers': [],  # Will be set below
+            'level': 'WARNING',  # Reduce noise from dev server
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': [],  # Will be set below
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+    
+    # Root logger (catches everything else)
+    'root': {
+        'handlers': [],  # Will be set below
+        'level': 'DEBUG' if DEBUG else 'INFO',  # Changed from WARNING
+    }
+}
+
+# Determine if file logging should be enabled (via ENV variable)
+enable_file_logs = os.getenv('ENABLE_FILE_LOGS', '').lower() in {'1', 'true', 'yes'}
+logs_dir = Path(BASE_DIR / 'logs')
+use_files = enable_file_logs and logs_dir.exists()
+
+# Console handler (always present)
+LOGGING['handlers']['console'] = {
+    'class': 'logging.StreamHandler',
+    'formatter': 'structured',
+    'filters': ['safe_extra'],
+}
+
+# Add file handlers if enabled and directory exists
+if use_files:
+    LOGGING['handlers']['file'] = {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': str(logs_dir / 'app.log'),
+        'maxBytes': 5 * 1024 * 1024,  # 5MB
+        'backupCount': 5,
+        'formatter': 'structured',
+        'filters': ['safe_extra'],
+    }
+    LOGGING['handlers']['error_file'] = {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': str(logs_dir / 'error.log'),
+        'maxBytes': 5 * 1024 * 1024,  # 5MB
+        'backupCount': 5,
+        'formatter': 'structured',
+        'filters': ['safe_extra'],
+        'level': 'ERROR',
+    }
+    active_handlers = ['console', 'file', 'error_file']
+else:
+    # Console only (default for PaaS or when file logs disabled)
+    active_handlers = ['console']
+
+# Apply handlers to all loggers
+for logger_name in LOGGING['loggers']:
+    LOGGING['loggers'][logger_name]['handlers'] = active_handlers
+LOGGING['root']['handlers'] = active_handlers
+
+# Log configuration status (only in DEBUG)
+if DEBUG:
+    import sys
+    config_msg = f"Logging configured: file_logs={use_files}, handlers={active_handlers}"
+    if not use_files and enable_file_logs:
+        config_msg += f" (logs/ directory not found)"
+    print(f"[LOGGING] {config_msg}", file=sys.stderr)

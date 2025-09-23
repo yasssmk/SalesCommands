@@ -14,7 +14,6 @@ from django.db.models import Q
 from django.contrib.auth import get_user_model
 
 from .compat import get_auth_ctx, AuthContext
-from .checks import resolve_tier
 
 import logging
 
