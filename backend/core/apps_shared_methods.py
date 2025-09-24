@@ -463,6 +463,26 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         print("="*50 + "\n")
 
         if isinstance(exc, Http404):
+
+            action_map = {'GET': 'retrieve', 'PATCH': 'update', 'PUT': 'update', 'DELETE': 'delete'}
+            action = action_map.get(getattr(request, 'method', 'GET'), 'read')
+            target_id = '-'
+            try:
+                if hasattr(self, 'kwargs') and isinstance(self.kwargs, dict):
+                    target_id = str(self.kwargs.get('pk', '-'))
+            except Exception:
+                pass
+
+            enriched = {
+                **log_context,
+                'event': 'resource_not_found',
+                'resource': getattr(self, 'entity_name', '-') or '-',
+                'target_id': target_id,
+                'action': action,
+                'scope': 'client',
+            }
+            logger.info("resource_not_found", extra=enriched)
+            
             return Response(
                 StandardizedValidationError._format_detail(CoreErrorMessages.OBJECT_NOT_FOUND),
                 status=status.HTTP_404_NOT_FOUND

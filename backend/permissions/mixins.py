@@ -56,109 +56,111 @@ class ScopedPermission(permissions.BasePermission):
             module = 'accounts'
     """
     
+   # permissions/mixins.py
+
+class ScopedPermission(permissions.BasePermission):
+    
     def has_permission(self, request: Request, view: APIView) -> bool:
-        """
-        Check if the request should be permitted.
-        
-        Args:
-            request: DRF request
-            view: The view being accessed
-            
-        Returns:
-            True if permission granted, False otherwise
-        """
+        # Common log context (no PII)
+        base_extra = {
+            'correlation_id': get_correlation_id(),
+            'user_id': str(getattr(request.user, 'id', '-')) if getattr(request, 'user', None) else '-',
+            'client_id': getattr(request, 'client_id', '-'),
+            'method': getattr(request, 'method', '-'),
+            'path': getattr(request, 'path', '-'),
+            'origin': request.auth.get('origin') if isinstance(getattr(request, 'auth', None), dict) else '-',
+            'role_name': getattr(request.user, 'role_name', '-') if getattr(request, 'user', None) else '-',
+            'event': 'permission_check',
+        }
+
         # Skip if permissions system is disabled
         if not is_enabled():
             logger.debug("permissions_system_disabled", extra={
-                'correlation_id': get_correlation_id(),
+                **base_extra,
                 'view': view.__class__.__name__,
-                'event': 'permissions_check'
             })
             return True
-        
+
         # Get module from view
         module = getattr(view, 'module', None)
         if not module:
-            # No module specified - deny by default
             logger.warning("permission_denied_no_module", extra={
-                'correlation_id': get_correlation_id(),
+                **base_extra,
                 'view': view.__class__.__name__,
-                'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
-                'event': 'permission_denied'
+                'reason_code': 'missing_module',
+                'event': 'permission_denied',
             })
             return False
-        
+
         # Skip if module is not enabled
         if not is_module_enabled(module):
             logger.debug("module_not_enabled", extra={
-                'correlation_id': get_correlation_id(),
+                **base_extra,
                 'module': module,
                 'view': view.__class__.__name__,
-                'event': 'permissions_check'
             })
             return True
-        
-        # Get action
+
+        # Resolve action (normalize PATCH -> update)
         action = self._get_action(view)
-        
-        # Normalize PATCH to UPDATE
         if action == 'patch':
             action = 'update'
-        
+
         logger.debug("permission_check_start", extra={
-            'correlation_id': get_correlation_id(),
+            **base_extra,
             'biz_module': module,
             'action': action,
-            'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
-            'method': request.method,
-            'path': request.path if hasattr(request, 'path') else '-',
-            'event': 'permission_check'
         })
-        
-        # Check if this action has a custom policy
+
+        # Custom action policy first
         action_policies = getattr(view, 'action_policies', {})
         if action in action_policies:
             logger.debug("using_action_policy", extra={
-                'correlation_id': get_correlation_id(),
+                **base_extra,
                 'biz_module': module,
                 'action': action,
-                'event': 'permission_check'
             })
-            # Use action_policies for this specific action
             is_permitted, scope = check_action_policy_permission(
                 action_policies, action, request, module
             )
-            
-            # Store the resolved scope on the request for later use
+
             if is_permitted:
+                # Store resolved scope for downstream usage
                 request._applied_scope = scope
-            
+                logger.debug("permission_granted", extra={
+                    **base_extra,
+                    'biz_module': module,
+                    'action': action,
+                    'source': 'action_policy',
+                })
+            else:
+                logger.info("permission_denied", extra={
+                    **base_extra,
+                    'biz_module': module,
+                    'action': action,
+                    'reason_code': 'action_policy_denied',
+                })
             return is_permitted
-        
+
         # Standard registry check
         result = has_permission(request, module, action)
-        
+
         if not result:
             logger.info("permission_denied", extra={
-                'correlation_id': get_correlation_id(),
+                **base_extra,
                 'biz_module': module,
                 'action': action,
-                'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
-                'client_id': getattr(request, 'client_id', '-'),
-                'method': request.method,
-                'path': request.path if hasattr(request, 'path') else '-',
-                'event': 'permission_denied'
+                'reason_code': 'policy_denied',
             })
         else:
             logger.debug("permission_granted", extra={
-                'correlation_id': get_correlation_id(),
+                **base_extra,
                 'biz_module': module,
                 'action': action,
-                'user_id': str(request.user.id) if hasattr(request, 'user') and hasattr(request.user, 'id') else '-',
-                'event': 'permission_granted'
             })
-        
+
         return result
+
     
     def has_object_permission(self, request: Request, view: APIView, obj) -> bool:
         """

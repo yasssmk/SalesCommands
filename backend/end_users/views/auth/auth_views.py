@@ -3,7 +3,7 @@
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-
+from django.conf import settings
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
@@ -14,10 +14,11 @@ from ...serializers.user_serializer import (
     UserSerializer
 )
 import logging
-
-from core.logging import get_logger, ctx_from_request  
+from permissions import compat
+from core.logging import get_logger, ctx_from_request 
 
 logger = get_logger(__name__)
+
 
 
 class UserLoginView(BaseAPIView):
@@ -66,16 +67,30 @@ class UserLoginView(BaseAPIView):
         })
         logger.info("login_success", extra=ctx)
 
-        response.data.update({
+        # AJOUT CRITIQUE : Définir request.user pour que get_auth_ctx() ne retourne pas "Anonymous"
+        request.user = user
+        
+        # Peupler request.auth pour que get_auth_ctx puisse l'extraire
+        client_id_val = getattr(user, 'client_account_id', None)
+        request.auth = {
+            "user_id": str(user.id),
+            "client_account": str(client_id_val) if client_id_val else None,
+            "origin": "end_users",
+        }
+
+        # IMPORTANT: pas de .update() sur Response(data=None) -> on assigne directement
+        response.data = {
             "origin": "end_users",
             "message": "Login successful",
             "user": {
                 "id": str(user.id),
                 "name": user.get_full_name(),
                 "email": user.email,
-                "role": user.role_name
+                "role": getattr(user, 'role_name', None),
+                "client_id": str(client_id_val) if client_id_val else None,
+                "client_name": getattr(getattr(user, "client_account", None), "name", None),
             }
-        })
+        }
 
         return response
 
@@ -188,10 +203,7 @@ class UserRefreshTokenView(BaseAPIView):
                 serializer_class=UserSerializer
             )
 
-            # Create response object first so cookies can be set on it
             response = Response(status=status.HTTP_200_OK)
-            
-            # Pass request for context
             result = auth_service.refresh_tokens(request, response)
 
             # Log success with user info
@@ -204,7 +216,21 @@ class UserRefreshTokenView(BaseAPIView):
             })
             logger.info("token_refresh_success", extra=ctx)
             
-            # Set the enriched data (message + user)
+            # Peupler request.user et request.auth pour le middleware
+            user_id = result.get('user', {}).get('id')
+            client_id_val = result.get('user', {}).get('client_id')
+            
+            if user_id:
+                # Récupérer l'objet user pour request.user
+                user = User.objects.get(id=user_id)
+                request.user = user
+                
+                request.auth = {
+                    "user_id": str(user_id),
+                    "client_account": str(client_id_val) if client_id_val else None,
+                    "origin": "end_users",
+                }
+            
             response.data = result
             
             return response

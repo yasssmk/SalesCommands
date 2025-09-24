@@ -13,6 +13,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
+from django.http import Http404
 from ..models import User
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from ..serializers.user_serializer import (
@@ -165,7 +166,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             serializer = UserSerializer(user)
             return Response({"success": True, "data": serializer.data})
 
-        except User.DoesNotExist:
+        except (User.DoesNotExist, Http404):
             ctx = ctx_from_request(request)
             ctx.update({
                 "event": "user_retrieve_not_found",
@@ -179,6 +180,18 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        ctx = ctx_from_request(request)
+        total = response.data.get('count', '-') if isinstance(response.data, dict) else '-'
+        ctx.update({
+            "event": "user_list",
+            "result_count": total,
+            "role_name": getattr(request.user, 'role_name', '-') if getattr(request, 'user', None) else '-',
+        })
+        logger.info("user_list", extra=ctx)
+        return response
         
     def create(self, request, *args, **kwargs):
         """
@@ -238,7 +251,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     "data": UserSerializer(updated_user).data,
                 })
 
-        except User.DoesNotExist:
+        except (User.DoesNotExist, Http404):
 
             ctx = ctx_from_request(request)
             ctx.update({
@@ -370,7 +383,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     'message': f'User "{user_name}" deleted successfully'
                 }, status=status.HTTP_204_NO_CONTENT)
 
-        except User.DoesNotExist:
+        except (User.DoesNotExist, Http404):
 
             ctx = ctx_from_request(request)
             ctx.update({
@@ -381,7 +394,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 "scope": "client",
             })
             logger.info("user_delete_not_found", extra=ctx)
-            
+
             return Response({
                 'success': False,
                 'error': CoreErrorMessages.OBJECT_NOT_FOUND

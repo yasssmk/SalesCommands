@@ -17,6 +17,21 @@ from django.conf import settings
 from .context import get_correlation_id
 from .sanitize import format_headers_for_logging
 
+try:
+    from backend.permissions.compat import get_auth_ctx
+except ImportError:
+    try:
+        from permissions.compat import get_auth_ctx
+    except ImportError:
+        # Fallback si permissions non disponible
+        def get_auth_ctx(request):
+            class DummyContext:
+                client_id = None
+                user_id = None
+                origin = None
+                jti = None
+            return DummyContext()
+
 # Use standard logger to avoid circular import
 logger = logging.getLogger(__name__)
 
@@ -86,6 +101,21 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         
         # Log level for requests (DEBUG in development, INFO in production)
         self.request_log_level = logging.DEBUG if settings.DEBUG else logging.INFO
+
+        # ⚠️ Alerte DEBUG si on utilise le fallback DummyContext
+        try:
+            is_dummy = (
+                getattr(get_auth_ctx, "__name__", "") == "get_auth_ctx" and
+                getattr(get_auth_ctx, "__module__", "") == __name__  # le fallback est défini dans ce module
+            )
+        except Exception:
+            is_dummy = False  # par prudence
+
+        if settings.DEBUG and is_dummy:
+            logger.warning(
+                "request_logging: get_auth_ctx not importable; using DummyContext "
+                "(client_id may be '-')"
+            )
     
     def process_request(self, request: HttpRequest) -> None:
         """
@@ -173,13 +203,22 @@ class RequestLoggingMiddleware(MiddlewareMixin):
             'response_size': len(response.content) if hasattr(response, 'content') else 0,
         }
         
-        # Add user info if available
-        if hasattr(request, 'user') and request.user.is_authenticated:
-            context['user_id'] = str(request.user.id)
+        # CHANGEMENT PRINCIPAL : Utiliser get_auth_ctx() pour extraire le contexte unifié
+        # C'est la même source que celle utilisée par les permissions
+        auth_ctx = get_auth_ctx(request)
         
-        # Add client_id if available  
-        if hasattr(request, 'client_id'):
-            context['client_id'] = str(request.client_id)
+        # Peupler les champs depuis l'AuthContext
+        context['user_id'] = str(auth_ctx.user_id) if auth_ctx.user_id else '-'
+        context['client_id'] = str(auth_ctx.client_id) if auth_ctx.client_id else '-'
+        
+        # Ajouter origin et jti s'ils sont disponibles
+        if auth_ctx.origin:
+            context['origin'] = auth_ctx.origin
+        else:
+            context['origin'] = '-'
+            
+        if auth_ctx.jti:
+            context['jti'] = auth_ctx.jti
         
         # Determine log level based on status code
         if response.status_code >= 500:
@@ -197,54 +236,42 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         )
         
         return response
+
     
     def process_exception(self, request: HttpRequest, exception: Exception) -> None:
-        """
-        Log exceptions that occur during request processing.
-        
-        Args:
-            request: The HTTP request
-            exception: The exception that occurred
-        """
-        # Skip if marked for skipping
         if getattr(request, '_skip_logging', False):
             return None
-        
-        # Calculate duration if we have start time
+
         duration_ms = '-'
         if hasattr(request, '_start_time'):
             duration = time.perf_counter() - request._start_time
             duration_ms = f"{duration * 1000:.2f}"
-        
-        # Build exception context
+
         context = {
             'correlation_id': get_correlation_id(),
-            'method': request.method,
-            'path': request.path,
+            'method': getattr(request, 'method', '-'),
+            'path': getattr(request, 'path', '-'),
             'duration_ms': duration_ms,
             'remote_ip': getattr(request, '_client_ip', '-'),
             'exception_type': exception.__class__.__name__,
             'exception_message': str(exception),
         }
-        
-        # Add user info if available
-        if hasattr(request, 'user') and request.user.is_authenticated:
-            context['user_id'] = str(request.user.id)
-        
-        # Add client_id if available
-        if hasattr(request, 'client_id'):
-            context['client_id'] = str(request.client_id)
-        
-        # Log with simple message
+
+        # >>> unifier la source avec les permissions
+        auth_ctx = get_auth_ctx(request)
+        context['user_id'] = str(auth_ctx.user_id) if getattr(auth_ctx, 'user_id', None) else '-'
+        context['client_id'] = str(auth_ctx.client_id) if getattr(auth_ctx, 'client_id', None) else '-'
+        context['origin'] = getattr(auth_ctx, 'origin', '-') or '-'
+        if getattr(auth_ctx, 'jti', None):
+            context['jti'] = auth_ctx.jti
+
         logger.error(
-            "request_failed",  # Simple, fixed message
+            "request_failed",
             extra=context,
-            exc_info=True if settings.DEBUG else False  # Include traceback in DEBUG
+            exc_info=True if settings.DEBUG else False
         )
-        
-        # Let Django continue with exception handling
         return None
-    
+        
     def _should_skip_logging(self, path: str) -> bool:
         """
         Check if a path should be skipped from logging.
