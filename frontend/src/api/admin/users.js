@@ -69,10 +69,24 @@ export function useGetUsers() {
 }
 
 /**
- * ✅ GET SINGLE USER - Clé tenant standardisée
+ * ✅ GET SINGLE USER - Pour UN utilisateur spécifique
+ * @param {string} userId - ID de l'utilisateur à récupérer
+ * 
+ * ⚠️ IMPORTANT: Pour le current user, utiliser useCurrentUser() à la place
  */
 export function useGetUser(userId) {
   const { tenantId } = useAuth();
+
+  // ✅ GUARD: Si pas d'userId, retourner un état vide sans faire d'appel
+  if (!userId) {
+    console.warn('⚠️ useGetUser called without userId - use useCurrentUser() for current user');
+    return {
+      user: null,           // UN user
+      userLoading: false,
+      userError: null,
+      userValidating: false
+    };
+  }
 
   // ✅ STANDARDISÉ: tenantKey pour single user
   const swrKey = userId && tenantId 

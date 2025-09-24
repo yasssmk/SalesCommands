@@ -111,6 +111,10 @@ export const logoutUser = async () => {
 /**
  * ✅ GET CURRENT USER - Fonction centrale pour vérification auth
  * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
+ * ⚠️ USAGE INTERNE UNIQUEMENT PAR useAuth()
+ * ⚠️ NE PAS UTILISER DIRECTEMENT - Utiliser useCurrentUser() hook à la place
+ * 
+ * @private
  */
 export const getCurrentUser = async () => {
   debugLog('👤 Getting current user...');
@@ -118,48 +122,59 @@ export const getCurrentUser = async () => {
   const result = await api.get(authConfig.ENDPOINTS.USER);
   
   if (result.success) {
-    debugLog('✅ Current user retrieved successfully');
+    const userData = result.data.user || result.data;
+
+    debugLog('✅ Current user retrieved:', {
+      id: userData.id,
+      email: userData.email,
+      role: userData.role
+    });
+
     return {
       success: true,
-      user: result.data.user || result.data
+      user: userData
     };
   } else {
     debugLog('❌ Failed to get current user:', result.error);
     // ✅ Session invalide / non authentifié → on nettoie lastRoute
     resetAuthState();
     
-    return {
+    return { 
       success: false,
       error: result.error
     };
   }
 };
 
-export function useGetCurrentUserClient() {
-  const { data, error, isLoading, isValidating } = useSWR(
-    'auth/current-user',
-    async () => {
-      const res = await api.get(authConfig.ENDPOINTS.USER); 
-      if (!res.success) throw new Error(res.error || 'Failed to fetch current user');
-      return res.data.user || res.data;
-    },
-    {
-      revalidateIfStale: false,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false
-    }
-  );
+// NOTE: Pour accéder au current user, utiliser:
+// - import { useCurrentUser } from 'hooks/useCurrentUser';
+// - const { currentUser, currentUserLoading } = useCurrentUser();
 
-  const user = data || null;
-  return {
-    user,
-    clientId: user?.client_id ?? null,
-    clientName: user?.client_name ?? null,
-    currentUserLoading: isLoading,
-    currentUserError: error,
-    currentUserValidating: isValidating
-  };
-}
+// export function useGetCurrentUserClient() {
+//   const { data, error, isLoading, isValidating } = useSWR(
+//     'auth/current-user',
+//     async () => {
+//       const res = await api.get(authConfig.ENDPOINTS.USER); 
+//       if (!res.success) throw new Error(res.error || 'Failed to fetch current user');
+//       return res.data.user || res.data;
+//     },
+//     {
+//       revalidateIfStale: false,
+//       revalidateOnFocus: false,
+//       revalidateOnReconnect: false
+//     }
+//   );
+
+//   const user = data || null;
+//   return {
+//     user,
+//     clientId: user?.client_id ?? null,
+//     clientName: user?.client_name ?? null,
+//     currentUserLoading: isLoading,
+//     currentUserError: error,
+//     currentUserValidating: isValidating
+//   };
+// }
 
 /**
  * ✅ CHECK AUTH STATUS - Fonction originale restaurée

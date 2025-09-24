@@ -2,11 +2,13 @@
 import Grid from '@mui/material/Grid';
 import UserCountCard from 'sections/admin/users/UserSeatsCard';
 import { useGetClientSeats } from 'api/admin/users';
-import { useGetCurrentUserClient } from 'api/auth';
+import { useCurrentUser } from 'hooks/useCurrentUser';
 
 export default function SeatsSummary() {
   // Récupère clientId depuis l’auth courante
-  const { clientId } = useGetCurrentUserClient();
+  const { currentUser } = useCurrentUser();
+  const clientId = currentUser?.client_id || null;
+  const clientName = currentUser?.client_name || null;
 
   // Appelle /client-accounts/:id/stats/ via notre hook
   const { seats, seatsUsed, seatsLeft, seatsLoading } = useGetClientSeats(clientId);

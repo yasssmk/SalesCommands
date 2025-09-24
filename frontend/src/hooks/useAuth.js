@@ -35,6 +35,7 @@ export function AuthProvider({ children }) {
   // Refs pour optimisation
   const refreshTimerRef = useRef(null);
   const isRefreshingRef = useRef(false);
+  const hasInitializedRef = useRef(false);
 
   // ==============================|| HELPER FUNCTIONS ||============================== //
 
@@ -270,6 +271,13 @@ export function AuthProvider({ children }) {
     let mounted = true;
 
     const initializeAuth = async () => {
+
+      // ✅ Skip si déjà initialisé avec un user
+      if (hasInitializedRef.current && user) {
+        debugLog('ℹ️ Auth already initialized with user, skipping re-fetch');
+        return;
+      }
+
       // Routes publiques où l'auth n'est pas nécessaire
       const publicRoutes = authConfig.PUBLIC_ROUTES || ['/login', '/register', '/forgot-password'];
       
@@ -278,6 +286,14 @@ export function AuthProvider({ children }) {
         setIsLoading(false);
         return;
       }
+
+      // ✅ Skip re-init sur navigation interne si user déjà chargé
+      if (hasInitializedRef.current && user) {
+        debugLog('ℹ️ Navigation within admin with existing user, skipping re-init');
+        setIsLoading(false);
+        return;
+      }
+
 
       try {
         debugLog('🚀 Initializing authentication...');
@@ -296,7 +312,10 @@ export function AuthProvider({ children }) {
         debugLog('❌ Auth initialization error:', error.message);
         clearAuthState();
       } finally {
-        if (mounted) setIsLoading(false);
+        if (mounted) {
+          setIsLoading(false);
+          hasInitializedRef.current = true;
+        }
       }
     };
 
@@ -306,7 +325,7 @@ export function AuthProvider({ children }) {
       mounted = false;
       stopAutoRefresh();
     };
-  }, [pathname, setAuthenticatedUser, clearAuthState, startAutoRefresh, stopAutoRefresh]);
+  }, []); // ✅ IMPORTANT: Retirer pathname des dépendances pour éviter re-init sur navigation
 
   // ==============================|| CONTEXT VALUE ||============================== //
 

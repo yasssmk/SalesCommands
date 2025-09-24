@@ -30,6 +30,7 @@ import IconButton from 'components/@extended/IconButton';
 import { ThemeDirection, ThemeMode } from 'config';
 import useConfig from 'hooks/useConfig';
 import { useAuth } from 'hooks/useAuth';
+import { useCurrentUser } from 'hooks/useCurrentUser';
 
 // assets
 import LogoutOutlined from '@ant-design/icons/LogoutOutlined';
@@ -56,7 +57,8 @@ function a11yProps(index) {
 
 export default function Profile() {
   const theme = useTheme();
-  const { user, logout } = useAuth();
+  const { currentUser } = useCurrentUser(); 
+  const { logout } = useAuth();  
   const router = useRouter();
   const { themeDirection } = useConfig();
 
@@ -110,11 +112,11 @@ export default function Profile() {
         aria-haspopup="true"
         onClick={handleToggle}
       >
-        {user && (
+        {currentUser && (
           <Stack direction="row" spacing={1.25} alignItems="center" sx={{ p: 0.5 }}>
-            <Avatar alt={user.name} src={user.avatar} size="sm" />
+            <Avatar alt={currentUser.name} src={currentUser.avatar} size="sm" />
             <Typography variant="subtitle1" sx={{ textTransform: 'capitalize' }}>
-              {user.name && user.name}
+              {currentUser.name && currentUser.name}
             </Typography>
           </Stack>
         )}
@@ -152,13 +154,13 @@ export default function Profile() {
                   <CardContent sx={{ px: 2.5, pt: 3 }}>
                     <Grid container justifyContent="space-between" alignItems="center">
                       <Grid>
-                        {user && (
+                        {currentUser && (
                           <Stack direction="row" spacing={1.25} alignItems="center">
-                            <Avatar alt={user.name} src={user.avatar} />
+                            <Avatar alt={currentUser.name} src={currentUser.avatar} />
                             <Stack>
-                              <Typography variant="h6">{user.name}</Typography>
+                              <Typography variant="h6">{currentUser.name}</Typography>
                               <Typography variant="body2" color="text.secondary">
-                                {user.role || 'User'}
+                                {currentUser.role || 'User'}
                               </Typography>
                             </Stack>
                           </Stack>
