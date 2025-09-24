@@ -1,4 +1,4 @@
-# Modifications dans backend/end_users/views/auth/auth_views.py
+# backend/end_users/views/auth/auth_views.py
 
 from rest_framework import status
 from rest_framework.response import Response
@@ -61,7 +61,8 @@ class UserLoginView(BaseAPIView):
             'user_id': str(user.id),
             'client_id': str(user.client_account_id) if user.client_account_id else '-',
             'origin': 'end_users',
-            'event': 'login_success'
+            'event': 'login_success',
+            'role_name': user.role_name if hasattr(user, 'role_name') else '-'
         })
         logger.info("login_success", extra=ctx)
 
@@ -92,7 +93,12 @@ class UserCurrentView(BaseAPIView):
             user = request.user
 
             ctx = ctx_from_request(request)
-            ctx.update({'event': 'get_current_user'})
+            ctx.update({
+                'event': 'get_current_user',
+                'user_id': str(user.id),
+                'client_id': str(user.client_account_id) if getattr(user, 'client_account_id', None) else '-',
+                'role_name': user.role_name if hasattr(user, 'role_name') else '-'
+            })
             logger.debug("get_current_user", extra=ctx)
             
             serializer = UserSerializer(user)
@@ -146,7 +152,10 @@ class UserLogoutView(BaseAPIView):
             
             # Log success after logout
             ctx = ctx_from_request(request)
-            ctx.update({'event': 'logout_success'})
+            ctx.update({
+                'event': 'logout_success',
+                'role_name': request.user.role_name if hasattr(request.user, 'role_name') else '-'
+            })
             logger.info("logout_success", extra=ctx)
             
             return response
@@ -189,7 +198,9 @@ class UserRefreshTokenView(BaseAPIView):
             ctx = ctx_from_request(request)
             ctx.update({
                 'user_id': result.get('user', {}).get('id', '-'),
-                'event': 'token_refresh_success'
+                'client_id': result.get('user', {}).get('client_id', '-'),
+                'event': 'token_refresh_success',
+                'role_name': result.get('user', {}).get('role', '-')
             })
             logger.info("token_refresh_success", extra=ctx)
             

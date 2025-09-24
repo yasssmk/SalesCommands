@@ -88,6 +88,7 @@ class AuthService:
         }
 
         # Log successful login
+        log_context['role_name'] = user.role_name if hasattr(user, 'role_name') else '-'
         logger.info("login_success", extra=log_context)
         return user
 
@@ -123,6 +124,7 @@ class AuthService:
                 if hasattr(user, 'client_account_id') and user.client_account_id
                 else '-'
             )
+            log_context['role_name'] = user.role_name if hasattr(user, 'role_name') else '-'
 
             logger.info("registration_success", extra=log_context)
             return self.serializer_class(user).data
@@ -192,7 +194,8 @@ class AuthService:
             logger.info("token_refresh_success", extra={
                 **log_context,
                 'user_id': str(user.id),
-                'client_id': str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else '-'
+                'client_id': str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else '-',
+                'role_name': user.role_name if hasattr(user, 'role_name') else '-'
             })
 
             return {

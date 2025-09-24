@@ -158,6 +158,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 "target_user_id": str(user.id),
                 "is_self": is_self,
                 "event": "user_retrieve",
+                "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
             })
             logger.info("user_retrieve", extra=ctx)
 
@@ -165,6 +166,15 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             return Response({"success": True, "data": serializer.data})
 
         except User.DoesNotExist:
+            ctx = ctx_from_request(request)
+            ctx.update({
+                "event": "user_retrieve_not_found",
+                "resource": "user",
+                "target_id": str(kwargs.get('pk', '-')),
+                "action": "retrieve",
+                "scope": "client",
+            })
+            logger.info("user_retrieve_not_found", extra=ctx)
             return Response(
                 {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
@@ -184,6 +194,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             ctx.update({
                 "new_user_id": str(user.id),
                 "event": "user_create_success",
+                "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
             })
             logger.info("user_create_success", extra=ctx)
 
@@ -217,6 +228,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     "changed_fields": changed_fields,
                     "is_self": str(user.id) == str(request.user.id),
                     "event": "user_update_success",
+                    "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
                 })
                 logger.info("user_update_success", extra=ctx)
 
@@ -227,6 +239,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 })
 
         except User.DoesNotExist:
+
+            ctx = ctx_from_request(request)
+            ctx.update({
+                "event": "user_update_not_found",
+                "resource": "user",
+                "target_id": str(kwargs.get('pk', '-')),
+                "action": "update",
+                "scope": "client",
+            })
+            logger.info("user_update_not_found", extra=ctx)
+
             return Response(
                 {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
@@ -335,6 +358,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     "target_user_id": str(user.id),
                     "deleted_user_name": user_name,
                     "event": "user_delete_success",
+                    "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
                 })
                 logger.info("user_delete_success", extra=ctx)
 
@@ -347,6 +371,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 }, status=status.HTTP_204_NO_CONTENT)
 
         except User.DoesNotExist:
+
+            ctx = ctx_from_request(request)
+            ctx.update({
+                "event": "user_delete_not_found",
+                "resource": "user",
+                "target_id": str(kwargs.get('pk', '-')),
+                "action": "delete",
+                "scope": "client",
+            })
+            logger.info("user_delete_not_found", extra=ctx)
+            
             return Response({
                 'success': False,
                 'error': CoreErrorMessages.OBJECT_NOT_FOUND
