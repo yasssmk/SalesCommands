@@ -18,6 +18,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# P2-T5: Module-level flag to track initialization logging
+_boot_logged = False
+_using_dummy = False  # Track if we're in dummy mode
+
 
 @dataclass
 class AuthContext:
@@ -57,22 +61,73 @@ class AuthContext:
         return f"AuthContext(origin={self.origin}, user_id={self.user_id}, client_id={self.client_id}, roles={len(self.roles)})"
 
 
+def _log_boot_once():
+    """
+    P2-T5: Log initialization status exactly once at module load.
+    
+    This helps diagnose whether the permissions system is properly configured
+    without spamming logs on every request.
+    """
+    global _boot_logged, _using_dummy
+    
+    if _boot_logged:
+        return
+    
+    _boot_logged = True
+    
+    # Determine what mode we're in
+    mode = "DummyContext (fallback)" if _using_dummy else "AuthContext (normal)"
+    message = f"permissions.compat initialized: mode={mode}"
+    
+    # Log at INFO level so it's visible in production logs
+    logger.info(message)
+    
+    # Also log to console in DEBUG mode for immediate visibility
+    try:
+        from django.conf import settings
+        if settings.DEBUG:
+            import sys
+            print(f"[PERMISSIONS] {message}", file=sys.stderr)
+    except:
+        pass  # Fail silently if settings not available
+
+
 def get_auth_ctx(request) -> AuthContext:
     """
     Extract standardized auth context from request WITHOUT database queries.
+    
+    Priority order:
+    1. request.auth.payload (JWT validated by authentication)
+    2. request.user attributes (fallback)
+    3. Default values (anonymous)
+    
+    Args:
+        request: Django/DRF request object
+        
+    Returns:
+        AuthContext: Standardized context for permission checks
+        
+    Note:
+        This function does NOT perform any database queries or role inference.
+        It only extracts and normalizes data already present in the request.
     """
+    # P2-T5: Log initialization on first call
+    _log_boot_once()
+    
     ctx = AuthContext()
     
     # Check if user is authenticated
     if not hasattr(request, 'user') or isinstance(request.user, AnonymousUser):
-        print(f"[COMPAT] Anonymous user - returning empty context")
+        if settings.DEBUG:
+            logger.debug("[COMPAT] Anonymous user - returning empty context")
         return ctx
     
     user = request.user
     ctx.is_authenticated = user.is_authenticated if hasattr(user, 'is_authenticated') else False
     
     if not ctx.is_authenticated:
-        print(f"[COMPAT] User not authenticated - returning minimal context")
+        if settings.DEBUG:
+            logger.debug("[COMPAT] User not authenticated - returning minimal context")
         return ctx
     
     # PRIORITÉ 1 : Extraire depuis request.auth (validated_token de JWT)
@@ -86,7 +141,8 @@ def get_auth_ctx(request) -> AuthContext:
             auth_dict = {}
         
         if auth_dict:
-            print(f"[COMPAT] Found JWT auth dict with keys: {list(auth_dict.keys())}")
+            if settings.DEBUG:
+                logger.debug(f"[COMPAT] Found JWT auth dict with keys: {list(auth_dict.keys())}")
             
             # Core fields
             ctx.origin = auth_dict.get('origin', 'end_users')
@@ -96,7 +152,8 @@ def get_auth_ctx(request) -> AuthContext:
             # Extract role WITH flags
             if 'role' in auth_dict:
                 role = auth_dict.get('role')
-                print(f"[COMPAT] Role in JWT: type={type(role)}, value={role}")
+                if settings.DEBUG:
+                    logger.debug(f"[COMPAT] Role in JWT: type={type(role)}, value={role}")
                 if isinstance(role, dict):
                     # Nouveau format avec flags
                     ctx.roles = [{
@@ -106,12 +163,14 @@ def get_auth_ctx(request) -> AuthContext:
                         'is_manager': role.get('is_manager', False),
                         'is_individual': role.get('is_individual', False),
                     }]
-                    print(f"[COMPAT] Extracted role with flags: {role.get('name')} "
-                          f"(admin={role.get('is_admin')}, manager={role.get('is_manager')}, "
-                          f"individual={role.get('is_individual')})")
+                    if settings.DEBUG:
+                        logger.debug(f"[COMPAT] Extracted role with flags: {role.get('name')} "
+                              f"(admin={role.get('is_admin')}, manager={role.get('is_manager')}, "
+                              f"individual={role.get('is_individual')})")
                 else:
                     # Ancien format sans flags
-                    print(f"[COMPAT] WARNING: Old JWT format without role flags")
+                    if settings.DEBUG:
+                        logger.debug("[COMPAT] WARNING: Old JWT format without role flags")
                     ctx.roles = []
             
             # Teams
@@ -134,7 +193,8 @@ def get_auth_ctx(request) -> AuthContext:
             ctx.jti = auth_dict.get('jti')
     else:
         # PRIORITÉ 2 : Fallback sur user object
-        print(f"[COMPAT] No JWT auth, using user object (LIMITED)")
+        if settings.DEBUG:
+            logger.debug("[COMPAT] No JWT auth, using user object (LIMITED)")
         
         ctx.user_id = str(user.id) if hasattr(user, 'id') else None
         ctx.is_superuser = getattr(user, 'is_superuser', False)
@@ -154,21 +214,25 @@ def get_auth_ctx(request) -> AuthContext:
                     'is_manager': getattr(role, 'is_manager', False),
                     'is_individual': getattr(role, 'is_individual', False),
                 }]
-                print(f"[COMPAT] Extracted role flags from user object: {role.name} "
-                      f"(admin={role.is_admin}, manager={role.is_manager}, "
-                      f"individual={role.is_individual})")
+                if settings.DEBUG:
+                    logger.debug(f"[COMPAT] Extracted role flags from user object: {role.name} "
+                          f"(admin={role.is_admin}, manager={role.is_manager}, "
+                          f"individual={role.is_individual})")
             else:
-                print(f"[COMPAT] Role on user object but no flags")
+                if settings.DEBUG:
+                    logger.debug("[COMPAT] Role on user object but no flags")
                 ctx.roles = []
     
     # Set origin if not set
     if not ctx.origin or ctx.origin == 'unknown':
         ctx.origin = 'end_users'
     
-    print(f"[COMPAT] Final context: user_id={ctx.user_id}, client_id={ctx.client_id}, "
-          f"roles={len(ctx.roles)}, teams={len(ctx.teams)}, origin={ctx.origin}")
+    if settings.DEBUG:
+        logger.debug(f"[COMPAT] Final context: user_id={ctx.user_id}, client_id={ctx.client_id}, "
+              f"roles={len(ctx.roles)}, teams={len(ctx.teams)}, origin={ctx.origin}")
     
     return ctx
+
 
 def get_client_id(request) -> Optional[str]:
     """
@@ -190,7 +254,7 @@ def is_admin(request) -> bool:
     
     This checks tier which is legacy. Use ctx.roles[].is_admin instead.
     """
-    print("[COMPAT] WARNING: is_admin() is deprecated, use role flags from get_auth_ctx()")
+    logger.warning("[COMPAT] WARNING: is_admin() is deprecated, use role flags from get_auth_ctx()")
     ctx = get_auth_ctx(request)
     # Check if any role has is_admin flag
     for role in ctx.roles:
@@ -205,7 +269,7 @@ def is_manager(request) -> bool:
     
     This checks tier which is legacy. Use ctx.roles[].is_manager instead.
     """
-    print("[COMPAT] WARNING: is_manager() is deprecated, use role flags from get_auth_ctx()")
+    logger.warning("[COMPAT] WARNING: is_manager() is deprecated, use role flags from get_auth_ctx()")
     ctx = get_auth_ctx(request)
     # Check if any role has is_manager flag
     for role in ctx.roles:
@@ -261,3 +325,16 @@ def debug_auth_context(request) -> Dict[str, Any]:
             'jti': ctx.jti,
         }
     }
+
+
+# P2-T5: Check if we're using settings (normal) or dummy mode
+# This is set at module load time
+try:
+    from django.conf import settings
+    _using_dummy = False
+except ImportError:
+    logger.warning("Django settings not available - permissions.compat may not work correctly")
+    _using_dummy = True
+
+# P2-T5: Log initialization status at module load
+_log_boot_once()

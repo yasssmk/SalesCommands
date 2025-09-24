@@ -349,6 +349,38 @@ def check_permission_config():
 if DEBUG:
     check_permission_config()
 
+# ========================================
+# LOGGING CONFIGURATION 
+# ========================================
+
+# Feature flag to enable header logging in production
+# Set LOG_HEADERS_IN_PROD=true in environment to enable
+LOG_HEADERS_IN_PROD = env.bool('LOG_HEADERS_IN_PROD', default=False)
+
+# Allowlist of headers to log in production (case-insensitive)
+# These headers provide useful debugging info without exposing sensitive data
+LOG_HEADERS_ALLOWLIST = [
+    'x-request-id',        # Correlation ID from proxies/LB
+    'x-forwarded-for',     # Original client IP through proxies
+    'x-real-ip',           # Alternative client IP header
+    'cf-connecting-ip',    # Cloudflare's client IP header
+    'user-agent',          # Browser/client identification
+    'content-type',        # Request content type
+    'x-forwarded-proto',   # Original protocol (http/https)
+    'x-forwarded-host',    # Original host header
+    'referer',             # Referrer for tracking navigation
+    'accept',              # Content negotiation
+    'accept-language',     # Language preferences
+    'x-csrf-token',        # CSRF token (already public)
+]
+
+# Additional paths to exclude from logging (beyond defaults)
+# Add paths here that are specific to your deployment
+LOGGING_EXCLUDED_PATHS = {
+    # '/api/v1/internal/health',
+    # '/api/v1/internal/metrics',
+}
+
 
 # =========================================================================
 # LOGGING CONFIGURATION - MVP

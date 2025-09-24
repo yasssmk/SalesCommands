@@ -11,11 +11,11 @@ import time
 import logging
 from typing import Optional, List
 from django.utils.deprecation import MiddlewareMixin
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, StreamingHttpResponse
 from django.conf import settings
 
 from .context import get_correlation_id
-from .sanitize import format_headers_for_logging
+from .sanitize import format_headers_for_logging, sanitize_headers
 
 try:
     from backend.permissions.compat import get_auth_ctx
@@ -46,6 +46,7 @@ class RequestLoggingMiddleware(MiddlewareMixin):
     - Logs metadata only (no request/response bodies)
     - Excludes configured paths (health checks, etc.)
     - Respects DEBUG setting for verbosity
+    - Handles StreamingHttpResponse safely (P0-T1)
     
     This middleware should be placed AFTER RequestIdMiddleware
     to ensure correlation_id is available:
@@ -101,6 +102,10 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         
         # Log level for requests (DEBUG in development, INFO in production)
         self.request_log_level = logging.DEBUG if settings.DEBUG else logging.INFO
+        
+        # P1: Get header logging configuration from settings
+        self.log_headers_in_prod = getattr(settings, 'LOG_HEADERS_IN_PROD', False)
+        self.headers_allowlist = getattr(settings, 'LOG_HEADERS_ALLOWLIST', [])
 
         # ⚠️ Alerte DEBUG si on utilise le fallback DummyContext
         try:
@@ -116,6 +121,16 @@ class RequestLoggingMiddleware(MiddlewareMixin):
                 "request_logging: get_auth_ctx not importable; using DummyContext "
                 "(client_id may be '-')"
             )
+        
+        # P1: Log header configuration on startup (DEBUG only)
+        if settings.DEBUG:
+            if self.log_headers_in_prod:
+                logger.info(
+                    f"request_logging: Header logging enabled in production mode "
+                    f"with {len(self.headers_allowlist)} allowed headers"
+                )
+            else:
+                logger.debug("request_logging: Headers will only be logged in DEBUG mode")
     
     def process_request(self, request: HttpRequest) -> None:
         """
@@ -124,8 +139,8 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         Args:
             request: The incoming HTTP request
         """
-        # Start timing with monotonic clock
-        request._start_time = time.perf_counter()
+        # Start timing with monotonic clock (P0-T2: renamed for clarity)
+        request._logging_start_ts = time.perf_counter()
         
         # Skip logging for excluded paths
         if self._should_skip_logging(request.path):
@@ -158,11 +173,24 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         if hasattr(request, 'client_id'):
             context['client_id'] = str(request.client_id)
         
-        # Log sanitized headers in DEBUG mode
-        if settings.DEBUG:
+        # P1: Log headers based on configuration
+        # Log headers in DEBUG mode OR when explicitly enabled in production
+        should_log_headers = settings.DEBUG or self.log_headers_in_prod
+        
+        if should_log_headers:
             # Get headers dict from META
             headers = self._extract_headers(request.META)
-            context['headers'] = format_headers_for_logging(headers)
+            
+            if settings.DEBUG:
+                # In DEBUG mode: log all headers (sanitized)
+                context['headers'] = format_headers_for_logging(headers)
+            elif self.log_headers_in_prod:
+                # In production with flag enabled: use allowlist
+                context['headers'] = sanitize_headers(
+                    headers, 
+                    allowlist=self.headers_allowlist,
+                    redact_sensitive=True
+                )
         
         # Log with simple message (details in structured fields)
         logger.log(
@@ -186,11 +214,34 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         if getattr(request, '_skip_logging', False):
             return response
         
-        # Calculate duration if we have start time
+        # P0-T2: Calculate duration with robust fallback
         duration_ms = '-'
-        if hasattr(request, '_start_time'):
-            duration = time.perf_counter() - request._start_time
-            duration_ms = f"{duration * 1000:.2f}"  # Convert to milliseconds
+        try:
+            if hasattr(request, '_logging_start_ts'):
+                duration = time.perf_counter() - request._logging_start_ts
+                duration_ms = f"{duration * 1000:.2f}"  # Convert to milliseconds
+        except Exception:
+            # Fallback in case of any error
+            duration_ms = '-'
+        
+        # P0-T1: Safe response_size handling for streaming responses
+        response_size = None
+        try:
+            # Check if it's a streaming response
+            if isinstance(response, StreamingHttpResponse) or \
+               hasattr(response, 'streaming_content') or \
+               getattr(response, 'streaming', False):
+                # Streaming response - size unknown
+                response_size = None
+            elif hasattr(response, 'content'):
+                # Regular response with content
+                response_size = len(response.content)
+            else:
+                # Fallback for responses without content
+                response_size = 0
+        except Exception:
+            # Any error accessing content - default to None
+            response_size = None
         
         # Build response context
         context = {
@@ -200,7 +251,7 @@ class RequestLoggingMiddleware(MiddlewareMixin):
             'status_code': response.status_code,
             'duration_ms': duration_ms,
             'remote_ip': getattr(request, '_client_ip', '-'),
-            'response_size': len(response.content) if hasattr(response, 'content') else 0,
+            'response_size': response_size if response_size is not None else '-',
         }
         
         # CHANGEMENT PRINCIPAL : Utiliser get_auth_ctx() pour extraire le contexte unifié
@@ -220,12 +271,13 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         if auth_ctx.jti:
             context['jti'] = auth_ctx.jti
         
-        # Determine log level based on status code
+        # P0-T2: Determine log level based on status code (confirmer mapping)
         if response.status_code >= 500:
             log_level = logging.ERROR
         elif response.status_code >= 400:
             log_level = logging.WARNING
         else:
+            # 2xx/3xx: INFO en prod, DEBUG en dev
             log_level = self.request_log_level
         
         # Log with simple message
@@ -239,13 +291,27 @@ class RequestLoggingMiddleware(MiddlewareMixin):
 
     
     def process_exception(self, request: HttpRequest, exception: Exception) -> None:
+        """
+        Process exception and log request failure.
+        
+        Args:
+            request: The HTTP request
+            exception: The exception that occurred
+            
+        Returns:
+            None (let Django handle the exception)
+        """
         if getattr(request, '_skip_logging', False):
             return None
 
+        # P0-T2: Robust duration calculation with fallback
         duration_ms = '-'
-        if hasattr(request, '_start_time'):
-            duration = time.perf_counter() - request._start_time
-            duration_ms = f"{duration * 1000:.2f}"
+        try:
+            if hasattr(request, '_logging_start_ts'):
+                duration = time.perf_counter() - request._logging_start_ts
+                duration_ms = f"{duration * 1000:.2f}"
+        except Exception:
+            duration_ms = '-'
 
         context = {
             'correlation_id': get_correlation_id(),
@@ -265,6 +331,7 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         if getattr(auth_ctx, 'jti', None):
             context['jti'] = auth_ctx.jti
 
+        # P0-T2: Exception = ERROR level
         logger.error(
             "request_failed",
             extra=context,
@@ -334,58 +401,49 @@ class RequestLoggingMiddleware(MiddlewareMixin):
             ip: IP address string
             
         Returns:
-            bool: True if appears to be valid IP
+            bool: True if valid IP format
         """
-        if not ip or ip == '-':
+        if not ip:
             return False
         
-        # Very basic check - just ensure it's not empty and looks like an IP
-        # For MVP, we don't need strict validation
-        parts = ip.split('.')
-        if len(parts) == 4:  # IPv4
-            return all(part.isdigit() for part in parts)
-        elif ':' in ip:  # IPv6
-            return True
+        # Basic IPv4 validation
+        if '.' in ip:
+            parts = ip.split('.')
+            if len(parts) == 4:
+                try:
+                    return all(0 <= int(p) <= 255 for p in parts)
+                except ValueError:
+                    return False
+        
+        # Basic IPv6 validation (simplified)
+        if ':' in ip:
+            # Just check it has colons and hex chars
+            return all(c in '0123456789abcdefABCDEF:' for c in ip)
         
         return False
     
     def _extract_headers(self, meta: dict) -> dict:
         """
-        Extract HTTP headers from Django's META dict.
+        Extract HTTP headers from request META.
+        
+        Django stores headers in META with HTTP_ prefix.
         
         Args:
-            meta: Django's request.META dictionary
+            meta: Request META dict
             
         Returns:
-            dict: HTTP headers
+            dict: Headers dict
         """
         headers = {}
         
         for key, value in meta.items():
-            # HTTP headers in META start with HTTP_
             if key.startswith('HTTP_'):
-                # Convert HTTP_HEADER_NAME to Header-Name
+                # Remove HTTP_ prefix and convert to header case
                 header_name = key[5:].replace('_', '-').title()
                 headers[header_name] = value
-            # Also include content type and length
             elif key in ('CONTENT_TYPE', 'CONTENT_LENGTH'):
+                # Special cases without HTTP_ prefix
                 header_name = key.replace('_', '-').title()
                 headers[header_name] = value
         
         return headers
-
-
-# Convenience function to check if request logging is enabled
-def is_request_logging_enabled() -> bool:
-    """
-    Check if request logging middleware is enabled.
-    
-    Returns:
-        bool: True if RequestLoggingMiddleware is in MIDDLEWARE
-    """
-    middleware = getattr(settings, 'MIDDLEWARE', [])
-    return any(
-        'RequestLoggingMiddleware' in m or 
-        'request_logging.RequestLoggingMiddleware' in m
-        for m in middleware
-    )

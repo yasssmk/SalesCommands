@@ -25,6 +25,8 @@ SENSITIVE_HEADERS = {
     'x-csrf-token',
     'x-access-token',
     'x-refresh-token',
+    'proxy-authorization',  # P1: Added
+    'www-authenticate',     # P1: Added
 }
 
 SENSITIVE_KEYS = {
@@ -128,6 +130,90 @@ def mask_header(header_name: str, header_value: str) -> str:
     return header_value
 
 
+def sanitize_headers(
+    headers: Dict[str, str], 
+    allowlist: Optional[List[str]] = None,
+    redact_sensitive: bool = True
+) -> Dict[str, str]:
+    """
+    P1: Sanitize HTTP headers for safe logging with optional allowlist filtering.
+    
+    This function:
+    1. Filters headers by allowlist if provided
+    2. Redacts sensitive headers even if in allowlist
+    3. Normalizes header names to lowercase
+    4. Truncates long values
+    5. Masks emails in values
+    
+    Args:
+        headers: Dictionary of HTTP headers
+        allowlist: Optional list of allowed header names (case-insensitive)
+        redact_sensitive: Whether to redact sensitive headers (default: True)
+        
+    Returns:
+        dict: Sanitized headers safe for logging
+        
+    Examples:
+        >>> headers = {
+        ...     'Authorization': 'Bearer token123',
+        ...     'User-Agent': 'Mozilla/5.0',
+        ...     'Content-Type': 'application/json'
+        ... }
+        >>> allowlist = ['user-agent', 'content-type']
+        >>> sanitize_headers(headers, allowlist)
+        {'user-agent': 'Mozilla/5.0', 'content-type': 'application/json'}
+        
+        >>> # Even if Authorization is in allowlist, it gets redacted
+        >>> allowlist = ['authorization', 'user-agent']
+        >>> sanitize_headers(headers, allowlist)
+        {'authorization': 'Bearer [REDACTED]', 'user-agent': 'Mozilla/5.0'}
+    """
+    if not headers:
+        return {}
+    
+    sanitized = {}
+    
+    # Convert allowlist to lowercase set for O(1) lookup
+    if allowlist is not None:
+        allowed_set = {name.lower() for name in allowlist}
+    else:
+        allowed_set = None
+    
+    for header_name, header_value in headers.items():
+        # Normalize header name to lowercase
+        normalized_name = header_name.lower()
+        
+        # Step 1: Check allowlist if provided
+        if allowed_set is not None and normalized_name not in allowed_set:
+            continue  # Skip headers not in allowlist
+        
+        # Convert value to string for processing
+        str_value = str(header_value) if header_value is not None else ''
+        
+        # Step 2: Always redact sensitive headers if redact_sensitive is True
+        if redact_sensitive and normalized_name in SENSITIVE_HEADERS:
+            # Special handling for Authorization - preserve scheme
+            if normalized_name == 'authorization' and ' ' in str_value:
+                scheme = str_value.split(' ', 1)[0]
+                sanitized[normalized_name] = f"{scheme} [REDACTED]"
+            else:
+                sanitized[normalized_name] = '[REDACTED]'
+            continue
+        
+        # Step 3: Check for and mask emails
+        if EMAIL_PATTERN.search(str_value):
+            str_value = EMAIL_PATTERN.sub(lambda m: mask_email(m.group(0)), str_value)
+        
+        # Step 4: Truncate if too long
+        if len(str_value) > MAX_VALUE_SIZE:
+            str_value = str_value[:MAX_VALUE_SIZE] + '…[TRUNCATED]'
+        
+        # Add sanitized header
+        sanitized[normalized_name] = str_value
+    
+    return sanitized
+
+
 def scrub_payload(
     data: Union[Dict, List, str, Any],
     max_size: int = MAX_VALUE_SIZE,
@@ -139,77 +225,59 @@ def scrub_payload(
     
     Args:
         data: Data to scrub (dict, list, or primitive)
-        max_size: Maximum size for string values (default 2KB)
-        depth: Current recursion depth (internal)
-        max_depth: Maximum recursion depth to prevent infinite loops
+        max_size: Maximum size for string values
+        depth: Current recursion depth
+        max_depth: Maximum recursion depth
         
     Returns:
-        Scrubbed data with sensitive values masked and large values truncated
-        
-    Examples:
-        >>> scrub_payload({'username': 'john', 'password': 'secret123'})
-        {'username': 'john', 'password': '[REDACTED]'}
-        >>> scrub_payload({'email': 'john@example.com', 'data': 'x' * 3000})
-        {'email': 'j***@example.com', 'data': 'xxx...[TRUNCATED_2048]'}
+        Scrubbed data safe for logging
     """
     # Prevent infinite recursion
     if depth > max_depth:
         return '[MAX_DEPTH_EXCEEDED]'
     
-    # Handle None
-    if data is None:
-        return data
-    
-    # Handle dictionaries
     if isinstance(data, dict):
         scrubbed = {}
         for key, value in data.items():
-            key_lower = str(key).lower()
+            key_lower = key.lower() if isinstance(key, str) else str(key)
             
-            # Check if key indicates sensitive data
+            # Check if key contains sensitive patterns
             is_sensitive = any(
-                sensitive in key_lower 
-                for sensitive in SENSITIVE_KEYS
+                pattern in key_lower 
+                for pattern in SENSITIVE_KEYS
             )
             
-            # Check for body/payload keys (completely redact)
-            is_payload = key_lower in ('body', 'request_body', 'response_body', 
-                                       'payload', 'data', 'request_data')
-            
-            if is_payload:
-                scrubbed[key] = '[PAYLOAD_REDACTED]'
-            elif is_sensitive:
-                # Mask sensitive values
-                if isinstance(value, str) and '@' in value:
-                    scrubbed[key] = mask_email(value)
-                else:
-                    scrubbed[key] = '[REDACTED]'
+            if is_sensitive:
+                scrubbed[key] = '[REDACTED]'
             else:
                 # Recursively scrub nested structures
-                scrubbed[key] = scrub_payload(value, max_size, depth + 1, max_depth)
+                scrubbed[key] = scrub_payload(
+                    value, 
+                    max_size, 
+                    depth + 1, 
+                    max_depth
+                )
         
         return scrubbed
     
-    # Handle lists
     elif isinstance(data, list):
+        # Scrub each item in list
         return [
-            scrub_payload(item, max_size, depth + 1, max_depth) 
+            scrub_payload(item, max_size, depth + 1, max_depth)
             for item in data
         ]
     
-    # Handle strings
     elif isinstance(data, str):
-        # Check for email patterns
+        # Check for emails
         if EMAIL_PATTERN.search(data):
             data = EMAIL_PATTERN.sub(lambda m: mask_email(m.group(0)), data)
         
         # Truncate if too long
         if len(data) > max_size:
-            return data[:max_size] + f'[TRUNCATED_{max_size}]'
+            return data[:max_size] + '[TRUNCATED]'
         
         return data
     
-    # Handle other types (numbers, booleans, etc.)
     else:
         # Convert to string for size check
         str_data = str(data)
@@ -245,6 +313,9 @@ def format_headers_for_logging(headers: Dict[str, str]) -> Dict[str, str]:
     """
     Format HTTP headers dict for safe logging.
     
+    NOTE: This function is being updated in P1 to use sanitize_headers()
+    for consistency. It maintains backward compatibility.
+    
     Args:
         headers: Dictionary of HTTP headers
         
@@ -254,16 +325,11 @@ def format_headers_for_logging(headers: Dict[str, str]) -> Dict[str, str]:
     Example:
         >>> headers = {'Authorization': 'Bearer token123', 'Content-Type': 'application/json'}
         >>> format_headers_for_logging(headers)
-        {'Authorization': 'Bearer [REDACTED]', 'Content-Type': 'application/json'}
+        {'authorization': 'Bearer [REDACTED]', 'content-type': 'application/json'}
     """
-    if not headers:
-        return {}
-    
-    sanitized = {}
-    for name, value in headers.items():
-        sanitized[name] = mask_header(name, value)
-    
-    return sanitized
+    # P1: Now delegates to sanitize_headers for consistency
+    # No allowlist = include all headers, but still sanitize sensitive ones
+    return sanitize_headers(headers, allowlist=None, redact_sensitive=True)
 
 
 def get_safe_error_details(error: Exception, include_type: bool = True) -> Dict[str, Any]:
