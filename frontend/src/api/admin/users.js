@@ -18,18 +18,6 @@ const endpoints = {
   clientAccountStats: (clientId) => `/client/client-accounts/${clientId}/stats/`
 };
 
-// ==============================|| SWR FETCHER - remplace par swr config global||============================== //
-
-// const fetcher = async (urlOrTuple) => {
-//   // ✅ Support des tuples [url, tenantId] et des URLs simples (legacy)
-//   const url = Array.isArray(urlOrTuple) ? urlOrTuple[0] : urlOrTuple;
-
-//   const result = await api.get(url);
-//   if (result.success) {
-//     return result.data;
-//   }
-//   throw new Error(result.error || 'Failed to fetch data');
-// };
 
 // ==============================|| HOOKS SWR STANDARDISÉS ||============================== //
 
@@ -369,6 +357,7 @@ export const insertUser = async (userData) => {
     return { success: false, error: result.error };
   }
 };
+
 
 /**
  * ✅ UPDATE USER (PATCH) - Revalidation standardisée
