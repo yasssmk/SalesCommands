@@ -1,12 +1,27 @@
+'use client';
 import PropTypes from 'prop-types';
-import AuthGuard from 'utils/route-guard/AuthGuard';
-import DashboardLayout from 'layout/DashboardLayout';
 
-export default function ProtectedLayout({ children }) {
+// project imports
+import DashboardLayout from 'layout/DashboardLayout';
+import AuthGuard from 'utils/route-guard/AuthGuard';
+import ErrorBoundary from 'components/ErrorBoundary';
+
+// ==============================|| PROTECTED LAYOUT WITH ERROR BOUNDARY ||============================== //
+
+export default function Layout({ children }) {
   return (
     <AuthGuard>
-      <DashboardLayout>{children}</DashboardLayout>
+      <ErrorBoundary name="ProtectedLayout">
+        <DashboardLayout>
+          <ErrorBoundary name="PageContent">
+            {children}
+          </ErrorBoundary>
+        </DashboardLayout>
+      </ErrorBoundary>
     </AuthGuard>
   );
 }
-ProtectedLayout.propTypes = { children: PropTypes.node.isRequired };
+
+Layout.propTypes = {
+  children: PropTypes.node
+};

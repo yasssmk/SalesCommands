@@ -36,6 +36,9 @@ import PlusOutlined from '@ant-design/icons/PlusOutlined';
 import { useTheme } from '@mui/material/styles';
 import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
 
+//TEST
+import TestErrorButton from 'components/TestErrorButton';
+
 // ==============================|| USER LIST ||============================== //
 
 export default function UserListPage() {
@@ -226,6 +229,7 @@ export default function UserListPage() {
         handleClose={handleClose} 
       />
       <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />
+      <TestErrorButton />
     </>
   );
 }
