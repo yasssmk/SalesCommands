@@ -3,7 +3,8 @@
 import axiosClient, { api } from '../utils/axiosClient';
 import { authConfig, debugLog } from '../config/auth';
 import useSWR from 'swr';
-
+import { tenantKey } from '../api/_swr';
+import { useAuth } from '../hooks/useAuth';
 
 
 // ==============================|| AUTH API FUNCTIONS ||============================== //

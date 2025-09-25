@@ -18,18 +18,18 @@ const endpoints = {
   clientAccountStats: (clientId) => `/client/client-accounts/${clientId}/stats/`
 };
 
-// ==============================|| SWR FETCHER ||============================== //
+// ==============================|| SWR FETCHER - remplace par swr config global||============================== //
 
-const fetcher = async (urlOrTuple) => {
-  // ✅ Support des tuples [url, tenantId] et des URLs simples (legacy)
-  const url = Array.isArray(urlOrTuple) ? urlOrTuple[0] : urlOrTuple;
+// const fetcher = async (urlOrTuple) => {
+//   // ✅ Support des tuples [url, tenantId] et des URLs simples (legacy)
+//   const url = Array.isArray(urlOrTuple) ? urlOrTuple[0] : urlOrTuple;
 
-  const result = await api.get(url);
-  if (result.success) {
-    return result.data;
-  }
-  throw new Error(result.error || 'Failed to fetch data');
-};
+//   const result = await api.get(url);
+//   if (result.success) {
+//     return result.data;
+//   }
+//   throw new Error(result.error || 'Failed to fetch data');
+// };
 
 // ==============================|| HOOKS SWR STANDARDISÉS ||============================== //
 
@@ -43,15 +43,17 @@ export function useGetUsers() {
   // ✅ STANDARDISÉ: Utilise toujours tenantKey()
   const swrKey = tenantKey(endpoints.users, tenantId);
 
-  const { data, isLoading, error, isValidating } = useSWR(
-    swrKey,
-    fetcher,
-    {
-      revalidateIfStale: false,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false
-    }
-  );
+  // const { data, isLoading, error, isValidating } = useSWR(
+  //   swrKey,
+  //   fetcher,
+  //   {
+  //     revalidateIfStale: false,
+  //     revalidateOnFocus: false,
+  //     revalidateOnReconnect: false
+  //   }
+  // );
+
+  const { data, isLoading, error, isValidating } = useSWR(swrKey);
 
   const memoizedValue = useMemo(
     () => ({
@@ -75,14 +77,22 @@ export function useGetUsers() {
  * ⚠️ IMPORTANT: Pour le current user, utiliser useCurrentUser() à la place
  */
 export function useGetUser(userId) {
-  const { tenantId } = useAuth();
-
-  // ✅ GUARD: Si pas d'userId, retourner un état vide sans faire d'appel
-  if (!userId) {
-    console.warn('⚠️ useGetUser called without userId - use useCurrentUser() for current user');
+  const { tenantId, user: currentUser } = useAuth();
+  
+  // ✅ GUARD INTELLIGENT: Détection automatique du current user
+  const isRequestingCurrentUser = !userId || userId === 'current' || userId === 'me';
+  const shouldUseCurrentUser = isRequestingCurrentUser || userId === currentUser?.id;
+  
+  // Si c'est le current user demandé, on utilise les données du contexte Auth
+  // Évite un appel API supplémentaire car on a déjà les données
+  if (shouldUseCurrentUser) {
+    if (process.env.NODE_ENV === 'development') {
+      console.info('ℹ️ useGetUser redirected to current user from Auth context');
+    }
+    
     return {
-      user: null,           // UN user
-      userLoading: false,
+      user: currentUser,
+      userLoading: false,  // Déjà chargé via AuthProvider
       userError: null,
       userValidating: false
     };
@@ -92,16 +102,8 @@ export function useGetUser(userId) {
   const swrKey = userId && tenantId 
     ? tenantKey(`${endpoints.users}${userId}/`, tenantId) 
     : null;
-  
-  const { data, isLoading, error, isValidating } = useSWR(
-    swrKey,
-    fetcher,
-    {
-      revalidateIfStale: false,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false
-    }
-  );
+
+  const { data, isLoading, error, isValidating } = useSWR(swrKey);
 
   const memoizedValue = useMemo(
     () => ({
@@ -125,15 +127,17 @@ export function useGetOrganizations() {
   // ✅ STANDARDISÉ: tenantKey()
   const swrKey = tenantKey(endpoints.organizations, tenantId);
   
-  const { data, isLoading, error } = useSWR(
-    swrKey, 
-    fetcher,
-    {
-      revalidateIfStale: false,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false
-    }
-  );
+  // const { data, isLoading, error } = useSWR(
+  //   swrKey, 
+  //   fetcher,
+  //   {
+  //     revalidateIfStale: false,
+  //     revalidateOnFocus: false,
+  //     revalidateOnReconnect: false
+  //   }
+  // );
+
+  const { data, isLoading, error } = useSWR(swrKey);
 
   const memoizedValue = useMemo(
     () => ({
@@ -161,15 +165,16 @@ export function useGetTeams(filters = {}, enabled = true) {
   // ✅ STANDARDISÉ: tenantKey avec URL complète incluant filtres
   const swrKey = enabled ? tenantKey(url, tenantId) : null;
 
-  const { data, isLoading, error } = useSWR(
-    swrKey, 
-    fetcher,
-    {
-      revalidateIfStale: false,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false
-    }
-  );
+  // const { data, isLoading, error } = useSWR(
+  //   swrKey, 
+  //   fetcher,
+  //   {
+  //     revalidateIfStale: false,
+  //     revalidateOnFocus: false,
+  //     revalidateOnReconnect: false
+  //   }
+  // );
+  const { data, isLoading, error } = useSWR(swrKey);
 
   const memoizedValue = useMemo(
     () => ({
@@ -192,15 +197,17 @@ export function useGetUserRoles() {
   // ✅ STANDARDISÉ: tenantKey()
   const swrKey = tenantKey(endpoints.roles, tenantId);
   
-  const { data, isLoading, error } = useSWR(
-    swrKey, 
-    fetcher,
-    {
-      revalidateIfStale: false,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false
-    }
-  );
+  // const { data, isLoading, error } = useSWR(
+  //   swrKey, 
+  //   fetcher,
+  //   {
+  //     revalidateIfStale: false,
+  //     revalidateOnFocus: false,
+  //     revalidateOnReconnect: false
+  //   }
+  // );
+
+  const { data, isLoading, error } = useSWR(swrKey);
 
   const memoizedValue = useMemo(
     () => ({
@@ -221,18 +228,21 @@ export function useGetUserRoles() {
  * seats_left = seats - seats_used
  */
 export function useGetClientSeats(clientId) {
-  const key = clientId ? 
-    endpoints.clientAccountStats(clientId) : null;
+  const { tenantId } = useAuth(); 
+  const swrKey = clientId && tenantId? 
+    tenantKey(endpoints.clientAccountStats(clientId), tenantId) : null;
 
-  const { data, isLoading, error, isValidating } = useSWR(
-    key,
-    fetcher,
-    {
-      revalidateIfStale: false,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false
-    }
-  );
+  // const { data, isLoading, error, isValidating } = useSWR(
+  //   key,
+  //   fetcher,
+  //   {
+  //     revalidateIfStale: false,
+  //     revalidateOnFocus: false,
+  //     revalidateOnReconnect: false
+  //   }
+  // );
+
+  const { data, isLoading, error, isValidating } = useSWR(swrKey);
 
   // our api wrapper returns the inner "data", so seats should be directly under data.seats
   const root = data?.seats ? data : data?.data ? data.data : {};
@@ -271,15 +281,17 @@ export function useGetTeam(teamId) {
     ? tenantKey(`${endpoints.teams}${teamId}/`, tenantId) 
     : null;
   
-  const { data, isLoading, error, isValidating } = useSWR(
-    swrKey,
-    fetcher,
-    {
-      revalidateIfStale: false,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false
-    }
-  );
+  // const { data, isLoading, error, isValidating } = useSWR(
+  //   swrKey,
+  //   fetcher,
+  //   {
+  //     revalidateIfStale: false,
+  //     revalidateOnFocus: false,
+  //     revalidateOnReconnect: false
+  //   }
+  // );
+
+  const { data, isLoading, error, isValidating } = useSWR(swrKey);
 
   const memoizedValue = useMemo(
     () => ({
@@ -310,15 +322,17 @@ export function useGetOrganization(orgId) {
     ? tenantKey(`${endpoints.organizations}${orgId}/`, tenantId) 
     : null;
   
-  const { data, isLoading, error, isValidating } = useSWR(
-    swrKey,
-    fetcher,
-    {
-      revalidateIfStale: false,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false
-    }
-  );
+  // const { data, isLoading, error, isValidating } = useSWR(
+  //   swrKey,
+  //   fetcher,
+  //   {
+  //     revalidateIfStale: false,
+  //     revalidateOnFocus: false,
+  //     revalidateOnReconnect: false
+  //   }
+  // );
+
+  const { data, isLoading, error, isValidating } = useSWR(swrKey);
 
   const memoizedValue = useMemo(
     () => ({
@@ -477,27 +491,3 @@ export const revalidateUsersLists = () => {
   return refreshUsers();
 };
 
-// ==============================|| RÉSUMÉ DES AMÉLIORATIONS ||============================== //
-
-/*
-✅ STANDARDISATION COMPLÈTE :
-- Toutes les clés SWR utilisent tenantKey(url, tenantId)
-- Revalidations avec revalidateByPrefix() et revalidateMultiple()
-- Support tuples ET strings dans les revalidations
-- Isolation multi-tenant garantie
-
-✅ SÉCURITÉ RENFORCÉE :
-- Impossible de récupérer des données d'un autre tenant
-- Clés uniformes [url, tenantId] pour tous les hooks
-- Revalidations ciblées qui matchent les bonnes clés
-
-✅ PERFORMANCE OPTIMISÉE :
-- Revalidations ciblées (pas de purge globale)
-- Support des filtres dans les clés
-- Backward compatibility pour migration en douceur
-
-✅ MAINTENANCE SIMPLIFIÉE :
-- Une seule façon de gérer les clés SWR
-- Helpers centralisés réutilisables
-- Code plus prévisible et debuggable
-*/
