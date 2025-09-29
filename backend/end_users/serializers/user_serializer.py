@@ -15,25 +15,55 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     Serializer léger pour les listes d'utilisateurs (performance optimisée)
     """
     full_name = serializers.CharField(source='get_full_name', read_only=True)
-    display_name = serializers.CharField(source='get_display_name', read_only=True)
-    team_name = serializers.CharField(source='team.name', read_only=True)
-    organization_name = serializers.CharField(source='organization.name', read_only=True)
-    is_manager = serializers.SerializerMethodField(read_only=True)
+    
+    # Relations (objets pour compatibilité frontend)
+    organization = serializers.SerializerMethodField(read_only=True)
+    team = serializers.SerializerMethodField(read_only=True)
+    
+    # Champ direct timestamp
     last_login = serializers.DateTimeField(read_only=True)
+    
     class Meta:
         model = User
         fields = [
+            # ✅ Identité minimale
             'id', 'email', 'first_name', 'last_name',
-            'full_name', 'display_name',
-            'role_name', 'team_name', 'organization_name',
-            'is_active', 'is_manager','is_superuser', 'is_staff',
-            'created_at', 'last_login'
+            'full_name',  # Pour modal delete
+            
+            # ✅ Relations (objets complets pour frontend)
+            'role_name', 'organization', 'team',
+            
+            # ✅ Status
+            'is_active', 'is_superuser',
+            
+            # ✅ Timestamps
+            'last_login'
         ]
         read_only_fields = fields
     
-    def get_is_manager(self, obj):
-        """Vérifier si l'utilisateur est manager"""
-        return obj.is_manager()
+    def get_organization(self, obj):
+        """
+        Retourner l'organisation sous forme d'objet minimal
+        Compatible avec l'usage frontend: row.original.organization?.name
+        """
+        if obj.organization:
+            return {
+                'id': str(obj.organization_id),
+                'name': obj.organization.name
+            }
+        return None
+    
+    def get_team(self, obj):
+        """
+        Retourner l'équipe sous forme d'objet minimal
+        Compatible avec l'usage frontend: row.original.team?.name
+        """
+        if obj.team:
+            return {
+                'id': str(obj.team_id),
+                'name': obj.team.name
+            }
+        return None
 
 
 class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):

@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q
+from django.db.models import Q, Exists, OuterRef
 from datetime import datetime, date
 from django.db import transaction
 from core.client_scope import ClientScopeManager
@@ -14,7 +14,7 @@ from core.error_messages import CoreErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
 from django.http import Http404
-from ..models import User
+from ..models import User, Team, Organization
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from ..serializers.user_serializer import (
     UserSerializer,
@@ -127,14 +127,30 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             # Liste légère
             queryset = queryset.select_related(
                 'team', 'organization', 'role', 'client_account'
+            ).annotate(
+                # ✅ Annotation: Vérifie si l'utilisateur manage au moins une équipe
+                has_managed_teams=Exists(
+                    Team.objects.filter(manager_id=OuterRef('pk'))
+                ),
+                # ✅ Annotation: Vérifie si l'utilisateur manage au moins une organisation
+                has_managed_orgs=Exists(
+                    Organization.objects.filter(manager_id=OuterRef('pk'))
+                )
             )
+            
+            if settings.DEBUG:
+                print("[UserViewSet] Applied list optimizations: select_related + annotations for is_manager")
+        
         else:
-            # Détails complets
+            # Détails complets: prefetch les relations managées
             queryset = queryset.select_related(
                 'client_account', 'role', 'team', 'organization'
             ).prefetch_related(
                 'managed_teams', 'managed_organizations'
             )
+            
+            if settings.DEBUG:
+                print("[UserViewSet] Applied detail optimizations: select_related + prefetch_related")
         
         # Filtres spéciaux
         managers_only = self.request.query_params.get('managers_only', None)
