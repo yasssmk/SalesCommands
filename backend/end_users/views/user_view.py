@@ -463,6 +463,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Valider si l'utilisateur peut être supprimé
         UPDATED: Prevent deletion of last superuser
         """
+        if user.id == self.request.user.id:
+            raise StandardizedValidationError(
+                CoreErrorMessages.SELF_DELETE_FORBIDDEN
+            )
+    
         client = user.client_account
         
         # Check if this is the last superuser

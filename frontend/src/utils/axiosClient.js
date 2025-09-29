@@ -75,7 +75,9 @@ export const apiRequest = async (requestFn) => {
     
     return {
       success: false,
-      error: errorMessage
+      error: errorMessage,
+      status: error.response?.status || 0,
+      response: error.response || null
     };
   }
 };

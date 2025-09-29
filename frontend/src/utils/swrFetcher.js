@@ -1,8 +1,10 @@
+// frontend/src/utils/swrFetcher.js
+
 /**
- * SWR Global Fetcher avec Monitoring
+ * SWR Global Fetcher with Monitoring
  * 
- * Fetcher centralisé pour tous les hooks SWR de l'application
- * avec monitoring des latences par endpoint.
+ * Centralized fetcher for all SWR hooks in the application
+ * with latency monitoring per endpoint.
  * 
  * @module utils/swrFetcher
  */
@@ -10,13 +12,40 @@
 import { api } from 'utils/axiosClient';
 import metricsCollector from 'utils/monitoring';
 
+// ==============================|| ERROR HELPER ||============================== //
+
+/**
+ * Create an Error object that preserves the HTTP status code
+ * This is crucial for error handling in components
+ * 
+ * @param {string} message - Error message
+ * @param {number} status - HTTP status code
+ * @param {Object} response - Optional response object
+ * @returns {Error} Enhanced error with status
+ */
+const createApiError = (message, status, response = null) => {
+  const error = new Error(message);
+  
+  // ✅ Attach status in multiple formats for compatibility
+  error.status = status;
+  
+  // ✅ Create a response-like object (Axios format)
+  error.response = {
+    status,
+    data: response?.data || null,
+    statusText: response?.statusText || ''
+  };
+  
+  return error;
+};
+
 // ==============================|| PERFORMANCE HELPERS ||============================== //
 
 /**
- * Wrapper pour mesurer la performance d'une requête
- * @param {Function} asyncFn - Fonction async à mesurer
- * @param {string} endpoint - URL de l'endpoint
- * @returns {Promise} Résultat avec monitoring
+ * Wrapper to measure request performance
+ * @param {Function} asyncFn - Async function to measure
+ * @param {string} endpoint - URL endpoint
+ * @returns {Promise} Result with monitoring
  */
 const withPerformanceTracking = async (asyncFn, endpoint) => {
   const startTime = performance.now();
@@ -27,19 +56,19 @@ const withPerformanceTracking = async (asyncFn, endpoint) => {
   try {
     const result = await asyncFn();
     
-    // Extraire le status code si disponible
+    // Extract status code if available
     statusCode = result?.__meta?.status || 200;
     
     return result;
   } catch (err) {
     success = false;
     error = err;
-    statusCode = err.response?.status || 0;
+    statusCode = err.response?.status || err.status || 0;
     throw err;
   } finally {
     const duration = performance.now() - startTime;
     
-    // Enregistrer la métrique
+    // Record metric
     if (success) {
       metricsCollector.recordEndpointLatency(endpoint, duration, {
         success: true,
@@ -53,15 +82,15 @@ const withPerformanceTracking = async (asyncFn, endpoint) => {
       });
     }
     
-    // === LOGS AMÉLIORÉS AVEC COULEURS ET EMOJIS ===
+    // === ENHANCED LOGS WITH COLORS AND EMOJIS ===
     if (process.env.NODE_ENV === 'development') {
-      // Nettoyer l'endpoint pour l'affichage
+      // Clean endpoint for display
       const cleanUrl = endpoint
         .replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, '{uuid}')
         .replace(/\/\d+\//g, '/{id}/')
         .replace(/\/\d+$/g, '/{id}');
       
-      // Déterminer la couleur selon la latence
+      // Determine color based on latency
       let style = '';
       let emoji = '';
       
@@ -82,19 +111,19 @@ const withPerformanceTracking = async (asyncFn, endpoint) => {
         style = 'color: #ff4444; font-weight: bold';
       }
       
-      // Format du message
+      // Format message
       const method = success ? 'GET' : 'ERR';
       const time = duration < 1000 
         ? `${duration.toFixed(0)}ms` 
         : `${(duration/1000).toFixed(2)}s`;
       
-      // Log avec style
+      // Log with style
       console.log(
         `%c${emoji} [${method}] ${cleanUrl} → ${time} (${statusCode || '?'})`,
         style
       );
       
-      // Si requête très lente, log supplémentaire
+      // If very slow request, additional log
       if (duration > 2000 && success) {
         console.warn(
           `%c⏰ VERY SLOW REQUEST: ${cleanUrl} took ${(duration/1000).toFixed(2)} seconds!`,
@@ -102,7 +131,7 @@ const withPerformanceTracking = async (asyncFn, endpoint) => {
         );
       }
       
-      // Si erreur, log détaillé
+      // If error, detailed log
       if (!success && error) {
         console.group(`%c❌ Error Details for ${cleanUrl}`, 'color: #cc0000');
         console.error('Status:', statusCode);
@@ -119,48 +148,48 @@ const withPerformanceTracking = async (asyncFn, endpoint) => {
 // ==============================|| MAIN FETCHER ||============================== //
 
 /**
- * Fetcher global pour SWR avec monitoring - méthode GET
+ * Global fetcher for SWR with monitoring - GET method
  * 
- * IMPORTANT: SWR peut passer soit :
- * 1. La clé originale (string ou array)
- * 2. Une version stringifiée pour les clés complexes (commence par @)
- * 3. Les éléments du tuple comme arguments séparés
+ * IMPORTANT: SWR can pass either:
+ * 1. The original key (string or array)
+ * 2. A stringified version for complex keys (starts with @)
+ * 3. Tuple elements as separate arguments
  * 
- * @param {...any} args - Arguments passés par SWR
- * @returns {Promise<any>} - Données de l'API
- * @throws {Error} - Erreur si la requête échoue
+ * @param {...any} args - Arguments passed by SWR
+ * @returns {Promise<any>} - API data
+ * @throws {Error} - Error if request fails
  */
 const swrFetcher = async (...args) => {
   let url;
   let keyInfo = { raw: args };
   
-  // === PARSING DE LA CLÉ SWR ===
+  // === SWR KEY PARSING ===
   
-  // Cas 1: Un seul argument
+  // Case 1: Single argument
   if (args.length === 1) {
     const key = args[0];
     
-    // Si c'est une string qui commence par @, c'est une clé sérialisée par SWR
+    // If it's a string starting with @, it's a serialized key by SWR
     if (typeof key === 'string' && key.startsWith('@')) {
-      // SWR a stringifié notre tuple, on ne peut pas l'utiliser directement
+      // SWR stringified our tuple, can't use it directly
       console.error('[SWR Fetcher] Received serialized key:', key);
       throw new Error('Fetcher received serialized key - check SWR configuration');
     }
-    // Si c'est un tableau [url, tenantId]
+    // If it's an array [url, tenantId]
     else if (Array.isArray(key)) {
       url = key[0];
       keyInfo.type = 'tuple';
       keyInfo.tenantId = key[1];
     }
-    // Si c'est une string simple
+    // If it's a simple string
     else if (typeof key === 'string') {
       url = key;
       keyInfo.type = 'string';
     }
   }
-  // Cas 2: Plusieurs arguments (SWR a décomposé le tuple)
+  // Case 2: Multiple arguments (SWR decomposed the tuple)
   else if (args.length >= 2) {
-    // Premier argument est l'URL
+    // First argument is the URL
     url = args[0];
     keyInfo.type = 'spread';
     keyInfo.tenantId = args[1];
@@ -173,7 +202,7 @@ const swrFetcher = async (...args) => {
     throw new Error(`Invalid SWR key: URL must be a string, got ${typeof url}`);
   }
 
-  // === LOG DE DEBUG (OPTIONNEL - peut être supprimé) ===
+  // === DEBUG LOG (OPTIONAL - can be removed) ===
   if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEBUG_SWR === 'true') {
     console.debug('[SWR Fetcher] Processing:', {
       url,
@@ -182,25 +211,30 @@ const swrFetcher = async (...args) => {
     });
   }
 
-  // === FETCH AVEC MONITORING ===
+  // === FETCH WITH MONITORING ===
   
   try {
     const data = await withPerformanceTracking(
       async () => {
-        // Utilisation du wrapper api qui gère déjà :
-        // - Les cookies HTTP-only pour l'authentification JWT
-        // - Les headers tenant (X-Client-ID, etc.)
-        // - La gestion d'erreurs standardisée
-        // - Les interceptors axios pour refresh token
+        // Use api wrapper which already handles:
+        // - HTTP-only cookies for JWT authentication
+        // - Tenant headers (X-Client-ID, etc.)
+        // - Standardized error handling
+        // - Axios interceptors for token refresh
         const result = await api.get(url);
         
-        // Le wrapper api retourne {success, data, error}
+        // The api wrapper returns {success, data, error, status}
         if (result.success) {
           return result.data;
         }
         
-        // Si pas de succès, lancer l'erreur pour que SWR la gère
-        throw new Error(result.error || 'Failed to fetch data');
+        // ✅ FIX: If not successful, throw error WITH status code preserved
+        // This ensures UI components can access error.response.status
+        throw createApiError(
+          result.error || 'Failed to fetch data',
+          result.status || 0,
+          result.response
+        );
       },
       url // Pass URL for monitoring
     );
@@ -208,23 +242,23 @@ const swrFetcher = async (...args) => {
     return data;
     
   } catch (error) {
-    // Re-throw l'erreur pour que SWR puisse :
-    // - Utiliser onError si configuré
-    // - Appliquer shouldRetryOnError selon la config
-    // - Afficher l'erreur dans le composant via error state
+    // Re-throw the error so SWR can:
+    // - Use onError if configured
+    // - Apply shouldRetryOnError based on config
+    // - Display error in component via error state
     throw error;
   }
 };
 
-// ==============================|| MUTATION FETCHERS AVEC MONITORING ||============================== //
+// ==============================|| MUTATION FETCHERS WITH MONITORING ||============================== //
 
 /**
- * Fetcher pour requêtes POST avec monitoring
+ * Fetcher for POST requests with monitoring
  * 
- * @param {string | [string, string]} keyOrTuple - URL string ou tuple [url, tenantId]
- * @param {Object} options - Options de la mutation
- * @param {any} options.arg - Données à envoyer en POST
- * @returns {Promise<any>} - Données de réponse
+ * @param {string | [string, string]} keyOrTuple - URL string or tuple [url, tenantId]
+ * @param {Object} options - Mutation options
+ * @param {any} options.arg - Data to send in POST
+ * @returns {Promise<any>} - Response data
  */
 export const swrPostFetcher = async (keyOrTuple, { arg }) => {
   const url = Array.isArray(keyOrTuple) ? keyOrTuple[0] : keyOrTuple;
@@ -241,20 +275,25 @@ export const swrPostFetcher = async (keyOrTuple, { arg }) => {
         return result.data;
       }
       
-      throw new Error(result.error || 'Failed to post data');
+      // ✅ Preserve status code in error
+      throw createApiError(
+        result.error || 'Failed to post data',
+        result.status || 0,
+        result.response
+      );
     },
     url
   );
 };
 
 /**
- * Fetcher pour requêtes PUT/PATCH avec monitoring
+ * Fetcher for PUT/PATCH requests with monitoring
  * 
- * @param {string | [string, string]} keyOrTuple - URL string ou tuple [url, tenantId]
- * @param {Object} options - Options de la mutation
- * @param {any} options.arg - Données à envoyer
- * @param {string} options.method - Méthode HTTP (PUT ou PATCH)
- * @returns {Promise<any>} - Données de réponse
+ * @param {string | [string, string]} keyOrTuple - URL string or tuple [url, tenantId]
+ * @param {Object} options - Mutation options
+ * @param {any} options.arg - Data to send
+ * @param {string} options.method - HTTP method (PUT or PATCH)
+ * @returns {Promise<any>} - Response data
  */
 export const swrMutateFetcher = async (keyOrTuple, { arg, method = 'PATCH' }) => {
   const url = Array.isArray(keyOrTuple) ? keyOrTuple[0] : keyOrTuple;
@@ -273,17 +312,22 @@ export const swrMutateFetcher = async (keyOrTuple, { arg, method = 'PATCH' }) =>
         return result.data;
       }
       
-      throw new Error(result.error || `Failed to ${method} data`);
+      // ✅ Preserve status code in error
+      throw createApiError(
+        result.error || `Failed to ${method} data`,
+        result.status || 0,
+        result.response
+      );
     },
     url
   );
 };
 
 /**
- * Fetcher pour requêtes DELETE avec monitoring
+ * Fetcher for DELETE requests with monitoring
  * 
- * @param {string | [string, string]} keyOrTuple - URL string ou tuple [url, tenantId]
- * @returns {Promise<any>} - Confirmation de suppression
+ * @param {string | [string, string]} keyOrTuple - URL string or tuple [url, tenantId]
+ * @returns {Promise<any>} - Deletion confirmation
  */
 export const swrDeleteFetcher = async (keyOrTuple) => {
   const url = Array.isArray(keyOrTuple) ? keyOrTuple[0] : keyOrTuple;
@@ -300,7 +344,12 @@ export const swrDeleteFetcher = async (keyOrTuple) => {
         return result.data || { success: true };
       }
       
-      throw new Error(result.error || 'Failed to delete');
+      // ✅ Preserve status code in error
+      throw createApiError(
+        result.error || 'Failed to delete',
+        result.status || 0,
+        result.response
+      );
     },
     url
   );
@@ -309,8 +358,8 @@ export const swrDeleteFetcher = async (keyOrTuple) => {
 // ==============================|| CACHE ANALYSIS HELPER ||============================== //
 
 /**
- * Helper pour analyser le cache SWR (dev only)
- * @param {Function} useSWRConfig - Hook SWR config
+ * Helper to analyze SWR cache (dev only)
+ * @param {Function} useSWRConfig - SWR config hook
  */
 export const analyzeSWRCache = (useSWRConfig) => {
   if (process.env.NODE_ENV !== 'development') return;
@@ -321,7 +370,7 @@ export const analyzeSWRCache = (useSWRConfig) => {
   console.group('📦 SWR Cache Analysis');
   console.log('Total cached keys:', cacheKeys.length);
   
-  // Grouper par endpoint
+  // Group by endpoint
   const byEndpoint = {};
   cacheKeys.forEach(key => {
     const clean = key.replace(/\?.*/, '').replace(/\/\d+/g, '/{id}');
@@ -334,5 +383,5 @@ export const analyzeSWRCache = (useSWRConfig) => {
   return { total: cacheKeys.length, byEndpoint };
 };
 
-// Export par défaut du fetcher GET (le plus utilisé)
+// Export GET fetcher as default (most used)
 export default swrFetcher;

@@ -24,6 +24,8 @@ import UserSeatsCard from 'sections/admin/users/UserSeatsCard';
 import SeatsSummary from 'sections/admin/users/SeatsSummary';
 
 import { useGetUsers } from 'api/admin/users';
+import { useAuth } from 'hooks/useAuth';
+import { tenantKey } from 'api/_swr';
 
 // formatting (standardized across the app)
 import { formatDateTime } from 'config/formatters'; 
@@ -43,7 +45,14 @@ import TestErrorButton from 'components/TestErrorButton';
 
 export default function UserListPage() {
   const theme = useTheme();
-  const { usersLoading, users: lists } = useGetUsers();
+  const { tenantId } = useAuth();
+  
+  // ✅ STEP 1: Get error from hook
+  const { usersLoading, users: lists, usersError } = useGetUsers();
+
+  
+  // ✅ STEP 2: Create SWR key for mutate (retry functionality)
+  const swrKey = tenantKey('/client/users/', tenantId);
 
   const [open, setOpen] = useState(false);
 
@@ -100,7 +109,7 @@ export default function UserListPage() {
           />
         )
       },
-           {
+      {
         header: 'SuperUser',
         accessorKey: 'is_superuser',
         cell: ({ row }) => (
@@ -144,7 +153,7 @@ export default function UserListPage() {
           />
         )
       },
-            {
+      {
         header: 'Last connection',
         accessorKey: 'last_login',
         cell: ({ getValue }) => {
@@ -159,14 +168,25 @@ export default function UserListPage() {
         },
         disableSortBy: true,
         cell: ({ row }) => {
-          const collapseIcon = row.getCanExpand() && row.getIsExpanded() ? 
-            <PlusOutlined style={{ transform: 'rotate(45deg)' }} /> : <EyeOutlined />;
+          const collapseIcon = row.getCanExpand() && row.getIsExpanded() ? (
+            <Tooltip title="Close">
+              <EyeOutlined style={{ color: theme.palette.error.main, transform: 'rotate(90deg)' }} />
+            </Tooltip>
+          ) : (
+            <Tooltip title="View">
+              <EyeOutlined />
+            </Tooltip>
+          );
+
           return (
             <Stack direction="row" alignItems="center" justifyContent="center" spacing={0}>
               <Tooltip title="View">
                 <IconButton
-                  color={row.getIsExpanded() ? 'error' : 'secondary'}
-                  onClick={row.getToggleExpandedHandler()}
+                  color="secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    row.toggleExpanded();
+                  }}
                 >
                   {collapseIcon}
                 </IconButton>
@@ -189,8 +209,8 @@ export default function UserListPage() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelectedUser(row.original);
+                    handleClose();
                     setUserDeleteId(row.original.id);
-                    setOpen(true);
                   }}
                 >
                   <DeleteOutlined />
@@ -201,35 +221,42 @@ export default function UserListPage() {
         }
       }
     ],
-    [open]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [theme]
   );
 
-
   return (
-    <>
-       {/* Cards row */}
+    <Grid container spacing={3}>
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <SeatsSummary />
       </Grid>
-
-      <UserTable
-        {...{
-          data: lists || [],
-          columns,
-          modalToggler: () => {
-            setUserModal(true);
+      <Grid item xs={12}>
+        <UserTable
+          data={lists || []}
+          columns={columns}
+          loading={usersLoading}
+          error={usersError}        // ✅ STEP 3: Pass error to UserTable
+          swrKey={swrKey}            // ✅ STEP 4: Pass SWR key for retry
+          modalToggler={() => {
             setSelectedUser(null);
-          }
-        }}
-      />
+            setUserModal(true);
+          }}
+        />
+      </Grid>
+
+      {/* Add/Edit User Modal */}
+      <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />
+      
+      {/* Delete Confirmation */}
       <AlertUserDelete 
         id={userDeleteId} 
-        title={selectedUser?.full_name || 'User'} 
+        title={selectedUser ? `${selectedUser.first_name || ''} ${selectedUser.last_name || ''}`.trim() + ` (${selectedUser.email})` : 'User'}
         open={open} 
         handleClose={handleClose} 
       />
-      <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />
-      <TestErrorButton />
-    </>
+      
+      {/* Test Error Button (dev only) */}
+      {process.env.NODE_ENV === 'development' && <TestErrorButton />}
+    </Grid>
   );
 }

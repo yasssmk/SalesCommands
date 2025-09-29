@@ -227,6 +227,7 @@ class JWTHelpers:
         payload = {
             'origin': origin,
             'user_id': UUIDEncoder.encode(user.id),
+            'is_superuser': user.is_superuser,
         }
 
         if origin == 'end_users':

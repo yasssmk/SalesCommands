@@ -149,6 +149,7 @@ def get_auth_ctx(request) -> AuthContext:
             ctx.user_id = str(auth_dict.get('user_id')) if auth_dict.get('user_id') else None
             ctx.client_id = str(auth_dict.get('client_account')) if auth_dict.get('client_account') else None
             
+            
             # Extract role WITH flags
             if 'role' in auth_dict:
                 role = auth_dict.get('role')

@@ -1,5 +1,6 @@
 import PropTypes from 'prop-types';
 import { Fragment, useMemo, useState } from 'react';
+import { useSWRConfig } from 'swr';
 
 // material-ui
 import { alpha, useTheme } from '@mui/material/styles';
@@ -18,6 +19,10 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Skeleton from '@mui/material/Skeleton';
 import Button from '@mui/material/Button';
+import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
+import WarningOutlined from '@ant-design/icons/WarningOutlined';
+import ReloadOutlined from '@ant-design/icons/ReloadOutlined';
 
 // third-party
 import {
@@ -39,18 +44,70 @@ import { DebouncedInput, HeaderSort, IndeterminateCheckbox, RowSelection, Select
 
 import ExpandingUserDetail from './ExpandingUserDetail';
 
+// utils
+import { getErrorDisplayInfo } from 'utils/errorMessages';
+
 // assets
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
 
+// ==============================|| ERROR DISPLAY COMPONENT ||============================== //
+
+/**
+ * Inline error display component with retry action
+ * Uses the reusable getErrorDisplayInfo utility for consistent error handling
+ */
+function ErrorDisplay({ error, onRetry, isRetrying }) {
+  const errorInfo = getErrorDisplayInfo(error);
+
+  if (!errorInfo) return null;
+
+  return (
+    <TableRow>
+      <TableCell colSpan={100} sx={{ py: 6, px: 3 }}>
+        <Alert 
+          severity={errorInfo.severity}
+          icon={<WarningOutlined style={{ fontSize: 24 }} />}
+          action={
+            errorInfo.isRetryable && (
+              <Button
+                color={errorInfo.severity}
+                size="small"
+                variant="outlined"
+                onClick={onRetry}
+                disabled={isRetrying}
+                startIcon={<ReloadOutlined />}
+              >
+                {isRetrying ? 'Loading...' : 'Retry'}
+              </Button>
+            )
+          }
+        >
+          <AlertTitle sx={{ fontWeight: 600 }}>{errorInfo.title}</AlertTitle>
+          {errorInfo.message}
+        </Alert>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+ErrorDisplay.propTypes = {
+  error: PropTypes.object,
+  onRetry: PropTypes.func.isRequired,
+  isRetrying: PropTypes.bool
+};
+
+
 // ==============================|| REACT TABLE ||============================== //
 
-function ReactTable({ data, columns, loading, modalToggler }) {
+function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
+  const { mutate } = useSWRConfig();
 
   const [sorting, setSorting] = useState([]);
   const [rowSelection, setRowSelection] = useState({});
   const [globalFilter, setGlobalFilter] = useState('');
+  const [isRetrying, setIsRetrying] = useState(false);
 
   const table = useReactTable({
     data,
@@ -75,13 +132,30 @@ function ReactTable({ data, columns, loading, modalToggler }) {
 
   const backColor = alpha(theme.palette.primary.lighter, 0.1);
 
+  // Handler to retry loading after error
+  const handleRetry = async () => {
+    if (!swrKey || isRetrying) return;
+
+    setIsRetrying(true);
+    try {
+      // Revalidate the SWR key (forces a new fetch)
+      await mutate(swrKey);
+    } catch (err) {
+      // Error will be captured by SWR and displayed
+      console.error('Retry failed:', err);
+    } finally {
+      // Small delay to prevent spam clicking
+      setTimeout(() => setIsRetrying(false), 500);
+    }
+  };
+
   let headers = [];
   table.getVisibleFlatColumns().map(
     (columns) =>
       // @ts-ignore
       columns.columnDef.accessorKey &&
       headers.push({
-        label: typeof columns.columnDef.header === 'string' ? columns.columnDef.header : '#',
+        label: typeof columns.columnDef.header === 'string' ? columns.columnDef.header : columns.columnDef.header,
         // @ts-ignore
         key: columns.columnDef.accessorKey
       })
@@ -97,21 +171,25 @@ function ReactTable({ data, columns, loading, modalToggler }) {
         sx={{ padding: 2, ...(matchDownSM && { '& .MuiOutlinedInput-root, & .MuiFormControl-root': { width: '100%' } }) }}
       >
         <DebouncedInput
-          
           value={globalFilter ?? ''}
           onFilterChange={(value) => setGlobalFilter(String(value))}
           placeholder={loading ? "Loading..." : `Search ${data.length} records...`}
-          disabled={loading}
+          disabled={loading || !!error}
         />
 
         <Stack direction="row" alignItems="center" spacing={2} sx={{ width: { xs: '100%', sm: 'auto' } }}>
           <SelectColumnSorting 
             {...{ getState: table.getState, getAllColumns: table.getAllColumns, setSorting }} 
-            disabled={loading}
+            disabled={loading || !!error}
           />
-          <Button variant="contained" startIcon={<PlusOutlined />} onClick={modalToggler} disabled={loading}>
-              Add User
-            </Button>
+          <Button 
+            variant="contained" 
+            startIcon={<PlusOutlined />} 
+            onClick={modalToggler} 
+            disabled={loading || !!error}
+          >
+            Add User
+          </Button>
         </Stack>
       </Stack>
       <ScrollX>
@@ -148,8 +226,15 @@ function ReactTable({ data, columns, loading, modalToggler }) {
                 ))}
               </TableHead>
               <TableBody>
-                {loading ? (
-                  // ✅ LOADING STATE - Skeleton rows
+                {/* ✅ PRIORITY 1: ERROR - Displayed first if present */}
+                {error ? (
+                  <ErrorDisplay 
+                    error={error} 
+                    onRetry={handleRetry}
+                    isRetrying={isRetrying}
+                  />
+                ) : loading ? (
+                  // ✅ PRIORITY 2: LOADING - Skeleton rows
                   Array.from({ length: 5 }).map((_, index) => (
                     <TableRow key={`skeleton-${index}`}>
                       {columns.map((column, colIndex) => (
@@ -160,7 +245,7 @@ function ReactTable({ data, columns, loading, modalToggler }) {
                     </TableRow>
                   ))
                 ) : data.length === 0 ? (
-                  // ✅ EMPTY STATE - No data message
+                  // ✅ PRIORITY 3: EMPTY STATE - No data message
                   <TableRow>
                     <TableCell colSpan={columns.length} align="center" sx={{ py: 6 }}>
                       <Stack spacing={1} alignItems="center">
@@ -174,7 +259,7 @@ function ReactTable({ data, columns, loading, modalToggler }) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  // ✅ DATA STATE - Normal table rows
+                  // ✅ PRIORITY 4: DATA STATE - Normal table rows
                   table.getRowModel().rows.map((row) => (
                     <Fragment key={row.id}>
                       <TableRow>
@@ -206,7 +291,7 @@ function ReactTable({ data, columns, loading, modalToggler }) {
                   setPageIndex: table.setPageIndex,
                   getState: table.getState,
                   getPageCount: table.getPageCount,
-                  disabled: loading
+                  disabled: loading || !!error
                 }}
               />
             </Box>
@@ -219,13 +304,15 @@ function ReactTable({ data, columns, loading, modalToggler }) {
 
 // ==============================|| USER TABLE ||============================== //
 
-export default function UserTable({ data, columns, loading, modalToggler }) {
-  return <ReactTable {...{ data, columns, loading, modalToggler }} />;
+export default function UserTable({ data, columns, loading, error, swrKey, modalToggler }) {
+  return <ReactTable {...{ data, columns, loading, error, swrKey, modalToggler }} />;
 }
 
 UserTable.propTypes = { 
   data: PropTypes.array, 
   columns: PropTypes.array, 
   loading: PropTypes.bool,
+  error: PropTypes.object,        // ✅ Error object from SWR
+  swrKey: PropTypes.any,           // ✅ SWR key for mutate()
   modalToggler: PropTypes.func 
 };

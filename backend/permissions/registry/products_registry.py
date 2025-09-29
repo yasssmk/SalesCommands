@@ -14,7 +14,7 @@ PRODUCTS_REGISTRY: Dict[str, ModulePermissions] = {
     # Product module 
     # Ownership: none
     # ========================================================================
-    'users': {
+    'products' : {
         'create': {
             'admin': 'client',      # Admin can create any product
             'manager': 'none',      # Manager cannot create product
