@@ -801,47 +801,31 @@ def test_team_performance_allowed_all(api, users, tenants):
 # TESTS: Superusers listing
 # ============================================================================
 
-def test_list_superusers_admin_only(api, users, tenants):
-    """SUPERUSERS: Seuls les admins peuvent voir la liste des superusers"""
-    
-    # Test avec admin - devrait réussir
-    admin = users["actors"]["admin"]
-    authenticate_user(api, admin, tenants["A"])
-    
-    resp = make_request(api, "get", url_superusers(), tenants["A"])
-    assert resp.status_code == status.HTTP_200_OK
-    
-    # Vérifier qu'on ne voit que les superusers du tenant A si des données sont retournées
-    if resp.data:
-        # Si c'est un dict avec 'results' (pagination)
-        if isinstance(resp.data, dict) and 'results' in resp.data:
-            users_list = resp.data['results']
-        # Si c'est directement une liste
-        elif isinstance(resp.data, list):
-            users_list = resp.data
-        # Si c'est une string, on peut avoir une réponse d'erreur
-        elif isinstance(resp.data, str):
-            users_list = []
-        else:
-            users_list = []
+def test_list_superusers_allowed_all_roles(api, users, tenants):
+    """SUPERUSERS: Tous les rôles peuvent voir la liste des superusers"""
+    for role_name in ["admin", "manager", "individual"]:
+        actor = users["actors"][role_name]
+        authenticate_user(api, actor, tenants["A"])
         
-        for user_data in users_list:
-            if isinstance(user_data, dict) and "id" in user_data:
-                assert User.objects.get(id=user_data["id"]).client_account_id == tenants["A"]
-    
-    # Test avec manager - devrait être bloqué
-    manager = users["actors"]["manager"]
-    authenticate_user(api, manager, tenants["A"])
-    
-    resp = make_request(api, "get", url_superusers(), tenants["A"])
-    assert resp.status_code in (status.HTTP_400_BAD_REQUEST, status.HTTP_403_FORBIDDEN)
-    
-    # Test avec individual - devrait être bloqué
-    individual = users["actors"]["individual"]
-    authenticate_user(api, individual, tenants["A"])
-    
-    resp = make_request(api, "get", url_superusers(), tenants["A"])
-    assert resp.status_code in (status.HTTP_400_BAD_REQUEST, status.HTTP_403_FORBIDDEN)
+        resp = make_request(api, "get", url_superusers(), tenants["A"])
+        assert resp.status_code == status.HTTP_200_OK
+        
+        # Vérifier qu'on ne voit que les superusers du tenant A
+        # La réponse peut être une liste ou un dict avec 'results'
+        if resp.data:
+            # Si c'est un dict avec 'results' (pagination)
+            if isinstance(resp.data, dict) and 'results' in resp.data:
+                users_list = resp.data['results']
+            # Si c'est directement une liste
+            elif isinstance(resp.data, list):
+                users_list = resp.data
+            # Si c'est une string ou autre type non itérable, on skip
+            else:
+                users_list = []
+            
+            for user_data in users_list:
+                if isinstance(user_data, dict) and "id" in user_data:
+                    assert User.objects.get(id=user_data["id"]).client_account_id == tenants["A"]
 
 
 # ============================================================================
