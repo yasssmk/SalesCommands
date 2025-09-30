@@ -46,13 +46,13 @@ const FEATURE_FLAGS = {
  */
 const admin = {
   id: 'administration',
-  title: 'Administration',
+  title: 'administration', // Clé i18n au lieu du texte hardcodé
   type: 'group',
   icon: icons.SettingOutlined,
   children: [
     {
       id: 'user-management',
-      title: 'User Management',
+      title: 'user-management', // Clé i18n
       type: 'item',
       url: '/admin/users',
       icon: icons.UserOutlined,
@@ -61,7 +61,7 @@ const admin = {
     },
     {
       id: 'team-management', 
-      title: 'Team Management',
+      title: 'team-management', // Clé i18n
       type: 'item',
       // Don't use the URL if disabled - it prevents accidental navigation
       url: isFeatureEnabled('TEAM_MANAGEMENT') 
@@ -74,7 +74,7 @@ const admin = {
     },
     {
       id: 'roles-permissions',
-      title: 'Roles & Permissions',
+      title: 'roles-permissions', // Clé i18n
       type: 'item',
       url: isFeatureEnabled('ROLES_PERMISSIONS') 
         ? '/admin/roles' 

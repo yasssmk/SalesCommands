@@ -19,6 +19,9 @@ import ListItemText from '@mui/material/ListItemText';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
+// third-party - AJOUT pour i18n
+import { FormattedMessage } from 'react-intl';
+
 // project import
 import Dot from 'components/@extended/Dot';
 import IconButton from 'components/@extended/IconButton';
@@ -81,6 +84,31 @@ export default function NavItem({ item, level, isParents = false }) {
 
   const textColor = mode === ThemeMode.DARK ? 'grey.400' : 'text.primary';
   const iconSelectedColor = mode === ThemeMode.DARK && drawerOpen ? 'text.primary' : 'primary.main';
+
+  // Helper pour obtenir le titre traduit ou le titre brut comme fallback
+  const getItemTitle = () => {
+    // Si le titre contient des espaces ou caractères spéciaux, c'est probablement déjà du texte
+    // et non une clé i18n, donc on l'affiche directement
+    if (item.title && (item.title.includes(' ') || item.title.includes('&'))) {
+      return item.title;
+    }
+    
+    // Sinon, on considère que c'est une clé i18n
+    return <FormattedMessage id={item.title} defaultMessage={item.title} />;
+  };
+
+  // Helper pour obtenir le tooltip traduit
+  const getTooltipTitle = () => {
+    if (!item.tooltip) return '';
+    
+    // Si le tooltip contient des espaces, c'est du texte direct
+    if (item.tooltip.includes(' ')) {
+      return item.tooltip;
+    }
+    
+    // Sinon c'est une clé i18n
+    return <FormattedMessage id={item.tooltip} defaultMessage={item.tooltip} />;
+  };
 
   // Build the ListItemButton
   const listItemButton = (
@@ -175,7 +203,7 @@ export default function NavItem({ item, level, isParents = false }) {
         <ListItemText
           primary={
             <Typography variant="h6" sx={{ color: isSelected ? iconSelectedColor : textColor }}>
-              {item.title}
+              {getItemTitle()}
             </Typography>
           }
         />
@@ -350,7 +378,7 @@ export default function NavItem({ item, level, isParents = false }) {
           <ListItemText
             primary={
               <Typography variant="h6" color={isSelected ? 'primary.main' : 'secondary.dark'}>
-                {item.title}
+                {getItemTitle()}
               </Typography>
             }
           />

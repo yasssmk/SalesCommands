@@ -112,9 +112,9 @@ export default function Breadcrumbs({
     mainContent = (
       <NextLink href={main.url} passHref legacyBehavior>
         <Typography
-          variant={window.location.pathname === main.url ? 'subtitle1' : 'h6'}
+          variant={location === main.url ? 'subtitle1' : 'h6'}
           sx={{ textDecoration: 'none', cursor: 'pointer' }}
-          color={window.location.pathname === main.url ? 'text.primary' : 'text.secondary'}
+          color={location === main.url ? 'text.primary' : 'text.secondary'}
         >
           {icons && <CollapseIcon style={iconSX} />}
           {main.title}
