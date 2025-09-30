@@ -15,6 +15,7 @@ const endpoints = {
   organizations: '/client/organizations/',
   teams: '/client/teams/',
   roles: '/client/roles/',
+  clientAccountSeats: (clientId) => `/client/client-accounts/${clientId}/seats/`,
   clientAccountStats: (clientId) => `/client/client-accounts/${clientId}/stats/`
 };
 
@@ -217,38 +218,41 @@ export function useGetUserRoles() {
  */
 export function useGetClientSeats(clientId) {
   const { tenantId } = useAuth(); 
+  
+  // ✅ NOUVEAU: Utilise l'endpoint /seats/ au lieu de /stats/
   const swrKey = clientId && tenantId? 
-    tenantKey(endpoints.clientAccountStats(clientId), tenantId) : null;
-
-  // const { data, isLoading, error, isValidating } = useSWR(
-  //   key,
-  //   fetcher,
-  //   {
-  //     revalidateIfStale: false,
-  //     revalidateOnFocus: false,
-  //     revalidateOnReconnect: false
-  //   }
-  // );
+    tenantKey(endpoints.clientAccountSeats(clientId), tenantId) : null;
 
   const { data, isLoading, error, isValidating } = useSWR(swrKey);
+  
+  // Debug pour vérifier la structure
+  // if (process.env.NODE_ENV === 'development' && data) {
+  //   console.log('[useGetClientSeats] Response:', data);
+  // }
 
-  // our api wrapper returns the inner "data", so seats should be directly under data.seats
-  const root = data?.seats ? data : data?.data ? data.data : {};
-  const s = root?.seats || {};
+  // ✅ Structure correcte: data.data contient directement seats, seats_used, seats_left
+  const seatData = data?.data || {};
+  
+  const seats = Number(seatData.seats ?? 0);
+  const seatsUsed = Number(seatData.seats_used ?? 0);
+  const seatsLeft = Number(seatData.seats_left ?? 0);
 
-  const seats = Number(s.seats ?? 0);
-  const seatsUsed = Number(s.seats_used ?? 0);
-  const seatsLeft = Number(s.seats_left ?? Math.max(0, seats - seatsUsed));
+  const memoizedValue = useMemo(
+    () => ({
+      seats,
+      seatsUsed,
+      seatsLeft,
+      seatsLoading: isLoading,
+      seatsError: error,
+      seatsValidating: isValidating,
+      // Métadonnées de performance
+      timing: data?._meta?.timing_ms,
+      raw: data  // Pour debug si besoin
+    }),
+    [seats, seatsUsed, seatsLeft, isLoading, error, isValidating, data]
+  );
 
-  return {
-    seats,
-    seatsUsed,
-    seatsLeft,
-    seatsLoading: isLoading,
-    seatsError: error,
-    seatsValidating: isValidating,
-    raw: data
-  };
+  return memoizedValue;
 }
 
 // ==============================|| HOOKS POUR RESOURCE GUARD LAYOUT ||============================== //

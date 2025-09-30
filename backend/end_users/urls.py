@@ -49,9 +49,18 @@ urlpatterns = [
     }), name='client-account-detail'),
     
     # Client Account Actions
+    path('client-accounts/<uuid:pk>/seats/', ClientAccountViewSet.as_view({
+        'get': 'seats'
+    }), name='client-account-seats'),
+
     path('client-accounts/<uuid:pk>/stats/', ClientAccountViewSet.as_view({
         'get': 'stats'
     }), name='client-account-stats'),
+
+    path('client-accounts/<uuid:pk>/users-summary/', ClientAccountViewSet.as_view({
+        'get': 'users_summary'
+    }), name='client-account-users-summary'),
+    
     
     # =========================================================================
     # USER ROLES MANAGEMENT - Gestion des rôles et permissions

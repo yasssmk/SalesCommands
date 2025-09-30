@@ -141,16 +141,30 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             if settings.DEBUG:
                 print("[UserViewSet] Applied list optimizations: select_related + annotations for is_manager")
         
-        else:
-            # Détails complets: prefetch les relations managées
+        elif self.action == 'retrieve':
+            # ✅ OPTIMISATION: Pas de prefetch_related pour retrieve simple
+            queryset = queryset.select_related(
+                'client_account', 'role', 'team', 'organization'
+            )
+            # ❌ SUPPRIMÉ: .prefetch_related('managed_teams', 'managed_organizations')
+            if settings.DEBUG:
+                print("[UserViewSet] Applied retrieve optimizations: select_related only (no prefetch)")
+        
+        elif self.action in ['managed_users_performance', 'managers']:
+            # Garder prefetch seulement pour les actions qui en ont vraiment besoin
             queryset = queryset.select_related(
                 'client_account', 'role', 'team', 'organization'
             ).prefetch_related(
                 'managed_teams', 'managed_organizations'
             )
-            
             if settings.DEBUG:
-                print("[UserViewSet] Applied detail optimizations: select_related + prefetch_related")
+                print("[UserViewSet] Applied full optimizations for manager actions")
+        
+        else:
+            # Autres actions: select_related basique
+            queryset = queryset.select_related(
+                'client_account', 'role', 'team', 'organization'
+            )
         
         # Filtres spéciaux
         managers_only = self.request.query_params.get('managers_only', None)
