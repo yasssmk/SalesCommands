@@ -1,3 +1,5 @@
+// frontend/src/layout/DashboardLayout/Drawer/DrawerContent/Navigation/NavItem.jsx
+
 import PropTypes from 'prop-types';
 import { useEffect } from 'react';
 
@@ -14,6 +16,7 @@ import Chip from '@mui/material/Chip';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
 // project import
@@ -26,6 +29,16 @@ import { useMenuState } from 'hooks/useMenuState';
 
 export default function NavItem({ item, level, isParents = false }) {
   const theme = useTheme();
+
+  // Debug log to check item properties
+  if (process.env.NODE_ENV === 'development' && item.disabled !== undefined) {
+    console.log('[NavItem Debug]', {
+      title: item.title,
+      disabled: item.disabled,
+      url: item.url,
+      tooltip: item.tooltip
+    });
+  }
 
   const {
     menuMaster,
@@ -69,97 +82,146 @@ export default function NavItem({ item, level, isParents = false }) {
   const textColor = mode === ThemeMode.DARK ? 'grey.400' : 'text.primary';
   const iconSelectedColor = mode === ThemeMode.DARK && drawerOpen ? 'text.primary' : 'primary.main';
 
+  // Build the ListItemButton
+  const listItemButton = (
+    <ListItemButton
+      {...(!item.disabled && { 
+        component: Link,
+        href: item.url,
+        target: itemTarget 
+      })}
+      disabled={item.disabled}
+      selected={isSelected}
+      onClick={(e) => {
+        if (item.disabled) {
+          e.preventDefault();
+          e.stopPropagation();
+          // Log in development
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[WIP Menu Click]', { 
+              item: item.title, 
+              id: item.id,
+              tooltip: item.tooltip 
+            });
+          }
+          return;
+        }
+        // Handle drawer close on mobile
+        if (downLG) {
+          handlerDrawerOpen(false);
+        }
+      }}
+      sx={{
+        zIndex: 1201,
+        pl: drawerOpen ? `${level * 28}px` : 1.5,
+        py: !drawerOpen && level === 1 ? 1.25 : 1,
+        ...(drawerOpen && {
+          '&:hover': {
+            bgcolor: mode === ThemeMode.DARK ? 'divider' : 'primary.lighter'
+          },
+          '&.Mui-selected': {
+            bgcolor: mode === ThemeMode.DARK ? 'divider' : 'primary.lighter',
+            borderRight: '2px solid',
+            borderRightColor: 'primary.main',
+            color: iconSelectedColor,
+            '&:hover': {
+              color: iconSelectedColor,
+              bgcolor: mode === ThemeMode.DARK ? 'divider' : 'primary.lighter'
+            }
+          }
+        }),
+        ...(!drawerOpen && {
+          '&:hover': {
+            bgcolor: 'transparent'
+          },
+          '&.Mui-selected': {
+            '&:hover': {
+              bgcolor: 'transparent'
+            },
+            bgcolor: 'transparent'
+          }
+        })
+      }}
+    >
+    
+      {itemIcon && (
+        <ListItemIcon
+          sx={{
+            minWidth: 28,
+            color: isSelected ? iconSelectedColor : textColor,
+            ...(!drawerOpen && {
+              borderRadius: 1.5,
+              width: 36,
+              height: 36,
+              alignItems: 'center',
+              justifyContent: 'center',
+              '&:hover': {
+                bgcolor: mode === ThemeMode.DARK ? 'secondary.light' : 'secondary.lighter'
+              }
+            }),
+            ...(!drawerOpen &&
+              isSelected && {
+                bgcolor: mode === ThemeMode.DARK ? 'primary.900' : 'primary.lighter',
+                '&:hover': {
+                  bgcolor: mode === ThemeMode.DARK ? 'primary.darker' : 'primary.lighter'
+                }
+              })
+          }}
+        >
+          {itemIcon}
+        </ListItemIcon>
+      )}
+      {(drawerOpen || (!drawerOpen && level !== 1)) && (
+        <ListItemText
+          primary={
+            <Typography variant="h6" sx={{ color: isSelected ? iconSelectedColor : textColor }}>
+              {item.title}
+            </Typography>
+          }
+        />
+      )}
+      
+      {/* WIP Badge - Added for disabled items */}
+      {(drawerOpen || (!drawerOpen && level !== 1)) && item.disabled && item.tooltip && (
+        <Chip
+          color="warning"
+          variant="outlined"
+          size="small"
+          label={item.tooltip}
+          sx={{ 
+            height: 20,
+            fontSize: '0.625rem',
+            ml: 1
+          }}
+        />
+      )}
+      
+      {/* Original chip */}
+      {(drawerOpen || (!drawerOpen && level !== 1)) && !item.disabled && item.chip && (
+        <Chip
+          color={item.chip.color}
+          variant={item.chip.variant}
+          size={item.chip.size}
+          label={item.chip.label}
+          avatar={item.chip.avatar && <Avatar>{item.chip.avatar}</Avatar>}
+        />
+      )}
+    </ListItemButton>
+  );
+
   return (
     <>
       {menuOrientation === MenuOrientation.VERTICAL || downLG ? (
         <Box sx={{ position: 'relative' }}>
-          <ListItemButton
-            component={Link}
-            href={item.url}
-            target={itemTarget}
-            disabled={item.disabled}
-            selected={isSelected}
-            sx={{
-              zIndex: 1201,
-              pl: drawerOpen ? `${level * 28}px` : 1.5,
-              py: !drawerOpen && level === 1 ? 1.25 : 1,
-              ...(drawerOpen && {
-                '&:hover': {
-                  bgcolor: mode === ThemeMode.DARK ? 'divider' : 'primary.lighter'
-                },
-                '&.Mui-selected': {
-                  bgcolor: mode === ThemeMode.DARK ? 'divider' : 'primary.lighter',
-                  borderRight: '2px solid',
-                  borderRightColor: 'primary.main',
-                  color: iconSelectedColor,
-                  '&:hover': {
-                    color: iconSelectedColor,
-                    bgcolor: mode === ThemeMode.DARK ? 'divider' : 'primary.lighter'
-                  }
-                }
-              }),
-              ...(!drawerOpen && {
-                '&:hover': {
-                  bgcolor: 'transparent'
-                },
-                '&.Mui-selected': {
-                  '&:hover': {
-                    bgcolor: 'transparent'
-                  },
-                  bgcolor: 'transparent'
-                }
-              })
-            }}
-            {...(downLG && {
-              onClick: () => handlerDrawerOpen(false)
-            })}
-          >
-            {itemIcon && (
-              <ListItemIcon
-                sx={{
-                  minWidth: 28,
-                  color: isSelected ? iconSelectedColor : textColor,
-                  ...(!drawerOpen && {
-                    borderRadius: 1.5,
-                    width: 36,
-                    height: 36,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    '&:hover': {
-                      bgcolor: mode === ThemeMode.DARK ? 'secondary.light' : 'secondary.lighter'
-                    }
-                  }),
-                  ...(!drawerOpen &&
-                    isSelected && {
-                      bgcolor: mode === ThemeMode.DARK ? 'primary.900' : 'primary.lighter',
-                      '&:hover': {
-                        bgcolor: mode === ThemeMode.DARK ? 'primary.darker' : 'primary.lighter'
-                      }
-                    })
-                }}
-              >
-                {itemIcon}
-              </ListItemIcon>
-            )}
-            {(drawerOpen || (!drawerOpen && level !== 1)) && (
-              <ListItemText
-                primary={
-                  <Typography variant="h6" sx={{ color: isSelected ? iconSelectedColor : textColor }}>
-                    {item.title}
-                  </Typography>
-                }
-              />
-            )}
-            {(drawerOpen || (!drawerOpen && level !== 1)) && item.chip && (
-              <Chip
-                color={item.chip.color}
-                variant={item.chip.variant}
-                size={item.chip.size}
-                label={item.chip.label}
-                avatar={item.chip.avatar && <Avatar>{item.chip.avatar}</Avatar>}
-              />
-            )}
-          </ListItemButton>
+          {/* Add tooltip wrapper only for disabled items */}
+          {item.disabled && item.tooltip ? (
+            <Tooltip title={item.tooltip} placement="right" arrow>
+              <span>{listItemButton}</span>
+            </Tooltip>
+          ) : (
+            listItemButton
+          )}
+          
           {(drawerOpen || (!drawerOpen && level !== 1)) &&
             item?.actions &&
             item?.actions.map((action, index) => {
@@ -202,16 +264,30 @@ export default function NavItem({ item, level, isParents = false }) {
         </Box>
       ) : (
         <ListItemButton
-          component={Link}
-          href={item.url}
-          target={itemTarget}
+          {...(!item.disabled && {
+            component: Link,
+            href: item.url,
+            target: itemTarget
+          })}
           disabled={item.disabled}
           selected={isSelected}
-          {...(isParents && {
-            onClick: () => {
+          onClick={(e) => {
+            if (item.disabled) {
+              e.preventDefault();
+              e.stopPropagation();
+              if (process.env.NODE_ENV === 'development') {
+                console.log('[WIP Menu Click]', { 
+                  item: item.title, 
+                  id: item.id,
+                  tooltip: item.tooltip 
+                });
+              }
+              return;
+            }
+            if (isParents) {
               handlerHorizontalActiveItem(item.id);
             }
-          })}
+          }}
           sx={{
             zIndex: 1201,
             ...(isParents && {

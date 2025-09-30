@@ -3,14 +3,33 @@ import UserOutlined from '@ant-design/icons/UserOutlined';
 import TeamOutlined from '@ant-design/icons/TeamOutlined';
 import SettingOutlined from '@ant-design/icons/SettingOutlined';
 import IdcardOutlined from '@ant-design/icons/IdcardOutlined';
+import SafetyOutlined from '@ant-design/icons/SafetyOutlined'
+
+import { isFeatureEnabled } from '../config/features';
 
 // icons
 const icons = { 
   UserOutlined, 
   TeamOutlined, 
   SettingOutlined, 
-  IdcardOutlined 
+  IdcardOutlined,
+  SafetyOutlined
 };
+
+// ==============================|| FEATURE FLAGS ||============================== //
+
+/**
+ * Feature flags for Work In Progress items
+ * In production: set all to false to hide WIP items
+ * In development: set to true to show disabled/coming-soon items
+ */
+const FEATURE_FLAGS = {
+  SHOW_WIP_ITEMS: process.env.NODE_ENV === 'development', // Auto-hide in production
+  ENABLE_TEAMS: false, // Team management not ready
+  ENABLE_ORGANIZATIONS: false, // Organizations not ready
+  ENABLE_ROLES: false, // Roles & permissions not ready
+};
+
 
 // ==============================|| MENU ITEMS - ADMINISTRATION ||============================== //
 
@@ -27,7 +46,7 @@ const icons = {
  */
 const admin = {
   id: 'administration',
-  title: 'Administration tah le hood',
+  title: 'Administration',
   type: 'group',
   icon: icons.SettingOutlined,
   children: [
@@ -37,33 +56,38 @@ const admin = {
       type: 'item',
       url: '/admin/users',
       icon: icons.UserOutlined,
-      breadcrumbs: true
+      breadcrumbs: true,
+      wip: false,
     },
     {
       id: 'team-management', 
-      title: 'Ekip Management',
+      title: 'Team Management',
       type: 'item',
-      url: '/admin/teams',
+      // Don't use the URL if disabled - it prevents accidental navigation
+      url: isFeatureEnabled('TEAM_MANAGEMENT') 
+        ? '/admin/teams' 
+        : '#',
       icon: icons.TeamOutlined,
-      breadcrumbs: false
-    },
-    {
-      id: 'organization-management',
-      title: 'Organizations',
-      type: 'item', 
-      url: '/admin/organizations',
-      icon: icons.IdcardOutlined,
-      breadcrumbs: false
+      breadcrumbs: false,
+      disabled: !isFeatureEnabled('TEAM_MANAGEMENT'),
+      tooltip: !isFeatureEnabled('TEAM_MANAGEMENT') ? 'Soon' : null,
     },
     {
       id: 'roles-permissions',
       title: 'Roles & Permissions',
       type: 'item',
-      url: '/admin/roles',
-      icon: icons.SettingOutlined,
-      breadcrumbs: false
+      url: isFeatureEnabled('ROLES_PERMISSIONS') 
+        ? '/admin/roles' 
+        : '#',
+      icon: icons.SafetyOutlined,
+      breadcrumbs: false,
+      disabled: !isFeatureEnabled('ROLES_PERMISSIONS'),
+      tooltip: !isFeatureEnabled('ROLES_PERMISSIONS') ? 'Soon' : null,
     }
-  ]
+  ] // Show all items
 };
 
 export default admin;
+
+// Export feature flags for use in other components
+export { FEATURE_FLAGS };

@@ -67,7 +67,7 @@ export function useMenuState() {
     (open) => {
       mutate(
         (current) => ({
-          ...(current || INITIAL_MENU_MASTER),
+          ...(current ?? initialMaster),
           isDashboardDrawerOpened: Boolean(open)
         }),
         { revalidate: false }
@@ -79,7 +79,7 @@ export function useMenuState() {
   const toggleDrawer = useCallback(() => {
     mutate(
       (current) => {
-        const base = current || INITIAL_MENU_MASTER;
+        const base = current ?? initialMaster;
         return { ...base, isDashboardDrawerOpened: !base.isDashboardDrawerOpened };
       },
       { revalidate: false }
@@ -93,14 +93,14 @@ export function useMenuState() {
   // ===== Handlers "compat modèle" =====
   const handlerActiveItem = useCallback(
     (openedItem) => {
-      mutate((c) => ({ ...(c || INITIAL_MENU_MASTER), openedItem }), { revalidate: false });
+      mutate((c) => ({ ...(c ?? initialMaster), openedItem }), { revalidate: false });
     },
     [mutate]
   );
 
   const handlerHorizontalActiveItem = useCallback(
     (openedHorizontalItem) => {
-      mutate((c) => ({ ...(c || INITIAL_MENU_MASTER), openedHorizontalItem }), { revalidate: false });
+      mutate((c) => ({ ...(c ?? initialMaster), openedHorizontalItem }), { revalidate: false });
     },
     [mutate]
   );
@@ -108,7 +108,7 @@ export function useMenuState() {
   const handlerComponentDrawer = useCallback(
     (isComponentDrawerOpened) => {
       mutate(
-        (c) => ({ ...(c || INITIAL_MENU_MASTER), isComponentDrawerOpened: !!isComponentDrawerOpened }),
+        (c) => ({ ...(c ?? initialMaster), isComponentDrawerOpened: !!isComponentDrawerOpened }),
         { revalidate: false }
       );
     },
@@ -117,7 +117,7 @@ export function useMenuState() {
 
   const handlerActiveComponent = useCallback(
     (openedComponent) => {
-      mutate((c) => ({ ...(c || INITIAL_MENU_MASTER), openedComponent }), { revalidate: false });
+      mutate((c) => ({ ...(c ?? initialMaster), openedComponent }), { revalidate: false });
     },
     [mutate]
   );

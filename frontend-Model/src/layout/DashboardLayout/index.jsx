@@ -60,7 +60,7 @@ export default function DashboardLayout({ children }) {
   return (
     <QueryClientProvider client={queryClient}>
     <Stack direction="row" width={1}>
-      <Box component="main" sx={{ width: 'calc(100% - 260px)', flexGrow: 1, p: { xs: 2, sm: 3 } }}>
+      <Box component="main" sx={{ backgroundColor: 'red !important', width: 'calc(100% - 260px)', flexGrow: 1, p: { xs: 2, sm: 3 } }}>
         <Toolbar sx={{ mt: isHorizontal ? 8 : 'inherit' }} />
         <Container
           maxWidth={container ? 'xl' : false}

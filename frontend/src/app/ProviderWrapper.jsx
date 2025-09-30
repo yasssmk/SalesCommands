@@ -22,6 +22,17 @@ import Notistack from 'components/third-party/Notistack';
 import { ConfigProvider } from '../contexts/ConfigContext';
 import { AuthProvider } from '../hooks/useAuth';
 
+// Load feature flags in development
+if (process.env.NODE_ENV === 'development') {
+  import('../config/features').then(module => {
+    console.log('✅ Feature flags module loaded');
+    // The module self-initializes and exposes helpers to window
+  }).catch(err => {
+    console.warn('⚠️ Could not load feature flags:', err.message);
+  });
+}
+
+
 // ==============================|| RETRY LOGIC HELPER ||============================== //
 
 /**
