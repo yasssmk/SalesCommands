@@ -35,6 +35,38 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+# =========================================================================
+# THROTTLING CONFIGURATION - MVP SECURITY
+# =========================================================================
+
+# Feature flag pour activer/désactiver le throttling
+THROTTLING_ENABLED = env.bool('THROTTLING_ENABLED', default=True)
+
+# Configuration par environnement
+if DEBUG:
+    # Dev: Plus permissif pour faciliter les tests
+    THROTTLE_RATES = {
+        'anon': '100/hour',      # Utilisateurs non authentifiés
+        'user': '1000/hour',     # Utilisateurs authentifiés
+        'login': '20/hour',      # Tentatives de login (par IP+email)
+        'password': '10/hour',   # Changements de mot de passe
+        'sensitive': '30/hour',  # Opérations sensibles
+        'burst': '10/minute',    # Anti-burst
+        'registration': '5/hour', # Inscriptions
+    }
+else:
+    # Production: Plus restrictif
+    THROTTLE_RATES = {
+        'anon': '20/hour',       
+        'user': '100/hour',      
+        'login': '5/hour',       # Plus strict en prod : 5 tentatives/heure
+        'password': '3/hour',    
+        'sensitive': '10/hour',  
+        'burst': '5/minute',
+        'registration': '3/hour',
+    }
+
+
 
 # Application definition
 
@@ -198,6 +230,30 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
     ),
     'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
+
+    # ===== THROTTLING CONFIGURATION (MVP) =====
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'core.throttling.BurstRateThrottle',  # 🔹 anti-burst par minute (auth only)
+    ] if THROTTLING_ENABLED else [],
+
+    'DEFAULT_THROTTLE_RATES': THROTTLE_RATES if THROTTLING_ENABLED else {},
+
+    # ===== AUTRES CONFIGURATIONS =====
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.FormParser',
+        'rest_framework.parsers.MultiPartParser'
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DATETIME_FORMAT': '%Y-%m-%dT%H:%M:%S.%fZ',
+    'DATE_FORMAT': '%Y-%m-%d',
+    'TIME_FORMAT': '%H:%M:%S',
 }
 
 
@@ -278,6 +334,116 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# =========================================================================
+# CACHE CONFIGURATION FOR THROTTLING
+# =========================================================================
+
+import os
+
+CACHE_DIR = BASE_DIR / ".cache"
+os.makedirs(CACHE_DIR, exist_ok=True)  # crée le dossier si absent
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": str(CACHE_DIR),
+        # Laisser DRF gérer les TTL par clé ; None = pas d'expiration globale
+        "TIMEOUT": None,
+        "OPTIONS": {
+            "MAX_ENTRIES": 50000
+
+        }
+    }
+}
+
+# Si un cache 'throttle' dédié est défini ailleurs, DRF l'utilisera :
+if "throttle" in CACHES:
+    REST_FRAMEWORK["DEFAULT_THROTTLE_CACHE"] = "throttle"
+
+# =========================================================================
+# LOGGING FOR THROTTLING (OPTIONNEL MAIS UTILE)
+# =========================================================================
+
+# Ajouter dans votre configuration de logging existante
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        # ... vos formatters existants ...
+    },
+    'handlers': {
+        # ... vos handlers existants ...
+        
+        # Handler spécifique pour le throttling
+        'throttle_file': {
+            'level': 'WARNING',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'throttle.log',
+            'maxBytes': 1024 * 1024 * 5,  # 5 MB
+            'backupCount': 3,
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        # ... vos loggers existants ...
+        
+        # Logger pour le throttling
+        'rest_framework.throttling': {
+            'handlers': ['throttle_file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        
+        # Logger pour les tentatives de login bloquées
+        'core.throttling': {
+            'handlers': ['throttle_file', 'console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
+
+# =========================================================================
+# THROTTLE WHITELIST (OPTIONNEL)
+# =========================================================================
+
+# IPs ou ranges à exclure du throttling (ex: monitoring, CI/CD)
+THROTTLE_WHITELIST_IPS = env.list('THROTTLE_WHITELIST_IPS', default=[
+    '127.0.0.1',  # Localhost
+    # '10.0.0.0/8',  # Réseau interne (décommenter si nécessaire)
+])
+
+# Utilisateurs à exclure du throttling (par email ou ID)
+THROTTLE_WHITELIST_USERS = env.list('THROTTLE_WHITELIST_USERS', default=[
+    # 'admin@yourcompany.com',
+    # 'monitoring@yourcompany.com',
+])
+
+# =========================================================================
+# CONFIGURATION DE MESSAGES D'ERREUR THROTTLING
+# =========================================================================
+
+# Messages personnalisés pour les erreurs de throttling
+THROTTLE_ERROR_MESSAGES = {
+    'anon': 'Too many requests from this IP. Please try again later.',
+    'user': 'You have exceeded the rate limit. Please slow down your requests.',
+    'login': 'Too many login attempts. Please wait before trying again.',
+    'password': 'Too many password change attempts. Please wait before trying again.',
+    'sensitive': 'This action has been rate limited for security. Please try again later.',
+}
+
+# =========================================================================
+# MONITORING & ALERTING (OPTIONNEL)
+# =========================================================================
+
+# Seuils d'alerte pour le monitoring
+THROTTLE_ALERT_THRESHOLDS = {
+    'login_attempts_per_hour': 50,  # Alerter si plus de 50 tentatives de login/heure depuis une IP
+    'user_requests_per_minute': 20,  # Alerter si un user fait plus de 20 requêtes/minute
+    'total_throttled_per_hour': 100,  # Alerter si plus de 100 requêtes throttled/heure globalement
+}
+
 
 
 # ========================================================================
@@ -637,3 +803,5 @@ if DEBUG:
     if not use_files and enable_file_logs:
         config_msg += f" (logs/ directory not found)"
     print(f"[LOGGING] {config_msg}", file=sys.stderr)
+
+

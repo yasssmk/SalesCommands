@@ -9,6 +9,8 @@ from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from core.auth_service import AuthService
 from core.jwt_helpers import CustomJWTAuthentication
+from core.throttling import LoginRateThrottle, PasswordChangeThrottle, BurstRateThrottle
+
 from ...models import User
 from ...serializers.user_serializer import (
     UserSerializer
@@ -25,6 +27,8 @@ class UserLoginView(BaseAPIView):
     """View to authenticate users and return tokens."""
     authentication_classes = []  # Pas d'auth requise pour login
     permission_classes = []
+
+    throttle_classes = [LoginRateThrottle, BurstRateThrottle]
     
     def post(self, request):
         email = request.data.get('email')
@@ -39,7 +43,8 @@ class UserLoginView(BaseAPIView):
         ctx = ctx_from_request(request)
         ctx.update({
             'email': (email[:3] + '***') if email else '-',
-            'event': 'login_attempt'
+            'event': 'login_attempt',
+            'throttle_key': f"{request.META.get('REMOTE_ADDR')}:{email.lower()}" if email else '-'
         })
         logger.info("login_attempt", extra=ctx)
 

@@ -16,6 +16,7 @@ from core.apps_shared_methods import BaseAPIView
 from django.http import Http404
 from ..models import User, Team, Organization
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
+from core.throttling import PasswordChangeThrottle, SensitiveActionThrottle, BurstRateThrottle
 from ..serializers.user_serializer import (
     UserSerializer,
     UserListSerializer,
@@ -301,7 +302,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             return self.handle_exception(e)
 
     
-    @action(detail=True, methods=['patch'], url_path='change-password')
+    @action(detail=True, methods=['patch'], url_path='change-password', throttle_classes=[PasswordChangeThrottle, BurstRateThrottle])
     def change_password(self, request, pk=None):
         """
         Change le mot de passe d'un utilisateur.
@@ -914,7 +915,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         except Exception as e:
             return self.handle_exception(e)
     
-    @action(detail=False, methods=['post'], url_path='grant-superuser')
+    @action(detail=False, methods=['post'], url_path='grant-superuser', throttle_classes=[SensitiveActionThrottle, BurstRateThrottle])
     def grant_superuser(self, request):  
         """
         Accorder le statut superuser à un utilisateur

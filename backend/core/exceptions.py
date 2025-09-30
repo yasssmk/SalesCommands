@@ -3,6 +3,8 @@ from rest_framework.exceptions import ValidationError, PermissionDenied, Authent
 from django.core.exceptions import ValidationError as DjangoValidationError
 from core.error_messages import CoreErrorMessages
 from rest_framework.exceptions import ParseError
+from rest_framework.exceptions import Throttled
+
 
 #TO DO: GESTION DES ERREUR 500
 

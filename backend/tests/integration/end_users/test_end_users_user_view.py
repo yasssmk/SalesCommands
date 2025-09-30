@@ -1,6 +1,6 @@
 ###########
 # Lancement de la commande test depuis le terminal:
-# pytest tests/integration/test_user_crud_permissions.py -q -x
+# pytest tests/integration/end_users/test_user_crud_permissions.py -q -x
 ######################################
 # tests/integration/test_user_crud_permissions.py
 

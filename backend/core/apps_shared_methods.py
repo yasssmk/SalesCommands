@@ -16,7 +16,9 @@ from core.error_messages import CoreErrorMessages, AuthErrorMessages
 from rest_framework.exceptions import ParseError
 import logging
 from django.conf import settings
-from django.http import Http404  
+from django.http import Http404 
+from rest_framework.exceptions import Throttled
+
 
 # Import robuste de get_correlation_id avec double fallback
 try:
@@ -420,6 +422,28 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             'client_id': getattr(request, 'client_id', '-') if request else '-',
             'exception_type': exc.__class__.__name__,
         }
+
+        # === Cas spécial: Throttling (429) ===
+        if isinstance(exc, Throttled):
+            # log en WARNING, pas comme une erreur serveur
+            logger.warning("throttled", extra=log_context)
+
+            # Construire la réponse 429 avec Retry-After
+            wait_val = getattr(exc, 'wait', None)
+            try:
+                wait_seconds = 0 if wait_val is None else max(0, int(wait_val))
+            except Exception:
+                wait_seconds = 0
+
+            headers = {}
+            if wait_seconds is not None:
+                headers['Retry-After'] = str(wait_seconds)
+
+            # Utiliser votre format standard {"error": "..."}
+            message = getattr(exc, 'detail', "Request was throttled. Please try again later.")
+            formatted = StandardizedValidationError._format_detail(message)
+
+            return Response(formatted, status=status.HTTP_429_TOO_MANY_REQUESTS, headers=headers)
         
         # Log selon le type d'exception
         if isinstance(exc, (DRFValidationError, DjangoValidationError, FieldError, ParseError)):
