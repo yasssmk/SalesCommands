@@ -14,6 +14,7 @@ from pathlib import Path
 import environ
 from django.core.cache.backends.filebased import FileBasedCache
 from datetime import timedelta
+import sys
 
 env = environ.Env()
 environ.Env.read_env()
@@ -22,18 +23,125 @@ environ.Env.read_env()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# =========================================================================
+# CRITICAL SECURITY SETTINGS - ENVIRONMENT VARIABLES
+# =========================================================================
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-1gqx+c6khp7ji5bf$q%k&=x%#t918n(hn5mi^k)%e+4yb$ydif'
+SECRET_KEY = env('SECRET_KEY')
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env.bool('DEBUG', default=True)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'] if DEBUG else [])
+
+
+# =========================================================================
+# CORS CONFIGURATION - ENVIRONMENT GATING
+# =========================================================================
+
+# Get CORS origins from environment variable (comma-separated list)
+# Development default: localhost origins
+# Production: MUST be set via environment variable
+_cors_origins_raw = env.list(
+    'CORS_ALLOWED_ORIGINS',
+    default=['http://localhost:3000', 'http://localhost:8081'] if DEBUG else []
+)
+
+# Validate CORS configuration based on environment
+if DEBUG:
+    # Development: Allow localhost, but warn if production origins are present
+    CORS_ALLOWED_ORIGINS = _cors_origins_raw
+    
+    # Warn if HTTPS origins in development (possible misconfiguration)
+    https_origins = [o for o in CORS_ALLOWED_ORIGINS if o.startswith('https://')]
+    if https_origins:
+        print(
+            f"⚠️  WARNING: HTTPS origins detected in development mode: {https_origins}\n"
+            f"   This is unusual. Verify your CORS_ALLOWED_ORIGINS configuration."
+        )
+else:
+    # Production: Strict validation
+    CORS_ALLOWED_ORIGINS = _cors_origins_raw
+    
+    # CRITICAL: Validate no localhost in production
+    localhost_origins = [
+        o for o in CORS_ALLOWED_ORIGINS 
+        if 'localhost' in o or '127.0.0.1' in o or '0.0.0.0' in o
+    ]
+    
+    if localhost_origins:
+        error_msg = (
+            f"\n{'='*70}\n"
+            f"🚨 CRITICAL SECURITY ERROR: Localhost origins in production!\n"
+            f"{'='*70}\n"
+            f"The following localhost origins were found in CORS_ALLOWED_ORIGINS:\n"
+            f"{localhost_origins}\n\n"
+            f"This is a CRITICAL security vulnerability that allows any attacker\n"
+            f"to bypass CORS protection by making requests from localhost.\n\n"
+            f"ACTION REQUIRED:\n"
+            f"1. Remove all localhost origins from CORS_ALLOWED_ORIGINS\n"
+            f"2. Set production frontend URLs only (e.g., https://app.yourdomain.com)\n"
+            f"3. Restart the application\n"
+            f"{'='*70}\n"
+        )
+        print(error_msg, file=sys.stderr)
+        raise ValueError("Localhost origins not allowed in production. Check CORS_ALLOWED_ORIGINS environment variable.")
+    
+    # Validate HTTPS in production (warning only, not blocking)
+    http_origins = [o for o in CORS_ALLOWED_ORIGINS if o.startswith('http://') and not o.startswith('http://localhost')]
+    if http_origins:
+        print(
+            f"⚠️  WARNING: Non-HTTPS origins in production: {http_origins}\n"
+            f"   HTTPS is strongly recommended for production.\n"
+            f"   HTTP origins are insecure and should only be used for testing."
+        )
+    
+    # Validate at least one origin is configured in production
+    if not CORS_ALLOWED_ORIGINS:
+        error_msg = (
+            f"\n{'='*70}\n"
+            f"🚨 CONFIGURATION ERROR: No CORS origins in production!\n"
+            f"{'='*70}\n"
+            f"CORS_ALLOWED_ORIGINS is empty in production mode.\n\n"
+            f"ACTION REQUIRED:\n"
+            f"Set CORS_ALLOWED_ORIGINS environment variable with your frontend URLs.\n"
+            f"Example: CORS_ALLOWED_ORIGINS=https://app.yourdomain.com,https://www.yourdomain.com\n"
+            f"{'='*70}\n"
+        )
+        print(error_msg, file=sys.stderr)
+        raise ValueError("CORS_ALLOWED_ORIGINS must be configured in production.")
+
+# Additional CORS settings
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    # Default django-cors-headers
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    # 🔗 Custom header for distributed tracing
+    'x-correlation-id',
+]
+
+# Log CORS configuration on startup (DEBUG mode only)
+if DEBUG:
+    print(f"✓ CORS configuration loaded:")
+    print(f"  - Allowed origins: {CORS_ALLOWED_ORIGINS}")
+    print(f"  - Allow credentials: {CORS_ALLOW_CREDENTIALS}")
+
+
 
 # =========================================================================
 # THROTTLING CONFIGURATION - MVP SECURITY
@@ -66,6 +174,10 @@ else:
         'registration': '3/hour',
     }
 
+
+# =========================================================================
+# REST OF SETTINGS.PY CONTINUES UNCHANGED...
+# =========================================================================
 
 
 # Application definition
@@ -271,27 +383,6 @@ REST_FRAMEWORK = {
 }
 
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8081",  # Frontend local address
-    "http://localhost:3000",          # Next.js local
-]
-
-CORS_ALLOW_CREDENTIALS = True
-
-CORS_ALLOW_HEADERS = [
-    # Default django-cors-headers
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-    # 🔗 Custom header for distributed tracing
-    'x-correlation-id',
-]
 
 # Session Cookie Settings
 SESSION_COOKIE_HTTPONLY = True

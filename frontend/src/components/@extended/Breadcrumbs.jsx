@@ -14,6 +14,9 @@ import Grid from '@mui/material/Unstable_Grid2';
 import Typography from '@mui/material/Typography';
 import MuiBreadcrumbs from '@mui/material/Breadcrumbs';
 
+// third-party - i18n
+import { FormattedMessage } from 'react-intl';
+
 // project import
 import MainCard from 'components/MainCard';
 import { ThemeDirection } from 'config';
@@ -23,6 +26,26 @@ import navigation from 'menu-items';
 import ApartmentOutlined from '@ant-design/icons/ApartmentOutlined';
 import HomeOutlined from '@ant-design/icons/HomeOutlined';
 import HomeFilled from '@ant-design/icons/HomeFilled';
+
+// ==============================|| HELPER FUNCTION - i18n ||============================== //
+
+/**
+ * Helper pour obtenir un titre traduit ou le titre brut comme fallback
+ * Même logique que dans NavItem.jsx
+ */
+const getTranslatedTitle = (title) => {
+  if (!title) return '';
+  
+  // Si le titre contient des espaces ou caractères spéciaux, c'est du texte brut
+  if (title.includes(' ') || title.includes('&')) {
+    return title;
+  }
+  
+  // Sinon, c'est une clé i18n
+  return <FormattedMessage id={title} defaultMessage={title} />;
+};
+
+// ==============================|| BREADCRUMBS COMPONENT ||============================== //
 
 export default function Breadcrumbs({
   card = false,
@@ -117,7 +140,7 @@ export default function Breadcrumbs({
           color={location === main.url ? 'text.primary' : 'text.secondary'}
         >
           {icons && <CollapseIcon style={iconSX} />}
-          {main.title}
+          {getTranslatedTitle(main.title)}
         </Typography>
       </NextLink>
     );
@@ -151,7 +174,7 @@ export default function Breadcrumbs({
           </Grid>
           {title && titleBottom && (
             <Grid sx={{ mt: card === false ? 0.25 : 1 }}>
-              <Typography variant="h2">{main.title}</Typography>
+              <Typography variant="h2">{getTranslatedTitle(main.title)}</Typography>
             </Grid>
           )}
         </Grid>
@@ -168,7 +191,7 @@ export default function Breadcrumbs({
     itemContent = (
       <Typography variant="subtitle1" color="text.primary">
         {icons && <ItemIcon style={iconSX} />}
-        {itemTitle}
+        {getTranslatedTitle(itemTitle)}
       </Typography>
     );
 
@@ -200,7 +223,7 @@ export default function Breadcrumbs({
                 color={!link.to ? 'text.primary' : 'text.secondary'}
               >
                 {link.icon && <CollapseIcon style={iconSX} />}
-                {link.title}
+                {getTranslatedTitle(link.title)}
               </Typography>
             );
             if (link.to) {
@@ -235,13 +258,17 @@ export default function Breadcrumbs({
           >
             {title && !titleBottom && (
               <Grid>
-                <Typography variant="h2">{custom ? heading : item?.title}</Typography>
+                <Typography variant="h2">
+                  {custom ? heading : getTranslatedTitle(item?.title)}
+                </Typography>
               </Grid>
             )}
             <Grid>{tempContent}</Grid>
             {title && titleBottom && (
               <Grid sx={{ mt: card === false ? 0.25 : 1 }}>
-                <Typography variant="h2">{custom ? heading : item?.title}</Typography>
+                <Typography variant="h2">
+                  {custom ? heading : getTranslatedTitle(item?.title)}
+                </Typography>
               </Grid>
             )}
           </Grid>
