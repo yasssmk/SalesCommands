@@ -132,7 +132,11 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-.env.backup
+.env.*
+*.env
+*.env.*
+backend/salescommands/.env.backup
+
 
 
 # Spyder project settings
