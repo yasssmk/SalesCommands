@@ -17,6 +17,7 @@ from django.http import Http404
 from ..models import User, Team, Organization
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from core.throttling import PasswordChangeThrottle, SensitiveActionThrottle, BurstRateThrottle
+from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version
 from ..serializers.user_serializer import (
     UserSerializer,
     UserListSerializer,
@@ -176,53 +177,230 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         
         return queryset
     
+    # def retrieve(self, request, *args, **kwargs):
+    #     """
+    #     Récupérer un utilisateur spécifique par son ID
+    #     GET /client/users/{id}/
+    #     """
+    #     try:
+    #         user = self.get_object()
+    #         is_self = str(user.id) == str(request.user.id)
+
+    #         ctx = ctx_from_request(request)
+    #         ctx.update({
+    #             "target_user_id": str(user.id),
+    #             "is_self": is_self,
+    #             "event": "user_retrieve",
+    #             "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
+    #         })
+    #         logger.info("user_retrieve", extra=ctx)
+
+    #         serializer = UserSerializer(user)
+    #         return Response({"success": True, "data": serializer.data})
+
+    #     except (User.DoesNotExist, Http404):
+    #         ctx = ctx_from_request(request)
+    #         ctx.update({
+    #             "event": "user_retrieve_not_found",
+    #             "resource": "user",
+    #             "target_id": str(kwargs.get('pk', '-')),
+    #             "action": "retrieve",
+    #             "scope": "client",
+    #         })
+    #         logger.info("user_retrieve_not_found", extra=ctx)
+    #         return Response(
+    #             {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
+    #             status=status.HTTP_404_NOT_FOUND,
+    #         )
+
     def retrieve(self, request, *args, **kwargs):
         """
         Récupérer un utilisateur spécifique par son ID
         GET /client/users/{id}/
+        
+        Cache: 180s sur les données sérialisées
         """
-        try:
-            user = self.get_object()
-            is_self = str(user.id) == str(request.user.id)
+        from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
+        
+        pk = kwargs.get('pk')
+        
+        # Skip cache si pas Redis
+        if not _is_redis_backend():
+            try:
+                user = self.get_object()
+                is_self = str(user.id) == str(request.user.id)
 
-            ctx = ctx_from_request(request)
-            ctx.update({
-                "target_user_id": str(user.id),
-                "is_self": is_self,
-                "event": "user_retrieve",
-                "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
-            })
-            logger.info("user_retrieve", extra=ctx)
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    "target_user_id": str(user.id),
+                    "is_self": is_self,
+                    "event": "user_retrieve",
+                    "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
+                })
+                logger.info("user_retrieve", extra=ctx)
 
-            serializer = UserSerializer(user)
-            return Response({"success": True, "data": serializer.data})
+                serializer = UserSerializer(user)
+                return Response({"success": True, "data": serializer.data})
 
-        except (User.DoesNotExist, Http404):
-            ctx = ctx_from_request(request)
-            ctx.update({
-                "event": "user_retrieve_not_found",
-                "resource": "user",
-                "target_id": str(kwargs.get('pk', '-')),
-                "action": "retrieve",
-                "scope": "client",
-            })
-            logger.info("user_retrieve_not_found", extra=ctx)
+            except (User.DoesNotExist, Http404):
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    "event": "user_retrieve_not_found",
+                    "resource": "user",
+                    "target_id": str(pk),
+                    "action": "retrieve",
+                    "scope": "client",
+                })
+                logger.info("user_retrieve_not_found", extra=ctx)
+                return Response(
+                    {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        
+        # Construire clé de cache
+        client_id = self.get_client_id()
+        user_id = request.user.id
+        perm_version = get_permissions_version()
+        
+        cache_key = build_drf_cache_key(
+            namespace='user_detail',
+            client_id=client_id,
+            user_id=user_id,
+            perm_version=perm_version,
+            extra=str(pk),  # L'ID de l'user demandé
+        )
+        
+        # Producer : retourne un dict sérialisable
+        def producer():
+            try:
+                user = self.get_object()
+                is_self = str(user.id) == str(request.user.id)
+                
+                # Log
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    "target_user_id": str(user.id),
+                    "is_self": is_self,
+                    "event": "user_retrieve",
+                    "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
+                })
+                logger.info("user_retrieve", extra=ctx)
+                
+                serializer = UserSerializer(user)
+                return {"success": True, "data": serializer.data}
+                
+            except (User.DoesNotExist, Http404):
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    "event": "user_retrieve_not_found",
+                    "resource": "user",
+                    "target_id": str(pk),
+                    "action": "retrieve",
+                    "scope": "client",
+                })
+                logger.info("user_retrieve_not_found", extra=ctx)
+                # Retourner dict avec flag d'erreur
+                return {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND, "status": 404}
+        
+        # Cache les données
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=producer,
+            ttl=180,  # 3 minutes
+            tag=(client_id, 'users')
+        )
+        
+        # Gérer le cas 404 depuis le cache
+        if not cached_data.get('success'):
             return Response(
-                {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
+                {"success": False, "error": cached_data.get('error')},
                 status=status.HTTP_404_NOT_FOUND,
             )
         
+        return Response(cached_data)
+        
     def list(self, request, *args, **kwargs):
-        response = super().list(request, *args, **kwargs)
+        """
+        Liste des utilisateurs avec cache applicatif
+        GET /client/users/
+        
+        Cache: 120s sur les données sérialisées (dict Python, pas Response)
+        """
+        from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
+        
+        # Skip cache si pas Redis (FileBasedCache trop lent)
+        if not _is_redis_backend():
+            response = super().list(request, *args, **kwargs)
+            ctx = ctx_from_request(request)
+            total = response.data.get('count', '-') if isinstance(response.data, dict) else '-'
+            ctx.update({
+                "event": "user_list",
+                "result_count": total,
+                "role_name": getattr(request.user, 'role_name', '-') if getattr(request, 'user', None) else '-',
+            })
+            logger.info("user_list", extra=ctx)
+            return response
+
+        
+        # Construire clé de cache
+        client_id = self.get_client_id()
+        user_id = request.user.id
+        perm_version = get_permissions_version()
+        query_string = request.META.get('QUERY_STRING', '')
+        
+        cache_key = build_drf_cache_key(
+            namespace='users_list',
+            client_id=client_id,
+            user_id=user_id,
+            perm_version=perm_version,
+            query_string=query_string,
+        )
+        
+        # Producer : retourne un dict sérialisable, PAS un Response
+        def producer():
+            queryset = self.filter_queryset(self.get_queryset())
+            page = self.paginate_queryset(queryset)
+            
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                # Retourner un dict Python simple (sérialisable par Redis)
+                return {
+                    'results': serializer.data,
+                    'count': self.paginator.page.paginator.count,
+                    'next': self.paginator.get_next_link(),
+                    'previous': self.paginator.get_previous_link(),
+                }
+            
+            # Pas de pagination
+            serializer = self.get_serializer(queryset, many=True)
+            return serializer.data
+        
+        # Cache les données (dict Python, pas Response)
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=producer,
+            ttl=120,
+            tag=(client_id, 'users')
+        )
+        
+        # Logging
         ctx = ctx_from_request(request)
-        total = response.data.get('count', '-') if isinstance(response.data, dict) else '-'
+        if isinstance(cached_data, dict) and 'count' in cached_data:
+            total = cached_data['count']
+        elif isinstance(cached_data, list):
+            total = len(cached_data)
+        else:
+            total = '-'
+        
         ctx.update({
             "event": "user_list",
             "result_count": total,
             "role_name": getattr(request.user, 'role_name', '-') if getattr(request, 'user', None) else '-',
         })
         logger.info("user_list", extra=ctx)
-        return response
+        
+        # Construire Response depuis les données cachées
+        return Response(cached_data)
         
     def create(self, request, *args, **kwargs):
         """
@@ -799,30 +977,86 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 )
             )
     
+
     @action(detail=False, methods=['get'])
     def managers(self, request):
-        """Liste des managers avec leurs équipes"""
-        managers = self.get_queryset().filter(
-            Q(managed_teams__isnull=False) | Q(managed_organizations__isnull=False)
-        ).distinct()
+        """
+        Liste des managers avec leurs équipes
+        GET /client/users/managers/
         
-        managers_data = []
-        for manager in managers:
-            managers_data.append({
-                'id': str(manager.id),
-                'name': manager.get_full_name(),
-                'email': manager.email,
-                'role': manager.role_name,
-                'managed_teams': list(manager.managed_teams.values('id', 'name')),
-                'managed_organizations': list(manager.managed_organizations.values('id', 'name')),
-                'managed_users_count': manager.get_managed_users().count()
+        Cache: 300s sur les données sérialisées
+        """
+        from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
+        
+        # Skip cache si pas Redis
+        if not _is_redis_backend():
+            managers = self.get_queryset().filter(
+                Q(managed_teams__isnull=False) | Q(managed_organizations__isnull=False)
+            ).distinct()
+            
+            managers_data = []
+            for manager in managers:
+                managers_data.append({
+                    'id': str(manager.id),
+                    'name': manager.get_full_name(),
+                    'email': manager.email,
+                    'role': manager.role_name,
+                    'managed_teams': list(manager.managed_teams.values('id', 'name')),
+                    'managed_organizations': list(manager.managed_organizations.values('id', 'name')),
+                    'managed_users_count': manager.get_managed_users().count()
+                })
+            
+            return Response({
+                'success': True,
+                'data': managers_data,
+                'total_managers': len(managers_data)
             })
         
-        return Response({
-            'success': True,
-            'data': managers_data,
-            'total_managers': len(managers_data)
-        })
+        # Construire clé de cache
+        client_id = self.get_client_id()
+        user_id = request.user.id
+        perm_version = get_permissions_version()
+        
+        cache_key = build_drf_cache_key(
+            namespace='users_managers',
+            client_id=client_id,
+            user_id=user_id,
+            perm_version=perm_version,
+        )
+        
+        # Producer : retourne un dict sérialisable
+        def producer():
+            managers = self.get_queryset().filter(
+                Q(managed_teams__isnull=False) | Q(managed_organizations__isnull=False)
+            ).distinct()
+            
+            managers_data = []
+            for manager in managers:
+                managers_data.append({
+                    'id': str(manager.id),
+                    'name': manager.get_full_name(),
+                    'email': manager.email,
+                    'role': manager.role_name,
+                    'managed_teams': list(manager.managed_teams.values('id', 'name')),
+                    'managed_organizations': list(manager.managed_organizations.values('id', 'name')),
+                    'managed_users_count': manager.get_managed_users().count()
+                })
+            
+            return {
+                'success': True,
+                'data': managers_data,
+                'total_managers': len(managers_data)
+            }
+        
+        # Cache les données
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=producer,
+            ttl=300,  # 5 minutes
+            tag=(client_id, 'users')
+        )
+        
+        return Response(cached_data)
     
     @action(detail=False, methods=['get'], url_path='superusers')
     def superusers(self, request):
@@ -833,87 +1067,174 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Permissions:
         - Accessible uniquement aux Admin et SuperUser
         
+        Cache: 300s sur les données sérialisées
+        
         Returns:
         - Liste des superusers avec leurs informations
         - Statistiques sur les superusers du tenant
         """
-        try:
-             # Vérifier les permissions - seuls Admin et SuperUser peuvent voir cette liste
-            from permissions.compat import get_auth_ctx
-            ctx_auth = get_auth_ctx(request)
-            is_admin = any(isinstance(r, dict) and r.get('is_admin') for r in ctx_auth.roles) or ctx_auth.is_superuser
-            if not is_admin:
-                raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
-                
-            # Récupérer le client_id du contexte pour garantir le multi-tenant
-            client_id = self.get_client_id()
+        from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
+        
+        # Vérifier les permissions - seuls Admin et SuperUser peuvent voir cette liste
+        from permissions.compat import get_auth_ctx
+        ctx_auth = get_auth_ctx(request)
+        is_admin = any(isinstance(r, dict) and r.get('is_admin') for r in ctx_auth.roles) or ctx_auth.is_superuser
+        if not is_admin:
+            raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
+        
+        # Skip cache si pas Redis
+        if not _is_redis_backend():
+            try:
+                client_id = self.get_client_id()
 
-            ctx = ctx_from_request(request)
-            ctx.update({"event": "superusers_list"})
-            logger.debug("superusers_list_access", extra=ctx)
-            
-            # Filtrer les superusers du tenant actuel
-            superusers = self.get_queryset().filter(
-                is_superuser=True
-            ).select_related('role', 'team', 'organization').order_by('-is_active', 'first_name', 'last_name')
-            
-            # Préparer les données détaillées pour chaque superuser
-            superusers_data = []
-            for user in superusers:
-                superusers_data.append({
-                    'id': str(user.id),
-                    'email': user.email,
-                    'name': user.get_full_name(),
-                    'is_active': user.is_active,
-                    'is_staff': user.is_staff,
-                    'role': {
-                        'id': str(user.role.id) if user.role else None,
-                        'name': user.role.name if user.role else None
+                ctx = ctx_from_request(request)
+                ctx.update({"event": "superusers_list"})
+                logger.debug("superusers_list_access", extra=ctx)
+                
+                superusers = self.get_queryset().filter(
+                    is_superuser=True
+                ).select_related('role', 'team', 'organization').order_by('-is_active', 'first_name', 'last_name')
+                
+                superusers_data = []
+                for user in superusers:
+                    superusers_data.append({
+                        'id': str(user.id),
+                        'email': user.email,
+                        'name': user.get_full_name(),
+                        'is_active': user.is_active,
+                        'is_staff': user.is_staff,
+                        'role': {
+                            'id': str(user.role.id) if user.role else None,
+                            'name': user.role.name if user.role else None
+                        },
+                        'organization': {
+                            'id': str(user.organization.id) if user.organization else None,
+                            'name': user.organization.name if user.organization else None
+                        },
+                        'team': {
+                            'id': str(user.team.id) if user.team else None,
+                            'name': user.team.name if user.team else None
+                        },
+                        'last_login': user.last_login.isoformat() if user.last_login else None,
+                        'created_at': user.created_at.isoformat(),
+                        'updated_at': user.updated_at.isoformat()
+                    })
+                
+                total_superusers = len(superusers_data)
+                active_superusers = superusers.filter(is_active=True).count()
+                inactive_superusers = total_superusers - active_superusers
+                
+                admin_role_users = self.get_queryset().filter(
+                    role__name='Admin',
+                    is_active=True
+                ).exclude(is_superuser=True).count()
+                
+                return Response({
+                    'success': True,
+                    'data': superusers_data,
+                    'statistics': {
+                        'total_superusers': total_superusers,
+                        'active_superusers': active_superusers,
+                        'inactive_superusers': inactive_superusers,
+                        'admin_role_users_non_super': admin_role_users,
+                        'total_administrators': active_superusers + admin_role_users
                     },
-                    'organization': {
-                        'id': str(user.organization.id) if user.organization else None,
-                        'name': user.organization.name if user.organization else None
-                    },
-                    'team': {
-                        'id': str(user.team.id) if user.team else None,
-                        'name': user.team.name if user.team else None
-                    },
-                    'last_login': user.last_login.isoformat() if user.last_login else None,
-                    'created_at': user.created_at.isoformat(),
-                    'updated_at': user.updated_at.isoformat()
+                'permissions_info': {
+                        'description': 'Superusers have full administrative rights within this tenant',
+                        'can_grant_superuser': self._can_grant_superuser(request.user),
+                        'current_user_is_superuser': request.user.is_superuser
+                    }
                 })
-            
-            # Calculer les statistiques
-            total_superusers = len(superusers_data)
-            active_superusers = superusers.filter(is_active=True).count()
-            inactive_superusers = total_superusers - active_superusers
-            
-            # Compter aussi les admins par rôle pour comparaison
-            admin_role_users = self.get_queryset().filter(
-                role__name='Admin',
-                is_active=True
-            ).exclude(is_superuser=True).count()  # Admins qui ne sont PAS superusers
-            
-            
-            return Response({
-                'success': True,
-                'data': superusers_data,
-                'statistics': {
-                    'total_superusers': total_superusers,
-                    'active_superusers': active_superusers,
-                    'inactive_superusers': inactive_superusers,
-                    'admin_role_users_non_super': admin_role_users,
-                    'total_administrators': active_superusers + admin_role_users  # Total avec droits admin
-                },
-               'permissions_info': {
-                    'description': 'Superusers have full administrative rights within this tenant',
-                    'can_grant_superuser': self._can_grant_superuser(request.user),
-                    'current_user_is_superuser': request.user.is_superuser
+                
+            except Exception as e:
+                return self.handle_exception(e)
+        
+        # Construire clé de cache
+        client_id = self.get_client_id()
+        user_id = request.user.id
+        perm_version = get_permissions_version()
+        
+        cache_key = build_drf_cache_key(
+            namespace='users_superusers',
+            client_id=client_id,
+            user_id=user_id,
+            perm_version=perm_version,
+        )
+        
+        # Producer : retourne un dict sérialisable
+        def producer():
+            try:
+                ctx = ctx_from_request(request)
+                ctx.update({"event": "superusers_list"})
+                logger.debug("superusers_list_access", extra=ctx)
+                
+                superusers = self.get_queryset().filter(
+                    is_superuser=True
+                ).select_related('role', 'team', 'organization').order_by('-is_active', 'first_name', 'last_name')
+                
+                superusers_data = []
+                for user in superusers:
+                    superusers_data.append({
+                        'id': str(user.id),
+                        'email': user.email,
+                        'name': user.get_full_name(),
+                        'is_active': user.is_active,
+                        'is_staff': user.is_staff,
+                        'role': {
+                            'id': str(user.role.id) if user.role else None,
+                            'name': user.role.name if user.role else None
+                        },
+                        'organization': {
+                            'id': str(user.organization.id) if user.organization else None,
+                            'name': user.organization.name if user.organization else None
+                        },
+                        'team': {
+                            'id': str(user.team.id) if user.team else None,
+                            'name': user.team.name if user.team else None
+                        },
+                        'last_login': user.last_login.isoformat() if user.last_login else None,
+                        'created_at': user.created_at.isoformat(),
+                        'updated_at': user.updated_at.isoformat()
+                    })
+                
+                total_superusers = len(superusers_data)
+                active_superusers = superusers.filter(is_active=True).count()
+                inactive_superusers = total_superusers - active_superusers
+                
+                admin_role_users = self.get_queryset().filter(
+                    role__name='Admin',
+                    is_active=True
+                ).exclude(is_superuser=True).count()
+                
+                return {
+                    'success': True,
+                    'data': superusers_data,
+                    'statistics': {
+                        'total_superusers': total_superusers,
+                        'active_superusers': active_superusers,
+                        'inactive_superusers': inactive_superusers,
+                        'admin_role_users_non_super': admin_role_users,
+                        'total_administrators': active_superusers + admin_role_users
+                    },
+                'permissions_info': {
+                        'description': 'Superusers have full administrative rights within this tenant',
+                        'can_grant_superuser': self._can_grant_superuser(request.user),
+                        'current_user_is_superuser': request.user.is_superuser
+                    }
                 }
-            })
-            
-        except Exception as e:
-            return self.handle_exception(e)
+                
+            except Exception as e:
+                return self.handle_exception(e)
+        
+        # Cache les données
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=producer,
+            ttl=300,  # 5 minutes
+            tag=(client_id, 'users')
+        )
+        
+        return Response(cached_data)
     
     @action(detail=False, methods=['post'], url_path='grant-superuser', throttle_classes=[SensitiveActionThrottle, BurstRateThrottle])
     def grant_superuser(self, request):  

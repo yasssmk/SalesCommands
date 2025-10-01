@@ -15,6 +15,7 @@ import environ
 from django.core.cache.backends.filebased import FileBasedCache
 from datetime import timedelta
 import sys
+import os
 
 env = environ.Env()
 environ.Env.read_env()
@@ -176,7 +177,7 @@ else:
 
 
 # =========================================================================
-# REST OF SETTINGS.PY CONTINUES UNCHANGED...
+# REST OF SETTINGS.PY 
 # =========================================================================
 
 
@@ -218,6 +219,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'core.logging.middlewares.RequestIdMiddleware',
     'core.logging.request_logging.RequestLoggingMiddleware',
+    'core.http.etag.ETagMiddleware',
     
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -462,28 +464,55 @@ SECURE_HSTS_PRELOAD = True
 
 
 # =========================================================================
-# CACHE CONFIGURATION FOR THROTTLING
+# CACHE CONFIGURATION - Redis with graceful fallback
 # =========================================================================
 
-import os
 
 CACHE_DIR = BASE_DIR / ".cache"
-os.makedirs(CACHE_DIR, exist_ok=True)  # crée le dossier si absent
+os.makedirs(CACHE_DIR, exist_ok=True)
 
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
-        "LOCATION": str(CACHE_DIR),
-        # Laisser DRF gérer les TTL par clé ; None = pas d'expiration globale
-        "TIMEOUT": None,
-        "OPTIONS": {
-            "MAX_ENTRIES": 50000
+REDIS_URL = env('REDIS_URL', default=None)
+REDIS_THROTTLE_URL = env('REDIS_THROTTLE_URL', default=None)
 
+
+if REDIS_URL:
+    # Redis cache (production/staging)
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": REDIS_URL,
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                "IGNORE_EXCEPTIONS": True,  # Graceful fallback if Redis fails
+            },
+            "KEY_PREFIX": "crm",
+            "TIMEOUT": 300,  # 5 minutes default TTL
         }
     }
-}
+    
+    # Optional: Dedicated Redis DB for throttling
+    if REDIS_THROTTLE_URL:
+        CACHES["throttle"] = {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": REDIS_THROTTLE_URL,
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                "IGNORE_EXCEPTIONS": True,
+            },
+            "KEY_PREFIX": "crm_throttle",
+        }
+else:
+    # Fallback: File-based cache for development without Redis
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+            "LOCATION": str(CACHE_DIR),
+            "TIMEOUT": None,
+            "OPTIONS": {"MAX_ENTRIES": 50000},
+        }
+    }
 
-# Si un cache 'throttle' dédié est défini ailleurs, DRF l'utilisera :
+# Configure DRF throttling to use dedicated cache if available
 if "throttle" in CACHES:
     REST_FRAMEWORK["DEFAULT_THROTTLE_CACHE"] = "throttle"
 
@@ -679,7 +708,7 @@ LOGGING_EXCLUDED_PATHS = {
 # LOGGING CONFIGURATION - MVP
 # =========================================================================
 
-import os
+
 import time
 import logging.handlers
 from pathlib import Path
