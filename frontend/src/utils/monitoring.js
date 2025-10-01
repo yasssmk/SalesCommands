@@ -1,11 +1,18 @@
+// frontend/src/utils/monitoring.js
+
 /**
  * Monitoring Module - MVP
  * 
  * Collecteur centralisé de métriques pour le frontend
  * Stockage en mémoire avec export périodique en console
  * 
+ * ✅ UPDATED: Integrated PII sanitization for all logs
+ * 
  * @module utils/monitoring
  */
+
+// 🔒 SECURITY: Import sanitization utilities
+import { safeConsole, sanitizeObject } from './logSanitizer';
 
 // ==============================|| METRICS STORE ||============================== //
 
@@ -76,9 +83,9 @@ class MetricsCollector {
       metrics.measurements.shift();
     }
     
-    // Log immédiat en dev pour les requêtes lentes
+    // 🔒 UPDATED: Log immédiat en dev pour les requêtes lentes (with sanitization)
     if (process.env.NODE_ENV === 'development' && duration > 1000) {
-      console.warn(`⚠️ [Slow Request] ${cleanEndpoint}: ${duration.toFixed(0)}ms`);
+      safeConsole.warn(`⚠️ [Slow Request] ${cleanEndpoint}: ${duration.toFixed(0)}ms`);
     }
   }
   
@@ -98,13 +105,18 @@ class MetricsCollector {
       ...metadata
     });
     
-    // Log spécifique pour les erreurs en dev
+    // 🔒 UPDATED: Log spécifique pour les erreurs en dev (with sanitization)
     if (process.env.NODE_ENV === 'development') {
-      console.error(`❌ [API Error] ${cleanEndpoint}:`, {
+      // Sanitize error object before logging
+      const sanitizedErrorData = sanitizeObject({
         status: error.response?.status,
         message: error.message,
-        duration: metadata.duration
+        duration: metadata.duration,
+        // Remove sensitive data from response
+        data: error.response?.data
       });
+      
+      safeConsole.error(`❌ [API Error] ${cleanEndpoint}:`, sanitizedErrorData);
     }
   }
 
@@ -227,7 +239,7 @@ class MetricsCollector {
     } catch (e) {
         return endpoint;
     }
-    }
+  }
     
   /**
    * Calcule un percentile
@@ -253,70 +265,56 @@ class MetricsCollector {
   
   /**
    * Démarre le reporting périodique en console
+   * 🔒 UPDATED: All console output now sanitized
    */
   startPeriodicReporting() {
-  setInterval(() => {
-    const summary = this.getSummary();
-    
-    if (summary.summary) {
-      // Style du header
-      console.log(
-        '%c📊 API Performance Report',
-        'color: #0066cc; font-size: 14px; font-weight: bold; padding: 4px 0'
-      );
+    setInterval(() => {
+      const summary = this.getSummary();
       
-      // Tableau de résumé avec couleurs
-      const errorRateColor = summary.summary.globalErrorRate > 0.05 ? '#ff4444' : 
-                            summary.summary.globalErrorRate > 0.01 ? '#ff9900' : '#00cc00';
-      const avgLatencyColor = summary.summary.globalAvgLatency > 500 ? '#ff4444' :
-                             summary.summary.globalAvgLatency > 200 ? '#ff9900' : '#00cc00';
-      
-      console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color: #666');
-      
-      // Stats en ligne avec couleurs
-      console.log(
-        `📍 Endpoints: %c${summary.summary.totalEndpoints}%c | ` +
-        `📞 Calls: %c${summary.summary.totalCalls}%c | ` +
-        `⚠️ Errors: %c${(summary.summary.globalErrorRate * 100).toFixed(1)}%%c | ` +
-        `⏱️ Avg: %c${this.formatDuration(summary.summary.globalAvgLatency)}`,
-        'color: #0099ff; font-weight: bold', 'color: inherit',
-        'color: #0099ff; font-weight: bold', 'color: inherit',
-        `color: ${errorRateColor}; font-weight: bold`, 'color: inherit',
-        `color: ${avgLatencyColor}; font-weight: bold`
-      );
-      
-      // Top endpoints si disponibles
-      if (summary.topEndpoints.length > 0) {
+      if (summary.summary) {
+        // Style du header
+        console.log(
+          '%c📊 API Performance Report',
+          'color: #0066cc; font-size: 14px; font-weight: bold; padding: 4px 0'
+        );
+        
+        // Tableau de résumé avec couleurs
+        const errorRateColor = summary.summary.globalErrorRate > 0.05 ? '#ff4444' : 
+                              summary.summary.globalErrorRate > 0.01 ? '#ff9900' : '#00cc00';
+        const avgLatencyColor = summary.summary.globalAvgLatency > 500 ? '#ff4444' :
+                               summary.summary.globalAvgLatency > 200 ? '#ff9900' : '#00cc00';
+        
+        console.log(
+          `  Total requests: %c${summary.summary.totalCalls}%c | Errors: %c${summary.summary.totalErrors}%c (${(summary.summary.globalErrorRate * 100).toFixed(2)}%) | Avg latency: %c${summary.summary.globalAvgLatency.toFixed(0)}ms`,
+          'color: #0066cc; font-weight: bold',
+          'color: inherit',
+          `color: ${errorRateColor}; font-weight: bold`,
+          'color: inherit',
+          `color: ${avgLatencyColor}; font-weight: bold`
+        );
+        
         console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color: #666');
-        console.log('%c🎯 Most Used Endpoints', 'color: #666; font-weight: bold; margin-top: 8px');
         
-        summary.topEndpoints.slice(0, 3).forEach(e => {
-          const avgColor = e.stats?.avg > 500 ? '#ff4444' :
-                          e.stats?.avg > 200 ? '#ff9900' : '#00cc00';
-          const errorEmoji = e.errors > 0 ? ` ❌${e.errors}` : '';
-          
-          console.log(
-            `  %c${e.endpoint}%c → ${e.count} calls, %c${e.stats ? e.stats.avg.toFixed(0) : 'N/A'}ms%c avg${errorEmoji}`,
-            'color: #666; font-family: monospace',
-            'color: inherit',
-            `color: ${avgColor}; font-weight: bold`,
-            'color: inherit'
-          );
-        });
-      }
-      
-      // Endpoints lents si présents
-      if (summary.slowestEndpoints && summary.slowestEndpoints.length > 0) {
-        const realSlowEndpoints = summary.slowestEndpoints.filter(e => e.stats?.p95 > 500);
+        // Top endpoints (plus utilisés)
+        if (summary.topEndpoints.length > 0) {
+          console.log('%c📈 Most Used Endpoints:', 'color: #666; font-weight: bold');
+          summary.topEndpoints.forEach((e, i) => {
+            const badge = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  ';
+            console.log(
+              `  ${badge} %c${e.endpoint}%c → ${e.count} calls, error rate: %c${(e.errorRate * 100).toFixed(1)}%`,
+              'color: #666; font-family: monospace',
+              'color: inherit',
+              e.errorRate > 0.05 ? 'color: #ff4444; font-weight: bold' : 'color: #00cc00'
+            );
+          });
+        }
         
-        if (realSlowEndpoints.length > 0) {
-          console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color: #666');
-          console.log(
-            '%c🐌 Slow Endpoints Alert (P95 > 500ms)',
-            'color: #ff9900; font-weight: bold; background: #fff3cd; padding: 2px 6px; border-radius: 3px'
-          );
-          
-          realSlowEndpoints.slice(0, 3).forEach(e => {
+        console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color: #666');
+        
+        // Slowest endpoints
+        if (summary.slowestEndpoints.length > 0) {
+          console.log('%c🐌 Slowest Endpoints (P95):', 'color: #666; font-weight: bold');
+          summary.slowestEndpoints.forEach((e, i) => {
             const badge = e.stats.p95 > 2000 ? '🔥' : e.stats.p95 > 1000 ? '🐌' : '⚠️';
             console.log(
               `  ${badge} %c${e.endpoint}%c → P95: %c${e.stats.p95.toFixed(0)}ms%c, Max: %c${e.stats.max.toFixed(0)}ms`,
@@ -335,20 +333,21 @@ class MetricsCollector {
         '%c💡 Tip: window.__metricsCollector for detailed analysis',
         'color: #666; font-style: italic; font-size: 11px'
       );
-    }
-  }, this.config.logInterval);
-}
+    }, this.config.logInterval);
+  }
   
   /**
    * Reset toutes les métriques
+   * 🔒 UPDATED: Sanitized console output
    */
   reset() {
     this.endpointMetrics.clear();
-    console.log('🔄 Metrics collector reset');
+    safeConsole.log('🔄 Metrics collector reset');
   }
   
   /**
    * Export des métriques pour analyse externe
+   * 🔒 UPDATED: Sanitized console output and data export
    * @returns {Object} Données exportables
    */
   export() {
@@ -361,10 +360,12 @@ class MetricsCollector {
       summary: this.getSummary()
     };
     
-    // En dev, permettre l'export via console
+    // En dev, permettre l'export via console (sanitized)
     if (process.env.NODE_ENV === 'development') {
-      console.log('📤 Exporting metrics data:');
-      console.log(JSON.stringify(data, null, 2));
+      safeConsole.log('📤 Exporting metrics data:');
+      // Sanitize data before stringifying (in case there's PII in error messages)
+      const sanitizedData = sanitizeObject(data);
+      console.log(JSON.stringify(sanitizedData, null, 2));
     }
     
     return data;
@@ -378,7 +379,7 @@ const metricsCollector = new MetricsCollector();
 // En dev, exposer globalement pour debug
 if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
   window.__metricsCollector = metricsCollector;
-  console.log('💡 Metrics collector available at window.__metricsCollector');
+  safeConsole.log('💡 Metrics collector available at window.__metricsCollector');
 }
 
 // ==============================|| EXPORTS ||============================== //

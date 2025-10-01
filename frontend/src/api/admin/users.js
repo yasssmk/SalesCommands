@@ -7,6 +7,7 @@ import { useAuth } from 'hooks/useAuth';
 // utils
 import axiosClient, { api } from 'utils/axiosClient';
 import { tenantKey, revalidateByPrefix, revalidateMultiple } from 'api/_swr';
+import { isValidUUID, sanitizeObject } from 'utils/validators';
 
 // ==============================|| ENDPOINTS ||============================== //
 
@@ -342,12 +343,37 @@ export function useGetOrganization(orgId) {
 // ==============================|| CRUD FUNCTIONS AVEC REVALIDATIONS STANDARDISÉES ||============================== //
 
 /**
- * ✅ CREATE USER - Revalidation standardisée
+ * ✅ CREATE USER - Revalidation standardisée + validation client
+ * 
+ * ✅ PHASE 5.3.2: Added UUID validation and string sanitization
+ * 
+ * @param {Object} userData - User data to create
+ * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
  */
 export const insertUser = async (userData) => {
-  const result = await api.post(endpoints.users, userData);
+  // ✅ PHASE 5.3.2: Validate UUID fields before API call
+  const uuidFields = ['role', 'organization', 'team'];
+  for (const field of uuidFields) {
+    const value = userData[field];
+    
+    // Skip validation if field is null/undefined/empty (nullable fields)
+    if (!value || value === '') continue;
+    
+    // Validate UUID format
+    if (!isValidUUID(value)) {
+      return {
+        success: false,
+        error: `Invalid ${field} ID format. Please select a valid ${field}.`
+      };
+    }
+  }
   
-  console.log(result)
+  // ✅ PHASE 5.3.2: Sanitize string fields (trim whitespace)
+  const sanitized = sanitizeObject(userData, ['email', 'first_name', 'last_name']);
+  
+  const result = await api.post(endpoints.users, sanitized);
+  
+  console.log(result);
   if (result.success) {
     // ✅ STANDARDISÉ: revalidateByPrefix pour tous les endpoints impactés
     revalidateMultiple([
@@ -357,17 +383,50 @@ export const insertUser = async (userData) => {
 
     return { success: true, user: result.data };
   } else {
-    
     return { success: false, error: result.error };
   }
 };
 
 
 /**
- * ✅ UPDATE USER (PATCH) - Revalidation standardisée
+ * ✅ UPDATE USER (PATCH) - Revalidation standardisée + validation client
+ * 
+ * ✅ PHASE 5.3.2: Added UUID validation for userId and related fields
+ * 
+ * @param {string} userId - User ID to update
+ * @param {Object} userData - User data to update
+ * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
  */
 export const updateUser = async (userId, userData) => {
-  const result = await api.patch(`${endpoints.users}${userId}/`, userData);
+  // ✅ PHASE 5.3.2: Validate userId is a valid UUID
+  if (!userId || !isValidUUID(userId)) {
+    return {
+      success: false,
+      error: 'Invalid user ID format. Cannot update user.'
+    };
+  }
+  
+  // ✅ PHASE 5.3.2: Validate UUID fields in userData
+  const uuidFields = ['role', 'organization', 'team'];
+  for (const field of uuidFields) {
+    const value = userData[field];
+    
+    // Skip validation if field is null/undefined/empty (nullable fields)
+    if (!value || value === '') continue;
+    
+    // Validate UUID format
+    if (!isValidUUID(value)) {
+      return {
+        success: false,
+        error: `Invalid ${field} ID format. Please select a valid ${field}.`
+      };
+    }
+  }
+  
+  // ✅ PHASE 5.3.2: Sanitize string fields (trim whitespace)
+  const sanitized = sanitizeObject(userData, ['first_name', 'last_name']);
+  
+  const result = await api.patch(`${endpoints.users}${userId}/`, sanitized);
 
   if (result.success) {
     // ✅ STANDARDISÉ: revalidation ciblée avec prefixes
@@ -384,13 +443,40 @@ export const updateUser = async (userId, userData) => {
 };
 
 /**
- * ✅ CHANGE USER PASSWORD - Revalidation standardisée
+ * ✅ CHANGE USER PASSWORD - Revalidation standardisée + validation client
+ * 
+ * ✅ PHASE 5.3.2: Added UUID validation for userId
+ * 
  * @param {string} userId - ID de l'utilisateur
  * @param {string} password - Nouveau mot de passe
  * @param {string} passwordConfirm - Confirmation du mot de passe
- * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
+ * @returns {Promise<Object>} {success: boolean, user?: Object, error?: Object, error?: string}
  */
 export const changePassword = async (userId, password, passwordConfirm) => {
+  // ✅ PHASE 5.3.2: Validate userId is a valid UUID
+  if (!userId || !isValidUUID(userId)) {
+    return {
+      success: false,
+      error: 'Invalid user ID format. Cannot change password.'
+    };
+  }
+  
+  // ✅ Additional validation: password length (client-side quick check)
+  if (!password || password.length < 8) {
+    return {
+      success: false,
+      error: 'Password must be at least 8 characters long.'
+    };
+  }
+  
+  // ✅ Additional validation: passwords match
+  if (password !== passwordConfirm) {
+    return {
+      success: false,
+      error: 'Passwords do not match.'
+    };
+  }
+  
   const result = await api.patch(`${endpoints.users}${userId}/change-password/`, {
     password,
     password_confirm: passwordConfirm
@@ -414,9 +500,23 @@ export const changePassword = async (userId, password, passwordConfirm) => {
 };
 
 /**
- * ✅ DELETE USER - Revalidation standardisée
+ * ✅ DELETE USER - Revalidation standardisée + validation client
+ * 
+ * ✅ PHASE 5.3.2: Added UUID validation for userId
+ * 
+ * @param {string} userId - User ID to delete
+ * @returns {Promise<Object>} {success: boolean, status?: number, error?: string}
  */
 export const deleteUser = async (userId) => {
+  // ✅ PHASE 5.3.2: Validate userId is a valid UUID
+  if (!userId || !isValidUUID(userId)) {
+    return {
+      success: false,
+      error: 'Invalid user ID format. Cannot delete user.',
+      status: 400
+    };
+  }
+  
   const result = await api.delete(`${endpoints.users}${userId}/`);
 
   if (result.success) {
@@ -433,9 +533,22 @@ export const deleteUser = async (userId) => {
 };
 
 /**
- * ✅ TOGGLE USER STATUS - Revalidation standardisée
+ * ✅ TOGGLE USER STATUS - Revalidation standardisée + validation client
+ * 
+ * ✅ PHASE 5.3.2: Added UUID validation for userId
+ * 
+ * @param {string} userId - User ID to toggle status
+ * @returns {Promise<Object>} {success: boolean, user?: Object, error?: string}
  */
 export const toggleUserStatus = async (userId) => {
+  // ✅ PHASE 5.3.2: Validate userId is a valid UUID
+  if (!userId || !isValidUUID(userId)) {
+    return {
+      success: false,
+      error: 'Invalid user ID format. Cannot toggle user status.'
+    };
+  }
+  
   const result = await api.post(`${endpoints.users}${userId}/toggle-status/`);
 
   if (result.success) {
@@ -482,5 +595,4 @@ export const filterUsers = (filters) => {
 export const revalidateUsersLists = () => {
   console.warn('[DEPRECATED] revalidateUsersLists() → use refreshUsers()');
   return refreshUsers();
-};
-
+}

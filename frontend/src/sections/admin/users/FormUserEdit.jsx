@@ -39,6 +39,9 @@ import Avatar from 'components/@extended/Avatar';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 import { openSnackbar } from 'api/snackbar';
 
+// utils
+import { isValidUUID } from 'utils/validators';
+
 // assets
 import CameraOutlined from '@ant-design/icons/CameraOutlined';
 
@@ -55,12 +58,43 @@ const buildInitialValues = (user) => ({
 });
 
 const EditSchema = Yup.object().shape({
-  email: Yup.string().max(255).required('Email is required').email('Must be a valid email'),
-  first_name: Yup.string().max(50),
-  last_name: Yup.string().max(50),
-  role: Yup.mixed().nullable(),
-  organization: Yup.mixed().nullable(),
-  team: Yup.mixed().nullable()
+  // ✅ Email: Keep validation for consistency, but field is disabled (read-only)
+  email: Yup.string()
+    .max(255)
+    .required('Email is required')
+    .email('Must be a valid email'),
+  
+  // ✅ Names: trim whitespace
+  first_name: Yup.string().trim().max(50),
+  last_name: Yup.string().trim().max(50),
+  
+  // ✅ UUID fields: validate UUID format when value is provided
+  role: Yup.string()
+    .nullable()
+    .test('is-valid-uuid', 'Invalid role selection', function(value) {
+      // Allow empty/null (optional field)
+      if (!value || value === '') return true;
+      // Validate UUID format
+      return isValidUUID(value);
+    }),
+  
+  organization: Yup.string()
+    .nullable()
+    .test('is-valid-uuid', 'Invalid organization selection', function(value) {
+      // Allow empty/null (optional field)
+      if (!value || value === '') return true;
+      // Validate UUID format
+      return isValidUUID(value);
+    }),
+  
+  team: Yup.string()
+    .nullable()
+    .test('is-valid-uuid', 'Invalid team selection', function(value) {
+      // Allow empty/null (optional field)
+      if (!value || value === '') return true;
+      // Validate UUID format
+      return isValidUUID(value);
+    })
 });
 
 function sanitizePayload(values) {
@@ -443,7 +477,7 @@ export default function FormUserEdit({ closeModal, userId, user: initialUser, on
                   <Button color="error" onClick={closeModal}>
                     Cancel
                   </Button>
-                  <Button type="submit" variant="contained" disabled={isSubmitting}>
+                  <Button type="submit" variant="contained" disabled={!formik.isValid || isSubmitting} >
                     Save
                   </Button>
                 </Stack>

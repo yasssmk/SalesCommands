@@ -9,7 +9,7 @@ const nextConfig = {
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: https:",
-      "connect-src 'self'",
+      "connect-src 'self' http://localhost:8000",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -21,6 +21,10 @@ const nextConfig = {
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       { key: 'Content-Security-Policy-Report-Only', value: csp },
+      { 
+        key: 'Permissions-Policy', 
+        value: 'geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=()'
+      },
     ];
 
     return [

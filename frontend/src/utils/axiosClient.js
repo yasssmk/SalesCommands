@@ -3,16 +3,21 @@
 import axios from 'axios';
 import { authConfig, debugLog } from '../config/auth';
 import { handleApiError } from '../utils/errorHandler';
+import { safeConsole } from './logSanitizer';
 
 // ==============================|| CENTRAL AXIOS CLIENT ||============================== //
 
 /**
- * ✅ AXIOS CLIENT CENTRAL AVEC AUTO-REFRESH
+ * ✅ AXIOS CLIENT CENTRAL WITH CORRELATION IDs
  * 
- * - Cookies HTTP-only automatiques (withCredentials: true)  
- * - Auto-refresh sur 401 (1 seul retry, pas de boucle infinie)
- * - Utilise handleApiError existant pour les messages backend
- * - Simple et efficace pour MVP
+ * Features:
+ * - HTTP-only cookies automatic (withCredentials: true)  
+ * - Auto-refresh on 401 (single retry, no infinite loops)
+ * - Uses existing handleApiError for backend messages
+ * - 🔒 PII sanitization on all logs
+ * - 🔗 Correlation ID for distributed tracing
+ * 
+ * @module utils/axiosClient
  */
 
 const axiosClient = axios.create({
@@ -21,21 +26,57 @@ const axiosClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Essentiel pour les cookies HTTP-only
+  withCredentials: true, // Essential for HTTP-only cookies
 });
 
-// Flag pour éviter les boucles infinies de refresh - SUPPRIMÉ (plus nécessaire)
-// let isRefreshing = false;
+// ==============================|| CORRELATION ID GENERATOR ||============================== //
+
+/**
+ * Generate unique correlation ID for request tracing
+ * Uses crypto.randomUUID() with fallback for older browsers
+ * 
+ * @returns {string} UUID v4
+ */
+const generateCorrelationId = () => {
+  // Modern browsers (preferred)
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  
+  // Fallback for older browsers
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
 
 // ==============================|| REQUEST INTERCEPTOR ||============================== //
 
 axiosClient.interceptors.request.use(
   (config) => {
-    debugLog(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    // 🔗 Generate and attach correlation ID
+    const correlationId = generateCorrelationId();
+    config.headers['X-Correlation-ID'] = correlationId;
+    
+    // Store for response logging
+    config.metadata = {
+      correlationId,
+      startTime: performance.now()
+    };
+    
+    // 🔒 Sanitized debug log with correlation ID
+    if (process.env.NODE_ENV === 'development') {
+      debugLog(
+        `🚀 [${correlationId.slice(0, 8)}] API Request: ${config.method?.toUpperCase()} ${config.url}`
+      );
+    }
+    
     return config;
   },
   (error) => {
-    debugLog('❌ Request interceptor error:', error);
+    // 🔒 Sanitized error log
+    safeConsole.error('❌ Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
@@ -44,13 +85,43 @@ axiosClient.interceptors.request.use(
 
 axiosClient.interceptors.response.use(
   (response) => {
-    debugLog(`✅ API Response: ${response.status} ${response.config.url}`);
+    const correlationId = response.config.metadata?.correlationId || 'unknown';
+    const startTime = response.config.metadata?.startTime;
+    
+    // Calculate request duration
+    let duration = 0;
+    if (startTime) {
+      duration = performance.now() - startTime;
+    }
+    
+    // 🔒 Sanitized debug log with correlation ID and duration
+    if (process.env.NODE_ENV === 'development') {
+      debugLog(
+        `✅ [${correlationId.slice(0, 8)}] API Response: ${response.status} ${response.config.url} (${duration.toFixed(0)}ms)`
+      );
+    }
+    
     return response;
   },
   (error) => {
+    const correlationId = error?.config?.metadata?.correlationId || 'unknown';
+    const startTime = error?.config?.metadata?.startTime;
     const status = error?.response?.status;
     const url = error?.config?.url;
-    debugLog(`❌ API Error: ${status ?? '—'} ${url ?? '—'}`);
+    
+    // Calculate request duration
+    let duration = 0;
+    if (startTime) {
+      duration = performance.now() - startTime;
+    }
+    
+    // 🔒 Sanitized error log with correlation ID
+    if (process.env.NODE_ENV === 'development') {
+      debugLog(
+        `❌ [${correlationId.slice(0, 8)}] API Error: ${status ?? '—'} ${url ?? '—'} (${duration.toFixed(0)}ms)`
+      );
+    }
+    
     return Promise.reject(error);
   }
 );
@@ -58,9 +129,9 @@ axiosClient.interceptors.response.use(
 // ==============================|| HELPER FUNCTIONS ||============================== //
 
 /**
- * ✅ WRAPPER POUR REQUÊTES AVEC GESTION D'ERREUR AUTOMATIQUE
- * @param {Function} requestFn - Fonction de requête axios
- * @returns {Promise<{success: boolean, data?: any, error?: string}>}
+ * ✅ WRAPPER FOR REQUESTS WITH AUTOMATIC ERROR HANDLING
+ * @param {Function} requestFn - Axios request function
+ * @returns {Promise<{success: boolean, data?: any, error?: string, status?: number, response?: Object}>}
  */
 export const apiRequest = async (requestFn) => {
   try {
@@ -71,7 +142,11 @@ export const apiRequest = async (requestFn) => {
     };
   } catch (error) {
     const errorMessage = handleApiError(error);
-    debugLog('❌ API Request failed:', errorMessage);
+    
+    // 🔒 Sanitized error log
+    if (process.env.NODE_ENV === 'development') {
+      safeConsole.error('❌ API Request failed:', errorMessage);
+    }
     
     return {
       success: false,
@@ -82,19 +157,14 @@ export const apiRequest = async (requestFn) => {
   }
 };
 
-/**
- * ✅ RESET REFRESH STATE - SUPPRIMÉ (plus nécessaire avec interceptor simplifié)
- */
-// export const resetRefreshState = () => {
-//   isRefreshing = false;
-//   debugLog('🔄 Refresh state reset');
-// };
-
 // ==============================|| EXPORTS ||============================== //
 
 export default axiosClient;
 
-// Méthodes de convenance avec gestion d'erreur intégrée
+/**
+ * Convenience methods with integrated error handling
+ * All methods include correlation IDs automatically
+ */
 export const api = {
   get: (url, config = {}) => apiRequest(() => axiosClient.get(url, config)),
   post: (url, data = {}, config = {}) => apiRequest(() => axiosClient.post(url, data, config)),

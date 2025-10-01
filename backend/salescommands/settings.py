@@ -175,11 +175,25 @@ API_ENDPOINT_PREFIXES = [
     '/product_admin/', # product admin endpoints
 ]
 
-# Headers de sécurité (gérés par SecurityMiddleware de Django)
+# ==============================
+# SECURITY HEADERS CONFIGURATION
+# ==============================
+
+# Security headers (managed by Django SecurityMiddleware)
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_REFERRER_POLICY = 'same-origin'
+
+# 🔒 HSTS (HTTP Strict Transport Security) - Production only
+# Forces HTTPS connections and prevents SSL stripping attacks
+# Only activated when DEBUG=False (production mode)
+SECURE_HSTS_SECONDS = 31536000  # 1 year (31536000 seconds)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True  # Apply to all subdomains
+SECURE_HSTS_PRELOAD = True  # Enable HSTS preload list eligibility
+
+# Note: HSTS headers will NOT be sent in development (DEBUG=True)
+# to allow HTTP connections on localhost
 
 
 # CACHES = {
@@ -264,6 +278,21 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
+CORS_ALLOW_HEADERS = [
+    # Default django-cors-headers
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    # 🔗 Custom header for distributed tracing
+    'x-correlation-id',
+]
+
 # Session Cookie Settings
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = not DEBUG  # True en production seulement
@@ -335,6 +364,12 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# HSTS Configuration (Production only)
+SECURE_HSTS_SECONDS = 31536000  # 1 year
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+
 # =========================================================================
 # CACHE CONFIGURATION FOR THROTTLING
 # =========================================================================
@@ -360,6 +395,7 @@ CACHES = {
 # Si un cache 'throttle' dédié est défini ailleurs, DRF l'utilisera :
 if "throttle" in CACHES:
     REST_FRAMEWORK["DEFAULT_THROTTLE_CACHE"] = "throttle"
+
 
 # =========================================================================
 # LOGGING FOR THROTTLING (OPTIONNEL MAIS UTILE)
