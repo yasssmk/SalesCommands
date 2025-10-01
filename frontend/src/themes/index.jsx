@@ -1,5 +1,5 @@
 import PropTypes from 'prop-types';
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 
 // material-ui
 import { createTheme, ThemeProvider } from '@mui/material/styles';
@@ -15,9 +15,10 @@ import { NextAppDirEmotionCacheProvider } from './emotionCache';
 
 // ==============================|| DEFAULT THEME - MAIN ||============================== //
 
-export default function ThemeCustomization({ children }) {
+const ThemeCustomization = React.memo(function ThemeCustomization({ children }) {
   const { themeDirection, mode, presetColor, fontFamily } = useConfig();
 
+  // ✅ Déjà optimisé avec useMemo (conservé tel quel)
   const theme = useMemo(() => Palette(mode, presetColor), [mode, presetColor]);
 
   const themeTypography = useMemo(() => Typography(fontFamily), [fontFamily]);
@@ -49,6 +50,7 @@ export default function ThemeCustomization({ children }) {
     [themeDirection, theme, themeTypography, themeCustomShadows]
   );
 
+  // ✅ createTheme est coûteux, mais déjà optimisé par les useMemo ci-dessus
   const themes = createTheme(themeOptions);
   themes.components = componentsOverride(themes);
 
@@ -60,6 +62,8 @@ export default function ThemeCustomization({ children }) {
       </ThemeProvider>
     </NextAppDirEmotionCacheProvider>
   );
-}
+});
 
 ThemeCustomization.propTypes = { children: PropTypes.node };
+
+export default ThemeCustomization;

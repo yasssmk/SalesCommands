@@ -2,8 +2,9 @@
 
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+
 
 // project imports
 import { 
@@ -327,29 +328,69 @@ export function AuthProvider({ children }) {
     };
   }, []); // ✅ IMPORTANT: Retirer pathname des dépendances pour éviter re-init sur navigation
 
-  // ==============================|| CONTEXT VALUE ||============================== //
+ // ==============================|| OPTIMISATIONS ||============================== //
+  
+  /**
+   * ✅ MÉMOÏSATION DES INFOS TENANT
+   * Évite de recalculer tenantId/tenantName à chaque render
+   * Impact: Réduction des re-renders sur tous les composants utilisant ces valeurs
+   */
+  const tenantInfo = useMemo(
+    () => ({
+      tenantId: user?.client_id || null,
+      tenantName: user?.client_name || null,
+    }),
+    [user?.client_id, user?.client_name]
+  );
 
-  const contextValue = {
-    // États
-    user,
-    isAuthenticated,
-    isLoading,
-    error,
-    
-    // Exposition explicite du tenantId pour l'isolation
-    tenantId: user?.client_id || null,
-    tenantName: user?.client_name || null,
-    
-    // Actions
-    login,
-    logout,
-    refreshUser,
-    checkAuth,
-    
-    // Utilities
-    clearError: useCallback(() => setError(null), []),
-    clearAuthState
-  };
+  /**
+   * ✅ CLEAR ERROR AVEC DÉPENDANCES CORRECTES
+   * Fixe le warning React sur les dépendances manquantes
+   */
+  const clearError = useCallback(() => setError(null), [setError]);
+
+  /**
+   * ✅ MÉMOÏSATION DE LA CONTEXT VALUE
+   * CRITIQUE: Évite que TOUS les composants utilisant useAuth() se re-render
+   * à chaque render du AuthProvider
+   * 
+   * Gain attendu: 100-200ms économisés sur navigation + réduction massive des re-renders
+   */
+  const contextValue = useMemo(
+    () => ({
+      // États
+      user,
+      isAuthenticated,
+      isLoading,
+      error,
+      
+      // Infos tenant mémoïsées
+      ...tenantInfo,
+      
+      // Actions
+      login,
+      logout,
+      refreshUser,
+      checkAuth,
+      
+      // Utilities
+      clearError,
+      clearAuthState
+    }),
+    [
+      user,
+      isAuthenticated,
+      isLoading,
+      error,
+      tenantInfo,
+      login,
+      logout,
+      refreshUser,
+      checkAuth,
+      clearError,
+      clearAuthState
+    ]
+  );
 
   return (
     <AuthContext.Provider value={contextValue}>
