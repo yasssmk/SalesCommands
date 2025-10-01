@@ -61,7 +61,7 @@ export default function DashboardLayout({ children }) {
     <Stack direction="row" width={1}>
       <Header />
       {!isHorizontal ? <Drawer /> : <HorizontalBar />}
-      <Box component="main" sx={{ width: 'calc(100% - 260px)', flexGrow: 1, p: { xs: 2, sm: 3 } }}>
+      <Box component="main" sx={{   width: 'calc(100% - 260px)', flexGrow: 1, p: { xs: 2, sm: 3 } }}>
         <Toolbar sx={{ mt: isHorizontal ? 8 : 'inherit' }} />
         <Container
           maxWidth={container ? 'xl' : false}
@@ -70,7 +70,7 @@ export default function DashboardLayout({ children }) {
             position: 'relative',
             minHeight: 'calc(100vh - 110px)',
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
           }}
         >
           {pathname !== '/apps/profiles/account/my-account' && <Breadcrumbs />}

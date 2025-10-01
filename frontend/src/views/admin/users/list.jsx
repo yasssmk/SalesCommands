@@ -226,37 +226,44 @@ export default function UserListPage() {
   );
 
   return (
-    <Grid container spacing={3}>
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        <SeatsSummary />
-      </Grid>
-      <Grid item xs={12}>
-        <UserTable
-          data={lists || []}
-          columns={columns}
-          loading={usersLoading}
-          error={usersError}        // ✅ STEP 3: Pass error to UserTable
-          swrKey={swrKey}            // ✅ STEP 4: Pass SWR key for retry
-          modalToggler={() => {
-            setSelectedUser(null);
-            setUserModal(true);
-          }}
-        />
-      </Grid>
-
-      {/* Add/Edit User Modal */}
-      <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />
-      
-      {/* Delete Confirmation */}
-      <AlertUserDelete 
-        id={userDeleteId} 
-        title={selectedUser ? `${selectedUser.first_name || ''} ${selectedUser.last_name || ''}`.trim() + ` (${selectedUser.email})` : 'User'}
-        open={open} 
-        handleClose={handleClose} 
-      />
-      
-      {/* Test Error Button (dev only) */}
-      {process.env.NODE_ENV === 'development' && <TestErrorButton />}
+  <>
+    <Grid container spacing={2} sx={{ mb: 2 }}>
+      <SeatsSummary />
     </Grid>
-  );
+
+    <UserTable
+      data={lists || []}
+      columns={columns}
+      loading={usersLoading}
+      error={usersError}        // ✅ STEP 3: Pass error to UserTable
+      swrKey={swrKey}            // ✅ STEP 4: Pass SWR key for retry
+      modalToggler={() => {
+        setSelectedUser(null);
+        setUserModal(true);
+      }}
+    />
+
+    {/* Add/Edit User Modal */}
+    <UserModal 
+      open={userModal} 
+      modalToggler={setUserModal} 
+      user={selectedUser} 
+    />
+
+    {/* Delete Confirmation */}
+    <AlertUserDelete 
+      id={userDeleteId} 
+      title={
+        selectedUser
+          ? `${selectedUser.first_name || ''} ${selectedUser.last_name || ''}`.trim() + ` (${selectedUser.email})`
+          : 'User'
+      }
+      open={open} 
+      handleClose={handleClose} 
+    />
+
+    {/* Test Error Button (dev only) */}
+    {process.env.NODE_ENV === 'development' && <TestErrorButton />}
+  </>
+);
 }
