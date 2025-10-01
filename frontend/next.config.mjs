@@ -13,7 +13,8 @@ const nextConfig = {
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
-      "report-uri /api/csp-report"
+      "report-uri /api/csp-report",
+      "http://localhost:8097" //React dev tool
     ].join('; ');
 
     const baseSecurityHeaders = [

@@ -1,7 +1,7 @@
 // frontend/src/sections/admin/users/FormUserAdd.jsx
 
 import PropTypes from 'prop-types';
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
@@ -116,7 +116,7 @@ function sanitizePayload(values) {
 }
 
 // ==============================|| USER ADD - FORM (CREATE ONLY) ||============================== //
-export default function FormUserAdd({ closeModal }) {
+function FormUserAdd({ closeModal }) {
   const theme = useTheme();
 
   const [loading, setLoading] = useState(true);
@@ -504,6 +504,6 @@ export default function FormUserAdd({ closeModal }) {
   );
 }
 
-FormUserAdd.propTypes = {
-  closeModal: PropTypes.func
-};
+FormUserAdd.propTypes = { closeModal: PropTypes.func };
+
+export default React.memo(FormUserAdd);

@@ -1,7 +1,7 @@
 // frontend/src/sections/admin/users/FormUserEdit.jsx
 
 import PropTypes from 'prop-types';
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 // material-ui
@@ -111,7 +111,7 @@ function sanitizePayload(values) {
 }
 
 // ==============================|| USER EDIT - FORM ||============================== //
-export default function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword }) {
+function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword }) {
   const theme = useTheme();
 
   const [loading, setLoading] = useState(true);
@@ -496,3 +496,5 @@ FormUserEdit.propTypes = {
   user: PropTypes.object,
   onChangePassword: PropTypes.func
 };
+
+export default React.memo(FormUserEdit)

@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback  } from 'react';
 
 // material-ui
 import Chip from '@mui/material/Chip';
@@ -60,9 +60,33 @@ export default function UserListPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [userDeleteId, setUserDeleteId] = useState('');
 
-  const handleClose = () => {
-    setOpen(!open);
-  };
+    // ==============================||  HANDLERS MÉMOÏSÉS ||============================== //
+
+  // const handleClose = () => {
+  //   setOpen(!open);
+  // };
+
+    const handleClose = useCallback(() => {
+    setOpen((prev) => !prev);
+  }, []);
+
+  const handleOpenEditModal = useCallback((user) => {
+    setSelectedUser(user);
+    setUserModal(true);
+  }, []);
+
+  const handleOpenAddModal = useCallback(() => {
+    setSelectedUser(null);
+    setUserModal(true);
+  }, []);
+
+  const handleOpenDeleteDialog = useCallback((user) => {
+    setSelectedUser(user);
+    setUserDeleteId(user.id);
+    handleClose();
+  }, [handleClose]);
+
+   // ==============================|| COLUMNS OPTIMISÉES ||============================== //
 
   const columns = useMemo(
     () => [
@@ -123,15 +147,15 @@ export default function UserListPage() {
           ) : null
         )
       },
-      {
-        header: 'Organization',
-        accessorKey: 'organization',
-        cell: ({ row }) => (
-          <Typography variant="body2">
-            {row.original.organization?.name || 'No Organization'}
-          </Typography>
-        )
-      },
+      // {
+      //   header: 'Organization',
+      //   accessorKey: 'organization',
+      //   cell: ({ row }) => (
+      //     <Typography variant="body2">
+      //       {row.original.organization?.name || 'No Organization'}
+      //     </Typography>
+      //   )
+      // },
       {
         header: 'Team',
         accessorKey: 'team',
@@ -196,8 +220,9 @@ export default function UserListPage() {
                   color="primary"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedUser(row.original);
-                    setUserModal(true);
+                    // setSelectedUser(row.original);
+                    // setUserModal(true);
+                    handleOpenEditModal(row.original);
                   }}
                 >
                   <EditOutlined />
@@ -208,9 +233,10 @@ export default function UserListPage() {
                   color="error"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedUser(row.original);
-                    handleClose();
-                    setUserDeleteId(row.original.id);
+                    // setSelectedUser(row.original);
+                    // handleClose();
+                    // setUserDeleteId(row.original.id);
+                    handleOpenDeleteDialog(row.original);
                   }}
                 >
                   <DeleteOutlined />
@@ -222,7 +248,7 @@ export default function UserListPage() {
       }
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [theme]
+    [theme, handleOpenEditModal, handleOpenDeleteDialog]
   );
 
   return (
@@ -235,8 +261,8 @@ export default function UserListPage() {
       data={lists || []}
       columns={columns}
       loading={usersLoading}
-      error={usersError}        // ✅ STEP 3: Pass error to UserTable
-      swrKey={swrKey}            // ✅ STEP 4: Pass SWR key for retry
+      error={usersError}        
+      swrKey={swrKey}            
       modalToggler={() => {
         setSelectedUser(null);
         setUserModal(true);

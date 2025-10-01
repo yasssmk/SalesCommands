@@ -1,5 +1,5 @@
 import PropTypes from 'prop-types';
-import { Fragment, useMemo, useState } from 'react';
+import React, { Fragment, useMemo, useState } from 'react';
 import { useSWRConfig } from 'swr';
 
 // material-ui
@@ -304,9 +304,9 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
 
 // ==============================|| USER TABLE ||============================== //
 
-export default function UserTable({ data, columns, loading, error, swrKey, modalToggler }) {
+const UserTable = React.memo(function UserTable({ data, columns, loading, error, swrKey, modalToggler }) {
   return <ReactTable {...{ data, columns, loading, error, swrKey, modalToggler }} />;
-}
+});
 
 UserTable.propTypes = { 
   data: PropTypes.array, 
@@ -316,3 +316,5 @@ UserTable.propTypes = {
   swrKey: PropTypes.any,           // ✅ SWR key for mutate()
   modalToggler: PropTypes.func 
 };
+
+export default UserTable;
