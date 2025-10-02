@@ -24,6 +24,7 @@ import AlertTitle from '@mui/material/AlertTitle';
 import WarningOutlined from '@ant-design/icons/WarningOutlined';
 import ReloadOutlined from '@ant-design/icons/ReloadOutlined';
 
+
 // third-party
 import {
   flexRender,
@@ -38,8 +39,9 @@ import {
 // project-import
 import MainCard from 'components/MainCard';
 import ScrollX from 'components/ScrollX';
-import { DebouncedInput, HeaderSort, RowSelection, SelectColumnSorting, TablePagination } from 'components/third-party/react-table';
 
+
+import { TableHeaderActions, DebouncedInput, HeaderSort, RowSelection, SelectColumnSorting, TablePagination } from 'components/third-party/react-table';
 import ExpandingUserDetail from './ExpandingUserDetail';
 
 // utils
@@ -93,7 +95,7 @@ ErrorDisplay.propTypes = {
 
 // ==============================|| REACT TABLE ||============================== //
 
-function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selectedCount }) {
+function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selectedCount, selectedRows }) {
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
   const { mutate } = useSWRConfig();
@@ -136,6 +138,13 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selec
     }
   };
 
+ const exportData = useMemo(() => {
+    if (!selectedRows || selectedRows.size === 0) {
+      return data; // Exporter toutes les données si aucune sélection
+    }
+    return data.filter(row => selectedRows.has(row.id)); // Exporter seulement les lignes sélectionnées
+  }, [data, selectedRows]);
+
   let headers = [];
   table.getVisibleFlatColumns().map(
     (columns) =>
@@ -162,8 +171,9 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selec
           disabled={loading || !!error}
         />
 
-        <Stack direction="row" alignItems="center" spacing={2} justifyContent="center" sx={{ width: { xs: '100%', sm: 'auto' } }}>
+        <Stack direction="row" alignItems="center" spacing={2} sx={{  width: { xs: '100%', sm: 'auto' } }}>
           <SelectColumnSorting {...{ getState: table.getState, getAllColumns: table.getAllColumns, setSorting }} disabled={loading || !!error} />
+          <Stack direction="row" spacing={2} alignItems="center" >
           {matchDownSM ? (
             <Tooltip title="Add User">
               <IconButton color="primary" variant="contained" onClick={modalToggler} disabled={loading || !!error}>
@@ -175,6 +185,26 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selec
               Add User
             </Button>
           )}
+
+            <TableHeaderActions
+              selectedRowCount={selectedCount || 0}
+              onEdit={() => {
+                // TODO: Implémenter la logique bulk edit
+                console.log('Bulk edit clicked');
+              }}
+              onDelete={() => {
+                // TODO: Implémenter la logique bulk delete
+                console.log('Bulk delete clicked');
+              }}
+              onImport={() => {
+                // TODO: Implémenter la logique import CSV
+                console.log('Import CSV clicked');
+              }}
+              exportData={exportData}
+              exportHeaders={headers}
+              exportFilename="users-list.csv"
+            />
+            </Stack>
         </Stack>
       </Stack>
       <ScrollX>
@@ -292,7 +322,8 @@ UserTable.propTypes = {
   error: PropTypes.object,
   swrKey: PropTypes.any,
   modalToggler: PropTypes.func,
-  selectedCount: PropTypes.number  // ✅ Ajout de la prop
+  selectedCount: PropTypes.number,
+  selectedRows: PropTypes.instanceOf(Set)
 };
 
 export default UserTable;

@@ -455,6 +455,8 @@ function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword 
                         <Link
                         variant="caption"
                         color="primary"
+                        fontWeight= '600'
+                        fontSize= '0.875rem'
                         onClick={() => router.push(`/users/${String(userData?.id)}/change-password`)}
                         sx={{ cursor: 'pointer', mt: 1, alignSelf: 'flex-start' }}
                           // href={`/users/${String(userData?.id)}/change-password`}

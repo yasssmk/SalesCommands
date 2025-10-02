@@ -60,9 +60,9 @@ export default function SeatsSummary() {
   })();
 
   const leftTone = (() => {
-    if (left === 0) return { number: 'error.dark', accent: 'error.main' };            // rouge critique
-    if (ratioLeft <= 0.3) return { number: 'warning.dark', accent: 'warning.main' };  // orange bas
-    return { number: 'success.dark', accent: 'success.main' };                        // vert OK
+    if (left === 0) return { number: 'error.light', accent: 'error.dark' };            // rouge critique
+    if (ratioLeft <= 0.3) return { number: 'warning.darker', accent: 'warning.dark' };  // orange bas
+    return { number: 'success.darker', accent: 'success.dark' };                        // vert OK
   })();
 
 
@@ -76,8 +76,8 @@ export default function SeatsSummary() {
         <UserSeatsCard
           primary="Seats"
           secondary={seatsLabel}
-          numberColor="primary.main"
-          accentColor="primary.400"
+          numberColor="primary.darker"
+          accentColor="primary.dark"
         />
       </Grid>
 
@@ -85,8 +85,8 @@ export default function SeatsSummary() {
         <UserSeatsCard
           primary="Seats used"
           secondary={usedLabel}
-          numberColor='info.dark'
-          accentColor='info.main'
+          numberColor='info.darker'
+          accentColor='info.dark'
         />
       </Grid>
 

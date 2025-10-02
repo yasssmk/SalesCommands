@@ -21,6 +21,8 @@ export default function TableCell(theme) {
       styleOverrides: {
         root: {
           fontSize: '0.875rem',
+          fontWeight: 200,
+          lineHeight: 1.57,
           padding: 12,
           borderColor: theme.palette.divider,
           '&.cell-right': {
@@ -47,8 +49,9 @@ export default function TableCell(theme) {
           padding: 8
         },
         head: {
-          fontSize: '0.75rem',
-          fontWeight: 700,
+          fontSize: '0.875rem',
+          fontWeight: 600,
+          lineHeight: 1.57,
           textTransform: 'uppercase',
           ...commonCell
         },

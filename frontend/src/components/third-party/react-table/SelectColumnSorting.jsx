@@ -35,12 +35,12 @@ export default function SelectColumnSorting({ getState, getAllColumns, setSortin
           const selectedColumn = getAllColumns().filter((column) => selected.length > 0 && column.id === selected[0].id)[0];
           if (selectedColumn) {
             return (
-              <Typography variant="subtitle2">
+              <Typography variant="h6" color="text.secondary">
                 Sort by ({typeof selectedColumn.columnDef.header === 'string' ? selectedColumn.columnDef.header : '#'})
               </Typography>
             );
           }
-          return <Typography variant="subtitle2">Sort By</Typography>;
+          return <Typography variant="h6" color="text.secondary">Sort By</Typography>;
         }}
         MenuProps={MenuProps}
         size={size}

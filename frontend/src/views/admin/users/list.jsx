@@ -2,6 +2,7 @@
 import { useMemo, useState, useCallback } from 'react';
 
 // material-ui
+import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
@@ -159,44 +160,73 @@ export default function UserListPage() {
       {
         header: 'Email',
         accessorKey: 'email',
-        cell: ({ getValue }) => getValue()
+        cell: ({ getValue }) => (
+          <Typography variant="h6">
+            {getValue()}
+          </Typography>
+        )
       },
       {
         header: 'Role',
         accessorKey: 'role_name',
-        cell: ({ getValue }) => (
-          <Chip
-            label={getValue() || 'No Role'}
-            size="small"
-            variant="light"
-            color={
-              getValue() === 'Admin'
-                ? 'error'
-                : getValue() === 'Team Manager'
-                  ? 'warning'
-                  : getValue() === 'Direction'
-                    ? 'primary'
-                    : getValue() === 'Account Executive'
-                      ? 'info'
-                      : getValue() === 'Business Developer'
-                        ? 'success'
-                        : 'default'
-            }
-          />
-        )
+        cell: ({ row }) => {
+          const roleTier = row.original.role_tier;
+          const roleName = row.original.role_name || 'No Role';
+          
+          let textColor = 'text.primary';
+          if (roleTier === 'admin') {
+            textColor = 'error.main';
+          } else if (roleTier === 'manager') {
+            textColor = 'warning.main';
+          } else if (roleTier === 'individual') {
+            textColor = 'info.main';
+          }
+          
+          return (
+            <Typography 
+              variant="h6" 
+              sx={{ color: textColor }}
+            >
+              {roleName}
+            </Typography>
+
+
+          );
+        }
       },
       {
         header: 'SuperUser',
         accessorKey: 'is_superuser',
-        cell: ({ row }) =>
+        meta: {
+          className: 'cell-center'  // ✅ Utilise le style cell-center de TableCell override
+        },
+        cell: ({ row }) => (
           row.original.is_superuser ? (
-            <CheckCircleFilled style={{ fontSize: '20px', color: theme.palette.error.light }} />
+            <CheckCircleFilled 
+              style={{ 
+                fontSize: '20px',
+                color: theme.palette.error.light
+              }} 
+            />
           ) : null
+        )
       },
       {
         header: 'Team',
         accessorKey: 'team',
-        cell: ({ row }) => <Typography variant="body2">{row.original.team?.name || 'No Team'}</Typography>
+        cell: ({ row }) => {
+          const teamName = row.original.team?.name || 'No Team';
+          const isNoTeam = !row.original.team;
+          
+          return (
+            <Typography 
+              variant="h6"
+              color={isNoTeam ? 'text.secondary' : 'inherit'}
+            >
+              {teamName}
+            </Typography>
+          );
+        }
       },
       {
         header: 'Status',
@@ -210,7 +240,7 @@ export default function UserListPage() {
         accessorKey: 'last_login',
         cell: ({ getValue }) => {
           const v = getValue();
-          return <Typography variant="body2">{v ? formatDateTime(v) : 'Never'}</Typography>;
+          return <Typography variant="body2" color="text.secondary">{v ? formatDateTime(v) : 'Never'}</Typography>;
         }
       },
       {
@@ -286,7 +316,8 @@ export default function UserListPage() {
         loading={usersLoading}
         error={usersError}
         swrKey={swrKey}
-        selectedCount={selectedRows.size} 
+        selectedCount={selectedRows.size}
+        selectedRows={selectedRows}
         modalToggler={() => {
           setSelectedUser(null);
           setUserModal(true);

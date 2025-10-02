@@ -8,6 +8,8 @@ export default function InputLabel(theme) {
           color: theme.palette.grey[600]
         },
         outlined: {
+          fontWeight: 800,
+          fontSize: '0.875rem',
           lineHeight: '1rem',
           top: -4,
           '&.MuiInputLabel-sizeSmall': {

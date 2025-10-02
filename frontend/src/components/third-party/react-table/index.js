@@ -12,4 +12,7 @@ export { default as IndeterminateCheckbox } from './IndeterminateCheckbox';
 export { default as SelectColumnVisibility } from './SelectColumnVisibility';
 export { default as SelectColumnSorting } from './SelectColumnSorting';
 
+
+export { default as TableHeaderActions } from './TableHeaderActions';
+
 export { default as Filter } from './Filter';

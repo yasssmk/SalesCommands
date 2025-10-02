@@ -32,10 +32,29 @@ function getColorStyle({ color, theme }) {
   };
 }
 
+function getDarkColorStyle({ color, theme }) {
+  const colors = getColors(theme, color);
+  const { dark, darker, lighter } = colors;
+
+  return {
+    color: lighter,           // Texte clair pour contraste
+    backgroundColor: darker,  // Fond très foncé
+    borderColor: dark,        // Bordure foncée
+    '& .MuiChip-deleteIcon': {
+      color: lighter,
+      '&:hover': {
+        color: '#fff'
+      }
+    }
+  };
+}
+
 // ==============================|| OVERRIDES - CHIP ||============================== //
 
 export default function Chip(theme) {
   const defaultLightChip = getColorStyle({ color: 'secondary', theme });
+  const defaultDarkChip = getDarkColorStyle({ color: 'secondary', theme })
+  
   return {
     MuiChip: {
       styleOverrides: {
@@ -50,6 +69,14 @@ export default function Chip(theme) {
           '&.MuiChip-colorInfo': getColor({ color: 'info', theme }),
           '&.MuiChip-colorSuccess': getColor({ color: 'success', theme }),
           '&.MuiChip-colorWarning': getColor({ color: 'warning', theme })
+        },
+        sizeSmall: {
+          fontSize: '0.875rem',  // ✅ Même que h6
+          height: 24
+        },
+        sizeMedium: {
+          fontSize: '0.875rem',  // ✅ Même que h6
+          height: 32
         },
         sizeLarge: {
           fontSize: '1rem',
@@ -73,6 +100,15 @@ export default function Chip(theme) {
           '&.MuiChip-combinedInfo': getColorStyle({ color: 'info', theme }),
           '&.MuiChip-combinedSuccess': getColorStyle({ color: 'success', theme }),
           '&.MuiChip-combinedWarning': getColorStyle({ color: 'warning', theme })
+        },
+        dark: {
+          ...defaultDarkChip,
+          '&.MuiChip-darkPrimary': getDarkColorStyle({ color: 'primary', theme }),
+          '&.MuiChip-darkSecondary': getDarkColorStyle({ color: 'secondary', theme }),
+          '&.MuiChip-darkError': getDarkColorStyle({ color: 'error', theme }),
+          '&.MuiChip-darkInfo': getDarkColorStyle({ color: 'info', theme }),
+          '&.MuiChip-darkSuccess': getDarkColorStyle({ color: 'success', theme }),
+          '&.MuiChip-darkWarning': getDarkColorStyle({ color: 'warning', theme })
         }
       }
     }

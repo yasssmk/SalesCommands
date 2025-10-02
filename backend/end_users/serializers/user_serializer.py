@@ -19,6 +19,8 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Relations (objets pour compatibilité frontend)
     organization = serializers.SerializerMethodField(read_only=True)
     team = serializers.SerializerMethodField(read_only=True)
+
+    role_tier = serializers.SerializerMethodField(read_only=True)
     
     # Champ direct timestamp
     last_login = serializers.DateTimeField(read_only=True)
@@ -31,7 +33,7 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'full_name',  # Pour modal delete
             
             # ✅ Relations (objets complets pour frontend)
-            'role_name', 'organization', 'team',
+            'role_name', 'role_tier', 'organization', 'team',
             
             # ✅ Status
             'is_active', 'is_superuser',
@@ -64,6 +66,33 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 'name': obj.team.name
             }
         return None
+    
+    def get_role_tier(self, obj):
+        """
+        Retourner le tier du rôle pour la logique de couleur frontend.
+        
+        Returns:
+            str: 'admin', 'manager', 'individual', ou None si pas de rôle
+        """
+        if not obj.role:
+            return None
+        
+        # Vérifier les flags de tier du rôle
+        if hasattr(obj.role, 'is_admin') and obj.role.is_admin:
+            return 'admin'
+        elif hasattr(obj.role, 'is_manager') and obj.role.is_manager:
+            return 'manager'
+        elif hasattr(obj.role, 'is_individual') and obj.role.is_individual:
+            return 'individual'
+        
+        # Fallback : détecter via le nom du rôle (pour compatibilité)
+        role_name_lower = obj.role.name.lower()
+        if 'admin' in role_name_lower:
+            return 'admin'
+        elif any(word in role_name_lower for word in ['manager', 'supervisor', 'lead', 'direction']):
+            return 'manager'
+        else:
+            return 'individual'
 
 
 class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
