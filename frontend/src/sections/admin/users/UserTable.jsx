@@ -38,9 +38,7 @@ import {
 // project-import
 import MainCard from 'components/MainCard';
 import ScrollX from 'components/ScrollX';
-import Avatar from 'components/@extended/Avatar';
-import IconButton from 'components/@extended/IconButton';
-import { DebouncedInput, HeaderSort, IndeterminateCheckbox, RowSelection, SelectColumnSorting, TablePagination, CSVExport } from 'components/third-party/react-table';
+import { DebouncedInput, HeaderSort, RowSelection, SelectColumnSorting, TablePagination } from 'components/third-party/react-table';
 
 import ExpandingUserDetail from './ExpandingUserDetail';
 
@@ -49,22 +47,19 @@ import { getErrorDisplayInfo } from 'utils/errorMessages';
 
 // assets
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import IconButton from 'components/@extended/IconButton';
 
 // ==============================|| ERROR DISPLAY COMPONENT ||============================== //
 
-/**
- * Inline error display component with retry action
- * Uses the reusable getErrorDisplayInfo utility for consistent error handling
- */
 function ErrorDisplay({ error, onRetry, isRetrying }) {
   const errorInfo = getErrorDisplayInfo(error);
 
   if (!errorInfo) return null;
 
   return (
-    <TableRow >
+    <TableRow>
       <TableCell colSpan={100} sx={{ py: 6, px: 3 }}>
-        <Alert 
+        <Alert
           severity={errorInfo.severity}
           icon={<WarningOutlined style={{ fontSize: 24 }} />}
           action={
@@ -96,16 +91,14 @@ ErrorDisplay.propTypes = {
   isRetrying: PropTypes.bool
 };
 
-
 // ==============================|| REACT TABLE ||============================== //
 
-function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
+function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selectedCount }) {
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
   const { mutate } = useSWRConfig();
 
   const [sorting, setSorting] = useState([]);
-  const [rowSelection, setRowSelection] = useState({});
   const [globalFilter, setGlobalFilter] = useState('');
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -114,14 +107,12 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
     columns,
     state: {
       sorting,
-      rowSelection,
       globalFilter
     },
-    enableRowSelection: true,
     onSortingChange: setSorting,
-    onRowSelectionChange: setRowSelection,
     onGlobalFilterChange: setGlobalFilter,
     getRowCanExpand: () => true,
+    getRowId: (row) => String(row.id),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getCoreRowModel: getCoreRowModel(),
@@ -132,19 +123,15 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
 
   const backColor = alpha(theme.palette.primary.lighter, 0.1);
 
-  // Handler to retry loading after error
   const handleRetry = async () => {
     if (!swrKey || isRetrying) return;
 
     setIsRetrying(true);
     try {
-      // Revalidate the SWR key (forces a new fetch)
       await mutate(swrKey);
     } catch (err) {
-      // Error will be captured by SWR and displayed
       console.error('Retry failed:', err);
     } finally {
-      // Small delay to prevent spam clicking
       setTimeout(() => setIsRetrying(false), 500);
     }
   };
@@ -152,11 +139,9 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
   let headers = [];
   table.getVisibleFlatColumns().map(
     (columns) =>
-      // @ts-ignore
       columns.columnDef.accessorKey &&
       headers.push({
         label: typeof columns.columnDef.header === 'string' ? columns.columnDef.header : columns.columnDef.header,
-        // @ts-ignore
         key: columns.columnDef.accessorKey
       })
   );
@@ -173,28 +158,28 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
         <DebouncedInput
           value={globalFilter ?? ''}
           onFilterChange={(value) => setGlobalFilter(String(value))}
-          placeholder={loading ? "Loading..." : `Search ${data.length} records...`}
+          placeholder={loading ? 'Loading...' : `Search ${data.length} records...`}
           disabled={loading || !!error}
         />
 
-        <Stack direction="row" alignItems="center" spacing={2} sx={{ width: { xs: '100%', sm: 'auto' } }}>
-          <SelectColumnSorting 
-            {...{ getState: table.getState, getAllColumns: table.getAllColumns, setSorting }} 
-            disabled={loading || !!error}
-          />
-          <Button 
-            variant="contained" 
-            startIcon={<PlusOutlined />} 
-            onClick={modalToggler} 
-            disabled={loading || !!error}
-          >
-            Add User
-          </Button>
+        <Stack direction="row" alignItems="center" spacing={2} justifyContent="center" sx={{ width: { xs: '100%', sm: 'auto' } }}>
+          <SelectColumnSorting {...{ getState: table.getState, getAllColumns: table.getAllColumns, setSorting }} disabled={loading || !!error} />
+          {matchDownSM ? (
+            <Tooltip title="Add User">
+              <IconButton color="primary" variant="contained" onClick={modalToggler} disabled={loading || !!error}>
+                <PlusOutlined />
+              </IconButton>
+            </Tooltip>
+          ) : (
+            <Button variant="contained" startIcon={<PlusOutlined />} onClick={modalToggler} disabled={loading || !!error}>
+              Add User
+            </Button>
+          )}
         </Stack>
       </Stack>
       <ScrollX>
         <Stack>
-          <RowSelection selected={Object.keys(rowSelection).length} />
+          <RowSelection selected={selectedCount || 0} />
           <TableContainer>
             <Table>
               <TableHead>
@@ -226,15 +211,9 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
                 ))}
               </TableHead>
               <TableBody>
-                {/* ✅ PRIORITY 1: ERROR - Displayed first if present */}
                 {error ? (
-                  <ErrorDisplay 
-                    error={error} 
-                    onRetry={handleRetry}
-                    isRetrying={isRetrying}
-                  />
+                  <ErrorDisplay error={error} onRetry={handleRetry} isRetrying={isRetrying} />
                 ) : loading ? (
-                  // ✅ PRIORITY 2: LOADING - Skeleton rows
                   Array.from({ length: 5 }).map((_, index) => (
                     <TableRow key={`skeleton-${index}`}>
                       {columns.map((column, colIndex) => (
@@ -245,7 +224,6 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
                     </TableRow>
                   ))
                 ) : data.length === 0 ? (
-                  // ✅ PRIORITY 3: EMPTY STATE - No data message
                   <TableRow>
                     <TableCell colSpan={columns.length} align="center" sx={{ py: 6 }}>
                       <Stack spacing={1} alignItems="center">
@@ -259,7 +237,6 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  // ✅ PRIORITY 4: DATA STATE - Normal table rows
                   table.getRowModel().rows.map((row) => (
                     <Fragment key={row.id}>
                       <TableRow>
@@ -304,17 +281,18 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler }) {
 
 // ==============================|| USER TABLE ||============================== //
 
-const UserTable = React.memo(function UserTable({ data, columns, loading, error, swrKey, modalToggler }) {
-  return <ReactTable {...{ data, columns, loading, error, swrKey, modalToggler }} />;
+const UserTable = React.memo(function UserTable({ data, columns, loading, error, swrKey, modalToggler, selectedCount }) {
+  return <ReactTable {...{ data, columns, loading, error, swrKey, modalToggler, selectedCount }} />;
 });
 
-UserTable.propTypes = { 
-  data: PropTypes.array, 
-  columns: PropTypes.array, 
+UserTable.propTypes = {
+  data: PropTypes.array,
+  columns: PropTypes.array,
   loading: PropTypes.bool,
-  error: PropTypes.object,        // ✅ Error object from SWR
-  swrKey: PropTypes.any,           // ✅ SWR key for mutate()
-  modalToggler: PropTypes.func 
+  error: PropTypes.object,
+  swrKey: PropTypes.any,
+  modalToggler: PropTypes.func,
+  selectedCount: PropTypes.number  // ✅ Ajout de la prop
 };
 
 export default UserTable;

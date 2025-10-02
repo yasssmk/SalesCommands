@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState, useCallback  } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 
 // material-ui
 import Chip from '@mui/material/Chip';
@@ -8,65 +8,52 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Grid from '@mui/material/Grid';
-
-// third-party
-import { PatternFormat } from 'react-number-format';
+import Checkbox from '@mui/material/Checkbox';
 
 // project-import
 import Avatar from 'components/@extended/Avatar';
 import IconButton from 'components/@extended/IconButton';
-import { IndeterminateCheckbox } from 'components/third-party/react-table';
+import { RowSelection } from 'components/third-party/react-table';
 
 import UserModal from 'sections/admin/users/UserModal';
 import AlertUserDelete from 'sections/admin/users/AlertUserDelete';
 import UserTable from 'sections/admin/users/UserTable';
-import UserSeatsCard from 'sections/admin/users/UserSeatsCard';
 import SeatsSummary from 'sections/admin/users/SeatsSummary';
 
 import { useGetUsers } from 'api/admin/users';
 import { useAuth } from 'hooks/useAuth';
 import { tenantKey } from 'api/_swr';
 
-// formatting (standardized across the app)
-import { formatDateTime } from 'config/formatters'; 
+// formatting
+import { formatDateTime } from 'config/formatters';
 
 // assets
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
-import PlusOutlined from '@ant-design/icons/PlusOutlined';
 import { useTheme } from '@mui/material/styles';
 import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
-
-//TEST
-import TestErrorButton from 'components/TestErrorButton';
 
 // ==============================|| USER LIST ||============================== //
 
 export default function UserListPage() {
   const theme = useTheme();
   const { tenantId } = useAuth();
-  
-  // ✅ STEP 1: Get error from hook
-  const { usersLoading, users: lists, usersError } = useGetUsers();
 
-  
-  // ✅ STEP 2: Create SWR key for mutate (retry functionality)
+  const { usersLoading, users: lists, usersError } = useGetUsers();
   const swrKey = tenantKey('/client/users/', tenantId);
 
   const [open, setOpen] = useState(false);
-
   const [userModal, setUserModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userDeleteId, setUserDeleteId] = useState('');
+  
+  // ✅ State de sélection
+  const [selectedRows, setSelectedRows] = useState(new Set());
 
-    // ==============================||  HANDLERS MÉMOÏSÉS ||============================== //
+  // ==============================|| HANDLERS ||============================== //
 
-  // const handleClose = () => {
-  //   setOpen(!open);
-  // };
-
-    const handleClose = useCallback(() => {
+  const handleClose = useCallback(() => {
     setOpen((prev) => !prev);
   }, []);
 
@@ -75,38 +62,97 @@ export default function UserListPage() {
     setUserModal(true);
   }, []);
 
-  const handleOpenAddModal = useCallback(() => {
-    setSelectedUser(null);
-    setUserModal(true);
+  const handleOpenDeleteDialog = useCallback(
+    (user) => {
+      setSelectedUser(user);
+      setUserDeleteId(user.id);
+      handleClose();
+    },
+    [handleClose]
+  );
+
+  // ✅ HANDLERS DE SÉLECTION - VERSION DEBUG
+  const handleSelectAll = useCallback((e) => {
+    e.stopPropagation();
+    if (e.target.checked && lists) {
+      setSelectedRows(new Set(lists.map(user => user.id)));
+    } else {
+      setSelectedRows(new Set());
+    }
+  }, [lists]);
+
+  const handleSelectRow = useCallback((userId) => {
+    setSelectedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(userId)) {
+        newSet.delete(userId);
+      } else {
+        newSet.add(userId);
+      }
+      return newSet;
+    });
   }, []);
 
-  const handleOpenDeleteDialog = useCallback((user) => {
-    setSelectedUser(user);
-    setUserDeleteId(user.id);
-    handleClose();
-  }, [handleClose]);
+  // Calculs
+  const allSelected = lists && lists.length > 0 && selectedRows.size === lists.length;
+  const someSelected = selectedRows.size > 0 && selectedRows.size < (lists?.length || 0);
 
-   // ==============================|| COLUMNS OPTIMISÉES ||============================== //
+
+  // ==============================|| COLUMNS ||============================== //
 
   const columns = useMemo(
     () => [
       {
+        id: 'select',
+        enableSorting: false,
+        header: () => {
+          return (
+            <div onClick={(e) => { e.stopPropagation(); }}>
+              <Checkbox
+                checked={allSelected}
+                indeterminate={someSelected}
+                onChange={handleSelectAll}
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              />
+            </div>
+          );
+        },
+        cell: ({ row }) => {
+          const isSelected = selectedRows.has(row.original.id);
+          return (
+            <div onClick={(e) => { e.stopPropagation(); }}>
+              <Checkbox
+                checked={isSelected}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  handleSelectRow(row.original.id);
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              />
+            </div>
+          );
+        }
+      },
+      {
         header: 'User Name',
         accessorKey: 'first_name',
-        cell: ({ row, getValue }) => (
+        cell: ({ row }) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Avatar 
-              alt="User Avatar" 
-              size="sm" 
+            <Avatar
+              alt="User Avatar"
+              size="sm"
               src={`/assets/images/users/avatar-${!row.original.avatar ? 1 : row.original.avatar}.png`}
             >
-              {row.original.first_name?.charAt(0)}{row.original.last_name?.charAt(0)}
+              {row.original.first_name?.charAt(0)}
+              {row.original.last_name?.charAt(0)}
             </Avatar>
-            <Stack spacing={0}>
-              <Typography variant="subtitle1">
-                {`${row.original.first_name || ''} ${row.original.last_name || ''}`.trim() || 'No Name'}
-              </Typography>
-            </Stack>
+            <Typography variant="subtitle1">
+              {`${row.original.first_name || ''} ${row.original.last_name || ''}`.trim() || 'No Name'}
+            </Typography>
           </Stack>
         )
       },
@@ -119,16 +165,22 @@ export default function UserListPage() {
         header: 'Role',
         accessorKey: 'role_name',
         cell: ({ getValue }) => (
-          <Chip 
-            label={getValue() || 'No Role'} 
-            size="small" 
+          <Chip
+            label={getValue() || 'No Role'}
+            size="small"
             variant="light"
             color={
-              getValue() === 'Admin' ? 'error' :
-              getValue() === 'Team Manager' ? 'warning' :
-              getValue() === 'Direction' ? 'primary' : 
-              getValue() === 'Account Executive' ? 'info' : 
-              getValue() === 'Business Developer' ? 'success' : 'default'
+              getValue() === 'Admin'
+                ? 'error'
+                : getValue() === 'Team Manager'
+                  ? 'warning'
+                  : getValue() === 'Direction'
+                    ? 'primary'
+                    : getValue() === 'Account Executive'
+                      ? 'info'
+                      : getValue() === 'Business Developer'
+                        ? 'success'
+                        : 'default'
             }
           />
         )
@@ -136,45 +188,21 @@ export default function UserListPage() {
       {
         header: 'SuperUser',
         accessorKey: 'is_superuser',
-        cell: ({ row }) => (
+        cell: ({ row }) =>
           row.original.is_superuser ? (
-            <CheckCircleFilled 
-              style={{ 
-                fontSize: '20px',
-                color: theme.palette.error.light
-              }} 
-            />
+            <CheckCircleFilled style={{ fontSize: '20px', color: theme.palette.error.light }} />
           ) : null
-        )
       },
-      // {
-      //   header: 'Organization',
-      //   accessorKey: 'organization',
-      //   cell: ({ row }) => (
-      //     <Typography variant="body2">
-      //       {row.original.organization?.name || 'No Organization'}
-      //     </Typography>
-      //   )
-      // },
       {
         header: 'Team',
         accessorKey: 'team',
-        cell: ({ row }) => (
-          <Typography variant="body2">
-            {row.original.team?.name || 'No Team'}
-          </Typography>
-        )
+        cell: ({ row }) => <Typography variant="body2">{row.original.team?.name || 'No Team'}</Typography>
       },
       {
         header: 'Status',
         accessorKey: 'is_active',
         cell: ({ getValue }) => (
-          <Chip
-            color={getValue() ? 'success' : 'error'}
-            label={getValue() ? 'Active' : 'Inactive'}
-            size="small"
-            variant="light"
-          />
+          <Chip color={getValue() ? 'success' : 'error'} label={getValue() ? 'Active' : 'Inactive'} size="small" variant="light" />
         )
       },
       {
@@ -192,15 +220,16 @@ export default function UserListPage() {
         },
         disableSortBy: true,
         cell: ({ row }) => {
-          const collapseIcon = row.getCanExpand() && row.getIsExpanded() ? (
-            <Tooltip title="Close">
-              <EyeOutlined style={{ color: theme.palette.error.main, transform: 'rotate(90deg)' }} />
-            </Tooltip>
-          ) : (
-            <Tooltip title="View">
-              <EyeOutlined />
-            </Tooltip>
-          );
+          const collapseIcon =
+            row.getCanExpand() && row.getIsExpanded() ? (
+              <Tooltip title="Close">
+                <EyeOutlined style={{ color: theme.palette.error.main, transform: 'rotate(90deg)' }} />
+              </Tooltip>
+            ) : (
+              <Tooltip title="View">
+                <EyeOutlined />
+              </Tooltip>
+            );
 
           return (
             <Stack direction="row" alignItems="center" justifyContent="center" spacing={0}>
@@ -220,8 +249,6 @@ export default function UserListPage() {
                   color="primary"
                   onClick={(e) => {
                     e.stopPropagation();
-                    // setSelectedUser(row.original);
-                    // setUserModal(true);
                     handleOpenEditModal(row.original);
                   }}
                 >
@@ -233,9 +260,6 @@ export default function UserListPage() {
                   color="error"
                   onClick={(e) => {
                     e.stopPropagation();
-                    // setSelectedUser(row.original);
-                    // handleClose();
-                    // setUserDeleteId(row.original.id);
                     handleOpenDeleteDialog(row.original);
                   }}
                 >
@@ -247,49 +271,36 @@ export default function UserListPage() {
         }
       }
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [theme, handleOpenEditModal, handleOpenDeleteDialog]
+    [theme, handleOpenEditModal, handleOpenDeleteDialog, allSelected, someSelected, handleSelectAll, selectedRows, handleSelectRow]
   );
 
   return (
-  <>
-    <Grid container spacing={2} sx={{ mb: 2 }}>
-      <SeatsSummary />
-    </Grid>
+    <>
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <SeatsSummary />
+      </Grid>
 
-    <UserTable
-      data={lists || []}
-      columns={columns}
-      loading={usersLoading}
-      error={usersError}        
-      swrKey={swrKey}            
-      modalToggler={() => {
-        setSelectedUser(null);
-        setUserModal(true);
-      }}
-    />
+      <UserTable
+        data={lists || []}
+        columns={columns}
+        loading={usersLoading}
+        error={usersError}
+        swrKey={swrKey}
+        selectedCount={selectedRows.size} 
+        modalToggler={() => {
+          setSelectedUser(null);
+          setUserModal(true);
+        }}
+      />
 
-    {/* Add/Edit User Modal */}
-    <UserModal 
-      open={userModal} 
-      modalToggler={setUserModal} 
-      user={selectedUser} 
-    />
+      <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />
 
-    {/* Delete Confirmation */}
-    <AlertUserDelete 
-      id={userDeleteId} 
-      title={
-        selectedUser
-          ? `${selectedUser.first_name || ''} ${selectedUser.last_name || ''}`.trim() + ` (${selectedUser.email})`
-          : 'User'
-      }
-      open={open} 
-      handleClose={handleClose} 
-    />
-
-    {/* Test Error Button (dev only) */}
-    {process.env.NODE_ENV === 'development' && <TestErrorButton />}
-  </>
-);
+      <AlertUserDelete
+        id={userDeleteId}
+        title={selectedUser ? `${selectedUser.first_name} ${selectedUser.last_name}` : ''}
+        open={open}
+        handleClose={handleClose}
+      />
+    </>
+  );
 }
