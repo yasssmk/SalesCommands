@@ -158,7 +158,7 @@ export default function Profile() {
                           <Stack direction="row" spacing={1.25} alignItems="center">
                             <Avatar alt={currentUser.name} src={currentUser.avatar} />
                             <Stack>
-                              <Typography variant="h6">{currentUser.name}</Typography>
+                              <Typography variant="h">{currentUser.name}</Typography>
                               <Typography variant="body2" color="text.secondary">
                                 {currentUser.role || 'User'}
                               </Typography>

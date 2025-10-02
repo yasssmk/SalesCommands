@@ -62,7 +62,7 @@ function ErrorDisplay({ error, onRetry, isRetrying }) {
   if (!errorInfo) return null;
 
   return (
-    <TableRow>
+    <TableRow >
       <TableCell colSpan={100} sx={{ py: 6, px: 3 }}>
         <Alert 
           severity={errorInfo.severity}

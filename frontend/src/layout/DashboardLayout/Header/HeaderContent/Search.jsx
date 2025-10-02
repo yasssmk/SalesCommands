@@ -18,12 +18,13 @@ export default function Search() {
           id="header-search"
           startAdornment={
             <InputAdornment position="start" sx={{ mr: 0.5 }}>
-              <SearchOutlined />
+              <SearchOutlined  />
             </InputAdornment>
           }
           aria-describedby="header-search-text"
           inputProps={{
-            'aria-label': 'weight'
+            'aria-label': 'weight',
+            'variant': 'h1'
           }}
           placeholder="Ctrl + K"
         />
