@@ -143,14 +143,6 @@ export default function UserListPage() {
         accessorKey: 'first_name',
         cell: ({ row }) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Avatar
-              alt="User Avatar"
-              size="sm"
-              src={`/assets/images/users/avatar-${!row.original.avatar ? 1 : row.original.avatar}.png`}
-            >
-              {row.original.first_name?.charAt(0)}
-              {row.original.last_name?.charAt(0)}
-            </Avatar>
             <Typography variant="subtitle1">
               {`${row.original.first_name || ''} ${row.original.last_name || ''}`.trim() || 'No Name'}
             </Typography>
