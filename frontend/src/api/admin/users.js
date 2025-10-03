@@ -1,7 +1,7 @@
 // frontend/src/api/admin/users.js
 
 import useSWR, { mutate } from 'swr';
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useAuth } from 'hooks/useAuth';
 
 // utils
@@ -20,29 +20,75 @@ const endpoints = {
   clientAccountStats: (clientId) => `/client/client-accounts/${clientId}/stats/`
 };
 
+// ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
+
+/**
+ * Construit une URL avec query params pour la pagination serveur
+ * @param {string} baseUrl - URL de base
+ * @param {Object} params - Paramètres optionnels {page, pageSize, search}
+ * @returns {string} URL avec query string
+ */
+const buildUrlWithParams = (baseUrl, params = {}) => {
+  const { page, pageSize, search } = params;
+  const queryParams = new URLSearchParams();
+  
+  // Ajouter les paramètres s'ils sont définis
+  if (page !== undefined && page !== null) {
+    queryParams.append('page', page);
+  }
+  
+  if (pageSize !== undefined && pageSize !== null) {
+    queryParams.append('page_size', pageSize);
+  }
+  
+  if (search !== undefined && search !== null && search !== '') {
+    queryParams.append('search', search);
+  }
+  
+  const queryString = queryParams.toString();
+  return queryString ? `${baseUrl}?${queryString}` : baseUrl;
+};
+
+
 
 // ==============================|| HOOKS SWR STANDARDISÉS ||============================== //
 
 /**
- * ✅ GET USERS LIST - Clé tenant standardisée
- * Uses Django pagination format with results array
+ * ✅ GET USERS LIST - Avec pagination serveur Django REST
+ * 
+ * @param {Object} options - Options de pagination
+ * @param {number} options.page - Numéro de page (1-indexed, défaut: 1)
+ * @param {number} options.pageSize - Taille de page (défaut: 10)
+ * @param {string} options.search - Terme de recherche
+ * 
+ * @returns {Object} {users, usersCount, usersLoading, usersError, usersValidating, usersEmpty}
+ * 
+ * @example
+ * // Sans paramètres (page 1, taille 10)
+ * const { users, usersCount } = useGetUsers();
+ * 
+ * @example
+ * // Avec pagination
+ * const { users, usersCount } = useGetUsers({ page: 2, pageSize: 25 });
+ * 
+ * @example
+ * // Avec recherche
+ * const { users, usersCount } = useGetUsers({ search: 'john', page: 1, pageSize: 10 });
  */
-export function useGetUsers() {
+export function useGetUsers(options = {}) {
   const { tenantId } = useAuth();
+  const { page = 1, pageSize = 10, search = '' } = options;
+
+  const urlWithParams = useMemo(() => {
+    return buildUrlWithParams(endpoints.users, { 
+      page, 
+      pageSize, 
+      search 
+    });
+  }, [page, pageSize, search]);
 
   // ✅ STANDARDISÉ: Utilise toujours tenantKey()
-  const swrKey = tenantKey(endpoints.users, tenantId);
-
-  // const { data, isLoading, error, isValidating } = useSWR(
-  //   swrKey,
-  //   fetcher,
-  //   {
-  //     revalidateIfStale: false,
-  //     revalidateOnFocus: false,
-  //     revalidateOnReconnect: false
-  //   }
-  // );
-
+  const swrKey = tenantKey(urlWithParams, tenantId);
   const { data, isLoading, error, isValidating } = useSWR(swrKey);
 
   const memoizedValue = useMemo(

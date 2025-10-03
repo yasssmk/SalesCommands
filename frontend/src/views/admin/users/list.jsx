@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 
 // material-ui
 import Box from '@mui/material/Box'
@@ -24,6 +24,7 @@ import SeatsSummary from 'sections/admin/users/SeatsSummary';
 import { useGetUsers } from 'api/admin/users';
 import { useAuth } from 'hooks/useAuth';
 import { tenantKey } from 'api/_swr';
+import useLocalStorage from 'hooks/useLocalStorage';
 
 // formatting
 import { formatDateTime } from 'config/formatters';
@@ -35,14 +36,42 @@ import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import { useTheme } from '@mui/material/styles';
 import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
 
+//TEST
+import TestErrorButton from 'components/TestErrorButton';
+
 // ==============================|| USER LIST ||============================== //
 
 export default function UserListPage() {
   const theme = useTheme();
   const { tenantId } = useAuth();
 
-  const { usersLoading, users: lists, usersError } = useGetUsers();
-  const swrKey = tenantKey('/client/users/', tenantId);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useLocalStorage(
+    `userTablePageSize`, 10
+  );
+
+  const validPageSize = useMemo(() => {
+    const parsed = Number(pageSize);
+    return (!isNaN(parsed) && parsed > 0) ? parsed : 10;
+  }, [pageSize]);
+
+  const [search, setSearch] = useState('');
+
+  const { usersLoading, users, usersCount, usersError } = useGetUsers({
+    page,
+    pageSize: validPageSize,
+    search
+  });
+
+  const swrKey = useMemo(() => {
+    const params = new URLSearchParams();
+    params.append('page', page);
+    params.append('page_size', pageSize);
+    if (search) params.append('search', search);
+
+    const url = `/client/users/${params.toString() ? `?${params.toString()}` : ''}`;
+    return tenantKey(url, tenantId);
+  }, [page, pageSize, search, tenantId]);
 
   const [open, setOpen] = useState(false);
   const [userModal, setUserModal] = useState(false);
@@ -53,6 +82,27 @@ export default function UserListPage() {
   const [selectedRows, setSelectedRows] = useState(new Set());
 
   // ==============================|| HANDLERS ||============================== //
+
+  // ✅ Handler pagination - appelé par UserTable
+  const handlePaginationChange = useCallback(
+    ({ page: newPage, pageSize: newPageSize }) => {
+      // Gestion du changement de page
+      setPage(newPage);
+      
+      // Gestion du changement de pageSize avec persistance
+      const size = Number(newPageSize);
+      if (!isNaN(size) && size > 0 && size !== validPageSize) {
+        setPageSize(size); // Persiste automatiquement dans localStorage
+      }
+    },
+    [setPageSize, validPageSize]
+  );
+
+  // ✅ Handler recherche - appelé par UserTable
+  const handleSearchChange = useCallback((searchTerm) => {
+    setSearch(searchTerm);
+    setPage(1);  // Reset à page 1 quand on recherche
+  }, []);
 
   const handleClose = useCallback(() => {
     setOpen((prev) => !prev);
@@ -75,12 +125,12 @@ export default function UserListPage() {
   // ✅ HANDLERS DE SÉLECTION - VERSION DEBUG
   const handleSelectAll = useCallback((e) => {
     e.stopPropagation();
-    if (e.target.checked && lists) {
-      setSelectedRows(new Set(lists.map(user => user.id)));
+    if (e.target.checked && users) {
+      setSelectedRows(new Set(users.map(user => user.id)));
     } else {
       setSelectedRows(new Set());
     }
-  }, [lists]);
+  }, [users]);
 
   const handleSelectRow = useCallback((userId) => {
     setSelectedRows(prev => {
@@ -95,8 +145,8 @@ export default function UserListPage() {
   }, []);
 
   // Calculs
-  const allSelected = lists && lists.length > 0 && selectedRows.size === lists.length;
-  const someSelected = selectedRows.size > 0 && selectedRows.size < (lists?.length || 0);
+  const allSelected = users && users.length > 0 && selectedRows.size === users.length;
+  const someSelected = selectedRows.size > 0 && selectedRows.size < (users?.length || 0);
 
 
   // ==============================|| COLUMNS ||============================== //
@@ -197,7 +247,7 @@ export default function UserListPage() {
             <CheckCircleFilled 
               style={{ 
                 fontSize: '20px',
-                color: theme.palette.error.light
+                color: theme.palette.secondary.main
               }} 
             />
           ) : null
@@ -257,7 +307,7 @@ export default function UserListPage() {
             <Stack direction="row" alignItems="center" justifyContent="center" spacing={0}>
               <Tooltip title="View">
                 <IconButton
-                  color="secondary"
+                  color="secondary.500"
                   onClick={(e) => {
                     e.stopPropagation();
                     row.toggleExpanded();
@@ -268,7 +318,7 @@ export default function UserListPage() {
               </Tooltip>
               <Tooltip title="Edit">
                 <IconButton
-                  color="primary"
+                  color="secondary.500"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleOpenEditModal(row.original);
@@ -279,7 +329,7 @@ export default function UserListPage() {
               </Tooltip>
               <Tooltip title="Delete">
                 <IconButton
-                  color="error"
+                  color="secondary.500"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleOpenDeleteDialog(row.original);
@@ -303,17 +353,22 @@ export default function UserListPage() {
       </Grid>
 
       <UserTable
-        data={lists || []}
+        data={users|| []}
         columns={columns}
         loading={usersLoading}
         error={usersError}
         swrKey={swrKey}
         selectedCount={selectedRows.size}
         selectedRows={selectedRows}
+        totalCount={usersCount} 
+        onPaginationChange={handlePaginationChange}      
+        onSearchChange={handleSearchChange}              
         modalToggler={() => {
           setSelectedUser(null);
           setUserModal(true);
+          
         }}
+        initialPageSize={pageSize}  
       />
 
       <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />
@@ -324,6 +379,8 @@ export default function UserListPage() {
         open={open}
         handleClose={handleClose}
       />
+      {/* Test Error Button (dev only) */}
+      {process.env.NODE_ENV === 'development' && <TestErrorButton />}
     </>
   );
 }

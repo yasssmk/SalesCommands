@@ -60,7 +60,7 @@ export default function TableHeaderActions({
       {selectedRowCount > 0 && (
         <Tooltip title={`Edit ${selectedRowCount} selected`}>
           <IconButton
-            color="primary"
+            color="secondary.500"
             onClick={(e) => {
               e.stopPropagation();
               if (onEdit) {
@@ -77,7 +77,7 @@ export default function TableHeaderActions({
       {selectedRowCount > 0 && (
         <Tooltip title={`Delete ${selectedRowCount} selected`}>
           <IconButton
-            color="error"
+            color="secondary.500"
             onClick={(e) => {
               e.stopPropagation();
               if (onDelete) {
@@ -121,7 +121,7 @@ export default function TableHeaderActions({
         {/* Export CSV */}
         <MenuItem onClick={handleMenuClose} sx={{ py: 1 }}>
           <ListItemIcon>
-            <DownloadOutlined style={{ fontSize: '16px', color: theme.palette.text.secondary }} />
+            <UploadOutlined style={{ fontSize: '16px', color: theme.palette.text.secondary }} />
           </ListItemIcon>
           <ListItemText>
           <ListItemText>
@@ -136,7 +136,7 @@ export default function TableHeaderActions({
         {/* Import CSV */}
         <MenuItem onClick={handleImportClick} sx={{ py: 1 }}>
           <ListItemIcon>
-            <UploadOutlined style={{ fontSize: '18px', color: theme.palette.text.secondary }} />
+            <DownloadOutlined style={{ fontSize: '18px', color: theme.palette.text.secondary }} />
           </ListItemIcon>
           <Typography variant="h6" color="text.secondary"> Import CSV</Typography>
         </MenuItem>

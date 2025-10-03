@@ -1,5 +1,5 @@
 import PropTypes from 'prop-types';
-import React, { Fragment, useMemo, useState } from 'react';
+import React, { Fragment, useMemo, useState, useEffect } from 'react';
 import { useSWRConfig } from 'swr';
 
 // material-ui
@@ -95,7 +95,22 @@ ErrorDisplay.propTypes = {
 
 // ==============================|| REACT TABLE ||============================== //
 
-function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selectedCount, selectedRows }) {
+function ReactTable({ 
+  data, 
+  columns, 
+  loading, 
+  error, 
+  swrKey, 
+  modalToggler, 
+  selectedCount, 
+  selectedRows, 
+  onPaginationChange,
+  onSearchChange, 
+  totalCount,
+  initialPageSize = 10 
+}) {
+
+
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
   const { mutate } = useSWRConfig();
@@ -104,21 +119,56 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selec
   const [globalFilter, setGlobalFilter] = useState('');
   const [isRetrying, setIsRetrying] = useState(false);
 
+   const pageIndex = useMemo(() => {
+    // Le parent nous dit quelle page afficher via onPaginationChange
+    // Ici on assume page 0 par défaut, le parent gère le vrai état
+    return 0;
+  }, []);
+
+  const pageCount = useMemo(() => {
+    const size = Number(initialPageSize) || 10;
+    return Math.ceil((totalCount || 0) / size);
+  }, [totalCount, initialPageSize]);
+
+  useEffect(() => {
+    if (onSearchChange) {
+      onSearchChange(globalFilter);
+    }
+  }, [globalFilter, onSearchChange]);
+
   const table = useReactTable({
     data,
     columns,
+    pageCount,
     state: {
       sorting,
-      globalFilter
+      globalFilter,
+      pagination: {
+        pageIndex: 0, 
+        pageSize: Number(initialPageSize) || 10
+      }
     },
+    manualPagination: true,
+    manualFiltering: true,
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: (updater) => {
+      // Calculer les nouvelles valeurs
+      const currentState = { pageIndex: 0, pageSize: Number(initialPageSize) || 10 };
+      const nextState = typeof updater === 'function' ? updater(currentState) : updater;
+      
+      // Notifier le parent qui gère la vraie pagination
+      if (onPaginationChange) {
+        onPaginationChange({ 
+          page: nextState.pageIndex + 1, 
+          pageSize: nextState.pageSize 
+        });
+      }
+    },
     getRowCanExpand: () => true,
     getRowId: (row) => String(row.id),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     debugTable: false
   });
@@ -167,7 +217,7 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selec
         <DebouncedInput
           value={globalFilter ?? ''}
           onFilterChange={(value) => setGlobalFilter(String(value))}
-          placeholder={loading ? 'Loading...' : `Search ${data.length} records...`}
+          placeholder={loading ? 'Loading...' : `Search ${totalCount} records...`}
           disabled={loading || !!error}
         />
 
@@ -261,7 +311,10 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selec
                           No users found
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          Start by adding your first user to the system
+                          {globalFilter 
+                            ? `No results for "${globalFilter}"`
+                            : 'Start by adding your first user to the system'
+                          }
                         </Typography>
                       </Stack>
                     </TableCell>
@@ -311,8 +364,38 @@ function ReactTable({ data, columns, loading, error, swrKey, modalToggler, selec
 
 // ==============================|| USER TABLE ||============================== //
 
-const UserTable = React.memo(function UserTable({ data, columns, loading, error, swrKey, modalToggler, selectedCount }) {
-  return <ReactTable {...{ data, columns, loading, error, swrKey, modalToggler, selectedCount }} />;
+const UserTable = React.memo(function UserTable({ 
+  data, 
+  columns, 
+  loading, 
+  error, 
+  swrKey, 
+  modalToggler,
+  totalCount = 0,         
+  onPaginationChange,      
+  onSearchChange,          
+  selectedCount,           
+  selectedRows,
+  initialPageSize = 10               
+}) {
+  return (
+    <ReactTable 
+      {...{ 
+        data, 
+        columns, 
+        loading, 
+        error, 
+        swrKey, 
+        modalToggler,
+        totalCount,
+        onPaginationChange,
+        onSearchChange,
+        selectedCount,
+        selectedRows,
+        initialPageSize
+      }} 
+    />
+  );
 });
 
 UserTable.propTypes = {
@@ -323,7 +406,11 @@ UserTable.propTypes = {
   swrKey: PropTypes.any,
   modalToggler: PropTypes.func,
   selectedCount: PropTypes.number,
-  selectedRows: PropTypes.instanceOf(Set)
+  selectedRows: PropTypes.instanceOf(Set),   
+  totalCount: PropTypes.number,
+  initialPageSize: PropTypes.number,
+  onPaginationChange: PropTypes.func,
+  onSearchChange: PropTypes.func
 };
 
 export default UserTable;

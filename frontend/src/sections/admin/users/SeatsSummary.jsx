@@ -85,8 +85,8 @@ export default function SeatsSummary() {
         <UserSeatsCard
           primary="Seats used"
           secondary={usedLabel}
-          numberColor='info.darker'
-          accentColor='info.dark'
+          numberColor='primary.main'
+          accentColor='primary.400'
         />
       </Grid>
 
@@ -95,7 +95,7 @@ export default function SeatsSummary() {
           primary="Seats left"
           secondary={leftLabel}
           numberColor={leftTone.number}
-          accentColor={leftTone.accent}
+          accentColor='primary.700'
         />
       </Grid>
     </>
