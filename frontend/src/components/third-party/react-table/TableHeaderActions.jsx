@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import PropTypes from 'prop-types';
 
 // material-ui
@@ -13,9 +13,11 @@ import Divider from '@mui/material/Divider';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
+// third-party
+import { CSVLink } from 'react-csv';
+
 // project imports
 import IconButton from 'components/@extended/IconButton';
-import { CSVExport } from 'components/third-party/react-table';
 
 // assets
 import EditOutlined from '@ant-design/icons/EditOutlined';
@@ -37,6 +39,7 @@ export default function TableHeaderActions({
 }) {
   const theme = useTheme();
   const [anchorEl, setAnchorEl] = useState(null);
+  const csvLinkRef = useRef(null);
   const open = Boolean(anchorEl);
 
   const handleMenuClick = (event) => {
@@ -45,6 +48,14 @@ export default function TableHeaderActions({
 
   const handleMenuClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleExportClick = () => {
+    // Trigger CSV download
+    if (csvLinkRef.current) {
+      csvLinkRef.current.link.click();
+    }
+    handleMenuClose();
   };
 
   const handleImportClick = () => {
@@ -60,7 +71,7 @@ export default function TableHeaderActions({
       {selectedRowCount > 0 && (
         <Tooltip title={`Edit ${selectedRowCount} selected`}>
           <IconButton
-            color="secondary.500"
+            color="secondary"
             onClick={(e) => {
               e.stopPropagation();
               if (onEdit) {
@@ -77,7 +88,7 @@ export default function TableHeaderActions({
       {selectedRowCount > 0 && (
         <Tooltip title={`Delete ${selectedRowCount} selected`}>
           <IconButton
-            color="secondary.500"
+            color="secondary"
             onClick={(e) => {
               e.stopPropagation();
               if (onDelete) {
@@ -103,6 +114,15 @@ export default function TableHeaderActions({
         </IconButton>
       </Tooltip>
 
+      {/* Hidden CSV Link */}
+      <CSVLink
+        data={exportData}
+        headers={exportHeaders}
+        filename={exportFilename}
+        ref={csvLinkRef}
+        style={{ display: 'none' }}
+      />
+
       {/* Dropdown Menu */}
       <Menu
         id="table-actions-menu"
@@ -119,15 +139,12 @@ export default function TableHeaderActions({
         }}
       >
         {/* Export CSV */}
-        <MenuItem onClick={handleMenuClose} sx={{ py: 1 }}>
+        <MenuItem onClick={handleExportClick} sx={{ py: 1 }}>
           <ListItemIcon>
             <UploadOutlined style={{ fontSize: '16px', color: theme.palette.text.secondary }} />
           </ListItemIcon>
           <ListItemText>
-          <ListItemText>
-          <Typography variant="h6" color="text.secondary"> Export CSV</Typography>
-          </ListItemText>
-            {/* <CSVExport data={exportData} headers={exportHeaders} filename={exportFilename} /> */}
+            <Typography variant="h6" color="text.secondary">Export CSV</Typography>
           </ListItemText>
         </MenuItem>
 
@@ -138,7 +155,9 @@ export default function TableHeaderActions({
           <ListItemIcon>
             <DownloadOutlined style={{ fontSize: '18px', color: theme.palette.text.secondary }} />
           </ListItemIcon>
-          <Typography variant="h6" color="text.secondary"> Import CSV</Typography>
+          <ListItemText>
+            <Typography variant="h6" color="text.secondary">Import CSV</Typography>
+          </ListItemText>
         </MenuItem>
       </Menu>
     </Box>
