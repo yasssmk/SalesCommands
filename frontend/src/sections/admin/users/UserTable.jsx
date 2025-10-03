@@ -107,7 +107,8 @@ function ReactTable({
   onPaginationChange,
   onSearchChange, 
   totalCount,
-  initialPageSize = 10 
+  initialPageSize = 10,
+  onImport 
 }) {
 
 
@@ -247,10 +248,7 @@ function ReactTable({
                 // TODO: Implémenter la logique bulk delete
                 console.log('Bulk delete clicked');
               }}
-              onImport={() => {
-                // TODO: Implémenter la logique import CSV
-                console.log('Import CSV clicked');
-              }}
+              onImport={onImport}
               exportData={exportData}
               exportHeaders={headers}
               exportFilename="users-list.csv"
@@ -377,6 +375,7 @@ const UserTable = React.memo(function UserTable({
   onSearchChange,          
   selectedCount,           
   selectedRows,
+  onImport,
   initialPageSize = 10               
 }) {
   return (
@@ -393,7 +392,8 @@ const UserTable = React.memo(function UserTable({
         onSearchChange,
         selectedCount,
         selectedRows,
-        initialPageSize
+        initialPageSize,
+        onImport,
       }} 
     />
   );
@@ -411,7 +411,8 @@ UserTable.propTypes = {
   totalCount: PropTypes.number,
   initialPageSize: PropTypes.number,
   onPaginationChange: PropTypes.func,
-  onSearchChange: PropTypes.func
+  onSearchChange: PropTypes.func,
+  onImport: PropTypes.func 
 };
 
 export default UserTable;

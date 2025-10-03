@@ -12,9 +12,7 @@ import Grid from '@mui/material/Grid';
 import Checkbox from '@mui/material/Checkbox';
 
 // project-import
-import Avatar from 'components/@extended/Avatar';
 import IconButton from 'components/@extended/IconButton';
-import { RowSelection } from 'components/third-party/react-table';
 
 import UserModal from 'sections/admin/users/UserModal';
 import AlertUserDelete from 'sections/admin/users/AlertUserDelete';
@@ -25,6 +23,9 @@ import { useGetUsers } from 'api/admin/users';
 import { useAuth } from 'hooks/useAuth';
 import { tenantKey } from 'api/_swr';
 import useLocalStorage from 'hooks/useLocalStorage';
+
+import UserCSVImportModal from 'sections/admin/users/UserCSVImportModal';
+import { openSnackbar } from 'api/snackbar';
 
 // formatting
 import { formatDateTime } from 'config/formatters';
@@ -57,7 +58,9 @@ export default function UserListPage() {
 
   const [search, setSearch] = useState('');
 
-  const { usersLoading, users, usersCount, usersError } = useGetUsers({
+  const [csvImportModal, setCsvImportModal] = useState(false);
+
+  const { usersLoading, users, usersCount, usersError, mutate } = useGetUsers({
     page,
     pageSize: validPageSize,
     search
@@ -121,6 +124,36 @@ export default function UserListPage() {
     },
     [handleClose]
   );
+
+  // Handler Import CSV
+const handleImportClick = useCallback(() => {
+  setCsvImportModal(true);
+}, []);
+
+const handleImportCSV = useCallback(async (data) => {
+  try {
+    // TODO: Replace with actual API call
+    console.log('Import data:', data);
+    
+    // Mock API delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // Mock success
+    openSnackbar(`Successfully imported ${data.length} users`, {
+      variant: 'success'
+    });
+    
+    // Refresh users list
+    mutate(swrKey);
+    
+    // Close modal
+    setCsvImportModal(false);
+  } catch (error) {
+    openSnackbar(error.message || 'Import failed', {
+      variant: 'error'
+    });
+  }
+}, [mutate, swrKey]);
 
   // ✅ HANDLERS DE SÉLECTION - VERSION DEBUG
   const handleSelectAll = useCallback((e) => {
@@ -360,7 +393,8 @@ export default function UserListPage() {
         swrKey={swrKey}
         selectedCount={selectedRows.size}
         selectedRows={selectedRows}
-        totalCount={usersCount} 
+        totalCount={usersCount}
+        onImport={handleImportClick}
         onPaginationChange={handlePaginationChange}      
         onSearchChange={handleSearchChange}              
         modalToggler={() => {
@@ -379,6 +413,12 @@ export default function UserListPage() {
         open={open}
         handleClose={handleClose}
       />
+       <UserCSVImportModal           // <-- AJOUTER CES 5 LIGNES
+        open={csvImportModal}
+        onClose={() => setCsvImportModal(false)}
+        onImport={handleImportCSV}
+      />
+      
       {/* Test Error Button (dev only) */}
       {process.env.NODE_ENV === 'development' && <TestErrorButton />}
     </>
