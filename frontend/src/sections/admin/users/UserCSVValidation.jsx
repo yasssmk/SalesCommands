@@ -209,7 +209,7 @@ export const prepareUserDataForAPI = (validRows) => {
  * Get column definitions for user import
  */
 export const getUserCSVColumns = () => [
-  { key: 'email', label: 'Email', required: true },
+  { key: 'email', label: 'email', required: true },
   { key: 'first_name', label: 'First Name', required: false },
   { key: 'last_name', label: 'Last Name', required: false },
   { key: 'password', label: 'Password', required: false },

@@ -6,22 +6,37 @@
 // Supported delimiters to auto-detect
 const DELIMITERS = [',', ';', '\t', '|'];
 
-/**
- * Detect the most likely delimiter from a sample of text
- */
 const detectDelimiter = (text) => {
   const sample = text.split('\n').slice(0, 5).join('\n');
   let maxCount = 0;
   let bestDelimiter = ',';
-
+  
+  // Amélioration : compter aussi la cohérence entre lignes
+  const lines = sample.split('\n').filter(l => l.trim());
+  
   DELIMITERS.forEach(delim => {
-    const count = (sample.match(new RegExp(delim, 'g')) || []).length;
-    if (count > maxCount) {
-      maxCount = count;
+    let counts = [];
+    let totalCount = 0;
+    
+    lines.forEach(line => {
+      const count = (line.match(new RegExp(`\\${delim}`, 'g')) || []).length;
+      counts.push(count);
+      totalCount += count;
+    });
+    
+    // Vérifier que le délimiteur apparaît de manière cohérente
+    const isConsistent = counts.length > 0 && counts.every(c => c === counts[0] && c > 0);
+    
+    console.log(`Delimiter "${delim}": total=${totalCount}, consistent=${isConsistent}, counts=[${counts}]`);
+    
+    // Prioriser la cohérence ET le nombre total
+    if (isConsistent && totalCount > maxCount) {
+      maxCount = totalCount;
       bestDelimiter = delim;
     }
   });
 
+  console.log(`Best delimiter detected: "${bestDelimiter}"`);
   return bestDelimiter;
 };
 
@@ -78,7 +93,6 @@ export const parseCSVFile = async (file) => {
       throw new Error('Please upload a CSV file');
     }
 
-    // Read file
     const text = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve(e.target.result);
@@ -90,11 +104,14 @@ export const parseCSVFile = async (file) => {
       throw new Error('File is empty');
     }
 
+    // Remove BOM if present (common with Excel-generated CSV files)
+    const cleanText = text.replace(/^\uFEFF/, '');
+    
     // Detect delimiter
-    const delimiter = detectDelimiter(text);
+    const delimiter = detectDelimiter(cleanText);
 
     // Split lines and remove empty ones
-    const lines = text.trim().split(/\r?\n/).filter(line => line.trim());
+    const lines = cleanText.trim().split(/\r?\n/).filter(line => line.trim());
     
     if (lines.length === 0) {
       throw new Error('No data found in file');
@@ -102,12 +119,23 @@ export const parseCSVFile = async (file) => {
 
     // Parse headers
     const headerValues = parseCSVLine(lines[0], delimiter);
+    
+    // DEBUG: Log raw headers before processing
+    console.log('=== CSV PARSING DEBUG ===');
+    console.log('First line raw:', lines[0]);
+    console.log('Delimiter detected:', delimiter);
+    console.log('Raw header values:', headerValues);
+    
     const headers = headerValues.map(h => 
       h.toLowerCase()
+        .trim()  // Ajout du trim
         .replace(/[^a-z0-9]/g, '_')
         .replace(/^_+|_+$/g, '')
         .replace(/_+/g, '_')
     );
+    
+    console.log('Processed headers:', headers);
+    console.log('======================');
 
     // Parse data rows
     const data = [];
