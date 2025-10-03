@@ -190,11 +190,11 @@ export default function UserListPage() {
       },
       {
         header: 'User Name',
-        accessorKey: 'first_name',
-        cell: ({ row }) => (
+        accessorKey: 'full_name',
+        cell: ({ getValue }) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Typography variant="subtitle1">
-              {`${row.original.first_name || ''} ${row.original.last_name || ''}`.trim() || 'No Name'}
+              {getValue() || 'No Name'}
             </Typography>
           </Stack>
         )

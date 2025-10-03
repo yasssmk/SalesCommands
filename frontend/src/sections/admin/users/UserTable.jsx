@@ -195,15 +195,16 @@ function ReactTable({
     return data.filter(row => selectedRows.has(row.id)); // Exporter seulement les lignes sélectionnées
   }, [data, selectedRows]);
 
-  let headers = [];
-  table.getVisibleFlatColumns().map(
-    (columns) =>
-      columns.columnDef.accessorKey &&
+  // Et simplifier la construction des headers :
+  const headers = [];
+  table.getVisibleFlatColumns().forEach((column) => {
+    if (column.columnDef.accessorKey) {
       headers.push({
-        label: typeof columns.columnDef.header === 'string' ? columns.columnDef.header : columns.columnDef.header,
-        key: columns.columnDef.accessorKey
-      })
-  );
+        label: column.columnDef.header,
+        key: column.columnDef.accessorKey
+      });
+    }
+  });
 
   return (
     <MainCard content={false}>
