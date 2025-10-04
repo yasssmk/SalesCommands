@@ -1,220 +1,311 @@
 /**
- * User CSV validation logic
- * Validates and transforms user data for import
+ * Client-side validation & sanitization utilities
+ * Phase 5.3 - Security & Robustness
  */
 
-// Email validation regex
+// ==============================|| UUID VALIDATION ||============================== //
+
+/**
+ * UUID v4 regex pattern
+ * Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+ */
+const UUID_V4_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Validate if a value is a valid UUID v4.
+ */
+export function isValidUUID(value) {
+  if (!value || typeof value !== 'string') return false;
+  return UUID_V4_REGEX.test(value.trim());
+}
+
+/**
+ * Validate multiple UUIDs at once.
+ */
+export function areValidUUIDs(values) {
+  if (!Array.isArray(values)) return false;
+  if (values.length === 0) return true;
+  return values.every((v) => isValidUUID(v));
+}
+
+// ==============================|| STRING SANITIZATION ||============================== //
+
+/**
+ * Safely trim a value and return null when empty.
+ */
+export function trimString(value) {
+  if (value === null || value === undefined) return null;
+  const out = String(value).trim();
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * Sanitize email address (trim + lowercase).
+ */
+export function sanitizeEmail(email) {
+  const trimmed = trimString(email);
+  if (!trimmed) return null;
+  return trimmed.toLowerCase();
+}
+
+/**
+ * Sanitize an object's string properties.
+ * Recursively trims all string values in an object.
+ * If `fields` est fourni, on ne nettoie que ces propriétés.
+ */
+export function sanitizeObject(obj, fields = null) {
+  if (!obj || typeof obj !== 'object') return obj;
+
+  const sanitized = { ...obj };
+  const keysToSanitize = fields || Object.keys(sanitized);
+
+  keysToSanitize.forEach((key) => {
+    if (key in sanitized && typeof sanitized[key] === 'string') {
+      const trimmed = trimString(sanitized[key]);
+      sanitized[key] = trimmed === null ? '' : trimmed;
+    }
+  });
+
+  return sanitized;
+}
+
+// ==============================|| ADDITIONAL STRING UTILITIES (CSV) ||============================== //
+
+/**
+ * Remove invisible/zero-width characters from string.
+ */
+export function stripInvisible(str) {
+  if (!str || typeof str !== 'string') return str || '';
+
+  const invisibleChars = [
+    '\u200B', // ZWSP
+    '\u200C', // ZWNJ
+    '\u200D', // ZWJ
+    '\uFEFF', // BOM
+    '\u00AD', // Soft hyphen
+    '\u2060', // Word joiner
+    '\u180E', // Mongolian vowel separator
+    '\u202A', // LRE
+    '\u202B', // RLE
+    '\u202C', // PDF
+    '\u202D', // LRO
+    '\u202E', // RLO
+    '\u2061', // Function application
+    '\u2062', // Invisible times
+    '\u2063', // Invisible separator
+    '\u2064'  // Invisible plus
+  ];
+
+  let cleaned = str;
+  invisibleChars.forEach((c) => {
+    cleaned = cleaned.split(c).join('');
+  });
+  return cleaned;
+}
+
+/**
+ * Normalize a name field (first/last name).
+ * - Remove invisibles
+ * - Trim + collapse spaces
+ * - Unicode NFKC
+ */
+export function normalizeName(name) {
+  if (!name) return '';
+  let s = String(name);
+  s = stripInvisible(s);
+  s = s.trim().replace(/\s+/g, ' ');
+  if (s.normalize) s = s.normalize('NFKC');
+  return s;
+}
+
+/**
+ * Convert empty strings to null.
+ */
+export function toNullIfEmpty(value) {
+  if (value === null || value === undefined) return null;
+  const t = String(value).trim();
+  return t.length > 0 ? t : null;
+}
+
+/**
+ * Convert various boolean representations to boolean.
+ * Supports: true/false, 1/0, yes/no, y/n, on/off (case-insensitive)
+ */
+export function toBooleanLoose(value) {
+  if (typeof value === 'boolean') return value;
+  if (value === null || value === undefined) return null;
+
+  const v = String(value).toLowerCase().trim();
+  const TRUE = ['true', '1', 'yes', 'y', 'on'];
+  const FALSE = ['false', '0', 'no', 'n', 'off'];
+  if (TRUE.includes(v)) return true;
+  if (FALSE.includes(v)) return false;
+  return null;
+}
+
+// ==============================|| EMAIL VALIDATION ||============================== //
+
+/**
+ * Simple email validation regex (non-RFC but sufficient).
+ */
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Valid boolean values
-const BOOLEAN_TRUE = ['true', '1', 'yes', 'y', 'on'];
-const BOOLEAN_FALSE = ['false', '0', 'no', 'n', 'off'];
+/**
+ * Validate email format.
+ */
+export function isValidEmail(email) {
+  if (!email || typeof email !== 'string') return false;
+  return EMAIL_REGEX.test(email);
+}
+
+// ==============================|| CSV ROW SANITIZATION ||============================== //
 
 /**
- * Validate single user row
- * @param {Object} row - Raw row data from CSV
- * @param {number} rowIndex - Row number in CSV
- * @returns {Object} {isValid: boolean, errors: Array, data: Object}
+ * Sanitize a user row from CSV import (client-side).
+ * - Email required + format
+ * - Names normalized
+ * - Password optional (>=8 if provided)
+ * - Role/Organization/Team kept as trimmed strings (resolved later)
+ * - is_active accepts boolean-ish values
  */
-const validateUserRow = (row, rowIndex) => {
-  const errors = [];
-  const transformedData = {};
+export function sanitizeUserRow(rawRow) {
+  const issues = [];
+  const clean = {};
 
-  // Required: Email
-  if (!row.email || !row.email.trim()) {
-    errors.push(`Row ${rowIndex}: Email is required`);
-  } else {
-    const email = row.email.trim().toLowerCase();
-    if (!EMAIL_REGEX.test(email)) {
-      errors.push(`Row ${rowIndex}: Invalid email format (${row.email})`);
-    }
-    transformedData.email = email;
-  }
-
-  // Optional: First Name
-  if (row.first_name) {
-    const firstName = row.first_name.trim();
-    if (firstName.length > 50) {
-      errors.push(`Row ${rowIndex}: First name too long (max 50 characters)`);
-    }
-    transformedData.first_name = firstName;
-  } else {
-    transformedData.first_name = '';
-  }
-
-  // Optional: Last Name
-  if (row.last_name) {
-    const lastName = row.last_name.trim();
-    if (lastName.length > 50) {
-      errors.push(`Row ${rowIndex}: Last name too long (max 50 characters)`);
-    }
-    transformedData.last_name = lastName;
-  } else {
-    transformedData.last_name = '';
-  }
-
-  // Optional: Role (keep as string for backend to validate against existing roles)
-  if (row.role) {
-    transformedData.role = row.role.trim();
-  }
-
-  // Optional: Organization (keep as string for backend to validate)
-  if (row.organization) {
-    transformedData.organization = row.organization.trim();
-  }
-
-  // Optional: Team
-  if (row.team) {
-    const team = row.team.trim();
-    // Team requires organization
-    if (team && !transformedData.organization) {
-      errors.push(`Row ${rowIndex}: Team requires an organization`);
-    }
-    transformedData.team = team;
-  }
-
-  // Optional: Active Status (default to true if not specified)
-  if (row.is_active && row.is_active.trim()) {
-    const value = row.is_active.trim().toLowerCase();
-    if (BOOLEAN_TRUE.includes(value)) {
-      transformedData.is_active = true;
-    } else if (BOOLEAN_FALSE.includes(value)) {
-      transformedData.is_active = false;
+  // Email (required)
+  if (rawRow.email) {
+    const email = sanitizeEmail(rawRow.email);
+    if (email && isValidEmail(email)) {
+      clean.email = email;
     } else {
-      errors.push(`Row ${rowIndex}: Invalid is_active value "${row.is_active}". Use true/false, 1/0, yes/no`);
+      issues.push('Invalid email format');
     }
   } else {
-    transformedData.is_active = true; // Default to active
+    issues.push('Email is required');
   }
 
-  // Optional: Password (only for new users)
-  if (row.password) {
-    const password = row.password.trim();
-    if (password.length < 8) {
-      errors.push(`Row ${rowIndex}: Password must be at least 8 characters`);
+  // Names (optional)
+  clean.first_name = normalizeName(rawRow.first_name);
+  clean.last_name = normalizeName(rawRow.last_name);
+
+  // Password (optional, >= 8)
+  if (rawRow.password) {
+    const pwd = trimString(rawRow.password);
+    if (pwd && pwd.length >= 8) {
+      clean.password = pwd;
+    } else {
+      issues.push('Password must be at least 8 characters');
     }
-    transformedData.password = password;
   }
+
+  // Role / Organization / Team (optional, resolved later)
+  if (rawRow.role) clean.role = trimString(rawRow.role);
+  if (rawRow.organization) clean.organization = trimString(rawRow.organization);
+  if (rawRow.team) clean.team = trimString(rawRow.team);
+
+  // Active status (optional)
+  if (
+    rawRow.is_active !== undefined &&
+    rawRow.is_active !== null &&
+    rawRow.is_active !== ''
+  ) {
+    const bool = toBooleanLoose(rawRow.is_active);
+    if (bool !== null) clean.is_active = bool;
+    else issues.push(`Invalid active status value: "${rawRow.is_active}"`);
+  }
+
+  return { clean, issues };
+}
+
+// ==============================|| ID VALIDATION ||============================== //
+
+/**
+ * Validate if a value can be used as an ID (UUID or positive integer).
+ */
+export function isValidId(value) {
+  if (value === null || value === undefined) return false;
+
+  if (typeof value === 'string' && isValidUUID(value)) return true;
+
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return true;
+  }
+
+  if (typeof value === 'string') {
+    const n = Number(value);
+    return !isNaN(n) && Number.isInteger(n) && n > 0;
+    }
+  return false;
+}
+
+// ==============================|| FORM VALIDATION HELPERS ||============================== //
+
+/**
+ * Validate form payload before API submission.
+ * - Check required UUID fields
+ * - Sanitize string fields
+ */
+export function validateFormPayload(payload, requiredUUIDs = []) {
+  const errors = {};
+  const sanitized = { ...payload };
+
+  requiredUUIDs.forEach((field) => {
+    const val = sanitized[field];
+    if (!val) return; // nullable ok
+    if (!isValidUUID(val)) errors[field] = `Invalid ${field} ID`;
+  });
+
+  Object.keys(sanitized).forEach((k) => {
+    if (typeof sanitized[k] === 'string') {
+      const t = trimString(sanitized[k]);
+      sanitized[k] = t === null ? '' : t;
+    }
+  });
 
   return {
-    isValid: errors.length === 0,
+    valid: Object.keys(errors).length === 0,
     errors,
-    data: transformedData
+    sanitized
   };
-};
+}
 
 /**
- * Validate all user data from CSV
- * @param {Array} rawData - Raw data from CSV parser
- * @returns {Object} Validation results
+ * Format validation errors object to a sentence.
  */
-export const validateUserCSVData = (rawData) => {
-  if (!rawData || !Array.isArray(rawData)) {
-    return {
-      success: false,
-      error: 'No data to validate',
-      validRows: [],
-      invalidRows: [],
-      totalRows: 0
-    };
-  }
+export function formatValidationErrors(errors) {
+  if (!errors || Object.keys(errors).length === 0) return '';
+  return Object.values(errors).join('. ') + '.';
+}
 
-  const validRows = [];
-  const invalidRows = [];
-  const allErrors = [];
-  const emailMap = new Map();
-  const duplicateEmails = new Set();
+// ==============================|| DEFAULT BUNDLE EXPORT ||============================== //
 
-  // First pass: validate each row
-  rawData.forEach((row) => {
-    const rowIndex = row._rowIndex || validRows.length + invalidRows.length + 1;
-    const validation = validateUserRow(row, rowIndex);
+export default {
+  // UUID
+  isValidUUID,
+  areValidUUIDs,
 
-    const processedRow = {
-      ...validation.data,
-      _rowIndex: rowIndex,
-      _errors: validation.errors,
-      _isValid: validation.isValid
-    };
+  // Strings
+  trimString,
+  sanitizeEmail,
+  sanitizeObject,
+  stripInvisible,
+  normalizeName,
+  toNullIfEmpty,
 
-    if (validation.isValid) {
-      // Check for duplicate emails
-      const email = validation.data.email;
-      if (emailMap.has(email)) {
-        // Mark both rows as invalid
-        const firstOccurrence = emailMap.get(email);
-        processedRow._errors.push(`Row ${rowIndex}: Duplicate email (first seen in row ${firstOccurrence})`);
-        processedRow._isValid = false;
-        duplicateEmails.add(email);
-        invalidRows.push(processedRow);
-      } else {
-        emailMap.set(email, rowIndex);
-        validRows.push(processedRow);
-      }
-    } else {
-      invalidRows.push(processedRow);
-    }
+  // Boolean
+  toBooleanLoose,
 
-    allErrors.push(...validation.errors);
-  });
+  // Email
+  isValidEmail,
 
-  // Second pass: mark first occurrences of duplicate emails as invalid
-  if (duplicateEmails.size > 0) {
-    const updatedValidRows = [];
-    validRows.forEach(row => {
-      if (duplicateEmails.has(row.email)) {
-        row._errors.push(`Row ${row._rowIndex}: Duplicate email found in other rows`);
-        row._isValid = false;
-        invalidRows.push(row);
-      } else {
-        updatedValidRows.push(row);
-      }
-    });
-    validRows.length = 0;
-    validRows.push(...updatedValidRows);
-  }
+  // CSV
+  sanitizeUserRow,
 
-  // Sort invalid rows by row number for better display
-  invalidRows.sort((a, b) => a._rowIndex - b._rowIndex);
+  // ID
+  isValidId,
 
-  return {
-    success: true,
-    validRows,
-    invalidRows,
-    allErrors,
-    totalRows: rawData.length,
-    stats: {
-      total: rawData.length,
-      valid: validRows.length,
-      invalid: invalidRows.length,
-      duplicates: duplicateEmails.size
-    }
-  };
+  // Forms
+  validateFormPayload,
+  formatValidationErrors
 };
-
-/**
- * Prepare valid data for API submission
- * @param {Array} validRows - Validated rows
- * @returns {Array} Clean data ready for API
- */
-export const prepareUserDataForAPI = (validRows) => {
-  return validRows.map(row => {
-    // Remove internal fields
-    const { _rowIndex, _errors, _isValid, ...userData } = row;
-    return userData;
-  });
-};
-
-/**
- * Get column definitions for user import
- */
-export const getUserCSVColumns = () => [
-  { key: 'email', label: 'email', required: true },
-  { key: 'first_name', label: 'First Name', required: false },
-  { key: 'last_name', label: 'Last Name', required: false },
-  { key: 'password', label: 'Password', required: false },
-  { key: 'role', label: 'Role', required: false },
-  { key: 'organization', label: 'Organization', required: false },
-  { key: 'team', label: 'Team', required: false },
-  { key: 'is_active', label: 'Active Status', required: false }
-];

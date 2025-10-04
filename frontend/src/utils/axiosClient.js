@@ -150,6 +150,7 @@ export const apiRequest = async (requestFn) => {
     
     return {
       success: false,
+      data: error.response?.data || null,  // ✅ AJOUT: Préserver les données de la réponse
       error: errorMessage,
       status: error.response?.status || 0,
       response: error.response || null

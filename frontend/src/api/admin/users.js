@@ -632,13 +632,29 @@ export const createBulkUsers = async (users, mode = 'partial') => {
       return result.data; // ← shape backend direct (summary/results/…)
     }
 
-    // Erreur API connue (HTTP != 2xx) → structure d’erreur exploitable
+    // ✅ IMPORTANT: En cas d'erreur HTTP 400, le backend renvoie toujours des données structurées
+    // result.data est maintenant préservé même en cas d'erreur grâce à notre fix dans apiRequest
     const status = result.status || 0;
     const message = result.error || 'Bulk create failed';
     console.error('[createBulkUsers] api.post error', { status, message });
 
+    // Si le backend a renvoyé des données structurées avec les détails d'erreur
+    if (result.data && typeof result.data === 'object') {
+      // Vérifier si c'est une réponse structurée du backend (avec results/summary)
+      if (result.data.results || result.data.summary) {
+        console.log('[createBulkUsers] returning structured error from backend');
+        // ✅ Fusionner avec success: false pour être cohérent
+        return {
+          ...result.data,
+          success: false  // S'assurer que success est false
+        };
+      }
+    }
+
+    // Fallback: structure d'erreur générique si pas de données détaillées
     return {
       success: false,
+      message: message,
       error: { status, message, response: result.response || null },
       summary: { total: users.length, success: 0, failed: users.length, skipped: 0 },
       results: {
@@ -656,6 +672,7 @@ export const createBulkUsers = async (users, mode = 'partial') => {
     console.error('[createBulkUsers] thrown', err);
     return {
       success: false,
+      message: err?.message || 'Unknown error',
       error: { message: err?.message || String(err) },
       summary: { total: users?.length ?? 0, success: 0, failed: users?.length ?? 0, skipped: 0 },
       results: {

@@ -37,11 +37,15 @@ import { handleApiError } from 'utils/errorHandler';
 
 // utils
 import { parseCSVFile } from 'utils/csvParser';
-import { validateUserCSVData, prepareUserDataForAPI, getUserCSVColumns } from './userCSVValidation';
+import { validateUserCSVData, prepareUserDataForAPI, getUserCSVColumns, generateSampleCSV } from './userCSVValidation';
+import { buildLookups, getAvailableValues } from './resolvers';
+import { isValidUUID } from 'utils/validators';
 
 // assets
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
+import DownloadOutlined from '@ant-design/icons/DownloadOutlined';
+import InfoCircleOutlined from '@ant-design/icons/InfoCircleOutlined';
 
 // ==============================|| USER CSV IMPORT MODAL ||============================== //
 
@@ -55,7 +59,12 @@ export default function UserCSVImportModal({ open, onClose, onImport }) {
   const [parseError, setParseError] = useState(null);
   const [parsedData, setParsedData] = useState(null);
   const [validationResult, setValidationResult] = useState(null);
-   const [importResponse, setImportResponse] = useState(null);
+  const [importResponse, setImportResponse] = useState(null);
+  
+  // New state for lookups
+  const [lookups, setLookups] = useState(null);
+  const [lookupsLoading, setLookupsLoading] = useState(false);
+  const [lookupsError, setLookupsError] = useState(null);
   
   // Import progress state
   const [importProgress, setImportProgress] = useState({
@@ -80,20 +89,37 @@ export default function UserCSVImportModal({ open, onClose, onImport }) {
       skipped: 0
     });
     setImportResponse(null);
+    setLookupsError(null);
   }, []);
 
-  // ♻️ Reset auto à l'ouverture du modal (évite l'état "Import Results" persistant)
+  // ♻️ Reset auto à l'ouverture du modal + préfetch lookups
   useEffect(() => {
     if (open) {
       resetState();
-      // DEBUG
-      // eslint-disable-next-line no-console
-      console.debug('[UserCSVImportModal] open=true → reset state');
+      // Préfetch lookups
+      loadLookups();
+      console.debug('[UserCSVImportModal] open=true → reset state + fetch lookups');
     } else {
-      // eslint-disable-next-line no-console
       console.debug('[UserCSVImportModal] open=false');
     }
   }, [open, resetState]);
+
+  // Load lookups for name resolution
+  const loadLookups = async () => {
+    setLookupsLoading(true);
+    setLookupsError(null);
+    
+    try {
+      const lookupsData = await buildLookups();
+      setLookups(lookupsData);
+      console.debug('[UserCSVImportModal] Lookups loaded successfully');
+    } catch (error) {
+      console.error('[UserCSVImportModal] Failed to load lookups:', error);
+      setLookupsError(error.message || 'Failed to load reference data');
+    } finally {
+      setLookupsLoading(false);
+    }
+  };
 
   // Get column definitions
   const expectedColumns = getUserCSVColumns();
@@ -133,8 +159,8 @@ export default function UserCSVImportModal({ open, onClose, onImport }) {
 
       setParsedData(parseResult);
 
-      // Validate data
-      const validation = validateUserCSVData(parseResult.data);
+      // Validate data with lookups for name resolution
+      const validation = validateUserCSVData(parseResult.data, lookups);
       setValidationResult(validation);
 
     } catch (error) {
@@ -142,6 +168,20 @@ export default function UserCSVImportModal({ open, onClose, onImport }) {
     } finally {
       setProcessing(false);
     }
+  };
+
+  // Download sample CSV
+  const handleDownloadSample = () => {
+    const csvContent = generateSampleCSV(lookups);
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'users_import_sample.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   };
 
   // Handle import
@@ -538,7 +578,7 @@ export default function UserCSVImportModal({ open, onClose, onImport }) {
             <AlertTitle>
               {importResponse.httpStatus ? `Error ${importResponse.httpStatus}` : 'Import Error'}
             </AlertTitle>
-            {importResponse.errorMessage || 'You do not have permission to perform this action.'}
+            {importResponse.errorMessage }
           </Alert>
         </Box>
       )}
@@ -585,6 +625,21 @@ export default function UserCSVImportModal({ open, onClose, onImport }) {
             </Alert>
           </Grid>
            )}
+
+           <Alert 
+              severity="info" 
+              icon={<InfoCircleOutlined />}
+              action={
+                <Button
+                  size="small"
+                  startIcon={<DownloadOutlined />}
+                  onClick={handleDownloadSample}  // ✅ Utilise la fonction ici
+                  disabled={lookupsLoading}
+                >
+                  Download Sample CSV
+                </Button>
+              }
+            ></Alert>
 
           {/* Parse Error */}
           {parseError && (
