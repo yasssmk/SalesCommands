@@ -1,5 +1,6 @@
 'use client';
 import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useSWRConfig } from 'swr';
 
 // material-ui
 import Box from '@mui/material/Box'
@@ -46,6 +47,11 @@ export default function UserListPage() {
   const theme = useTheme();
   const { tenantId } = useAuth();
 
+  const [refreshNonce, setRefreshNonce] = useState(0);
+
+   const { mutate: globalMutate } = useSWRConfig();
+
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useLocalStorage(
     `userTablePageSize`, 10
@@ -60,11 +66,12 @@ export default function UserListPage() {
 
   const [csvImportModal, setCsvImportModal] = useState(false);
 
-  const { usersLoading, users, usersCount, usersError, mutate } = useGetUsers({
+  const { usersLoading, users, usersCount, usersError } = useGetUsers({
     page,
     pageSize: validPageSize,
     search
   });
+
 
   const swrKey = useMemo(() => {
     const params = new URLSearchParams();
@@ -72,9 +79,14 @@ export default function UserListPage() {
     params.append('page_size', pageSize);
     if (search) params.append('search', search);
 
+    // ✅ force le refetch sans mutate
+    params.append('nonce', String(refreshNonce));
+
     const url = `/client/users/${params.toString() ? `?${params.toString()}` : ''}`;
     return tenantKey(url, tenantId);
-  }, [page, pageSize, search, tenantId]);
+  }, [page, pageSize, search, tenantId, refreshNonce]);
+
+
 
   const [open, setOpen] = useState(false);
   const [userModal, setUserModal] = useState(false);
@@ -103,79 +115,106 @@ export default function UserListPage() {
 
   // ✅ Handler recherche - appelé par UserTable
   const handleSearchChange = useCallback((searchTerm) => {
-    setSearch(searchTerm);
-    setPage(1);  // Reset à page 1 quand on recherche
-  }, []);
+      setSearch(searchTerm);
+      setPage(1);  // Reset à page 1 quand on recherche
+    }, []);
 
-  const handleClose = useCallback(() => {
-    setOpen((prev) => !prev);
-  }, []);
+    const handleClose = useCallback(() => {
+      setOpen((prev) => !prev);
+    }, []);
 
-  const handleOpenEditModal = useCallback((user) => {
-    setSelectedUser(user);
-    setUserModal(true);
-  }, []);
-
-  const handleOpenDeleteDialog = useCallback(
-    (user) => {
+    const handleOpenEditModal = useCallback((user) => {
       setSelectedUser(user);
-      setUserDeleteId(user.id);
-      handleClose();
-    },
-    [handleClose]
-  );
+      setUserModal(true);
+    }, []);
 
-  // Handler Import CSV
-const handleImportClick = useCallback(() => {
-  setCsvImportModal(true);
-}, []);
+    const handleOpenDeleteDialog = useCallback(
+      (user) => {
+        setSelectedUser(user);
+        setUserDeleteId(user.id);
+        handleClose();
+      },
+      [handleClose]
+    );
 
-const handleImportCSV = useCallback(async (data) => {
-  try {
-    // TODO: Replace with actual API call
-    console.log('Import data:', data);
-    
-    // Mock API delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Mock success
-    openSnackbar(`Successfully imported ${data.length} users`, {
-      variant: 'success'
-    });
-    
-    // Refresh users list
-    mutate(swrKey);
-    
-    // Close modal
-    setCsvImportModal(false);
-  } catch (error) {
-    openSnackbar(error.message || 'Import failed', {
-      variant: 'error'
-    });
-  }
-}, [mutate, swrKey]);
+    // Handler Import CSV
+    const handleImportClick = useCallback(() => {
+        setCsvImportModal(true);
+      }, []);
 
-  // ✅ HANDLERS DE SÉLECTION - VERSION DEBUG
-  const handleSelectAll = useCallback((e) => {
-    e.stopPropagation();
-    if (e.target.checked && users) {
-      setSelectedRows(new Set(users.map(user => user.id)));
-    } else {
-      setSelectedRows(new Set());
-    }
-  }, [users]);
-
-  const handleSelectRow = useCallback((userId) => {
-    setSelectedRows(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(userId)) {
-        newSet.delete(userId);
-      } else {
-        newSet.add(userId);
+    const handleImportCSV = useCallback((response) => {
+      // --- debug utile en dev
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('[Users] onImport payload:', response);
       }
-      return newSet;
-    });
-  }, []);
+
+      // lecture sûre des compteurs
+      const failed  = Number(response?.summary?.failed  ?? 0);
+      const skipped = Number(response?.summary?.skipped ?? 0);
+      const success = Number(response?.summary?.success ?? 0);
+
+      // succès "clean" = success>0 et aucun failed/skip
+      const isCleanSuccess = !!response?.success && failed === 0 && skipped === 0 && success > 0;
+
+      // message backend prioritaire
+      const backendMessage = typeof response?.message === 'string' ? response.message.trim() : '';
+
+      // fallback si pas de message backend
+      let fallback = '';
+      if (response?.summary) {
+        const parts = [];
+        parts.push(`${success} imported`);
+        if (failed  > 0) parts.push(`${failed} failed`);
+        if (skipped > 0) parts.push(`${skipped} skipped`);
+        fallback = parts.join(', ');
+      } else {
+        fallback = response?.success ? 'Import completed' : 'Import failed';
+      }
+
+      const text = backendMessage || fallback;
+
+      // sévérité du toast
+      const hasIssues = failed > 0 || skipped > 0;
+      openSnackbar(text, {
+        variant: isCleanSuccess ? 'success' : hasIssues ? 'warning' : 'error',
+        autoHideDuration: isCleanSuccess ? 3000 : 7000
+      });
+
+      // revalidation de la liste (même en partiel → données changées)
+      if (typeof globalMutate === 'function') {
+        globalMutate(swrKey, undefined, { revalidate: true });
+      }
+
+      // ✅ auto-fermeture SEULEMENT si succès clean
+      if (isCleanSuccess) {
+        setCsvImportModal(false);
+      }
+      // sinon: on laisse la modale ouverte pour afficher le BulkImportReport
+    }, [globalMutate, swrKey]);
+
+
+    // +===== Selecion =========+ //
+
+    const handleSelectRow = useCallback((userId) => {
+      setSelectedRows(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(userId)) {
+          newSet.delete(userId);
+        } else {
+          newSet.add(userId);
+        }
+        return newSet;
+      });
+    }, []);
+
+    const handleSelectAll = useCallback((e) => {
+      e.stopPropagation();
+      if (e.target.checked && users) {
+        setSelectedRows(new Set(users.map((user) => user.id)));
+      } else {
+        setSelectedRows(new Set());
+      }
+    }, [users]);
 
   // Calculs
   const allSelected = users && users.length > 0 && selectedRows.size === users.length;
@@ -413,12 +452,12 @@ const handleImportCSV = useCallback(async (data) => {
         open={open}
         handleClose={handleClose}
       />
-       <UserCSVImportModal           // <-- AJOUTER CES 5 LIGNES
+       <UserCSVImportModal          
         open={csvImportModal}
         onClose={() => setCsvImportModal(false)}
         onImport={handleImportCSV}
       />
-      
+
       {/* Test Error Button (dev only) */}
       {process.env.NODE_ENV === 'development' && <TestErrorButton />}
     </>

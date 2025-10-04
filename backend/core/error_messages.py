@@ -69,6 +69,52 @@ class CoreErrorMessages:
 
     INVALID_DATE_RANGE= _("Invalid date range: {start_date} must be before {end_date}")
 
+    # ====== Bulk Error Message ======
+
+    # Bulk Operations
+    BULK_NO_DATA = _("No {entity} data provided for bulk operation")
+    BULK_INVALID_FORMAT = _("Bulk data must be a list of {entity}")
+    BULK_SIZE_EXCEEDED = _("Maximum {max_size} {entity} allowed per bulk operation")
+    BULK_DUPLICATE_IN_REQUEST = _("Duplicate {field} in request: '{value}' appears multiple times")
+    BULK_PARTIAL_SUCCESS = _("{success_count} succeeded, {failed_count} failed")
+    BULK_ALL_FAILED = _("All {entity} failed to {operation}")
+    BULK_MODE_INVALID = _("Bulk mode must be 'partial' or 'strict'")
+    BULK_STRICT_MODE_FAILED = _("Bulk operation failed in strict mode: {error_count} errors found")
+    
+    # Bulk Create specific
+    BULK_CREATE_DUPLICATE_EMAIL = _("Email '{email}' already exists")
+    BULK_CREATE_INVALID_ROLE = _("Role '{role}' not found in your organization")
+    BULK_CREATE_INVALID_TEAM = _("Team '{team}' not found or doesn't belong to organization '{org}'")
+    BULK_CREATE_PASSWORD_REQUIRED = _("Password is required for new users")
+    
+    # Bulk Update specific  
+    BULK_UPDATE_NO_ID = _("ID is required for bulk update")
+    BULK_UPDATE_INVALID_ID = _("User with ID '{id}' not found")
+    BULK_UPDATE_NO_FIELDS = _("No valid fields provided for update")
+    BULK_UPDATE_RESTRICTED_FIELD = _("Field '{field}' cannot be updated in bulk operations")
+    BULK_UPDATE_SELF_MODIFY = _("Cannot modify your own account in bulk operations")
+    
+    # Bulk Delete specific
+    BULK_DELETE_NO_IDS = _("No IDs provided for bulk delete")
+    BULK_DELETE_INVALID_ID = _("User with ID '{id}' not found or already deleted")
+    BULK_DELETE_SELF = _("Cannot delete your own account")
+    BULK_DELETE_LAST_ADMIN = _("Cannot delete user '{email}': last admin in organization")
+    BULK_DELETE_PROTECTED = _("Cannot delete protected user '{email}'")
+    
+    # Bulk Operation Results
+    BULK_OPERATION_TIMEOUT = _("Bulk operation timed out after processing {processed} of {total} items")
+    BULK_OPERATION_CANCELLED = _("Bulk operation cancelled by user")
+    BULK_RESULT_ROW = _("Row {row}")
+    BULK_RESULT_ITEM = _("Item {index}")
+    
+    # CSV Import specific (for frontend integration)
+    CSV_PARSE_ERROR = _("Failed to parse CSV file: {error}")
+    CSV_INVALID_HEADERS = _("Invalid CSV headers. Expected: {expected}")
+    CSV_EMPTY_FILE = _("CSV file is empty")
+    CSV_TOO_MANY_ROWS = _("CSV file contains {count} rows. Maximum {max_rows} allowed")
+    CSV_ENCODING_ERROR = _("CSV file encoding error. Please use UTF-8 encoding")
+
+
 class AccountErrorMessages:
     """Account specific error messages"""
     INVALID_PARENT = _("Invalid parent assignment")

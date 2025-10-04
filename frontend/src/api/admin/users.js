@@ -611,6 +611,67 @@ export const toggleUserStatus = async (userId) => {
   }
 };
 
+// =============================|| BULK CRUD || ==================================== //
+
+/**
+ * Bulk create users
+ * @param {Array} users - Array of user objects
+ * @param {string} mode - 'partial' or 'strict'
+ * @returns {Promise} Response with created users and errors
+ */
+export const createBulkUsers = async (users, mode = 'partial') => {
+  try {
+    // 🔎 debug non-PII
+    console.log('[createBulkUsers] start', { count: users?.length ?? 0, mode });
+
+    // Utilise NOTRE wrapper standardisé (cookies, corr-id, handleApiError, etc.)
+    const result = await api.post('/client/users/bulk-create/', { users, mode });
+
+    if (result.success) {
+      console.log('[createBulkUsers] ok', { status: result.status ?? 201 });
+      return result.data; // ← shape backend direct (summary/results/…)
+    }
+
+    // Erreur API connue (HTTP != 2xx) → structure d’erreur exploitable
+    const status = result.status || 0;
+    const message = result.error || 'Bulk create failed';
+    console.error('[createBulkUsers] api.post error', { status, message });
+
+    return {
+      success: false,
+      error: { status, message, response: result.response || null },
+      summary: { total: users.length, success: 0, failed: users.length, skipped: 0 },
+      results: {
+        success: [],
+        failed: users.map((u, i) => ({
+          row: i + 1,
+          email: u?.email || '(unknown)',
+          errors: [message]
+        })),
+        skipped: []
+      }
+    };
+  } catch (err) {
+    // Exception JS (ex: variable inconnue, throw, etc.)
+    console.error('[createBulkUsers] thrown', err);
+    return {
+      success: false,
+      error: { message: err?.message || String(err) },
+      summary: { total: users?.length ?? 0, success: 0, failed: users?.length ?? 0, skipped: 0 },
+      results: {
+        success: [],
+        failed: (users || []).map((u, i) => ({
+          row: i + 1,
+          email: u?.email || '(unknown)',
+          errors: [err?.message || 'Unknown error']
+        })),
+        skipped: []
+      }
+    };
+  }
+};
+
+
 // ==============================|| HELPER FUNCTIONS ||============================== //
 
 /**

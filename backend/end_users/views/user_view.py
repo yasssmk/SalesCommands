@@ -610,6 +610,397 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return self.handle_exception(e)
+        
+    # =============== BULK ACTIONS =======================
+
+    def bulk_create(self, request):
+        """
+        Create multiple users with detailed error reporting
+        Uses standardized error messages from CoreErrorMessages
+
+        Response schema (aligné avec le front):
+        {
+            "success": <bool>,
+            "message": "<synthetic message>",
+            "summary": { "total": <int>, "success": <int>, "failed": <int>, "skipped": <int> },
+            "results": {
+                "success": [{ "row": <int>, "email": <str>, "id": <uuid>, "name": <str> }],
+                "failed":  [{ "row": <int>, "email": <str>, "errors": [<str>, ...] }],
+                "skipped": [{ "row": <int>, "email": <str>, "error": <str>, "first_occurrence": <int> }]
+            }
+        }
+        """
+        ctx = ctx_from_request(request)
+        ctx.update({
+            'event': 'bulk_create_users',
+            'client_id': self.get_client_id()
+        })
+
+        # Validate input using helper
+        users_data, mode, error_response = self._validate_bulk_input(request.data, 'create')
+        if error_response:
+            return error_response
+
+        ctx['users_count'] = len(users_data)
+        ctx['mode'] = mode
+        logger.info("Starting bulk user creation", extra=ctx)
+
+        # Initialize results (schéma attendu par le front)
+        results = {
+            'success': [],
+            'failed': [],
+            'skipped': []
+        }
+
+        # Pre-check for duplicate emails in request (skipped)
+        seen_emails = {}
+        for idx, user_data in enumerate(users_data):
+            row_num = idx + 1
+            email = (user_data.get('email') or '').lower().strip()
+            if not email:
+                # Pas d'email -> sera traité en validation (failed)
+                continue
+            if email in seen_emails:
+                results['skipped'].append({
+                    'row': row_num,
+                    'email': email,
+                    'error': CoreErrorMessages.BULK_DUPLICATE_IN_REQUEST.format(
+                        field='email',
+                        value=email
+                    ),
+                    'first_occurrence': seen_emails[email]
+                })
+            else:
+                seen_emails[email] = row_num
+
+        # In strict mode, toute anomalie “skipped” (duplication requête) invalide l’opération
+        if mode == 'strict' and results['skipped']:
+            raise StandardizedValidationError(
+                CoreErrorMessages.BULK_STRICT_MODE_FAILED.format(
+                    error_count=len(results['skipped'])
+                )
+            )
+
+        # Process users based on mode
+        if mode == 'strict':
+            # Tout doit réussir ou rien (hors "skipped" déjà traité ci-dessus)
+            with transaction.atomic():
+                for idx, user_data in enumerate(users_data):
+                    row_num = idx + 1
+
+                    # Si la ligne a été marquée skipped (duplicate in request), on la saute
+                    if any(s['row'] == row_num for s in results['skipped']):
+                        continue
+
+                    try:
+                        user_data['client_account'] = self.get_client_id()
+                        self._resolve_role_name(user_data)
+
+                        serializer = self.get_serializer(
+                            data=user_data,
+                            context=self.get_serializer_context()
+                        )
+
+                        serializer.is_valid(raise_exception=True)
+                        user = serializer.save()
+
+                        results['success'].append({
+                            'row': row_num,
+                            'email': user.email,
+                            'id': str(user.id),
+                            'name': user.get_full_name()
+                        })
+
+                    except StandardizedValidationError:
+                        # Re-raise pour rollback complet
+                        raise
+                    except Exception as e:
+                        # Convertir en StandardizedValidationError pour rollback
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.UNEXPECTED_ERROR.format(detail=str(e))
+                        )
+
+        else:
+            # mode == 'partial' : on continue même si certaines lignes échouent
+            for idx, user_data in enumerate(users_data):
+                row_num = idx + 1
+                email_display = user_data.get('email') or 'Unknown'
+
+                # Skip duplicates detected in request
+                if any(s['row'] == row_num for s in results['skipped']):
+                    continue
+
+                with transaction.atomic():
+                    try:
+                        user_data['client_account'] = self.get_client_id()
+
+                        # Check if email already exists in DB
+                        if 'email' in user_data and user_data['email'] and User.objects.filter(
+                            email__iexact=user_data['email']
+                        ).exists():
+                            raise StandardizedValidationError(
+                                CoreErrorMessages.BULK_CREATE_DUPLICATE_EMAIL.format(
+                                    email=user_data['email']
+                                )
+                            )
+
+                        # Resolve role by name if needed
+                        self._resolve_role_name(user_data)
+
+                        serializer = self.get_serializer(
+                            data=user_data,
+                            context=self.get_serializer_context()
+                        )
+
+                        if serializer.is_valid():
+                            user = serializer.save()
+                            results['success'].append({
+                                'row': row_num,
+                                'email': user.email,
+                                'id': str(user.id),
+                                'name': user.get_full_name()
+                            })
+                        else:
+                            error_entry = self._format_bulk_error(
+                                {'row': row_num, 'email': email_display},
+                                serializer.errors
+                            )
+                            results['failed'].append(error_entry)
+                            transaction.set_rollback(True)
+
+                    except StandardizedValidationError as e:
+                        error_entry = self._format_bulk_error(
+                            {'row': row_num, 'email': email_display},
+                            e
+                        )
+                        results['failed'].append(error_entry)
+                        transaction.set_rollback(True)
+
+                    except Exception as e:
+                        logger.error(
+                            f"Unexpected error in bulk create row {row_num}",
+                            extra=ctx,
+                            exc_info=True
+                        )
+                        error_entry = self._format_bulk_error(
+                            {'row': row_num, 'email': email_display},
+                            CoreErrorMessages.UNEXPECTED_ERROR.format(detail="Processing failed")
+                        )
+                        results['failed'].append(error_entry)
+                        transaction.set_rollback(True)
+
+        # Build and return response (signature corrigée)
+        return self._build_bulk_response(results, len(users_data), 'create', ctx)
+
+    
+    def _format_bulk_error(self, row_identifier, error, include_fields=None):
+        """
+        Formate une erreur pour le rapport bulk
+
+        Args:
+            row_identifier: dict avec 'row' ou 'id' ou 'email'
+            error: Exception ou dict d'erreurs
+            include_fields: Liste de champs additionnels à inclure
+
+        Returns:
+            dict formaté pour le rapport (avec 'errors': [<str>, ...])
+        """
+        error_entry = {}
+
+        # Identifiant (row, id, email)
+        if isinstance(row_identifier, dict):
+            error_entry.update(row_identifier)
+        else:
+            error_entry['identifier'] = str(row_identifier)
+
+        # Normalisation des erreurs en liste de strings
+        formatted_errors = []
+
+        # Cas StandardizedValidationError
+        if isinstance(error, StandardizedValidationError):
+            detail = getattr(error, 'detail', None)
+            if isinstance(detail, dict):
+                # Notre _format_detail renvoie {"error": "..."} ou dicts similaires
+                msg = detail.get('error')
+                if msg:
+                    formatted_errors.append(str(msg))
+                else:
+                    # Fallback: aplatir les valeurs
+                    for v in detail.values():
+                        if isinstance(v, (list, tuple)):
+                            formatted_errors.extend([str(x) for x in v])
+                        else:
+                            formatted_errors.append(str(v))
+            elif isinstance(detail, (list, tuple)):
+                formatted_errors.extend([str(x) for x in detail])
+            elif detail:
+                formatted_errors.append(str(detail))
+            else:
+                formatted_errors.append(str(error))
+
+        # Cas dict (erreurs de serializer DRF)
+        elif isinstance(error, dict):
+            for field, field_errors in error.items():
+                if isinstance(field_errors, list):
+                    for err in field_errors:
+                        if field == 'non_field_errors':
+                            formatted_errors.append(str(err))
+                        else:
+                            formatted_errors.append(f"{field}: {err}")
+                else:
+                    formatted_errors.append(f"{field}: {field_errors}")
+
+        # Cas liste/tuple déjà formatés
+        elif isinstance(error, (list, tuple)):
+            formatted_errors.extend([str(e) for e in error])
+
+        else:
+            formatted_errors.append(str(error))
+
+        # Sécurité: si aucune erreur collectée, fallback générique
+        if not formatted_errors:
+            formatted_errors.append("Validation error")
+
+        error_entry['errors'] = formatted_errors
+
+        # Ajouter champs additionnels si demandé
+        if include_fields:
+            if isinstance(include_fields, dict):
+                error_entry.update(include_fields)
+
+        return error_entry
+
+    
+    def _check_request_duplicates(self, users_data, results):
+        """Détecter les emails dupliqués dans la requête"""
+        seen_emails = {}
+        for idx, user_data in enumerate(users_data):
+            email = user_data.get('email', '').lower().strip()
+            if email:
+                if email in seen_emails:
+                    results['duplicates'].append({
+                        'row': idx + 1,
+                        'email': email,
+                        'error': f'Duplicate in request (first at row {seen_emails[email]})'
+                    })
+                else:
+                    seen_emails[email] = idx + 1
+    
+    def _is_duplicate_row(self, row_num, results):
+        """Vérifier si une ligne est marquée comme duplicate"""
+        return any(d['row'] == row_num for d in results['duplicates'])
+    
+    def _resolve_role_name(self, user_data):
+        """Convert role name to ID if needed"""
+        if 'role' in user_data and isinstance(user_data['role'], str):
+            try:
+                # Check if it's already a UUID
+                import uuid
+                uuid.UUID(user_data['role'])
+                from ..models import UserRole
+                
+            except ValueError:
+                # It's a name, not UUID
+                role = UserRole.objects.filter(
+                    client_account_id=self.get_client_id(),
+                    name__iexact=user_data['role']
+                ).first()
+                
+                if role:
+                    user_data['role'] = str(role.id)
+                else:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.BULK_CREATE_INVALID_ROLE.format(
+                            role=user_data['role']
+                        )
+                    )
+    
+    def _format_serializer_errors(self, errors):
+        """Formater les erreurs du serializer en liste lisible"""
+        formatted = []
+        for field, field_errors in errors.items():
+            if isinstance(field_errors, list):
+                for error in field_errors:
+                    if field == 'non_field_errors':
+                        formatted.append(str(error))
+                    else:
+                        formatted.append(f"{field}: {error}")
+            else:
+                formatted.append(f"{field}: {field_errors}")
+        return formatted
+    
+    # ====== REPLACE THIS METHOD IN UserViewSet ======
+    def _build_bulk_response(self, results, total, operation, ctx):
+        """
+        Construit une réponse standardisée pour les opérations bulk.
+
+        Compatibilité front :
+        - results: { success:[], failed:[], skipped:[] }
+        - summary: { total, success, failed, skipped }
+        - success (top-level): True seulement si aucune erreur/skip
+        - HTTP 201/207/400 selon le cas
+        """
+        # Sécuriser l'accès aux clés
+        success_items = results.get('success', []) or []
+        failed_items = results.get('failed', []) or []
+        skipped_items = results.get('skipped', []) or []
+
+        # Certains parcours ajoutaient "duplicates" séparément → on les assimile aux "skipped"
+        duplicate_items = results.get('duplicates', []) or []
+        if duplicate_items and not skipped_items:
+            skipped_items = duplicate_items
+
+        success_count = len(success_items)
+        failed_count  = len(failed_items)
+        skipped_count = len(skipped_items)
+
+        # Logging synthétique
+        ctx.update({
+            'event': f'bulk_users_{operation}_completed',
+            'bulk_total': int(total),
+            'bulk_success': success_count,
+            'bulk_failed': failed_count,
+            'bulk_skipped': skipped_count,
+        })
+        logger.info('bulk_users_completed', extra=ctx)
+
+        # Choix du statut HTTP
+        if success_count == 0 and (failed_count > 0 or skipped_count > 0):
+            status_code = status.HTTP_400_BAD_REQUEST
+        elif failed_count > 0 or skipped_count > 0:
+            status_code = status.HTTP_207_MULTI_STATUS
+        else:
+            status_code = status.HTTP_201_CREATED
+
+        # Message (le front utilise surtout summary, mais on garde un texte propre)
+        # NB: "Importing Users Complete" est utilisé par le front dans l'UI.
+        message_parts = [f"{success_count} created"]
+        if failed_count:
+            message_parts.append(f"{failed_count} failed")
+        if skipped_count:
+            message_parts.append(f"{skipped_count} skipped")
+        message_text = ", ".join(message_parts) if message_parts else "No users processed"
+
+        return Response({
+            'success': failed_count == 0 and skipped_count == 0,
+            'message': "Importing Users Complete",
+            'details': message_text,  # info additionnelle lisible
+            'summary': {
+                'total': int(total),
+                'success': success_count,
+                'failed': failed_count,
+                'skipped': skipped_count
+            },
+            'results': {
+                'success': success_items,
+                'failed': failed_items,
+                'skipped': skipped_items
+            }
+        }, status=status_code)
+
+
+
+    # ====================================================
     
     def _can_grant_superuser(self, current_user):
         """
