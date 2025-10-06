@@ -1,311 +1,220 @@
-/**
- * Client-side validation & sanitization utilities
- * Phase 5.3 - Security & Robustness
- */
-
-// ==============================|| UUID VALIDATION ||============================== //
+// frontend/src/sections/admin/users/userCSVValidation.jsx
 
 /**
- * UUID v4 regex pattern
- * Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+ * CSV Validation & Preparation for User Import
+ * Centralizes all validation logic for CSV user import
  */
-const UUID_V4_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// Utils
+import { sanitizeUserRow } from 'utils/validators';
+import { resolveUserRelations, getAvailableValues } from './resolvers';
+
+// ==============================|| COLUMN DEFINITIONS ||============================== //
 
 /**
- * Validate if a value is a valid UUID v4.
+ * Get CSV column definitions
+ * @returns {Array} Column definitions with key, label, and required flag
  */
-export function isValidUUID(value) {
-  if (!value || typeof value !== 'string') return false;
-  return UUID_V4_REGEX.test(value.trim());
-}
-
-/**
- * Validate multiple UUIDs at once.
- */
-export function areValidUUIDs(values) {
-  if (!Array.isArray(values)) return false;
-  if (values.length === 0) return true;
-  return values.every((v) => isValidUUID(v));
-}
-
-// ==============================|| STRING SANITIZATION ||============================== //
-
-/**
- * Safely trim a value and return null when empty.
- */
-export function trimString(value) {
-  if (value === null || value === undefined) return null;
-  const out = String(value).trim();
-  return out.length > 0 ? out : null;
-}
-
-/**
- * Sanitize email address (trim + lowercase).
- */
-export function sanitizeEmail(email) {
-  const trimmed = trimString(email);
-  if (!trimmed) return null;
-  return trimmed.toLowerCase();
-}
-
-/**
- * Sanitize an object's string properties.
- * Recursively trims all string values in an object.
- * If `fields` est fourni, on ne nettoie que ces propriétés.
- */
-export function sanitizeObject(obj, fields = null) {
-  if (!obj || typeof obj !== 'object') return obj;
-
-  const sanitized = { ...obj };
-  const keysToSanitize = fields || Object.keys(sanitized);
-
-  keysToSanitize.forEach((key) => {
-    if (key in sanitized && typeof sanitized[key] === 'string') {
-      const trimmed = trimString(sanitized[key]);
-      sanitized[key] = trimmed === null ? '' : trimmed;
-    }
-  });
-
-  return sanitized;
-}
-
-// ==============================|| ADDITIONAL STRING UTILITIES (CSV) ||============================== //
-
-/**
- * Remove invisible/zero-width characters from string.
- */
-export function stripInvisible(str) {
-  if (!str || typeof str !== 'string') return str || '';
-
-  const invisibleChars = [
-    '\u200B', // ZWSP
-    '\u200C', // ZWNJ
-    '\u200D', // ZWJ
-    '\uFEFF', // BOM
-    '\u00AD', // Soft hyphen
-    '\u2060', // Word joiner
-    '\u180E', // Mongolian vowel separator
-    '\u202A', // LRE
-    '\u202B', // RLE
-    '\u202C', // PDF
-    '\u202D', // LRO
-    '\u202E', // RLO
-    '\u2061', // Function application
-    '\u2062', // Invisible times
-    '\u2063', // Invisible separator
-    '\u2064'  // Invisible plus
+export function getUserCSVColumns() {
+  return [
+    { key: 'email', label: 'Email', required: true },
+    { key: 'first_name', label: 'First Name', required: false },
+    { key: 'last_name', label: 'Last Name', required: false },
+    { key: 'password', label: 'Password', required: false },
+    { key: 'role', label: 'Role', required: false },
+    { key: 'organization', label: 'Organization', required: false },
+    { key: 'team', label: 'Team', required: false },
+    { key: 'is_active', label: 'Active Status', required: false }
   ];
-
-  let cleaned = str;
-  invisibleChars.forEach((c) => {
-    cleaned = cleaned.split(c).join('');
-  });
-  return cleaned;
 }
 
-/**
- * Normalize a name field (first/last name).
- * - Remove invisibles
- * - Trim + collapse spaces
- * - Unicode NFKC
- */
-export function normalizeName(name) {
-  if (!name) return '';
-  let s = String(name);
-  s = stripInvisible(s);
-  s = s.trim().replace(/\s+/g, ' ');
-  if (s.normalize) s = s.normalize('NFKC');
-  return s;
-}
+// ==============================|| VALIDATION ||============================== //
 
 /**
- * Convert empty strings to null.
+ * Validate CSV data for user import
+ * @param {Array} data - Parsed CSV data (array of row objects)
+ * @param {Object} lookups - Lookup tables from buildLookups()
+ * @returns {Object} Validation result with valid/invalid rows and stats
  */
-export function toNullIfEmpty(value) {
-  if (value === null || value === undefined) return null;
-  const t = String(value).trim();
-  return t.length > 0 ? t : null;
-}
+export function validateUserCSVData(data, lookups) {
+  if (!data || !Array.isArray(data)) {
+    return {
+      validRows: [],
+      invalidRows: [],
+      stats: { total: 0, valid: 0, invalid: 0, duplicates: 0 },
+      allErrors: []
+    };
+  }
 
-/**
- * Convert various boolean representations to boolean.
- * Supports: true/false, 1/0, yes/no, y/n, on/off (case-insensitive)
- */
-export function toBooleanLoose(value) {
-  if (typeof value === 'boolean') return value;
-  if (value === null || value === undefined) return null;
+  const validRows = [];
+  const invalidRows = [];
+  const allErrors = [];
+  const emailsSeen = new Set();
 
-  const v = String(value).toLowerCase().trim();
-  const TRUE = ['true', '1', 'yes', 'y', 'on'];
-  const FALSE = ['false', '0', 'no', 'n', 'off'];
-  if (TRUE.includes(v)) return true;
-  if (FALSE.includes(v)) return false;
-  return null;
-}
+  data.forEach((rawRow, index) => {
+    const rowNumber = rawRow._rowIndex || index + 1;
+    const rowErrors = [];
 
-// ==============================|| EMAIL VALIDATION ||============================== //
+    // Step 1: Sanitize the row
+    const { clean, issues } = sanitizeUserRow(rawRow);
+    
+    if (issues.length > 0) {
+      issues.forEach(issue => {
+        const errorMsg = `Row ${rowNumber}: ${issue}`;
+        rowErrors.push(errorMsg);
+        allErrors.push(errorMsg);
+      });
+    }
 
-/**
- * Simple email validation regex (non-RFC but sufficient).
- */
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Step 2: Check for duplicate emails in the CSV
+    if (clean.email) {
+      if (emailsSeen.has(clean.email)) {
+        const errorMsg = `Row ${rowNumber}: Duplicate email "${clean.email}"`;
+        rowErrors.push(errorMsg);
+        allErrors.push(errorMsg);
+      } else {
+        emailsSeen.add(clean.email);
+      }
+    }
 
-/**
- * Validate email format.
- */
-export function isValidEmail(email) {
-  if (!email || typeof email !== 'string') return false;
-  return EMAIL_REGEX.test(email);
-}
+    // Step 3: Resolve relations (role, organization, team)
+    let resolved = { ...clean };
+    if (lookups && rowErrors.length === 0) {
+      const { resolved: resolvedData, issues: resolveIssues } = resolveUserRelations(clean, lookups);
+      resolved = resolvedData;
+      
+      if (resolveIssues.length > 0) {
+        resolveIssues.forEach(issue => {
+          const errorMsg = `Row ${rowNumber}: ${issue}`;
+          rowErrors.push(errorMsg);
+          allErrors.push(errorMsg);
+        });
+      }
+    }
 
-// ==============================|| CSV ROW SANITIZATION ||============================== //
-
-/**
- * Sanitize a user row from CSV import (client-side).
- * - Email required + format
- * - Names normalized
- * - Password optional (>=8 if provided)
- * - Role/Organization/Team kept as trimmed strings (resolved later)
- * - is_active accepts boolean-ish values
- */
-export function sanitizeUserRow(rawRow) {
-  const issues = [];
-  const clean = {};
-
-  // Email (required)
-  if (rawRow.email) {
-    const email = sanitizeEmail(rawRow.email);
-    if (email && isValidEmail(email)) {
-      clean.email = email;
+    // Add row to valid or invalid list
+    const rowWithIndex = { ...resolved, _rowIndex: rowNumber, _originalRow: rawRow };
+    
+    if (rowErrors.length === 0) {
+      validRows.push(rowWithIndex);
     } else {
-      issues.push('Invalid email format');
-    }
-  } else {
-    issues.push('Email is required');
-  }
-
-  // Names (optional)
-  clean.first_name = normalizeName(rawRow.first_name);
-  clean.last_name = normalizeName(rawRow.last_name);
-
-  // Password (optional, >= 8)
-  if (rawRow.password) {
-    const pwd = trimString(rawRow.password);
-    if (pwd && pwd.length >= 8) {
-      clean.password = pwd;
-    } else {
-      issues.push('Password must be at least 8 characters');
-    }
-  }
-
-  // Role / Organization / Team (optional, resolved later)
-  if (rawRow.role) clean.role = trimString(rawRow.role);
-  if (rawRow.organization) clean.organization = trimString(rawRow.organization);
-  if (rawRow.team) clean.team = trimString(rawRow.team);
-
-  // Active status (optional)
-  if (
-    rawRow.is_active !== undefined &&
-    rawRow.is_active !== null &&
-    rawRow.is_active !== ''
-  ) {
-    const bool = toBooleanLoose(rawRow.is_active);
-    if (bool !== null) clean.is_active = bool;
-    else issues.push(`Invalid active status value: "${rawRow.is_active}"`);
-  }
-
-  return { clean, issues };
-}
-
-// ==============================|| ID VALIDATION ||============================== //
-
-/**
- * Validate if a value can be used as an ID (UUID or positive integer).
- */
-export function isValidId(value) {
-  if (value === null || value === undefined) return false;
-
-  if (typeof value === 'string' && isValidUUID(value)) return true;
-
-  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
-    return true;
-  }
-
-  if (typeof value === 'string') {
-    const n = Number(value);
-    return !isNaN(n) && Number.isInteger(n) && n > 0;
-    }
-  return false;
-}
-
-// ==============================|| FORM VALIDATION HELPERS ||============================== //
-
-/**
- * Validate form payload before API submission.
- * - Check required UUID fields
- * - Sanitize string fields
- */
-export function validateFormPayload(payload, requiredUUIDs = []) {
-  const errors = {};
-  const sanitized = { ...payload };
-
-  requiredUUIDs.forEach((field) => {
-    const val = sanitized[field];
-    if (!val) return; // nullable ok
-    if (!isValidUUID(val)) errors[field] = `Invalid ${field} ID`;
-  });
-
-  Object.keys(sanitized).forEach((k) => {
-    if (typeof sanitized[k] === 'string') {
-      const t = trimString(sanitized[k]);
-      sanitized[k] = t === null ? '' : t;
+      invalidRows.push({ ...rawRow, _rowIndex: rowNumber, _errors: rowErrors });
     }
   });
 
   return {
-    valid: Object.keys(errors).length === 0,
-    errors,
-    sanitized
+    validRows,
+    invalidRows,
+    stats: {
+      total: data.length,
+      valid: validRows.length,
+      invalid: invalidRows.length,
+      duplicates: data.length - emailsSeen.size
+    },
+    allErrors
   };
 }
 
+// ==============================|| SAMPLE CSV GENERATION ||============================== //
+
 /**
- * Format validation errors object to a sentence.
+ * Generate a sample CSV with example data
+ * @param {Object} lookups - Optional lookup tables for real values
+ * @returns {string} CSV content as string
  */
-export function formatValidationErrors(errors) {
-  if (!errors || Object.keys(errors).length === 0) return '';
-  return Object.values(errors).join('. ') + '.';
+export function generateSampleCSV(lookups) {
+  const columns = getUserCSVColumns();
+  const headers = columns.map(col => col.label).join(',');
+  
+  // Get available values if lookups provided
+  const availableValues = lookups ? getAvailableValues(lookups) : null;
+  
+  // Sample data rows
+  const sampleRows = [
+    {
+      email: 'john.doe@example.com',
+      first_name: 'John',
+      last_name: 'Doe',
+      password: 'SecurePass123',
+      role: availableValues?.roles?.[0] || 'Admin',
+      organization: availableValues?.organizations?.[0] || 'Sales EMEA',
+      team: availableValues?.teams?.[0]?.name || 'Sales Team',
+      is_active: 'true'
+    },
+    {
+      email: 'jane.smith@example.com',
+      first_name: 'Jane',
+      last_name: 'Smith',
+      password: 'AnotherPass456',
+      role: availableValues?.roles?.[1] || 'User',
+      organization: availableValues?.organizations?.[0] || 'Sales EMEA',
+      team: '',
+      is_active: 'yes'
+    },
+    {
+      email: 'bob.wilson@example.com',
+      first_name: 'Bob',
+      last_name: 'Wilson',
+      password: '',
+      role: '',
+      organization: '',
+      team: '',
+      is_active: '1'
+    }
+  ];
+
+  // Convert to CSV rows
+  const dataRows = sampleRows.map(row => {
+    return columns.map(col => {
+      const value = row[col.key] || '';
+      // Escape quotes and wrap in quotes if contains comma
+      const escaped = String(value).replace(/"/g, '""');
+      return /[,\n"]/.test(escaped) ? `"${escaped}"` : escaped;
+    }).join(',');
+  });
+
+  return [headers, ...dataRows].join('\n');
 }
 
-// ==============================|| DEFAULT BUNDLE EXPORT ||============================== //
+// ==============================|| API PREPARATION ||============================== //
+
+/**
+ * Prepare validated rows for API submission
+ * @param {Array} validatedRows - Rows that passed validation
+ * @returns {Array} Array of user objects ready for API
+ */
+export function prepareUserDataForAPI(validatedRows) {
+  if (!validatedRows || !Array.isArray(validatedRows)) {
+    return [];
+  }
+
+  return validatedRows.map(row => {
+    // Remove internal fields
+    const { _rowIndex, _originalRow, ...userData } = row;
+
+    // Build API payload
+    const payload = {
+      email: userData.email
+    };
+
+    // Add optional fields only if present
+    if (userData.first_name) payload.first_name = userData.first_name;
+    if (userData.last_name) payload.last_name = userData.last_name;
+    if (userData.password) payload.password = userData.password;
+    if (userData.role) payload.role = userData.role;
+    if (userData.organization) payload.organization = userData.organization;
+    if (userData.team) payload.team = userData.team;
+    if (userData.is_active !== undefined) payload.is_active = userData.is_active;
+
+    return payload;
+  });
+}
+
+// ==============================|| DEFAULT EXPORT ||============================== //
 
 export default {
-  // UUID
-  isValidUUID,
-  areValidUUIDs,
-
-  // Strings
-  trimString,
-  sanitizeEmail,
-  sanitizeObject,
-  stripInvisible,
-  normalizeName,
-  toNullIfEmpty,
-
-  // Boolean
-  toBooleanLoose,
-
-  // Email
-  isValidEmail,
-
-  // CSV
-  sanitizeUserRow,
-
-  // ID
-  isValidId,
-
-  // Forms
-  validateFormPayload,
-  formatValidationErrors
+  getUserCSVColumns,
+  validateUserCSVData,
+  generateSampleCSV,
+  prepareUserDataForAPI
 };

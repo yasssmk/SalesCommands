@@ -1,8 +1,8 @@
 email,password,first_name,last_name,role
 user1@companya.com,password123,John,Doe,Direction
-user22@companya.com,password123,Jane,Smith,Team_Manager
-user32@companya.com,password123,Bob,Brown,Team_Manager
-user42@companya.com,password123,Bob,Brown,Account_Executive
-user52@companya.com,password123,Bob,Brown,Account_Executive
-user62@companya.com,password123,Bob,Brown,Account_Executive
-user72@companya.com,password123,Bob,Brown,Account_Executive
+user22@companya.com,password123,Jane,Smith,Team Manager
+user32@companya.com,password123,Bob,Brown,Team Manager
+user42@companya.com,password123,Bob,Brown,Account Executive
+user52@companya.com,password123,Bob,Brown,Account Executive
+user62@companya.com,password123,Bob,Brown,Account Executive
+user72@companya.com,password123,Bob,Brown,Account Executive
