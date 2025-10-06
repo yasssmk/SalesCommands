@@ -688,6 +688,384 @@ export const createBulkUsers = async (users, mode = 'partial') => {
   }
 };
 
+/**
+ * ✅ BULK UPDATE USERS
+ * 
+ * Met à jour plusieurs utilisateurs en une seule requête
+ * 
+ * @param {Array<string>} userIds - Array of user IDs to update
+ * @param {Object} patchData - Data to apply to all selected users
+ * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+ * @returns {Promise<Object>} {success: boolean, summary: Object, results: Object}
+ * 
+ * @example
+ * const result = await bulkUpdateUsers(
+ *   ['uuid1', 'uuid2'], 
+ *   { is_active: false, role: 'member' },
+ *   'partial'
+ * );
+ */
+export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial') => {
+  try {
+    // 🔎 Debug non-PII
+    console.log('[bulkUpdateUsers] start', { 
+      count: userIds?.length ?? 0, 
+      mode,
+      fields: Object.keys(patchData || {})
+    });
+
+    // ✅ Validation: Vérifier que userIds est un array non vide
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return {
+        success: false,
+        message: 'No user IDs provided',
+        summary: { requested: 0, updated: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
+    const invalidIds = userIds.filter(id => !isValidUUID(id));
+    if (invalidIds.length > 0) {
+      console.error('[bulkUpdateUsers] invalid UUIDs', { count: invalidIds.length });
+      return {
+        success: false,
+        message: `${invalidIds.length} invalid user ID(s) detected`,
+        summary: { requested: userIds.length, updated: 0, failed: userIds.length },
+        results: {
+          success: [],
+          failed: invalidIds.map(id => ({
+            id,
+            errors: ['Invalid UUID format']
+          }))
+        }
+      };
+    }
+
+    // ✅ Validation: Vérifier les UUID fields dans patchData
+    const uuidFields = ['role', 'organization', 'team'];
+    for (const field of uuidFields) {
+      const value = patchData[field];
+      
+      // Skip si null/undefined/empty (nullable fields)
+      if (!value || value === '') continue;
+      
+      // Valider le format UUID
+      if (!isValidUUID(value)) {
+        return {
+          success: false,
+          message: `Invalid ${field} ID format in patch data`,
+          summary: { requested: userIds.length, updated: 0, failed: userIds.length },
+          results: {
+            success: [],
+            failed: userIds.map(id => ({
+              id,
+              errors: [`Invalid ${field} ID format`]
+            }))
+          }
+        };
+      }
+    }
+
+    // ✅ Sanitization: Nettoyer les champs string
+    const sanitized = sanitizeObject(patchData, ['first_name', 'last_name']);
+
+    // ✅ Appel API avec notre wrapper standardisé
+    const result = await api.patch('/client/users/bulk-update/', {
+      ids: userIds,
+      patch: sanitized,
+      mode
+    });
+
+    if (result.success) {
+      console.log('[bulkUpdateUsers] ok', { 
+        status: result.status ?? 200,
+        updated: result.data?.summary?.updated ?? 0
+      });
+
+      // ✅ Revalidation après bulk update
+      revalidateMultiple([
+        endpoints.users,                    // Liste users
+        '/client/client-accounts/'          // Stats seats (si is_active modifié)
+      ]);
+
+      return result.data; // Shape backend: {success, summary, results, message}
+    }
+
+    // ✅ Gestion d'erreur structurée
+    const status = result.status || 0;
+    const message = result.error || 'Bulk update failed';
+    console.error('[bulkUpdateUsers] api.patch error', { status, message });
+
+    // Si le backend a renvoyé des données structurées
+    if (result.data && typeof result.data === 'object') {
+      if (result.data.results || result.data.summary) {
+        console.log('[bulkUpdateUsers] returning structured error from backend');
+        return {
+          ...result.data,
+          success: false
+        };
+      }
+    }
+
+    // Fallback: structure d'erreur générique
+    return {
+      success: false,
+      message: message,
+      error: { status, message, response: result.response || null },
+      summary: { requested: userIds.length, updated: 0, failed: userIds.length },
+      results: {
+        success: [],
+        failed: userIds.map(id => ({
+          id,
+          errors: [message]
+        }))
+      }
+    };
+
+  } catch (err) {
+    // Exception JS (ex: variable inconnue, throw, etc.)
+    console.error('[bulkUpdateUsers] thrown', err);
+    return {
+      success: false,
+      message: err?.message || 'Unknown error',
+      error: { message: err?.message || String(err) },
+      summary: { requested: userIds?.length ?? 0, updated: 0, failed: userIds?.length ?? 0 },
+      results: {
+        success: [],
+        failed: (userIds || []).map(id => ({
+          id,
+          errors: [err?.message || 'Unknown error']
+        }))
+      }
+    };
+  }
+};
+
+/**
+ * ✅ BULK DELETE USERS
+ * 
+ * Supprime plusieurs utilisateurs en une seule requête
+ * ⚠️ En MVP/dev: suppression PHYSIQUE (hard delete)
+ * ⚠️ En prod: utiliser bulkSoftDeleteUsers à la place
+ * 
+ * @param {Array<string>} userIds - Array of user IDs to delete
+ * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+ * @returns {Promise<Object>} {success: boolean, summary: Object, results: Object}
+ * 
+ * @example
+ * const result = await bulkDeleteUsers(['uuid1', 'uuid2'], 'partial');
+ */
+export const bulkDeleteUsers = async (userIds, mode = 'partial') => {
+  try {
+    // 🔎 Debug non-PII
+    console.log('[bulkDeleteUsers] start', { 
+      count: userIds?.length ?? 0, 
+      mode 
+    });
+
+    // ✅ Validation: Vérifier que userIds est un array non vide
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return {
+        success: false,
+        message: 'No user IDs provided',
+        summary: { requested: 0, deleted: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
+    const invalidIds = userIds.filter(id => !isValidUUID(id));
+    if (invalidIds.length > 0) {
+      console.error('[bulkDeleteUsers] invalid UUIDs', { count: invalidIds.length });
+      return {
+        success: false,
+        message: `${invalidIds.length} invalid user ID(s) detected`,
+        summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
+        results: {
+          success: [],
+          failed: invalidIds.map(id => ({
+            id,
+            errors: ['Invalid UUID format']
+          }))
+        }
+      };
+    }
+
+    // ✅ Appel API avec notre wrapper standardisé
+    const result = await api.delete('/client/users/bulk-delete/', {
+      data: { ids: userIds, mode }  // ⚠️ DELETE avec body nécessite data: {}
+    });
+
+    if (result.success) {
+      console.log('[bulkDeleteUsers] ok', { 
+        status: result.status ?? 200,
+        deleted: result.data?.summary?.deleted ?? 0
+      });
+
+      // ✅ Revalidation après bulk delete
+      revalidateMultiple([
+        endpoints.users,                    // Liste users
+        '/client/client-accounts/'          // Stats seats (seats_used diminue)
+      ]);
+
+      return result.data; // Shape backend: {success, summary, results, message}
+    }
+
+    // ✅ Gestion d'erreur structurée
+    const status = result.status || 0;
+    const message = result.error || 'Bulk delete failed';
+    console.error('[bulkDeleteUsers] api.delete error', { status, message });
+
+    // Si le backend a renvoyé des données structurées
+    if (result.data && typeof result.data === 'object') {
+      if (result.data.results || result.data.summary) {
+        console.log('[bulkDeleteUsers] returning structured error from backend');
+        return {
+          ...result.data,
+          success: false
+        };
+      }
+    }
+
+    // Fallback: structure d'erreur générique
+    return {
+      success: false,
+      message: message,
+      error: { status, message, response: result.response || null },
+      summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
+      results: {
+        success: [],
+        failed: userIds.map(id => ({
+          id,
+          errors: [message]
+        }))
+      }
+    };
+
+  } catch (err) {
+    // Exception JS (ex: variable inconnue, throw, etc.)
+    console.error('[bulkDeleteUsers] thrown', err);
+    return {
+      success: false,
+      message: err?.message || 'Unknown error',
+      error: { message: err?.message || String(err) },
+      summary: { requested: userIds?.length ?? 0, deleted: 0, failed: userIds?.length ?? 0 },
+      results: {
+        success: [],
+        failed: (userIds || []).map(id => ({
+          id,
+          errors: [err?.message || 'Unknown error']
+        }))
+      }
+    };
+  }
+};
+
+/**
+ * ✅ BULK SOFT DELETE USERS (pour production future)
+ * 
+ * Archive plusieurs utilisateurs (is_active=false) sans suppression physique
+ * ⚠️ Non utilisé en MVP, préparé pour production
+ * 
+ * @param {Array<string>} userIds - Array of user IDs to soft delete
+ * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+ * @returns {Promise<Object>} {success: boolean, summary: Object, results: Object}
+ */
+export const bulkSoftDeleteUsers = async (userIds, mode = 'partial') => {
+  try {
+    console.log('[bulkSoftDeleteUsers] start', { 
+      count: userIds?.length ?? 0, 
+      mode 
+    });
+
+    // ✅ Validation: Vérifier que userIds est un array non vide
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return {
+        success: false,
+        message: 'No user IDs provided',
+        summary: { requested: 0, archived: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
+    const invalidIds = userIds.filter(id => !isValidUUID(id));
+    if (invalidIds.length > 0) {
+      console.error('[bulkSoftDeleteUsers] invalid UUIDs', { count: invalidIds.length });
+      return {
+        success: false,
+        message: `${invalidIds.length} invalid user ID(s) detected`,
+        summary: { requested: userIds.length, archived: 0, failed: userIds.length },
+        results: {
+          success: [],
+          failed: invalidIds.map(id => ({
+            id,
+            errors: ['Invalid UUID format']
+          }))
+        }
+      };
+    }
+
+    // ✅ Appel API
+    const result = await api.delete('/client/users/bulk-soft-delete/', {
+      data: { ids: userIds, mode }
+    });
+
+    if (result.success) {
+      console.log('[bulkSoftDeleteUsers] ok', { 
+        status: result.status ?? 200,
+        archived: result.data?.summary?.archived ?? 0
+      });
+
+      // ✅ Revalidation après soft delete
+      revalidateMultiple([
+        endpoints.users,
+        '/client/client-accounts/'
+      ]);
+
+      return result.data;
+    }
+
+    // Gestion d'erreur (même pattern)
+    const status = result.status || 0;
+    const message = result.error || 'Bulk soft delete failed';
+    console.error('[bulkSoftDeleteUsers] api.delete error', { status, message });
+
+    if (result.data && typeof result.data === 'object') {
+      if (result.data.results || result.data.summary) {
+        return { ...result.data, success: false };
+      }
+    }
+
+    return {
+      success: false,
+      message: message,
+      error: { status, message, response: result.response || null },
+      summary: { requested: userIds.length, archived: 0, failed: userIds.length },
+      results: {
+        success: [],
+        failed: userIds.map(id => ({ id, errors: [message] }))
+      }
+    };
+
+  } catch (err) {
+    console.error('[bulkSoftDeleteUsers] thrown', err);
+    return {
+      success: false,
+      message: err?.message || 'Unknown error',
+      error: { message: err?.message || String(err) },
+      summary: { requested: userIds?.length ?? 0, archived: 0, failed: userIds?.length ?? 0 },
+      results: {
+        success: [],
+        failed: (userIds || []).map(id => ({
+          id,
+          errors: [err?.message || 'Unknown error']
+        }))
+      }
+    };
+  }
+};
 
 // ==============================|| HELPER FUNCTIONS ||============================== //
 

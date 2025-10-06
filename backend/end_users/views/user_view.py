@@ -623,6 +623,110 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return self.handle_exception(e)
+    
+    @action(detail=True, methods=['delete'], url_path='soft')
+    def soft_destroy(self, request, pk=None):
+        """
+        Soft delete a user (set is_active=False instead of physical deletion)
+        DELETE /client/users/{id}/soft/
+        
+        This is a non-destructive operation. The user is archived but data is preserved.
+        The user can be reactivated later by setting is_active=True.
+        
+        Response:
+        {
+            "success": true,
+            "message": "User 'John Doe' archived successfully",
+            "user": {
+                "id": "...",
+                "email": "...",
+                "is_active": false
+            }
+        }
+        """
+        try:
+            with transaction.atomic():
+                user = self.get_object()
+
+                # Mémoriser le client et infos avant modification
+                client = user.client_account
+                
+                # Validation client scoping
+                self.validate_client_id(user)
+
+                # ===== SECURITY VALIDATIONS =====
+                
+                # 1. Empêcher de se supprimer soi-même
+                if user.id == request.user.id:
+                    raise StandardizedValidationError(
+                        "Cannot archive your own account. Please ask another administrator."
+                    )
+                
+                # 2. Empêcher de supprimer le dernier admin actif
+                if user.is_active and user.is_last_active_admin():
+                    raise StandardizedValidationError(
+                        f"Cannot archive user '{user.email}': last active administrator. "
+                        "Promote another user to admin first."
+                    )
+                
+                # 3. Vérifier les permissions superuser
+                if user.is_superuser and not request.user.is_superuser:
+                    raise StandardizedValidationError(
+                        "Only superusers can archive other superusers"
+                    )
+
+                # ===== SOFT DELETE: SET is_active=False =====
+                user_name = user.get_full_name()
+                user_email = user.email
+                was_already_inactive = not user.is_active
+                
+                user.is_active = False
+                user.save(update_fields=['is_active', 'updated_at'])
+
+                # Logging
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    "target_user_id": str(user.id),
+                    "archived_user_name": user_name,
+                    "archived_user_email": user_email,
+                    "was_already_inactive": was_already_inactive,
+                    "event": "user_soft_delete_success",
+                    "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
+                })
+                logger.info("user_soft_delete_success", extra=ctx)
+
+                # Filet de sécurité: s'assurer qu'un admin actif existe toujours
+                client.ensure_admin_invariants()
+
+                return Response({
+                    'success': True,
+                    'message': f'User "{user_name}" archived successfully',
+                    'user': {
+                        'id': str(user.id),
+                        'email': user_email,
+                        'name': user_name,
+                        'is_active': user.is_active
+                    }
+                }, status=status.HTTP_200_OK)
+
+        except (User.DoesNotExist, Http404):
+            ctx = ctx_from_request(request)
+            ctx.update({
+                "event": "user_soft_delete_not_found",
+                "resource": "user",
+                "target_id": str(pk),
+                "action": "soft_delete",
+                "scope": "client",
+            })
+            logger.info("user_soft_delete_not_found", extra=ctx)
+
+            return Response({
+                'success': False,
+                'error': CoreErrorMessages.OBJECT_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+        except Exception as e:
+            return self.handle_exception(e)
         
     # =============== BULK ACTIONS =======================
 
@@ -917,6 +1021,1097 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 'message': 'An unexpected error occurred',
                 'error': 'Internal server error. Please try again or contact support.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    @action(detail=False, methods=['patch'], url_path='bulk-update')
+    def bulk_update(self, request):
+        """
+        Update multiple users in bulk
+        
+        Request format:
+        {
+            "ids": ["uuid1", "uuid2", ...],
+            "patch": {
+                "is_active": true,
+                "is_superuser": false,
+                "role": "uuid",
+                "organization": "uuid",
+                "team": "uuid"
+            },
+            "mode": "partial"  // or "strict"
+        }
+        
+        Response format:
+        {
+            "success": true,
+            "summary": {
+                "requested": 10,
+                "updated": 8,
+                "failed": 2
+            },
+            "results": {
+                "success": [{"id": "...", "email": "..."}],
+                "failed": [{"id": "...", "email": "...", "errors": ["..."]}]
+            },
+            "message": "Bulk update: 8 updated, 2 failed"
+        }
+        """
+        ctx = ctx_from_request(request)
+        ctx.update({
+            'event': 'bulk_update_users',
+            'client_id': self.get_client_id()
+        })
+
+        try:
+            # ===== INPUT VALIDATION =====
+            if not isinstance(request.data, dict):
+                raise StandardizedValidationError(
+                    "Request must be a JSON object"
+                )
+
+            ids = request.data.get('ids', [])
+            patch = request.data.get('patch', {})
+            mode = request.data.get('mode', 'partial')
+
+            # Validate ids
+            if not isinstance(ids, list):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs")
+                )
+
+            if not ids:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_NO_DATA.format(entity="user IDs")
+                )
+
+            if len(ids) > 500:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users")
+                )
+
+            # Validate patch
+            if not isinstance(patch, dict):
+                raise StandardizedValidationError(
+                    "Patch data must be a JSON object"
+                )
+
+            if not patch:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_UPDATE_NO_FIELDS
+                )
+
+            # Validate mode
+            if mode not in ['partial', 'strict']:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_MODE_INVALID
+                )
+
+            ctx['ids_count'] = len(ids)
+            ctx['mode'] = mode
+            logger.info("Starting bulk user update", extra=ctx)
+
+            # ===== VALIDATE ALLOWED FIELDS =====
+            ALLOWED_FIELDS = {'is_active', 'is_superuser', 'role', 'team', 'organization'}
+            invalid_fields = set(patch.keys()) - ALLOWED_FIELDS
+            
+            if invalid_fields:
+                raise StandardizedValidationError(
+                    f"Fields not allowed in bulk update: {', '.join(invalid_fields)}. "
+                    f"Allowed fields: {', '.join(ALLOWED_FIELDS)}"
+                )
+
+            # ===== SECURITY: PREVENT SELF-MODIFICATION =====
+            requester_id = str(request.user.id)
+            if requester_id in ids:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_UPDATE_SELF_MODIFY
+                )
+
+            # ===== FETCH USERS WITH TENANT SCOPING =====
+            client_id = self.get_client_id()
+            users_qs = User.objects.filter(
+                id__in=ids,
+                client_account_id=client_id
+            ).select_related('role', 'team', 'organization', 'client_account')
+
+            users_dict = {str(u.id): u for u in users_qs}
+
+            # ===== CHECK FOR INVALID IDS =====
+            invalid_ids = set(ids) - set(users_dict.keys())
+            
+            results = {
+                'success': [],
+                'failed': [],
+                'skipped': [] 
+            }
+
+            # Add invalid IDs to failed results
+            for invalid_id in invalid_ids:
+                results['failed'].append({
+                    'id': invalid_id,
+                    'email': 'Unknown',
+                    'errors': [CoreErrorMessages.BULK_UPDATE_INVALID_ID.format(id=invalid_id)]
+                })
+
+            # ===== STRICT MODE: ABORT IF ANY INVALID IDS =====
+            if mode == 'strict' and invalid_ids:
+                return self._build_bulk_error_response(
+                    results,
+                    len(ids),
+                    f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
+                )
+
+            # ===== PROCESS UPDATES =====
+            if mode == 'strict':
+                # Strict mode: single transaction, all or nothing
+                try:
+                    with transaction.atomic():
+                        for user_id in ids:
+                            if user_id in invalid_ids:
+                                continue
+
+                            user = users_dict[user_id]
+                            
+                            try:
+                                # Validate and apply patch
+                                self._validate_and_apply_patch(user, patch, client_id)
+                                
+                                results['success'].append({
+                                    'id': str(user.id),
+                                    'email': user.email,
+                                    'name': user.get_full_name()
+                                })
+
+                            except StandardizedValidationError as e:
+                                error_msg = self._format_bulk_error_message(e)
+                                results['failed'].append({
+                                    'id': user_id,
+                                    'email': user.email,
+                                    'errors': [error_msg]
+                                })
+                                # In strict mode, any error causes rollback
+                                raise
+
+                except Exception as e:
+                    # Strict mode failure
+                    error_msg = self._format_bulk_error_message(e)
+                    ctx['event'] = 'bulk_update_strict_mode_failed'
+                    ctx['error'] = error_msg
+                    logger.error("Bulk update strict mode failed", extra=ctx, exc_info=True)
+                    
+                    return self._build_bulk_error_response(
+                        {'success': [], 'failed': results['failed']},
+                        len(ids),
+                        f"Strict mode failed: {error_msg}"
+                    )
+
+            else:
+                # Partial mode: continue on errors, one transaction per user
+                for user_id in ids:
+                    if user_id in invalid_ids:
+                        continue
+
+                    user = users_dict[user_id]
+                    
+                    with transaction.atomic():
+                        try:
+                            # Validate and apply patch
+                            self._validate_and_apply_patch(user, patch, client_id)
+                            
+                            results['success'].append({
+                                'id': str(user.id),
+                                'email': user.email,
+                                'name': user.get_full_name()
+                            })
+
+                        except StandardizedValidationError as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            results['failed'].append({
+                                'id': user_id,
+                                'email': user.email,
+                                'errors': [error_msg]
+                            })
+                            transaction.set_rollback(True)
+
+                        except Exception as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            results['failed'].append({
+                                'id': user_id,
+                                'email': user.email,
+                                'errors': [error_msg]
+                            })
+                            transaction.set_rollback(True)
+                            
+                            ctx['event'] = 'bulk_update_unexpected_error'
+                            ctx['user_id'] = user_id
+                            ctx['error'] = str(e)
+                            logger.error("Unexpected error in bulk update", extra=ctx, exc_info=True)
+
+            # ===== BUILD RESPONSE =====
+            return self._build_bulk_success_response(results, len(ids))
+
+        except StandardizedValidationError as e:
+            error_msg = str(e.detail) if hasattr(e, 'detail') else str(e)
+            return Response({
+                'success': False,
+                'message': error_msg,
+                'summary': {'requested': 0, 'updated': 0, 'failed': 0},
+                'results': {'success': [], 'failed': []}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            ctx['event'] = 'bulk_update_fatal_error'
+            ctx['error'] = str(e)
+            logger.error("Fatal error in bulk update", extra=ctx, exc_info=True)
+            
+            return Response({
+                'success': False,
+                'message': 'An unexpected error occurred',
+                'error': 'Internal server error. Please try again or contact support.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['delete'], url_path='bulk-delete')
+    def bulk_delete(self, request):
+        """
+        Physically delete multiple users in bulk (hard delete)
+        
+        WARNING: This is a destructive operation. Users are permanently deleted.
+        
+        Request format:
+        {
+            "ids": ["uuid1", "uuid2", ...],
+            "mode": "partial"  // or "strict"
+        }
+        
+        Response format:
+        {
+            "success": true,
+            "summary": {
+                "requested": 10,
+                "deleted": 8,
+                "failed": 2
+            },
+            "results": {
+                "success": [{"id": "...", "email": "..."}],
+                "failed": [{"id": "...", "email": "...", "errors": ["..."]}]
+            },
+            "message": "Bulk delete: 8 deleted, 2 failed"
+        }
+        """
+        ctx = ctx_from_request(request)
+        ctx.update({
+            'event': 'bulk_delete_users_hard',
+            'client_id': self.get_client_id()
+        })
+
+        try:
+            # ===== INPUT VALIDATION =====
+            if not isinstance(request.data, dict):
+                raise StandardizedValidationError(
+                    "Request must be a JSON object"
+                )
+
+            ids = request.data.get('ids', [])
+            mode = request.data.get('mode', 'partial')
+
+            # Validate ids
+            if not isinstance(ids, list):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs")
+                )
+
+            if not ids:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_DELETE_NO_IDS
+                )
+
+            if len(ids) > 500:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users")
+                )
+
+            # Validate mode
+            if mode not in ['partial', 'strict']:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_MODE_INVALID
+                )
+
+            ctx['ids_count'] = len(ids)
+            ctx['mode'] = mode
+            logger.info("Starting bulk user delete (hard)", extra=ctx)
+
+            # ===== SECURITY: PREVENT SELF-DELETE =====
+            requester_id = str(request.user.id)
+            if requester_id in ids:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_DELETE_SELF
+                )
+
+            # ===== FETCH USERS WITH TENANT SCOPING =====
+            client_id = self.get_client_id()
+            users_qs = User.objects.filter(
+                id__in=ids,
+                client_account_id=client_id
+            ).select_related('role', 'team', 'organization', 'client_account')
+
+            users_dict = {str(u.id): u for u in users_qs}
+
+            # ===== CHECK FOR INVALID IDS =====
+            invalid_ids = set(ids) - set(users_dict.keys())
+            
+            results = {
+                'success': [],
+                'failed': []
+            }
+
+            # Add invalid IDs to failed results
+            for invalid_id in invalid_ids:
+                results['failed'].append({
+                    'id': invalid_id,
+                    'email': 'Unknown',
+                    'errors': [CoreErrorMessages.BULK_DELETE_INVALID_ID.format(id=invalid_id)]
+                })
+
+            # ===== STRICT MODE: ABORT IF ANY INVALID IDS =====
+            if mode == 'strict' and invalid_ids:
+                return self._build_bulk_error_response(
+                    results,
+                    len(ids),
+                    f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
+                )
+
+            # ===== PRE-VALIDATION: CHECK FOR PROTECTED USERS =====
+            # Collect all users that would violate deletion rules
+            protected_users = []
+            
+            for user_id in ids:
+                if user_id in invalid_ids:
+                    continue
+                    
+                user = users_dict[user_id]
+                
+                # Check if user is last active admin
+                if user.is_last_active_admin():
+                    protected_users.append({
+                        'id': str(user.id),
+                        'email': user.email,
+                        'reason': CoreErrorMessages.BULK_DELETE_LAST_ADMIN.format(email=user.email)
+                    })
+
+            # ===== STRICT MODE: ABORT IF ANY PROTECTED USERS =====
+            if mode == 'strict' and protected_users:
+                for protected in protected_users:
+                    results['failed'].append({
+                        'id': protected['id'],
+                        'email': protected['email'],
+                        'errors': [protected['reason']]
+                    })
+                
+                return self._build_bulk_error_response(
+                    results,
+                    len(ids),
+                    f"Strict mode: {len(protected_users)} protected user(s) found"
+                )
+
+            # ===== PROCESS DELETIONS =====
+            if mode == 'strict':
+                # Strict mode: single transaction, all or nothing
+                try:
+                    with transaction.atomic():
+                        for user_id in ids:
+                            if user_id in invalid_ids:
+                                continue
+
+                            user = users_dict[user_id]
+                            
+                            try:
+                                # Hard delete: physically remove from database
+                                user_email = user.email
+                                user_name = user.get_full_name()
+                                user.delete()
+                                
+                                results['success'].append({
+                                    'id': user_id,
+                                    'email': user_email,
+                                    'name': user_name
+                                })
+
+                            except Exception as e:
+                                error_msg = self._format_bulk_error_message(e)
+                                results['failed'].append({
+                                    'id': user_id,
+                                    'email': user.email,
+                                    'errors': [error_msg]
+                                })
+                                # In strict mode, any error causes rollback
+                                raise
+
+                        # Ensure admin invariants after all deletions
+                        client = User.objects.get(id=requester_id).client_account
+                        client.ensure_admin_invariants()
+
+                except Exception as e:
+                    # Strict mode failure
+                    error_msg = self._format_bulk_error_message(e)
+                    ctx['event'] = 'bulk_delete_strict_mode_failed'
+                    ctx['error'] = error_msg
+                    logger.error("Bulk delete strict mode failed", extra=ctx, exc_info=True)
+                    
+                    return self._build_bulk_error_response(
+                        {'success': [], 'failed': results['failed']},
+                        len(ids),
+                        f"Strict mode failed: {error_msg}"
+                    )
+
+            else:
+                # Partial mode: continue on errors, one transaction per user
+                for user_id in ids:
+                    if user_id in invalid_ids:
+                        continue
+                    
+                    # Skip if protected (in partial mode, just fail this one)
+                    is_protected = any(p['id'] == user_id for p in protected_users)
+                    if is_protected:
+                        protected_info = next(p for p in protected_users if p['id'] == user_id)
+                        results['failed'].append({
+                            'id': user_id,
+                            'email': protected_info['email'],
+                            'errors': [protected_info['reason']]
+                        })
+                        continue
+
+                    user = users_dict[user_id]
+                    
+                    with transaction.atomic():
+                        try:
+                            # Hard delete: physically remove from database
+                            user_email = user.email
+                            user_name = user.get_full_name()
+                            user.delete()
+                            
+                            results['success'].append({
+                                'id': user_id,
+                                'email': user_email,
+                                'name': user_name
+                            })
+
+                        except Exception as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            results['failed'].append({
+                                'id': user_id,
+                                'email': user.email,
+                                'errors': [error_msg]
+                            })
+                            transaction.set_rollback(True)
+                            
+                            ctx['event'] = 'bulk_delete_unexpected_error'
+                            ctx['user_id'] = user_id
+                            ctx['error'] = str(e)
+                            logger.error("Unexpected error in bulk delete", extra=ctx, exc_info=True)
+
+                # Ensure admin invariants after all deletions (partial mode)
+                try:
+                    client = User.objects.get(id=requester_id).client_account
+                    client.ensure_admin_invariants()
+                except Exception as e:
+                    logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
+
+            # ===== BUILD RESPONSE =====
+            success_count = len(results['success'])
+            failed_count = len(results['failed'])
+
+            # Log completion
+            ctx.update({
+                'event': 'bulk_delete_users_completed',
+                'requested': len(ids),
+                'deleted': success_count,
+                'failed': failed_count
+            })
+            logger.info("Bulk user deletion completed", extra=ctx)
+
+            # Clean ErrorDetail objects (convert to strings)
+            clean_results = {
+                'success': results['success'][:],
+                'failed': []
+            }
+            
+            for failed_item in results['failed']:
+                clean_item = failed_item.copy()
+                if 'errors' in clean_item:
+                    clean_item['errors'] = [str(error) for error in clean_item['errors']]
+                clean_results['failed'].append(clean_item)
+
+            # Determine response status
+            if success_count == 0 and failed_count > 0:
+                status_code = status.HTTP_400_BAD_REQUEST
+                success = False
+                message = f"Bulk delete failed: all {failed_count} user(s) failed"
+            elif failed_count > 0:
+                status_code = status.HTTP_200_OK
+                success = True
+                message = f"Bulk delete: {success_count} deleted, {failed_count} failed"
+            else:
+                status_code = status.HTTP_200_OK
+                success = True
+                message = f"Bulk delete: {success_count} user(s) deleted successfully"
+
+            return Response({
+                'success': success,
+                'summary': {
+                    'requested': len(ids),
+                    'deleted': success_count,
+                    'failed': failed_count
+                },
+                'results': clean_results,
+                'message': message
+            }, status=status_code)
+
+        except StandardizedValidationError as e:
+            error_msg = str(e.detail) if hasattr(e, 'detail') else str(e)
+            return Response({
+                'success': False,
+                'message': error_msg,
+                'summary': {'requested': 0, 'deleted': 0, 'failed': 0},
+                'results': {'success': [], 'failed': []}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            ctx['event'] = 'bulk_delete_fatal_error'
+            ctx['error'] = str(e)
+            logger.error("Fatal error in bulk delete", extra=ctx, exc_info=True)
+            
+            return Response({
+                'success': False,
+                'message': 'An unexpected error occurred',
+                'error': 'Internal server error. Please try again or contact support.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    @action(detail=False, methods=['delete'], url_path='bulk-soft-delete')
+    def bulk_soft_delete(self, request):
+        """
+        Soft delete multiple users in bulk (set is_active=False)
+        
+        This is a non-destructive operation. Users are archived but data is preserved.
+        
+        Request format:
+        {
+            "ids": ["uuid1", "uuid2", ...],
+            "mode": "partial"  // or "strict"
+        }
+        
+        Response format:
+        {
+            "success": true,
+            "summary": {
+                "requested": 10,
+                "archived": 8,
+                "failed": 2,
+                "skipped": 0
+            },
+            "results": {
+                "success": [{"id": "...", "email": "..."}],
+                "failed": [{"id": "...", "email": "...", "errors": ["..."]}],
+                "skipped": [{"id": "...", "email": "...", "reason": "Already inactive"}]
+            },
+            "message": "Bulk archive: 8 archived, 2 failed"
+        }
+        """
+        ctx = ctx_from_request(request)
+        ctx.update({
+            'event': 'bulk_soft_delete_users',
+            'client_id': self.get_client_id()
+        })
+
+        try:
+            # ===== INPUT VALIDATION =====
+            if not isinstance(request.data, dict):
+                raise StandardizedValidationError(
+                    "Request must be a JSON object"
+                )
+
+            ids = request.data.get('ids', [])
+            mode = request.data.get('mode', 'partial')
+
+            # Validate ids
+            if not isinstance(ids, list):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs")
+                )
+
+            if not ids:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_DELETE_NO_IDS
+                )
+
+            if len(ids) > 500:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users")
+                )
+
+            # Validate mode
+            if mode not in ['partial', 'strict']:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_MODE_INVALID
+                )
+
+            ctx['ids_count'] = len(ids)
+            ctx['mode'] = mode
+            logger.info("Starting bulk user soft delete", extra=ctx)
+
+            # ===== SECURITY: PREVENT SELF-DELETE =====
+            requester_id = str(request.user.id)
+            if requester_id in ids:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.BULK_DELETE_SELF
+                )
+
+            # ===== FETCH USERS WITH TENANT SCOPING =====
+            client_id = self.get_client_id()
+            users_qs = User.objects.filter(
+                id__in=ids,
+                client_account_id=client_id
+            ).select_related('role', 'team', 'organization', 'client_account')
+
+            users_dict = {str(u.id): u for u in users_qs}
+
+            # ===== CHECK FOR INVALID IDS =====
+            invalid_ids = set(ids) - set(users_dict.keys())
+            
+            results = {
+                'success': [],
+                'failed': [],
+                'skipped': []
+            }
+
+            # Add invalid IDs to failed results
+            for invalid_id in invalid_ids:
+                results['failed'].append({
+                    'id': invalid_id,
+                    'email': 'Unknown',
+                    'errors': [CoreErrorMessages.BULK_DELETE_INVALID_ID.format(id=invalid_id)]
+                })
+
+            # ===== STRICT MODE: ABORT IF ANY INVALID IDS =====
+            if mode == 'strict' and invalid_ids:
+                return self._build_bulk_error_response(
+                    results,
+                    len(ids),
+                    f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
+                )
+
+            # ===== PRE-VALIDATION: CHECK FOR PROTECTED USERS & ALREADY INACTIVE =====
+            protected_users = []
+            
+            for user_id in ids:
+                if user_id in invalid_ids:
+                    continue
+                    
+                user = users_dict[user_id]
+                
+                # Skip already inactive users (idempotent operation)
+                if not user.is_active:
+                    results['skipped'].append({
+                        'id': str(user.id),
+                        'email': user.email,
+                        'reason': 'Already inactive'
+                    })
+                    continue
+                
+                # Check if user is last active admin
+                if user.is_last_active_admin():
+                    protected_users.append({
+                        'id': str(user.id),
+                        'email': user.email,
+                        'reason': CoreErrorMessages.BULK_DELETE_LAST_ADMIN.format(email=user.email)
+                    })
+
+            # ===== STRICT MODE: ABORT IF ANY PROTECTED USERS OR SKIPPED =====
+            if mode == 'strict' and (protected_users or results['skipped']):
+                for protected in protected_users:
+                    results['failed'].append({
+                        'id': protected['id'],
+                        'email': protected['email'],
+                        'errors': [protected['reason']]
+                    })
+                
+                error_count = len(protected_users) + len(results['skipped'])
+                return self._build_bulk_error_response(
+                    results,
+                    len(ids),
+                    f"Strict mode: {error_count} user(s) cannot be archived"
+                )
+
+            # ===== PROCESS SOFT DELETIONS =====
+            if mode == 'strict':
+                # Strict mode: single transaction, all or nothing
+                try:
+                    with transaction.atomic():
+                        for user_id in ids:
+                            if user_id in invalid_ids:
+                                continue
+                            
+                            # Skip if already in skipped list
+                            if any(s['id'] == user_id for s in results['skipped']):
+                                continue
+
+                            user = users_dict[user_id]
+                            
+                            try:
+                                # Soft delete: set is_active=False
+                                user.is_active = False
+                                user.save(update_fields=['is_active', 'updated_at'])
+                                
+                                results['success'].append({
+                                    'id': str(user.id),
+                                    'email': user.email,
+                                    'name': user.get_full_name()
+                                })
+
+                            except Exception as e:
+                                error_msg = self._format_bulk_error_message(e)
+                                results['failed'].append({
+                                    'id': user_id,
+                                    'email': user.email,
+                                    'errors': [error_msg]
+                                })
+                                # In strict mode, any error causes rollback
+                                raise
+
+                        # Ensure admin invariants after all deletions
+                        client = User.objects.get(id=requester_id).client_account
+                        client.ensure_admin_invariants()
+
+                except Exception as e:
+                    # Strict mode failure
+                    error_msg = self._format_bulk_error_message(e)
+                    ctx['event'] = 'bulk_soft_delete_strict_mode_failed'
+                    ctx['error'] = error_msg
+                    logger.error("Bulk soft delete strict mode failed", extra=ctx, exc_info=True)
+                    
+                    return self._build_bulk_error_response(
+                        {'success': [], 'failed': results['failed'], 'skipped': results['skipped']},
+                        len(ids),
+                        f"Strict mode failed: {error_msg}"
+                    )
+
+            else:
+                # Partial mode: continue on errors, one transaction per user
+                for user_id in ids:
+                    if user_id in invalid_ids:
+                        continue
+                    
+                    # Skip if already in skipped list
+                    if any(s['id'] == user_id for s in results['skipped']):
+                        continue
+                    
+                    # Skip if protected (in partial mode, just fail this one)
+                    is_protected = any(p['id'] == user_id for p in protected_users)
+                    if is_protected:
+                        protected_info = next(p for p in protected_users if p['id'] == user_id)
+                        results['failed'].append({
+                            'id': user_id,
+                            'email': protected_info['email'],
+                            'errors': [protected_info['reason']]
+                        })
+                        continue
+
+                    user = users_dict[user_id]
+                    
+                    with transaction.atomic():
+                        try:
+                            # Soft delete: set is_active=False
+                            user.is_active = False
+                            user.save(update_fields=['is_active', 'updated_at'])
+                            
+                            results['success'].append({
+                                'id': str(user.id),
+                                'email': user.email,
+                                'name': user.get_full_name()
+                            })
+
+                        except Exception as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            results['failed'].append({
+                                'id': user_id,
+                                'email': user.email,
+                                'errors': [error_msg]
+                            })
+                            transaction.set_rollback(True)
+                            
+                            ctx['event'] = 'bulk_soft_delete_unexpected_error'
+                            ctx['user_id'] = user_id
+                            ctx['error'] = str(e)
+                            logger.error("Unexpected error in bulk soft delete", extra=ctx, exc_info=True)
+
+                # Ensure admin invariants after all deletions (partial mode)
+                try:
+                    client = User.objects.get(id=requester_id).client_account
+                    client.ensure_admin_invariants()
+                except Exception as e:
+                    logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
+
+            # ===== BUILD RESPONSE =====
+            success_count = len(results['success'])
+            failed_count = len(results['failed'])
+            skipped_count = len(results['skipped'])
+
+            # Log completion
+            ctx.update({
+                'event': 'bulk_soft_delete_users_completed',
+                'requested': len(ids),
+                'archived': success_count,
+                'failed': failed_count,
+                'skipped': skipped_count
+            })
+            logger.info("Bulk user soft deletion completed", extra=ctx)
+
+            # Clean ErrorDetail objects (convert to strings)
+            clean_results = {
+                'success': results['success'][:],
+                'failed': [],
+                'skipped': []
+            }
+            
+            for failed_item in results['failed']:
+                clean_item = failed_item.copy()
+                if 'errors' in clean_item:
+                    clean_item['errors'] = [str(error) for error in clean_item['errors']]
+                clean_results['failed'].append(clean_item)
+            
+            for skipped_item in results['skipped']:
+                clean_item = skipped_item.copy()
+                if 'reason' in clean_item:
+                    clean_item['reason'] = str(clean_item['reason'])
+                clean_results['skipped'].append(clean_item)
+
+            # Determine response status
+            if success_count == 0 and failed_count > 0:
+                status_code = status.HTTP_400_BAD_REQUEST
+                success = False
+                message = f"Bulk archive failed: all {failed_count} user(s) failed"
+            elif failed_count > 0:
+                status_code = status.HTTP_200_OK
+                success = True
+                message = f"Bulk archive: {success_count} archived, {failed_count} failed"
+            else:
+                status_code = status.HTTP_200_OK
+                success = True
+                message = f"Bulk archive: {success_count} user(s) archived successfully"
+
+            return Response({
+                'success': success,
+                'summary': {
+                    'requested': len(ids),
+                    'archived': success_count,
+                    'failed': failed_count,
+                    'skipped': skipped_count
+                },
+                'results': clean_results,
+                'message': message
+            }, status=status_code)
+
+        except StandardizedValidationError as e:
+            error_msg = str(e.detail) if hasattr(e, 'detail') else str(e)
+            return Response({
+                'success': False,
+                'message': error_msg,
+                'summary': {'requested': 0, 'archived': 0, 'failed': 0, 'skipped': 0},
+                'results': {'success': [], 'failed': [], 'skipped': []}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            ctx['event'] = 'bulk_soft_delete_fatal_error'
+            ctx['error'] = str(e)
+            logger.error("Fatal error in bulk soft delete", extra=ctx, exc_info=True)
+            
+            return Response({
+                'success': False,
+                'message': 'An unexpected error occurred',
+                'error': 'Internal server error. Please try again or contact support.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def _validate_and_apply_patch(self, user, patch, client_id):
+        """
+        Validate and apply patch to a user
+        
+        Args:
+            user: User instance to update
+            patch: Dict of fields to update
+            client_id: Current client ID for validation
+            
+        Raises:
+            StandardizedValidationError: If validation fails
+        """
+        from ..models import UserRole, Team, Organization
+        
+        # Track what will change
+        changes = {}
+        
+        # ===== VALIDATE AND PREPARE CHANGES =====
+        
+        # 1. is_active
+        if 'is_active' in patch:
+            new_active = patch['is_active']
+            if not isinstance(new_active, bool):
+                raise StandardizedValidationError(
+                    "is_active must be a boolean"
+                )
+            
+            # Prevent deactivating last active admin
+            if new_active is False and user.is_active:
+                if user.is_last_active_admin():
+                    raise StandardizedValidationError(
+                        f"Cannot deactivate user '{user.email}': last active administrator. "
+                        "Promote another user first."
+                    )
+            
+            changes['is_active'] = new_active
+
+        # 2. is_superuser
+        if 'is_superuser' in patch:
+            new_superuser = patch['is_superuser']
+            if not isinstance(new_superuser, bool):
+                raise StandardizedValidationError(
+                    "is_superuser must be a boolean"
+                )
+            
+            # Prevent removing superuser status from last superuser
+            if new_superuser is False and user.is_superuser:
+                if user.is_last_superuser():
+                    raise StandardizedValidationError(
+                        f"Cannot remove superuser status from user '{user.email}': last superuser. "
+                        "Promote another user first."
+                    )
+            
+            changes['is_superuser'] = new_superuser
+            # If promoting to superuser, must also have is_staff
+            if new_superuser is True:
+                changes['is_staff'] = True
+
+        # 3. role
+        if 'role' in patch:
+            role_id = patch['role']
+            
+            if role_id is None or role_id == '':
+                changes['role'] = None
+                changes['role_name'] = None
+            else:
+                # Validate UUID format
+                try:
+                    import uuid
+                    uuid.UUID(str(role_id))
+                except ValueError:
+                    raise StandardizedValidationError(
+                        f"Invalid role ID format: {role_id}"
+                    )
+                
+                # Fetch role
+                try:
+                    role = UserRole.objects.get(
+                        id=role_id,
+                        client_account_id=client_id
+                    )
+                    changes['role'] = role
+                    changes['role_name'] = role.name
+                except UserRole.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.BULK_CREATE_INVALID_ROLE.format(role=role_id)
+                    )
+
+        # 4. organization
+        if 'organization' in patch:
+            org_id = patch['organization']
+            
+            if org_id is None or org_id == '':
+                changes['organization'] = None
+            else:
+                # Validate UUID format
+                try:
+                    import uuid
+                    uuid.UUID(str(org_id))
+                except ValueError:
+                    raise StandardizedValidationError(
+                        f"Invalid organization ID format: {org_id}"
+                    )
+                
+                # Fetch organization
+                try:
+                    organization = Organization.objects.get(
+                        id=org_id,
+                        client_account_id=client_id
+                    )
+                    changes['organization'] = organization
+                except Organization.DoesNotExist:
+                    raise StandardizedValidationError(
+                        f"Organization '{org_id}' not found or doesn't belong to this client"
+                    )
+
+        # 5. team
+        if 'team' in patch:
+            team_id = patch['team']
+            
+            if team_id is None or team_id == '':
+                changes['team'] = None
+            else:
+                # Validate UUID format
+                try:
+                    import uuid
+                    uuid.UUID(str(team_id))
+                except ValueError:
+                    raise StandardizedValidationError(
+                        f"Invalid team ID format: {team_id}"
+                    )
+                
+                # Fetch team
+                try:
+                    team = Team.objects.select_related('organization').get(
+                        id=team_id,
+                        organization__client_account_id=client_id
+                    )
+                    
+                    # Verify team belongs to user's organization
+                    if user.organization and str(team.organization_id) != str(user.organization_id):
+                        raise StandardizedValidationError(
+                            f"Team '{team.name}' does not belong to user's organization"
+                        )
+                    
+                    changes['team'] = team
+                except Team.DoesNotExist:
+                    raise StandardizedValidationError(
+                        f"Team '{team_id}' not found or doesn't belong to this client"
+                    )
+
+        # 4. first_name
+        if 'first_name' in patch:
+            first_name = patch['first_name']
+            if first_name is not None:
+                first_name = str(first_name).strip()
+                if len(first_name) > 50:
+                    raise StandardizedValidationError(
+                        "first_name must be 50 characters or less"
+                    )
+            changes['first_name'] = first_name
+
+        # 5. last_name
+        if 'last_name' in patch:
+            last_name = patch['last_name']
+            if last_name is not None:
+                last_name = str(last_name).strip()
+                if len(last_name) > 50:
+                    raise StandardizedValidationError(
+                        "last_name must be 50 characters or less"
+                    )
+            changes['last_name'] = last_name
+
+        # ===== APPLY CHANGES =====
+        if not changes:
+            raise StandardizedValidationError(
+                "No valid changes to apply"
+            )
+
+        for field, value in changes.items():
+            setattr(user, field, value)
+        
+        user.save()
     
     def _resolve_role_name(self, user_data):
         """
@@ -1030,7 +2225,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         """
         success_count = len(results['success'])
         failed_count = len(results['failed'])
-        skipped_count = len(results['skipped'])
+        skipped_count = len(results.get('skipped', []))
 
         # Log completion
         ctx = ctx_from_request(self.request)

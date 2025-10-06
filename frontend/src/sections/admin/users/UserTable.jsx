@@ -107,6 +107,7 @@ function ReactTable({
   onPaginationChange,
   onSearchChange, 
   totalCount,
+  onEdit,
   initialPageSize = 10,
   onImport 
 }) {
@@ -241,8 +242,11 @@ function ReactTable({
             <TableHeaderActions
               selectedRowCount={selectedCount || 0}
               onEdit={() => {
-                // TODO: Implémenter la logique bulk edit
-                console.log('Bulk edit clicked');
+                console.log('🟢 onEdit called from UserTable, selectedCount:', selectedCount);
+                console.log('🟢 onEdit function exists:', typeof onEdit);
+                if (onEdit) {
+                  onEdit();
+                }
               }}
               onDelete={() => {
                 // TODO: Implémenter la logique bulk delete
@@ -376,6 +380,7 @@ const UserTable = React.memo(function UserTable({
   selectedCount,           
   selectedRows,
   onImport,
+  onEdit, 
   initialPageSize = 10               
 }) {
   return (
@@ -394,6 +399,7 @@ const UserTable = React.memo(function UserTable({
         selectedRows,
         initialPageSize,
         onImport,
+        onEdit 
       }} 
     />
   );
@@ -412,7 +418,8 @@ UserTable.propTypes = {
   initialPageSize: PropTypes.number,
   onPaginationChange: PropTypes.func,
   onSearchChange: PropTypes.func,
-  onImport: PropTypes.func 
+  onImport: PropTypes.func,
+  onEdit: PropTypes.func  
 };
 
 export default UserTable;

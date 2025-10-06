@@ -16,13 +16,14 @@ import Checkbox from '@mui/material/Checkbox';
 import IconButton from 'components/@extended/IconButton';
 
 import UserModal from 'sections/admin/users/UserModal';
+import UserBulkEditModal from 'sections/admin/users/UserBulkEditModal';
 import AlertUserDelete from 'sections/admin/users/AlertUserDelete';
 import UserTable from 'sections/admin/users/UserTable';
 import SeatsSummary from 'sections/admin/users/SeatsSummary';
 
 import { useGetUsers } from 'api/admin/users';
 import { useAuth } from 'hooks/useAuth';
-import { tenantKey, revalidateMultiple } from 'api/_swr';
+import { tenantKey, revalidateMultiple, revalidateByPrefix } from 'api/_swr';
 import useLocalStorage from 'hooks/useLocalStorage';
 
 import UserCSVImportModal from 'sections/admin/users/UserCSVImportModal';
@@ -95,6 +96,8 @@ export default function UserListPage() {
   
   // ✅ State de sélection
   const [selectedRows, setSelectedRows] = useState(new Set());
+
+  const [bulkEditModal, setBulkEditModal] = useState(false);
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -221,6 +224,12 @@ export default function UserListPage() {
   const allSelected = users && users.length > 0 && selectedRows.size === users.length;
   const someSelected = selectedRows.size > 0 && selectedRows.size < (users?.length || 0);
 
+  const handleBulkEdit = useCallback(() => {
+  if (selectedRows.size > 0) {
+    setBulkEditModal(true);
+  }
+}, [selectedRows.size]);
+
 
   // ==============================|| COLUMNS ||============================== //
 
@@ -313,7 +322,7 @@ export default function UserListPage() {
         header: 'SuperUser',
         accessorKey: 'is_superuser',
         meta: {
-          className: 'cell-center'  // ✅ Utilise le style cell-center de TableCell override
+          className: 'cell-center'  
         },
         cell: ({ row }) => (
           row.original.is_superuser ? (
@@ -436,7 +445,8 @@ export default function UserListPage() {
         totalCount={usersCount}
         onImport={handleImportClick}
         onPaginationChange={handlePaginationChange}      
-        onSearchChange={handleSearchChange}              
+        onSearchChange={handleSearchChange}
+        onEdit={handleBulkEdit}              
         modalToggler={() => {
           setSelectedUser(null);
           setUserModal(true);
@@ -457,6 +467,19 @@ export default function UserListPage() {
         open={csvImportModal}
         onClose={() => setCsvImportModal(false)}
         onImport={handleImportCSV}
+      />
+      {console.log('🔵 Rendering UserBulkEditModal with:', { 
+        open: bulkEditModal, 
+        selectedUserIds: Array.from(selectedRows),
+        selectedCount: selectedRows.size 
+      })}
+
+
+      <UserBulkEditModal
+        open={bulkEditModal}
+        modalToggler={setBulkEditModal}
+        selectedUserIds={Array.from(selectedRows)}
+        selectedCount={selectedRows.size}
       />
 
       {/* Test Error Button (dev only) */}

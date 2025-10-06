@@ -37,10 +37,17 @@ export default function TableHeaderActions({
   exportHeaders = [],
   exportFilename = 'export.csv'
 }) {
+
+  console.log('🔵 TableHeaderActions render:', { 
+    selectedRowCount, 
+    hasOnEdit: typeof onEdit === 'function',
+    hasOnDelete: typeof onDelete === 'function'});
+
   const theme = useTheme();
   const [anchorEl, setAnchorEl] = useState(null);
   const csvLinkRef = useRef(null);
   const open = Boolean(anchorEl);
+  
 
   const handleMenuClick = (event) => {
     setAnchorEl(event.currentTarget);

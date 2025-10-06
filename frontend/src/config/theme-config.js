@@ -72,7 +72,7 @@ const config = {
   miniDrawer: false,                        // Menu normal (pas replié)
   container: true,                          // Conteneur avec largeur max
   mode: ThemeMode.LIGHT,                    // Mode clair
-  presetColor: 'theme5',                   // Couleur primaire (bleu) [Dans themes/theme/index.js]
+  presetColor: 'theme3',                   // Couleur primaire (bleu) [Dans themes/theme/index.js]
   themeDirection: ThemeDirection.LTR        // Texte gauche→droite
 };
 

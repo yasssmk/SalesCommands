@@ -47,6 +47,10 @@ urlpatterns = [
         'patch': 'partial_update',
         'delete': 'destroy'
     }), name='client-account-detail'),
+
+    path('users/<uuid:pk>/soft/', UserViewSet.as_view({
+        'delete': 'soft_destroy'
+    }), name='user-soft-delete'),
     
     # Client Account Actions
     path('client-accounts/<uuid:pk>/seats/', ClientAccountViewSet.as_view({
@@ -173,6 +177,10 @@ urlpatterns = [
     path('users/bulk-delete/', UserViewSet.as_view({
         'delete': 'bulk_delete'
     }), name='user-bulk-delete'),
+
+    path('users/bulk-soft-delete/', UserViewSet.as_view({
+        'delete': 'bulk_soft_delete'
+    }), name='user-bulk-soft-delete'),
     
     # =========================================================================
     # USER PERFORMANCE INTEGRATION - Intégration UserPerformanceService
