@@ -22,7 +22,7 @@ import SeatsSummary from 'sections/admin/users/SeatsSummary';
 
 import { useGetUsers } from 'api/admin/users';
 import { useAuth } from 'hooks/useAuth';
-import { tenantKey } from 'api/_swr';
+import { tenantKey, revalidateMultiple } from 'api/_swr';
 import useLocalStorage from 'hooks/useLocalStorage';
 
 import UserCSVImportModal from 'sections/admin/users/UserCSVImportModal';
@@ -142,7 +142,7 @@ export default function UserListPage() {
         setCsvImportModal(true);
       }, []);
 
-    const handleImportCSV = useCallback((response) => {
+   const handleImportCSV = useCallback((response) => {
       // --- debug utile en dev
       if (process.env.NODE_ENV === 'development') {
         console.debug('[Users] onImport payload:', response);
@@ -180,18 +180,19 @@ export default function UserListPage() {
         autoHideDuration: isCleanSuccess ? 3000 : 7000
       });
 
-      // revalidation de la liste (même en partiel → données changées)
-      if (typeof globalMutate === 'function') {
-        globalMutate(swrKey, undefined, { revalidate: true });
-      }
+      // ✅ CORRECTION : Force le refetch via revalidateMultiple (comme insertUser)
+      // Import nécessaire en haut du fichier : import { revalidateMultiple } from 'api/_swr';
+      revalidateMultiple([
+        '/client/users/',                   // Liste users (tous les appels)
+        '/client/client-accounts/'          // Stats seats
+      ]);
 
       // ✅ auto-fermeture SEULEMENT si succès clean
       if (isCleanSuccess) {
         setCsvImportModal(false);
       }
       // sinon: on laisse la modale ouverte pour afficher le BulkImportReport
-    }, [globalMutate, swrKey]);
-
+    }, []);  // ✅ Dependencies vides car revalidateMultiple est stable
 
     // +===== Selecion =========+ //
 

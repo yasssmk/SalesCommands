@@ -1,9 +1,10 @@
 email,password,first_name,last_name,role
+user932@companya.com,password123,San,Goku,account executive
 user1@companya.com,password123,John,Doe,Direction
-user22@companya.com,password123,Jane,Smith,Team Manager
+user222@companya.com,password123,Jane,Smith,Team Manager
 user32@companya.com,password123,Bob,Brown,Team Manager
 user42@companya.com,password123,Bob,Brown,Account Executive
-user52@companya.com,password123,Bob,Brown,Account Executive
+user522@companya.com,password123,Bob,Brown,Account Executive
 user62@companya.com,password123,Bob,Brown,Account Executive
 user72@companya.com,password123,Bob,Brown,Account Executive
 user82@companya.com,password123,Bob,Brown,account executive
