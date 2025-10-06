@@ -3,6 +3,11 @@
 /**
  * CSV Validation & Preparation for User Import
  * Centralizes all validation logic for CSV user import
+ * 
+ * IMPORTANT:
+ * - organization is NOT in CSV (auto-assigned from team)
+ * - is_superuser IS supported
+ * - role is optional (not required)
  */
 
 // Utils
@@ -14,18 +19,35 @@ import { resolveUserRelations, getAvailableValues } from './resolvers';
 /**
  * Get CSV column definitions
  * @returns {Array} Column definitions with key, label, and required flag
+ * 
+ * NOTES:
+ * - email + password are required for user creation
+ * - role is optional (can be assigned later)
+ * - organization is NOT included (auto-assigned from team)
+ * - team is optional
+ * - is_active and is_superuser are optional booleans
  */
 export function getUserCSVColumns() {
   return [
     { key: 'email', label: 'Email', required: true },
+    { key: 'password', label: 'Password', required: true },
     { key: 'first_name', label: 'First Name', required: false },
     { key: 'last_name', label: 'Last Name', required: false },
-    { key: 'password', label: 'Password', required: false },
     { key: 'role', label: 'Role', required: false },
-    { key: 'organization', label: 'Organization', required: false },
     { key: 'team', label: 'Team', required: false },
-    { key: 'is_active', label: 'Active Status', required: false }
+    { key: 'is_active', label: 'Active', required: false },
+    { key: 'is_superuser', label: 'Superuser', required: false }
   ];
+}
+
+export function getUserCSVGuidelines (){
+  return [
+  'Required fields: Email (*), Password (*)',
+  'Active Status accepted values: true/false, 1/0, yes/no, y/n, on/off',
+  'SUPERUSER accepted values: true/false, 1/0, yes/no, y/n, on/off',
+  'Role / Team accept either name or ID (case-insensitive)',
+  'Password must be at least 8 characters'
+];
 }
 
 // ==============================|| VALIDATION ||============================== //
@@ -55,7 +77,7 @@ export function validateUserCSVData(data, lookups) {
     const rowNumber = rawRow._rowIndex || index + 1;
     const rowErrors = [];
 
-    // Step 1: Sanitize the row
+    // Step 1: Sanitize the row (includes is_superuser now)
     const { clean, issues } = sanitizeUserRow(rawRow);
     
     if (issues.length > 0) {
@@ -66,7 +88,14 @@ export function validateUserCSVData(data, lookups) {
       });
     }
 
-    // Step 2: Check for duplicate emails in the CSV
+    // Step 2: Password is required for user creation
+    if (!clean.password || clean.password.length < 8) {
+      const errorMsg = `Row ${rowNumber}: Password is required (min 8 characters)`;
+      rowErrors.push(errorMsg);
+      allErrors.push(errorMsg);
+    }
+
+    // Step 3: Check for duplicate emails in the CSV
     if (clean.email) {
       if (emailsSeen.has(clean.email)) {
         const errorMsg = `Row ${rowNumber}: Duplicate email "${clean.email}"`;
@@ -77,7 +106,8 @@ export function validateUserCSVData(data, lookups) {
       }
     }
 
-    // Step 3: Resolve relations (role, organization, team)
+    // Step 4: Resolve relations (role, team)
+    // NOTE: organization is NOT resolved from CSV (auto-assigned from team)
     let resolved = { ...clean };
     if (lookups && rowErrors.length === 0) {
       const { resolved: resolvedData, issues: resolveIssues } = resolveUserRelations(clean, lookups);
@@ -133,33 +163,33 @@ export function generateSampleCSV(lookups) {
   const sampleRows = [
     {
       email: 'john.doe@example.com',
+      password: 'SecurePass123',
       first_name: 'John',
       last_name: 'Doe',
-      password: 'SecurePass123',
-      role: availableValues?.roles?.[0] || 'Admin',
-      organization: availableValues?.organizations?.[0] || 'Sales EMEA',
-      team: availableValues?.teams?.[0]?.name || 'Sales Team',
-      is_active: 'true'
+      role: availableValues?.roles?.[1] || 'Admin',
+      team: availableValues?.teams?.[0]?.name || 'Admin Team',
+      is_active: 'true',
+      is_superuser: 'false'
     },
     {
       email: 'jane.smith@example.com',
+      password: 'AnotherPass456',
       first_name: 'Jane',
       last_name: 'Smith',
-      password: 'AnotherPass456',
-      role: availableValues?.roles?.[1] || 'User',
-      organization: availableValues?.organizations?.[0] || 'Sales EMEA',
-      team: '',
-      is_active: 'yes'
+      role: availableValues?.roles?.[0] || 'Account Executive',
+      team: availableValues?.teams?.[1]?.name || 'Sale Team',
+      is_active: 'yes',
+      is_superuser: 'no'
     },
     {
       email: 'bob.wilson@example.com',
+      password: 'BobPass789',
       first_name: 'Bob',
       last_name: 'Wilson',
-      password: '',
       role: '',
-      organization: '',
       team: '',
-      is_active: '1'
+      is_active: '1',
+      is_superuser: '0'
     }
   ];
 
@@ -182,6 +212,8 @@ export function generateSampleCSV(lookups) {
  * Prepare validated rows for API submission
  * @param {Array} validatedRows - Rows that passed validation
  * @returns {Array} Array of user objects ready for API
+ * 
+ * NOTE: organization is intentionally excluded (auto-assigned from team)
  */
 export function prepareUserDataForAPI(validatedRows) {
   if (!validatedRows || !Array.isArray(validatedRows)) {
@@ -192,19 +224,21 @@ export function prepareUserDataForAPI(validatedRows) {
     // Remove internal fields
     const { _rowIndex, _originalRow, ...userData } = row;
 
-    // Build API payload
+    // Build API payload (required fields)
     const payload = {
-      email: userData.email
+      email: userData.email,
+      password: userData.password // Required for user creation
     };
 
     // Add optional fields only if present
     if (userData.first_name) payload.first_name = userData.first_name;
     if (userData.last_name) payload.last_name = userData.last_name;
-    if (userData.password) payload.password = userData.password;
     if (userData.role) payload.role = userData.role;
-    if (userData.organization) payload.organization = userData.organization;
     if (userData.team) payload.team = userData.team;
     if (userData.is_active !== undefined) payload.is_active = userData.is_active;
+    if (userData.is_superuser !== undefined) payload.is_superuser = userData.is_superuser;
+
+    // NOTE: organization is NOT included (auto-assigned by backend from team)
 
     return payload;
   });
@@ -214,6 +248,7 @@ export function prepareUserDataForAPI(validatedRows) {
 
 export default {
   getUserCSVColumns,
+  getUserCSVGuidelines,
   validateUserCSVData,
   generateSampleCSV,
   prepareUserDataForAPI

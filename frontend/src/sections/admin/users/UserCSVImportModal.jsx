@@ -37,7 +37,7 @@ import { handleApiError } from 'utils/errorHandler';
 
 // utils
 import { parseCSVFile } from 'utils/csvParser';
-import { validateUserCSVData, prepareUserDataForAPI, getUserCSVColumns, generateSampleCSV } from './userCSVValidation';
+import { validateUserCSVData, prepareUserDataForAPI, getUserCSVColumns, getUserCSVGuidelines, generateSampleCSV } from './userCSVValidation';
 import { buildLookups, getAvailableValues } from './resolvers';
 import { isValidUUID } from 'utils/validators';
 
@@ -123,6 +123,7 @@ export default function UserCSVImportModal({ open, onClose, onImport }) {
 
   // Get column definitions
   const expectedColumns = getUserCSVColumns();
+  const csvGuidelines = getUserCSVGuidelines();
 
   // Handle file selection
   const handleFileSelect = (selectedFile) => {
@@ -619,18 +620,28 @@ export default function UserCSVImportModal({ open, onClose, onImport }) {
                   />
                 ))}
               </Box>
-              <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
-                * Required fields • Active Status values: true/false, 1/0, yes/no
-              </Typography>
-            </Alert>
-          </Grid>
-           )}
-
-           <Alert 
-              severity="info" 
-              icon={<InfoCircleOutlined />}
-              action={
-                <Button
+              <Divider sx={{ my: 1.5 }} />
+      <Typography 
+        variant="caption" 
+        color="text.secondary" 
+        sx={{ fontWeight: 600, display: 'block', mb: 1 }}
+      >
+        Import Guidelines:
+      </Typography>
+      <Box component="ul" sx={{ pl: 3, m: 0 }}>
+        {csvGuidelines.map((rule, idx) => (
+          <Typography
+            key={idx}
+            component="li"
+            variant="caption"
+            color="text.secondary"
+            sx={{ mb: 0.5 }}
+          >
+            {rule}
+          </Typography>
+        ))}
+      </Box>
+              <Button
                   size="small"
                   startIcon={<DownloadOutlined />}
                   onClick={handleDownloadSample}  // ✅ Utilise la fonction ici
@@ -638,8 +649,9 @@ export default function UserCSVImportModal({ open, onClose, onImport }) {
                 >
                   Download Sample CSV
                 </Button>
-              }
-            ></Alert>
+            </Alert>
+          </Grid>
+           )}
 
           {/* Parse Error */}
           {parseError && (
