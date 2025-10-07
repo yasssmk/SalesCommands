@@ -30,7 +30,7 @@ import { useFormik, Form, FormikProvider } from 'formik';
 // api
 import { useGetUserRoles, useGetOrganizations, useGetTeams, bulkUpdateUsers  } from 'api/admin/users';
 import { openSnackbar } from 'api/snackbar';
-
+import { showSnackbar } from 'utils/snackbar';
 // project imports
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 
@@ -164,9 +164,11 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
         closeModal?.();
 
         } else {
+          const errorMessage = result?.message || result?.error?.message || result?.error || 'Failed to update users';
+  
           openSnackbar({
             open: true,
-            message: response.data.message || 'Failed to update users',
+            message: String(errorMessage), // ✅ Conversion sécurisée en string
             variant: 'alert',
             alert: { color: 'error' }
           });

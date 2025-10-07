@@ -1,3 +1,6 @@
+// frontend/src/components/@extended/Snackbar.jsx
+// ✅ VERSION CORRIGÉE avec autoHideDuration dynamique
+
 // material-ui
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
@@ -63,7 +66,7 @@ export default function Snackbar() {
         <MuiSnackbar
           anchorOrigin={snackbar.anchorOrigin}
           open={snackbar.open}
-          autoHideDuration={1500}
+          autoHideDuration={snackbar.autoHideDuration}  // ✅ Utilise la valeur dynamique
           onClose={handleClose}
           message={snackbar.message}
           TransitionComponent={animation[snackbar.transition]}
@@ -86,7 +89,7 @@ export default function Snackbar() {
           TransitionComponent={animation[snackbar.transition]}
           anchorOrigin={snackbar.anchorOrigin}
           open={snackbar.open}
-          autoHideDuration={1500}
+          autoHideDuration={snackbar.autoHideDuration}  // ✅ Utilise la valeur dynamique
           onClose={handleClose}
         >
           <Alert

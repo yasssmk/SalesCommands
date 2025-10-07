@@ -3,6 +3,7 @@
 import useSWR, { mutate } from 'swr';
 import { useMemo, useEffect } from 'react';
 import { useAuth } from 'hooks/useAuth';
+import { authConfig } from 'config/auth';
 
 // utils
 import axiosClient, { api } from 'utils/axiosClient';
@@ -625,7 +626,10 @@ export const createBulkUsers = async (users, mode = 'partial') => {
     console.log('[createBulkUsers] start', { count: users?.length ?? 0, mode });
 
     // Utilise NOTRE wrapper standardisé (cookies, corr-id, handleApiError, etc.)
-    const result = await api.post('/client/users/bulk-create/', { users, mode });
+    const result = await api.post('/client/users/bulk-create/', 
+      { users, mode }, 
+      { timeout: authConfig.BULK_OPERATION_TIMEOUT }
+    );
 
     if (result.success) {
       console.log('[createBulkUsers] ok', { status: result.status ?? 201 });
@@ -633,7 +637,6 @@ export const createBulkUsers = async (users, mode = 'partial') => {
     }
 
     // ✅ IMPORTANT: En cas d'erreur HTTP 400, le backend renvoie toujours des données structurées
-    // result.data est maintenant préservé même en cas d'erreur grâce à notre fix dans apiRequest
     const status = result.status || 0;
     const message = result.error || 'Bulk create failed';
     console.error('[createBulkUsers] api.post error', { status, message });
@@ -685,6 +688,12 @@ export const createBulkUsers = async (users, mode = 'partial') => {
         skipped: []
       }
     };
+  } finally {
+    // ⭐ NOUVEAU: Revalidation TOUJOURS exécutée (même si timeout/erreur)
+    revalidateMultiple([
+      endpoints.users,                    // Liste users
+      '/client/client-accounts/'          // Stats seats
+    ]);
   }
 };
 
@@ -697,13 +706,6 @@ export const createBulkUsers = async (users, mode = 'partial') => {
  * @param {Object} patchData - Data to apply to all selected users
  * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
  * @returns {Promise<Object>} {success: boolean, summary: Object, results: Object}
- * 
- * @example
- * const result = await bulkUpdateUsers(
- *   ['uuid1', 'uuid2'], 
- *   { is_active: false, role: 'member' },
- *   'partial'
- * );
  */
 export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial') => {
   try {
@@ -747,10 +749,8 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial') => {
     for (const field of uuidFields) {
       const value = patchData[field];
       
-      // Skip si null/undefined/empty (nullable fields)
       if (!value || value === '') continue;
       
-      // Valider le format UUID
       if (!isValidUUID(value)) {
         return {
           success: false,
@@ -775,6 +775,8 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial') => {
       ids: userIds,
       patch: sanitized,
       mode
+    }, {
+      timeout: authConfig.BULK_OPERATION_TIMEOUT
     });
 
     if (result.success) {
@@ -782,12 +784,6 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial') => {
         status: result.status ?? 200,
         updated: result.data?.summary?.updated ?? 0
       });
-
-      // ✅ Revalidation après bulk update
-      revalidateMultiple([
-        endpoints.users,                    // Liste users
-        '/client/client-accounts/'          // Stats seats (si is_active modifié)
-      ]);
 
       return result.data; // Shape backend: {success, summary, results, message}
     }
@@ -839,6 +835,12 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial') => {
         }))
       }
     };
+  } finally {
+    // ⭐ NOUVEAU: Revalidation TOUJOURS exécutée (même si timeout/erreur)
+    revalidateMultiple([
+      endpoints.users,                    // Liste users
+      '/client/client-accounts/'          // Stats seats
+    ]);
   }
 };
 
@@ -852,9 +854,6 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial') => {
  * @param {Array<string>} userIds - Array of user IDs to delete
  * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
  * @returns {Promise<Object>} {success: boolean, summary: Object, results: Object}
- * 
- * @example
- * const result = await bulkDeleteUsers(['uuid1', 'uuid2'], 'partial');
  */
 export const bulkDeleteUsers = async (userIds, mode = 'partial') => {
   try {
@@ -894,7 +893,8 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial') => {
 
     // ✅ Appel API avec notre wrapper standardisé
     const result = await api.delete('/client/users/bulk-delete/', {
-      data: { ids: userIds, mode }  // ⚠️ DELETE avec body nécessite data: {}
+      data: { ids: userIds, mode },
+      timeout: 30000  
     });
 
     if (result.success) {
@@ -902,12 +902,6 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial') => {
         status: result.status ?? 200,
         deleted: result.data?.summary?.deleted ?? 0
       });
-
-      // ✅ Revalidation après bulk delete
-      revalidateMultiple([
-        endpoints.users,                    // Liste users
-        '/client/client-accounts/'          // Stats seats (seats_used diminue)
-      ]);
 
       return result.data; // Shape backend: {success, summary, results, message}
     }
@@ -959,6 +953,12 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial') => {
         }))
       }
     };
+  } finally {
+    // ⭐ NOUVEAU: Revalidation TOUJOURS exécutée (même si timeout/erreur)
+    revalidateMultiple([
+      endpoints.users,                    // Liste users
+      '/client/client-accounts/'          // Stats seats
+    ]);
   }
 };
 
@@ -1009,7 +1009,8 @@ export const bulkSoftDeleteUsers = async (userIds, mode = 'partial') => {
 
     // ✅ Appel API
     const result = await api.delete('/client/users/bulk-soft-delete/', {
-      data: { ids: userIds, mode }
+      data: { ids: userIds, mode },
+      timeout: authConfig.BULK_OPERATION_TIMEOUT // ← AJOUTER timeout 30s
     });
 
     if (result.success) {

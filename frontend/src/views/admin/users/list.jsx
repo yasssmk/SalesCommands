@@ -18,12 +18,13 @@ import IconButton from 'components/@extended/IconButton';
 import UserModal from 'sections/admin/users/UserModal';
 import UserBulkEditModal from 'sections/admin/users/UserBulkEditModal';
 import AlertUserDelete from 'sections/admin/users/AlertUserDelete';
+import AlertUserBulkDelete from 'sections/admin/users/AlertUserBulkDelete';
 import UserTable from 'sections/admin/users/UserTable';
 import SeatsSummary from 'sections/admin/users/SeatsSummary';
 
 import { useGetUsers } from 'api/admin/users';
 import { useAuth } from 'hooks/useAuth';
-import { tenantKey, revalidateMultiple, revalidateByPrefix } from 'api/_swr';
+import { tenantKey, revalidateMultiple } from 'api/_swr';
 import useLocalStorage from 'hooks/useLocalStorage';
 
 import UserCSVImportModal from 'sections/admin/users/UserCSVImportModal';
@@ -98,6 +99,7 @@ export default function UserListPage() {
   const [selectedRows, setSelectedRows] = useState(new Set());
 
   const [bulkEditModal, setBulkEditModal] = useState(false);
+  const [bulkDeleteAlert, setBulkDeleteAlert] = useState(false);
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -230,6 +232,16 @@ export default function UserListPage() {
   }
 }, [selectedRows.size]);
 
+const handleBulkDelete = useCallback(() => {
+  if (selectedRows.size > 0) {
+    setBulkDeleteAlert(true);
+  }
+}, [selectedRows.size]);
+
+// ✅ Ce handler ne fait QUE vider la sélection (appelé par le composant en cas de succès)
+const handleBulkDeleteComplete = useCallback(() => {
+  setSelectedRows(new Set());
+}, []);
 
   // ==============================|| COLUMNS ||============================== //
 
@@ -446,7 +458,8 @@ export default function UserListPage() {
         onImport={handleImportClick}
         onPaginationChange={handlePaginationChange}      
         onSearchChange={handleSearchChange}
-        onEdit={handleBulkEdit}              
+        onEdit={handleBulkEdit}
+        onDelete={handleBulkDelete}              
         modalToggler={() => {
           setSelectedUser(null);
           setUserModal(true);
@@ -480,6 +493,13 @@ export default function UserListPage() {
         modalToggler={setBulkEditModal}
         selectedUserIds={Array.from(selectedRows)}
         selectedCount={selectedRows.size}
+      />
+
+      <AlertUserBulkDelete
+        selectedIds={Array.from(selectedRows)}
+        open={bulkDeleteAlert}
+        handleClose={() => setBulkDeleteAlert(false)}  // ← Juste fermer
+        onDeleteComplete={handleBulkDeleteComplete}     // ← Juste vider
       />
 
       {/* Test Error Button (dev only) */}

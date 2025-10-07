@@ -108,6 +108,7 @@ function ReactTable({
   onSearchChange, 
   totalCount,
   onEdit,
+  onDelete,
   initialPageSize = 10,
   onImport 
 }) {
@@ -249,8 +250,10 @@ function ReactTable({
                 }
               }}
               onDelete={() => {
-                // TODO: Implémenter la logique bulk delete
-                console.log('Bulk delete clicked');
+                console.log('🟣 onDelete called from UserTable, selectedCount:', selectedCount);
+                if (onDelete) {
+                  onDelete();
+                }
               }}
               onImport={onImport}
               exportData={exportData}
@@ -380,7 +383,8 @@ const UserTable = React.memo(function UserTable({
   selectedCount,           
   selectedRows,
   onImport,
-  onEdit, 
+  onEdit,
+  onDelete, 
   initialPageSize = 10               
 }) {
   return (
@@ -399,7 +403,8 @@ const UserTable = React.memo(function UserTable({
         selectedRows,
         initialPageSize,
         onImport,
-        onEdit 
+        onEdit,
+        onDelete 
       }} 
     />
   );
@@ -419,7 +424,8 @@ UserTable.propTypes = {
   onPaginationChange: PropTypes.func,
   onSearchChange: PropTypes.func,
   onImport: PropTypes.func,
-  onEdit: PropTypes.func  
+  onEdit: PropTypes.func,
+  onDelete: PropTypes.func  
 };
 
 export default UserTable;
