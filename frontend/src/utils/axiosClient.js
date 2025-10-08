@@ -16,6 +16,7 @@ import { safeConsole } from './logSanitizer';
  * - Uses existing handleApiError for backend messages
  * - 🔒 PII sanitization on all logs
  * - 🔗 Correlation ID for distributed tracing
+ * -  Retry-After header support for 429 responses
  * 
  * @module utils/axiosClient
  */
@@ -49,6 +50,43 @@ const generateCorrelationId = () => {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+};
+
+// ==============================|| RETRY-AFTER PARSER ||============================== //
+
+/**
+ * Parse Retry-After header
+ * 
+ * The Retry-After header can be either:
+ * - An integer (seconds to wait)
+ * - An HTTP date string (absolute time)
+ * 
+ * @param {string} retryAfter - Value from Retry-After header
+ * @returns {number} Delay in milliseconds, or 0 if invalid
+ */
+const parseRetryAfter = (retryAfter) => {
+  if (!retryAfter) return 0;
+
+  // Case 1: Integer (seconds)
+  const seconds = parseInt(retryAfter, 10);
+  if (!isNaN(seconds) && seconds > 0) {
+    return seconds * 1000; // Convert to milliseconds
+  }
+
+  // Case 2: HTTP date string
+  try {
+    const retryDate = new Date(retryAfter);
+    if (!isNaN(retryDate.getTime())) {
+      const now = Date.now();
+      const delay = retryDate.getTime() - now;
+      return Math.max(0, delay); // Never negative
+    }
+  } catch (e) {
+    // Invalid date format, fall through
+  }
+
+  // Fallback: invalid format
+  return 0;
 };
 
 // ==============================|| REQUEST INTERCEPTOR ||============================== //
@@ -115,6 +153,39 @@ axiosClient.interceptors.response.use(
       duration = performance.now() - startTime;
     }
     
+    // Handle 429 Retry-After
+    if (status === 429 && error?.response?.headers) {
+      console.log('🔍 ALL HEADERS:', error.response.headers);
+      // ⚠️ FIX: Try multiple header case variations (axios may normalize)
+      const headers = error.response.headers;
+      const retryAfter = headers['retry-after'] || 
+                        headers['Retry-After'] || 
+                        headers['RETRY-AFTER'];
+      
+      if (retryAfter) {
+        const retryAfterMs = parseRetryAfter(retryAfter);
+        
+        if (retryAfterMs > 0) {
+          // Attach parsed delay to error for SWR to use
+          error.retryAfterMs = retryAfterMs;
+          
+          if (process.env.NODE_ENV === 'development') {
+            debugLog(
+              `⏱️ [${correlationId.slice(0, 8)}] Rate limited: retry after ${(retryAfterMs / 1000).toFixed(1)}s`
+            );
+          }
+        } else if (process.env.NODE_ENV === 'development') {
+          debugLog(
+            `⚠️ [${correlationId.slice(0, 8)}] Rate limited but couldn't parse Retry-After: "${retryAfter}"`
+          );
+        }
+      } else if (process.env.NODE_ENV === 'development') {
+        debugLog(
+          `⚠️ [${correlationId.slice(0, 8)}] Rate limited but no Retry-After header found`
+        );
+      }
+    }
+    
     // 🔒 Sanitized error log with correlation ID
     if (process.env.NODE_ENV === 'development') {
       debugLog(
@@ -148,13 +219,20 @@ export const apiRequest = async (requestFn) => {
       safeConsole.error('❌ API Request failed:', errorMessage);
     }
     
-    return {
+    const result = {
       success: false,
-      data: error.response?.data || null,  // ✅ AJOUT: Préserver les données de la réponse
+      data: error.response?.data || null,
       error: errorMessage,
       status: error.response?.status || 0,
       response: error.response || null
     };
+    
+    // ✅ Si retryAfterMs existe sur l'erreur (ajouté par interceptor), le propager
+    if (error.retryAfterMs) {
+      result.retryAfterMs = error.retryAfterMs;
+    }
+    
+    return result;
   }
 };
 

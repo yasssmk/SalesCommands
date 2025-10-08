@@ -4,6 +4,7 @@ import useSWR, { mutate } from 'swr';
 import { useMemo, useEffect } from 'react';
 import { useAuth } from 'hooks/useAuth';
 import { authConfig } from 'config/auth';
+import { debounce } from 'lodash';
 
 // utils
 import axiosClient, { api } from 'utils/axiosClient';
@@ -20,6 +21,22 @@ const endpoints = {
   clientAccountSeats: (clientId) => `/client/client-accounts/${clientId}/seats/`,
   clientAccountStats: (clientId) => `/client/client-accounts/${clientId}/stats/`
 };
+
+// ==============================|| DEBOUNCED REVALIDATION (1.4) ||============================== //
+
+/**
+ * ✅ Debounced revalidation pour éviter rafales
+ * 
+ * Groupe les revalidations multiples en 300ms max pour éviter :
+ * - Les rafales HTTP lors de bulk operations successives
+ * - La surcharge serveur avec requests concurrentes
+ * 
+ * Exemple : 3 bulk ops en 200ms → 1 seule revalidation users finale
+ */
+const debouncedRevalidate = debounce((paths) => {
+  revalidateMultiple(paths);
+}, 300);
+
 
 // ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
 
@@ -415,7 +432,7 @@ export const insertUser = async (userData) => {
     }
   }
   
-  // ✅ PHASE 5.3.2: Sanitize string fields (trim whitespace)
+  // Sanitize string fields (trim whitespace)
   const sanitized = sanitizeObject(userData, ['email', 'first_name', 'last_name']);
   
   const result = await api.post(endpoints.users, sanitized);
@@ -438,7 +455,7 @@ export const insertUser = async (userData) => {
 /**
  * ✅ UPDATE USER (PATCH) - Revalidation standardisée + validation client
  * 
- * ✅ PHASE 5.3.2: Added UUID validation for userId and related fields
+ * ✅ Added UUID validation for userId and related fields
  * 
  * @param {string} userId - User ID to update
  * @param {Object} userData - User data to update
@@ -689,11 +706,13 @@ export const createBulkUsers = async (users, mode = 'partial') => {
       }
     };
   } finally {
-    // ⭐ NOUVEAU: Revalidation TOUJOURS exécutée (même si timeout/erreur)
-    revalidateMultiple([
-      endpoints.users,                    // Liste users
-      '/client/client-accounts/'          // Stats seats
-    ]);
+    // Revalidation liste users (debounced pour éviter rafales)
+    debouncedRevalidate([endpoints.users]);
+    
+    // Revalidation seats décalée 2s (éviter concurrence users/seats)
+    setTimeout(() => {
+      revalidateMultiple(['/client/client-accounts/']);
+    }, 2000);
   }
 };
 
@@ -836,11 +855,13 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial') => {
       }
     };
   } finally {
-    // ⭐ NOUVEAU: Revalidation TOUJOURS exécutée (même si timeout/erreur)
-    revalidateMultiple([
-      endpoints.users,                    // Liste users
-      '/client/client-accounts/'          // Stats seats
-    ]);
+    // Revalidation liste users (debounced pour éviter rafales)
+    debouncedRevalidate([endpoints.users]);
+    
+    // Revalidation seats décalée 2s (éviter concurrence users/seats)
+    setTimeout(() => {
+      revalidateMultiple(['/client/client-accounts/']);
+    }, 2000);
   }
 };
 
@@ -894,7 +915,7 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial') => {
     // ✅ Appel API avec notre wrapper standardisé
     const result = await api.delete('/client/users/bulk-delete/', {
       data: { ids: userIds, mode },
-      timeout: 30000  
+      timeout: authConfig.BULK_OPERATION_TIMEOUT 
     });
 
     if (result.success) {
@@ -954,11 +975,13 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial') => {
       }
     };
   } finally {
-    // ⭐ NOUVEAU: Revalidation TOUJOURS exécutée (même si timeout/erreur)
-    revalidateMultiple([
-      endpoints.users,                    // Liste users
-      '/client/client-accounts/'          // Stats seats
-    ]);
+    // Revalidation liste users (debounced pour éviter rafales)
+    debouncedRevalidate([endpoints.users]);
+    
+    // Revalidation seats décalée 2s (éviter concurrence users/seats)
+    setTimeout(() => {
+      revalidateMultiple(['/client/client-accounts/']);
+    }, 2000);
   }
 };
 

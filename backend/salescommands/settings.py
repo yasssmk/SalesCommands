@@ -136,11 +136,20 @@ CORS_ALLOW_HEADERS = [
     'x-correlation-id',
 ]
 
+# Sans ceci, JavaScript ne peut PAS lire ces headers à cause de CORS
+CORS_EXPOSE_HEADERS = [
+    'Retry-After',      # ← CRITIQUE pour Phase 1 (429 throttling)
+    'X-Request-ID',     # Pour debug/tracing
+    'X-Correlation-ID', # Pour distributed tracing
+]
+
+
 # Log CORS configuration on startup (DEBUG mode only)
 if DEBUG:
     print(f"✓ CORS configuration loaded:")
     print(f"  - Allowed origins: {CORS_ALLOWED_ORIGINS}")
     print(f"  - Allow credentials: {CORS_ALLOW_CREDENTIALS}")
+    print(f"  - Exposed headers: {CORS_EXPOSE_HEADERS}") 
 
 
 

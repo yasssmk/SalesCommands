@@ -46,6 +46,7 @@ import ExpandingUserDetail from './ExpandingUserDetail';
 
 // utils
 import { getErrorDisplayInfo } from 'utils/errorMessages';
+import { useRetryCountdown } from 'hooks/useRetryCountdown';
 
 // assets
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
@@ -53,10 +54,53 @@ import IconButton from 'components/@extended/IconButton';
 
 // ==============================|| ERROR DISPLAY COMPONENT ||============================== //
 
+/**
+ * ✅ ÉTAPE 1.8 : Affichage erreur avec support countdown 429
+ * 
+ * Modifications :
+ * 1. Import du hook useRetryCountdown
+ * 2. Bouton "Retry Now" MASQUÉ sur les 429 (pas juste disabled)
+ * 3. Message clair avec countdown dynamique "Automatic retry in Xs"
+ */
+
+
 function ErrorDisplay({ error, onRetry, isRetrying }) {
   const errorInfo = getErrorDisplayInfo(error);
+  
+  // ✅ Hook countdown pour les 429
+  const secondsLeft = useRetryCountdown(error);
 
   if (!errorInfo) return null;
+
+  // ✅ Message avec countdown si 429
+  const errorMessage = (() => {
+    // Cas 429 avec countdown actif
+    if (errorInfo.status === 429 && secondsLeft !== null && secondsLeft > 0) {
+      return (
+        <Fragment>
+          {errorInfo.message}
+          <Box component="span" sx={{ display: 'block', mt: 1.5, fontWeight: 600, color: 'info.main' }}>
+            🕐 Automatic retry in <strong>{secondsLeft}s</strong> - Please wait
+          </Box>
+        </Fragment>
+      );
+    }
+    
+    // Cas 429 countdown terminé (en attente du retry)
+    if (errorInfo.status === 429) {
+      return (
+        <Fragment>
+          {errorInfo.message}
+          <Box component="span" sx={{ display: 'block', mt: 1.5, fontStyle: 'italic', opacity: 0.7 }}>
+            Retrying automatically...
+          </Box>
+        </Fragment>
+      );
+    }
+    
+    // Autres erreurs
+    return errorInfo.message;
+  })();
 
   return (
     <TableRow>
@@ -65,7 +109,8 @@ function ErrorDisplay({ error, onRetry, isRetrying }) {
           severity={errorInfo.severity}
           icon={<WarningOutlined style={{ fontSize: 24 }} />}
           action={
-            errorInfo.isRetryable && (
+            // ✅ MASQUER le bouton pour les 429 (pas juste disabled)
+            errorInfo.isRetryable && errorInfo.status !== 429 && (
               <Button
                 color={errorInfo.severity}
                 size="small"
@@ -74,13 +119,13 @@ function ErrorDisplay({ error, onRetry, isRetrying }) {
                 disabled={isRetrying}
                 startIcon={<ReloadOutlined />}
               >
-                {isRetrying ? 'Loading...' : 'Retry'}
+                {isRetrying ? 'Retrying...' : 'Retry Now'}
               </Button>
             )
           }
         >
           <AlertTitle sx={{ fontWeight: 600 }}>{errorInfo.title}</AlertTitle>
-          {errorInfo.message}
+          <Typography variant="body2">{errorMessage}</Typography>
         </Alert>
       </TableCell>
     </TableRow>

@@ -41,7 +41,8 @@ import { useTheme } from '@mui/material/styles';
 import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
 
 //TEST
-import TestErrorButton from 'components/TestErrorButton';
+import TestErrorButton from 'components/ErrorTest/TestErrorButton';
+import TestRateLimitButton from 'components/ErrorTest/TestRateLimitButton'
 
 // ==============================|| USER LIST ||============================== //
 
@@ -503,7 +504,7 @@ const handleBulkDeleteComplete = useCallback(() => {
       />
 
       {/* Test Error Button (dev only) */}
-      {process.env.NODE_ENV === 'development' && <TestErrorButton />}
+      {process.env.NODE_ENV === 'development' && <TestRateLimitButton/>}
     </>
   );
 }

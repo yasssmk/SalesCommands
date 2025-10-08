@@ -27,6 +27,7 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
     try {
       setDeleting(true);
       const res = await bulkDeleteUsers(selectedIds, 'partial');
+
       
       if (res?.success) {
         openSnackbar({
@@ -36,8 +37,7 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
           variant: 'alert',
           alert: { color: 'success' }
         });
-        handleClose?.();
-        onDeleteComplete?.();
+
       } else {
         // ✅ CORRECTION: Extraire le message correctement
         // res.error peut être un objet {message, status, response}
@@ -69,6 +69,8 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
       });
     } finally {
       setDeleting(false);
+      handleClose?.();        // ← Modal toujours fermée
+      onDeleteComplete?.();   // ← Sélection toujours vidée
     }
   };
 

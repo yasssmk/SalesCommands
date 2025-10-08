@@ -18,12 +18,15 @@ import metricsCollector from 'utils/monitoring';
  * Create an Error object that preserves the HTTP status code
  * This is crucial for error handling in components
  * 
+ * preserve retryAfterMs for 429 responses
+ * 
  * @param {string} message - Error message
  * @param {number} status - HTTP status code
  * @param {Object} response - Optional response object
- * @returns {Error} Enhanced error with status
+ * @param {number} retryAfterMs - Optional retry delay from server (429 responses)
+ * @returns {Error} Enhanced error with status and retry info
  */
-const createApiError = (message, status, response = null) => {
+const createApiError = (message, status, response = null, retryAfterMs = null) => {
   const error = new Error(message);
   
   // ✅ Attach status in multiple formats for compatibility
@@ -35,6 +38,7 @@ const createApiError = (message, status, response = null) => {
     data: response?.data || null,
     statusText: response?.statusText || ''
   };
+  
   
   return error;
 };
@@ -228,15 +232,20 @@ const swrFetcher = async (...args) => {
           return result.data;
         }
         
-        // ✅ FIX: If not successful, throw error WITH status code preserved
-        // This ensures UI components can access error.response.status
-        throw createApiError(
+       const apiError = createApiError(
           result.error || 'Failed to fetch data',
           result.status || 0,
           result.response
         );
+        
+        // ✅ Copier retryAfterMs si présent dans result
+        if (result.retryAfterMs) {
+          apiError.retryAfterMs = result.retryAfterMs;
+        }
+        
+        throw apiError;
       },
-      url // Pass URL for monitoring
+      url
     );
     
     return data;
@@ -279,7 +288,8 @@ export const swrPostFetcher = async (keyOrTuple, { arg }) => {
       throw createApiError(
         result.error || 'Failed to post data',
         result.status || 0,
-        result.response
+        result.response,
+        result
       );
     },
     url
@@ -316,7 +326,8 @@ export const swrMutateFetcher = async (keyOrTuple, { arg, method = 'PATCH' }) =>
       throw createApiError(
         result.error || `Failed to ${method} data`,
         result.status || 0,
-        result.response
+        result.response,
+        result
       );
     },
     url
@@ -348,7 +359,8 @@ export const swrDeleteFetcher = async (keyOrTuple) => {
       throw createApiError(
         result.error || 'Failed to delete',
         result.status || 0,
-        result.response
+        result.response,
+        result
       );
     },
     url
