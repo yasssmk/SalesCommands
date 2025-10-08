@@ -1,5 +1,4 @@
 // frontend/src/sections/admin/users/FormUserBulkEdit.jsx
-
 import PropTypes from 'prop-types';
 import React, { useEffect, useMemo, useState } from 'react';
 
@@ -14,7 +13,6 @@ import Divider from '@mui/material/Divider';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Grid from '@mui/material/Grid';
-import InputLabel from '@mui/material/InputLabel';
 import ListItemText from '@mui/material/ListItemText';
 import MenuItem from '@mui/material/MenuItem';
 import OutlinedInput from '@mui/material/OutlinedInput';
@@ -28,11 +26,13 @@ import * as Yup from 'yup';
 import { useFormik, Form, FormikProvider } from 'formik';
 
 // api
-import { useGetUserRoles, useGetOrganizations, useGetTeams, bulkUpdateUsers  } from 'api/admin/users';
+import { useGetUserRoles, useGetOrganizations, useGetTeams, bulkUpdateUsers } from 'api/admin/users';
 import { openSnackbar } from 'api/snackbar';
-import { showSnackbar } from 'utils/snackbar';
+
 // project imports
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
+import BulkOperationSyncDialog from 'components/bulk/BulkOperationSyncDialog';
+import { useBulkOperationSync } from 'hooks/useBulkOperationSync';
 
 // utils
 import { isValidUUID } from 'utils/validators';
@@ -45,7 +45,7 @@ const buildInitialValues = () => ({
   apply_role: false,
   apply_organization: false,
   apply_team: false,
-
+  
   // Actual values
   is_active: true,
   is_superuser: false,
@@ -114,8 +114,30 @@ function buildPatchPayload(values) {
 }
 
 // ==============================|| BULK EDIT USERS - FORM ||============================== //
+
 function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 }) {
   const [loading, setLoading] = useState(false);
+  const [hadTimeout, setHadTimeout] = useState(false);  // ⭐ NOUVEAU: Flag pour tracker le timeout
+
+  // ⭐ Hook centralisé avec snackbar de succès après sync
+  const { syncing, syncAttempt, onSyncProgress, onSyncComplete } = useBulkOperationSync({
+    onComplete: () => {
+      // ⭐ Si timeout, afficher le snackbar de succès maintenant
+      if (hadTimeout) {
+        openSnackbar({
+          open: true,
+          message: `${selectedCount} user${selectedCount > 1 ? 's' : ''} updated successfully`,
+          anchorOrigin: { vertical: 'top', horizontal: 'right' },
+          variant: 'alert',
+          alert: { color: 'success' }
+        });
+      }
+      
+      closeModal?.();
+      setHadTimeout(false);  // Reset le flag
+    },
+    closeDelay: 300
+  });
 
   useEffect(() => {
     setLoading(false);
@@ -140,71 +162,91 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
           return;
         }
 
-        const payload = {
-          ids: selectedUserIds,
-          patch,
-          mode: 'partial' // Use partial mode by default
-        };
+        const result = await bulkUpdateUsers(
+          selectedUserIds, 
+          patch, 
+          'partial',
+          onSyncProgress,
+          onSyncComplete
+        );
 
-        const result = await bulkUpdateUsers(selectedUserIds, patch, 'partial');
-
-      if (result.success) {
-        const { summary, message } = result;
-        
-        openSnackbar({
-          open: true,
-          message: message || `Bulk update: ${summary.updated} users updated`,
-          variant: 'alert',
-          alert: { 
-            color: summary.failed > 0 ? 'warning' : 'success' 
-          }
-        });
-
-        setSubmitting(false);
-        closeModal?.();
-
-        } else {
-          const errorMessage = result?.message || result?.error?.message || result?.error || 'Failed to update users';
-  
+        if (result.success) {
+          // ✅ Succès immédiat (pas de timeout)
+          const { summary, message } = result;
+          
           openSnackbar({
             open: true,
-            message: String(errorMessage), // ✅ Conversion sécurisée en string
+            message: message || `Bulk update: ${summary.updated} users updated`,
             variant: 'alert',
-            alert: { color: 'error' }
+            alert: {
+              color: summary.failed > 0 ? 'warning' : 'success'
+            }
           });
-          setSubmitting(false);
+
+          // Fermer immédiatement si pas de sync
+          if (!syncing) {
+            setSubmitting(false);
+            closeModal?.();
+          }
+        } else {
+          // ⭐ NOUVEAU: Vérifier si c'est un timeout (flag vient de users.js)
+          if (result?.isTimeout) {
+            // ⭐ Timeout détecté → Le sync va démarrer, ne pas afficher d'erreur
+            console.log('[FormUserBulkEdit] Timeout detected, sync will start');
+            setHadTimeout(true);  // Flag pour afficher succès après sync
+            // NE PAS afficher de snackbar d'erreur ici
+          } else {
+            // ❌ Erreur réelle (validation, permissions, etc.) → Afficher l'erreur
+            const errorMessage = result?.message || result?.error?.message || result?.error || 'Failed to update users';
+            
+            openSnackbar({
+              open: true,
+              message: String(errorMessage),
+              variant: 'alert',
+              alert: { color: 'error' }
+            });
+            
+            setSubmitting(false);
+            // NE PAS fermer le formulaire en cas d'erreur réelle
+          }
         }
       } catch (err) {
+        // ❌ Exception JS (pas un timeout)
         const errorMsg = err?.message || 'Unexpected error';
+        
         openSnackbar({
           open: true,
           message: errorMsg,
           variant: 'alert',
           alert: { color: 'error' }
         });
+        
         setSubmitting(false);
       }
     }
   });
 
+
   const { errors, touched, handleSubmit, isSubmitting, setFieldValue, values } = formik;
 
   const { roles = [], rolesLoading } = useGetUserRoles();
   const { organizations: orgs = [], organizationsLoading } = useGetOrganizations();
-
+  
   const teamsEnabled = Boolean(values?.organization && values?.apply_organization);
   const { teams = [], teamsLoading } = useGetTeams(
     teamsEnabled ? { organization: values.organization } : undefined,
     teamsEnabled
   );
-
+  
   const filteredTeams = useMemo(() => (Array.isArray(teams) ? teams : []), [teams]);
 
   // Auto-sync organization when team is selected
   useEffect(() => {
     if (!values.apply_team || !values.team || !(teams?.length)) return;
+    
     const t = (teams || []).find((x) => String(x.id) === String(values.team));
     const orgId = t?.organization?.id ?? t?.organization;
+    
     if (orgId && !values.organization) {
       setFieldValue('organization', String(orgId), false);
       setFieldValue('apply_organization', true, false);
@@ -245,299 +287,323 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
               {selectedCount} user{selectedCount !== 1 ? 's' : ''} selected • {selectedFieldsCount} field{selectedFieldsCount !== 1 ? 's' : ''} to update
             </Typography>
           </DialogTitle>
+          
           <Divider />
-          <DialogContent sx={{ p: 2.5 }}>
-            <Grid container spacing={3}>
-              
-              {/* INFO BOX */}
-              <Grid item xs={12}>
-                <Box sx={{ 
-                  p: 2, 
-                  bgcolor: 'primary.lighter', 
-                  borderRadius: 1,
-                  border: '1px solid',
-                  borderColor: 'primary.light'
-                }}>
-                  <Typography variant="body2" color="text.secondary">
-                    <strong>How it works:</strong> Check the boxes next to the fields you want to update. 
-                    Only checked fields will be applied to all selected users.
-                  </Typography>
-                </Box>
-              </Grid>
 
-              {/* ROLE */}
-              <Grid item xs={12}>
-                <Stack spacing={1}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={values.apply_role}
-                        onChange={(e) => setFieldValue('apply_role', e.target.checked)}
-                      />
-                    }
-                    label={
-                      <Typography variant="subtitle1" fontWeight={values.apply_role ? 600 : 400}>
-                        Update Role
-                      </Typography>
-                    }
-                  />
-                  
-                  {values.apply_role && (
-                    <FormControl fullWidth>
-                      <Select
-                        id="bulk-role"
-                        displayEmpty
-                        value={values.role}
-                        onChange={(e) => setFieldValue('role', e.target.value)}
-                        input={<OutlinedInput placeholder="Select role" />}
-                        disabled={!values.apply_role}
-                        error={Boolean(touched.role && errors.role && values.apply_role)}
-                        renderValue={(selected) => {
-                          if ((roles?.length ?? 0) === 0) {
-                            return (
-                              <Typography variant="subtitle1" color="text.secondary">
-                                No roles available
-                              </Typography>
-                            );
-                          }
-                          if (!selected) return <Typography variant="subtitle1" color="text.secondary">Select role</Typography>;
-                          const r = roles?.find((x) => String(x.id) === String(selected));
-                          return <Typography variant="subtitle2">{r?.name || '—'}</Typography>;
-                        }}
-                      >
-                        {(roles || []).length === 0 ? (
-                          <MenuItem disabled>
-                            <Typography color="text.secondary">No roles available</Typography>
-                          </MenuItem>
-                        ) : (
-                          (roles || []).map((r) => (
-                            <MenuItem key={r.id} value={String(r.id)}>
-                              <ListItemText primary={r.name} />
-                            </MenuItem>
-                          ))
-                        )}
-                      </Select>
-                      {touched.role && errors.role && values.apply_role && (
-                        <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
-                          {errors.role}
-                        </Typography>
-                      )}
-                    </FormControl>
-                  )}
-                </Stack>
-              </Grid>
+          {/* ⭐ NOUVEAU: Affichage conditionnel simplifié */}
+          {syncing ? (
+            // État: Sync en cours → Composant réutilisable
+            <DialogContent>
+              <BulkOperationSyncDialog 
+                attempt={syncAttempt}
+                maxAttempts={3}
+                operation="update"
+              />
+            </DialogContent>
+          ) : (
+            // État: Normal → Formulaire normal
+            <DialogContent sx={{ p: 2.5 }}>
+              <Grid container spacing={3}>
+                {/* INFO BOX */}
+                <Grid item xs={12}>
+                  <Box sx={{
+                    p: 2,
+                    bgcolor: 'primary.lighter',
+                    borderRadius: 1,
+                    border: '1px solid',
+                    borderColor: 'primary.light'
+                  }}>
+                    <Typography variant="body2" color="text.secondary">
+                      <strong>How it works:</strong> Check the boxes next to the fields you want to update.
+                      Only checked fields will be applied to all selected users.
+                    </Typography>
+                  </Box>
+                </Grid>
 
-              {/* ORGANIZATION */}
-              <Grid item xs={12}>
-                <Stack spacing={1}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={values.apply_organization}
-                        onChange={(e) => setFieldValue('apply_organization', e.target.checked)}
-                      />
-                    }
-                    label={
-                      <Typography variant="subtitle1" fontWeight={values.apply_organization ? 600 : 400}>
-                        Update Organization
-                      </Typography>
-                    }
-                  />
-                  
-                  {values.apply_organization && (
-                    <FormControl fullWidth>
-                      <Select
-                        id="bulk-organization"
-                        displayEmpty
-                        value={values.organization}
-                        onChange={(e) => setFieldValue('organization', e.target.value)}
-                        input={<OutlinedInput placeholder="Select organization" />}
-                        disabled={!values.apply_organization}
-                        error={Boolean(touched.organization && errors.organization && values.apply_organization)}
-                        renderValue={(selected) => {
-                          if ((orgs?.length ?? 0) === 0) {
-                            return (
-                              <Typography variant="subtitle1" color="text.secondary">
-                                No organizations available
-                              </Typography>
-                            );
-                          }
-                          if (!selected) return <Typography variant="subtitle1" color="text.secondary">Select organization</Typography>;
-                          const o = orgs?.find((x) => String(x.id) === String(selected));
-                          return <Typography variant="subtitle2">{o?.name || '—'}</Typography>;
-                        }}
-                      >
-                        {(orgs || []).length === 0 ? (
-                          <MenuItem disabled>
-                            <Typography color="text.secondary">No organizations available</Typography>
-                          </MenuItem>
-                        ) : (
-                          (orgs || []).map((o) => (
-                            <MenuItem key={o.id} value={String(o.id)}>
-                              <ListItemText primary={o.name} />
-                            </MenuItem>
-                          ))
-                        )}
-                      </Select>
-                      {touched.organization && errors.organization && values.apply_organization && (
-                        <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
-                          {errors.organization}
+                {/* ROLE */}
+                <Grid item xs={12}>
+                  <Stack spacing={1}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={values.apply_role}
+                          onChange={(e) => setFieldValue('apply_role', e.target.checked)}
+                        />
+                      }
+                      label={
+                        <Typography variant="subtitle1" fontWeight={values.apply_role ? 600 : 400}>
+                          Update Role
                         </Typography>
-                      )}
-                    </FormControl>
-                  )}
-                </Stack>
-              </Grid>
-
-              {/* TEAM */}
-              <Grid item xs={12}>
-                <Stack spacing={1}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={values.apply_team}
-                        onChange={(e) => setFieldValue('apply_team', e.target.checked)}
-                      />
-                    }
-                    label={
-                      <Typography variant="subtitle1" fontWeight={values.apply_team ? 600 : 400}>
-                        Update Team
-                      </Typography>
-                    }
-                  />
-                  
-                  {values.apply_team && (
-                    <FormControl fullWidth>
-                      <Select
-                        id="bulk-team"
-                        displayEmpty
-                        value={values.team}
-                        onChange={(e) => setFieldValue('team', e.target.value)}
-                        input={<OutlinedInput placeholder="Select team" />}
-                        disabled={!values.apply_team}
-                        error={Boolean(touched.team && errors.team && values.apply_team)}
-                        renderValue={(selected) => {
-                          if (noOrgOrTeam || noTeamsToShow) {
-                            return (
-                              <Typography variant="subtitle1" color="text.secondary">
-                                No teams available
-                              </Typography>
-                            );
-                          }
-                          if (!selected) return <Typography variant="subtitle1" color="text.secondary">Select team</Typography>;
-                          const t = filteredTeams.find((x) => String(x.id) === String(selected));
-                          return <Typography variant="subtitle2">{t?.name || '—'}</Typography>;
-                        }}
-                      >
-                        {noOrgOrTeam || noTeamsToShow ? (
-                          <MenuItem disabled>
-                            <Typography color="text.secondary">No teams available</Typography>
-                          </MenuItem>
-                        ) : (
-                          filteredTeams.map((t) => (
-                            <MenuItem key={t.id} value={String(t.id)}>
-                              <ListItemText primary={t.name} />
-                            </MenuItem>
-                          ))
-                        )}
-                      </Select>
-                      {touched.team && errors.team && values.apply_team && (
-                        <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
-                          {errors.team}
-                        </Typography>
-                      )}
-                    </FormControl>
-                  )}
-                </Stack>
-              </Grid>
-
-              <Grid item xs={12}>
-                <Divider />
-              </Grid>
-
-              {/* IS_ACTIVE */}
-              <Grid item xs={12}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={values.apply_is_active}
-                        onChange={(e) => setFieldValue('apply_is_active', e.target.checked)}
-                      />
-                    }
-                    label={
-                      <Stack spacing={0.5}>
-                        <Typography variant="subtitle1" fontWeight={values.apply_is_active ? 600 : 400}>
-                          Update Active Status
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Controls whether users can sign in
-                        </Typography>
-                      </Stack>
-                    }
-                  />
-                  
-                  {values.apply_is_active && (
-                    <Switch 
-                      checked={values.is_active} 
-                      onChange={(e) => setFieldValue('is_active', e.target.checked)}
-                      disabled={!values.apply_is_active}
+                      }
                     />
-                  )}
-                </Stack>
-              </Grid>
+                    
+                    {values.apply_role && (
+                      <FormControl fullWidth>
+                        <Select
+                          id="bulk-role"
+                          displayEmpty
+                          value={values.role}
+                          onChange={(e) => setFieldValue('role', e.target.value)}
+                          input={<OutlinedInput placeholder="Select role" />}
+                          disabled={!values.apply_role}
+                          error={Boolean(touched.role && errors.role && values.apply_role)}
+                          renderValue={(selected) => {
+                            if ((roles?.length ?? 0) === 0) {
+                              return (
+                                <Typography variant="subtitle1" color="text.secondary">
+                                  No roles available
+                                </Typography>
+                              );
+                            }
+                            if (!selected) return <Typography variant="subtitle1" color="text.secondary">Select role</Typography>;
+                            const r = roles?.find((x) => String(x.id) === String(selected));
+                            return <Typography variant="subtitle2">{r?.name || '—'}</Typography>;
+                          }}
+                        >
+                          {(roles || []).length === 0 ? (
+                            <MenuItem disabled>
+                              <Typography color="text.secondary">No roles available</Typography>
+                            </MenuItem>
+                          ) : (
+                            (roles || []).map((r) => (
+                              <MenuItem key={r.id} value={String(r.id)}>
+                                <ListItemText primary={r.name} />
+                              </MenuItem>
+                            ))
+                          )}
+                        </Select>
+                        {touched.role && errors.role && values.apply_role && (
+                          <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
+                            {errors.role}
+                          </Typography>
+                        )}
+                      </FormControl>
+                    )}
+                  </Stack>
+                </Grid>
 
-              {/* IS_SUPERUSER */}
-              <Grid item xs={12}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={values.apply_is_superuser}
-                        onChange={(e) => setFieldValue('apply_is_superuser', e.target.checked)}
-                      />
-                    }
-                    label={
-                      <Stack spacing={0.5}>
-                        <Typography variant="subtitle1" fontWeight={values.apply_is_superuser ? 600 : 400}>
-                          Update SuperUser Status
+                {/* ORGANIZATION */}
+                <Grid item xs={12}>
+                  <Stack spacing={1}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={values.apply_organization}
+                          onChange={(e) => setFieldValue('apply_organization', e.target.checked)}
+                        />
+                      }
+                      label={
+                        <Typography variant="subtitle1" fontWeight={values.apply_organization ? 600 : 400}>
+                          Update Organization
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Grants admin rights to users
-                        </Typography>
-                      </Stack>
-                    }
-                  />
-                  
-                  {values.apply_is_superuser && (
-                    <Switch 
-                      checked={values.is_superuser} 
-                      onChange={(e) => setFieldValue('is_superuser', e.target.checked)}
-                      disabled={!values.apply_is_superuser}
+                      }
                     />
-                  )}
-                </Stack>
-              </Grid>
+                    
+                    {values.apply_organization && (
+                      <FormControl fullWidth>
+                        <Select
+                          id="bulk-organization"
+                          displayEmpty
+                          value={values.organization}
+                          onChange={(e) => setFieldValue('organization', e.target.value)}
+                          input={<OutlinedInput placeholder="Select organization" />}
+                          disabled={!values.apply_organization}
+                          error={Boolean(touched.organization && errors.organization && values.apply_organization)}
+                          renderValue={(selected) => {
+                            if ((orgs?.length ?? 0) === 0) {
+                              return (
+                                <Typography variant="subtitle1" color="text.secondary">
+                                  No organizations available
+                                </Typography>
+                              );
+                            }
+                            if (!selected) return <Typography variant="subtitle1" color="text.secondary">Select organization</Typography>;
+                            const o = orgs?.find((x) => String(x.id) === String(selected));
+                            return <Typography variant="subtitle2">{o?.name || '—'}</Typography>;
+                          }}
+                        >
+                          {(orgs || []).length === 0 ? (
+                            <MenuItem disabled>
+                              <Typography color="text.secondary">No organizations available</Typography>
+                            </MenuItem>
+                          ) : (
+                            (orgs || []).map((o) => (
+                              <MenuItem key={o.id} value={String(o.id)}>
+                                <ListItemText primary={o.name} />
+                              </MenuItem>
+                            ))
+                          )}
+                        </Select>
+                        {touched.organization && errors.organization && values.apply_organization && (
+                          <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
+                            {errors.organization}
+                          </Typography>
+                        )}
+                      </FormControl>
+                    )}
+                  </Stack>
+                </Grid>
 
-            </Grid>
-          </DialogContent>
+                {/* TEAM */}
+                <Grid item xs={12}>
+                  <Stack spacing={1}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={values.apply_team}
+                          onChange={(e) => setFieldValue('apply_team', e.target.checked)}
+                        />
+                      }
+                      label={
+                        <Typography variant="subtitle1" fontWeight={values.apply_team ? 600 : 400}>
+                          Update Team
+                        </Typography>
+                      }
+                    />
+                    
+                    {values.apply_team && (
+                      <FormControl fullWidth>
+                        <Select
+                          id="bulk-team"
+                          displayEmpty
+                          value={values.team}
+                          onChange={(e) => setFieldValue('team', e.target.value)}
+                          input={<OutlinedInput placeholder="Select team" />}
+                          disabled={!values.apply_team}
+                          error={Boolean(touched.team && errors.team && values.apply_team)}
+                          renderValue={(selected) => {
+                            if (noOrgOrTeam || noTeamsToShow) {
+                              return (
+                                <Typography variant="subtitle1" color="text.secondary">
+                                  No teams available
+                                </Typography>
+                              );
+                            }
+                            if (!selected) return <Typography variant="subtitle1" color="text.secondary">Select team</Typography>;
+                            const t = filteredTeams.find((x) => String(x.id) === String(selected));
+                            return <Typography variant="subtitle2">{t?.name || '—'}</Typography>;
+                          }}
+                        >
+                          {noOrgOrTeam || noTeamsToShow ? (
+                            <MenuItem disabled>
+                              <Typography color="text.secondary">No teams available</Typography>
+                            </MenuItem>
+                          ) : (
+                            filteredTeams.map((t) => (
+                              <MenuItem key={t.id} value={String(t.id)}>
+                                <ListItemText primary={t.name} />
+                              </MenuItem>
+                            ))
+                          )}
+                        </Select>
+                        {touched.team && errors.team && values.apply_team && (
+                          <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
+                            {errors.team}
+                          </Typography>
+                        )}
+                      </FormControl>
+                    )}
+                  </Stack>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Divider />
+                </Grid>
+
+                {/* IS_ACTIVE */}
+                <Grid item xs={12}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={values.apply_is_active}
+                          onChange={(e) => setFieldValue('apply_is_active', e.target.checked)}
+                        />
+                      }
+                      label={
+                        <Stack spacing={0.5}>
+                          <Typography variant="subtitle1" fontWeight={values.apply_is_active ? 600 : 400}>
+                            Update Active Status
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Controls whether users can sign in
+                          </Typography>
+                        </Stack>
+                      }
+                    />
+                    {values.apply_is_active && (
+                      <Switch
+                        checked={values.is_active}
+                        onChange={(e) => setFieldValue('is_active', e.target.checked)}
+                        disabled={!values.apply_is_active}
+                      />
+                    )}
+                  </Stack>
+                </Grid>
+
+                {/* IS_SUPERUSER */}
+                <Grid item xs={12}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={values.apply_is_superuser}
+                          onChange={(e) => setFieldValue('apply_is_superuser', e.target.checked)}
+                        />
+                      }
+                      label={
+                        <Stack spacing={0.5}>
+                          <Typography variant="subtitle1" fontWeight={values.apply_is_superuser ? 600 : 400}>
+                            Update SuperUser Status
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Grants admin rights to users
+                          </Typography>
+                        </Stack>
+                      }
+                    />
+                    {values.apply_is_superuser && (
+                      <Switch
+                        checked={values.is_superuser}
+                        onChange={(e) => setFieldValue('is_superuser', e.target.checked)}
+                        disabled={!values.apply_is_superuser}
+                      />
+                    )}
+                  </Stack>
+                </Grid>
+              </Grid>
+            </DialogContent>
+          )}
+
           <Divider />
+
+          {/* Actions */}
           <DialogActions sx={{ p: 2.5 }}>
             <Grid container justifyContent="space-between" alignItems="center">
               <Grid item>
-                <Typography variant="caption" color="text.secondary">
-                  {selectedFieldsCount === 0 && 'Select at least one field to update'}
-                </Typography>
+                {syncing ? (
+                  <Typography variant="caption" color="text.secondary">
+                    Please wait, synchronization in progress...
+                  </Typography>
+                ) : (
+                  <Typography variant="caption" color="text.secondary">
+                    {selectedFieldsCount === 0 && 'Select at least one field to update'}
+                  </Typography>
+                )}
               </Grid>
               <Grid item>
                 <Stack direction="row" spacing={2} alignItems="center">
-                  <Button color="error" onClick={closeModal} disabled={isSubmitting}>
+                  <Button 
+                    color="error" 
+                    onClick={closeModal} 
+                    disabled={isSubmitting || syncing}
+                  >
                     Cancel
                   </Button>
-                  <Button 
-                    type="submit" 
-                    variant="contained" 
-                    disabled={isSubmitting || selectedFieldsCount === 0}
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    disabled={isSubmitting || syncing || selectedFieldsCount === 0}
                   >
                     {isSubmitting ? 'Updating...' : `Update ${selectedCount} User${selectedCount !== 1 ? 's' : ''}`}
                   </Button>

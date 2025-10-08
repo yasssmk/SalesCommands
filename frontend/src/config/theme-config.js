@@ -71,7 +71,7 @@ const config = {
   menuOrientation: MenuOrientation.VERTICAL,// Police globale
   miniDrawer: false,                        // Menu normal (pas replié)
   container: true,                          // Conteneur avec largeur max
-  mode: ThemeMode.LIGHT,                    // Mode clair
+  mode: ThemeMode.DARK,                    // Mode clair
   presetColor: 'theme3',                   // Couleur primaire (bleu) [Dans themes/theme/index.js]
   themeDirection: ThemeDirection.LTR        // Texte gauche→droite
 };

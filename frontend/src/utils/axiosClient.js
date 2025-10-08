@@ -152,6 +152,35 @@ axiosClient.interceptors.response.use(
     if (startTime) {
       duration = performance.now() - startTime;
     }
+
+    // Axios timeout errors have code 'ECONNABORTED' or message contains 'timeout'
+    const isTimeout = 
+      error.code === 'ECONNABORTED' || 
+      error.code === 'ETIMEDOUT' ||
+      (error.message && error.message.toLowerCase().includes('timeout'));
+    
+    if (isTimeout) {
+      // Marquer l'erreur comme timeout avec status 408
+      error.isTimeout = true;
+      
+      // Si pas de response, créer une pseudo-response avec status 408
+      if (!error.response) {
+        error.response = {
+          status: 408,
+          data: { 
+            error: 'Request timeout. The operation took too long to complete.',
+            detail: 'Request timeout. The operation took too long to complete.'
+          },
+          statusText: 'Request Timeout'
+        };
+      }
+      
+      if (process.env.NODE_ENV === 'development') {
+        debugLog(
+          `⏱️ [${correlationId.slice(0, 8)}] TIMEOUT: ${url ?? '—'} (${duration.toFixed(0)}ms)`
+        );
+      }
+    }
     
     // Handle 429 Retry-After
     if (status === 429 && error?.response?.headers) {
@@ -213,6 +242,14 @@ export const apiRequest = async (requestFn) => {
     };
   } catch (error) {
     const errorMessage = handleApiError(error);
+
+    let status = 0;
+    
+    if (error.isTimeout) {
+      status = 408;
+    } else if (error.response?.status) {
+      status = error.response.status;
+    }
     
     // 🔒 Sanitized error log
     if (process.env.NODE_ENV === 'development') {
@@ -226,6 +263,10 @@ export const apiRequest = async (requestFn) => {
       status: error.response?.status || 0,
       response: error.response || null
     };
+    
+    if (error.isTimeout) {
+      result.isTimeout = true;
+    }
     
     // ✅ Si retryAfterMs existe sur l'erreur (ajouté par interceptor), le propager
     if (error.retryAfterMs) {

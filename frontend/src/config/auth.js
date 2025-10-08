@@ -75,7 +75,7 @@ export const authConfig = {
 
   // Configuration de retry et timeouts
   REQUEST_TIMEOUT: 10000, // 10 secondes
-  BULK_OPERATION_TIMEOUT: 60000, // 60 secondes (bulk operations)
+  BULK_OPERATION_TIMEOUT: 20000, // 60 secondes (bulk operations)
   MAX_RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000, // 1 seconde
 

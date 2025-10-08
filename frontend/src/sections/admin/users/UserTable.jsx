@@ -55,7 +55,7 @@ import IconButton from 'components/@extended/IconButton';
 // ==============================|| ERROR DISPLAY COMPONENT ||============================== //
 
 /**
- * ✅ ÉTAPE 1.8 : Affichage erreur avec support countdown 429
+ * Affichage erreur avec support countdown 429
  * 
  * Modifications :
  * 1. Import du hook useRetryCountdown

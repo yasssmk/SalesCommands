@@ -371,7 +371,7 @@ const swrGlobalConfig = {
           message: `Rate limit reached. please wait ~${seconds}s`,
           anchorOrigin: { vertical: 'top', horizontal: 'right' },
           variant: 'alert',
-          alert: { color: 'info' },
+          alert: { color: 'warning' },
           close: true,  // Bouton de fermeture
           autoHideDuration: error.retryAfterMs  // Disparaît après le délai
         });
