@@ -416,6 +416,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         
         # Construire Response depuis les données cachées
         return Response(cached_data)
+
         
     def create(self, request, *args, **kwargs):
         """
@@ -625,6 +626,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return self.handle_exception(e)
+
     
     @action(detail=True, methods=['delete'], url_path='soft')
     def soft_destroy(self, request, pk=None):

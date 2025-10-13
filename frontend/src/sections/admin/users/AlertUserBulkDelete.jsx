@@ -13,7 +13,7 @@ import Avatar from 'components/@extended/Avatar';
 import { PopupTransition } from 'components/@extended/Transitions';
 import BulkOperationSyncDialog from 'components/bulk/BulkOperationSyncDialog';
 import { bulkDeleteUsers } from 'api/admin/users';
-import { openSnackbar } from 'api/snackbar';
+import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 import { useBulkOperationSync } from 'hooks/useBulkOperationSync';
 
 // assets
@@ -32,13 +32,9 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
     onComplete: () => {
       // ⭐ Si timeout, afficher le snackbar de succès maintenant
       if (hadTimeout) {
-        openSnackbar({
-          open: true,
-          message: `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`,
-          anchorOrigin: { vertical: 'top', horizontal: 'right' },
-          variant: 'alert',
-          alert: { color: 'success' }
-        });
+        displaySuccessSnackbar(
+          `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`
+        );
       }
       
       handleClose?.();
@@ -61,13 +57,9 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
       
       if (res?.success) {
         // ✅ Succès immédiat (pas de timeout)
-        openSnackbar({
-          open: true,
-          message: `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`,
-          anchorOrigin: { vertical: 'top', horizontal: 'right' },
-          variant: 'alert',
-          alert: { color: 'success' }
-        });
+        displaySuccessSnackbar(
+          `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`
+        );
         
         // Fermer immédiatement si pas de sync
         if (!syncing) {
@@ -85,31 +77,13 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
           // NE PAS afficher de snackbar d'erreur ici
         } else {
           // ❌ Erreur réelle (validation, permissions, etc.) → Afficher l'erreur
-          const errorMessage = res?.message || res?.error?.message || res?.error || 'Failed to delete users';
-          const status = res?.status || res?.error?.status || 0;
-          const color = status === 400 ? 'warning' : 'error';
-          
-          openSnackbar({
-            open: true,
-            message: String(errorMessage),
-            anchorOrigin: { vertical: 'top', horizontal: 'right' },
-            variant: 'alert',
-            alert: { color }
-          });
+          displayErrorSnackbar(res)
           // NE PAS fermer la modal en cas d'erreur réelle
         }
       }
     } catch (err) {
       // ❌ Exception JS (pas un timeout)
-      const errorMessage = err?.message || err?.error?.message || String(err) || 'Unexpected error';
-      
-      openSnackbar({
-        open: true,
-        message: String(errorMessage),
-        anchorOrigin: { vertical: 'top', horizontal: 'right' },
-        variant: 'alert',
-        alert: { color: 'error' }
-      });
+      displayErrorSnackbar(err)
     } finally {
       setDeleting(false);
     }

@@ -27,7 +27,7 @@ import { Formik } from 'formik';
 // project import
 import IconButton from 'components/@extended/IconButton';
 import AnimateButton from 'components/@extended/AnimateButton';
-import { openSnackbar } from 'api/snackbar';
+import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 import { changePassword } from 'api/admin/users';
 import { strengthColor, strengthIndicator } from 'utils/password-strength';
 
@@ -91,14 +91,7 @@ export default function AuthChangePassword({ userId, userEmail }) {
             setStatus({ success: true });
             
             // Notification de succès
-            openSnackbar({
-              open: true,
-              message: result.message || 'Password changed successfully',
-              variant: 'alert',
-              alert: {
-                color: 'success'
-              }
-            });
+            displaySuccessSnackbar(result.message || 'Password changed successfully');
             
             // Redirection après 1.5 secondes
             setTimeout(() => {
@@ -109,29 +102,13 @@ export default function AuthChangePassword({ userId, userEmail }) {
             // Gestion des erreurs de l'API
             setErrors({ submit: result.error || 'Failed to change password' });
             setStatus({ success: false });
-            
-            openSnackbar({
-              open: true,
-              message: result.error || 'Failed to change password',
-              variant: 'alert',
-              alert: {
-                color: 'error'
-              }
-            });
+            displayErrorSnackbar(result);
           }
         } catch (err) {
           console.error('Password change error:', err);
           setStatus({ success: false });
           setErrors({ submit: err.message || 'An unexpected error occurred' });
-          
-          openSnackbar({
-            open: true,
-            message: err.message || 'An unexpected error occurred',
-            variant: 'alert',
-            alert: {
-              color: 'error'
-            }
-          });
+          displayErrorSnackbar(err);
         } finally {
           setSubmitting(false);
         }

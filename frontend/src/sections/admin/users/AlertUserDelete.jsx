@@ -12,7 +12,7 @@ import Avatar from 'components/@extended/Avatar';
 import { PopupTransition } from 'components/@extended/Transitions';
 
 import { deleteUser } from 'api/admin/users';
-import { openSnackbar } from 'api/snackbar';
+import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
 // assets
 import DeleteFilled from '@ant-design/icons/DeleteFilled';
@@ -28,34 +28,15 @@ export default function AlertUserDelete({ id, title, open, handleClose }) {
       const res = await deleteUser(id);
 
       if (res?.success) {
-        openSnackbar({
-          open: true,
-          message: 'User deleted successfully',
-          anchorOrigin: { vertical: 'top', horizontal: 'right' },
-          variant: 'alert',
-          alert: { color: 'success' }
-        });
+        displaySuccessSnackbar('User deleted successfully');
         handleClose?.();
       } else {
         // Choix de la couleur: warning si 400, sinon error
-        const color = res?.status === 400 ? 'warning' : 'error';
-        openSnackbar({
-          open: true,
-          message: res?.error || 'Failed to delete user',
-          anchorOrigin: { vertical: 'top', horizontal: 'right' },
-          variant: 'alert',
-          alert: { color }
-        });
+        displayErrorSnackbar(res);
         // on NE ferme PAS la modal en cas d’erreur
       }
     } catch (err) {
-      openSnackbar({
-        open: true,
-        message: err?.message || 'Unexpected error',
-        anchorOrigin: { vertical: 'top', horizontal: 'right' },
-        variant: 'alert',
-        alert: { color: 'error' }
-      });
+      displayErrorSnackbar(err);
     } finally {
       setDeleting(false);
     }
@@ -94,8 +75,8 @@ export default function AlertUserDelete({ id, title, open, handleClose }) {
             <Button fullWidth onClick={handleClose} color="secondary" variant="outlined">
               Cancel
             </Button>
-            <Button fullWidth color="error" variant="contained" onClick={deletehandler} autoFocus>
-              Delete
+            <Button fullWidth color="error" variant="contained" onClick={deletehandler} autoFocus disabled={deleting}>
+              {deleting ? 'Deleting...' : 'Delete'}
             </Button>
           </Stack>
         </Stack>

@@ -21,6 +21,7 @@ import ToolOutlined from '@ant-design/icons/ToolOutlined';
 // project import
 import MainCard from 'components/MainCard';
 import Avatar from 'components/@extended/Avatar';
+import { displayInfoSnackbar } from 'utils/displayError';
 
 // assets
 import EnvironmentOutlined from '@ant-design/icons/EnvironmentOutlined';
@@ -37,15 +38,8 @@ export default function ExpandingUserDetail({ data }) {
   const downMD = useMediaQuery((theme) => theme.breakpoints.down('md'));
 
   const handlePlaceholderAction = () => {
-      openSnackbar({
-        open: true,
-        message: 'User detail is under construction. Coming soon!',
-        variant: 'alert',
-        alert: {
-          color: 'info'
-        }
-      });
-    };
+    displayInfoSnackbar('User detail is under construction. Coming soon!');
+  };
 
   return (
     <Grid container spacing={2.5} sx={{ pl: { xs: 0, sm: 5, md: 6, lg: 10, xl: 12 } }}>

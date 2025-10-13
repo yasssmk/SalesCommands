@@ -35,7 +35,7 @@ import { useGetUserRoles, useGetOrganizations, useGetTeams, insertUser } from 'a
 // project imports
 import Avatar from 'components/@extended/Avatar';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
-import { openSnackbar } from 'api/snackbar';
+import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
 // utils
 import { isValidUUID } from 'utils/validators';
@@ -142,30 +142,15 @@ function FormUserAdd({ closeModal }) {
         const result = await insertUser(payload);
 
         if (result.success) {
-          openSnackbar({
-            open: true,
-            message: 'User created successfully.',
-            variant: 'alert',
-            alert: { color: 'success' }
-          });
+          displaySuccessSnackbar('User created successfully');
           setSubmitting(false);
           closeModal?.();
         } else {
-          openSnackbar({
-            open: true,
-            message: result.error || 'Failed to create user',
-            variant: 'alert',
-            alert: { color: 'error' }
-          });
+          displayErrorSnackbar(result);
           setSubmitting(false);
         }
       } catch (err) {
-        openSnackbar({
-          open: true,
-          message: err?.message || 'Unexpected error',
-          variant: 'alert',
-          alert: { color: 'error' }
-        });
+        displayErrorSnackbar(err);
         setSubmitting(false);
       }
     }

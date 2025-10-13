@@ -46,6 +46,7 @@ import ExpandingUserDetail from './ExpandingUserDetail';
 
 // utils
 import { getErrorDisplayInfo } from 'utils/errorMessages';
+import { displayErrorSnackbar } from 'utils/displayError'; 
 import { useRetryCountdown } from 'hooks/useRetryCountdown';
 
 // assets
@@ -183,6 +184,12 @@ function ReactTable({
       onSearchChange(globalFilter);
     }
   }, [globalFilter, onSearchChange]);
+
+  useEffect(() => {
+    if (error) {
+      displayErrorSnackbar(error);
+    }
+  }, [error]);
 
   const table = useReactTable({
     data,

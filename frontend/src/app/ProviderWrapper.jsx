@@ -22,7 +22,7 @@ import Notistack from 'components/third-party/Notistack';
 import { ConfigProvider } from '../contexts/ConfigContext';
 import { AuthProvider } from '../hooks/useAuth';
 
-import { openSnackbar } from '../api/snackbar';
+import { displayErrorSnackbar } from '../utils/displayError';
 
 // Load feature flags in development
 if (process.env.NODE_ENV === 'development') {
@@ -49,9 +49,9 @@ if (process.env.NODE_ENV === 'development') {
  * - Éviter les re-renders inutiles
  */
 let __swrPauseUntil = 0;
-let __lastToastTime = 0;  // ✅  Dedup temporel des toasts
-const TOAST_DEDUP_MS = 5000;  // Max 1 toast / 5s
-const TOAST_KEY_429 = 'rate-limit-429';  // Clé unique Notistack
+// let __lastToastTime = 0;  // ✅  Dedup temporel des toasts
+// const TOAST_DEDUP_MS = 5000;  // Max 1 toast / 5s
+// const TOAST_KEY_429 = 'rate-limit-429';  // Clé unique Notistack
 
 /**
  * Active la pause globale jusqu'à un timestamp donné
@@ -125,51 +125,6 @@ const shouldRetryRequest = (error) => {
 };
 
 
-// /**
-//  * Smart retry delay with Retry-After support
-//  * 
-//  * Priority:
-//  * 1. Use server's Retry-After if present (429 responses)
-//  * 2. Fall back to exponential backoff for other retryable errors
-//  * 
-//  * @param {Error} error - The error object
-//  * @param {number} retryCount - Current retry attempt (0-indexed)
-//  * @returns {number} Delay in milliseconds before next retry
-//  */
-// const getRetryDelay = (error, retryCount) => {
-//   console.log('🔍 [getRetryDelay] Called!', {
-//     hasError: !!error,
-//     retryAfterMs: error?.retryAfterMs,
-//     type: typeof error?.retryAfterMs,
-//     keys: error ? Object.keys(error).filter(k => k !== 'stack') : []
-//   });
-
-//   // Check if server provided Retry-After (from axios interceptor)
-//   if (error?.retryAfterMs && error.retryAfterMs > 0) {
-//     if (process.env.NODE_ENV === 'development') {
-//       console.log(
-//         `🔄 [SWR Retry] Using server Retry-After: ${(error.retryAfterMs / 1000).toFixed(1)}s`
-//       );
-//     }
-//     return error.retryAfterMs;
-//   }
-  
-//   // ✅ Fallback: Exponential backoff for other errors
-//   // Formula: 1s * (2 ^ retryCount) with max 30s
-//   // retryCount 0 → 1s, 1 → 2s, 2 → 4s, 3 → 8s, etc.
-//   const baseDelay = 1000;
-//   const exponentialDelay = baseDelay * Math.pow(2, retryCount);
-//   const cappedDelay = Math.min(exponentialDelay, 30000); // Max 30s
-  
-//   if (process.env.NODE_ENV === 'development') {
-//     console.log(
-//       `🔄 [SWR Retry] Exponential backoff: ${(cappedDelay / 1000).toFixed(1)}s (attempt ${retryCount + 1})`
-//     );
-//   }
-  
-//   return cappedDelay;
-// };
-
 
 // ==============================|| SWR CONFIG WITH MONITORING ||============================== //
 
@@ -196,45 +151,6 @@ const swrGlobalConfig = {
   // Fige TOUTES les revalidations (auto + manuelles) pendant un cooldown 429
   isPaused: isPausedNow,
   
-  // // === GESTION D'ERREURS INTELLIGENTE ===
-  // shouldRetryOnError: shouldRetryRequest,  // ✅ Retry intelligent
-  // errorRetryCount: 3,                      // ✅ Max 3 retry (au lieu de 1)
-
-  // // ✅ Respecte Retry-After si présent, sinon backoff exponentiel (cap 30s)
-  // onErrorRetry: (error, key, config, revalidate, { retryCount }) => {
-  //   // 1) Si non-retryable → stop
-  //   if (!shouldRetryRequest(error)) return;
-
-  //   // 2) Respecter la limite globale de tentatives
-  //   const max = config.errorRetryCount ?? 0;
-  //   if (retryCount >= max) return;
-
-  //   // 3) Délai côté serveur (429) transmis par axios/swrFetcher: error.retryAfterMs
-  //   const serverDelay =
-  //     typeof error?.retryAfterMs === 'number' && error.retryAfterMs > 0
-  //       ? error.retryAfterMs
-  //       : null;
-
-  //   // 4) Sinon backoff exponentiel
-  //   const base = 1000;
-  //   const expo = Math.min(base * Math.pow(2, retryCount), 30000);
-  //   const delay = serverDelay ?? expo;
-
-  //   if (process.env.NODE_ENV === 'development') {
-  //     // Log utile pour valider le comportement
-  //     const endpoint = Array.isArray(key) ? key[0] : key;
-  //     console.log('🔄 [SWR Retry]', {
-  //       endpoint,
-  //       retryCount,
-  //       hasRetryAfter: !!serverDelay,
-  //       delayMs: delay
-  //     });
-  //   }
-
-  //   // 5) Planifie la revalidation (SWR gère retryCount automatiquement)
-  //   setTimeout(() => revalidate({ retryCount }), delay);
-  // },
-
   // === GESTION D'ERREURS INTELLIGENTE ===
   
   /**
@@ -323,69 +239,61 @@ const swrGlobalConfig = {
   // === CALLBACKS ENRICHIS AVEC MONITORING ===
   
   /**
-   * Callback global sur erreur
-   * Enrichi avec contexte et monitoring
-   */
-  onError: (error, key, config) => {
-    // Extraire le contexte
-    const endpoint = Array.isArray(key) ? key[0] : key;
-    const status = error?.response?.status || error?.status || 0;
-    const isRetryable = shouldRetryRequest(error);
+ * Callback global sur erreur
+ * Enrichi avec contexte et monitoring
+ * 
+ * ✅ PHASE 3: Uses unified error bridge for standardized display
+ */
+onError: (error, key, config) => {
+  // Extraire le contexte
+  const endpoint = Array.isArray(key) ? key[0] : key;
+  const status = error?.response?.status || error?.status || 0;
+  const isRetryable = shouldRetryRequest(error);
+  
+  // Contexte enrichi pour les logs
+  const errorContext = {
+    key: endpoint,
+    status,
+    message: error?.message || 'Unknown error',
+    retryable: isRetryable,
+    hasRetryAfter: !!error?.retryAfterMs,
+    timestamp: new Date().toISOString()
+  };
+  
+  // Log structuré en dev
+  if (process.env.NODE_ENV === 'development') {
+    const emoji = isRetryable ? '🔄' : '🚫';
+    console.error(`${emoji} [SWR Error]`, errorContext);
+  }
+  
+  // Auth errors: just log (auth interceptor handles these)
+  if (status === 401 || status === 403) {
+    console.warn('[SWR] Auth error detected:', status);
+    // Note: No snackbar for auth errors - let auth interceptor handle user notification
+    return;
+  }
+  
+  // ✅ Rate limit handling (429)
+  if (status === 429 && error?.retryAfterMs) {
+    const now = Date.now();
     
-    // Contexte enrichi pour les logs
-    const errorContext = {
-      key: endpoint,
-      status,
-      message: error?.message || 'Unknown error',
-      retryable: isRetryable,
-      hasRetryAfter: !!error?.retryAfterMs,
-      timestamp: new Date().toISOString()
-    };
+    // Display standardized error notification
+    // Deduplication is handled automatically by displayErrorSnackbar
+    displayErrorSnackbar(error);
     
-    // Log structuré en dev
+    // ⚠️ CRITICAL BUSINESS LOGIC: Pause ALL SWR revalidations
+    setPauseUntil(now + error.retryAfterMs);
+    
+    // Dev logging for debugging
     if (process.env.NODE_ENV === 'development') {
-      const emoji = isRetryable ? '🔄' : '🚫';
-      console.error(`${emoji} [SWR Error]`, errorContext);
+      const seconds = Math.ceil(error.retryAfterMs / 1000);
+      console.log(`🔔 [429 Rate Limit] User notified, SWR paused for ${seconds}s`);
     }
-    
-    // Envoyer une notification si erreur critique (optionnel)
-    if (status === 401 || status === 403) {
-      // Token expiré ou permissions insuffisantes
-      // Le auth interceptor devrait déjà gérer ça
-      console.warn('[SWR] Auth error detected:', status);
-    }
-    
-    if (status === 429 && error?.retryAfterMs) {
-      const now = Date.now();
-      
-      // Dedup temporel : Max 1 toast / 5s
-      if (now - __lastToastTime > TOAST_DEDUP_MS) {
-        __lastToastTime = now;
-        
-        const seconds = Math.ceil(error.retryAfterMs / 1000);
-        
-        // Toast avec clé unique pour éviter empilement
-        openSnackbar({
-          key: TOAST_KEY_429,  // Notistack utilisera cette clé pour dedup
-          open: true,
-          message: `Rate limit reached. please wait ~${seconds}s`,
-          anchorOrigin: { vertical: 'top', horizontal: 'right' },
-          variant: 'alert',
-          alert: { color: 'warning' },
-          close: true,  // Bouton de fermeture
-          autoHideDuration: error.retryAfterMs  // Disparaît après le délai
-        });
-        
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`🔔 [Toast 429] User notified: retry in ${seconds}s`);
-        }
-      } else {
-        if (process.env.NODE_ENV === 'development') {
-          console.debug(`🔕 [Toast 429] Skipped (dedup): last toast ${Math.ceil((now - __lastToastTime) / 1000)}s ago`);
-        }
-      }
-    }
-  },
+  }
+  
+  // Note: Other errors (5xx, network, etc.) are NOT displayed as snackbars here
+  // They're shown contextually by individual components when needed
+},
   
   
   /**

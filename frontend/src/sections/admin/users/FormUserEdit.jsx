@@ -37,7 +37,7 @@ import { useGetUser, useGetUserRoles, useGetOrganizations, useGetTeams, updateUs
 // project imports
 import Avatar from 'components/@extended/Avatar';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
-import { openSnackbar } from 'api/snackbar';
+import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
 // utils
 import { isValidUUID } from 'utils/validators';
@@ -141,30 +141,15 @@ function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword 
         const result = await updateUser(userData.id, payload);
 
         if (result.success) {
-          openSnackbar({
-            open: true,
-            message: 'User updated successfully.',
-            variant: 'alert',
-            alert: { color: 'success' }
-          });
+          displaySuccessSnackbar('User updated successfully');
           setSubmitting(false);
           closeModal?.();
         } else {
-          openSnackbar({
-            open: true,
-            message: result.error || 'Failed to update user',
-            variant: 'alert',
-            alert: { color: 'error' }
-          });
+          displayErrorSnackbar(result);
           setSubmitting(false);
         }
       } catch (err) {
-        openSnackbar({
-          open: true,
-          message: err?.message || 'Unexpected error',
-          variant: 'alert',
-          alert: { color: 'error' }
-        });
+        displayErrorSnackbar(err);
         setSubmitting(false);
       }
     }

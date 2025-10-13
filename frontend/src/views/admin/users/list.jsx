@@ -28,7 +28,7 @@ import { tenantKey, revalidateMultiple } from 'api/_swr';
 import useLocalStorage from 'hooks/useLocalStorage';
 
 import UserCSVImportModal from 'sections/admin/users/UserCSVImportModal';
-import { openSnackbar } from 'api/snackbar';
+import { displayErrorSnackbar, displaySuccessSnackbar, displayWarningSnackbar } from 'utils/displayError';
 
 // formatting
 import { formatDateTime } from 'config/formatters';
@@ -181,10 +181,13 @@ export default function UserListPage() {
 
       // sévérité du toast
       const hasIssues = failed > 0 || skipped > 0;
-      openSnackbar(text, {
-        variant: isCleanSuccess ? 'success' : hasIssues ? 'warning' : 'error',
-        autoHideDuration: isCleanSuccess ? 3000 : 7000
-      });
+      if (isCleanSuccess) {
+        displaySuccessSnackbar(text);
+      } else if (hasIssues) {
+        displayWarningSnackbar(text);
+      } else {
+        displayErrorSnackbar(response);
+      }
 
       // ✅ CORRECTION : Force le refetch via revalidateMultiple (comme insertUser)
       // Import nécessaire en haut du fichier : import { revalidateMultiple } from 'api/_swr';

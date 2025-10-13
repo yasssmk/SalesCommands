@@ -27,7 +27,7 @@ import { useFormik, Form, FormikProvider } from 'formik';
 
 // api
 import { useGetUserRoles, useGetOrganizations, useGetTeams, bulkUpdateUsers } from 'api/admin/users';
-import { openSnackbar } from 'api/snackbar';
+import { displayErrorSnackbar, displaySuccessSnackbar, displayWarningSnackbar } from 'utils/displayError';
 
 // project imports
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
@@ -124,13 +124,7 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
     onComplete: () => {
       // ⭐ Si timeout, afficher le snackbar de succès maintenant
       if (hadTimeout) {
-        openSnackbar({
-          open: true,
-          message: `${selectedCount} user${selectedCount > 1 ? 's' : ''} updated successfully`,
-          anchorOrigin: { vertical: 'top', horizontal: 'right' },
-          variant: 'alert',
-          alert: { color: 'success' }
-        });
+        displaySuccessSnackbar(`${selectedCount} user${selectedCount > 1 ? 's' : ''} updated successfully`);
       }
       
       closeModal?.();
@@ -152,12 +146,7 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
         
         // Check if at least one field is selected
         if (Object.keys(patch).length === 0) {
-          openSnackbar({
-            open: true,
-            message: 'Please select at least one field to update',
-            variant: 'alert',
-            alert: { color: 'warning' }
-          });
+          displayWarningSnackbar('Please select at least one field to update');
           setSubmitting(false);
           return;
         }
@@ -174,14 +163,9 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
           // ✅ Succès immédiat (pas de timeout)
           const { summary, message } = result;
           
-          openSnackbar({
-            open: true,
-            message: message || `Bulk update: ${summary.updated} users updated`,
-            variant: 'alert',
-            alert: {
-              color: summary.failed > 0 ? 'warning' : 'success'
-            }
-          });
+          displaySuccessSnackbar(
+            message || `Bulk update: ${summary.updated} users updated`
+          );
 
           // Fermer immédiatement si pas de sync
           if (!syncing) {
@@ -199,12 +183,7 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
             // ❌ Erreur réelle (validation, permissions, etc.) → Afficher l'erreur
             const errorMessage = result?.message || result?.error?.message || result?.error || 'Failed to update users';
             
-            openSnackbar({
-              open: true,
-              message: String(errorMessage),
-              variant: 'alert',
-              alert: { color: 'error' }
-            });
+            displayErrorSnackbar(result);
             
             setSubmitting(false);
             // NE PAS fermer le formulaire en cas d'erreur réelle
@@ -214,12 +193,7 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
         // ❌ Exception JS (pas un timeout)
         const errorMsg = err?.message || 'Unexpected error';
         
-        openSnackbar({
-          open: true,
-          message: errorMsg,
-          variant: 'alert',
-          alert: { color: 'error' }
-        });
+        displayErrorSnackbar(err);
         
         setSubmitting(false);
       }
