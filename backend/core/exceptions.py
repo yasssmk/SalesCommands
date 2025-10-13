@@ -19,27 +19,41 @@ class StandardizedValidationError(ValidationError):
     def _format_detail(detail):
         """Format the detail into our standard error structure"""
         if detail is None:
-            return {"error": CoreErrorMessages.UNEXPECTED_ERROR}
+            return {"error": "An unexpected error occurred"}
         
         if isinstance(detail, ParseError):
             return {"error": detail}
 
-        # For direct string messages
-        if isinstance(detail, str):
-            return {"error": detail}
-
         # For ErrorDetail objects
-        if isinstance(detail, ErrorDetail):
-            return {"error": str(detail)}
+        if isinstance(detail, str):
+            # ✅ Handle empty strings
+            if not detail.strip():
+                return {"error": "An unexpected error occurred"}
+            return {"error": detail}
 
         # If it's already a proper error format, return as is
         if isinstance(detail, dict):
             if "error" in detail:
                 return detail
             
+            if "detail" in detail and len(detail) == 1:
+                detail_value = detail["detail"]
+                # Si c'est une string simple, extraire directement
+                if isinstance(detail_value, (str, ErrorDetail)):
+                    return {"error": str(detail_value)}
+                # Si c'est un dict avec "error", le retourner tel quel
+                if isinstance(detail_value, dict) and "error" in detail_value:
+                    return detail_value
+                # Sinon, récurser pour traiter la structure
+                return StandardizedValidationError._format_detail(detail_value)
+            
             # For field-specific errors
             messages = []
             for field, error in detail.items():
+                # Skip the "detail" key if we already handled it above
+                if field == "detail" and len(detail) == 1:
+                    continue
+                    
                 # Handle list/tuple of errors for a field
                 if isinstance(error, (list, tuple)):
                     error = error[0] if error else ''
@@ -47,11 +61,22 @@ class StandardizedValidationError(ValidationError):
                     # Handle nested error structures
                     sub_detail = StandardizedValidationError._format_detail(error)
                     error = sub_detail.get("error", "")
-                messages.append(f"{field}: {str(error)}")
-            return {"error": " ".join(msg for msg in messages if msg)}
+                
+                # Build field-specific message
+                if error:
+                    messages.append(f"{field}: {str(error)}")
+            
+            # ✅ FIX: Handle empty dict or dict that produced no messages
+            if messages:
+                return {"error": " ".join(messages)}
+            else:
+                return {"error": "Invalid request data"}
 
         # For list/tuple of errors - take only the first error
-        if isinstance(detail, (list, tuple)) and detail:
+        if isinstance(detail, (list, tuple)):
+            if not detail:  # ✅ FIX: Handle empty list
+                return {"error": "An unexpected error occurred"}
+            
             # If first item is already a dict with error key, use it
             if isinstance(detail[0], dict) and "error" in detail[0]:
                 return detail[0]
@@ -59,7 +84,8 @@ class StandardizedValidationError(ValidationError):
             return StandardizedValidationError._format_detail(detail[0])
 
         # For any other case, convert to string
-        return {"error": str(detail)}
+        return {"error": str(detail) if detail else "An unexpected error occurred"}
+
 
     # Alias for backward compatibility
     _extract_error_message = _format_detail
@@ -98,13 +124,24 @@ def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
     
     if response is not None:
-        # Handle potential list responses
+        # ✅ FIX: Improved response data normalization
+        
+        # Case 1: Response is a list (rare, but happens)
         if isinstance(response.data, list):
             if response.data:  # If list is not empty
                 response.data = StandardizedValidationError._format_detail(response.data[0])
             else:
                 response.data = {"error": CoreErrorMessages.UNEXPECTED_ERROR}
-        elif not isinstance(response.data, dict) or "error" not in response.data:
+        
+        # Case 2: Response is not a dict (very rare)
+        elif not isinstance(response.data, dict):
             response.data = StandardizedValidationError._format_detail(response.data)
+        
+        # Case 3: Response is a dict - check if it needs normalization
+        elif isinstance(response.data, dict):
+            # If it already has "error" key, it's in our format - leave it
+            if "error" not in response.data:
+                # Otherwise, normalize it (handles {"detail": ...} and other formats)
+                response.data = StandardizedValidationError._format_detail(response.data)
     
     return response

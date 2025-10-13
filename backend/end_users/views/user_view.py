@@ -926,25 +926,20 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             return self._build_bulk_success_response(results, len(users_data))
 
         except StandardizedValidationError as e:
-            error_msg = str(e.detail) if hasattr(e, 'detail') else str(e)
-            return Response({
-                'success': False,
-                'message': error_msg,
-                'summary': {'total': 0, 'success': 0, 'failed': 0, 'skipped': 0},
-                'results': {'success': [], 'failed': [], 'skipped': []}
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            ctx['event'] = 'bulk_create_fatal_error'
-            ctx['error'] = str(e)
-            logger.error("Fatal error in bulk create", extra=ctx, exc_info=True)
+            # Extract message properly from detail dict
+            if hasattr(e, 'detail') and isinstance(e.detail, dict):
+                error_msg = e.detail.get('error', str(e))
+            else:
+                error_msg = str(e)
             
-            return Response({
-                'success': False,
-                'message': 'An unexpected error occurred',
-                'error': 'Internal server error. Please try again or contact support.'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Use the existing _build_bulk_error_response helper
+            return self._build_bulk_error_response(
+                results={'success': [], 'failed': [], 'skipped': []},
+                total=0,
+                error_message=error_msg
+            )
         
+
     @action(detail=False, methods=['patch'], url_path='bulk-update')
     def bulk_update(self, request):
         """
@@ -1128,24 +1123,34 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             return self._build_bulk_success_response(results, len(ids))
 
         except StandardizedValidationError as e:
-            error_msg = str(e.detail) if hasattr(e, 'detail') else str(e)
-            return Response({
-                'success': False,
-                'message': error_msg,
-                'summary': {'requested': 0, 'updated': 0, 'failed': 0},
-                'results': {'success': [], 'failed': []}
-            }, status=status.HTTP_400_BAD_REQUEST)
+            # ✅ FIX: Extract message properly from detail dict
+            if hasattr(e, 'detail') and isinstance(e.detail, dict):
+                error_msg = e.detail.get('error', str(e))
+            else:
+                error_msg = str(e)
+            
+            ctx['event'] = 'bulk_update_validation_error'
+            ctx['error'] = error_msg
+            logger.warning("Bulk update validation error", extra=ctx)
+            
+            # ✅ Use bulk error response format (matches existing pattern)
+            return self._build_bulk_error_response(
+                results={'success': [], 'failed': [], 'skipped': []},
+                total=0,
+                error_message=error_msg
+            )
 
         except Exception as e:
             ctx['event'] = 'bulk_update_fatal_error'
             ctx['error'] = str(e)
             logger.error("Fatal error in bulk update", extra=ctx, exc_info=True)
             
-            return Response({
-                'success': False,
-                'message': 'An unexpected error occurred',
-                'error': 'Internal server error. Please try again or contact support.'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # ✅ Use bulk error response format (matches existing pattern in bulk operations)
+            return self._build_bulk_error_response(
+                results={'success': [], 'failed': [], 'skipped': []},
+                total=0,
+                error_message='An unexpected error occurred. Please try again or contact support.'
+            )
         
     @action(detail=False, methods=['delete'], url_path='bulk-delete')
     def bulk_delete(self, request):
@@ -1401,24 +1406,18 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             }, status=status_code)
 
         except StandardizedValidationError as e:
-            error_msg = str(e.detail) if hasattr(e, 'detail') else str(e)
-            return Response({
-                'success': False,
-                'message': error_msg,
-                'summary': {'requested': 0, 'deleted': 0, 'failed': 0},
-                'results': {'success': [], 'failed': []}
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            ctx['event'] = 'bulk_delete_fatal_error'
-            ctx['error'] = str(e)
-            logger.error("Fatal error in bulk delete", extra=ctx, exc_info=True)
+            # Extract message properly from detail dict
+            if hasattr(e, 'detail') and isinstance(e.detail, dict):
+                error_msg = e.detail.get('error', str(e))
+            else:
+                error_msg = str(e)
             
-            return Response({
-                'success': False,
-                'message': 'An unexpected error occurred',
-                'error': 'Internal server error. Please try again or contact support.'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Use the existing _build_bulk_error_response helper
+            return self._build_bulk_error_response(
+                results={'success': [], 'failed': [], 'skipped': []},
+                total=0,
+                error_message=error_msg
+            )
         
     @action(detail=False, methods=['delete'], url_path='bulk-soft-delete')
     def bulk_soft_delete(self, request):
@@ -1699,25 +1698,19 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             }, status=status_code)
 
         except StandardizedValidationError as e:
-            error_msg = str(e.detail) if hasattr(e, 'detail') else str(e)
-            return Response({
-                'success': False,
-                'message': error_msg,
-                'summary': {'requested': 0, 'archived': 0, 'failed': 0, 'skipped': 0},
-                'results': {'success': [], 'failed': [], 'skipped': []}
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            ctx['event'] = 'bulk_soft_delete_fatal_error'
-            ctx['error'] = str(e)
-            logger.error("Fatal error in bulk soft delete", extra=ctx, exc_info=True)
+            # Extract message properly from detail dict
+            if hasattr(e, 'detail') and isinstance(e.detail, dict):
+                error_msg = e.detail.get('error', str(e))
+            else:
+                error_msg = str(e)
             
-            return Response({
-                'success': False,
-                'message': 'An unexpected error occurred',
-                'error': 'Internal server error. Please try again or contact support.'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+            # Use the existing _build_bulk_error_response helper
+            return self._build_bulk_error_response(
+                results={'success': [], 'failed': [], 'skipped': []},
+                total=0,
+                error_message=error_msg
+            )
+            
     def _validate_and_apply_patch(self, user, patch, client_id):
         """
         Validate and apply patch to a user

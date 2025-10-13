@@ -16,13 +16,29 @@
  */
 
 export const handleApiError = (axiosError) => {
-  // 1) Erreur réseau
+
+  if (axiosError && !axiosError.response) {
+    // Check for .error property first (from apiRequest wrapper)
+    if (axiosError.error && typeof axiosError.error === 'string') {
+      return axiosError.error;
+    }
+    
+    // Check for .message property (from some catch blocks or Error objects)
+    if (axiosError.message && typeof axiosError.message === 'string') {
+      return axiosError.message;
+    }
+  }
+
+  // ==============================
+  //  Network Error Detection
+  // ==============================
+  // No response = true network error (connection lost, DNS failure, etc.)
   if (!axiosError?.response) return 'Network error. Please check your connection.';
 
   const { status, data } = axiosError.response;
 
   // 2) 500+
-  if (status >= 500) return 'Server Error';
+  if (status >= 500) return 'Server Error, please try again';
 
   // 3) DRF/Custom: detail (très courant)
   if (data?.detail && typeof data.detail === 'string') return data.detail;
@@ -61,7 +77,37 @@ export const handleApiError = (axiosError) => {
   }
 
   // 9) Fallback
+  if (status >= 400 && status < 500) {
+    // Validation errors
+    if (status === 400 || status === 422) {
+      return 'Validation error. Please review your input.';
+    }
+    
+    // Authentication required
+    if (status === 401) {
+      return 'Authentication required. Please sign in again.';
+    }
+    
+    // Permission denied
+    if (status === 403) {
+      return 'You do not have permission to perform this action.';
+    }
+    
+    // Resource not found
+    if (status === 404) {
+      return 'Resource not found.';
+    }
+    
+    // Generic 4xx fallback (for other client errors like 409, 418, etc.)
+    return 'Request failed. Please check your input and try again.';
+  }
+
+  // ==============================
+  // Final Fallback
+  // ==============================
+  // Should rarely be reached (only for unknown status codes or edge cases)
   return `Request failed (${status})`;
+
 };
 
 

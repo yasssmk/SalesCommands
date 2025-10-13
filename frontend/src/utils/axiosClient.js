@@ -183,19 +183,47 @@ axiosClient.interceptors.response.use(
     }
     
     // Handle 429 Retry-After
-    if (status === 429 && error?.response?.headers) {
-      console.log('🔍 ALL HEADERS:', error.response.headers);
-      // ⚠️ FIX: Try multiple header case variations (axios may normalize)
-      const headers = error.response.headers;
-      const retryAfter = headers['retry-after'] || 
-                        headers['Retry-After'] || 
-                        headers['RETRY-AFTER'];
+    // if (status === 429 && error?.response?.headers) {
+    //   console.log('🔍 ALL HEADERS:', error.response.headers);
+    //   // ⚠️ FIX: Try multiple header case variations (axios may normalize)
+    //   const headers = error.response.headers;
+    //   const retryAfter = headers['retry-after'] || 
+    //                     headers['Retry-After'] || 
+    //                     headers['RETRY-AFTER'];
+      
+    //   if (retryAfter) {
+    //     const retryAfterMs = parseRetryAfter(retryAfter);
+        
+    //     if (retryAfterMs > 0) {
+    //       // Attach parsed delay to error for SWR to use
+    //       error.retryAfterMs = retryAfterMs;
+          
+    //       if (process.env.NODE_ENV === 'development') {
+    //         debugLog(
+    //           `⏱️ [${correlationId.slice(0, 8)}] Rate limited: retry after ${(retryAfterMs / 1000).toFixed(1)}s`
+    //         );
+    //       }
+    //     } else if (process.env.NODE_ENV === 'development') {
+    //       debugLog(
+    //         `⚠️ [${correlationId.slice(0, 8)}] Rate limited but couldn't parse Retry-After: "${retryAfter}"`
+    //       );
+    //     }
+    //   } else if (process.env.NODE_ENV === 'development') {
+    //     debugLog(
+    //       `⚠️ [${correlationId.slice(0, 8)}] Rate limited but no Retry-After header found`
+    //     );
+    //   }
+    // }
+
+    if (status === 429) {
+      // Axios normalizes headers to lowercase
+      const retryAfter = error?.response?.headers?.['retry-after'];
       
       if (retryAfter) {
         const retryAfterMs = parseRetryAfter(retryAfter);
         
         if (retryAfterMs > 0) {
-          // Attach parsed delay to error for SWR to use
+          // Attach parsed delay to error for SWR
           error.retryAfterMs = retryAfterMs;
           
           if (process.env.NODE_ENV === 'development') {
@@ -205,13 +233,19 @@ axiosClient.interceptors.response.use(
           }
         } else if (process.env.NODE_ENV === 'development') {
           debugLog(
-            `⚠️ [${correlationId.slice(0, 8)}] Rate limited but couldn't parse Retry-After: "${retryAfter}"`
+            `⚠️ [${correlationId.slice(0, 8)}] Invalid Retry-After value: "${retryAfter}"`
+          );
+          // Fallback: use minimal default
+          error.retryAfterMs = 5000; // 5s default
+        }
+      } else {
+        // Missing Retry-After header on 429
+        if (process.env.NODE_ENV === 'development') {
+          debugLog(
+            `⚠️ [${correlationId.slice(0, 8)}] 429 response missing Retry-After header, using 5s default`
           );
         }
-      } else if (process.env.NODE_ENV === 'development') {
-        debugLog(
-          `⚠️ [${correlationId.slice(0, 8)}] Rate limited but no Retry-After header found`
-        );
+        error.retryAfterMs = 5000; // 5s default fallback
       }
     }
     
