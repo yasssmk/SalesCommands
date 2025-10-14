@@ -166,8 +166,7 @@ if DEBUG:
     THROTTLE_RATES = {
         'anon': '100/hour',      # Utilisateurs non authentifiés
         'user': '1000/hour',
-        'login_ip': '10/minute',     # Utilisateurs authentifiés
-        'login': '2/hour',      # Tentatives de login (par IP+email) 
+        'login': '10/hour',      # Tentatives de login (par IP+email) 
         'password': '10/hour',   # Changements de mot de passe
         'sensitive': '30/hour',  # Opérations sensibles
         'burst': '5/minute',    # Anti-burst
@@ -177,8 +176,7 @@ else:
     # Production: Plus restrictif
     THROTTLE_RATES = {
         'anon': '20/hour',       
-        'user': '100/hour',
-        'login_ip': '10/minute',      
+        'user': '100/hour',    
         'login': '5/hour',       # Plus strict en prod : 5 tentatives/heure
         'password': '3/hour',    
         'sensitive': '10/hour',  
@@ -614,8 +612,7 @@ THROTTLE_WHITELIST_USERS = env.list('THROTTLE_WHITELIST_USERS', default=[
 THROTTLE_ERROR_MESSAGES = {
     'anon': 'Too many requests from this IP. Please try again later.',
     'user': 'You have exceeded the rate limit. Please slow down your requests.',
-    'login_ip': 'Too many login attempts from this IP address. Please wait before trying again.',
-    # 'login': 'Too many login attempts BUBU. Please wait before trying again.',
+    'login': 'Too many login attempts BUBU. Please wait before trying again.',
     'password': 'Too many password change attempts. Please wait before trying again.',
     'sensitive': 'This action has been rate limited for security. Please try again later.',
 }

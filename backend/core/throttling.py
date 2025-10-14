@@ -115,67 +115,7 @@ class BaseCustomThrottle(SimpleRateThrottle):
         default_msg = f"Request was throttled. Please retry in {wait_seconds} seconds."
         message = error_messages.get(self.scope, default_msg)
 
-        raise Throttled(detail=message, wait=wait_seconds)
-
-class LoginIPThrottle(BaseCustomThrottle):
-    """
-    🚨 SECURITY: Throttle login attempts by IP address ONLY.
-    
-    Prevents attackers from bypassing throttle by changing email on each attempt.
-    This is the FIRST line of defense against brute force attacks.
-    
-    Works in combination with LoginRateThrottle:
-    - LoginIPThrottle: Limits total login attempts from ONE IP (all emails combined)
-    - LoginRateThrottle: Limits attempts for ONE specific account (IP+email)
-    
-    Example attack scenario WITHOUT this throttle:
-    - Attacker tries 1000 different emails from same IP
-    - Each email gets its own throttle counter
-    - Attacker bypasses the 3/minute limit by rotating emails
-    
-    With this throttle:
-    - Attacker is limited to 10 attempts/minute total from their IP
-    - Regardless of how many different emails they try
-    """
-    scope = 'login_ip'
-    
-    def get_cache_key(self, request, view):
-        """
-        Create cache key based on IP ONLY (not email).
-        This ensures the limit applies to ALL login attempts from this IP.
-        """
-        ident = self.get_ident(request)
-        if ident is None:
-            logger.info(f"[THROTTLE] LoginIPThrottle skipped (whitelisted IP)")
-            return None
-            
-        cache_key = self.cache_format % {
-            'scope': self.scope,
-            'ident': ident
-        }
-        
-        logger.debug(f"[THROTTLE] LoginIPThrottle cache_key={cache_key} ip={ident}")
-        
-        return cache_key
-    
-    def allow_request(self, request, view):
-        """Override to add detailed logging"""
-        allowed = super().allow_request(request, view)
-        
-        if allowed:
-            logger.debug(
-                f"[THROTTLE] LoginIPThrottle ALLOWED "
-                f"history_size={len(self.history)} limit={self.num_requests}"
-            )
-        else:
-            logger.warning(
-                f"[THROTTLE] LoginIPThrottle BLOCKED "
-                f"history_size={len(self.history)} limit={self.num_requests} "
-                f"wait={self.wait()}s"
-            )
-        
-        return allowed
-
+        raise Throttled(detail=message)
 
 
 
