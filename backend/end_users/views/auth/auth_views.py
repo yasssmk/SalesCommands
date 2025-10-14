@@ -186,7 +186,8 @@ class UserLogoutView(BaseAPIView):
                 'event': 'logout_failed'
             })
             logger.error("logout_failed", extra=ctx)
-            raise StandardizedValidationError(str(e))
+            # raise StandardizedValidationError(str(e))
+            raise
 
 
 class UserRefreshTokenView(BaseAPIView):
@@ -247,4 +248,4 @@ class UserRefreshTokenView(BaseAPIView):
                 'event': 'token_refresh_failed'
             })
             logger.error("token_refresh_failed", extra=ctx)
-            raise StandardizedValidationError(str(e))
+            raise 

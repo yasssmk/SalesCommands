@@ -556,6 +556,22 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                 StandardizedValidationError._format_detail(detail),
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        from rest_framework.exceptions import APIException
+        if isinstance(exc, APIException):
+            status_code = getattr(exc, 'status_code', status.HTTP_500_INTERNAL_SERVER_ERROR)
+            detail = getattr(exc, 'detail', str(exc))
+            
+            # Log avec le bon niveau selon le code status
+            if status_code >= 500:
+                logger.error("api_exception_5xx", extra={**log_context, 'status_code': status_code})
+            else:
+                logger.warning("api_exception_4xx", extra={**log_context, 'status_code': status_code})
+            
+            return Response(
+                StandardizedValidationError._format_detail(detail),
+                status=status_code
+            )
 
         # Log unexpected errors with formatted traceback
         error_traceback = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))

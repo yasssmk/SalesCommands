@@ -67,6 +67,9 @@ const getErrorTitle = (error) => {
 
   // Server errors (5xx)
   if (status >= 500 && status < 600) {
+    if (status === 503) {
+      return 'Server Unavailable';
+    }
     return 'Server Error';
   }
 
@@ -90,6 +93,66 @@ const getErrorTitle = (error) => {
   // Default
   return 'Unexpected Error';
 };
+
+// ==============================|| FALLBACK MESSAGES ||============================== //
+
+/**
+ * ✅ NEW: Fallback messages when backend response is malformed or extraction fails
+ * These are user-friendly messages in English, matching our standards
+ */
+const FALLBACK_MESSAGES = {
+  // 4xx fallbacks
+  '400': 'The request could not be processed. Please check your input or try again.',
+  '401': 'Your session has expired. Please log in again.',
+  '403': 'You do not have permission to perform this action.',
+  '404': 'The requested resource could not be found.',
+  '408': 'The request took too long to complete. Please try again.',
+  '429': 'Too many requests. Please wait a moment and try again.',
+  
+  // Generic 4xx
+  '4xx': 'The request could not be processed. Please check your input or try again.',
+  
+  // 5xx fallbacks
+  '500': 'The server encountered an error. Please try again later.',
+  '502': 'The server is temporarily unavailable. Please try again shortly.',
+  '503': 'The service is temporarily unavailable. Please try again shortly.',
+  '504': 'The server took too long to respond. Please try again.',
+  
+  // Generic 5xx
+  '5xx': 'The service is temporarily unavailable. Please try again shortly.',
+  
+  // Network/unknown
+  'network': 'Unable to connect to the server. Please check your internet connection.',
+  'unknown': 'An unexpected error occurred. Please try again.'
+};
+
+/**
+ * ✅ NEW: Get fallback message for a specific status code
+ * Returns a user-friendly message when backend response is unusable
+ * 
+ * @param {number} status - HTTP status code
+ * @returns {string} Fallback message
+ */
+const getFallbackMessage = (status) => {
+  if (!status) return FALLBACK_MESSAGES.unknown;
+  
+  // Exact match
+  if (FALLBACK_MESSAGES[status.toString()]) {
+    return FALLBACK_MESSAGES[status.toString()];
+  }
+  
+  // Range match
+  if (status >= 400 && status < 500) {
+    return FALLBACK_MESSAGES['4xx'];
+  }
+  
+  if (status >= 500 && status < 600) {
+    return FALLBACK_MESSAGES['5xx'];
+  }
+  
+  return FALLBACK_MESSAGES.unknown;
+};
+
 
 // ==============================|| MAIN UTILITY FUNCTION ||============================== //
 
@@ -126,6 +189,25 @@ export const getErrorDisplayInfo = (error) => {
 
   // Use existing handleApiError to extract backend message
   const backendMessage = handleApiError(error);
+
+  //Validate extracted message - use fallback if suspicious
+  const isValidMessage = backendMessage && 
+                         backendMessage.trim().length > 0 &&
+                         !backendMessage.includes('Network error') && // Don't use generic network msg for server errors
+                         !backendMessage.includes('[object Object]') &&
+                         backendMessage !== 'undefined' &&
+                         backendMessage !== 'null';
+  
+  // ✅ NEW: Use fallback if extraction failed or message is invalid
+  if (!isValidMessage) {
+    if (!error.response) {
+      // True network error (no response from server)
+      backendMessage = FALLBACK_MESSAGES.network;
+    } else {
+      // Server responded but message extraction failed
+      backendMessage = getFallbackMessage(status);
+    }
+  }
 
   // Determine if error is retryable
   const isRetryable =
@@ -195,6 +277,13 @@ export const ErrorMessages = {
   SERVER_ERROR: {
     title: 'Server Error',
     message: 'The server encountered an error. Please try again later.',
+    severity: 'error'
+  },
+
+  // 503
+  SERVICE_UNAVAILABLE: {
+    title: 'Server Unavailable',
+    message: 'The service is temporarily unavailable. Please try again shortly.',
     severity: 'error'
   },
 

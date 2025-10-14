@@ -1,11 +1,19 @@
 from django.conf import settings
-from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, APIException
 from django.contrib.auth.hashers import check_password
 from django.utils.timezone import now
 from .jwt_helpers import JWTHelpers
 import logging
 
 from core.logging import get_logger, ctx_from_request, get_correlation_id
+from core.error_messages import CoreErrorMessages
+
+try:
+    import psycopg2
+    DB_OPERATIONAL_ERROR = psycopg2.OperationalError
+except ImportError:
+    # Fallback si psycopg2 n'est pas installé (ex: tests avec SQLite)
+    from django.db import OperationalError as DB_OPERATIONAL_ERROR
 
 logger = get_logger(__name__)
 
@@ -172,7 +180,20 @@ class AuthService:
             if isinstance(user_id, str):
                 user_id = uuid.UUID(user_id)
 
-            user = self.user_model.objects.get(pk=user_id)
+            try:
+                user = self.user_model.objects.get(id=user_id)
+            except DB_OPERATIONAL_ERROR as db_err:
+                # Log complet côté serveur (avec stack trace)
+                logger.error(
+                    "token_refresh_failed_db_unavailable",
+                    extra={**log_context, 'db_error': str(db_err)[:200]},
+                    exc_info=True
+                )
+                # Lever 503 avec message court standardisé (pas de détails techniques)
+                raise APIException(
+                    detail=str(CoreErrorMessages.SERVICE_UNAVAILABLE),
+                    code=503
+                )
 
             if not user.is_active:
                 logger.warning("token_refresh_failed_disabled", extra={
@@ -202,7 +223,12 @@ class AuthService:
                 "message": "Token refreshed successfully",
                 "user": user_data
             }
-
+        
+        
+        except APIException:
+            # Re-lever les APIException (503, etc.) sans transformation
+            raise
+        
         except self.user_model.DoesNotExist:
             logger.warning("token_refresh_failed_user_not_found", extra={
                 **log_context,
