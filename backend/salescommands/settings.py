@@ -226,10 +226,10 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+
     'core.logging.middlewares.RequestIdMiddleware',
     'core.logging.request_logging.RequestLoggingMiddleware',
     'core.http.etag.ETagMiddleware',
-    
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',

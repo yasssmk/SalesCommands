@@ -33,6 +33,7 @@ class UserLoginView(BaseAPIView):
     def post(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
+        
 
         if not email or not password:
             raise StandardizedValidationError(

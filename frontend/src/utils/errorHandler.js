@@ -38,7 +38,19 @@ export const handleApiError = (axiosError) => {
   const { status, data } = axiosError.response;
 
   // 2) 500+
-  if (status >= 500) return 'Server Error, please try again';
+  if (status >= 500) {
+    if (status === 503) {
+      return 'Service temporarily unavailable. Please try again shortly.';
+    }
+    if (status === 502) {
+      return 'Bad gateway. The server is temporarily unavailable.';
+    }
+    if (status === 504) {
+      return 'Gateway timeout. The server took too long to respond.';
+    }
+    // Generic 500
+    return 'Server error. Please try again later.';
+  }
 
   // 3) DRF/Custom: detail (très courant)
   if (data?.detail && typeof data.detail === 'string') return data.detail;
