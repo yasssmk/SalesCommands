@@ -436,11 +436,31 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                 wait_seconds = 0
 
             headers = {}
-            if wait_seconds is not None:
+            if wait_seconds > 0:
                 headers['Retry-After'] = str(wait_seconds)
 
-            # Utiliser votre format standard {"error": "..."}
-            message = getattr(exc, 'detail', "Request was throttled. Please try again later.")
+            import math
+            
+            if wait_seconds >= 60:
+                wait_minutes = math.ceil(wait_seconds / 60)
+                time_msg = f"{wait_minutes} minute{'s' if wait_minutes > 1 else ''}"
+            else:
+                time_msg = f"{wait_seconds} second{'s' if wait_seconds != 1 else ''}"
+            
+            # Extract original message to check if it already has custom formatting
+            original_message = getattr(exc, 'detail', '')
+            
+            # If the message already contains our custom format, use it as-is
+            if original_message and ('minute' in original_message.lower() or 
+                                     ('second' in original_message.lower() and 
+                                      'Expected available' not in original_message)):
+                message = original_message
+            else:
+                # Otherwise, construct a clean user-friendly message
+                message = (
+                    f"Too many requests. Please wait {time_msg} before trying again."
+                )
+                
             formatted = StandardizedValidationError._format_detail(message)
 
             return Response(formatted, status=status.HTTP_429_TOO_MANY_REQUESTS, headers=headers)
@@ -556,6 +576,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
                 StandardizedValidationError._format_detail(detail),
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
         
         from rest_framework.exceptions import APIException
         if isinstance(exc, APIException):

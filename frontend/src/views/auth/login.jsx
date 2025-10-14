@@ -39,11 +39,6 @@ export default function SignIn() {
         <Grid xs={12}>
           <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: { xs: -0.5, sm: 0.5 } }}>
             <Typography variant="h3">Login</Typography>
-            <Link href="/register" style={{ textDecoration: 'none' }}>
-              <Typography variant="body1" color="primary" sx={{ cursor: 'pointer' }}>
-                Don&apos;t have an account?
-              </Typography>
-            </Link>
           </Stack>
         </Grid>
         <Grid xs={12}>

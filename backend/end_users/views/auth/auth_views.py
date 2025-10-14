@@ -38,6 +38,56 @@ class UserLoginView(BaseAPIView):
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(field='Email and Password')
             )
+        
+        # ================================================================
+        # CRITICAL SECURITY CHECK: Hard lockout enforcement
+        # ================================================================
+        # Check throttle BEFORE authentication to prevent post-throttle success.
+        # This is a defense-in-depth measure that ensures throttle limits are
+        # enforced even if DRF middleware has edge cases or race conditions.
+        
+        from core.throttle_enforcer import check_dual_throttle
+        from rest_framework.exceptions import Throttled
+        import math
+        
+        throttle_result = check_dual_throttle(
+            request=request,
+            email=email,
+            scope='login'
+        )
+        
+        if throttle_result['is_throttled']:
+            wait_seconds = throttle_result.get('wait_seconds', 0)
+            wait_seconds = max(0, int(math.ceil(wait_seconds)))
+            
+            # Log the blocked attempt
+            ctx = ctx_from_request(request)
+            ctx.update({
+                'email': (email[:3] + '***') if email else '-',
+                'event': 'login_blocked_throttled',
+                'wait_seconds': wait_seconds,
+                'violated_key': throttle_result.get('violated_key', '-')
+            })
+            logger.warning("login_blocked_throttled", extra=ctx)
+            
+            # Construct user-friendly message
+            if wait_seconds >= 60:
+                wait_minutes = math.ceil(wait_seconds / 60)
+                time_msg = f"{wait_minutes} minute{'s' if wait_minutes > 1 else ''}"
+            else:
+                time_msg = f"{wait_seconds} second{'s' if wait_seconds != 1 else ''}"
+            
+            message = (
+                f"Too many login attempts. Please wait {time_msg} before trying again."
+            )
+            
+            # Raise Throttled exception BEFORE authentication runs
+            # This ensures authentication is never called during lockout
+            raise Throttled(detail=message)
+        
+        # ================================================================
+        # END SECURITY CHECK
+        # ================================================================
 
         # Log login attempt (safe extras)
         ctx = ctx_from_request(request)

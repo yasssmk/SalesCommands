@@ -117,37 +117,224 @@ class BaseCustomThrottle(SimpleRateThrottle):
 
         raise Throttled(detail=message, wait=wait_seconds)
 
-
-class LoginRateThrottle(BaseCustomThrottle):
+class LoginIPThrottle(BaseCustomThrottle):
     """
-    Throttle for login attempts.
+    🚨 SECURITY: Throttle login attempts by IP address ONLY.
     
-    Tracks by IP + email combination to prevent:
-    - Brute force password attacks
-    - Account enumeration
-    - Credential stuffing
+    Prevents attackers from bypassing throttle by changing email on each attempt.
+    This is the FIRST line of defense against brute force attacks.
+    
+    Works in combination with LoginRateThrottle:
+    - LoginIPThrottle: Limits total login attempts from ONE IP (all emails combined)
+    - LoginRateThrottle: Limits attempts for ONE specific account (IP+email)
+    
+    Example attack scenario WITHOUT this throttle:
+    - Attacker tries 1000 different emails from same IP
+    - Each email gets its own throttle counter
+    - Attacker bypasses the 3/minute limit by rotating emails
+    
+    With this throttle:
+    - Attacker is limited to 10 attempts/minute total from their IP
+    - Regardless of how many different emails they try
     """
-    scope = 'login'
+    scope = 'login_ip'
     
     def get_cache_key(self, request, view):
         """
-        Create unique key based on IP + email for more precise throttling.
+        Create cache key based on IP ONLY (not email).
+        This ensures the limit applies to ALL login attempts from this IP.
         """
         ident = self.get_ident(request)
         if ident is None:
+            logger.info(f"[THROTTLE] LoginIPThrottle skipped (whitelisted IP)")
             return None
             
+        cache_key = self.cache_format % {
+            'scope': self.scope,
+            'ident': ident
+        }
+        
+        logger.debug(f"[THROTTLE] LoginIPThrottle cache_key={cache_key} ip={ident}")
+        
+        return cache_key
+    
+    def allow_request(self, request, view):
+        """Override to add detailed logging"""
+        allowed = super().allow_request(request, view)
+        
+        if allowed:
+            logger.debug(
+                f"[THROTTLE] LoginIPThrottle ALLOWED "
+                f"history_size={len(self.history)} limit={self.num_requests}"
+            )
+        else:
+            logger.warning(
+                f"[THROTTLE] LoginIPThrottle BLOCKED "
+                f"history_size={len(self.history)} limit={self.num_requests} "
+                f"wait={self.wait()}s"
+            )
+        
+        return allowed
+
+
+
+
+class LoginRateThrottle(BaseCustomThrottle):
+
+    """
+    Throttle for login attempts with dual-key enforcement.
+    
+    Implements AND-model rate limiting:
+    - IP-based throttle: prevents brute force from single source
+    - Email-based throttle: prevents account-targeted attacks
+    
+    Both limits must pass for request to proceed. If either is exceeded,
+    request is blocked BEFORE authentication runs.
+    
+    Uses the new throttle_enforcer module for atomic dual-key checking.
+    """
+    scope = 'login'
+    
+    def __init__(self):
+        """Initialize throttle with rate from settings."""
+        super().__init__()
+        # Store throttle result for use in throttle_failure()
+        self._throttle_result = None
+    
+    def allow_request(self, request, view):
+        """
+        Check if request should be allowed.
+        
+        Overrides DRF's default behavior to implement dual-key throttling.
+        Uses throttle_enforcer for AND-model enforcement.
+        
+        Returns:
+            bool: True if request allowed, False if throttled
+        """
+        # Import here to avoid circular imports
+        from core.throttle_enforcer import check_dual_throttle
+        
+        # Extract email from request data
+        email = None
+        if request.data:
+            email = request.data.get('email', '')
+        
+        # If no email provided, we can't throttle by identifier
+        # Fall back to IP-only throttling via parent class
+        if not email:
+            logger.debug("No email in login request, using IP-only throttle")
+            return super().allow_request(request, view)
+        
+        # Check dual throttle (IP AND email)
+        self._throttle_result = check_dual_throttle(
+            request=request,
+            email=email,
+            scope=self.scope
+        )
+        
+        # If throttled, return False to trigger throttle_failure()
+        if self._throttle_result['is_throttled']:
+            return False
+        
+        # Not throttled - allow request
+        return True
+    
+    def wait(self):
+        """
+        Return number of seconds to wait before retry.
+        
+        Called by DRF when throttled to populate Retry-After header.
+        
+        Returns:
+            int: Seconds to wait (0 if unknown)
+        """
+        if self._throttle_result:
+            return self._throttle_result.get('wait_seconds', 0)
+        
+        # Fallback to parent implementation
+        try:
+            return super().wait()
+        except Exception:
+            return 0
+    
+    def throttle_failure(self):
+        """
+        Called when request is throttled.
+        
+        Logs the throttle event with detailed context and raises
+        Throttled exception with user-friendly message.
+        """
+        import math
+        
+        # Get wait time (ensure it's a valid integer >= 0)
+        try:
+            wait_seconds = self.wait()
+            wait_seconds = 0 if wait_seconds is None else max(0, int(math.ceil(wait_seconds)))
+        except Exception:
+            wait_seconds = 0
+        
+        # Log with detailed context from enforcer
+        if self._throttle_result:
+            details = self._throttle_result.get('details', {})
+            violated_key = self._throttle_result.get('violated_key', 'unknown')
+            
+            logger.warning(
+                f"Login throttle exceeded: "
+                f"key={violated_key} "
+                f"ip={details.get('ip', '-')} "
+                f"email={details.get('email_prefix', '-')} "
+                f"rate={details.get('rate', '-')} "
+                f"wait={wait_seconds}s"
+            )
+        else:
+            # Fallback logging if no enforcer result
+            logger.warning(
+                f"Login throttle exceeded "
+                f"scope={self.scope} wait={wait_seconds}s"
+            )
+        
+        # Construct user-friendly message
+        # Convert wait_seconds to minutes if >= 60 seconds
+        if wait_seconds >= 60:
+            wait_minutes = math.ceil(wait_seconds / 60)
+            time_msg = f"{wait_minutes} minute{'s' if wait_minutes > 1 else ''}"
+        else:
+            time_msg = f"{wait_seconds} second{'s' if wait_seconds != 1 else ''}"
+
+        message = (
+            f"Too many login attempts. Please wait {time_msg} before trying again."
+        )
+        
+        # Raise Throttled exception with wait time (DRF will add Retry-After header)
+        raise Throttled(detail=message)
+    
+    def get_cache_key(self, request, view):
+        """
+        Generate cache key for DRF compatibility.
+        
+        Note: This method is kept for backward compatibility with DRF's
+        SimpleRateThrottle, but actual throttling is done in allow_request()
+        via the dual-key enforcer.
+        
+        Returns:
+            str|None: Cache key (or None for whitelisted requests)
+        """
+        ident = self.get_ident(request)
+        if ident is None:
+            return None  # Whitelisted
+        
         # Try to get email from request data
         email = None
         if request.data:
             email = request.data.get('email', '')
-            
+        
         # Create composite key: IP + email (if available)
+        # This maintains compatibility with existing cache patterns
         if email:
             composite_ident = f"{ident}:{email.lower()}"
         else:
             composite_ident = ident
-            
+        
         cache_key = self.cache_format % {
             'scope': self.scope,
             'ident': composite_ident
@@ -155,26 +342,7 @@ class LoginRateThrottle(BaseCustomThrottle):
         
         return cache_key
     
-    def throttle_failure(self):
-        """Enhanced logging for login throttling."""
-        import math
-        try:
-            wait_seconds = self.wait()
-            wait_seconds = 0 if wait_seconds is None else max(0, int(math.ceil(wait_seconds)))
-        except Exception:
-            wait_seconds = 0
 
-        logger.warning(
-            f"Login throttle exceeded "
-            f"rate={self.num_requests}/{self.duration}s wait={wait_seconds}s"
-        )
-
-        message = (
-            "Too many login attempts. Please wait "
-            f"{wait_seconds} seconds before trying again."
-        )
-
-        raise Throttled(detail=message, wait=wait_seconds)
 
 
 class SensitiveActionThrottle(UserRateThrottle):
@@ -246,7 +414,7 @@ class SensitiveActionThrottle(UserRateThrottle):
             f"Please wait {wait_seconds} seconds before trying again."
         )
 
-        raise Throttled(detail=message, wait=wait_seconds)
+        raise Throttled(detail=message)
 
 
 
@@ -375,7 +543,7 @@ class RegistrationThrottle(AnonRateThrottle):
             f"Please wait {wait_seconds} seconds."
         )
 
-        raise Throttled(detail=message, wait=wait_seconds)
+        raise Throttled(detail=message)
 
 
 # =====================================================================

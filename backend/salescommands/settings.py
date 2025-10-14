@@ -165,8 +165,9 @@ if DEBUG:
     # Dev: Plus permissif pour faciliter les tests
     THROTTLE_RATES = {
         'anon': '100/hour',      # Utilisateurs non authentifiés
-        'user': '1000/hour',     # Utilisateurs authentifiés
-        'login': '20/hour',      # Tentatives de login (par IP+email)
+        'user': '1000/hour',
+        'login_ip': '10/minute',     # Utilisateurs authentifiés
+        'login': '2/hour',      # Tentatives de login (par IP+email) 
         'password': '10/hour',   # Changements de mot de passe
         'sensitive': '30/hour',  # Opérations sensibles
         'burst': '5/minute',    # Anti-burst
@@ -176,7 +177,8 @@ else:
     # Production: Plus restrictif
     THROTTLE_RATES = {
         'anon': '20/hour',       
-        'user': '100/hour',      
+        'user': '100/hour',
+        'login_ip': '10/minute',      
         'login': '5/hour',       # Plus strict en prod : 5 tentatives/heure
         'password': '3/hour',    
         'sensitive': '10/hour',  
@@ -483,24 +485,42 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 REDIS_URL = env('REDIS_URL', default=None)
 REDIS_THROTTLE_URL = env('REDIS_THROTTLE_URL', default=None)
 
+def _is_redis_active(url):
+    """Return True iff a Redis instance is configured and reachable (PING ok)."""
+    if not url:
+        return False
+    try:
+        import redis
+        client = redis.Redis.from_url(
+            url,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
+            health_check_interval=0  # ping explicit below
+        )
+        return bool(client.ping())
+    except Exception:
+        return False
 
-if REDIS_URL:
-    # Redis cache (production/staging)
+USE_REDIS_DEFAULT = _is_redis_active(REDIS_URL)
+USE_REDIS_THROTTLE = _is_redis_active(REDIS_THROTTLE_URL)
+
+if USE_REDIS_DEFAULT:
+    # Redis cache (production/staging) — only if active
     CACHES = {
         "default": {
             "BACKEND": "django_redis.cache.RedisCache",
             "LOCATION": REDIS_URL,
             "OPTIONS": {
                 "CLIENT_CLASS": "django_redis.client.DefaultClient",
-                "IGNORE_EXCEPTIONS": True,  # Graceful fallback if Redis fails
+                "IGNORE_EXCEPTIONS": True,  # Graceful fallback if Redis fails at runtime
             },
             "KEY_PREFIX": "crm",
             "TIMEOUT": 300,  # 5 minutes default TTL
         }
     }
-    
-    # Optional: Dedicated Redis DB for throttling
-    if REDIS_THROTTLE_URL:
+
+    # Optional: Dedicated Redis DB for throttling — only if active
+    if USE_REDIS_THROTTLE:
         CACHES["throttle"] = {
             "BACKEND": "django_redis.cache.RedisCache",
             "LOCATION": REDIS_THROTTLE_URL,
@@ -511,7 +531,7 @@ if REDIS_URL:
             "KEY_PREFIX": "crm_throttle",
         }
 else:
-    # Fallback: File-based cache for development without Redis
+    # Fallback: File-based cache for development OR if Redis is down
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
@@ -574,10 +594,11 @@ LOGGING = {
 # =========================================================================
 
 # IPs ou ranges à exclure du throttling (ex: monitoring, CI/CD)
-THROTTLE_WHITELIST_IPS = env.list('THROTTLE_WHITELIST_IPS', default=[
-    '127.0.0.1',  # Localhost
-    # '10.0.0.0/8',  # Réseau interne (décommenter si nécessaire)
-])
+# THROTTLE_WHITELIST_IPS = env.list('THROTTLE_WHITELIST_IPS', default=[
+#     '127.0.0.1',  # Localhost
+#     # '10.0.0.0/8',  # Réseau interne (décommenter si nécessaire)
+# ])
+THROTTLE_WHITELIST_IPS=env.list('THROTTLE_WHITELIST_IPS', default=[])
 
 # Utilisateurs à exclure du throttling (par email ou ID)
 THROTTLE_WHITELIST_USERS = env.list('THROTTLE_WHITELIST_USERS', default=[
@@ -593,7 +614,8 @@ THROTTLE_WHITELIST_USERS = env.list('THROTTLE_WHITELIST_USERS', default=[
 THROTTLE_ERROR_MESSAGES = {
     'anon': 'Too many requests from this IP. Please try again later.',
     'user': 'You have exceeded the rate limit. Please slow down your requests.',
-    'login': 'Too many login attempts. Please wait before trying again.',
+    'login_ip': 'Too many login attempts from this IP address. Please wait before trying again.',
+    # 'login': 'Too many login attempts BUBU. Please wait before trying again.',
     'password': 'Too many password change attempts. Please wait before trying again.',
     'sensitive': 'This action has been rate limited for security. Please try again later.',
 }
