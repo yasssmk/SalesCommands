@@ -52,8 +52,9 @@ export default function UserListPage() {
 
   const [refreshNonce, setRefreshNonce] = useState(0);
 
-   const { mutate: globalMutate } = useSWRConfig();
+  const { mutate: globalMutate } = useSWRConfig();
 
+  const MAX_PAGE_SIZE = 100;
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useLocalStorage(
@@ -61,33 +62,40 @@ export default function UserListPage() {
   );
 
   const validPageSize = useMemo(() => {
-    const parsed = Number(pageSize);
-    return (!isNaN(parsed) && parsed > 0) ? parsed : 10;
-  }, [pageSize]);
+  const parsed = Number(pageSize);
+  if (isNaN(parsed) || parsed <= 0) return 10;
+  return Math.min(parsed, MAX_PAGE_SIZE);  // ✅ Cap à 100
+}, [pageSize]);
 
   const [search, setSearch] = useState('');
 
   const [csvImportModal, setCsvImportModal] = useState(false);
 
-  const { usersLoading, users, usersCount, usersError } = useGetUsers({
-    page,
-    pageSize: validPageSize,
-    search
-  });
 
 
   const swrKey = useMemo(() => {
-    const params = new URLSearchParams();
-    params.append('page', page);
-    params.append('page_size', pageSize);
-    if (search) params.append('search', search);
+  const params = new URLSearchParams();
+  params.append('page', page);
+  params.append('page_size', validPageSize);  // ✅ Pas pageSize brut
+  if (search) params.append('search', search);
+  params.append('nonce', String(refreshNonce));
+  const url = `/client/users/${params.toString() ? `?${params.toString()}` : ''}`;
+  return tenantKey(url, tenantId);
+}, [page, validPageSize, search, tenantId, refreshNonce]);
 
-    // ✅ force le refetch sans mutate
-    params.append('nonce', String(refreshNonce));
+const _usersHook = useGetUsers({ 
+  page, 
+  pageSize: validPageSize, 
+  search 
+}) || {};
 
-    const url = `/client/users/${params.toString() ? `?${params.toString()}` : ''}`;
-    return tenantKey(url, tenantId);
-  }, [page, pageSize, search, tenantId, refreshNonce]);
+const {
+  usersLoading = false,
+  users = [],
+  usersCount = 0,
+  usersError = null
+} = _usersHook;
+
 
 
 
@@ -247,10 +255,6 @@ const handleBulkDeleteComplete = useCallback(() => {
   setSelectedRows(new Set());
 }, []);
 
-const handleTestInvalidPagination = useCallback(() => {
-  setPage(-1);           // Page invalide
-  setPageSize(999999);   // Page size > max
-}, []);
 
   // ==============================|| COLUMNS ||============================== //
 
@@ -451,15 +455,6 @@ const handleTestInvalidPagination = useCallback(() => {
 
   return (
     <>
-    <Grid item xs={12}>
-      <Button 
-        variant="outlined" 
-        color="error" 
-        onClick={handleTestInvalidPagination}
-      >
-        🧪 Test Invalid Pagination (400)
-      </Button>
-    </Grid>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <SeatsSummary />
@@ -485,7 +480,7 @@ const handleTestInvalidPagination = useCallback(() => {
           setUserModal(true);
           
         }}
-        initialPageSize={pageSize}  
+        initialPageSize={validPageSize} 
       />
 
       <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />

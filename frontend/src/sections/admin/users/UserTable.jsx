@@ -177,7 +177,9 @@ function ReactTable({
   }, [currentPage]);
 
   const pageSize = useMemo(() => {
-    return Number(initialPageSize) || 10;
+    const n = Number(initialPageSize);
+    if (!n || n <= 0) return 10;
+    return Math.min(n, 100);  // ✅ Cap à 100
   }, [initialPageSize]);
 
   const pageCount = useMemo(() => {
@@ -190,11 +192,11 @@ function ReactTable({
     }
   }, [globalFilter, onSearchChange]);
 
-  useEffect(() => {
-    if (error) {
-      displayErrorSnackbar(error);
-    }
-  }, [error]);
+  // useEffect(() => {
+  //   if (error) {
+  //     displayErrorSnackbar(error);
+  //   }
+  // }, [error]);
 
   // ✅ HANDLERS PERSONNALISÉS qui communiquent directement avec le parent
   // Au lieu d'utiliser les méthodes TanStack (setPageIndex, setPageSize)
@@ -202,10 +204,10 @@ function ReactTable({
     if (onPaginationChange) {
       onPaginationChange({
         page: newPageIndex + 1,  // Convert 0-indexed to 1-indexed
-        pageSize: pageSize
+        pageSize: Number(initialPageSize) || 10
       });
     }
-  }, [onPaginationChange, pageSize]);
+  }, [onPaginationChange, initialPageSize]);
 
   const handlePageSizeChange = useCallback((newPageSize) => {
     if (onPaginationChange) {
@@ -357,7 +359,8 @@ function ReactTable({
                 </TableHead>
                 <TableBody>
                   {loading ? (
-                    Array.from({ length: initialPageSize }).map((_, index) => (
+                    Array.from({ length: Math.max(1, Math.min(initialPageSize ?? 10, 100)) 
+                      }).map((_, index) => (
                       <TableRow key={index}>
                         {columns.map((_, colIndex) => (
                           <TableCell key={colIndex}>

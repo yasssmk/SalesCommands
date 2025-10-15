@@ -1,7 +1,6 @@
 'use client';
 import PropTypes from 'prop-types';
-
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 
 // material-ui
 import FormControl from '@mui/material/FormControl';
@@ -15,8 +14,25 @@ import Typography from '@mui/material/Typography';
 
 // ==============================|| TABLE PAGINATION ||============================== //
 
-export default function TablePagination({ getPageCount, setPageIndex, setPageSize, getState, initialPageSize }) {
+export default function TablePagination({ 
+  getPageCount, 
+  setPageIndex, 
+  setPageSize, 
+  getState, 
+  initialPageSize 
+}) {
   const [open, setOpen] = useState(false);
+  const MAX_PAGE_SIZE = 100;
+  
+  // ✅ État local pour le TextField "Go to"
+  const currentPageIndex = getState().pagination.pageIndex;
+  const [pageInputValue, setPageInputValue] = useState(String(currentPageIndex + 1));
+
+  // ✅ Sync avec la page réelle quand elle change (via pagination cliquable)
+  useEffect(() => {
+    setPageInputValue(String(currentPageIndex + 1));
+  }, [currentPageIndex]);
+  
   let options = [10, 25, 50, 100];
 
   if (initialPageSize) {
@@ -40,7 +56,40 @@ export default function TablePagination({ getPageCount, setPageIndex, setPageSiz
   };
 
   const handleChange = (event) => {
-    setPageSize(Number(event.target.value));
+    // ✅ Capper la valeur pour éviter les crashes
+    const v = Math.max(1, Math.min(Number(event.target.value) || 10, MAX_PAGE_SIZE));
+    setPageSize(v);
+  };
+
+  // ✅ Handler pour la saisie libre
+  const handlePageInputChange = (e) => {
+    setPageInputValue(e.target.value);
+  };
+
+  // ✅ Validation et application de la page
+  const applyPageInput = () => {
+    const maxPage = getPageCount();
+    
+    if (pageInputValue === '' || pageInputValue === null) {
+      // Si vide, revenir à la page actuelle
+      setPageInputValue(String(currentPageIndex + 1));
+      return;
+    }
+    
+    let page = Number(pageInputValue);
+    
+    // Valider et capper
+    if (isNaN(page) || page < 1) {
+      page = 1;
+    } else if (page > maxPage) {
+      page = maxPage;
+    }
+    
+    // Mettre à jour l'affichage avec la valeur corrigée
+    setPageInputValue(String(page));
+    
+    // Appliquer la page validée (0-indexed)
+    setPageIndex(page - 1);
   };
 
   return (
@@ -76,10 +125,19 @@ export default function TablePagination({ getPageCount, setPageIndex, setPageSiz
           <TextField
             size="small"
             type="number"
-            value={getState().pagination.pageIndex + 1}
-            onChange={(e) => {
-              const page = e.target.value ? Number(e.target.value) - 1 : 0;
-              setPageIndex(page);
+            value={pageInputValue}
+            onChange={handlePageInputChange}
+            onBlur={applyPageInput}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                applyPageInput();
+              }
+            }}
+            inputProps={{
+              min: 1,
+              max: getPageCount(),
+              step: 1
             }}
             sx={{ '& .MuiOutlinedInput-input': { py: 0.75, px: 1.25, width: 36 } }}
           />
