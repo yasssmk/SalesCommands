@@ -411,6 +411,7 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 
+
     'ALGORITHM': 'HS256',
     'SIGNING_KEY_ADMIN': env('JWT_ADMIN_SECRET_KEY'),
     'SIGNING_KEY_USER': env('JWT_USER_SECRET_KEY'),

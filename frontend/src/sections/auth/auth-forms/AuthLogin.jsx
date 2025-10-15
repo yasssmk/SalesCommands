@@ -38,12 +38,12 @@ import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
 
 // ============================|| DJANGO AUTH - LOGIN ||============================ //
 
-export default function AuthLogin({ providers, csrfToken }) {
+export default function AuthLogin({ providers, csrfToken, initialError = null }) {
   const downSM = useMediaQuery((theme) => theme.breakpoints.down('sm'));
   const [checked, setChecked] = useState(false);
   const [capsWarning, setCapsWarning] = useState(false);
-
   const [showPassword, setShowPassword] = useState(false);
+
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
   };
@@ -61,6 +61,7 @@ export default function AuthLogin({ providers, csrfToken }) {
   };
 
   const { login } = useAuth();
+  console.log('INITIAL ERROR:', { initialError });
 
   return (
     <>
@@ -76,136 +77,145 @@ export default function AuthLogin({ providers, csrfToken }) {
             .required('Password is required')
             .test('no-leading-trailing-whitespace', 'Password cannot start or end with spaces', (value) => value === value.trim())
         })}
-      onSubmit={async (values, { setErrors, setSubmitting, setStatus }) => {
-        setErrors({});
-        setStatus(null);
-
-        const trimmedEmail = values.email.trim();
-        console.log('Attempting login for:', trimmedEmail);
-
-        try {
-          const result = await login(trimmedEmail, values.password);
-
-          if (result.success) {
-            console.log('Login successful, redirect will be handled by useAuth');
-          } else {
-            console.log('Login failed with error:', result.error);
-            setErrors({ submit: result.error || 'Login failed. Please try again.' });
+        onSubmit={async (values, { setErrors, setSubmitting, setStatus }) => {
+          setErrors({});
+          setStatus(null);
+          const trimmedEmail = values.email.trim();
+          console.log('Attempting login for:', trimmedEmail);
+          try {
+            const result = await login(trimmedEmail, values.password);
+            if (result.success) {
+              console.log('Login successful, redirect will be handled by useAuth');
+            } else {
+              console.log('Login failed with error:', result.error);
+              setErrors({ submit: result.error || 'Login failed. Please try again.' });
+            }
+          } finally {
+            setSubmitting(false);
           }
-        } finally {
-          setSubmitting(false);
-        }
-      }}
+        }}
       >
-        {({ errors, handleBlur, handleChange, handleSubmit, isSubmitting, touched, values }) => (
-          <form noValidate onSubmit={handleSubmit}>
-            <input name="csrfToken" type="hidden" defaultValue={csrfToken} />
-            <Grid container spacing={2}>
-              <Grid xs={12}>
-                <Stack spacing={1}>
-                  <InputLabel htmlFor="email-login">Email Address</InputLabel>
-                  <OutlinedInput
-                    id="email-login"
-                    type="email"
-                    value={values.email}
-                    name="email"
-                    onBlur={handleBlur}
-                    onChange={handleChange}
-                    placeholder="Enter email address"
-                    fullWidth
-                    error={Boolean(touched.email && errors.email)}
-                  />
-                </Stack>
-                {touched.email && errors.email && (
-                  <FormHelperText error id="standard-weight-helper-text-email-login">
-                    {errors.email}
-                  </FormHelperText>
-                )}
-              </Grid>
-              <Grid xs={12}>
-                <Stack spacing={1}>
-                  <InputLabel htmlFor="password-login">Password</InputLabel>
-                  <OutlinedInput
-                    fullWidth
-                    color={capsWarning ? 'warning' : 'primary'}
-                    error={Boolean(touched.password && errors.password)}
-                    id="password-login"
-                    type={showPassword ? 'text' : 'password'}
-                    value={values.password}
-                    name="password"
-                    onBlur={(event) => {
-                      setCapsWarning(false);
-                      handleBlur(event);
-                    }}
-                    onKeyDown={onKeyDown}
-                    onChange={handleChange}
-                    endAdornment={
-                      <InputAdornment position="end">
-                        <IconButton
-                          aria-label="toggle password visibility"
-                          onClick={handleClickShowPassword}
-                          onMouseDown={handleMouseDownPassword}
-                          edge="end"
-                          color="secondary"
-                        >
-                          {showPassword ? <EyeOutlined /> : <EyeInvisibleOutlined />}
-                        </IconButton>
-                      </InputAdornment>
-                    }
-                    placeholder="Enter password"
-                  />
-                  {capsWarning && (
-                    <Typography variant="caption" sx={{ color: 'warning.main' }} id="warning-helper-text-password-login">
-                      Caps lock on!
-                    </Typography>
-                  )}
-                </Stack>
-                {touched.password && errors.password && (
-                  <FormHelperText error id="standard-weight-helper-text-password-login">
-                    {errors.password}
-                  </FormHelperText>
-                )}
-              </Grid>
+        {({ errors, handleBlur, handleChange, handleSubmit, isSubmitting, touched, values, setErrors }) => {
+          React.useEffect(() => {
+            if (initialError) {
+              console.log('🔥 Setting flash error in Formik:', initialError);
+              setErrors({ submit: initialError });
+            }
+          }, [initialError, setErrors]);
 
-              <Grid xs={12} sx={{ mt: -1 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={checked}
-                        onChange={(event) => setChecked(event.target.checked)}
-                        name="checked"
-                        color="primary"
-                        size="small"
-                      />
-                    }
-                    label={<Typography variant="h6">Keep me sign in</Typography>}
-                  />
-                  <Link href="/forget-pass" style={{ textDecoration: 'none' }}>
-                    <Typography variant="h6" color="text.primary">
-                      Forgot Password?
-                    </Typography>
-                  </Link>
-                </Stack>
-              </Grid>
-              {errors.submit && (
+          return (
+            <form noValidate onSubmit={handleSubmit}>
+              <input name="csrfToken" type="hidden" defaultValue={csrfToken} />
+              <Grid container spacing={2}>
                 <Grid xs={12}>
-                  <FormHelperText error>{errors.submit}</FormHelperText>
+                  <Stack spacing={1}>
+                    <InputLabel htmlFor="email-login">Email Address</InputLabel>
+                    <OutlinedInput
+                      id="email-login"
+                      type="email"
+                      value={values.email}
+                      name="email"
+                      onBlur={handleBlur}
+                      onChange={handleChange}
+                      placeholder="Enter email address"
+                      fullWidth
+                      error={Boolean(touched.email && errors.email)}
+                    />
+                  </Stack>
+                  {touched.email && errors.email && (
+                    <FormHelperText error id="standard-weight-helper-text-email-login">
+                      {errors.email}
+                    </FormHelperText>
+                  )}
                 </Grid>
-              )}
-              <Grid xs={12}>
-                <AnimateButton>
-                  <Button disableElevation disabled={isSubmitting} fullWidth size="large" type="submit" variant="contained" color="primary">
-                    Login
-                  </Button>
-                </AnimateButton>
+                <Grid xs={12}>
+                  <Stack spacing={1}>
+                    <InputLabel htmlFor="password-login">Password</InputLabel>
+                    <OutlinedInput
+                      fullWidth
+                      color={capsWarning ? 'warning' : 'primary'}
+                      error={Boolean(touched.password && errors.password)}
+                      id="password-login"
+                      type={showPassword ? 'text' : 'password'}
+                      value={values.password}
+                      name="password"
+                      onBlur={(event) => {
+                        setCapsWarning(false);
+                        handleBlur(event);
+                      }}
+                      onKeyDown={onKeyDown}
+                      onChange={handleChange}
+                      endAdornment={
+                        <InputAdornment position="end">
+                          <IconButton
+                            aria-label="toggle password visibility"
+                            onClick={handleClickShowPassword}
+                            onMouseDown={handleMouseDownPassword}
+                            edge="end"
+                            color="secondary"
+                          >
+                            {showPassword ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+                          </IconButton>
+                        </InputAdornment>
+                      }
+                      placeholder="Enter password"
+                    />
+                    {capsWarning && (
+                      <Typography variant="caption" sx={{ color: 'warning.main' }} id="warning-helper-text-password-login">
+                        Caps lock on!
+                      </Typography>
+                    )}
+                  </Stack>
+                  {touched.password && errors.password && (
+                    <FormHelperText error id="standard-weight-helper-text-password-login">
+                      {errors.password}
+                    </FormHelperText>
+                  )}
+                </Grid>
+                <Grid xs={12} sx={{ mt: -1 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={checked}
+                          onChange={(event) => setChecked(event.target.checked)}
+                          name="checked"
+                          color="primary"
+                          size="small"
+                        />
+                      }
+                      label={<Typography variant="h6">Keep me sign in</Typography>}
+                    />
+                    <Link href="/forget-pass" style={{ textDecoration: 'none' }}>
+                      <Typography variant="h6" color="text.primary">
+                        Forgot Password?
+                      </Typography>
+                    </Link>
+                  </Stack>
+                </Grid>
+                {errors.submit && (
+                  <Grid xs={12}>
+                    <FormHelperText error>{errors.submit}</FormHelperText>
+                  </Grid>
+                )}
+                <Grid xs={12}>
+                  <AnimateButton>
+                    <Button disableElevation disabled={isSubmitting} fullWidth size="large" type="submit" variant="contained" color="primary">
+                      Login
+                    </Button>
+                  </AnimateButton>
+                </Grid>
               </Grid>
-            </Grid>
-          </form>
-        )}
+            </form>
+          );
+        }}
       </Formik>
     </>
   );
 }
 
-AuthLogin.propTypes = { providers: PropTypes.any, csrfToken: PropTypes.any };
+AuthLogin.propTypes = { 
+  providers: PropTypes.any, 
+  csrfToken: PropTypes.any, 
+  initialError: PropTypes.string 
+};

@@ -20,6 +20,55 @@ import { authConfig, debugLog } from '../config/auth';
 
 const AuthContext = createContext(null);
 
+// ==============================|| FLASH MESSAGE HELPERS ||============================== //
+
+/**
+ * Store auth flash message for display on login page
+ * @param {string} message - Error message to display
+ */
+const setAuthFlash = (message) => {
+  try {
+    const flash = {
+      m: message,
+      t: Date.now()
+    };
+    sessionStorage.setItem('authFlash', JSON.stringify(flash));
+    debugLog('💾 Auth flash stored:', message);
+  } catch (e) {
+    // Silent fail - sessionStorage might be unavailable
+    debugLog('⚠️ Failed to store auth flash:', e.message);
+  }
+};
+
+/**
+ * Read and clear auth flash message
+ * @returns {string|null} Flash message or null
+ */
+export const getAuthFlash = () => {
+  try {
+    const raw = sessionStorage.getItem('authFlash');
+    if (!raw) return null;
+
+    const flash = JSON.parse(raw);
+    const age = Date.now() - (flash.t || 0);
+    
+    // Flash expires after 30 seconds (prevents stale messages)
+    if (age > 30000) {
+      sessionStorage.removeItem('authFlash');
+      return null;
+    }
+
+    // Clear flash after reading
+    sessionStorage.removeItem('authFlash');
+    debugLog('📖 Auth flash read and cleared:', flash.m);
+    return flash.m || null;
+  } catch (e) {
+    debugLog('⚠️ Failed to read auth flash:', e.message);
+    return null;
+  }
+};
+
+
 // ==============================|| AUTH PROVIDER ||============================== //
 
 export function AuthProvider({ children }) {
@@ -52,17 +101,6 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * SET AUTHENTICATED USER - Action unifiée
-   */
-  const setAuthenticatedUser = useCallback((userData) => {
-    setUser(userData);
-    setIsAuthenticated(true);
-    setError(null);
-    setIsLoading(false);
-    debugLog('✅ User authenticated:', userData);
-  }, []);
-
-  /**
    * CLEAR AUTH STATE - Nettoyage complet
    */
   const clearAuthState = useCallback(() => {
@@ -82,13 +120,15 @@ export function AuthProvider({ children }) {
     setIsLoading(false);
     stopAutoRefresh(); // ✅ Arrêt du timer en cas d'erreur d'auth
     clearAuthState();
+    setAuthFlash(errorMessage);
     debugLog('❌ Auth error handled:', errorMessage);
   }, [clearAuthState, stopAutoRefresh]);
 
   // ==============================|| TOKEN REFRESH ||============================== //
 
   /**
-   * AUTO-REFRESH TOKENS
+   * AUTO-REFRESH TOKENS (called by timer)
+   * ⚠️ Uses setUser() directly to avoid infinite loop with setAuthenticatedUser()
    */
   const performTokenRefresh = useCallback(async () => {
     if (isRefreshingRef.current) return;
@@ -100,7 +140,7 @@ export function AuthProvider({ children }) {
       const result = await refreshTokens();
       if (result.success) {
         if (result.user) {
-          setUser(result.user);
+          setUser(result.user); // ✅ Direct setUser, not setAuthenticatedUser
           debugLog('✅ Token refresh successful with user data');
         } else {
           debugLog('✅ Token refresh successful (no user data)');
@@ -117,15 +157,33 @@ export function AuthProvider({ children }) {
     }
   }, [handleAuthError]);
 
+  /**
+   * START AUTO REFRESH with jitter
+   */
   const startAutoRefresh = useCallback(() => {
     stopAutoRefresh();
-    debugLog('⏰ Starting auto-refresh timer');
+    const jitter = Math.floor(Math.random() * 30000) - 15000; // ±15s
+    const interval = authConfig.TOKEN_REFRESH_INTERVAL + jitter;
+    debugLog(`⏰ Starting auto-refresh timer (interval: ${(interval / 1000).toFixed(0)}s)`);
     
     refreshTimerRef.current = setInterval(
       performTokenRefresh,
-      authConfig.TOKEN_REFRESH_INTERVAL
+      interval
     );
   }, [performTokenRefresh, stopAutoRefresh]);
+
+  /**
+   * ✅ SET AUTHENTICATED USER + START TIMER
+   * Called after login and initialization
+   */
+  const setAuthenticatedUser = useCallback((userData) => {
+    setUser(userData);
+    setIsAuthenticated(true);
+    setError(null);
+    setIsLoading(false);
+    startAutoRefresh(); // ✅ Start proactive refresh timer
+    debugLog('✅ User authenticated + timer started:', userData);
+  }, [startAutoRefresh]);
 
   // ==============================|| AUTH ACTIONS ||============================== //
 
@@ -144,7 +202,7 @@ export function AuthProvider({ children }) {
         return { success: false, error: result.error };
       }
 
-      // Store user
+      // Store user + start timer
       setAuthenticatedUser(result.user);
       
       // Navigation Next.js avec re-hydratation
@@ -271,6 +329,13 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
+    const handleSessionExpired = (event) => {
+      debugLog('🚨 Session expired event received from interceptor');
+      handleAuthError(event.detail.error);
+    };
+    
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+
     const initializeAuth = async () => {
 
       // ✅ Skip si déjà initialisé avec un user
@@ -302,8 +367,8 @@ export function AuthProvider({ children }) {
         if (!mounted) return;
 
         if (result.success) {
+          // ✅ setAuthenticatedUser starts timer automatically
           setAuthenticatedUser(result.user);
-          startAutoRefresh();
           debugLog('✅ User already authenticated:', result.user);
         } else {
           clearAuthState();
@@ -325,8 +390,9 @@ export function AuthProvider({ children }) {
     return () => {
       mounted = false;
       stopAutoRefresh();
+      window.removeEventListener('auth:session-expired', handleSessionExpired);
     };
-  }, []); // ✅ IMPORTANT: Retirer pathname des dépendances pour éviter re-init sur navigation
+  }, []); 
 
  // ==============================|| OPTIMISATIONS ||============================== //
   
@@ -347,7 +413,7 @@ export function AuthProvider({ children }) {
    * ✅ CLEAR ERROR AVEC DÉPENDANCES CORRECTES
    * Fixe le warning React sur les dépendances manquantes
    */
-  const clearError = useCallback(() => setError(null), [setError]);
+  const clearError = useCallback(() => setError(null), []);
 
   /**
    * ✅ MÉMOÏSATION DE LA CONTEXT VALUE
@@ -413,3 +479,5 @@ export function useAuth() {
 }
 
 export default useAuth;
+
+

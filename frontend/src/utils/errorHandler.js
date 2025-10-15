@@ -17,23 +17,39 @@
 
 export const handleApiError = (axiosError) => {
 
-  if (axiosError && !axiosError.response) {
-    // Check for .error property first (from apiRequest wrapper)
+  // ==============================
+  // NETWORK ERROR (Backend down, DNS failure, etc.)
+  // ==============================
+  // Detect genuine Axios network errors FIRST before checking .error/.message
+  if (!axiosError?.response) {
+    // Check if it's a genuine Axios network error (not a custom error object)
+    const isAxiosNetworkError = 
+      axiosError?.message === 'Network Error' || 
+      axiosError?.code === 'ERR_NETWORK' ||
+      axiosError?.code === 'ECONNREFUSED';
+    
+    if (isAxiosNetworkError) {
+      // ✅ Use front-end message for true network errors
+      return 'Unable to connect to the server. Please check your internet connection.';
+    }
+    
+    // For other cases without response, check custom error properties
+    // (e.g. from apiRequest wrapper for specific scenarios)
     if (axiosError.error && typeof axiosError.error === 'string') {
       return axiosError.error;
     }
     
-    // Check for .message property (from some catch blocks or Error objects)
     if (axiosError.message && typeof axiosError.message === 'string') {
       return axiosError.message;
     }
+    
+    // Final fallback for unknown no-response errors
+    return 'Network error. Please check your connection.';
   }
 
   // ==============================
   //  Network Error Detection
   // ==============================
-  // No response = true network error (connection lost, DNS failure, etc.)
-  if (!axiosError?.response) return 'Network error. Please check your connection.';
 
   const { status, data } = axiosError.response;
 

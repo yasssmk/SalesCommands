@@ -5,6 +5,38 @@ import { authConfig, debugLog } from '../config/auth';
 import { handleApiError } from '../utils/errorHandler';
 import { safeConsole } from './logSanitizer';
 
+// ==============================|| SINGLE-FLIGHT REFRESH PATTERN ||============================== //
+
+/**
+ * ✅ SINGLE-FLIGHT PATTERN
+ * 
+ * Ensures only ONE token refresh happens at a time.
+ * Multiple concurrent 401s will wait for the same refresh and then retry.
+ * 
+ * This prevents:
+ * - Multiple simultaneous refresh calls
+ * - Race conditions on token rotation
+ * - Backend throttling on refresh endpoint
+ */
+
+let refreshPromise = null; // Tracks the ongoing refresh operation
+const subscriberQueue = []; // Queue of requests waiting for refresh
+
+/**
+ * Called when refresh succeeds - retries all queued requests
+ */
+function onRefreshed() {
+  subscriberQueue.splice(0).forEach(({ resolve }) => resolve());
+}
+
+/**
+ * Called when refresh fails - rejects all queued requests
+ */
+function onRefreshFailed(error) {
+  subscriberQueue.splice(0).forEach(({ reject }) => reject(error));
+}
+
+
 // ==============================|| CENTRAL AXIOS CLIENT ||============================== //
 
 /**
@@ -141,17 +173,123 @@ axiosClient.interceptors.response.use(
     
     return response;
   },
-  (error) => {
+   async (error) => {
     const correlationId = error?.config?.metadata?.correlationId || 'unknown';
     const startTime = error?.config?.metadata?.startTime;
     const status = error?.response?.status;
     const url = error?.config?.url;
+    const originalRequest = error.config;
     
     // Calculate request duration
     let duration = 0;
     if (startTime) {
       duration = performance.now() - startTime;
     }
+
+    // ==============================
+    // 🔄 HANDLE 401 UNAUTHORIZED - AUTO REFRESH TOKEN
+    // ==============================
+    
+    // Check if this is a refresh endpoint call (prevent infinite loop)
+    const isRefreshCall = url?.includes('/client/refresh-token/');
+    
+    // Only attempt refresh if:
+    // 1. Status is 401
+    // 2. Not already retried (prevent double refresh)
+    // 3. Not the refresh endpoint itself
+    if (status === 401 && !originalRequest._retry && !isRefreshCall) {
+      originalRequest._retry = true; // Mark as retried
+      
+      // If a refresh is already in progress, queue this request
+      if (refreshPromise) {
+        if (process.env.NODE_ENV === 'development') {
+          debugLog(
+            `⏸️ [${correlationId.slice(0, 8)}] 401 - Queuing request (refresh in progress)`
+          );
+        }
+        
+        return new Promise((resolve, reject) => {
+          subscriberQueue.push({
+            resolve: () => {
+              if (process.env.NODE_ENV === 'development') {
+                debugLog(
+                  `🔁 [${correlationId.slice(0, 8)}] Retrying after refresh: ${originalRequest.method?.toUpperCase()} ${originalRequest.url}`
+                );
+              }
+              resolve(axiosClient(originalRequest));
+            },
+            reject,
+          });
+        });
+      }
+      
+      // Start a new refresh
+      try {
+        if (process.env.NODE_ENV === 'development') {
+          debugLog(
+            `🔄 [${correlationId.slice(0, 8)}] 401 - Starting token refresh`
+          );
+        }
+        
+        // Import refreshTokens dynamically to avoid circular dependency
+        const { refreshTokens } = await import('../api/auth');
+        
+        // Create the refresh promise
+        refreshPromise = refreshTokens();
+        const refreshResult = await refreshPromise;
+        
+        if (!refreshResult.success) {
+          throw new Error(refreshResult.error || 'Token refresh failed');
+        }
+        
+        // Refresh succeeded - notify all queued requests
+        onRefreshed();
+        
+        if (process.env.NODE_ENV === 'development') {
+          debugLog(
+            `✅ [${correlationId.slice(0, 8)}] Token refresh successful, retrying original request`
+          );
+        }
+        
+        // Retry the original request
+        return axiosClient(originalRequest);
+        
+      } catch (refreshError) {
+        // Refresh failed - notify all queued requests
+        onRefreshFailed(refreshError);
+        
+        if (process.env.NODE_ENV === 'development') {
+          debugLog(
+            `❌ [${correlationId.slice(0, 8)}] Token refresh failed: ${refreshError.message}`
+          );
+        }
+        
+        // Import handleAuthError dynamically to trigger logout
+        // This will stop the proactive timer and redirect to login
+        try {
+          // Signal to the app that session has expired
+          // The app will handle logout via useAuth context
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('auth:session-expired', {
+              detail: { error: 'Session expired. Please sign in again.' }
+            }));
+          }
+        } catch (e) {
+          // Fallback if event dispatch fails
+          safeConsole.error('Failed to dispatch session-expired event:', e);
+        }
+        
+        // Reject with original 401 error
+        return Promise.reject(error);
+        
+      } finally {
+        refreshPromise = null;
+      }
+    }
+
+    // ==============================
+    // ⏱️ HANDLE TIMEOUT
+    // ==============================
 
     // Axios timeout errors have code 'ECONNABORTED' or message contains 'timeout'
     const isTimeout = 
@@ -182,39 +320,6 @@ axiosClient.interceptors.response.use(
       }
     }
     
-    // Handle 429 Retry-After
-    // if (status === 429 && error?.response?.headers) {
-    //   console.log('🔍 ALL HEADERS:', error.response.headers);
-    //   // ⚠️ FIX: Try multiple header case variations (axios may normalize)
-    //   const headers = error.response.headers;
-    //   const retryAfter = headers['retry-after'] || 
-    //                     headers['Retry-After'] || 
-    //                     headers['RETRY-AFTER'];
-      
-    //   if (retryAfter) {
-    //     const retryAfterMs = parseRetryAfter(retryAfter);
-        
-    //     if (retryAfterMs > 0) {
-    //       // Attach parsed delay to error for SWR to use
-    //       error.retryAfterMs = retryAfterMs;
-          
-    //       if (process.env.NODE_ENV === 'development') {
-    //         debugLog(
-    //           `⏱️ [${correlationId.slice(0, 8)}] Rate limited: retry after ${(retryAfterMs / 1000).toFixed(1)}s`
-    //         );
-    //       }
-    //     } else if (process.env.NODE_ENV === 'development') {
-    //       debugLog(
-    //         `⚠️ [${correlationId.slice(0, 8)}] Rate limited but couldn't parse Retry-After: "${retryAfter}"`
-    //       );
-    //     }
-    //   } else if (process.env.NODE_ENV === 'development') {
-    //     debugLog(
-    //       `⚠️ [${correlationId.slice(0, 8)}] Rate limited but no Retry-After header found`
-    //     );
-    //   }
-    // }
-
     if (status === 429) {
       // Axios normalizes headers to lowercase
       const retryAfter = error?.response?.headers?.['retry-after'];

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 // next
@@ -16,7 +16,7 @@ import AuthWrapper from 'sections/auth/AuthWrapper';
 import AuthLogin from 'sections/auth/auth-forms/AuthLogin';
 
 // CHANGEMENT: Utiliser le hook useAuth au lieu de isAuthenticated
-import { useAuth } from 'hooks/useAuth';
+import { useAuth, getAuthFlash } from 'hooks/useAuth';
 import Loader from 'components/Loader';
 
 // ==============================|| LOGIN PAGE ||============================== //
@@ -24,7 +24,19 @@ import Loader from 'components/Loader';
 export default function SignIn() {
   
   const { isAuthenticated, isLoading } = useAuth();
+  const [flashError, setFlashError] = useState(null);
 
+  useEffect(() => {
+    console.log('🔍 [DEBUG] Login mounted, checking flash...'); // DEBUG
+    console.log('🔍 [DEBUG] sessionStorage authFlash:', sessionStorage.getItem('authFlash')); // DEBUG
+    
+    const flash = getAuthFlash();
+    console.log('🔍 [DEBUG] getAuthFlash returned:', flash); // DEBUG
+    
+    if (flash) {
+      setFlashError(flash);
+    }
+  }, []);
   if (isAuthenticated) {
     return null; 
   }
@@ -42,7 +54,7 @@ export default function SignIn() {
           </Stack>
         </Grid>
         <Grid xs={12}>
-          <AuthLogin providers={providers} csrfToken={csrfToken} />
+          <AuthLogin providers={providers} csrfToken={csrfToken} initialError={flashError} />
         </Grid>
       </Grid>
     </AuthWrapper>
