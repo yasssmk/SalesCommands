@@ -27,6 +27,7 @@ import logging
 from django.conf import settings
 
 from core.logging import get_logger, ctx_from_request
+from rest_framework.exceptions import PermissionDenied
 
 logger = get_logger(__name__)
 
@@ -236,6 +237,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
         
         pk = kwargs.get('pk')
+
         
         # Skip cache si pas Redis
         if not _is_redis_backend():

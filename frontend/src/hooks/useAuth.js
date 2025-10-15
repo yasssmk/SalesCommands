@@ -146,7 +146,6 @@ export function AuthProvider({ children }) {
           debugLog('✅ Token refresh successful (no user data)');
         }
       } else {
-        debugLog('❌ Token refresh failed:', result.error);
         handleAuthError(result.error);
       }
     } catch (error) {
@@ -223,43 +222,86 @@ export function AuthProvider({ children }) {
   /**
    * LOGOUT FUNCTION - Navigation Next + re-hydratation
    */
-  const logout = useCallback(async () => {
-    if (isLoading) {
-      debugLog('⚠️ Logout already in progress');
-      return { success: false, error: 'Logout already in progress' };
-    }
+  // const logout = useCallback(async () => {
+  //   if (isLoading) {
+  //     debugLog('⚠️ Logout already in progress');
+  //     return { success: false, error: 'Logout already in progress' };
+  //   }
 
-    try {
-      setIsLoading(true);
-      setError(null);
-      debugLog('🚪 Starting logout process...');
+  //   try {
+  //     setIsLoading(true);
+  //     setError(null);
+  //     debugLog('🚪 Starting logout process...');
 
-      // Étape 1: Appel backend
-      try {
-        await logoutUser();
-        debugLog('✅ Server logout successful');
-      } catch (backendError) {
-        debugLog('⚠️ Server logout failed, continuing client logout:', backendError.message);
-      }
+  //     // Étape 1: Appel backend
+  //     try {
+  //       await logoutUser();
+  //       debugLog('✅ Server logout successful');
+  //     } catch (backendError) {
+  //       debugLog('⚠️ Server logout failed, continuing client logout:', backendError.message);
+  //     }
 
-      // Étape 2: Nettoyage client
-      stopAutoRefresh();
-      clearAuthState();
+  //     // Étape 2: Nettoyage client
+  //     stopAutoRefresh();
+  //     clearAuthState();
       
-      // Étape 3: Navigation Next.js avec re-hydratation
-      debugLog('🚀 Redirecting to login...');
-      router.replace(authConfig.PAGES.LOGIN);
-      router.refresh();
+  //     // Étape 3: Navigation Next.js avec re-hydratation
+  //     debugLog('🚀 Redirecting to login...');
+  //     router.replace(authConfig.PAGES.LOGIN);
+  //     router.refresh();
 
-      return { success: true };
-    } catch (error) {
-      debugLog('❌ Unexpected logout error:', error.message);
-      clearAuthState();
-      router.replace(authConfig.PAGES.LOGIN);
-      router.refresh();
-      return { success: false, error: error.message };
+  //     return { success: true };
+  //   } catch (error) {
+  //     debugLog('❌ Unexpected logout error:', error.message);
+  //     clearAuthState();
+  //     router.replace(authConfig.PAGES.LOGIN);
+  //     router.refresh();
+  //     return { success: false, error: error.message };
+  //   }
+  // }, [router, clearAuthState, isLoading, stopAutoRefresh]);
+  const logout = useCallback(async () => {
+  if (isLoading) {
+    debugLog('⚠️ Logout already in progress');
+    return { success: false, error: 'Logout already in progress' };
+  }
+
+  try {
+    setIsLoading(true);
+    setError(null);
+    debugLog('🚪 Starting logout process...');
+
+    // Étape 1: Appel backend (best effort)
+    try {
+      await logoutUser();
+      debugLog('✅ Server logout successful');
+    } catch (backendError) {
+      debugLog('⚠️ Server logout failed, continuing client logout:', backendError.message);
     }
-  }, [router, clearAuthState, isLoading, stopAutoRefresh]);
+
+    // Étape 2: Cleanup + flash message via handleAuthError (centrale)
+    // Message SOC-friendly et générique
+    handleAuthError('You have been signed out. Please sign in again to continue.');
+
+    // Étape 3: Navigation Next.js avec re-hydratation
+    debugLog('🚀 Redirecting to login...');
+    router.replace(authConfig.PAGES.LOGIN);
+    router.refresh();
+
+    return { success: true };
+  } catch (error) {
+    debugLog('❌ Unexpected logout error:', error.message);
+
+    // Assurer le cleanup et le message même en cas d’exception
+    handleAuthError('You have been signed out. Please sign in again to continue.');
+    router.replace(authConfig.PAGES.LOGIN);
+    router.refresh();
+
+    return { success: false, error: error.message };
+  } finally {
+    // handleAuthError met déjà isLoading à false, mais on remet une couche pour sécurité
+    setIsLoading(false);
+  }
+}, [isLoading, handleAuthError, router]);
 
   /**
    * REFRESH USER DATA
@@ -309,17 +351,19 @@ export function AuthProvider({ children }) {
       
       if (result.success) {
         setAuthenticatedUser(result.user);
+        debugLog('✅ User already authenticated:', result.user);
         return true;
       } else {
-        clearAuthState();
+         handleAuthError(result.error || 'Session expired. Please sign in again.');
         return false;
       }
     } catch (error) {
       debugLog('❌ Check auth error:', error.message);
-      clearAuthState();
+      handleAuthError('Session expired. Please sign in again.');
+
       return false;
     }
-  }, [setAuthenticatedUser, clearAuthState]);
+  }, [setAuthenticatedUser, handleAuthError]);
 
   // ==============================|| INITIALIZATION ||============================== //
 
@@ -371,12 +415,12 @@ export function AuthProvider({ children }) {
           setAuthenticatedUser(result.user);
           debugLog('✅ User already authenticated:', result.user);
         } else {
-          clearAuthState();
+          handleAuthError(result.error)
           debugLog('ℹ️ No authenticated user found');
         }
       } catch (error) {
         debugLog('❌ Auth initialization error:', error.message);
-        clearAuthState();
+        handleAuthError(result.error)
       } finally {
         if (mounted) {
           setIsLoading(false);

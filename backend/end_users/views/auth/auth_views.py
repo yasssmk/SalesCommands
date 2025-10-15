@@ -155,6 +155,9 @@ class UserCurrentView(BaseAPIView):
     """View to get current authenticated user info."""
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsAuthenticated]
+    
+
+
 
     http_method_names = ['get']
 
@@ -204,9 +207,11 @@ class UserLogoutView(BaseAPIView):
 
     def post(self, request):
         try:
+
             ctx = ctx_from_request(request)
             ctx.update({'event': 'logout_attempt'})
             logger.info("logout_attempt", extra=ctx)
+
             
             from django.conf import settings
             auth_service = AuthService(

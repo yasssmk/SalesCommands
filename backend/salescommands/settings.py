@@ -169,7 +169,7 @@ if DEBUG:
         'login': '10/hour',      # Tentatives de login (par IP+email) 
         'password': '10/hour',   # Changements de mot de passe
         'sensitive': '30/hour',  # Opérations sensibles
-        'burst': '5/minute',    # Anti-burst
+        'burst': '20/minute',    # Anti-burst
         'registration': '5/hour', # Inscriptions
     }
 else:
@@ -180,7 +180,7 @@ else:
         'login': '5/hour',       # Plus strict en prod : 5 tentatives/heure
         'password': '3/hour',    
         'sensitive': '10/hour',  
-        'burst': '5/minute',
+        'burst': '10/minute',
         'registration': '3/hour',
     }
 

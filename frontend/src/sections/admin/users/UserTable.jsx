@@ -1,5 +1,6 @@
+// frontend/src/sections/admin/users/UserTable.jsx
 import PropTypes from 'prop-types';
-import React, { Fragment, useMemo, useState, useEffect } from 'react';
+import React, { Fragment, useMemo, useState, useEffect, useCallback } from 'react';
 import { useSWRConfig } from 'swr';
 
 // material-ui
@@ -24,7 +25,6 @@ import AlertTitle from '@mui/material/AlertTitle';
 import WarningOutlined from '@ant-design/icons/WarningOutlined';
 import ReloadOutlined from '@ant-design/icons/ReloadOutlined';
 
-
 // third-party
 import {
   flexRender,
@@ -40,9 +40,9 @@ import {
 import MainCard from 'components/MainCard';
 import ScrollX from 'components/ScrollX';
 
-
 import { TableHeaderActions, DebouncedInput, HeaderSort, RowSelection, SelectColumnSorting, TablePagination } from 'components/third-party/react-table';
 import ExpandingUserDetail from './ExpandingUserDetail';
+import { safeGet } from 'utils/safeHelpers'
 
 // utils
 import { getErrorDisplayInfo } from 'utils/errorMessages';
@@ -57,29 +57,34 @@ import IconButton from 'components/@extended/IconButton';
 
 /**
  * Affichage erreur avec support countdown 429
- * 
- * Modifications :
- * 1. Import du hook useRetryCountdown
- * 2. Bouton "Retry Now" MASQUÉ sur les 429 (pas juste disabled)
- * 3. Message clair avec countdown dynamique "Automatic retry in Xs"
  */
-
-
 function ErrorDisplay({ error, onRetry, isRetrying }) {
   const errorInfo = getErrorDisplayInfo(error);
+
+   const { 
+    severity = 'error', 
+    message = 'An error occurred', 
+    status = 0, 
+    title = 'Error',
+    isRetryable = false 
+  } = safeGet(errorInfo, {
+    severity: 'error',
+    message: 'An error occurred',
+    status: 0,
+    title: 'Error',
+    isRetryable: false
+  });
   
   // ✅ Hook countdown pour les 429
   const secondsLeft = useRetryCountdown(error);
 
-  if (!errorInfo) return null;
-
   // ✅ Message avec countdown si 429
   const errorMessage = (() => {
     // Cas 429 avec countdown actif
-    if (errorInfo.status === 429 && secondsLeft !== null && secondsLeft > 0) {
+    if (status === 429 && secondsLeft !== null && secondsLeft > 0) {
       return (
         <Fragment>
-          {errorInfo.message}
+          {message}
           <Box component="span" sx={{ display: 'block', mt: 1.5, fontWeight: 600, color: 'info.main' }}>
             🕐 Automatic retry in <strong>{secondsLeft}s</strong> - Please wait
           </Box>
@@ -88,10 +93,10 @@ function ErrorDisplay({ error, onRetry, isRetrying }) {
     }
     
     // Cas 429 countdown terminé (en attente du retry)
-    if (errorInfo.status === 429) {
+    if (status === 429) {
       return (
         <Fragment>
-          {errorInfo.message}
+          {message}
           <Box component="span" sx={{ display: 'block', mt: 1.5, fontStyle: 'italic', opacity: 0.7 }}>
             Retrying automatically...
           </Box>
@@ -100,25 +105,23 @@ function ErrorDisplay({ error, onRetry, isRetrying }) {
     }
     
     // Autres erreurs
-    return errorInfo.message;
+    return message;
   })();
 
   return (
     <TableRow>
-      <TableCell colSpan={100} sx={{ py: 6, px: 3 }}>
+      <TableCell colSpan={100} sx={{ py: 3 }}>
         <Alert
           severity={errorInfo.severity}
           icon={<WarningOutlined style={{ fontSize: 24 }} />}
           action={
-            // ✅ MASQUER le bouton pour les 429 (pas juste disabled)
-            errorInfo.isRetryable && errorInfo.status !== 429 && (
+             isRetryable && status !== 429 && (
               <Button
-                color={errorInfo.severity}
+                color="inherit"
                 size="small"
-                variant="outlined"
                 onClick={onRetry}
                 disabled={isRetrying}
-                startIcon={<ReloadOutlined />}
+                startIcon={<ReloadOutlined spin={isRetrying} />}
               >
                 {isRetrying ? 'Retrying...' : 'Retry Now'}
               </Button>
@@ -150,6 +153,7 @@ function ReactTable({
   modalToggler, 
   selectedCount, 
   selectedRows, 
+  currentPage = 1,
   onPaginationChange,
   onSearchChange, 
   totalCount,
@@ -159,7 +163,6 @@ function ReactTable({
   onImport 
 }) {
 
-
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
   const { mutate } = useSWRConfig();
@@ -168,16 +171,18 @@ function ReactTable({
   const [globalFilter, setGlobalFilter] = useState('');
   const [isRetrying, setIsRetrying] = useState(false);
 
-   const pageIndex = useMemo(() => {
-    // Le parent nous dit quelle page afficher via onPaginationChange
-    // Ici on assume page 0 par défaut, le parent gère le vrai état
-    return 0;
-  }, []);
+  // ✅ Calculer pageIndex depuis currentPage (1-indexed → 0-indexed)
+  const pageIndex = useMemo(() => {
+    return Math.max(0, currentPage - 1);
+  }, [currentPage]);
+
+  const pageSize = useMemo(() => {
+    return Number(initialPageSize) || 10;
+  }, [initialPageSize]);
 
   const pageCount = useMemo(() => {
-    const size = Number(initialPageSize) || 10;
-    return Math.ceil((totalCount || 0) / size);
-  }, [totalCount, initialPageSize]);
+    return Math.ceil((totalCount || 0) / pageSize);
+  }, [totalCount, pageSize]);
 
   useEffect(() => {
     if (onSearchChange) {
@@ -191,6 +196,26 @@ function ReactTable({
     }
   }, [error]);
 
+  // ✅ HANDLERS PERSONNALISÉS qui communiquent directement avec le parent
+  // Au lieu d'utiliser les méthodes TanStack (setPageIndex, setPageSize)
+  const handlePageIndexChange = useCallback((newPageIndex) => {
+    if (onPaginationChange) {
+      onPaginationChange({
+        page: newPageIndex + 1,  // Convert 0-indexed to 1-indexed
+        pageSize: pageSize
+      });
+    }
+  }, [onPaginationChange, pageSize]);
+
+  const handlePageSizeChange = useCallback((newPageSize) => {
+    if (onPaginationChange) {
+      onPaginationChange({
+        page: 1,  // Reset to first page when changing page size
+        pageSize: newPageSize
+      });
+    }
+  }, [onPaginationChange]);
+
   const table = useReactTable({
     data,
     columns,
@@ -199,26 +224,17 @@ function ReactTable({
       sorting,
       globalFilter,
       pagination: {
-        pageIndex: 0, 
-        pageSize: Number(initialPageSize) || 10
+        pageIndex: pageIndex,
+        pageSize: pageSize
       }
     },
     manualPagination: true,
     manualFiltering: true,
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
-    onPaginationChange: (updater) => {
-      // Calculer les nouvelles valeurs
-      const currentState = { pageIndex: 0, pageSize: Number(initialPageSize) || 10 };
-      const nextState = typeof updater === 'function' ? updater(currentState) : updater;
-      
-      // Notifier le parent qui gère la vraie pagination
-      if (onPaginationChange) {
-        onPaginationChange({ 
-          page: nextState.pageIndex + 1, 
-          pageSize: nextState.pageSize 
-        });
-      }
+    // ✅ Ce callback ne sera plus utilisé car on passe nos propres handlers à TablePagination
+    onPaginationChange: () => {
+      // Intentionally empty - we handle pagination through custom handlers
     },
     getRowCanExpand: () => true,
     getRowId: (row) => String(row.id),
@@ -243,14 +259,13 @@ function ReactTable({
     }
   };
 
- const exportData = useMemo(() => {
+  const exportData = useMemo(() => {
     if (!selectedRows || selectedRows.size === 0) {
-      return data; // Exporter toutes les données si aucune sélection
+      return data;
     }
-    return data.filter(row => selectedRows.has(row.id)); // Exporter seulement les lignes sélectionnées
+    return data.filter(row => selectedRows.has(row.id));
   }, [data, selectedRows]);
 
-  // Et simplifier la construction des headers :
   const headers = [];
   table.getVisibleFlatColumns().forEach((column) => {
     if (column.columnDef.accessorKey) {
@@ -291,134 +306,149 @@ function ReactTable({
               Add User
             </Button>
           )}
-
-            <TableHeaderActions
-              selectedRowCount={selectedCount || 0}
-              onEdit={() => {
-                console.log('🟢 onEdit called from UserTable, selectedCount:', selectedCount);
-                console.log('🟢 onEdit function exists:', typeof onEdit);
-                if (onEdit) {
-                  onEdit();
-                }
-              }}
-              onDelete={() => {
-                console.log('🟣 onDelete called from UserTable, selectedCount:', selectedCount);
-                if (onDelete) {
-                  onDelete();
-                }
-              }}
-              onImport={onImport}
-              exportData={exportData}
-              exportHeaders={headers}
-              exportFilename="users-list.csv"
-            />
-            </Stack>
+          <TableHeaderActions 
+            {...{ 
+              data: exportData, 
+              filename: 'users-export.csv', 
+              headers,
+              onImport,
+              selectedCount
+            }} 
+          />
+          </Stack>
         </Stack>
       </Stack>
+
       <ScrollX>
         <Stack>
-          <RowSelection selected={selectedCount || 0} />
-          <TableContainer>
-            <Table>
-              <TableHead>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => {
-                      if (header.column.columnDef.meta !== undefined && header.column.getCanSort()) {
-                        Object.assign(header.column.columnDef.meta, {
-                          className: header.column.columnDef.meta.className + ' cursor-pointer prevent-select'
-                        });
-                      }
-
-                      return (
-                        <TableCell
-                          key={header.id}
-                          {...header.column.columnDef.meta}
-                          onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
-                        >
-                          {header.isPlaceholder ? null : (
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <Box>{flexRender(header.column.columnDef.header, header.getContext())}</Box>
-                              {header.column.getCanSort() && <HeaderSort column={header.column} />}
-                            </Stack>
-                          )}
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                ))}
-              </TableHead>
-              <TableBody>
-                {error ? (
-                  <ErrorDisplay error={error} onRetry={handleRetry} isRetrying={isRetrying} />
-                ) : loading ? (
-                  Array.from({ length: 5 }).map((_, index) => (
-                    <TableRow key={`skeleton-${index}`}>
-                      {columns.map((column, colIndex) => (
-                        <TableCell key={`skeleton-cell-${colIndex}`}>
-                          <Skeleton animation="wave" height={20} />
-                        </TableCell>
-                      ))}
+          <>
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => {
+                        if (header.column.columnDef.meta !== undefined && header.column.getCanSort()) {
+                          Object.assign(header.column.columnDef.meta, {
+                            className: header.column.columnDef.meta.className + ' cursor-pointer prevent-select'
+                          });
+                        }
+                        return (
+                          <TableCell
+                            key={header.id}
+                            {...header.column.columnDef.meta}
+                            onClick={header.column.getToggleSortingHandler()}
+                            {...(header.column.getCanSort() &&
+                              header.column.columnDef.meta === undefined && {
+                                className: 'cursor-pointer prevent-select'
+                              })}
+                          >
+                            {header.isPlaceholder ? null : (
+                              <Stack direction="row" spacing={1} alignItems="center">
+                                <Box>{flexRender(header.column.columnDef.header, header.getContext())}</Box>
+                                {header.column.getCanSort() && <HeaderSort column={header.column} />}
+                              </Stack>
+                            )}
+                          </TableCell>
+                        );
+                      })}
                     </TableRow>
-                  ))
-                ) : data.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} align="center" sx={{ py: 6 }}>
-                      <Stack spacing={1} alignItems="center">
-                        <Typography variant="h6" color="text.secondary">
-                          No users found
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {globalFilter 
-                            ? `No results for "${globalFilter}"`
-                            : 'Start by adding your first user to the system'
-                          }
-                        </Typography>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  table.getRowModel().rows.map((row) => (
-                    <Fragment key={row.id}>
-                      <TableRow>
-                        {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id} {...cell.column.columnDef.meta}>
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  ))}
+                </TableHead>
+                <TableBody>
+                  {loading ? (
+                    Array.from({ length: initialPageSize }).map((_, index) => (
+                      <TableRow key={index}>
+                        {columns.map((_, colIndex) => (
+                          <TableCell key={colIndex}>
+                            <Skeleton animation="wave" />
                           </TableCell>
                         ))}
                       </TableRow>
-                      {row.getIsExpanded() && (
-                        <TableRow sx={{ bgcolor: backColor, '&:hover': { bgcolor: `${backColor} !important` } }}>
-                          <TableCell colSpan={row.getVisibleCells().length}>
-                            <ExpandingUserDetail data={row.original} />
-                          </TableCell>
+                    ))
+                  ) : error ? (
+                    <ErrorDisplay error={error} onRetry={handleRetry} isRetrying={isRetrying} />
+                  ) : data.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={columns.length} align="center" sx={{ py: 6 }}>
+                        <Stack spacing={1} alignItems="center">
+                          <Typography variant="h6" color="text.secondary">
+                            No users found
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {globalFilter 
+                              ? `No results for "${globalFilter}"`
+                              : 'Start by adding your first user to the system'
+                            }
+                          </Typography>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    table.getRowModel().rows.map((row) => (
+                      <Fragment key={row.id}>
+                        <TableRow>
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell key={cell.id} {...cell.column.columnDef.meta}>
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </TableCell>
+                          ))}
                         </TableRow>
-                      )}
-                    </Fragment>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          <>
-            <Divider />
-            <Box sx={{ p: 2 }}>
-              <TablePagination
-                {...{
-                  setPageSize: table.setPageSize,
-                  setPageIndex: table.setPageIndex,
-                  getState: table.getState,
-                  getPageCount: table.getPageCount,
-                  disabled: loading || !!error
-                }}
-              />
-            </Box>
+                        {row.getIsExpanded() && (
+                          <TableRow sx={{ bgcolor: backColor, '&:hover': { bgcolor: `${backColor} !important` } }}>
+                            <TableCell colSpan={row.getVisibleCells().length}>
+                              <ExpandingUserDetail data={row.original} />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <>
+              <Divider />
+              <Box sx={{ p: 2 }}>
+                <TablePagination
+                  {...{
+                    // ✅ NE PLUS passer setPageIndex/setPageSize de TanStack
+                    // À la place, passer nos handlers personnalisés
+                    setPageSize: handlePageSizeChange,
+                    setPageIndex: handlePageIndexChange,
+                    getState: table.getState,
+                    getPageCount: table.getPageCount,
+                    initialPageSize,
+                    disabled: loading || !!error
+                  }}
+                />
+              </Box>
+            </>
           </>
         </Stack>
       </ScrollX>
     </MainCard>
   );
 }
+
+ReactTable.propTypes = {
+  data: PropTypes.array,
+  columns: PropTypes.array,
+  loading: PropTypes.bool,
+  error: PropTypes.object,
+  swrKey: PropTypes.any,
+  modalToggler: PropTypes.func,
+  selectedCount: PropTypes.number,
+  selectedRows: PropTypes.instanceOf(Set),
+  currentPage: PropTypes.number,
+  onPaginationChange: PropTypes.func,
+  onSearchChange: PropTypes.func,
+  totalCount: PropTypes.number,
+  initialPageSize: PropTypes.number,
+  onImport: PropTypes.func,
+  onEdit: PropTypes.func,
+  onDelete: PropTypes.func
+};
 
 // ==============================|| USER TABLE ||============================== //
 
@@ -429,7 +459,8 @@ const UserTable = React.memo(function UserTable({
   error, 
   swrKey, 
   modalToggler,
-  totalCount = 0,         
+  totalCount = 0,
+  currentPage = 1,
   onPaginationChange,      
   onSearchChange,          
   selectedCount,           
@@ -449,6 +480,7 @@ const UserTable = React.memo(function UserTable({
         swrKey, 
         modalToggler,
         totalCount,
+        currentPage,
         onPaginationChange,
         onSearchChange,
         selectedCount,
@@ -472,6 +504,7 @@ UserTable.propTypes = {
   selectedCount: PropTypes.number,
   selectedRows: PropTypes.instanceOf(Set),   
   totalCount: PropTypes.number,
+  currentPage: PropTypes.number,
   initialPageSize: PropTypes.number,
   onPaginationChange: PropTypes.func,
   onSearchChange: PropTypes.func,

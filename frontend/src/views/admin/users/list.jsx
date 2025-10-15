@@ -247,6 +247,11 @@ const handleBulkDeleteComplete = useCallback(() => {
   setSelectedRows(new Set());
 }, []);
 
+const handleTestInvalidPagination = useCallback(() => {
+  setPage(-1);           // Page invalide
+  setPageSize(999999);   // Page size > max
+}, []);
+
   // ==============================|| COLUMNS ||============================== //
 
   const columns = useMemo(
@@ -446,6 +451,16 @@ const handleBulkDeleteComplete = useCallback(() => {
 
   return (
     <>
+    <Grid item xs={12}>
+      <Button 
+        variant="outlined" 
+        color="error" 
+        onClick={handleTestInvalidPagination}
+      >
+        🧪 Test Invalid Pagination (400)
+      </Button>
+    </Grid>
+
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <SeatsSummary />
       </Grid>
@@ -459,6 +474,7 @@ const handleBulkDeleteComplete = useCallback(() => {
         selectedCount={selectedRows.size}
         selectedRows={selectedRows}
         totalCount={usersCount}
+        currentPage={page}
         onImport={handleImportClick}
         onPaginationChange={handlePaginationChange}      
         onSearchChange={handleSearchChange}

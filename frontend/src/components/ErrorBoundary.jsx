@@ -1,3 +1,4 @@
+// frontend/src/components/ErrorBoundary.jsx
 'use client';
 
 import React, { Component } from 'react';
@@ -16,7 +17,7 @@ import Typography from '@mui/material/Typography';
 import ReloadOutlined from '@ant-design/icons/ReloadOutlined';
 import WarningOutlined from '@ant-design/icons/WarningOutlined';
 
-// ==============================|| ERROR BOUNDARY ||============================== //
+// ==============================|| ERROR BOUNDARY (IMPROVED) ||============================== //
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -25,7 +26,8 @@ class ErrorBoundary extends Component {
       hasError: false,
       error: null,
       errorInfo: null,
-      errorCount: 0
+      errorCount: 0,
+      errorType: 'unknown'  // ✅ NEW: Classify error types
     };
   }
 
@@ -33,10 +35,53 @@ class ErrorBoundary extends Component {
     return { hasError: true };
   }
 
+  /**
+   * ✅ NEW: Classify the error type for better user messaging
+   */
+  classifyError(error) {
+    if (!error) return 'unknown';
+    
+    const errorStr = error.toString().toLowerCase();
+    const stackStr = error.stack?.toLowerCase() || '';
+
+    // Destructuring errors (the main issue we're fixing)
+    if (
+      errorStr.includes('cannot destructure') ||
+      errorStr.includes('cannot read propert') ||
+      errorStr.includes('undefined is not an object') ||
+      errorStr.includes('null is not an object') ||
+      stackStr.includes('destructur')
+    ) {
+      return 'destructuring';
+    }
+
+    // Network/API errors
+    if (
+      errorStr.includes('network') ||
+      errorStr.includes('fetch') ||
+      errorStr.includes('axios')
+    ) {
+      return 'network';
+    }
+
+    // Render errors
+    if (
+      errorStr.includes('rendering') ||
+      errorStr.includes('hydration') ||
+      stackStr.includes('react-dom')
+    ) {
+      return 'render';
+    }
+
+    return 'unknown';
+  }
+
   componentDidCatch(error, errorInfo) {
-    // Log uniquement en console
+    const errorType = this.classifyError(error);
+
+    // ✅ Enhanced logging with classification
     if (process.env.NODE_ENV === 'development') {
-      console.group(`🚨 ErrorBoundary [${this.props.name || 'Unknown'}]`);
+      console.group(`🚨 ErrorBoundary [${this.props.name || 'Unknown'}] - Type: ${errorType}`);
       console.error('Error:', error);
       console.error('Stack:', errorInfo?.componentStack);
       console.groupEnd();
@@ -45,6 +90,7 @@ class ErrorBoundary extends Component {
     this.setState(prevState => ({
       error,
       errorInfo,
+      errorType,
       errorCount: prevState.errorCount + 1
     }));
   }
@@ -53,7 +99,8 @@ class ErrorBoundary extends Component {
     this.setState({
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
+      errorType: 'unknown'
     });
   };
 
@@ -63,20 +110,57 @@ class ErrorBoundary extends Component {
     }
   };
 
+  /**
+   * ✅ NEW: Get user-friendly message based on error type
+   */
+  getUserMessage(errorType) {
+    switch (errorType) {
+      case 'destructuring':
+        return {
+          title: 'Data Loading Error',
+          message: 'There was an issue loading the data for this page. This has been logged and we\'ll fix it.',
+          suggestion: 'Try refreshing the page or going back to the previous page.'
+        };
+      
+      case 'network':
+        return {
+          title: 'Connection Error',
+          message: 'Unable to connect to the server. Please check your internet connection.',
+          suggestion: 'Make sure you\'re connected to the internet and try again.'
+        };
+      
+      case 'render':
+        return {
+          title: 'Display Error',
+          message: 'There was a problem displaying this content.',
+          suggestion: 'Try refreshing the page. If the problem persists, clear your browser cache.'
+        };
+      
+      default:
+        return {
+          title: 'Something went wrong',
+          message: 'We encountered an unexpected error. The issue has been logged and we\'ll look into it.',
+          suggestion: 'Try refreshing the page or going back to the previous page.'
+        };
+    }
+  }
+
   render() {
-    const { hasError, error, errorCount } = this.state;
+    const { hasError, error, errorCount, errorType } = this.state;
     const { children, name, minimal } = this.props;
 
     if (!hasError) {
       return children;
     }
 
+    const userMessage = this.getUserMessage(errorType);
+
     // Version minimale
     if (minimal) {
       return (
         <Card sx={{ p: 2, textAlign: 'center', bgcolor: 'error.lighter' }}>
           <Typography color="error" gutterBottom>
-            Something went wrong
+            {userMessage.title}
           </Typography>
           <Button 
             size="small" 
@@ -119,13 +203,18 @@ class ErrorBoundary extends Component {
               </Box>
 
               <Typography variant="h3" gutterBottom>
-                Oops! Something went wrong
+                {userMessage.title}
               </Typography>
 
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-                We encountered an unexpected error. The issue has been logged and we'll look into it.
+              <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+                {userMessage.message}
               </Typography>
 
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                {userMessage.suggestion}
+              </Typography>
+
+              {/* ✅ Development info with error type classification */}
               {process.env.NODE_ENV === 'development' && error && (
                 <Card variant="outlined" sx={{ mb: 3, bgcolor: 'grey.50' }}>
                   <CardContent>
@@ -139,7 +228,9 @@ class ErrorBoundary extends Component {
                         fontSize: '0.75rem'
                       }}
                     >
-                      {name && `[${name}]\n`}
+                      {name && `[${name}] `}
+                      Type: {errorType}
+                      {'\n\n'}
                       {error.toString()}
                     </Typography>
                   </CardContent>
