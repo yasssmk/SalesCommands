@@ -309,20 +309,21 @@ function ReactTable({
             </Button>
           )}
           <TableHeaderActions 
-            {...{ 
-              data: exportData, 
-              filename: 'users-export.csv', 
-              headers,
-              onImport,
-              selectedCount
-            }} 
-          />
+              selectedRowCount={selectedCount || 0}    
+              onEdit={() => { if (onEdit) onEdit(); }} 
+              onDelete={() => { if (onDelete) onDelete(); }} 
+              onImport={onImport}
+              exportData={exportData}                  
+              exportHeaders={headers}                  
+              exportFilename="users-list.csv"
+            />
           </Stack>
         </Stack>
       </Stack>
 
       <ScrollX>
         <Stack>
+        <RowSelection selected={selectedCount || 0} />
           <>
             <TableContainer>
               <Table>

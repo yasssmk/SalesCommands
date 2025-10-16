@@ -27,7 +27,7 @@ import logging
 from django.conf import settings
 
 from core.logging import get_logger, ctx_from_request
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, APIException
 
 logger = get_logger(__name__)
 

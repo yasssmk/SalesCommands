@@ -452,7 +452,12 @@ export const insertUser = async (userData) => {
 
     return { success: true, user: result.data };
   } else {
-    return { success: false, error: result.error };
+    return { 
+      success: false, 
+      error: result.error,
+      status: result.status || 0,
+      response: result.response || null
+    };
   }
 };
 
@@ -475,7 +480,7 @@ export const updateUser = async (userId, userData) => {
     };
   }
   
-  // ✅ PHASE 5.3.2: Validate UUID fields in userData
+  // ✅ Validate UUID fields in userData
   const uuidFields = ['role', 'organization', 'team'];
   for (const field of uuidFields) {
     const value = userData[field];
@@ -492,7 +497,7 @@ export const updateUser = async (userId, userData) => {
     }
   }
   
-  // ✅ PHASE 5.3.2: Sanitize string fields (trim whitespace)
+  // ✅ Sanitize string fields (trim whitespace)
   const sanitized = sanitizeObject(userData, ['first_name', 'last_name']);
   
   const result = await api.patch(`${endpoints.users}${userId}/`, sanitized);
@@ -507,7 +512,12 @@ export const updateUser = async (userId, userData) => {
 
     return { success: true, user: result.data };
   } else {
-    return { success: false, error: result.error };
+    return { 
+      success: false, 
+      error: result.error,
+      status: result.status || 0,
+      response: result.response || null
+    };
   }
 };
 
@@ -563,7 +573,9 @@ export const changePassword = async (userId, password, passwordConfirm) => {
   } else {
     return { 
       success: false, 
-      error: result.error || 'Failed to change password' 
+      error: result.error || 'Failed to change password',
+      status: result.status || 0,
+      response: result.response || null
     };
   }
 };
@@ -577,7 +589,7 @@ export const changePassword = async (userId, password, passwordConfirm) => {
  * @returns {Promise<Object>} {success: boolean, status?: number, error?: string}
  */
 export const deleteUser = async (userId) => {
-  // ✅ PHASE 5.3.2: Validate userId is a valid UUID
+
   if (!userId || !isValidUUID(userId)) {
     return {
       success: false,
@@ -589,7 +601,7 @@ export const deleteUser = async (userId) => {
   const result = await api.delete(`${endpoints.users}${userId}/`);
 
   if (result.success) {
-    // ✅ STANDARDISÉ: revalidation multiple après suppression
+    // ✅ revalidation multiple après suppression
     revalidateMultiple([
       endpoints.users,                    // Liste users
       '/client/client-accounts/'          // Stats seats (seats_used diminue)
@@ -597,7 +609,12 @@ export const deleteUser = async (userId) => {
     
     return { success: true, status: result.status ?? 204 };
   } else {
-    return { success: false, error: result.error, status: result.status };
+    return { 
+      success: false, 
+      error: result.error, 
+      status: result.status || 0,
+      response: result.response || null
+    };
   }
 };
 
@@ -630,7 +647,12 @@ export const toggleUserStatus = async (userId) => {
 
     return { success: true, user: result.data };
   } else {
-    return { success: false, error: result.error };
+    return { 
+      success: false, 
+      error: result.error,
+      status: result.status || 0,
+      response: result.response || null
+    };
   }
 };
 
