@@ -160,14 +160,15 @@ function ReactTable({
   onEdit,
   onDelete,
   initialPageSize = 10,
-  onImport 
+  onImport,
+  sorting,              
+  onSortingChange  
 }) {
 
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
   const { mutate } = useSWRConfig();
 
-  const [sorting, setSorting] = useState([]);
   const [globalFilter, setGlobalFilter] = useState('');
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -232,11 +233,10 @@ function ReactTable({
     },
     manualPagination: true,
     manualFiltering: true,
-    onSortingChange: setSorting,
+    manualSorting: true,              
+    onSortingChange: onSortingChange,
     onGlobalFilterChange: setGlobalFilter,
-    // ✅ Ce callback ne sera plus utilisé car on passe nos propres handlers à TablePagination
     onPaginationChange: () => {
-      // Intentionally empty - we handle pagination through custom handlers
     },
     getRowCanExpand: () => true,
     getRowId: (row) => String(row.id),
@@ -295,7 +295,14 @@ function ReactTable({
         />
 
         <Stack direction="row" alignItems="center" spacing={2} sx={{  width: { xs: '100%', sm: 'auto' } }}>
-          <SelectColumnSorting {...{ getState: table.getState, getAllColumns: table.getAllColumns, setSorting }} disabled={loading || !!error} />
+          <SelectColumnSorting 
+            {...{ 
+              getState: table.getState, 
+              getAllColumns: table.getAllColumns, 
+              setSorting: onSortingChange  
+            }} 
+            disabled={loading || !!error} 
+          />
           <Stack direction="row" spacing={2} alignItems="center" >
           {matchDownSM ? (
             <Tooltip title="Add User">
@@ -451,7 +458,9 @@ ReactTable.propTypes = {
   initialPageSize: PropTypes.number,
   onImport: PropTypes.func,
   onEdit: PropTypes.func,
-  onDelete: PropTypes.func
+  onDelete: PropTypes.func,
+  sorting: PropTypes.array,           
+  onSortingChange: PropTypes.func 
 };
 
 // ==============================|| USER TABLE ||============================== //
@@ -472,7 +481,9 @@ const UserTable = React.memo(function UserTable({
   onImport,
   onEdit,
   onDelete, 
-  initialPageSize = 10               
+  initialPageSize = 10,
+  sorting,                  
+  onSortingChange            
 }) {
   return (
     <ReactTable 
@@ -492,7 +503,9 @@ const UserTable = React.memo(function UserTable({
         initialPageSize,
         onImport,
         onEdit,
-        onDelete 
+        onDelete,
+        sorting,                  
+        onSortingChange 
       }} 
     />
   );
@@ -514,7 +527,9 @@ UserTable.propTypes = {
   onSearchChange: PropTypes.func,
   onImport: PropTypes.func,
   onEdit: PropTypes.func,
-  onDelete: PropTypes.func  
+  onDelete: PropTypes.func,
+  sorting: PropTypes.array,           
+  onSortingChange: PropTypes.func   
 };
 
 export default UserTable;

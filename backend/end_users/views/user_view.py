@@ -40,9 +40,19 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     entity_name = 'user'
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['is_active', 'role', 'team', 'organization', 'is_staff']
-    search_fields = ['email', 'first_name', 'last_name']
-    ordering_fields = ['email', 'first_name', 'last_name', 'created_at']
+    filterset_fields = ['is_active', 'role', 'team', 'organization', 'is_staff', "is_superuser"]
+    search_fields = ['email', 'first_name', 'last_name', 'role__name',  'team__name' ]
+    ordering_fields = [
+        'email', 
+        'first_name', 
+        'last_name', 
+        'created_at',
+        'is_superuser',   
+        'is_active',      
+        'last_login',      
+        'role__name',      
+        'team__name'       
+    ]
     ordering = ['first_name', 'last_name']
     
     # Security configuration

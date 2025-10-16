@@ -52,7 +52,7 @@ const debouncedRevalidate = debounce((paths) => {
  * @returns {string} URL avec query string
  */
 const buildUrlWithParams = (baseUrl, params = {}) => {
-  const { page, pageSize, search } = params;
+  const { page, pageSize, search, ordering } = params;
   const queryParams = new URLSearchParams();
   
   // Ajouter les paramètres s'ils sont définis
@@ -66,6 +66,10 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   
   if (search !== undefined && search !== null && search !== '') {
     queryParams.append('search', search);
+  }
+
+  if (ordering !== undefined && ordering !== null && ordering !== '') {
+    queryParams.append('ordering', ordering);
   }
   
   const queryString = queryParams.toString();
@@ -100,15 +104,16 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
  */
 export function useGetUsers(options = {}) {
   const { tenantId } = useAuth();
-  const { page = 1, pageSize = 10, search = '' } = options;
+  const { page = 1, pageSize = 10, search = '', ordering = '' } = options;
 
   const urlWithParams = useMemo(() => {
     return buildUrlWithParams(endpoints.users, { 
       page, 
       pageSize, 
-      search 
+      search,
+      ordering 
     });
-  }, [page, pageSize, search]);
+  }, [page, pageSize, search, ordering]);
 
   // ✅ STANDARDISÉ: Utilise toujours tenantKey()
   const swrKey = tenantKey(urlWithParams, tenantId);

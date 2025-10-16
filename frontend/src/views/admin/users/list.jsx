@@ -44,6 +44,16 @@ import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
 import TestErrorButton from 'components/ErrorTest/TestErrorButton';
 import TestRateLimitButton from 'components/ErrorTest/TestRateLimitButton'
 
+const COLUMN_TO_BACKEND_FIELD = {
+  'full_name': 'last_name',      
+  'email': 'email',
+  'role_name': 'role__name',      
+  'is_superuser': 'is_superuser', 
+  'team': 'team__name',           
+  'is_active': 'is_active',
+  'last_login': 'last_login'
+};
+
 // ==============================|| USER LIST ||============================== //
 
 export default function UserListPage() {
@@ -63,38 +73,64 @@ export default function UserListPage() {
 
   const validPageSize = useMemo(() => {
   const parsed = Number(pageSize);
-  if (isNaN(parsed) || parsed <= 0) return 10;
-  return Math.min(parsed, MAX_PAGE_SIZE);  // ✅ Cap à 100
-}, [pageSize]);
+    if (isNaN(parsed) || parsed <= 0) return 10;
+    return Math.min(parsed, MAX_PAGE_SIZE);  // ✅ Cap à 100
+  }, [pageSize]);
 
   const [search, setSearch] = useState('');
+
+  const [sorting, setSorting] = useState([]);
 
   const [csvImportModal, setCsvImportModal] = useState(false);
 
 
 
   const swrKey = useMemo(() => {
-  const params = new URLSearchParams();
-  params.append('page', page);
-  params.append('page_size', validPageSize);  // ✅ Pas pageSize brut
-  if (search) params.append('search', search);
-  params.append('nonce', String(refreshNonce));
-  const url = `/client/users/${params.toString() ? `?${params.toString()}` : ''}`;
-  return tenantKey(url, tenantId);
-}, [page, validPageSize, search, tenantId, refreshNonce]);
+    const params = new URLSearchParams();
+    params.append('page', page);
+    params.append('page_size', validPageSize);  // ✅ Pas pageSize brut
+    if (search) params.append('search', search);
+    params.append('nonce', String(refreshNonce));
+    const url = `/client/users/${params.toString() ? `?${params.toString()}` : ''}`;
+    return tenantKey(url, tenantId);
+  }, [page, validPageSize, search, tenantId, refreshNonce]);
 
-const _usersHook = useGetUsers({ 
-  page, 
-  pageSize: validPageSize, 
-  search 
-}) || {};
+  const ordering = useMemo(() => {
+      if (!sorting || sorting.length === 0) {
+        return '';
+      }
 
-const {
-  usersLoading = false,
-  users = [],
-  usersCount = 0,
-  usersError = null
-} = _usersHook;
+      // Prendre uniquement le premier tri (TanStack supporte multi-sort mais Django ne le fait pas nativement)
+      const firstSort = sorting[0];
+      const columnId = firstSort.id;
+      const isDesc = firstSort.desc;
+
+      // Récupérer le champ backend correspondant
+      const backendField = COLUMN_TO_BACKEND_FIELD[columnId];
+
+      // Si la colonne n'est pas dans le mapping, ignorer le tri
+      if (!backendField) {
+        return '';
+      }
+
+      // Ajouter le préfixe '-' pour le tri descendant
+      return isDesc ? `-${backendField}` : backendField;
+    }, [sorting]);
+
+    // Hook useGetUsers avec le paramètre ordering
+  const _usersHook = useGetUsers({ 
+      page, 
+      pageSize: validPageSize, 
+      search,
+      ordering  
+    }) || {};
+
+  const {
+      usersLoading = false,
+      users = [],
+      usersCount = 0,
+      usersError = null
+    } = _usersHook;
 
 
 
@@ -109,6 +145,8 @@ const {
 
   const [bulkEditModal, setBulkEditModal] = useState(false);
   const [bulkDeleteAlert, setBulkDeleteAlert] = useState(false);
+
+  
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -133,16 +171,41 @@ const {
       setPage(1);  // Reset à page 1 quand on recherche
     }, []);
 
-    const handleClose = useCallback(() => {
+  const handleSortingChange = useCallback((updaterOrValue) => {
+    setSorting((prevSorting) => {
+      // Supporter à la fois les updater functions et les valeurs directes
+      const newSorting = typeof updaterOrValue === 'function' 
+        ? updaterOrValue(prevSorting) 
+        : updaterOrValue;
+
+      // Si le tri change, reset à la page 1
+      // (évite d'être sur page 3 avec un nouveau tri qui n'a que 2 pages)
+      if (JSON.stringify(newSorting) !== JSON.stringify(prevSorting)) {
+        setPage(1);
+      }
+
+      return newSorting;
+    });
+  }, []);
+
+  // ✅ NOUVEAU: Réinitialiser le tri quand la recherche change
+  // Évite les incohérences (ex: tri par "Team" alors que la recherche filtre les teams)
+  useEffect(() => {
+    if (search !== '') {
+      setSorting([]);
+    }
+  }, [search]); 
+
+  const handleClose = useCallback(() => {
       setOpen((prev) => !prev);
     }, []);
 
-    const handleOpenEditModal = useCallback((user) => {
+  const handleOpenEditModal = useCallback((user) => {
       setSelectedUser(user);
       setUserModal(true);
     }, []);
 
-    const handleOpenDeleteDialog = useCallback(
+  const handleOpenDeleteDialog = useCallback(
       (user) => {
         setSelectedUser(user);
         setUserDeleteId(user.id);
@@ -151,10 +214,10 @@ const {
       [handleClose]
     );
 
-    // Handler Import CSV
-    const handleImportClick = useCallback(() => {
+  // Handler Import CSV
+  const handleImportClick = useCallback(() => {
         setCsvImportModal(true);
-      }, []);
+    }, []);
 
    const handleImportCSV = useCallback((response) => {
       // --- debug utile en dev
@@ -238,17 +301,17 @@ const {
   const allSelected = users && users.length > 0 && selectedRows.size === users.length;
   const someSelected = selectedRows.size > 0 && selectedRows.size < (users?.length || 0);
 
-  const handleBulkEdit = useCallback(() => {
-  if (selectedRows.size > 0) {
-    setBulkEditModal(true);
-  }
-}, [selectedRows.size]);
+//   const handleBulkEdit = useCallback(() => {
+//   if (selectedRows.size > 0) {
+//     setBulkEditModal(true);
+//   }
+// }, [selectedRows.size]);
 
-const handleBulkDelete = useCallback(() => {
-  if (selectedRows.size > 0) {
-    setBulkDeleteAlert(true);
-  }
-}, [selectedRows.size]);
+// const handleBulkDelete = useCallback(() => {
+//   if (selectedRows.size > 0) {
+//     setBulkDeleteAlert(true);
+//   }
+// }, [selectedRows.size]);
 
 // ✅ Ce handler ne fait QUE vider la sélection (appelé par le composant en cas de succès)
 const handleBulkDeleteComplete = useCallback(() => {
@@ -398,6 +461,7 @@ const handleBulkDeleteComplete = useCallback(() => {
           className: 'cell-center'
         },
         disableSortBy: true,
+        enableSorting: false,
         cell: ({ row }) => {
           const collapseIcon =
             row.getCanExpand() && row.getIsExpanded() ? (
@@ -461,26 +525,47 @@ const handleBulkDeleteComplete = useCallback(() => {
       </Grid>
 
       <UserTable
-        data={users|| []}
+        data={users}
         columns={columns}
         loading={usersLoading}
         error={usersError}
         swrKey={swrKey}
-        selectedCount={selectedRows.size}
-        selectedRows={selectedRows}
-        totalCount={usersCount}
-        currentPage={page}
-        onImport={handleImportClick}
-        onPaginationChange={handlePaginationChange}      
-        onSearchChange={handleSearchChange}
-        onEdit={handleBulkEdit}
-        onDelete={handleBulkDelete}              
         modalToggler={() => {
           setSelectedUser(null);
           setUserModal(true);
-          
         }}
-        initialPageSize={validPageSize} 
+        totalCount={usersCount}
+        currentPage={page}
+        initialPageSize={validPageSize}
+        onPaginationChange={handlePaginationChange}
+        onSearchChange={handleSearchChange}
+        sorting={sorting}                          
+        onSortingChange={handleSortingChange}    
+        selectedCount={selectedRows.size}
+        selectedRows={selectedRows}
+        onImport={handleImportClick}
+        onEdit={() => {
+          if (selectedRows.size === 1) {
+            const userId = Array.from(selectedRows)[0];
+            const user = users.find(u => u.id === userId);
+            if (user) {
+              handleOpenEditModal(user);
+            }
+          } else if (selectedRows.size > 1) {
+            setBulkEditModal(true);
+          }
+        }}
+        onDelete={() => {
+          if (selectedRows.size === 1) {
+            const userId = Array.from(selectedRows)[0];
+            const user = users.find(u => u.id === userId);
+            if (user) {
+              handleOpenDeleteDialog(user);
+            }
+          } else if (selectedRows.size > 1) {
+            setBulkDeleteAlert(true);
+          }
+        }}
       />
 
       <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />
