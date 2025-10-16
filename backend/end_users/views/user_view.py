@@ -10,7 +10,7 @@ from datetime import datetime, date
 from django.db import transaction
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, UsersErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
 from django.http import Http404
@@ -245,6 +245,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Cache: 180s sur les données sérialisées
         """
         from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
+        # raise Exception("Test 500: Server error on retrieve")
         
         pk = kwargs.get('pk')
 
@@ -278,7 +279,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 })
                 logger.info("user_retrieve_not_found", extra=ctx)
                 return Response(
-                    {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
+                    {"success": False, "error": UsersErrorMessages.USER_NOT_FOUND},
                     status=status.HTTP_404_NOT_FOUND,
                 )
         
@@ -353,6 +354,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Cache: 120s sur les données sérialisées (dict Python, pas Response)
         """
         from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
+        # raise Exception("Test 500: Simulated server error")
         
         # Skip cache si pas Redis (FileBasedCache trop lent)
         if not _is_redis_backend():
@@ -501,7 +503,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             logger.info("user_update_not_found", extra=ctx)
 
             return Response(
-                {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
+                {"success": False, "error": UsersErrorMessages.USER_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
         except Exception as e:
@@ -580,7 +582,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             })
             
         except User.DoesNotExist:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+            raise StandardizedValidationError(UsersErrorMessages.USER_NOT_FOUND)
     
     def destroy(self, request, *args, **kwargs):
         """
@@ -634,7 +636,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
             return Response({
                 'success': False,
-                'error': CoreErrorMessages.OBJECT_NOT_FOUND
+                'error': UsersErrorMessages.USER_NOT_FOUND
             }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return self.handle_exception(e)
@@ -738,7 +740,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
             return Response({
                 'success': False,
-                'error': CoreErrorMessages.OBJECT_NOT_FOUND
+                'error': UsersErrorMessages.USER_NOT_FOUND
             }, status=status.HTTP_404_NOT_FOUND)
             
         except Exception as e:

@@ -6,6 +6,18 @@ import useSWR from 'swr';
 import { tenantKey } from '../api/_swr';
 import { useAuth } from '../hooks/useAuth';
 
+// ==============================|| HELPER FUNCTIONS ||============================== //
+
+const isRealUnauthorized = (result) => {
+  const status = Number(result?.status);
+  const hasServerResponse =
+    !!result?.response || !!result?.data || !!result?.headers; 
+
+  const is401or403 = status === 401 || status === 403;
+
+  return hasServerResponse && is401or403;
+};
+
 
 // ==============================|| AUTH API FUNCTIONS ||============================== //
 
@@ -66,14 +78,36 @@ export const refreshTokens = async () => {
       user: userData || null  // Explicitement null si pas de données (au lieu de undefined)
     };
   } else {
-    debugLog('❌ Token refresh failed:', result.error);
-    // ✅ Déconnexion forcée / session expirée → on nettoie
-    resetAuthState();
-
-    return {
-      success: false,
-      error: result.error
-    };
+    debugLog('❌ Token refresh failed:', result.error, 'Status:', result.status);
+    
+    // ✅ CRITIQUE : Logout seulement si VRAIE 401 (session expirée)
+    // Ne PAS logout sur Network Error (backend down) ou 500
+    if (isRealUnauthorized(result)) {
+      debugLog('🚪 Session réellement expirée (401 avec response) → Logout');
+      resetAuthState();
+      
+      return {
+        success: false,
+        error: result.error || 'Session expired. Please sign in again.',
+        shouldLogout: true
+      };
+    } else {
+      // Network Error ou 500 → Garder la session
+      const isNetworkError = result.status === 0 || !result.response;
+      
+      if (isNetworkError) {
+        debugLog('⚠️ Network Error détecté (backend down)');
+      } else {
+        debugLog('⚠️ Erreur serveur (', result.status, ') → Session préservée');
+      }
+      
+      return {
+        success: false,
+        error: result.error || 'Failed to refresh tokens',
+        shouldLogout: false,
+        isNetworkError
+      };
+    }
   }
 };
 
@@ -135,15 +169,36 @@ export const getCurrentUser = async () => {
       success: true,
       user: userData
     };
-  } else {
-    debugLog('❌ Failed to get current user:', result.error);
-    // ✅ Session invalide / non authentifié → on nettoie lastRoute
-    resetAuthState();
+  } else { debugLog('❌ Failed to get current user:', result.error, 'Status:', result.status);
     
-    return { 
-      success: false,
-      error: result.error
-    };
+    // ✅ CRITIQUE : Logout seulement si VRAIE 401 (session expirée)
+    // Ne PAS logout sur Network Error (backend down) ou 500
+    if (isRealUnauthorized(result)) {
+      debugLog('🚪 Session réellement expirée (401 avec response) → Logout');
+      resetAuthState();
+      
+      return {
+        success: false,
+        error: result.error || 'Session expired. Please sign in again.',
+        shouldLogout: true
+      };
+    } else {
+      // Network Error ou 500 → Garder la session
+      const isNetworkError = result.status === 0 || !result.response;
+      
+      if (isNetworkError) {
+        debugLog('⚠️ Network Error détecté → Session préservée (backend probablement down)');
+      } else {
+        debugLog('⚠️ Erreur serveur (', result.status, ') → Session préservée');
+      }
+      
+      return {
+        success: false,
+        error: result.error || 'Failed to get current user',
+        shouldLogout: false,
+        isNetworkError
+      };
+    }
   }
 };
 

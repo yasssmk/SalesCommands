@@ -11,6 +11,9 @@ class AuthErrorMessages:
     TOKEN_EXPIRED = _("Your session has expired. Please log in again")
     TOKEN_INVALID = _("Invalid authentication token")
 
+class UsersErrorMessages:
+    USER_NOT_FOUND = _("User does not exist")
+
 
 class CoreErrorMessages:
     """Base error messages used across all apps"""
