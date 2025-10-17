@@ -14,6 +14,7 @@
 
 import { handleApiError } from './errorHandler';
 import { safeGet, safeString, isNonEmptyString, isValidError } from './safeHelpers';
+import { isRetryableError } from './retryLogic';
 
 // ==============================|| ERROR SEVERITY MAPPING ||============================== //
 
@@ -297,12 +298,7 @@ export const getErrorDisplayInfo = (error) => {
   // ====================================================================
   // STEP 6: Determine if error is retryable
   // ====================================================================
-  const isRetryable =
-    status === 401 ||
-    status >= 500 ||
-    status === 408 ||
-    status === 429 ||
-    (!error.response && error.message);
+  const isRetryable = isRetryableError(error);
 
   // ====================================================================
   // STEP 7: Build final result

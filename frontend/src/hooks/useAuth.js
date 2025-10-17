@@ -15,6 +15,7 @@ import {
 } from '../api/auth';
 import { authConfig, debugLog } from '../config/auth';
 import { displayWarningSnackbar } from '../utils/displayError';
+import { ErrorMessages } from '../utils/errorMessages';
 
 // ==============================|| AUTH CONTEXT ||============================== //
 
@@ -119,7 +120,7 @@ export function AuthProvider({ children }) {
     // Show snackbar (max 1 every 10 seconds to avoid spam)
     const now = Date.now();
     if (now - lastSnackbarRef.current > 10000) {
-      displayWarningSnackbar('[useAuth] Connection issue.');
+      displayWarningSnackbar(ErrorMessages.NETWORK_ERROR.message);
       lastSnackbarRef.current = now;
     }
   }, []);
@@ -165,10 +166,10 @@ export function AuthProvider({ children }) {
       } else {
         if (result.shouldLogout) {
           debugLog('🚪 Real session expiration detected');
-          handleAuthError(result.error || 'Session expired. Please sign in again.');
+          handleAuthError(ErrorMessages.SESSION_EXPIRED.message);
         } else {
           debugLog('⚠️ Network issue during refresh, entering degraded mode');
-          handleSoftAuthIssue(result.error || 'Connection issue. Retrying...');
+          handleSoftAuthIssue(result.error || ErrorMessages.NETWORK_ERROR.message);
         }
       }
     } catch (error) {
@@ -259,7 +260,8 @@ export function AuthProvider({ children }) {
         debugLog('⚠️ Server logout failed, continuing client logout:', backendError.message);
       }
 
-      handleAuthError('You have been signed out. Please sign in again to continue.');
+      // handleAuthError('You have been signed out. Please sign in again to continue.');
+      handleAuthError('');
 
       debugLog('🚀 Redirecting to login...');
       router.replace(authConfig.PAGES.LOGIN);
@@ -268,7 +270,8 @@ export function AuthProvider({ children }) {
       return { success: true };
     } catch (error) {
       debugLog('❌ Unexpected logout error:', error.message);
-      handleAuthError('You have been signed out. Please sign in again to continue.');
+      // handleAuthError('You have been signed out. Please sign in again to continue.');
+      handleAuthError('');
       router.replace(authConfig.PAGES.LOGIN);
       router.refresh();
       return { success: false, error: error.message };
@@ -304,24 +307,24 @@ export function AuthProvider({ children }) {
           return userResult.user;
         } else {
           if (userResult.shouldLogout) {
-            handleAuthError(userResult.error);
+            handleAuthError(ErrorMessages.SESSION_EXPIRED.message);
           } else {
-            handleSoftAuthIssue(userResult.error || 'Connection issue. Retrying...');
+            handleSoftAuthIssue(userResult.error || ErrorMessages.NETWORK_ERROR.message);
           }
           return null;
         }
       }
       
       if (refreshResult.shouldLogout) {
-        handleAuthError(refreshResult.error);
+        handleAuthError(ErrorMessages.SESSION_EXPIRED.message);
       } else {
-        handleSoftAuthIssue(refreshResult.error || 'Connection issue. Retrying...');
+        handleSoftAuthIssue(refreshResult.error || ErrorMessages.NETWORK_ERROR.message);
       }
       return null;
       
     } catch (error) {
       debugLog('❌ Refresh user error:', error.message);
-      handleSoftAuthIssue('Connection issue. Retrying...');
+      handleSoftAuthIssue(ErrorMessages.NETWORK_ERROR.message);
       return null;
     }
   }, [handleAuthError, handleSoftAuthIssue]);
@@ -340,15 +343,15 @@ export function AuthProvider({ children }) {
         return true;
       } else {
         if (result.shouldLogout) {
-          handleAuthError(result.error || 'Session expired. Please sign in again.');
+          handleAuthError(ErrorMessages.SESSION_EXPIRED.message);
         } else {
-          handleSoftAuthIssue(result.error || 'Connection issue. Please try again.');
+          handleSoftAuthIssue(result.error || ErrorMessages.NETWORK_ERROR.message);
         }
         return false;
       }
     } catch (error) {
       debugLog('❌ Check auth error:', error.message);
-      handleSoftAuthIssue('Connection issue. Please try again.');
+      handleSoftAuthIssue(ErrorMessages.NETWORK_ERROR.message);
       return false;
     }
   }, [setAuthenticatedUser, handleAuthError, handleSoftAuthIssue]);
@@ -392,16 +395,16 @@ export function AuthProvider({ children }) {
           debugLog('✅ User already authenticated:', result.user);
         } else {
           if (result.shouldLogout) {
-            handleAuthError(result.error || 'Session expired. Please sign in again.');
+            handleAuthError(ErrorMessages.SESSION_EXPIRED.message);
           } else {
             debugLog('⚠️ Network issue during init, degraded mode');
-            handleSoftAuthIssue(result.error || 'Connection issue. Please try again.');
+            handleSoftAuthIssue(result.error || ErrorMessages.NETWORK_ERROR.message);
           }
         }
       } catch (error) {
         if (!mounted) return;
         debugLog('❌ Auth initialization error:', error.message);
-        handleSoftAuthIssue('Connection issue. Please try again.');
+        handleSoftAuthIssue(ErrorMessages.NETWORK_ERROR.message);
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -418,6 +421,66 @@ export function AuthProvider({ children }) {
       window.removeEventListener('auth:session-expired', handleSessionExpired);
     };
   }, []);
+
+  // ==============================|| SILENT RECONNECTION RETRY ||============================== //
+
+/**
+ * Silent retry mechanism when backend is down
+ * Attempts reconnection every 15 seconds
+ */
+useEffect(() => {
+  // Only run retry loop when in degraded mode
+  if (!isNetworkDown) {
+    return;
+  }
+
+  debugLog('🔄 Starting silent reconnection attempts (every 15s)...');
+
+  const attemptReconnection = async () => {
+    try {
+      debugLog('🔄 Silent retry: attempting to reconnect...');
+      
+      const result = await getCurrentUser();
+      
+      if (result.success) {
+        // ✅ SUCCESS: Backend is back online
+        debugLog('✅ Silent retry: Reconnection successful!');
+        
+        // Restore normal state
+        setIsNetworkDown(false);
+        setUser(result.user);
+        setError(null);
+        
+        debugLog('✅ Normal mode restored, retry loop stopped');
+      } else {
+        if (result.shouldLogout) {
+          // Hard error - stop retrying
+          debugLog('🚪 Silent retry: Session expired detected, stopping retry');
+          handleAuthError(result.error || ErrorMessages.SESSION_EXPIRED.message);
+        } else {
+          // Soft error - continue retrying
+          debugLog('⚠️ Silent retry: Still unreachable, will retry in 15s');
+        }
+      }
+    } catch (error) {
+      debugLog('⚠️ Silent retry: Attempt failed, will retry in 15s');
+    }
+  };
+
+  // First attempt immediately
+  attemptReconnection();
+
+  // Then retry every 15 seconds
+  const retryInterval = setInterval(() => {
+    attemptReconnection();
+  }, 15000);
+
+  // Cleanup
+  return () => {
+    debugLog('⏹ Stopping silent retry loop');
+    clearInterval(retryInterval);
+  };
+}, [isNetworkDown, handleAuthError]);
 
   // ==============================|| OPTIMIZATIONS ||============================== //
   

@@ -18,7 +18,7 @@ import ScrollTop from 'components/ScrollTop';
 import RTLLayout from 'components/RTLLayout';
 import Snackbar from 'components/@extended/Snackbar';
 import Notistack from 'components/third-party/Notistack';
-
+import { isRetryableError } from 'utils/retryLogic';
 import { ConfigProvider } from '../contexts/ConfigContext';
 import { AuthProvider } from '../hooks/useAuth';
 
@@ -90,38 +90,7 @@ const isPausedNow = () => {
  * @returns {boolean} true si on doit retry
  */
 const shouldRetryRequest = (error) => {
-  // Pas d'erreur = pas de retry
-  if (!error) return false;
-  
-  // Extraire le status code
-  const status = error.response?.status || error.status || 0;
-  
-  // RÈGLES DE RETRY :
-  // ✅ Retry sur erreurs réseau (pas de response)
-  if (!error.response && error.message?.includes('Network')) {
-    return true;
-  }
-  
-  // ✅ Retry sur erreurs serveur (5xx)
-  if (status >= 500 && status < 600) {
-    return true;
-  }
-
-  // Rate limiting (429) → retry (will use Retry-After)
-  if (status === 408 || status === 429) return true;
-  
-  // ❌ NE PAS retry sur erreurs client (4xx)
-  if (status >= 400 && status < 500) {
-    return false;
-  }
-  
-  // ❌ NE PAS retry si explicitement marqué
-  if (error.doNotRetry) {
-    return false;
-  }
-  
-  // Par défaut, pas de retry
-  return false;
+  return isRetryableError(error);
 };
 
 
@@ -222,17 +191,8 @@ const swrGlobalConfig = {
    * Utilisé par SWR pour décider si onErrorRetry doit être appelé
    */
   shouldRetryOnError: (error) => {
-    const status = error?.response?.status || error?.status || 0;
-    
-    // ✅ 429 est toujours retryable (géré par onErrorRetry)
-    if (status === 429) return true;
-    
-    // ❌ Autres 4xx ne sont PAS retryables
-    if (status >= 400 && status < 500) return false;
-    
-    // ✅ 5xx et erreurs réseau sont retryables
-    return true;
-  },
+  return isRetryableError(error);
+},
   
   errorRetryCount: 3, // Max 3 tentatives
   
@@ -248,7 +208,7 @@ onError: (error, key, config) => {
   // Extraire le contexte
   const endpoint = Array.isArray(key) ? key[0] : key;
   const status = error?.response?.status || error?.status || 0;
-  const isRetryable = shouldRetryRequest(error);
+  const isRetryable = isRetryableError(error);
   
   // Contexte enrichi pour les logs
   const errorContext = {

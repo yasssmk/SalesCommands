@@ -245,7 +245,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Cache: 180s sur les données sérialisées
         """
         from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
-        # raise Exception("Test 500: Server error on retrieve")
+        raise Exception("Test 500: Server error on retrieve")
         
         pk = kwargs.get('pk')
 
@@ -354,6 +354,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Cache: 120s sur les données sérialisées (dict Python, pas Response)
         """
         from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
+        # raise PermissionDenied("Test 403: You do not have permission to view users")
         # raise Exception("Test 500: Simulated server error")
         
         # Skip cache si pas Redis (FileBasedCache trop lent)
