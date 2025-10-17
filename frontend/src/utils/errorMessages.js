@@ -120,16 +120,71 @@ const getFallbackMessage = (status) => {
   return FALLBACK_MESSAGES.unknown;
 };
 
+// ==============================|| MESSAGE VALIDATION ||============================== //
+
+/**
+ * ✅ ENHANCED: Validate extracted message
+ * 
+ * Checks if a message is valid and user-displayable.
+ * Rejects: null, undefined, empty strings, '[object Object]', 'null', 'undefined'
+ * 
+ * @param {any} message - Message to validate
+ * @returns {boolean} true if valid message
+ */
+const isValidMessage = (message) => {
+  // Must be string
+  if (typeof message !== 'string') {
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('[isValidMessage] Not a string:', typeof message, message);
+    }
+    return false;
+  }
+  
+  // Must not be empty after trim
+  const trimmed = message.trim();
+  if (trimmed.length === 0) {
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('[isValidMessage] Empty string after trim');
+    }
+    return false;
+  }
+  
+  // Reject common invalid values
+  const lowerTrimmed = trimmed.toLowerCase();
+  const invalidValues = ['[object object]', 'null', 'undefined', 'nan', 'error'];
+  if (invalidValues.includes(lowerTrimmed)) {
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('[isValidMessage] Invalid value:', trimmed);
+    }
+    return false;
+  }
+  
+  // Must not be just special characters
+  if (/^[^a-zA-Z0-9]+$/.test(trimmed)) {
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('[isValidMessage] Only special characters:', trimmed);
+    }
+    return false;
+  }
+  
+  return true;
+};
+
 // ==============================|| MAIN UTILITY FUNCTION ||============================== //
 
 /**
- * ✅ GET STRUCTURED ERROR INFO FOR UI DISPLAY (CRASH-SAFE)
+ * ✅ GET STRUCTURED ERROR INFO FOR UI DISPLAY (ENHANCED)
  * 
  * Combines backend message extraction with UI metadata.
  * Reusable across all components that need to display errors.
  * 
  * ⚠️ ALWAYS RETURNS A VALID OBJECT - Never returns null
- * Use this everywhere instead of manual error parsing.
+ * 
+ * ENHANCEMENTS:
+ * - Detailed dev logging at each step
+ * - Better message validation
+ * - More aggressive fallback strategy
+ * - Should almost NEVER return DEFAULT_ERROR
  * 
  * @param {Error|Object|null|undefined} error - Axios error object from API call
  * @returns {Object} Structured error info (guaranteed to be valid object)
@@ -140,22 +195,14 @@ const getFallbackMessage = (status) => {
  * @returns {boolean} return.isRetryable - Whether retry makes sense for this error
  * 
  * @example
- * // SAFE: Always returns valid object
  * const errorInfo = getErrorDisplayInfo(error);
- * // No need to check if null - always has properties
  * <Alert severity={errorInfo.severity}>
  *   <AlertTitle>{errorInfo.title}</AlertTitle>
  *   {errorInfo.message}
  * </Alert>
- * 
- * @example
- * // Also safe with undefined/null
- * const info = getErrorDisplayInfo(null);  // Returns default error object
- * const info2 = getErrorDisplayInfo(undefined);  // Returns default error object
  */
 export const getErrorDisplayInfo = (error) => {
-  // ✅ CRITICAL FIX: Always return a valid object, never null
-  // This prevents "cannot destructure" errors everywhere this is used
+  // ✅ DEFAULT FALLBACK (last resort only)
   const DEFAULT_ERROR = {
     title: 'Unexpected Error',
     message: 'An unexpected error occurred. Please try again.',
@@ -164,7 +211,9 @@ export const getErrorDisplayInfo = (error) => {
     isRetryable: false
   };
 
-  // Early return with default if error is invalid
+  // ====================================================================
+  // STEP 1: Validate error object
+  // ====================================================================
   if (!isValidError(error)) {
     if (process.env.NODE_ENV === 'development') {
       console.warn('[getErrorDisplayInfo] Invalid error object:', error);
@@ -172,39 +221,82 @@ export const getErrorDisplayInfo = (error) => {
     return DEFAULT_ERROR;
   }
 
-  // ✅ SAFE: Extract status with fallbacks
+  // ====================================================================
+  // STEP 2: Extract status code
+  // ====================================================================
   const status = error?.response?.status || error?.status || 0;
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.group('🔍 [getErrorDisplayInfo] Processing error');
+    console.log('Status:', status);
+    console.log('Error type:', error.constructor?.name);
+    console.log('Has response:', !!error.response);
+    console.log('Response data:', error.response?.data);
+  }
 
-  // ✅ SAFE: Extract backend message using existing helper (wrapped in try-catch)
-  let backendMessage;
+  // ====================================================================
+  // STEP 3: Try to extract backend message using handleApiError
+  // ====================================================================
+  let backendMessage = null;
+  let extractionFailed = false;
+  
   try {
     backendMessage = handleApiError(error);
-  } catch (err) {
+    
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[getErrorDisplayInfo] handleApiError failed:', err);
+      console.log('handleApiError returned:', backendMessage);
+      console.log('Type:', typeof backendMessage);
     }
-    backendMessage = null;
+  } catch (err) {
+    extractionFailed = true;
+    if (process.env.NODE_ENV === 'development') {
+      console.error('handleApiError threw exception:', err);
+    }
   }
 
-  // ✅ SAFE: Validate extracted message (NO MORE CRASHES on .trim())
-  const isValidMessage = 
-    isNonEmptyString(backendMessage) &&
-    !safeString(backendMessage, 'includes', false, '[object Object]') &&
-    backendMessage !== 'undefined' &&
-    backendMessage !== 'null';
+  // ====================================================================
+  // STEP 4: Validate extracted message
+  // ====================================================================
+  const messageIsValid = isValidMessage(backendMessage);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Message validation:', messageIsValid ? '✅ VALID' : '❌ INVALID');
+  }
 
-  // ✅ Use fallback if extraction failed or message is invalid
-  if (!isValidMessage) {
+  // ====================================================================
+  // STEP 5: Choose final message (backend or fallback)
+  // ====================================================================
+  let finalMessage;
+  
+  if (messageIsValid) {
+    // ✅ Use backend message
+    finalMessage = backendMessage.trim();
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Using backend message:', finalMessage);
+    }
+  } else {
+    // ❌ Use fallback based on error type
     if (!error.response) {
-      // True network error (no response from server)
-      backendMessage = FALLBACK_MESSAGES.network;
+      // Network error (no response from server)
+      finalMessage = FALLBACK_MESSAGES.network;
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🌐 Network error detected, using fallback:', finalMessage);
+      }
     } else {
       // Server responded but message extraction failed
-      backendMessage = getFallbackMessage(status);
+      finalMessage = getFallbackMessage(status);
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`📋 Using status-based fallback (${status}):`, finalMessage);
+      }
     }
   }
 
-  // Determine if error is retryable
+  // ====================================================================
+  // STEP 6: Determine if error is retryable
+  // ====================================================================
   const isRetryable =
     status === 401 ||
     status >= 500 ||
@@ -212,13 +304,23 @@ export const getErrorDisplayInfo = (error) => {
     status === 429 ||
     (!error.response && error.message);
 
-  return {
+  // ====================================================================
+  // STEP 7: Build final result
+  // ====================================================================
+  const result = {
     title: getErrorTitle(error),
-    message: backendMessage,
+    message: finalMessage,
     severity: getSeverityFromStatus(status),
     status,
     isRetryable
   };
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('📤 Final result:', result);
+    console.groupEnd();
+  }
+
+  return result;
 };
 
 // ==============================|| SPECIFIC ERROR MESSAGES ||============================== //
@@ -322,7 +424,7 @@ export const shouldRetry = (error) => {
  * @returns {Object} Toast-friendly error object
  */
 export const getErrorForToast = (error) => {
-  const info = getErrorDisplayInfo(error);  // Always returns valid object now
+  const info = getErrorDisplayInfo(error);
   
   return {
     message: info.message,

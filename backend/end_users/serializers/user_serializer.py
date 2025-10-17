@@ -371,6 +371,7 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                 if email and User.objects.filter(email=email).exists():
                     raise StandardizedValidationError(
                         CoreErrorMessages.UNIQUE_CONSTRAINT.format(fields="email")
+
                     )
                 
                 if not data.get('role'):

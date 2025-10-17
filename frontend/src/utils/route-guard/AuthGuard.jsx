@@ -10,42 +10,55 @@ import Loader from 'components/Loader';
 import { useAuth } from 'hooks/useAuth';
 import { authConfig, debugLog } from 'config/auth';
 
-
-// ==============================|| AUTH GUARD - MVP ULTRA-SIMPLE ||============================== //
+// ==============================|| AUTH GUARD - WITH DEGRADED MODE ||============================== //
 
 /**
  * ✅ GUARD POUR PAGES PROTÉGÉES (dashboard, profile, settings)
  * 
- * RESPONSABILITÉ UNIQUE :
- * - SI utilisateur pas connecté → sauvegarde route + redirige vers login
- * - SINON → affiche la page protégée (children)
+ * COMPORTEMENT:
+ * - SI utilisateur pas connecté ET backend accessible → redirige vers login
+ * - SI utilisateur connecté → affiche la page protégée
+ * - SI mode dégradé (backend down) → affiche la page normalement, snackbar gère l'avertissement
  * 
- * USAGE :
+ * USAGE:
  * - app/(dashboard)/layout.jsx → <AuthGuard>{children}</AuthGuard>
  */
 export default function AuthGuard({ children }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, isNetworkDown } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   // ==============================|| AUTH-REDIRECT LOGIC ||============================== //
 
   useEffect(() => {
-    // Si pas connecté et sur page protégée → sauvegarder route + rediriger vers login
+    // ✅ Si mode dégradé: laisser l'utilisateur sur la page (snackbar gère l'avertissement)
+    if (isNetworkDown) {
+      debugLog('⚠️ AuthGuard: Network down mode - page visible, no redirect');
+      return;
+    }
+
+    // ✅ Si pas connecté et backend accessible → rediriger vers login
     if (!isLoading && !isAuthenticated) {
       debugLog('🛡️ AuthGuard: User not authenticated, redirecting to login');
       router.push(authConfig.PAGES.LOGIN);
     }
-  }, [isLoading, isAuthenticated, pathname, router]);
+  }, [isLoading, isAuthenticated, isNetworkDown, pathname, router]);
 
   // ==============================|| RENDER LOGIC ||============================== //
 
-  // Afficher loader pendant vérification auth
+  // ✅ Afficher loader UNIQUEMENT pendant vérification initiale
   if (isLoading) {
     return <Loader />;
   }
 
-  // Si pas connecté, on redirige (pas besoin d'afficher children)
+  // ✅ CRITIQUE: En mode dégradé, afficher la page normalement
+  // Le snackbar avertit déjà l'utilisateur du problème réseau
+  if (isNetworkDown) {
+    debugLog('🌐 AuthGuard: Degraded mode - showing page with offline warning');
+    return children;
+  }
+
+  // Si pas connecté ET backend accessible, on redirige
   if (!isAuthenticated) {
     return null;
   }

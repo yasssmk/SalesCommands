@@ -64,7 +64,8 @@ class StandardizedValidationError(ValidationError):
                 
                 # Build field-specific message
                 if error:
-                    messages.append(f"{field}: {str(error)}")
+                    # messages.append(f"{field}: {str(error)}")
+                    messages.append(f"{str(error)}")
             
             # ✅ FIX: Handle empty dict or dict that produced no messages
             if messages:

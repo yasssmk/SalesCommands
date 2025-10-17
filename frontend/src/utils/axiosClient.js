@@ -8,19 +8,12 @@ import { safeConsole } from './logSanitizer';
 // ==============================|| SINGLE-FLIGHT REFRESH PATTERN ||============================== //
 
 /**
- * ✅ SINGLE-FLIGHT PATTERN
- * 
- * Ensures only ONE token refresh happens at a time.
- * Multiple concurrent 401s will wait for the same refresh and then retry.
- * 
- * This prevents:
- * - Multiple simultaneous refresh calls
- * - Race conditions on token rotation
- * - Backend throttling on refresh endpoint
+ * Single-flight pattern for token refresh
+ * Ensures only ONE refresh happens at a time
+ * Multiple concurrent 401s wait for same refresh and retry
  */
-
-let refreshPromise = null; // Tracks the ongoing refresh operation
-const subscriberQueue = []; // Queue of requests waiting for refresh
+let refreshPromise = null;
+const subscriberQueue = [];
 
 /**
  * Called when refresh succeeds - retries all queued requests
@@ -36,47 +29,34 @@ function onRefreshFailed(error) {
   subscriberQueue.splice(0).forEach(({ reject }) => reject(error));
 }
 
-
 // ==============================|| CENTRAL AXIOS CLIENT ||============================== //
 
 /**
- * ✅ AXIOS CLIENT CENTRAL WITH CORRELATION IDs
- * 
- * Features:
- * - HTTP-only cookies automatic (withCredentials: true)  
+ * Central axios client with:
+ * - HTTP-only cookies automatic (withCredentials: true)
  * - Auto-refresh on 401 (single retry, no infinite loops)
- * - Uses existing handleApiError for backend messages
- * - 🔒 PII sanitization on all logs
- * - 🔗 Correlation ID for distributed tracing
- * -  Retry-After header support for 429 responses
- * 
- * @module utils/axiosClient
+ * - Correlation IDs for distributed tracing
+ * - Retry-After header support for 429 responses
  */
-
 const axiosClient = axios.create({
   baseURL: authConfig.API_BASE_URL,
   timeout: authConfig.REQUEST_TIMEOUT,
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Essential for HTTP-only cookies
+  withCredentials: true,
 });
 
 // ==============================|| CORRELATION ID GENERATOR ||============================== //
 
 /**
  * Generate unique correlation ID for request tracing
- * Uses crypto.randomUUID() with fallback for older browsers
- * 
- * @returns {string} UUID v4
  */
 const generateCorrelationId = () => {
-  // Modern browsers (preferred)
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
   
-  // Fallback for older browsers
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
@@ -87,14 +67,7 @@ const generateCorrelationId = () => {
 // ==============================|| RETRY-AFTER PARSER ||============================== //
 
 /**
- * Parse Retry-After header
- * 
- * The Retry-After header can be either:
- * - An integer (seconds to wait)
- * - An HTTP date string (absolute time)
- * 
- * @param {string} retryAfter - Value from Retry-After header
- * @returns {number} Delay in milliseconds, or 0 if invalid
+ * Parse Retry-After header (seconds or HTTP date)
  */
 const parseRetryAfter = (retryAfter) => {
   if (!retryAfter) return 0;
@@ -102,7 +75,7 @@ const parseRetryAfter = (retryAfter) => {
   // Case 1: Integer (seconds)
   const seconds = parseInt(retryAfter, 10);
   if (!isNaN(seconds) && seconds > 0) {
-    return seconds * 1000; // Convert to milliseconds
+    return seconds * 1000;
   }
 
   // Case 2: HTTP date string
@@ -111,13 +84,12 @@ const parseRetryAfter = (retryAfter) => {
     if (!isNaN(retryDate.getTime())) {
       const now = Date.now();
       const delay = retryDate.getTime() - now;
-      return Math.max(0, delay); // Never negative
+      return Math.max(0, delay);
     }
   } catch (e) {
-    // Invalid date format, fall through
+    // Invalid date format
   }
 
-  // Fallback: invalid format
   return 0;
 };
 
@@ -125,17 +97,15 @@ const parseRetryAfter = (retryAfter) => {
 
 axiosClient.interceptors.request.use(
   (config) => {
-    // 🔗 Generate and attach correlation ID
+    // Generate and attach correlation ID
     const correlationId = generateCorrelationId();
     config.headers['X-Correlation-ID'] = correlationId;
     
-    // Store for response logging
     config.metadata = {
       correlationId,
       startTime: performance.now()
     };
     
-    // 🔒 Sanitized debug log with correlation ID
     if (process.env.NODE_ENV === 'development') {
       debugLog(
         `🚀 [${correlationId.slice(0, 8)}] API Request: ${config.method?.toUpperCase()} ${config.url}`
@@ -145,7 +115,6 @@ axiosClient.interceptors.request.use(
     return config;
   },
   (error) => {
-    // 🔒 Sanitized error log
     safeConsole.error('❌ Request interceptor error:', error);
     return Promise.reject(error);
   }
@@ -158,13 +127,11 @@ axiosClient.interceptors.response.use(
     const correlationId = response.config.metadata?.correlationId || 'unknown';
     const startTime = response.config.metadata?.startTime;
     
-    // Calculate request duration
     let duration = 0;
     if (startTime) {
       duration = performance.now() - startTime;
     }
     
-    // 🔒 Sanitized debug log with correlation ID and duration
     if (process.env.NODE_ENV === 'development') {
       debugLog(
         `✅ [${correlationId.slice(0, 8)}] API Response: ${response.status} ${response.config.url} (${duration.toFixed(0)}ms)`
@@ -173,21 +140,20 @@ axiosClient.interceptors.response.use(
     
     return response;
   },
-   async (error) => {
+  async (error) => {
     const correlationId = error?.config?.metadata?.correlationId || 'unknown';
     const startTime = error?.config?.metadata?.startTime;
     const status = error?.response?.status;
     const url = error?.config?.url;
     const originalRequest = error.config;
     
-    // Calculate request duration
     let duration = 0;
     if (startTime) {
       duration = performance.now() - startTime;
     }
 
     // ==============================
-    // 🔄 HANDLE 401 UNAUTHORIZED - AUTO REFRESH TOKEN
+    // HANDLE 401 UNAUTHORIZED - AUTO REFRESH TOKEN
     // ==============================
     
     // Check if this is a refresh endpoint call (prevent infinite loop)
@@ -195,10 +161,10 @@ axiosClient.interceptors.response.use(
     
     // Only attempt refresh if:
     // 1. Status is 401
-    // 2. Not already retried (prevent double refresh)
+    // 2. Not already retried
     // 3. Not the refresh endpoint itself
     if (status === 401 && !originalRequest._retry && !isRefreshCall) {
-      originalRequest._retry = true; // Mark as retried
+      originalRequest._retry = true;
       
       // If a refresh is already in progress, queue this request
       if (refreshPromise) {
@@ -234,12 +200,17 @@ axiosClient.interceptors.response.use(
         // Import refreshTokens dynamically to avoid circular dependency
         const { refreshTokens } = await import('../api/auth');
         
-        // Create the refresh promise
         refreshPromise = refreshTokens();
         const refreshResult = await refreshPromise;
         
         if (!refreshResult.success) {
-          throw new Error(refreshResult.error || 'Token refresh failed');
+          // Store shouldLogout flag before throwing
+          const shouldTriggerLogout = refreshResult.shouldLogout === true;
+          const errorMessage = refreshResult.error || 'Token refresh failed';
+          
+          const error = new Error(errorMessage);
+          error.shouldLogout = shouldTriggerLogout;
+          throw error;
         }
         
         // Refresh succeeded - notify all queued requests
@@ -251,7 +222,6 @@ axiosClient.interceptors.response.use(
           );
         }
         
-        // Retry the original request
         return axiosClient(originalRequest);
         
       } catch (refreshError) {
@@ -264,22 +234,34 @@ axiosClient.interceptors.response.use(
           );
         }
         
-        // Import handleAuthError dynamically to trigger logout
-        // This will stop the proactive timer and redirect to login
-        try {
-          // Signal to the app that session has expired
-          // The app will handle logout via useAuth context
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('auth:session-expired', {
-              detail: { error: 'Session expired. Please sign in again.' }
-            }));
+        // Check if we should trigger hard logout or just stay in degraded mode
+        const shouldTriggerLogout = refreshError.shouldLogout === true;
+        
+        if (shouldTriggerLogout) {
+          if (process.env.NODE_ENV === 'development') {
+            debugLog(
+              `🚪 [${correlationId.slice(0, 8)}] Real session expiration - triggering logout`
+            );
           }
-        } catch (e) {
-          // Fallback if event dispatch fails
-          safeConsole.error('Failed to dispatch session-expired event:', e);
+          
+          // Signal to the app that session has expired
+          try {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('auth:session-expired', {
+                detail: { error: 'Session expired. Please sign in again.' }
+              }));
+            }
+          } catch (e) {
+            safeConsole.error('Failed to dispatch session-expired event:', e);
+          }
+        } else {
+          if (process.env.NODE_ENV === 'development') {
+            debugLog(
+              `⚠️ [${correlationId.slice(0, 8)}] Network error during refresh - no logout, degraded mode`
+            );
+          }
         }
         
-        // Reject with original 401 error
         return Promise.reject(error);
         
       } finally {
@@ -288,20 +270,17 @@ axiosClient.interceptors.response.use(
     }
 
     // ==============================
-    // ⏱️ HANDLE TIMEOUT
+    // HANDLE TIMEOUT
     // ==============================
 
-    // Axios timeout errors have code 'ECONNABORTED' or message contains 'timeout'
     const isTimeout = 
       error.code === 'ECONNABORTED' || 
       error.code === 'ETIMEDOUT' ||
       (error.message && error.message.toLowerCase().includes('timeout'));
     
     if (isTimeout) {
-      // Marquer l'erreur comme timeout avec status 408
       error.isTimeout = true;
       
-      // Si pas de response, créer une pseudo-response avec status 408
       if (!error.response) {
         error.response = {
           status: 408,
@@ -320,15 +299,17 @@ axiosClient.interceptors.response.use(
       }
     }
     
+    // ==============================
+    // HANDLE 429 RATE LIMIT
+    // ==============================
+    
     if (status === 429) {
-      // Axios normalizes headers to lowercase
       const retryAfter = error?.response?.headers?.['retry-after'];
       
       if (retryAfter) {
         const retryAfterMs = parseRetryAfter(retryAfter);
         
         if (retryAfterMs > 0) {
-          // Attach parsed delay to error for SWR
           error.retryAfterMs = retryAfterMs;
           
           if (process.env.NODE_ENV === 'development') {
@@ -340,21 +321,18 @@ axiosClient.interceptors.response.use(
           debugLog(
             `⚠️ [${correlationId.slice(0, 8)}] Invalid Retry-After value: "${retryAfter}"`
           );
-          // Fallback: use minimal default
-          error.retryAfterMs = 5000; // 5s default
+          error.retryAfterMs = 5000;
         }
       } else {
-        // Missing Retry-After header on 429
         if (process.env.NODE_ENV === 'development') {
           debugLog(
             `⚠️ [${correlationId.slice(0, 8)}] 429 response missing Retry-After header, using 5s default`
           );
         }
-        error.retryAfterMs = 5000; // 5s default fallback
+        error.retryAfterMs = 5000;
       }
     }
     
-    // 🔒 Sanitized error log with correlation ID
     if (process.env.NODE_ENV === 'development') {
       debugLog(
         `❌ [${correlationId.slice(0, 8)}] API Error: ${status ?? '—'} ${url ?? '—'} (${duration.toFixed(0)}ms)`
@@ -368,9 +346,7 @@ axiosClient.interceptors.response.use(
 // ==============================|| HELPER FUNCTIONS ||============================== //
 
 /**
- * ✅ WRAPPER FOR REQUESTS WITH AUTOMATIC ERROR HANDLING
- * @param {Function} requestFn - Axios request function
- * @returns {Promise<{success: boolean, data?: any, error?: string, status?: number, response?: Object}>}
+ * Wrapper for requests with automatic error handling
  */
 export const apiRequest = async (requestFn) => {
   try {
@@ -390,7 +366,6 @@ export const apiRequest = async (requestFn) => {
       status = error.response.status;
     }
     
-    // 🔒 Sanitized error log
     if (process.env.NODE_ENV === 'development') {
       safeConsole.error('❌ API Request failed:', errorMessage);
     }
@@ -407,7 +382,6 @@ export const apiRequest = async (requestFn) => {
       result.isTimeout = true;
     }
     
-    // ✅ Si retryAfterMs existe sur l'erreur (ajouté par interceptor), le propager
     if (error.retryAfterMs) {
       result.retryAfterMs = error.retryAfterMs;
     }
@@ -422,7 +396,6 @@ export default axiosClient;
 
 /**
  * Convenience methods with integrated error handling
- * All methods include correlation IDs automatically
  */
 export const api = {
   get: (url, config = {}) => apiRequest(() => axiosClient.get(url, config)),

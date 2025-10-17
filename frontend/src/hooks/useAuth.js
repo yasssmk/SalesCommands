@@ -5,7 +5,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 
-
 // project imports
 import { 
   loginUser, 
@@ -15,6 +14,7 @@ import {
   resetAuthState
 } from '../api/auth';
 import { authConfig, debugLog } from '../config/auth';
+import { displayWarningSnackbar } from '../utils/displayError';
 
 // ==============================|| AUTH CONTEXT ||============================== //
 
@@ -24,25 +24,19 @@ const AuthContext = createContext(null);
 
 /**
  * Store auth flash message for display on login page
- * @param {string} message - Error message to display
  */
 const setAuthFlash = (message) => {
   try {
-    const flash = {
-      m: message,
-      t: Date.now()
-    };
+    const flash = { m: message, t: Date.now() };
     sessionStorage.setItem('authFlash', JSON.stringify(flash));
     debugLog('💾 Auth flash stored:', message);
   } catch (e) {
-    // Silent fail - sessionStorage might be unavailable
     debugLog('⚠️ Failed to store auth flash:', e.message);
   }
 };
 
 /**
- * Read and clear auth flash message
- * @returns {string|null} Flash message or null
+ * Read and clear auth flash message (expires after 30s)
  */
 export const getAuthFlash = () => {
   try {
@@ -52,13 +46,11 @@ export const getAuthFlash = () => {
     const flash = JSON.parse(raw);
     const age = Date.now() - (flash.t || 0);
     
-    // Flash expires after 30 seconds (prevents stale messages)
     if (age > 30000) {
       sessionStorage.removeItem('authFlash');
       return null;
     }
 
-    // Clear flash after reading
     sessionStorage.removeItem('authFlash');
     debugLog('📖 Auth flash read and cleared:', flash.m);
     return flash.m || null;
@@ -68,29 +60,30 @@ export const getAuthFlash = () => {
   }
 };
 
-
 // ==============================|| AUTH PROVIDER ||============================== //
 
 export function AuthProvider({ children }) {
-  // États principaux
+  // Main auth states
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isNetworkDown, setIsNetworkDown] = useState(false);
   
   // Navigation hooks
   const router = useRouter();
   const pathname = usePathname();
   
-  // Refs pour optimisation
+  // Refs for optimization
   const refreshTimerRef = useRef(null);
   const isRefreshingRef = useRef(false);
   const hasInitializedRef = useRef(false);
+  const lastSnackbarRef = useRef(0);
 
   // ==============================|| HELPER FUNCTIONS ||============================== //
 
   /**
-   * STOP AUTO REFRESH
+   * Stop the auto-refresh timer
    */
   const stopAutoRefresh = useCallback(() => {
     if (refreshTimerRef.current) {
@@ -101,34 +94,55 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * CLEAR AUTH STATE - Nettoyage complet
+   * Clear all auth state (user, session, errors)
    */
   const clearAuthState = useCallback(() => {
     setUser(null);
     setIsAuthenticated(false);
     setError(null);
     setIsLoading(false);
+    setIsNetworkDown(false);
     resetAuthState();
     debugLog('🧹 Auth state cleared');
   }, []);
 
   /**
-   * HANDLE AUTH ERROR - Avec arrêt du timer
+   * Handle soft auth issue (network down, 5xx errors)
+   * Preserves session, activates degraded mode, shows snackbar
    */
-  const handleAuthError = useCallback((errorMessage) => {
+  const handleSoftAuthIssue = useCallback((errorMessage) => {
+    debugLog('⚠️ Soft auth issue (network down):', errorMessage);
+    setIsNetworkDown(true);
     setError(errorMessage);
     setIsLoading(false);
-    stopAutoRefresh(); // ✅ Arrêt du timer en cas d'erreur d'auth
+    
+    // Show snackbar (max 1 every 10 seconds to avoid spam)
+    const now = Date.now();
+    if (now - lastSnackbarRef.current > 10000) {
+      displayWarningSnackbar('[useAuth] Connection issue.');
+      lastSnackbarRef.current = now;
+    }
+  }, []);
+
+  /**
+   * Handle hard auth error (real 401/403 from server)
+   * Clears session, stops timer, redirects to login
+   */
+  const handleAuthError = useCallback((errorMessage) => {
+    debugLog('❌ Hard auth error (session expired):', errorMessage);
+    setError(errorMessage);
+    setIsLoading(false);
+    setIsNetworkDown(false);
+    stopAutoRefresh();
     clearAuthState();
     setAuthFlash(errorMessage);
-    debugLog('❌ Auth error handled:', errorMessage);
   }, [clearAuthState, stopAutoRefresh]);
 
   // ==============================|| TOKEN REFRESH ||============================== //
 
   /**
-   * AUTO-REFRESH TOKENS (called by timer)
-   * ⚠️ Uses setUser() directly to avoid infinite loop with setAuthenticatedUser()
+   * Auto-refresh tokens (called by timer)
+   * Distinguishes network errors from real session expirations
    */
   const performTokenRefresh = useCallback(async () => {
     if (isRefreshingRef.current) return;
@@ -138,60 +152,67 @@ export function AuthProvider({ children }) {
       debugLog('🔄 Auto-refreshing tokens...');
 
       const result = await refreshTokens();
+      
       if (result.success) {
+        setIsNetworkDown(false);
+        
         if (result.user) {
-          setUser(result.user); // ✅ Direct setUser, not setAuthenticatedUser
+          setUser(result.user);
           debugLog('✅ Token refresh successful with user data');
         } else {
           debugLog('✅ Token refresh successful (no user data)');
         }
       } else {
-        handleAuthError(result.error);
+        if (result.shouldLogout) {
+          debugLog('🚪 Real session expiration detected');
+          handleAuthError(result.error || 'Session expired. Please sign in again.');
+        } else {
+          debugLog('⚠️ Network issue during refresh, entering degraded mode');
+          handleSoftAuthIssue(result.error || 'Connection issue. Retrying...');
+        }
       }
     } catch (error) {
-      debugLog('❌ Token refresh error:', error.message);
-      handleAuthError(error.message);
+      debugLog('❌ Unexpected refresh error:', error.message);
+      handleSoftAuthIssue('Connection issue. Retrying...');
     } finally {
       isRefreshingRef.current = false;
     }
-  }, [handleAuthError]);
+  }, [handleAuthError, handleSoftAuthIssue]);
 
   /**
-   * START AUTO REFRESH with jitter
+   * Start auto-refresh timer with random jitter
    */
   const startAutoRefresh = useCallback(() => {
     stopAutoRefresh();
-    const jitter = Math.floor(Math.random() * 30000) - 15000; // ±15s
+    const jitter = Math.floor(Math.random() * 30000) - 15000;
     const interval = authConfig.TOKEN_REFRESH_INTERVAL + jitter;
     debugLog(`⏰ Starting auto-refresh timer (interval: ${(interval / 1000).toFixed(0)}s)`);
     
-    refreshTimerRef.current = setInterval(
-      performTokenRefresh,
-      interval
-    );
+    refreshTimerRef.current = setInterval(performTokenRefresh, interval);
   }, [performTokenRefresh, stopAutoRefresh]);
 
   /**
-   * ✅ SET AUTHENTICATED USER + START TIMER
-   * Called after login and initialization
+   * Set authenticated user and start timer
    */
   const setAuthenticatedUser = useCallback((userData) => {
     setUser(userData);
     setIsAuthenticated(true);
     setError(null);
     setIsLoading(false);
-    startAutoRefresh(); // ✅ Start proactive refresh timer
+    setIsNetworkDown(false);
+    startAutoRefresh();
     debugLog('✅ User authenticated + timer started:', userData);
   }, [startAutoRefresh]);
 
   // ==============================|| AUTH ACTIONS ||============================== //
 
   /**
-   * LOGIN FUNCTION - Navigation Next + re-hydratation
+   * Login user with email and password
    */
   const login = useCallback(async (email, password) => {
     try {
       setError(null);
+      setIsNetworkDown(false);
       debugLog('🔐 Login attempt for:', email);
 
       const result = await loginUser(email, password);
@@ -201,10 +222,8 @@ export function AuthProvider({ children }) {
         return { success: false, error: result.error };
       }
 
-      // Store user + start timer
       setAuthenticatedUser(result.user);
       
-      // Navigation Next.js avec re-hydratation
       debugLog('🚀 Login successful, navigating to dashboard...');
       router.replace(authConfig.PAGES.DASHBOARD);
       router.refresh();
@@ -220,91 +239,46 @@ export function AuthProvider({ children }) {
   }, [router, setAuthenticatedUser]);
 
   /**
-   * LOGOUT FUNCTION - Navigation Next + re-hydratation
+   * Logout user (best-effort backend call, always clears client state)
    */
-  // const logout = useCallback(async () => {
-  //   if (isLoading) {
-  //     debugLog('⚠️ Logout already in progress');
-  //     return { success: false, error: 'Logout already in progress' };
-  //   }
-
-  //   try {
-  //     setIsLoading(true);
-  //     setError(null);
-  //     debugLog('🚪 Starting logout process...');
-
-  //     // Étape 1: Appel backend
-  //     try {
-  //       await logoutUser();
-  //       debugLog('✅ Server logout successful');
-  //     } catch (backendError) {
-  //       debugLog('⚠️ Server logout failed, continuing client logout:', backendError.message);
-  //     }
-
-  //     // Étape 2: Nettoyage client
-  //     stopAutoRefresh();
-  //     clearAuthState();
-      
-  //     // Étape 3: Navigation Next.js avec re-hydratation
-  //     debugLog('🚀 Redirecting to login...');
-  //     router.replace(authConfig.PAGES.LOGIN);
-  //     router.refresh();
-
-  //     return { success: true };
-  //   } catch (error) {
-  //     debugLog('❌ Unexpected logout error:', error.message);
-  //     clearAuthState();
-  //     router.replace(authConfig.PAGES.LOGIN);
-  //     router.refresh();
-  //     return { success: false, error: error.message };
-  //   }
-  // }, [router, clearAuthState, isLoading, stopAutoRefresh]);
   const logout = useCallback(async () => {
-  if (isLoading) {
-    debugLog('⚠️ Logout already in progress');
-    return { success: false, error: 'Logout already in progress' };
-  }
-
-  try {
-    setIsLoading(true);
-    setError(null);
-    debugLog('🚪 Starting logout process...');
-
-    // Étape 1: Appel backend (best effort)
-    try {
-      await logoutUser();
-      debugLog('✅ Server logout successful');
-    } catch (backendError) {
-      debugLog('⚠️ Server logout failed, continuing client logout:', backendError.message);
+    if (isLoading) {
+      debugLog('⚠️ Logout already in progress');
+      return { success: false, error: 'Logout already in progress' };
     }
 
-    // Étape 2: Cleanup + flash message via handleAuthError (centrale)
-    // Message SOC-friendly et générique
-    handleAuthError('You have been signed out. Please sign in again to continue.');
+    try {
+      setIsLoading(true);
+      setError(null);
+      debugLog('🚪 Starting logout process...');
 
-    // Étape 3: Navigation Next.js avec re-hydratation
-    debugLog('🚀 Redirecting to login...');
-    router.replace(authConfig.PAGES.LOGIN);
-    router.refresh();
+      try {
+        await logoutUser();
+        debugLog('✅ Server logout successful');
+      } catch (backendError) {
+        debugLog('⚠️ Server logout failed, continuing client logout:', backendError.message);
+      }
 
-    return { success: true };
-  } catch (error) {
-    debugLog('❌ Unexpected logout error:', error.message);
+      handleAuthError('You have been signed out. Please sign in again to continue.');
 
-    // Assurer le cleanup et le message même en cas d’exception
-    handleAuthError('You have been signed out. Please sign in again to continue.');
-    router.replace(authConfig.PAGES.LOGIN);
-    router.refresh();
+      debugLog('🚀 Redirecting to login...');
+      router.replace(authConfig.PAGES.LOGIN);
+      router.refresh();
 
-    return { success: false, error: error.message };
-  } finally {
-    // handleAuthError met déjà isLoading à false, mais on remet une couche pour sécurité
-    setIsLoading(false);
-  }
-}, [isLoading, handleAuthError, router]);
+      return { success: true };
+    } catch (error) {
+      debugLog('❌ Unexpected logout error:', error.message);
+      handleAuthError('You have been signed out. Please sign in again to continue.');
+      router.replace(authConfig.PAGES.LOGIN);
+      router.refresh();
+      return { success: false, error: error.message };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoading, handleAuthError, router]);
 
   /**
-   * REFRESH USER DATA
+   * Refresh user data manually
    */
   const refreshUser = useCallback(async () => {
     try {
@@ -313,6 +287,7 @@ export function AuthProvider({ children }) {
       const refreshResult = await refreshTokens();
       
       if (refreshResult.success && refreshResult.user) {
+        setIsNetworkDown(false);
         setUser(refreshResult.user);
         debugLog('✅ User data refreshed via token refresh');
         return refreshResult.user;
@@ -323,52 +298,65 @@ export function AuthProvider({ children }) {
         const userResult = await getCurrentUser();
         
         if (userResult.success) {
+          setIsNetworkDown(false);
           setUser(userResult.user);
           debugLog('✅ User data fetched separately');
           return userResult.user;
         } else {
-          handleAuthError(userResult.error);
+          if (userResult.shouldLogout) {
+            handleAuthError(userResult.error);
+          } else {
+            handleSoftAuthIssue(userResult.error || 'Connection issue. Retrying...');
+          }
           return null;
         }
       }
       
-      handleAuthError(refreshResult.error);
+      if (refreshResult.shouldLogout) {
+        handleAuthError(refreshResult.error);
+      } else {
+        handleSoftAuthIssue(refreshResult.error || 'Connection issue. Retrying...');
+      }
       return null;
       
     } catch (error) {
       debugLog('❌ Refresh user error:', error.message);
-      handleAuthError(error.message);
+      handleSoftAuthIssue('Connection issue. Retrying...');
       return null;
     }
-  }, [handleAuthError]);
+  }, [handleAuthError, handleSoftAuthIssue]);
 
   /**
-   * CHECK AUTH STATUS
+   * Check if user is authenticated
    */
   const checkAuth = useCallback(async () => {
     try {
       const result = await getCurrentUser();
       
       if (result.success) {
+        setIsNetworkDown(false);
         setAuthenticatedUser(result.user);
         debugLog('✅ User already authenticated:', result.user);
         return true;
       } else {
-         handleAuthError(result.error || 'Session expired. Please sign in again.');
+        if (result.shouldLogout) {
+          handleAuthError(result.error || 'Session expired. Please sign in again.');
+        } else {
+          handleSoftAuthIssue(result.error || 'Connection issue. Please try again.');
+        }
         return false;
       }
     } catch (error) {
       debugLog('❌ Check auth error:', error.message);
-      handleAuthError('Session expired. Please sign in again.');
-
+      handleSoftAuthIssue('Connection issue. Please try again.');
       return false;
     }
-  }, [setAuthenticatedUser, handleAuthError]);
+  }, [setAuthenticatedUser, handleAuthError, handleSoftAuthIssue]);
 
   // ==============================|| INITIALIZATION ||============================== //
 
   /**
-   * INITIALIZATION EFFECT - Skip sur routes publiques
+   * Initialize auth on mount
    */
   useEffect(() => {
     let mounted = true;
@@ -381,14 +369,11 @@ export function AuthProvider({ children }) {
     window.addEventListener('auth:session-expired', handleSessionExpired);
 
     const initializeAuth = async () => {
-
-      // ✅ Skip si déjà initialisé avec un user
       if (hasInitializedRef.current && user) {
         debugLog('ℹ️ Auth already initialized with user, skipping re-fetch');
         return;
       }
 
-      // Routes publiques où l'auth n'est pas nécessaire
       const publicRoutes = authConfig.PUBLIC_ROUTES || ['/login', '/register', '/forgot-password'];
       
       if (publicRoutes.includes(pathname)) {
@@ -397,30 +382,26 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      // ✅ Skip re-init sur navigation interne si user déjà chargé
-      if (hasInitializedRef.current && user) {
-        debugLog('ℹ️ Navigation within admin with existing user, skipping re-init');
-        setIsLoading(false);
-        return;
-      }
-
-
       try {
         debugLog('🚀 Initializing authentication...');
         const result = await getCurrentUser();
         if (!mounted) return;
 
         if (result.success) {
-          // ✅ setAuthenticatedUser starts timer automatically
           setAuthenticatedUser(result.user);
           debugLog('✅ User already authenticated:', result.user);
         } else {
-          handleAuthError(result.error)
-          debugLog('ℹ️ No authenticated user found');
+          if (result.shouldLogout) {
+            handleAuthError(result.error || 'Session expired. Please sign in again.');
+          } else {
+            debugLog('⚠️ Network issue during init, degraded mode');
+            handleSoftAuthIssue(result.error || 'Connection issue. Please try again.');
+          }
         }
       } catch (error) {
+        if (!mounted) return;
         debugLog('❌ Auth initialization error:', error.message);
-        handleAuthError(result.error)
+        handleSoftAuthIssue('Connection issue. Please try again.');
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -436,14 +417,12 @@ export function AuthProvider({ children }) {
       stopAutoRefresh();
       window.removeEventListener('auth:session-expired', handleSessionExpired);
     };
-  }, []); 
+  }, []);
 
- // ==============================|| OPTIMISATIONS ||============================== //
+  // ==============================|| OPTIMIZATIONS ||============================== //
   
   /**
-   * ✅ MÉMOÏSATION DES INFOS TENANT
-   * Évite de recalculer tenantId/tenantName à chaque render
-   * Impact: Réduction des re-renders sur tous les composants utilisant ces valeurs
+   * Memoize tenant info to avoid recalculations
    */
   const tenantInfo = useMemo(
     () => ({
@@ -454,36 +433,25 @@ export function AuthProvider({ children }) {
   );
 
   /**
-   * ✅ CLEAR ERROR AVEC DÉPENDANCES CORRECTES
-   * Fixe le warning React sur les dépendances manquantes
+   * Clear error state
    */
   const clearError = useCallback(() => setError(null), []);
 
   /**
-   * ✅ MÉMOÏSATION DE LA CONTEXT VALUE
-   * CRITIQUE: Évite que TOUS les composants utilisant useAuth() se re-render
-   * à chaque render du AuthProvider
-   * 
-   * Gain attendu: 100-200ms économisés sur navigation + réduction massive des re-renders
+   * Memoize context value to prevent unnecessary re-renders
    */
   const contextValue = useMemo(
     () => ({
-      // États
       user,
       isAuthenticated,
       isLoading,
       error,
-      
-      // Infos tenant mémoïsées
+      isNetworkDown,
       ...tenantInfo,
-      
-      // Actions
       login,
       logout,
       refreshUser,
       checkAuth,
-      
-      // Utilities
       clearError,
       clearAuthState
     }),
@@ -492,6 +460,7 @@ export function AuthProvider({ children }) {
       isAuthenticated,
       isLoading,
       error,
+      isNetworkDown,
       tenantInfo,
       login,
       logout,
@@ -512,7 +481,7 @@ export function AuthProvider({ children }) {
 // ==============================|| HOOKS ||============================== //
 
 /**
- * MAIN AUTH HOOK
+ * Hook to access auth context
  */
 export function useAuth() {
   const context = useContext(AuthContext);
@@ -523,5 +492,3 @@ export function useAuth() {
 }
 
 export default useAuth;
-
-

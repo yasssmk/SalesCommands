@@ -253,6 +253,7 @@ class UserRefreshTokenView(BaseAPIView):
     
     def post(self, request):
         try:
+        
             ctx = ctx_from_request(request)
             ctx.update({'event': 'token_refresh_attempt'})
             logger.info("token_refresh_attempt", extra=ctx)
