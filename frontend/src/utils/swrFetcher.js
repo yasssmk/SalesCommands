@@ -6,6 +6,9 @@
  * Centralized fetcher for all SWR hooks in the application
  * with latency monitoring per endpoint.
  * 
+ * ✅ UPDATED: Now uses 'critical' profile (8s timeout) by default for GET requests
+ * ✅ UPDATED: Properly tags timeout errors with { status: 408, isTimeout: true }
+ * 
  * @module utils/swrFetcher
  */
 
@@ -18,15 +21,15 @@ import metricsCollector from 'utils/monitoring';
  * Create an Error object that preserves the HTTP status code
  * This is crucial for error handling in components
  * 
- * preserve retryAfterMs for 429 responses
+ * Preserves retryAfterMs for 429 responses and isTimeout flag for 408
  * 
  * @param {string} message - Error message
  * @param {number} status - HTTP status code
  * @param {Object} response - Optional response object
- * @param {number} retryAfterMs - Optional retry delay from server (429 responses)
+ * @param {Object} extraProps - Extra properties to attach (retryAfterMs, isTimeout)
  * @returns {Error} Enhanced error with status and retry info
  */
-const createApiError = (message, status, response = null, retryAfterMs = null) => {
+const createApiError = (message, status, response = null, extraProps = {}) => {
   const error = new Error(message);
   
   // ✅ Attach status in multiple formats for compatibility
@@ -39,6 +42,8 @@ const createApiError = (message, status, response = null, retryAfterMs = null) =
     statusText: response?.statusText || ''
   };
   
+  // ✅ Attach extra properties (retryAfterMs, isTimeout, etc.)
+  Object.assign(error, extraProps);
   
   return error;
 };
@@ -154,6 +159,9 @@ const withPerformanceTracking = async (asyncFn, endpoint) => {
 /**
  * Global fetcher for SWR with monitoring - GET method
  * 
+ * ✅ UPDATED: Uses 'critical' profile (8s timeout) by default
+ * ✅ UPDATED: Properly propagates isTimeout flag for 408 errors
+ * 
  * IMPORTANT: SWR can pass either:
  * 1. The original key (string or array)
  * 2. A stringified version for complex keys (starts with @)
@@ -220,28 +228,32 @@ const swrFetcher = async (...args) => {
   try {
     const data = await withPerformanceTracking(
       async () => {
-        // Use api wrapper which already handles:
+        // ✅ UPDATED: Use api.get which now defaults to 'critical' profile (8s timeout)
+        // The api wrapper already handles:
         // - HTTP-only cookies for JWT authentication
         // - Tenant headers (X-Client-ID, etc.)
         // - Standardized error handling
         // - Axios interceptors for token refresh
+        // - Profile-based timeout selection
         const result = await api.get(url);
         
-        // The api wrapper returns {success, data, error, status}
+        // The api wrapper returns {success, data, error, status, isTimeout, retryAfterMs}
         if (result.success) {
           return result.data;
         }
         
-       const apiError = createApiError(
+        // ✅ CRITICAL: Preserve ALL error properties (isTimeout, retryAfterMs, etc.)
+        const apiError = createApiError(
           result.error || 'Failed to fetch data',
           result.status || 0,
-          result.response
+          result.response,
+          {
+            // ✅ Preserve isTimeout flag for 408 errors
+            isTimeout: result.isTimeout || false,
+            // ✅ Preserve retryAfterMs for 429 responses
+            retryAfterMs: result.retryAfterMs || null
+          }
         );
-        
-        // ✅ Copier retryAfterMs si présent dans result
-        if (result.retryAfterMs) {
-          apiError.retryAfterMs = result.retryAfterMs;
-        }
         
         throw apiError;
       },
@@ -264,6 +276,8 @@ const swrFetcher = async (...args) => {
 /**
  * Fetcher for POST requests with monitoring
  * 
+ * Uses 'mutation' profile (10s timeout) by default
+ * 
  * @param {string | [string, string]} keyOrTuple - URL string or tuple [url, tenantId]
  * @param {Object} options - Mutation options
  * @param {any} options.arg - Data to send in POST
@@ -284,12 +298,15 @@ export const swrPostFetcher = async (keyOrTuple, { arg }) => {
         return result.data;
       }
       
-      // ✅ Preserve status code in error
+      // ✅ Preserve status code and error flags
       throw createApiError(
         result.error || 'Failed to post data',
         result.status || 0,
         result.response,
-        result
+        {
+          isTimeout: result.isTimeout || false,
+          retryAfterMs: result.retryAfterMs || null
+        }
       );
     },
     url
@@ -298,6 +315,8 @@ export const swrPostFetcher = async (keyOrTuple, { arg }) => {
 
 /**
  * Fetcher for PUT/PATCH requests with monitoring
+ * 
+ * Uses 'mutation' profile (10s timeout) by default
  * 
  * @param {string | [string, string]} keyOrTuple - URL string or tuple [url, tenantId]
  * @param {Object} options - Mutation options
@@ -322,12 +341,15 @@ export const swrMutateFetcher = async (keyOrTuple, { arg, method = 'PATCH' }) =>
         return result.data;
       }
       
-      // ✅ Preserve status code in error
+      // ✅ Preserve status code and error flags
       throw createApiError(
         result.error || `Failed to ${method} data`,
         result.status || 0,
         result.response,
-        result
+        {
+          isTimeout: result.isTimeout || false,
+          retryAfterMs: result.retryAfterMs || null
+        }
       );
     },
     url
@@ -336,6 +358,8 @@ export const swrMutateFetcher = async (keyOrTuple, { arg, method = 'PATCH' }) =>
 
 /**
  * Fetcher for DELETE requests with monitoring
+ * 
+ * Uses 'mutation' profile (10s timeout) by default
  * 
  * @param {string | [string, string]} keyOrTuple - URL string or tuple [url, tenantId]
  * @returns {Promise<any>} - Deletion confirmation
@@ -355,12 +379,15 @@ export const swrDeleteFetcher = async (keyOrTuple) => {
         return result.data || { success: true };
       }
       
-      // ✅ Preserve status code in error
+      // ✅ Preserve status code and error flags
       throw createApiError(
         result.error || 'Failed to delete',
         result.status || 0,
         result.response,
-        result
+        {
+          isTimeout: result.isTimeout || false,
+          retryAfterMs: result.retryAfterMs || null
+        }
       );
     },
     url

@@ -223,24 +223,42 @@ INSTALLED_APPS = [
     "phonenumber_field",
     'django_filters',
     'debug_toolbar',
+     'apps.ops',
 ]
 
 MIDDLEWARE = [
-
+    # 1. Request ID / Correlation ID (MUST be first for distributed tracing)
     'core.logging.middlewares.RequestIdMiddleware',
     'core.logging.request_logging.RequestLoggingMiddleware',
+
+    # 2. ETag caching
     'core.http.etag.ETagMiddleware',
+
+     # 3. CORS (before SecurityMiddleware to handle preflight OPTIONS)
     'corsheaders.middleware.CorsMiddleware',
+
+    # 4. Django security
     'django.middleware.security.SecurityMiddleware',
+
+    # 5. WhiteNoise static files (MUST be after SecurityMiddleware)
+    # Serves static files efficiently in production without nginx/Apache
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+
+    # 6. Django core middleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+
+    # 7. Custom security & logging
     'core.middlewares.security_middleware.InputSanitizationMiddleware',
     'core.middlewares.middleware.LogRequestHeadersMiddleware',
-    'debug_toolbar.middleware.DebugToolbarMiddleware',	
+
+    # 8. Debug toolbar (development only)
+    'debug_toolbar.middleware.DebugToolbarMiddleware',
+
 ]
 
 ROOT_URLCONF = 'salescommands.urls'
@@ -270,15 +288,16 @@ WSGI_APPLICATION = 'salescommands.wsgi.application'
 
 # Database
 DATABASES = {
-    # "default": {
-    #     "ENGINE": "django.db.backends.postgresql_psycopg2",
-    #     "NAME": env('DATABASE_NAME'),
-    #     "USER": env('DATABASE_USERNAME'),
-    #     "PASSWORD": env('DATABASE_PASSWORD'),
-    #     "HOST": env('DATABASE_HOSTNAME'),
-    #     "PORT": env('DATABASE_PORT')
-    # }
-     'default': env.db()
+    'default': {
+        **env.db(),  # Load connection params from DATABASE_URL env var
+        'OPTIONS': {
+            # PostgreSQL connection options for Supabase
+            # statement_timeout: Max time for a single SQL query (10s)
+            # idle_in_transaction_session_timeout: Max idle time in transaction (10s)
+            # Both timeouts prevent long-running queries and zombie connections
+            'options': '-c statement_timeout=10000 -c idle_in_transaction_session_timeout=10000'
+        }
+    }
 }
 
 # ==============================
@@ -308,27 +327,31 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_REFERRER_POLICY = 'same-origin'
 
-# 🔒 HSTS (HTTP Strict Transport Security) - Production only
-# Forces HTTPS connections and prevents SSL stripping attacks
-# Only activated when DEBUG=False (production mode)
-SECURE_HSTS_SECONDS = 31536000  # 1 year (31536000 seconds)
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True  # Apply to all subdomains
-SECURE_HSTS_PRELOAD = True  # Enable HSTS preload list eligibility
+if not DEBUG:
+    # Force HTTPS for all requests
+    SECURE_SSL_REDIRECT = True
+    
+    # Secure cookie flags (HTTPS only)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    
+    # HSTS settings
+    SECURE_HSTS_SECONDS = 31536000  # 1 year (31536000 seconds)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True  # Apply to all subdomains
+    SECURE_HSTS_PRELOAD = True  # Enable HSTS preload list eligibility
+    
+    # Note: Once HSTS is enabled and the browser caches it, you cannot
+    # easily disable it. Use with caution. Consider starting with a
+    # shorter duration (e.g., 300 seconds) for testing.
+else:
+    # Development: Allow HTTP connections
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    
+    # HSTS headers will NOT be sent in development
+    # This allows HTTP connections on localhost for easier testing
 
-# Note: HSTS headers will NOT be sent in development (DEBUG=True)
-# to allow HTTP connections on localhost
-
-
-# CACHES = {
-#     'default': {
-#         'BACKEND': 'django_redis.cache.RedisCache',
-#         'LOCATION': 'redis://127.0.0.1:6379/1',  # Update the location if Redis is hosted elsewhere
-#         'OPTIONS': {
-#             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-#         },
-#         'KEY_PREFIX': 'crm_cache'
-#     }
-# }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -457,10 +480,34 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
+# =========================================================================
+# STATIC FILES CONFIGURATION - WhiteNoise for production
+# =========================================================================
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
+# URL prefix for static files (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
+
+# Directory where collectstatic will collect static files for production
+# Render needs this to serve static files via WhiteNoise
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# WhiteNoise storage backend with compression and caching
+# Only used in production (DEBUG=False)
+if not DEBUG:
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    
+    # WhiteNoise configuration for optimal performance
+    WHITENOISE_MANIFEST_STRICT = False  # Don't fail on missing manifest entries
+    WHITENOISE_AUTOREFRESH = False      # Disable in production (use manifest)
+    WHITENOISE_USE_FINDERS = False      # Use collected files only
+    
+    # Compression settings (gzip + brotli)
+    WHITENOISE_SKIP_COMPRESS_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'zip', 'gz', 'tgz', 'bz2', 'tbz', 'xz', 'br', 'swf', 'flv', 'woff', 'woff2']
+else:
+    # Development: Use default storage (no compression)
+    # Django's built-in static files serving via runserver
+    pass
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

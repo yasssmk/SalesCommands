@@ -403,7 +403,26 @@ function ReusableTable({
                         </Stack>
                       </TableCell>
                     </TableRow>
-                  ) : cachedData }
+                  ) :  (
+                    tableInstance.getRowModel().rows.map((row) => (
+                      <Fragment key={row.id}>
+                        <TableRow>
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell key={cell.id} {...cell.column.columnDef.meta}>
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                        {row.getIsExpanded() && (
+                          <TableRow sx={{ bgcolor: backColor, '&:hover': { bgcolor: `${backColor} !important` } }}>
+                            <TableCell colSpan={row.getVisibleCells().length}>
+                              <ExpandingUserDetail data={row.original} />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>

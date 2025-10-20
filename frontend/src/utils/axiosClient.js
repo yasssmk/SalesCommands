@@ -29,24 +29,6 @@ function onRefreshFailed(error) {
   subscriberQueue.splice(0).forEach(({ reject }) => reject(error));
 }
 
-// ==============================|| CENTRAL AXIOS CLIENT ||============================== //
-
-/**
- * Central axios client with:
- * - HTTP-only cookies automatic (withCredentials: true)
- * - Auto-refresh on 401 (single retry, no infinite loops)
- * - Correlation IDs for distributed tracing
- * - Retry-After header support for 429 responses
- */
-const axiosClient = axios.create({
-  baseURL: authConfig.API_BASE_URL,
-  timeout: authConfig.REQUEST_TIMEOUT,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
 // ==============================|| CORRELATION ID GENERATOR ||============================== //
 
 /**
@@ -93,255 +75,337 @@ const parseRetryAfter = (retryAfter) => {
   return 0;
 };
 
-// ==============================|| REQUEST INTERCEPTOR ||============================== //
+// ==============================|| AXIOS CLIENT FACTORY ||============================== //
 
-axiosClient.interceptors.request.use(
-  (config) => {
-    // Generate and attach correlation ID
-    const correlationId = generateCorrelationId();
-    config.headers['X-Correlation-ID'] = correlationId;
-    
-    config.metadata = {
-      correlationId,
-      startTime: performance.now()
-    };
-    
-    if (process.env.NODE_ENV === 'development') {
-      debugLog(
-        `🚀 [${correlationId.slice(0, 8)}] API Request: ${config.method?.toUpperCase()} ${config.url}`
-      );
-    }
-    
-    return config;
-  },
-  (error) => {
-    safeConsole.error('❌ Request interceptor error:', error);
-    return Promise.reject(error);
-  }
-);
+/**
+ * ✅ NEW: Create an axios client with specific timeout and profile
+ * 
+ * Factory pattern allows multiple clients with different timeout configurations
+ * while sharing the same interceptor logic.
+ * 
+ * @param {number} timeout - Timeout in milliseconds
+ * @param {string} profile - Profile name for logging (critical/widget/mutation/bulk/auth)
+ * @returns {AxiosInstance} Configured axios instance
+ */
+function createAxiosClient(timeout, profile = 'default') {
+  const client = axios.create({
+    baseURL: authConfig.API_BASE_URL,
+    timeout,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    withCredentials: true,
+  });
 
-// ==============================|| RESPONSE INTERCEPTOR ||============================== //
+  // Attach interceptors to this client
+  addInterceptorsToClient(client, profile);
 
-axiosClient.interceptors.response.use(
-  (response) => {
-    const correlationId = response.config.metadata?.correlationId || 'unknown';
-    const startTime = response.config.metadata?.startTime;
-    
-    let duration = 0;
-    if (startTime) {
-      duration = performance.now() - startTime;
-    }
-    
-    if (process.env.NODE_ENV === 'development') {
-      debugLog(
-        `✅ [${correlationId.slice(0, 8)}] API Response: ${response.status} ${response.config.url} (${duration.toFixed(0)}ms)`
-      );
-    }
-    
-    return response;
-  },
-  async (error) => {
-    const correlationId = error?.config?.metadata?.correlationId || 'unknown';
-    const startTime = error?.config?.metadata?.startTime;
-    const status = error?.response?.status;
-    const url = error?.config?.url;
-    const originalRequest = error.config;
-    
-    let duration = 0;
-    if (startTime) {
-      duration = performance.now() - startTime;
-    }
+  return client;
+}
 
-    // ==============================
-    // HANDLE 401 UNAUTHORIZED - AUTO REFRESH TOKEN
-    // ==============================
-    
-    // Check if this is a refresh endpoint call (prevent infinite loop)
-    const isRefreshCall = url?.includes('/client/refresh-token/');
-    
-    // Only attempt refresh if:
-    // 1. Status is 401
-    // 2. Not already retried
-    // 3. Not the refresh endpoint itself
-    if (status === 401 && !originalRequest._retry && !isRefreshCall) {
-      originalRequest._retry = true;
+/**
+ * ✅ NEW: Add request and response interceptors to an axios client
+ * 
+ * Factorized interceptor logic to avoid duplication across multiple clients.
+ * Handles:
+ * - Correlation ID generation
+ * - Performance tracking
+ * - 401 auto-refresh
+ * - Timeout detection and enrichment
+ * - 429 Retry-After parsing
+ * 
+ * @param {AxiosInstance} client - Axios client to enhance
+ * @param {string} profile - Profile name for logging
+ */
+function addInterceptorsToClient(client, profile) {
+  // ==============================|| REQUEST INTERCEPTOR ||============================== //
+  
+  client.interceptors.request.use(
+    (config) => {
+      // Generate and attach correlation ID
+      const correlationId = generateCorrelationId();
+      config.headers['X-Correlation-ID'] = correlationId;
       
-      // If a refresh is already in progress, queue this request
-      if (refreshPromise) {
-        if (process.env.NODE_ENV === 'development') {
-          debugLog(
-            `⏸️ [${correlationId.slice(0, 8)}] 401 - Queuing request (refresh in progress)`
-          );
-        }
-        
-        return new Promise((resolve, reject) => {
-          subscriberQueue.push({
-            resolve: () => {
-              if (process.env.NODE_ENV === 'development') {
-                debugLog(
-                  `🔁 [${correlationId.slice(0, 8)}] Retrying after refresh: ${originalRequest.method?.toUpperCase()} ${originalRequest.url}`
-                );
-              }
-              resolve(axiosClient(originalRequest));
-            },
-            reject,
-          });
-        });
+      config.metadata = {
+        correlationId,
+        startTime: performance.now(),
+        profile // Track which profile was used
+      };
+      
+      if (process.env.NODE_ENV === 'development') {
+        debugLog(
+          `🚀 [${correlationId.slice(0, 8)}] [${profile.toUpperCase()}] API Request: ${config.method?.toUpperCase()} ${config.url}`
+        );
       }
       
-      // Start a new refresh
-      try {
-        if (process.env.NODE_ENV === 'development') {
-          debugLog(
-            `🔄 [${correlationId.slice(0, 8)}] 401 - Starting token refresh`
-          );
-        }
-        
-        // Import refreshTokens dynamically to avoid circular dependency
-        const { refreshTokens } = await import('../api/auth');
-        
-        refreshPromise = refreshTokens();
-        const refreshResult = await refreshPromise;
-        
-        if (!refreshResult.success) {
-          // Store shouldLogout flag before throwing
-          const shouldTriggerLogout = refreshResult.shouldLogout === true;
-          const errorMessage = refreshResult.error || 'Token refresh failed';
-          
-          const error = new Error(errorMessage);
-          error.shouldLogout = shouldTriggerLogout;
-          throw error;
-        }
-        
-        // Refresh succeeded - notify all queued requests
-        onRefreshed();
-        
-        if (process.env.NODE_ENV === 'development') {
-          debugLog(
-            `✅ [${correlationId.slice(0, 8)}] Token refresh successful, retrying original request`
-          );
-        }
-        
-        return axiosClient(originalRequest);
-        
-      } catch (refreshError) {
-        // Refresh failed - notify all queued requests
-        onRefreshFailed(refreshError);
-        
-        if (process.env.NODE_ENV === 'development') {
-          debugLog(
-            `❌ [${correlationId.slice(0, 8)}] Token refresh failed: ${refreshError.message}`
-          );
-        }
-        
-        // Check if we should trigger hard logout or just stay in degraded mode
-        const shouldTriggerLogout = refreshError.shouldLogout === true;
-        
-        if (shouldTriggerLogout) {
-          if (process.env.NODE_ENV === 'development') {
-            debugLog(
-              `🚪 [${correlationId.slice(0, 8)}] Real session expiration - triggering logout`
-            );
-          }
-          
-          // Signal to the app that session has expired
-          try {
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('auth:session-expired', {
-                detail: { error: 'Session expired. Please sign in again.' }
-              }));
-            }
-          } catch (e) {
-            safeConsole.error('Failed to dispatch session-expired event:', e);
-          }
-        } else {
-          if (process.env.NODE_ENV === 'development') {
-            debugLog(
-              `⚠️ [${correlationId.slice(0, 8)}] Network error during refresh - no logout, degraded mode`
-            );
-          }
-        }
-        
-        return Promise.reject(error);
-        
-      } finally {
-        refreshPromise = null;
-      }
+      return config;
+    },
+    (error) => {
+      safeConsole.error('❌ Request interceptor error:', error);
+      return Promise.reject(error);
     }
+  );
 
-    // ==============================
-    // HANDLE TIMEOUT
-    // ==============================
-
-    const isTimeout = 
-      error.code === 'ECONNABORTED' || 
-      error.code === 'ETIMEDOUT' ||
-      (error.message && error.message.toLowerCase().includes('timeout'));
-    
-    if (isTimeout) {
-      error.isTimeout = true;
+  // ==============================|| RESPONSE INTERCEPTOR ||============================== //
+  
+  client.interceptors.response.use(
+    (response) => {
+      const correlationId = response.config.metadata?.correlationId || 'unknown';
+      const startTime = response.config.metadata?.startTime;
+      const requestProfile = response.config.metadata?.profile || 'unknown';
       
-      if (!error.response) {
-        error.response = {
-          status: 408,
-          data: { 
-            error: 'Request timeout. The operation took too long to complete.',
-            detail: 'Request timeout. The operation took too long to complete.'
-          },
-          statusText: 'Request Timeout'
-        };
+      let duration = 0;
+      if (startTime) {
+        duration = performance.now() - startTime;
       }
       
       if (process.env.NODE_ENV === 'development') {
         debugLog(
-          `⏱️ [${correlationId.slice(0, 8)}] TIMEOUT: ${url ?? '—'} (${duration.toFixed(0)}ms)`
+          `✅ [${correlationId.slice(0, 8)}] [${requestProfile.toUpperCase()}] API Response: ${response.status} ${response.config.url} (${duration.toFixed(0)}ms)`
         );
       }
-    }
-    
-    // ==============================
-    // HANDLE 429 RATE LIMIT
-    // ==============================
-    
-    if (status === 429) {
-      const retryAfter = error?.response?.headers?.['retry-after'];
       
-      if (retryAfter) {
-        const retryAfterMs = parseRetryAfter(retryAfter);
+      return response;
+    },
+    async (error) => {
+      const correlationId = error?.config?.metadata?.correlationId || 'unknown';
+      const startTime = error?.config?.metadata?.startTime;
+      const requestProfile = error?.config?.metadata?.profile || 'unknown';
+      const status = error?.response?.status;
+      const url = error?.config?.url;
+      const originalRequest = error.config;
+      
+      let duration = 0;
+      if (startTime) {
+        duration = performance.now() - startTime;
+      }
+
+      // ==============================
+      // HANDLE 401 UNAUTHORIZED - AUTO REFRESH TOKEN
+      // ==============================
+      
+      // Check if this is a refresh endpoint call (prevent infinite loop)
+      const isRefreshCall = url?.includes('/client/refresh-token/');
+      
+      // Only attempt refresh if:
+      // 1. Status is 401
+      // 2. Not already retried
+      // 3. Not the refresh endpoint itself
+      if (status === 401 && !originalRequest._retry && !isRefreshCall) {
+        originalRequest._retry = true;
         
-        if (retryAfterMs > 0) {
-          error.retryAfterMs = retryAfterMs;
+        // If a refresh is already in progress, queue this request
+        if (refreshPromise) {
+          if (process.env.NODE_ENV === 'development') {
+            debugLog(
+              `⏸️ [${correlationId.slice(0, 8)}] 401 - Queuing request (refresh in progress)`
+            );
+          }
+          
+          return new Promise((resolve, reject) => {
+            subscriberQueue.push({
+              resolve: () => {
+                if (process.env.NODE_ENV === 'development') {
+                  debugLog(
+                    `🔁 [${correlationId.slice(0, 8)}] Retrying after refresh: ${originalRequest.method?.toUpperCase()} ${originalRequest.url}`
+                  );
+                }
+                resolve(client(originalRequest));
+              },
+              reject,
+            });
+          });
+        }
+        
+        // Start a new refresh
+        try {
+          if (process.env.NODE_ENV === 'development') {
+            debugLog(
+              `🔄 [${correlationId.slice(0, 8)}] 401 - Starting token refresh`
+            );
+          }
+          
+          // Import refreshTokens dynamically to avoid circular dependency
+          const { refreshTokens } = await import('../api/auth');
+          
+          refreshPromise = refreshTokens();
+          const refreshResult = await refreshPromise;
+          
+          if (!refreshResult.success) {
+            // Store shouldLogout flag before throwing
+            const shouldTriggerLogout = refreshResult.shouldLogout === true;
+            const errorMessage = refreshResult.error || 'Token refresh failed';
+            
+            const error = new Error(errorMessage);
+            error.shouldLogout = shouldTriggerLogout;
+            throw error;
+          }
+          
+          // Refresh succeeded - notify all queued requests
+          onRefreshed();
           
           if (process.env.NODE_ENV === 'development') {
             debugLog(
-              `⏱️ [${correlationId.slice(0, 8)}] Rate limited: retry after ${(retryAfterMs / 1000).toFixed(1)}s`
+              `✅ [${correlationId.slice(0, 8)}] Token refresh successful, retrying original request`
             );
           }
-        } else if (process.env.NODE_ENV === 'development') {
-          debugLog(
-            `⚠️ [${correlationId.slice(0, 8)}] Invalid Retry-After value: "${retryAfter}"`
-          );
-          error.retryAfterMs = 5000;
+          
+          return client(originalRequest);
+          
+        } catch (refreshError) {
+          // Refresh failed - notify all queued requests
+          onRefreshFailed(refreshError);
+          
+          if (process.env.NODE_ENV === 'development') {
+            debugLog(
+              `❌ [${correlationId.slice(0, 8)}] Token refresh failed: ${refreshError.message}`
+            );
+          }
+          
+          // Check if we should trigger hard logout or just stay in degraded mode
+          const shouldTriggerLogout = refreshError.shouldLogout === true;
+          
+          if (shouldTriggerLogout) {
+            if (process.env.NODE_ENV === 'development') {
+              debugLog(
+                `🚪 [${correlationId.slice(0, 8)}] Real session expiration - triggering logout`
+              );
+            }
+            
+            // Signal to the app that session has expired
+            try {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('auth:session-expired', {
+                  detail: { error: 'Session expired. Please sign in again.' }
+                }));
+              }
+            } catch (e) {
+              safeConsole.error('Failed to dispatch session-expired event:', e);
+            }
+          } else {
+            if (process.env.NODE_ENV === 'development') {
+              debugLog(
+                `⚠️ [${correlationId.slice(0, 8)}] Network error during refresh - no logout, degraded mode`
+              );
+            }
+          }
+          
+          return Promise.reject(error);
+          
+        } finally {
+          refreshPromise = null;
         }
-      } else {
+      }
+
+      // ==============================
+      // HANDLE TIMEOUT
+      // ==============================
+
+      const isTimeout = 
+        error.code === 'ECONNABORTED' || 
+        error.code === 'ETIMEDOUT' ||
+        (error.message && error.message.toLowerCase().includes('timeout'));
+      
+      if (isTimeout) {
+        error.isTimeout = true;
+        
+        if (!error.response) {
+          error.response = {
+            status: 408,
+            data: { 
+              error: 'Request timeout. The operation took too long to complete.',
+              detail: 'Request timeout. The operation took too long to complete.'
+            },
+            statusText: 'Request Timeout'
+          };
+        }
+        
         if (process.env.NODE_ENV === 'development') {
           debugLog(
-            `⚠️ [${correlationId.slice(0, 8)}] 429 response missing Retry-After header, using 5s default`
+            `⏱️ [${correlationId.slice(0, 8)}] [${requestProfile.toUpperCase()}] TIMEOUT: ${url ?? '—'} (${duration.toFixed(0)}ms)`
           );
         }
-        error.retryAfterMs = 5000;
       }
+      
+      // ==============================
+      // HANDLE 429 RATE LIMIT
+      // ==============================
+      
+      if (status === 429) {
+        // ✅ STEP 3.1: Add explicit rate limit flag for consistency with isTimeout
+        error.isRateLimited = true;
+        
+        const retryAfter = error?.response?.headers?.['retry-after'];
+        
+        if (retryAfter) {
+          const retryAfterMs = parseRetryAfter(retryAfter);
+          
+          if (retryAfterMs > 0) {
+            error.retryAfterMs = retryAfterMs;
+            
+            if (process.env.NODE_ENV === 'development') {
+              debugLog(
+                `⏱️ [${correlationId.slice(0, 8)}] Rate limited: retry after ${(retryAfterMs / 1000).toFixed(1)}s`
+              );
+            }
+          } else if (process.env.NODE_ENV === 'development') {
+            debugLog(
+              `⚠️ [${correlationId.slice(0, 8)}] Invalid Retry-After value: "${retryAfter}"`
+            );
+            error.retryAfterMs = 5000;
+          }
+        } else {
+          if (process.env.NODE_ENV === 'development') {
+            debugLog(
+              `⚠️ [${correlationId.slice(0, 8)}] 429 response missing Retry-After header, using 5s default`
+            );
+          }
+          error.retryAfterMs = 5000;
+        }
+      }
+      
+      if (process.env.NODE_ENV === 'development') {
+        debugLog(
+          `❌ [${correlationId.slice(0, 8)}] [${requestProfile.toUpperCase()}] API Error: ${status ?? '—'} ${url ?? '—'} (${duration.toFixed(0)}ms)`
+        );
+      }
+      
+      return Promise.reject(error);
     }
-    
-    if (process.env.NODE_ENV === 'development') {
-      debugLog(
-        `❌ [${correlationId.slice(0, 8)}] API Error: ${status ?? '—'} ${url ?? '—'} (${duration.toFixed(0)}ms)`
-      );
-    }
-    
-    return Promise.reject(error);
-  }
-);
+  );
+}
+
+// ==============================|| AXIOS CLIENTS WITH TIMEOUT PROFILES ||============================== //
+
+/**
+ * ✅ NEW: Multiple axios clients with differentiated timeout profiles
+ * 
+ * Each client has its own timeout configuration optimized for specific use cases:
+ * - critical: Main data fetching (users, accounts, contacts) - 8s
+ * - widget: Dashboard widgets, quick stats - 4s
+ * - mutation: Form submissions, CRUD operations - 10s
+ * - bulk: Import/export, bulk operations - 60s
+ * - auth: Login, token refresh - 5s (faster fail for auth issues)
+ * 
+ * All clients share the same interceptor logic (401 refresh, 429 handling, etc.)
+ */
+export const axiosClients = {
+  critical: createAxiosClient(authConfig.TIMEOUT_PROFILES.CRITICAL, 'critical'),
+  widget: createAxiosClient(authConfig.TIMEOUT_PROFILES.WIDGET, 'widget'),
+  mutation: createAxiosClient(authConfig.TIMEOUT_PROFILES.MUTATION, 'mutation'),
+  bulk: createAxiosClient(authConfig.TIMEOUT_PROFILES.BULK, 'bulk'),
+  auth: createAxiosClient(authConfig.TIMEOUT_PROFILES.AUTH, 'auth')
+};
+
+// ==============================|| DEFAULT AXIOS CLIENT (BACKWARD COMPATIBILITY) ||============================== //
+
+/**
+ * @deprecated Use axiosClients.mutation or specific profile instead
+ * 
+ * Legacy default client kept for backward compatibility with existing code.
+ * Uses mutation profile (10s timeout) as it was the original REQUEST_TIMEOUT value.
+ */
+const axiosClient = createAxiosClient(authConfig.REQUEST_TIMEOUT, 'default');
 
 // ==============================|| HELPER FUNCTIONS ||============================== //
 
@@ -382,6 +446,11 @@ export const apiRequest = async (requestFn) => {
       result.isTimeout = true;
     }
     
+    // ✅ STEP 3.1: Propagate isRateLimited flag to result object
+    if (error.isRateLimited) {
+      result.isRateLimited = true;
+    }
+    
     if (error.retryAfterMs) {
       result.retryAfterMs = error.retryAfterMs;
     }
@@ -390,17 +459,150 @@ export const apiRequest = async (requestFn) => {
   }
 };
 
+// ==============================|| PROFILE DETECTION ||============================== //
+
+/**
+ * ✅ NEW: Detect appropriate profile based on HTTP method and URL
+ * 
+ * Smart defaults:
+ * - GET: 'critical' (main data fetching)
+ * - POST/PUT/PATCH/DELETE: 'mutation' (form submissions)
+ * - URLs with '/bulk-': 'bulk' (override any default)
+ * 
+ * @param {string} method - HTTP method (GET, POST, etc.)
+ * @param {string} url - Request URL
+ * @param {string} explicitProfile - Explicitly provided profile (takes precedence)
+ * @returns {string} Profile name to use
+ */
+function detectProfile(method, url, explicitProfile) {
+  // Explicit profile always takes precedence
+  if (explicitProfile) {
+    return explicitProfile;
+  }
+
+  // Auto-detect bulk operations by URL pattern
+  if (url && (url.includes('/bulk-') || url.includes('/bulk/'))) {
+    return 'bulk';
+  }
+
+  // Default by HTTP method
+  const upperMethod = method?.toUpperCase();
+  
+  if (upperMethod === 'GET') {
+    return 'critical';
+  }
+  
+  // POST, PUT, PATCH, DELETE → mutation
+  return 'mutation';
+}
+
+/**
+ * ✅ NEW: Select appropriate axios client based on profile
+ * 
+ * @param {string} profile - Profile name
+ * @returns {AxiosInstance} Axios client instance
+ */
+function selectClient(profile) {
+  const client = axiosClients[profile];
+  
+  if (!client) {
+    if (process.env.NODE_ENV === 'development') {
+      safeConsole.warn(`⚠️ Unknown profile "${profile}", falling back to mutation client`);
+    }
+    return axiosClients.mutation;
+  }
+  
+  return client;
+}
+
 // ==============================|| EXPORTS ||============================== //
 
 export default axiosClient;
 
 /**
- * Convenience methods with integrated error handling
+ * ✅ UPDATED: Convenience methods with profile-aware timeout handling
+ * 
+ * Usage:
+ *   api.get(url)                          // Uses 'critical' profile (8s)
+ *   api.get(url, { profile: 'widget' })   // Uses 'widget' profile (4s)
+ *   api.post(url, data)                   // Uses 'mutation' profile (10s)
+ *   api.post(url, data, { profile: 'bulk' }) // Uses 'bulk' profile (60s)
+ * 
+ * Auto-detection:
+ *   api.get('/bulk-delete')               // Auto-detects 'bulk' profile
+ *   api.post('/client/bulk-create/', {})  // Auto-detects 'bulk' profile
  */
 export const api = {
-  get: (url, config = {}) => apiRequest(() => axiosClient.get(url, config)),
-  post: (url, data = {}, config = {}) => apiRequest(() => axiosClient.post(url, data, config)),
-  put: (url, data = {}, config = {}) => apiRequest(() => axiosClient.put(url, data, config)),
-  patch: (url, data = {}, config = {}) => apiRequest(() => axiosClient.patch(url, data, config)),
-  delete: (url, config = {}) => apiRequest(() => axiosClient.delete(url, config))
+  /**
+   * GET request with profile-aware timeout
+   * Default: 'critical' profile (8s)
+   * Override: { profile: 'widget' } for 4s timeout
+   */
+  get: (url, config = {}) => {
+    const profile = detectProfile('GET', url, config.profile);
+    const client = selectClient(profile);
+    
+    // Remove profile from config to avoid passing it to axios
+    const { profile: _removed, ...axiosConfig } = config;
+    
+    return apiRequest(() => client.get(url, axiosConfig));
+  },
+
+  /**
+   * POST request with profile-aware timeout
+   * Default: 'mutation' profile (10s)
+   * Override: { profile: 'bulk' } for 60s timeout
+   */
+  post: (url, data = {}, config = {}) => {
+    const profile = detectProfile('POST', url, config.profile);
+    const client = selectClient(profile);
+    
+    // Remove profile from config to avoid passing it to axios
+    const { profile: _removed, ...axiosConfig } = config;
+    
+    return apiRequest(() => client.post(url, data, axiosConfig));
+  },
+
+  /**
+   * PUT request with profile-aware timeout
+   * Default: 'mutation' profile (10s)
+   */
+  put: (url, data = {}, config = {}) => {
+    const profile = detectProfile('PUT', url, config.profile);
+    const client = selectClient(profile);
+    
+    // Remove profile from config to avoid passing it to axios
+    const { profile: _removed, ...axiosConfig } = config;
+    
+    return apiRequest(() => client.put(url, data, axiosConfig));
+  },
+
+  /**
+   * PATCH request with profile-aware timeout
+   * Default: 'mutation' profile (10s)
+   */
+  patch: (url, data = {}, config = {}) => {
+    const profile = detectProfile('PATCH', url, config.profile);
+    const client = selectClient(profile);
+    
+    // Remove profile from config to avoid passing it to axios
+    const { profile: _removed, ...axiosConfig } = config;
+    
+    return apiRequest(() => client.patch(url, data, axiosConfig));
+  },
+
+  /**
+   * DELETE request with profile-aware timeout
+   * Default: 'mutation' profile (10s)
+   * Override: { profile: 'bulk' } for bulk delete operations
+   */
+  delete: (url, config = {}) => {
+    const profile = detectProfile('DELETE', url, config.profile);
+    const client = selectClient(profile);
+    
+    // Remove profile from config to avoid passing it to axios
+    const { profile: _removed, ...axiosConfig } = config;
+    
+    return apiRequest(() => client.delete(url, axiosConfig));
+  }
 };

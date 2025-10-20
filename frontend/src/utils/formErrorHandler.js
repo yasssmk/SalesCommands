@@ -33,12 +33,189 @@ const isPlainObject = (obj) => {
 };
 
 /**
+ * ✅ NEW: Parse field name from generic error message
+ * 
+ * Attempts to extract a field name from error messages like:
+ * - "Role is required" → {role: "This field is required"}
+ * - ["role is required"] → {role: "This field is required"}  ✅ NEW
+ * - "Email is required" → {email: "This field is required"}
+ * - "role: This field is required" → {role: "This field is required"}
+ * - "User role is required" → {role: "This field is required"}
+ * 
+ * @param {string|Array} errorMessage - Generic error message (string or array)
+ * @returns {Object|null} Field errors object or null if no field detected
+ */
+const parseFieldFromErrorMessage = (errorMessage) => {
+  if (!errorMessage) {
+    return null;
+  }
+  
+  // ✅ NEW: Handle array format: ["role is required"] → "role is required"
+  if (Array.isArray(errorMessage)) {
+    if (errorMessage.length === 0) {
+      return null;
+    }
+    // Take first message from array
+    errorMessage = errorMessage[0];
+  }
+  
+  // Must be string after array handling
+  if (typeof errorMessage !== 'string') {
+    return null;
+  }
+  
+  const message = errorMessage.trim();
+  
+  // ✅ STRATEGY: Two-tier field detection
+  // 
+  // Tier 1: Common fields (fast path)
+  // - Covers 95% of form fields across all models
+  // - Optimized for "FieldName is required" pattern
+  //
+  // Tier 2: Dynamic regex fallback (universal)
+  // - Captures ANY field via "field_name: message" pattern
+  // - Works for all future models without config
+  //
+  // This approach is:
+  // - Scalable: Works for User, Contact, Account, Lead, Opportunity, etc.
+  // - Zero-config: New models work automatically
+  // - Performance: Fast path for common fields
+  
+  const knownFields = [
+    // ========== Authentication & Identity ==========
+    'email',
+    'password',
+    'username',
+    'first_name',
+    'last_name',
+    'full_name',
+    'name',
+    'phone',
+    'phone_number',
+    'mobile',
+    
+    // ========== Address & Location ==========
+    'address',
+    'street',
+    'city',
+    'state',
+    'country',
+    'postal_code',
+    'post_code',
+    'zip_code',
+    
+    // ========== User Management ==========
+    'role',
+    'organization',
+    'team',
+    'is_active',
+    'is_superuser',
+    'is_staff',
+    
+    // ========== Contact Fields ==========
+    'title',
+    'position',
+    'department',
+    'company',
+    'company_name',
+    'website',
+    'linkedin',
+    
+    // ========== Account/Company Fields ==========
+    'account_name',
+    'industry',
+    'annual_revenue',
+    'employee_count',
+    'company_size',
+    
+    // ========== Lead/Opportunity Fields ==========
+    'lead_source',
+    'lead_status',
+    'opportunity_name',
+    'deal_value',
+    'close_date',
+    'probability',
+    'stage',
+    'pipeline',
+    
+    // ========== Campaign Fields ==========
+    'campaign_name',
+    'campaign_type',
+    'start_date',
+    'end_date',
+    'budget',
+    'target_audience',
+    
+    // ========== Generic Form Fields ==========
+    'description',
+    'notes',
+    'status',
+    'type',
+    'category',
+    'priority',
+    'date',
+    'amount',
+    'quantity',
+    'price',
+    'currency',
+    'tags'
+  ];
+  
+  // Pattern 1: "FieldName is required" or "FieldName: error message"
+  for (const field of knownFields) {
+    const patterns = [
+      new RegExp(`^${field}\\s+is\\s+required`, 'i'),           // "Role is required"
+      new RegExp(`^${field}\\s*:\\s*(.+)$`, 'i'),               // "role: This field is required"
+      new RegExp(`^user\\s+${field}\\s+is\\s+required`, 'i'),   // "User role is required"
+      new RegExp(`^${field}\\s+field\\s+is\\s+required`, 'i'),  // "Role field is required"
+      new RegExp(`^the\\s+${field}\\s+is\\s+required`, 'i')     // "The role is required"
+    ];
+    
+    for (const pattern of patterns) {
+      if (pattern.test(message)) {
+        // Extract the error message (if available) or use generic
+        const match = message.match(new RegExp(`^${field}\\s*:\\s*(.+)$`, 'i'));
+        const errorText = match ? match[1].trim() : 'This field is required.';
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`✅ Detected field '${field}' from message: "${message}"`);
+        }
+        
+        return {
+          [field]: errorText
+        };
+      }
+    }
+  }
+  
+  // Pattern 2: Extract field name from "field: message" format
+  const colonMatch = message.match(/^([a-z_]+)\s*:\s*(.+)$/i);
+  if (colonMatch) {
+    const field = colonMatch[1].toLowerCase().trim();
+    const errorText = colonMatch[2].trim();
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`✅ Extracted field '${field}' from colon pattern: "${message}"`);
+    }
+    
+    return {
+      [field]: errorText
+    };
+  }
+  
+  // No field detected
+  return null;
+};
+
+/**
  * ✅ Extract field-level validation errors from response
  * 
  * Handles common DRF validation formats:
  * - {field: ["error"]} → {field: "error"}
  * - {field: "error"} → {field: "error"}
  * - {field: ["error1", "error2"]} → {field: "error1. error2."}
+ * - {error: "Role is required"} → {role: "This field is required"}  ✅ NEW
+ * - {error: "Email is required"} → {email: "This field is required"}  ✅ NEW
  * 
  * @param {Object} data - Response data from backend
  * @returns {Object|null} Field errors object or null if no field errors
@@ -48,11 +225,42 @@ const extractFieldErrors = (data) => {
     return null;
   }
   
-  // Skip if data has standard non-field keys (these are general errors)
+  // ✅ NEW: Try to parse generic error messages that mention field names
   const nonFieldKeys = ['detail', 'error', 'message', 'non_field_errors'];
   const hasOnlyNonFieldKeys = Object.keys(data).every(key => nonFieldKeys.includes(key));
   
   if (hasOnlyNonFieldKeys) {
+    // ✅ NEW: Before giving up, check if the error message mentions a field name
+    const genericError = data.error || data.detail || data.message;
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[extractFieldErrors] hasOnlyNonFieldKeys = true');
+      console.log('[extractFieldErrors] genericError:', genericError);
+      console.log('[extractFieldErrors] genericError type:', typeof genericError);
+      console.log('[extractFieldErrors] genericError isArray:', Array.isArray(genericError));
+    }
+    
+    // ✅ FIXED: Handle both string and array
+    if (genericError) {
+      const parsedFieldError = parseFieldFromErrorMessage(genericError);
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[extractFieldErrors] parsedFieldError:', parsedFieldError);
+      }
+      
+      if (parsedFieldError) {
+        // Successfully extracted a field name from the generic error
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ Parsed field error from generic message:', parsedFieldError);
+        }
+        return parsedFieldError;
+      }
+    }
+    
+    // No field could be extracted, treat as non-field error
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[extractFieldErrors] No field could be extracted, returning null');
+    }
     return null;
   }
   
@@ -163,6 +371,8 @@ const shouldUseFieldErrors = (status, fieldErrors) => {
  * 3. If 4XX + has field errors → setFieldError() for each field + optional snackbar
  * 4. Otherwise → snackbar only
  * 
+ * ✅ UPDATED: Now automatically sets fields as "touched" to force display of server errors
+ * 
  * @param {Error|Object} error - Error from API call (Axios error or result object)
  * @param {Object} formik - Formik instance (from useFormik hook)
  * @param {Object} [options={}] - Optional configuration
@@ -262,6 +472,16 @@ export const handleFormikError = (error, formik, options = {}) => {
         
         if (process.env.NODE_ENV === 'development') {
           console.log(`✅ Set field error: ${field} = "${errorMsg}"`);
+        }
+      }
+      
+      // ✅ NEW: Force field to be "touched" so error displays immediately
+      // Without this, server errors only show if user touched the field
+      if (formik.setFieldTouched) {
+        formik.setFieldTouched(field, true, false);
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`✅ Set field touched: ${field}`);
         }
       }
     });

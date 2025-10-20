@@ -201,6 +201,8 @@ function ErrorDisplay({
     );
   }
 
+  
+
   // ==============================|| CASE 3: FORBIDDEN (403) ||============================== //
   
   /**
@@ -298,33 +300,49 @@ function ErrorDisplay({
    * - Show Alert with retry button (classic behavior)
    * - This is the safe fallback for unexpected errors
    */
+  // return (
+  //   <TableRow>
+  //     <TableCell colSpan={columns.length} sx={{ py: 3 }}>
+  //       <Alert
+  //         severity={severity}
+  //         icon={<WarningOutlined style={{ fontSize: 24 }} />}
+  //         action={
+  //           isRetryable && (
+  //             <Button
+  //               color="inherit"
+  //               size="small"
+  //               onClick={onRetry}
+  //               disabled={isRetrying}
+  //               startIcon={<ReloadOutlined spin={isRetrying} />}
+  //             >
+  //               {isRetrying ? 'Retrying...' : 'Retry Now'}
+  //             </Button>
+  //           )
+  //         }
+  //       >
+  //         <AlertTitle sx={{ fontWeight: 600 }}>{title}</AlertTitle>
+  //         <Typography variant="body2">{message}</Typography>
+  //       </Alert>
+  //     </TableCell>
+  //   </TableRow>
+  // );
   return (
-    <TableRow>
-      <TableCell colSpan={columns.length} sx={{ py: 3 }}>
-        <Alert
-          severity={severity}
-          icon={<WarningOutlined style={{ fontSize: 24 }} />}
-          action={
-            isRetryable && (
-              <Button
-                color="inherit"
-                size="small"
-                onClick={onRetry}
-                disabled={isRetrying}
-                startIcon={<ReloadOutlined spin={isRetrying} />}
-              >
-                {isRetrying ? 'Retrying...' : 'Retry Now'}
-              </Button>
-            )
-          }
-        >
-          <AlertTitle sx={{ fontWeight: 600 }}>{title}</AlertTitle>
-          <Typography variant="body2">{message}</Typography>
-        </Alert>
-      </TableCell>
-    </TableRow>
-  );
-}
+      <TableRow>
+        <TableCell colSpan={columns.length} align="center" sx={{ py: 6 }}>
+          <Stack spacing={1} alignItems="center">
+            <Typography variant="h6" color="text.secondary">
+              {emptyMessage}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {globalFilter 
+                ? `No results for "${globalFilter}"` 
+                : emptyDescription}
+            </Typography>
+          </Stack>
+        </TableCell>
+      </TableRow>
+    );
+  }
 
 ErrorDisplay.propTypes = {
   error: PropTypes.object,

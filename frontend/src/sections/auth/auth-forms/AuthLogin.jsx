@@ -36,6 +36,7 @@ import { useAuth } from 'hooks/useAuth';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
 
+
 // ============================|| DJANGO AUTH - LOGIN ||============================ //
 
 export default function AuthLogin({ providers, csrfToken, initialError = null }) {

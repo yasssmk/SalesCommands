@@ -662,11 +662,519 @@ export const toggleUserStatus = async (userId) => {
   }
 };
 
-// =============================|| BULK CRUD STANDARDISÉ || ==================================== //
+// // =============================|| BULK CRUD STANDARDISÉ || ==================================== //
+// /**
+//  * ✅ BULK CREATE USERS
+//  * 
+//  * Crée plusieurs utilisateurs en une seule requête
+//  * 
+//  * @param {Array} users - Array of user objects
+//  * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+//  * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
+//  * @param {Function} onSyncComplete - Optional callback: () => void (called when sync is done)
+//  * @returns {Promise<Object>} {success: boolean, summary: Object, results: Object}
+//  */
+// export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
+//   let result = null;
+
+//   try {
+//     console.log('[createBulkUsers] start', { count: users?.length ?? 0, mode });
+
+//     // Utilise NOTRE wrapper standardisé (cookies, corr-id, handleApiError, etc.)
+//     result = await api.post('/client/users/bulk-create/', 
+//       { users, mode }, 
+//       { timeout: authConfig.BULK_OPERATION_TIMEOUT }
+//     );
+
+//     if (result.success) {
+//       console.log('[createBulkUsers] ok', { 
+//         status: result.status ?? 200,
+//         created: result.data?.summary?.success ?? 0
+//       });
+
+//       return result.data;
+//     }
+
+//     // Gestion d'erreur structurée
+//     const status = result.status || 0;
+//     const message = result.error || 'Bulk create failed';
+//     console.error('[createBulkUsers] api.post error', { status, message });
+
+//     if (result.data && typeof result.data === 'object') {
+//       if (result.data.results || result.data.summary) {
+//         console.log('[createBulkUsers] returning structured error from backend');
+//         return {
+//           ...result.data,
+//           success: false
+//         };
+//       }
+//     }
+
+//     return {
+//       success: false,
+//       message: message,
+//       error: { status, message, response: result.response || null },
+//       summary: { total: users?.length ?? 0, success: 0, failed: users?.length ?? 0, skipped: 0 },
+//       results: {
+//         success: [],
+//         failed: (users || []).map((u, i) => ({
+//           row: i + 1,
+//           email: u?.email || '(unknown)',
+//           errors: [message]
+//         })),
+//         skipped: []
+//       }
+//     };
+
+//   } catch (err) {
+//     console.error('[createBulkUsers] thrown', err);
+//     return {
+//       success: false,
+//       message: err?.message || 'Unknown error',
+//       error: { message: err?.message || String(err) },
+//       summary: { total: users?.length ?? 0, success: 0, failed: users?.length ?? 0, skipped: 0 },
+//       results: {
+//         success: [],
+//         failed: (users || []).map((u, i) => ({
+//           row: i + 1,
+//           email: u?.email || '(unknown)',
+//           errors: [err?.message || 'Unknown error']
+//         })),
+//         skipped: []
+//       }
+//     };
+//   } finally {
+//     // ⭐ Revalidation intelligente standardisée
+//     await handleBulkRevalidation(
+//       result,
+//       [endpoints.users, '/client/client-accounts/'],
+//       onSyncProgress,   // Callback intermédiaire
+//       onSyncComplete    // Callback de fin
+//     );
+//   }
+// };
+
+// /**
+//  * ✅ BULK UPDATE USERS
+//  * 
+//  * Met à jour plusieurs utilisateurs en une seule requête
+//  * 
+//  * @param {Array<string>} userIds - Array of user IDs to update
+//  * @param {Object} patchData - Data to apply to all selected users
+//  * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+//  * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
+//  * @param {Function} onSyncComplete - Optional callback: () => void (called when sync is done)
+//  * @returns {Promise<Object>} {success: boolean, isTimeout?: boolean, summary: Object, results: Object}
+//  */
+// export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
+//   let result = null;
+
+//   try {
+//     console.log('[bulkUpdateUsers] start', { 
+//       count: userIds?.length ?? 0, 
+//       mode,
+//       fields: Object.keys(patchData || {})
+//     });
+
+//     // ✅ Validation: Vérifier que userIds est un array non vide
+//     if (!Array.isArray(userIds) || userIds.length === 0) {
+//       return {
+//         success: false,
+//         message: 'No user IDs provided',
+//         summary: { requested: 0, updated: 0, failed: 0 },
+//         results: { success: [], failed: [] }
+//       };
+//     }
+
+//     // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
+//     const invalidIds = userIds.filter(id => !isValidUUID(id));
+//     if (invalidIds.length > 0) {
+//       console.error('[bulkUpdateUsers] invalid UUIDs', { count: invalidIds.length });
+//       return {
+//         success: false,
+//         message: `${invalidIds.length} invalid user ID(s) detected`,
+//         summary: { requested: userIds.length, updated: 0, failed: userIds.length },
+//         results: {
+//           success: [],
+//           failed: invalidIds.map(id => ({
+//             id,
+//             errors: ['Invalid UUID format']
+//           }))
+//         }
+//       };
+//     }
+
+//     // ✅ Validation: Vérifier les UUID fields dans patchData
+//     const uuidFields = ['role', 'organization', 'team'];
+//     for (const field of uuidFields) {
+//       const value = patchData[field];
+      
+//       if (!value || value === '') continue;
+      
+//       if (!isValidUUID(value)) {
+//         return {
+//           success: false,
+//           message: `Invalid ${field} ID format in patch data`,
+//           summary: { requested: userIds.length, updated: 0, failed: userIds.length },
+//           results: {
+//             success: [],
+//             failed: userIds.map(id => ({
+//               id,
+//               errors: [`Invalid ${field} ID format`]
+//             }))
+//           }
+//         };
+//       }
+//     }
+
+//     // ✅ Sanitization: Nettoyer les champs string
+//     const sanitized = sanitizeObject(patchData, ['first_name', 'last_name']);
+
+//     // ✅ Appel API avec notre wrapper standardisé
+//     result = await api.patch('/client/users/bulk-update/', {
+//       ids: userIds,
+//       patch: sanitized,
+//       mode
+//     }, {
+//       timeout: authConfig.BULK_OPERATION_TIMEOUT
+//     });
+
+//     if (result.success) {
+//       console.log('[bulkUpdateUsers] ok', { 
+//         status: result.status ?? 200,
+//         updated: result.data?.summary?.updated ?? 0
+//       });
+
+//       return result.data;
+//     }
+
+//     // ✅ Gestion d'erreur structurée
+//     const status = result.status || 0;
+//     const message = result.error || 'Bulk update failed';
+//     console.error('[bulkUpdateUsers] api.patch error', { status, message });
+
+//     if (result.data && typeof result.data === 'object') {
+//       if (result.data.results || result.data.summary) {
+//         console.log('[bulkUpdateUsers] returning structured error from backend');
+//         return {
+//           ...result.data,
+//           success: false
+//         };
+//       }
+//     }
+
+//     return {
+//       success: false,
+//       message: message,
+//       error: { status, message, response: result.response || null },
+//       summary: { requested: userIds.length, updated: 0, failed: userIds.length },
+//       results: {
+//         success: [],
+//         failed: userIds.map(id => ({
+//           id,
+//           errors: [message]
+//         }))
+//       }
+//     };
+
+//   } catch (err) {
+//     console.error('[bulkUpdateUsers] thrown', err);
+    
+//     // ⭐ NOUVEAU: Détecter si c'est un timeout
+//     const isTimeout = 
+//       err?.code === 'ECONNABORTED' || 
+//       err?.message?.toLowerCase()?.includes('timeout') ||
+//       err?.response?.status === 408 ||
+//       err?.response?.status === 504;
+    
+//     if (isTimeout) {
+//       console.log('[bulkUpdateUsers] Timeout detected, sync will be triggered');
+//     }
+    
+//     return {
+//       success: false,
+//       isTimeout: isTimeout,  // ⭐ Flag pour indiquer un timeout
+//       message: err?.message || 'Unknown error',
+//       error: { message: err?.message || String(err) },
+//       summary: { requested: userIds?.length ?? 0, updated: 0, failed: userIds?.length ?? 0 },
+//       results: {
+//         success: [],
+//         failed: (userIds || []).map(id => ({
+//           id,
+//           errors: [err?.message || 'Unknown error']
+//         }))
+//       }
+//     };
+//   } finally {
+//     // ⭐ Revalidation intelligente standardisée
+//     await handleBulkRevalidation(
+//       result,
+//       [endpoints.users, '/client/client-accounts/'],
+//       onSyncProgress,
+//       onSyncComplete
+//     );
+//   }
+// };
+
+// /**
+//  * ✅ BULK SOFT DELETE USERS (pour production future)
+//  * 
+//  * Archive plusieurs utilisateurs (is_active=false) sans suppression physique
+//  * ⚠️ Non utilisé en MVP, préparé pour production
+//  * 
+//  * @param {Array<string>} userIds - Array of user IDs to soft delete
+//  * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+//  * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
+//  * @param {Function} onSyncComplete - Optional callback: () => void (called when sync is done)
+//  * @returns {Promise<Object>} {success: boolean, summary: Object, results: Object}
+//  */
+// export const bulkSoftDeleteUsers = async (userIds, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
+//   let result = null;
+
+//   try {
+//     console.log('[bulkSoftDeleteUsers] start', { 
+//       count: userIds?.length ?? 0, 
+//       mode 
+//     });
+
+//     // ✅ Validation: Vérifier que userIds est un array non vide
+//     if (!Array.isArray(userIds) || userIds.length === 0) {
+//       return {
+//         success: false,
+//         message: 'No user IDs provided',
+//         summary: { requested: 0, archived: 0, failed: 0 },
+//         results: { success: [], failed: [] }
+//       };
+//     }
+
+//     // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
+//     const invalidIds = userIds.filter(id => !isValidUUID(id));
+//     if (invalidIds.length > 0) {
+//       console.error('[bulkSoftDeleteUsers] invalid UUIDs', { count: invalidIds.length });
+//       return {
+//         success: false,
+//         message: `${invalidIds.length} invalid user ID(s) detected`,
+//         summary: { requested: userIds.length, archived: 0, failed: userIds.length },
+//         results: {
+//           success: [],
+//           failed: invalidIds.map(id => ({
+//             id,
+//             errors: ['Invalid UUID format']
+//           }))
+//         }
+//       };
+//     }
+
+//     // ✅ Appel API
+//     result = await api.delete('/client/users/bulk-soft-delete/', {
+//       data: { ids: userIds, mode },
+//       timeout: authConfig.BULK_OPERATION_TIMEOUT
+//     });
+
+//     if (result.success) {
+//       console.log('[bulkSoftDeleteUsers] ok', { 
+//         status: result.status ?? 200,
+//         archived: result.data?.summary?.archived ?? 0
+//       });
+
+//       return result.data;
+//     }
+
+//     // ✅ Gestion d'erreur structurée
+//     const status = result.status || 0;
+//     const message = result.error || 'Bulk soft delete failed';
+//     console.error('[bulkSoftDeleteUsers] api.delete error', { status, message });
+
+//     if (result.data && typeof result.data === 'object') {
+//       if (result.data.results || result.data.summary) {
+//         console.log('[bulkSoftDeleteUsers] returning structured error from backend');
+//         return {
+//           ...result.data,
+//           success: false
+//         };
+//       }
+//     }
+
+//     return {
+//       success: false,
+//       message: message,
+//       error: { status, message, response: result.response || null },
+//       summary: { requested: userIds.length, archived: 0, failed: userIds.length },
+//       results: {
+//         success: [],
+//         failed: userIds.map(id => ({
+//           id,
+//           errors: [message]
+//         }))
+//       }
+//     };
+
+//   } catch (err) {
+//     console.error('[bulkSoftDeleteUsers] thrown', err);
+//     return {
+//       success: false,
+//       message: err?.message || 'Unknown error',
+//       error: { message: err?.message || String(err) },
+//       summary: { requested: userIds?.length ?? 0, archived: 0, failed: userIds?.length ?? 0 },
+//       results: {
+//         success: [],
+//         failed: (userIds || []).map(id => ({
+//           id,
+//           errors: [err?.message || 'Unknown error']
+//         }))
+//       }
+//     };
+//   } finally {
+//     // ⭐ Revalidation intelligente standardisée
+//     await handleBulkRevalidation(
+//       result,
+//       [endpoints.users, '/client/client-accounts/'],
+//       onSyncProgress,   // Callback intermédiaire
+//       onSyncComplete    // Callback de fin
+//     );
+//   }
+// };
+
+// /**
+//  * ✅ BULK DELETE USERS
+//  * 
+//  * Supprime plusieurs utilisateurs en une seule requête
+//  * ⚠️ En MVP/dev: suppression PHYSIQUE (hard delete)
+//  * ⚠️ En prod: utiliser bulkSoftDeleteUsers à la place
+//  * 
+//  * @param {Array<string>} userIds - Array of user IDs to delete
+//  * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+//  * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
+//  * @param {Function} onSyncComplete - Optional callback: () => void (called when sync is done)
+//  * @returns {Promise<Object>} {success: boolean, isTimeout?: boolean, summary: Object, results: Object}
+//  */
+// export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
+//   let result = null;
+
+//   try {
+//     console.log('[bulkDeleteUsers] start', { 
+//       count: userIds?.length ?? 0, 
+//       mode 
+//     });
+
+//     // ✅ Validation: Vérifier que userIds est un array non vide
+//     if (!Array.isArray(userIds) || userIds.length === 0) {
+//       return {
+//         success: false,
+//         message: 'No user IDs provided',
+//         summary: { requested: 0, deleted: 0, failed: 0 },
+//         results: { success: [], failed: [] }
+//       };
+//     }
+
+//     // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
+//     const invalidIds = userIds.filter(id => !isValidUUID(id));
+//     if (invalidIds.length > 0) {
+//       console.error('[bulkDeleteUsers] invalid UUIDs', { count: invalidIds.length });
+//       return {
+//         success: false,
+//         message: `${invalidIds.length} invalid user ID(s) detected`,
+//         summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
+//         results: {
+//           success: [],
+//           failed: invalidIds.map(id => ({
+//             id,
+//             errors: ['Invalid UUID format']
+//           }))
+//         }
+//       };
+//     }
+
+//     // ✅ Appel API avec notre wrapper standardisé
+//     result = await api.delete('/client/users/bulk-delete/', {
+//       data: { ids: userIds, mode },
+//       timeout: 30000  
+//     });
+
+//     if (result.success) {
+//       console.log('[bulkDeleteUsers] ok', { 
+//         status: result.status ?? 200,
+//         deleted: result.data?.summary?.deleted ?? 0
+//       });
+
+//       return result.data;
+//     }
+
+//     // ✅ Gestion d'erreur structurée
+//     const status = result.status || 0;
+//     const message = result.error || 'Bulk delete failed';
+//     console.error('[bulkDeleteUsers] api.delete error', { status, message });
+
+//     if (result.data && typeof result.data === 'object') {
+//       if (result.data.results || result.data.summary) {
+//         console.log('[bulkDeleteUsers] returning structured error from backend');
+//         return {
+//           ...result.data,
+//           success: false
+//         };
+//       }
+//     }
+
+//     return {
+//       success: false,
+//       message: message,
+//       error: { status, message, response: result.response || null },
+//       summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
+//       results: {
+//         success: [],
+//         failed: userIds.map(id => ({
+//           id,
+//           errors: [message]
+//         }))
+//       }
+//     };
+
+//   } catch (err) {
+//     console.error('[bulkDeleteUsers] thrown', err);
+    
+//     // ⭐ NOUVEAU: Détecter si c'est un timeout
+//     const isTimeout = 
+//       err?.code === 'ECONNABORTED' || 
+//       err?.message?.toLowerCase()?.includes('timeout') ||
+//       err?.response?.status === 408 ||
+//       err?.response?.status === 504;
+    
+//     if (isTimeout) {
+//       console.log('[bulkDeleteUsers] Timeout detected, sync will be triggered');
+//     }
+    
+//     return {
+//       success: false,
+//       isTimeout: isTimeout,  // ⭐ Flag pour indiquer un timeout
+//       message: err?.message || 'Unknown error',
+//       error: { message: err?.message || String(err) },
+//       summary: { requested: userIds?.length ?? 0, deleted: 0, failed: userIds?.length ?? 0 },
+//       results: {
+//         success: [],
+//         failed: (userIds || []).map(id => ({
+//           id,
+//           errors: [err?.message || 'Unknown error']
+//         }))
+//       }
+//     };
+//   } finally {
+//     // ⭐ Revalidation intelligente standardisée
+//     await handleBulkRevalidation(
+//       result,
+//       [endpoints.users, '/client/client-accounts/'],
+//       onSyncProgress,
+//       onSyncComplete
+//     );
+//   }
+// };
+
+// ==============================|| MODIFICATION 1: createBulkUsers ||============================== //
+
 /**
  * ✅ BULK CREATE USERS
  * 
  * Crée plusieurs utilisateurs en une seule requête
+ * ✅ STEP 4.2: Uses 'bulk' profile (60s timeout)
  * 
  * @param {Array} users - Array of user objects
  * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
@@ -680,10 +1188,10 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
   try {
     console.log('[createBulkUsers] start', { count: users?.length ?? 0, mode });
 
-    // Utilise NOTRE wrapper standardisé (cookies, corr-id, handleApiError, etc.)
+    // ✅ STEP 4.2: Use 'bulk' profile instead of hardcoded timeout
     result = await api.post('/client/users/bulk-create/', 
       { users, mode }, 
-      { timeout: authConfig.BULK_OPERATION_TIMEOUT }
+      { profile: 'bulk' }  // ⭐ CHANGED: Was { timeout: authConfig.BULK_OPERATION_TIMEOUT }
     );
 
     if (result.success) {
@@ -748,16 +1256,155 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
     await handleBulkRevalidation(
       result,
       [endpoints.users, '/client/client-accounts/'],
-      onSyncProgress,   // Callback intermédiaire
-      onSyncComplete    // Callback de fin
+      onSyncProgress,
+      onSyncComplete
     );
   }
 };
+
+// ==============================|| MODIFICATION 2: bulkDeleteUsers ||============================== //
+
+/**
+ * ✅ BULK DELETE USERS
+ * 
+ * Supprime plusieurs utilisateurs en une seule requête
+ * ✅ STEP 4.2: Uses 'bulk' profile (60s timeout)
+ * ⚠️ En MVP/dev: suppression PHYSIQUE (hard delete)
+ * ⚠️ En prod: utiliser bulkSoftDeleteUsers à la place
+ * 
+ * @param {Array<string>} userIds - Array of user IDs to delete
+ * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+ * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
+ * @param {Function} onSyncComplete - Optional callback: () => void (called when sync is done)
+ * @returns {Promise<Object>} {success: boolean, isTimeout?: boolean, summary: Object, results: Object}
+ */
+export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
+  let result = null;
+
+  try {
+    console.log('[bulkDeleteUsers] start', { 
+      count: userIds?.length ?? 0, 
+      mode 
+    });
+
+    // ✅ Validation: Vérifier que userIds est un array non vide
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return {
+        success: false,
+        message: 'No user IDs provided',
+        summary: { requested: 0, deleted: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
+    const invalidIds = userIds.filter(id => !isValidUUID(id));
+    if (invalidIds.length > 0) {
+      console.error('[bulkDeleteUsers] invalid UUIDs', { count: invalidIds.length });
+      return {
+        success: false,
+        message: `${invalidIds.length} invalid user ID(s) detected`,
+        summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
+        results: {
+          success: [],
+          failed: invalidIds.map(id => ({
+            id,
+            errors: ['Invalid UUID format']
+          }))
+        }
+      };
+    }
+
+    // ✅ STEP 4.2: Use 'bulk' profile instead of hardcoded 30s timeout
+    result = await api.delete('/client/users/bulk-delete/', {
+      data: { ids: userIds, mode },
+      profile: 'bulk'  // ⭐ CHANGED: Was timeout: 30000
+    });
+
+    if (result.success) {
+      console.log('[bulkDeleteUsers] ok', { 
+        status: result.status ?? 200,
+        deleted: result.data?.summary?.deleted ?? 0
+      });
+
+      return result.data;
+    }
+
+    // ✅ Gestion d'erreur structurée
+    const status = result.status || 0;
+    const message = result.error || 'Bulk delete failed';
+    console.error('[bulkDeleteUsers] api.delete error', { status, message });
+
+    if (result.data && typeof result.data === 'object') {
+      if (result.data.results || result.data.summary) {
+        console.log('[bulkDeleteUsers] returning structured error from backend');
+        return {
+          ...result.data,
+          success: false
+        };
+      }
+    }
+
+    return {
+      success: false,
+      message: message,
+      error: { status, message, response: result.response || null },
+      summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
+      results: {
+        success: [],
+        failed: userIds.map(id => ({
+          id,
+          errors: [message]
+        }))
+      }
+    };
+
+  } catch (err) {
+    console.error('[bulkDeleteUsers] thrown', err);
+    
+    // ⭐ NOUVEAU: Détecter si c'est un timeout
+    const isTimeout = 
+      err?.code === 'ECONNABORTED' || 
+      err?.message?.toLowerCase()?.includes('timeout') ||
+      err?.response?.status === 408 ||
+      err?.response?.status === 504;
+    
+    if (isTimeout) {
+      console.log('[bulkDeleteUsers] Timeout detected, sync will be triggered');
+    }
+    
+    return {
+      success: false,
+      isTimeout: isTimeout,
+      message: err?.message || 'Unknown error',
+      error: { message: err?.message || String(err) },
+      summary: { requested: userIds?.length ?? 0, deleted: 0, failed: userIds?.length ?? 0 },
+      results: {
+        success: [],
+        failed: (userIds || []).map(id => ({
+          id,
+          errors: [err?.message || 'Unknown error']
+        }))
+      }
+    };
+  } finally {
+    // ⭐ Revalidation intelligente standardisée
+    await handleBulkRevalidation(
+      result,
+      [endpoints.users, '/client/client-accounts/'],
+      onSyncProgress,
+      onSyncComplete
+    );
+  }
+};
+
+// ==============================|| MODIFICATION 3: bulkUpdateUsers ||============================== //
 
 /**
  * ✅ BULK UPDATE USERS
  * 
  * Met à jour plusieurs utilisateurs en une seule requête
+ * ✅ STEP 4.2: Uses 'bulk' profile (60s timeout)
  * 
  * @param {Array<string>} userIds - Array of user IDs to update
  * @param {Object} patchData - Data to apply to all selected users
@@ -830,13 +1477,13 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
     // ✅ Sanitization: Nettoyer les champs string
     const sanitized = sanitizeObject(patchData, ['first_name', 'last_name']);
 
-    // ✅ Appel API avec notre wrapper standardisé
+    // ✅ STEP 4.2: Use 'bulk' profile instead of hardcoded timeout
     result = await api.patch('/client/users/bulk-update/', {
       ids: userIds,
       patch: sanitized,
       mode
     }, {
-      timeout: authConfig.BULK_OPERATION_TIMEOUT
+      profile: 'bulk'  // ⭐ CHANGED: Was timeout: authConfig.BULK_OPERATION_TIMEOUT
     });
 
     if (result.success) {
@@ -893,262 +1540,10 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
     
     return {
       success: false,
-      isTimeout: isTimeout,  // ⭐ Flag pour indiquer un timeout
+      isTimeout: isTimeout,
       message: err?.message || 'Unknown error',
       error: { message: err?.message || String(err) },
       summary: { requested: userIds?.length ?? 0, updated: 0, failed: userIds?.length ?? 0 },
-      results: {
-        success: [],
-        failed: (userIds || []).map(id => ({
-          id,
-          errors: [err?.message || 'Unknown error']
-        }))
-      }
-    };
-  } finally {
-    // ⭐ Revalidation intelligente standardisée
-    await handleBulkRevalidation(
-      result,
-      [endpoints.users, '/client/client-accounts/'],
-      onSyncProgress,
-      onSyncComplete
-    );
-  }
-};
-
-/**
- * ✅ BULK SOFT DELETE USERS (pour production future)
- * 
- * Archive plusieurs utilisateurs (is_active=false) sans suppression physique
- * ⚠️ Non utilisé en MVP, préparé pour production
- * 
- * @param {Array<string>} userIds - Array of user IDs to soft delete
- * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
- * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
- * @param {Function} onSyncComplete - Optional callback: () => void (called when sync is done)
- * @returns {Promise<Object>} {success: boolean, summary: Object, results: Object}
- */
-export const bulkSoftDeleteUsers = async (userIds, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
-  let result = null;
-
-  try {
-    console.log('[bulkSoftDeleteUsers] start', { 
-      count: userIds?.length ?? 0, 
-      mode 
-    });
-
-    // ✅ Validation: Vérifier que userIds est un array non vide
-    if (!Array.isArray(userIds) || userIds.length === 0) {
-      return {
-        success: false,
-        message: 'No user IDs provided',
-        summary: { requested: 0, archived: 0, failed: 0 },
-        results: { success: [], failed: [] }
-      };
-    }
-
-    // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
-    const invalidIds = userIds.filter(id => !isValidUUID(id));
-    if (invalidIds.length > 0) {
-      console.error('[bulkSoftDeleteUsers] invalid UUIDs', { count: invalidIds.length });
-      return {
-        success: false,
-        message: `${invalidIds.length} invalid user ID(s) detected`,
-        summary: { requested: userIds.length, archived: 0, failed: userIds.length },
-        results: {
-          success: [],
-          failed: invalidIds.map(id => ({
-            id,
-            errors: ['Invalid UUID format']
-          }))
-        }
-      };
-    }
-
-    // ✅ Appel API
-    result = await api.delete('/client/users/bulk-soft-delete/', {
-      data: { ids: userIds, mode },
-      timeout: authConfig.BULK_OPERATION_TIMEOUT
-    });
-
-    if (result.success) {
-      console.log('[bulkSoftDeleteUsers] ok', { 
-        status: result.status ?? 200,
-        archived: result.data?.summary?.archived ?? 0
-      });
-
-      return result.data;
-    }
-
-    // ✅ Gestion d'erreur structurée
-    const status = result.status || 0;
-    const message = result.error || 'Bulk soft delete failed';
-    console.error('[bulkSoftDeleteUsers] api.delete error', { status, message });
-
-    if (result.data && typeof result.data === 'object') {
-      if (result.data.results || result.data.summary) {
-        console.log('[bulkSoftDeleteUsers] returning structured error from backend');
-        return {
-          ...result.data,
-          success: false
-        };
-      }
-    }
-
-    return {
-      success: false,
-      message: message,
-      error: { status, message, response: result.response || null },
-      summary: { requested: userIds.length, archived: 0, failed: userIds.length },
-      results: {
-        success: [],
-        failed: userIds.map(id => ({
-          id,
-          errors: [message]
-        }))
-      }
-    };
-
-  } catch (err) {
-    console.error('[bulkSoftDeleteUsers] thrown', err);
-    return {
-      success: false,
-      message: err?.message || 'Unknown error',
-      error: { message: err?.message || String(err) },
-      summary: { requested: userIds?.length ?? 0, archived: 0, failed: userIds?.length ?? 0 },
-      results: {
-        success: [],
-        failed: (userIds || []).map(id => ({
-          id,
-          errors: [err?.message || 'Unknown error']
-        }))
-      }
-    };
-  } finally {
-    // ⭐ Revalidation intelligente standardisée
-    await handleBulkRevalidation(
-      result,
-      [endpoints.users, '/client/client-accounts/'],
-      onSyncProgress,   // Callback intermédiaire
-      onSyncComplete    // Callback de fin
-    );
-  }
-};
-
-/**
- * ✅ BULK DELETE USERS
- * 
- * Supprime plusieurs utilisateurs en une seule requête
- * ⚠️ En MVP/dev: suppression PHYSIQUE (hard delete)
- * ⚠️ En prod: utiliser bulkSoftDeleteUsers à la place
- * 
- * @param {Array<string>} userIds - Array of user IDs to delete
- * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
- * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
- * @param {Function} onSyncComplete - Optional callback: () => void (called when sync is done)
- * @returns {Promise<Object>} {success: boolean, isTimeout?: boolean, summary: Object, results: Object}
- */
-export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
-  let result = null;
-
-  try {
-    console.log('[bulkDeleteUsers] start', { 
-      count: userIds?.length ?? 0, 
-      mode 
-    });
-
-    // ✅ Validation: Vérifier que userIds est un array non vide
-    if (!Array.isArray(userIds) || userIds.length === 0) {
-      return {
-        success: false,
-        message: 'No user IDs provided',
-        summary: { requested: 0, deleted: 0, failed: 0 },
-        results: { success: [], failed: [] }
-      };
-    }
-
-    // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
-    const invalidIds = userIds.filter(id => !isValidUUID(id));
-    if (invalidIds.length > 0) {
-      console.error('[bulkDeleteUsers] invalid UUIDs', { count: invalidIds.length });
-      return {
-        success: false,
-        message: `${invalidIds.length} invalid user ID(s) detected`,
-        summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
-        results: {
-          success: [],
-          failed: invalidIds.map(id => ({
-            id,
-            errors: ['Invalid UUID format']
-          }))
-        }
-      };
-    }
-
-    // ✅ Appel API avec notre wrapper standardisé
-    result = await api.delete('/client/users/bulk-delete/', {
-      data: { ids: userIds, mode },
-      timeout: 30000  
-    });
-
-    if (result.success) {
-      console.log('[bulkDeleteUsers] ok', { 
-        status: result.status ?? 200,
-        deleted: result.data?.summary?.deleted ?? 0
-      });
-
-      return result.data;
-    }
-
-    // ✅ Gestion d'erreur structurée
-    const status = result.status || 0;
-    const message = result.error || 'Bulk delete failed';
-    console.error('[bulkDeleteUsers] api.delete error', { status, message });
-
-    if (result.data && typeof result.data === 'object') {
-      if (result.data.results || result.data.summary) {
-        console.log('[bulkDeleteUsers] returning structured error from backend');
-        return {
-          ...result.data,
-          success: false
-        };
-      }
-    }
-
-    return {
-      success: false,
-      message: message,
-      error: { status, message, response: result.response || null },
-      summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
-      results: {
-        success: [],
-        failed: userIds.map(id => ({
-          id,
-          errors: [message]
-        }))
-      }
-    };
-
-  } catch (err) {
-    console.error('[bulkDeleteUsers] thrown', err);
-    
-    // ⭐ NOUVEAU: Détecter si c'est un timeout
-    const isTimeout = 
-      err?.code === 'ECONNABORTED' || 
-      err?.message?.toLowerCase()?.includes('timeout') ||
-      err?.response?.status === 408 ||
-      err?.response?.status === 504;
-    
-    if (isTimeout) {
-      console.log('[bulkDeleteUsers] Timeout detected, sync will be triggered');
-    }
-    
-    return {
-      success: false,
-      isTimeout: isTimeout,  // ⭐ Flag pour indiquer un timeout
-      message: err?.message || 'Unknown error',
-      error: { message: err?.message || String(err) },
-      summary: { requested: userIds?.length ?? 0, deleted: 0, failed: userIds?.length ?? 0 },
       results: {
         success: [],
         failed: (userIds || []).map(id => ({

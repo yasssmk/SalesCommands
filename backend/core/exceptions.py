@@ -47,27 +47,88 @@ class StandardizedValidationError(ValidationError):
                 # Sinon, récurser pour traiter la structure
                 return StandardizedValidationError._format_detail(detail_value)
             
-            # For field-specific errors
-            messages = []
-            for field, error in detail.items():
-                # Skip the "detail" key if we already handled it above
-                if field == "detail" and len(detail) == 1:
-                    continue
+        #     # For field-specific errors
+        #     messages = []
+        #     for field, error in detail.items():
+        #         # Skip the "detail" key if we already handled it above
+        #         if field == "detail" and len(detail) == 1:
+        #             continue
                     
-                # Handle list/tuple of errors for a field
-                if isinstance(error, (list, tuple)):
-                    error = error[0] if error else ''
+        #         # Handle list/tuple of errors for a field
+        #         if isinstance(error, (list, tuple)):
+        #             error = error[0] if error else ''
+        #         elif isinstance(error, dict):
+        #             # Handle nested error structures
+        #             sub_detail = StandardizedValidationError._format_detail(error)
+        #             error = sub_detail.get("error", "")
+                
+        #         # Build field-specific message
+        #         if error:
+        #             # messages.append(f"{field}: {str(error)}")
+        #             messages.append(f"{str(error)}")
+            
+        #     # ✅ FIX: Handle empty dict or dict that produced no messages
+        #     if messages:
+        #         return {"error": " ".join(messages)}
+        #     else:
+        #         return {"error": "Invalid request data"}
+
+        # # For list/tuple of errors - take only the first error
+        # if isinstance(detail, (list, tuple)):
+        #     if not detail:  # ✅ FIX: Handle empty list
+        #         return {"error": "An unexpected error occurred"}
+            
+        #     # If first item is already a dict with error key, use it
+        #     if isinstance(detail[0], dict) and "error" in detail[0]:
+        #         return detail[0]
+        #     # Otherwise format the first item
+        #     return StandardizedValidationError._format_detail(detail[0])
+
+        # # For any other case, convert to string
+        # return {"error": str(detail) if detail else "An unexpected error occurred"}
+            is_field_validation = True
+            field_errors = {}
+            
+            for field, error in detail.items():
+                # Skip special keys that indicate this is NOT field validation
+                if field in ["detail", "error", "message", "non_field_errors"]:
+                    is_field_validation = False
+                    break
+                
+                # Extract error message
+                if isinstance(error, (list, tuple)) and error:
+                    # Take first error if multiple
+                    error_msg = str(error[0])
                 elif isinstance(error, dict):
                     # Handle nested error structures
                     sub_detail = StandardizedValidationError._format_detail(error)
+                    error_msg = sub_detail.get("error", "")
+                else:
+                    error_msg = str(error) if error else ""
+                
+                if error_msg:
+                    field_errors[field] = [error_msg]  # Keep as array for consistency
+            
+            # ✅ If this looks like field validation, preserve the structure
+            if is_field_validation and field_errors:
+                return field_errors  # Return {email: ["error"], role: ["error"]}
+            
+            # ✅ Otherwise, concatenate into generic error message
+            # This handles non-field errors like {"non_field_errors": ["error"]}
+            messages = []
+            for field, error in detail.items():
+                if field == "detail" and len(detail) == 1:
+                    continue
+                    
+                if isinstance(error, (list, tuple)):
+                    error = error[0] if error else ''
+                elif isinstance(error, dict):
+                    sub_detail = StandardizedValidationError._format_detail(error)
                     error = sub_detail.get("error", "")
                 
-                # Build field-specific message
                 if error:
-                    # messages.append(f"{field}: {str(error)}")
                     messages.append(f"{str(error)}")
             
-            # ✅ FIX: Handle empty dict or dict that produced no messages
             if messages:
                 return {"error": " ".join(messages)}
             else:
@@ -75,7 +136,7 @@ class StandardizedValidationError(ValidationError):
 
         # For list/tuple of errors - take only the first error
         if isinstance(detail, (list, tuple)):
-            if not detail:  # ✅ FIX: Handle empty list
+            if not detail:
                 return {"error": "An unexpected error occurred"}
             
             # If first item is already a dict with error key, use it

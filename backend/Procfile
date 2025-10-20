@@ -1,0 +1,1 @@
+web: gunicorn salescommands.asgi:application -k uvicorn.workers.UvicornWorker --workers ${WEB_CONCURRENCY:-2} --timeout 15 --graceful-timeout 15 --keep-alive 2 --log-file - --access-logfile - --error-logfile -

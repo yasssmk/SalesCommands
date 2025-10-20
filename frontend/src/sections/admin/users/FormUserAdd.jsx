@@ -36,6 +36,7 @@ import { useGetUserRoles, useGetOrganizations, useGetTeams, insertUser } from 'a
 import Avatar from 'components/@extended/Avatar';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
+import { handleFormikError } from 'utils/formErrorHandler';
 
 // utils
 import { isValidUUID } from 'utils/validators';
@@ -131,30 +132,78 @@ function FormUserAdd({ closeModal }) {
     setLoading(false);
   }, []);
 
-  const formik = useFormik({
+  // const formik = useFormik({
     
-    initialValues: buildInitialValues(),
-    validationSchema: CreateSchema,
-    enableReinitialize: false,
-    onSubmit: async (values, { setSubmitting }) => {
-      try {
-        const payload = sanitizePayload(values);
-        const result = await insertUser(payload);
+  //   initialValues: buildInitialValues(),
+  //   validationSchema: CreateSchema,
+  //   enableReinitialize: false,
+  //   onSubmit: async (values, { setSubmitting }) => {
+  //     try {
+  //       const payload = sanitizePayload(values);
+  //       const result = await insertUser(payload);
 
-        if (result.success) {
-          displaySuccessSnackbar('User created successfully');
-          setSubmitting(false);
-          closeModal?.();
-        } else {
-          displayErrorSnackbar(result);
-          setSubmitting(false);
-        }
-      } catch (err) {
-        displayErrorSnackbar(err);
-        setSubmitting(false);
-      }
+  //       if (result.success) {
+  //         displaySuccessSnackbar('User created successfully');
+  //         setSubmitting(false);
+  //         closeModal?.();
+  //       } else {
+  //         displayErrorSnackbar(result);
+  //         setSubmitting(false);
+  //       }
+  //     } catch (err) {
+  //       displayErrorSnackbar(err);
+  //       setSubmitting(false);
+  //     }
+  //   }
+  // });
+
+  const formik = useFormik({
+  initialValues: buildInitialValues(),
+  validationSchema: CreateSchema,
+  enableReinitialize: false,
+  onSubmit: async (values, { setSubmitting }) => {
+  try {
+    const payload = sanitizePayload(values);
+    const result = await insertUser(payload);
+
+    console.group('🔍 [DEBUG FormUserAdd] Full result inspection');
+    console.log('result:', result);
+    console.log('result.success:', result.success);
+    console.log('result.error:', result.error);
+    console.log('result.status:', result.status);
+    console.log('result.data:', result.data);
+    console.log('result.response:', result.response);
+    
+    if (result.response?.data) {
+      console.log('result.response.data:', result.response.data);
+      console.log('Type:', typeof result.response.data);
+      console.log('Keys:', Object.keys(result.response.data));
+      
+      // Check each key
+      Object.entries(result.response.data).forEach(([key, value]) => {
+        console.log(`  [${key}]:`, value, `(type: ${typeof value})`);
+      });
     }
-  });
+    console.groupEnd();
+
+    if (result.success) {
+      displaySuccessSnackbar('User created successfully');
+      closeModal?.();
+    } else {
+      console.log('❌ Calling handleFormikError with:', result);
+      handleFormikError(result, formik);
+    }
+  } catch (err) {
+    console.group('🔍 [DEBUG FormUserAdd] Exception caught');
+    console.log('Exception:', err);
+    console.log('err.response:', err.response);
+    console.log('err.response?.data:', err.response?.data);
+    console.groupEnd();
+    
+    handleFormikError(err, formik);
+  }
+}
+});
 
 
   const { errors, touched, handleSubmit, isSubmitting, getFieldProps, setFieldValue, values } = formik;

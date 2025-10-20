@@ -357,9 +357,10 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # raise PermissionDenied("Test 403: You do not have permission to view users")
         # raise Exception("Test 500: Simulated server error")
         # from rest_framework.response import Response
+        # raise Http404("Ressource introuvable")
         # return Response(
-        #     {"detail": "Service temporarily unavailable"},
-        #     status=503
+        #     {"detail": "Not Found"},
+        #     status=404
         # )
         # import time
         # time.sleep(2)  # Simuler lenteur
@@ -451,6 +452,23 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         POST /client/users/
         """
         with transaction.atomic():
+
+            # raise PermissionDenied("Test 403: You do not have permission to view users")
+            # raise Exception("Test 500: Simulated server error")
+            # from rest_framework.response import Response
+            # raise Http404("Ressource introuvable")
+            # return Response(
+            #     {"detail": "Not Found"},
+            #     status=503
+            # )
+            # import time
+            # time.sleep(2)  # Simuler lenteur
+            # from rest_framework.response import Response
+            # return Response(
+            #     {"detail": "Request timeout"},
+            #     status=429
+            # )
+
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             user = serializer.save()
@@ -605,14 +623,6 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         try:
             with transaction.atomic():
                 user = self.get_object()
-
-                import time
-                time.sleep(2)  # Simuler lenteur
-                from rest_framework.response import Response
-                return Response(
-                    {"detail": "Request timeout"},
-                    status=408
-                )
 
                 # Mémoriser le client avant suppression
                 client = user.client_account

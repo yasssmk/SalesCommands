@@ -73,11 +73,47 @@ export const authConfig = {
     HTTP_ONLY: true
   },
 
-  // Configuration de retry et timeouts
-  REQUEST_TIMEOUT: 10000, // 10 secondes
-  BULK_OPERATION_TIMEOUT: 60000, // 60 secondes (bulk operations)
+  // ==============================|| TIMEOUT PROFILES ||============================== //
+  
+  /**
+   * ✅ NEW: Differentiated timeout profiles for various operation types
+   * 
+   * Ensures proper timeout handling aligned with backend configuration:
+   * - Frontend timeout < Backend timeout (avoid 504 Gateway Timeout)
+   * - Backend target: Nginx 15s, Gunicorn 15s, DB statement_timeout 10s
+   * 
+   * Usage examples:
+   *   api.get(url, { profile: 'critical' })  // 8s timeout
+   *   api.get(url, { profile: 'widget' })    // 4s timeout
+   *   api.post(url, data)                    // 10s timeout (default for mutations)
+   *   api.post(url, data, { profile: 'bulk' }) // 60s timeout
+   */
+  TIMEOUT_PROFILES: {
+    CRITICAL: 8000,   // 8s - Critical GET requests (main data: users, accounts, contacts)
+    WIDGET: 4000,     // 4s - Dashboard widgets, quick stats, non-critical data
+    MUTATION: 10000,  // 10s - POST/PUT/PATCH/DELETE operations (form submissions)
+    BULK: 60000,      // 60s - Bulk operations (import/export, bulk delete/update)
+    AUTH: 5000        // 5s - Authentication operations (login, refresh token)
+  },
+
+  // ==============================|| LEGACY TIMEOUT SETTINGS ||============================== //
+  
+  /**
+   * @deprecated Use TIMEOUT_PROFILES.MUTATION instead
+   * Kept for backward compatibility with existing code
+   */
+  REQUEST_TIMEOUT: 10000, // 10 seconds (default for mutations)
+  
+  /**
+   * @deprecated Use TIMEOUT_PROFILES.BULK instead
+   * Previously defined but never used in the codebase
+   */
+  BULK_OPERATION_TIMEOUT: 60000, // Now implemented in TIMEOUT_PROFILES.BULK
+  
+  // ==============================|| RETRY CONFIGURATION ||============================== //
+  
   MAX_RETRY_ATTEMPTS: 3,
-  RETRY_DELAY: 1000, // 1 seconde
+  RETRY_DELAY: 1000, // 1 second
 
   // Configuration du localStorage pour données non sensibles
   STORAGE_KEYS: {
@@ -96,73 +132,3 @@ export const debugLog = (...args) => {
 };
 
 export default authConfig;
-
-
-// // ==============================|| AUTH CONFIGURATION ||============================== //
-
-// export const authConfig = {
-//   // Durée de vie des tokens (en millisecondes)
-//   TOKEN_REFRESH_INTERVAL: 6 * 60 * 60 * 1000, // 6 heures
-//   TOKEN_REFRESH_THRESHOLD: 5 * 60 * 1000, // 5 minutes avant expiration
-
-//   // TOKEN_REFRESH_INTERVAL: 2 * 60 * 1000, // 2 minutes pour test
-//   // TOKEN_REFRESH_THRESHOLD: 5 * 60 * 1000, // 5 minutes avant expiration
-  
-//   // Endpoints backend Django
-//   API_BASE_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
-  
-//   ENDPOINTS: {
-//     LOGIN: '/client/login/',
-//     LOGOUT: '/client/logout/',
-//     REFRESH: '/client/refresh-token/',
-//     USER: '/client/user/',
-//   },
-  
-//   // Pages de redirection
-//   PAGES: {
-//     LOGIN: '/login',
-//     DASHBOARD: '/', // ou '/dashboardHome' selon votre structure
-//     HOME: '/',
-//   },
-
-//   // Messages d'erreur personnalisés
-//    ERROR_MESSAGES: {
-//     NETWORK_ERROR: 'Network error. Please check your connection and try again.',
-//     SERVER_ERROR: 'Server Error',
-//     UNKNOWN_ERROR: 'Something went wrong. Please try again.'
-//   },
-  
-//   // Options des cookies (côté serveur, mais pour référence)
-//   COOKIE_OPTIONS: {
-//     REFRESH_TOKEN_NAME: 'refresh_token',
-//     ACCESS_TOKEN_NAME: 'access_token',
-//     SAME_SITE: 'Lax',
-//     SECURE: process.env.NODE_ENV === 'production',
-//     HTTP_ONLY: true,
-//   },
-  
-//   // Configuration de retry et timeouts
-//   REQUEST_TIMEOUT: 10000, // 10 secondes
-//   MAX_RETRY_ATTEMPTS: 3,
-//   RETRY_DELAY: 1000, // 1 seconde
-  
-  
-//   // Configuration du localStorage pour les données non-sensibles
-//   STORAGE_KEYS: {
-//     USER_PREFERENCES: 'user_preferences',
-//     LAST_ROUTE: 'last_route',
-//     THEME: 'theme_preference',
-//   },
-// };
-
-// // Helper pour vérifier si on est en environnement de développement
-// export const isDevelopment = process.env.NODE_ENV === 'development';
-
-// // Helper pour les logs de debug en développement uniquement
-// export const debugLog = (...args) => {
-//   if (isDevelopment) {
-//     console.log('[AUTH DEBUG]:', ...args);
-//   }
-// };
-
-// export default authConfig;
