@@ -458,7 +458,7 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             else:
                 # Otherwise, construct a clean user-friendly message
                 message = (
-                    f"Too many requests. Please wait {time_msg} before trying again."
+                    f"Too many requests. Please wait {time_msg}."
                 )
                 
             formatted = StandardizedValidationError._format_detail(message)

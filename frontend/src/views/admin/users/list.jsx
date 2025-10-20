@@ -20,6 +20,7 @@ import UserBulkEditModal from 'sections/admin/users/UserBulkEditModal';
 import AlertUserDelete from 'sections/admin/users/AlertUserDelete';
 import AlertUserBulkDelete from 'sections/admin/users/AlertUserBulkDelete';
 import UserTable from 'sections/admin/users/UserTable';
+import ReusableTable from 'components/table/Table';
 import SeatsSummary from 'sections/admin/users/SeatsSummary';
 
 import { useGetUsers } from 'api/admin/users';
@@ -524,7 +525,7 @@ const handleBulkDeleteComplete = useCallback(() => {
         <SeatsSummary />
       </Grid>
 
-      <UserTable
+      <ReusableTable
         data={users}
         columns={columns}
         loading={usersLoading}
@@ -534,13 +535,13 @@ const handleBulkDeleteComplete = useCallback(() => {
           setSelectedUser(null);
           setUserModal(true);
         }}
-        totalCount={usersCount}
+        totalCount={usersCount} 
         currentPage={page}
         initialPageSize={validPageSize}
         onPaginationChange={handlePaginationChange}
         onSearchChange={handleSearchChange}
         sorting={sorting}                          
-        onSortingChange={handleSortingChange}    
+        onSortingChange={handleSortingChange}  
         selectedCount={selectedRows.size}
         selectedRows={selectedRows}
         onImport={handleImportClick}
@@ -566,6 +567,14 @@ const handleBulkDeleteComplete = useCallback(() => {
             setBulkDeleteAlert(true);
           }
         }}
+
+        // Customization (specific to Users)
+        addButtonLabel="Add User"
+        addButtonTooltip="Add User"
+        searchPlaceholder={`Search ${usersCount}  users...`}
+        exportFilename="users-list.csv"
+        emptyMessage="No users found"
+        emptyDescription="Start by adding your first user to the system"
       />
 
       <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />

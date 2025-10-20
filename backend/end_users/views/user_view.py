@@ -245,7 +245,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Cache: 180s sur les données sérialisées
         """
         from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
-        raise Exception("Test 500: Server error on retrieve")
+        # raise Exception("Test 500: Server error on retrieve")
         
         pk = kwargs.get('pk')
 
@@ -356,6 +356,18 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
         # raise PermissionDenied("Test 403: You do not have permission to view users")
         # raise Exception("Test 500: Simulated server error")
+        # from rest_framework.response import Response
+        # return Response(
+        #     {"detail": "Service temporarily unavailable"},
+        #     status=503
+        # )
+        # import time
+        # time.sleep(2)  # Simuler lenteur
+        # from rest_framework.response import Response
+        # return Response(
+        #     {"detail": "Request timeout"},
+        #     status=408
+        # )
         
         # Skip cache si pas Redis (FileBasedCache trop lent)
         if not _is_redis_backend():
@@ -593,6 +605,14 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         try:
             with transaction.atomic():
                 user = self.get_object()
+
+                import time
+                time.sleep(2)  # Simuler lenteur
+                from rest_framework.response import Response
+                return Response(
+                    {"detail": "Request timeout"},
+                    status=408
+                )
 
                 # Mémoriser le client avant suppression
                 client = user.client_account
@@ -1177,6 +1197,9 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             'event': 'bulk_delete_users_hard',
             'client_id': self.get_client_id()
         })
+
+        import time
+        time.sleep(2)  # Simuler lenteur
 
         try:
             # ===== INPUT VALIDATION =====

@@ -35,7 +35,7 @@ const STANDARD_ANCHOR = {
  * Prevents spam from identical messages shown within a short time window
  */
 const _recentMessages = new Map(); // key: `${message}:${status}`, value: timestamp
-const DEDUP_WINDOW_MS = 5000; // 5 seconds
+const DEDUP_WINDOW_MS = 45000; // 5 seconds
 const MAX_DEDUP_ENTRIES = 50; // Prevent unbounded growth
 
 /**

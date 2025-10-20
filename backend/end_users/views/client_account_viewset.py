@@ -82,6 +82,7 @@ class ClientAccountViewSet(BaseAPIView, viewsets.ModelViewSet):
                     CoreErrorMessages.OBJECT_NOT_FOUND
                 )
             
+            
             # Calcul simple des seats
             max_users = client['max_users'] or 0
             seats_used = client['active_users_count']
