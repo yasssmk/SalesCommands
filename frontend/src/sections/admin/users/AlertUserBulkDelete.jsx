@@ -13,7 +13,8 @@ import Avatar from 'components/@extended/Avatar';
 import { PopupTransition } from 'components/@extended/Transitions';
 import BulkOperationSyncDialog from 'components/bulk/BulkOperationSyncDialog';
 import { bulkDeleteUsers } from 'api/admin/users';
-import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
+import {  displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
+import { handleBulkError } from 'utils/bulkErrorHandler';
 import { useBulkOperationSync } from 'hooks/useBulkOperationSync';
 
 // assets
@@ -56,7 +57,7 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
       );
 
       
-      if (res?.success) {
+      if (res?.success === true) {
         // ✅ Succès immédiat (pas de timeout)
         displaySuccessSnackbar(
           `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`
@@ -68,23 +69,29 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
           onDeleteComplete?.();
         }
       } else if (res?.isTimeout) {
-        // Vérifier si c'est un timeout
-        const isTimeout = res?.isTimeout || res?.status === 408 || res?.status === 504;
-        
-        if (isTimeout) {
-          // ⭐ Timeout détecté → Le sync va démarrer, ne pas afficher d'erreur
+
           console.log('[AlertUserBulkDelete] Timeout detected, sync will start');
           setHadTimeout(true);  // Flag pour afficher succès après sync
           // NE PAS afficher de snackbar d'erreur ici
         } else {
-          // ❌ Erreur réelle (validation, permissions, etc.) → Afficher l'erreur
-          displayErrorSnackbar(res.message)
-          // NE PAS fermer la modal en cas d'erreur réelle
-        }
-      }
+          handleBulkError(res, {
+          onComplete: () => {
+          handleClose?.();
+          onDeleteComplete?.();
+          }
+       });
+            }
     } catch (err) {
-      // ❌ Exception JS (pas un timeout)
-      displayErrorSnackbar(err)
+      console.error('[AlertUserBulkDelete] Exception:', err);
+      
+      // Utiliser handleBulkError si c'est une structure bulk
+      const handled = handleBulkError(err);
+      
+      if (!handled) {
+        // Pas une réponse bulk → erreur générique
+        displayErrorSnackbar(err);
+      }
+
     } finally {
       setDeleting(false);
     }

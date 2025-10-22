@@ -627,7 +627,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             with transaction.atomic():
 
                 # raise PermissionDenied("Test 403: You do not have permission to view users")
-                raise Exception("Test 500: Simulated server error")
+                # raise Exception("Test 500: Simulated server error")
                 # from rest_framework.response import Response
                 # raise Http404("Ressource introuvable")
                 # return Response(
@@ -1270,7 +1270,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         })
 
         # raise PermissionDenied("Test 403: You do not have permission to view users")
-        raise Exception("Test 500: Simulated server error")
+        # raise Exception("Test 500: Simulated server error")
         # from rest_framework.response import Response
         # raise Http404("Ressource introuvable")
         # return Response(
@@ -1430,10 +1430,15 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         )
                 else:
                     # Partial mode
+                    testCount = 0
                     for user_id in ids:
+                        
+
                         if user_id in invalid_ids:
                             continue
                         
+                        testCount += 1
+
                         is_protected = any(p['id'] == user_id for p in protected_users)
                         if is_protected:
                             protected_info = next(p for p in protected_users if p['id'] == user_id)
@@ -1448,6 +1453,9 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         
                         with transaction.atomic():
                             try:
+                                if testCount == 1:
+                                    print ("[TEST ERRASE]: HAHAHAHAHHAHAHAHAHAHAHAHHAHAHAXXXXXX")
+                                    raise Http404("Ressource introuvable")
                                 user_email = user.email
                                 user_name = user.get_full_name()
                                 user.delete()
