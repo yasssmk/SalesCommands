@@ -35,7 +35,8 @@ const STANDARD_ANCHOR = {
  * Prevents spam from identical messages shown within a short time window
  */
 const _recentMessages = new Map(); // key: `${message}:${status}`, value: timestamp
-const DEDUP_WINDOW_MS = 45000; // 5 seconds
+const DEDUP_WINDOW_MS = 5000; // 5 seconds
+const DEDUP_WINDOW_MS_500 = 45000 // 45 seconds
 const MAX_DEDUP_ENTRIES = 50; // Prevent unbounded growth
 
 /**
@@ -48,11 +49,20 @@ function shouldShowMessage(message, status) {
   const key = `${message}:${status}`;
   const now = Date.now();
   const lastShown = _recentMessages.get(key);
+  const is_403 = status === 403; // We want user to be averted everytime he makes a forbiden request
+  const is_500 = status >= 500;
   
   // Check if same message was shown recently
-  if (lastShown && (now - lastShown) < DEDUP_WINDOW_MS) {
+  if (!is_403 && !is_500 & lastShown && (now - lastShown) < DEDUP_WINDOW_MS) {
     if (process.env.NODE_ENV === 'development') {
       console.debug(`🔕 [Snackbar Dedup] Suppressed duplicate: "${message}" (${status})`);
+    }
+    return false; // Suppress
+  }
+
+  if (is_500 & lastShown && (now - lastShown) < DEDUP_WINDOW_MS_500) {
+    if (process.env.NODE_ENV === 'development') {
+      console.debug(`🔕 [Snackbar Dedup Error 500] Suppressed duplicate: "${message}" (${status})`);
     }
     return false; // Suppress
   }

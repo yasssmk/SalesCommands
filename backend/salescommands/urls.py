@@ -18,7 +18,6 @@ from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
 
-from apps.ops.views import sleep_view, error_500_view, error_404_view, health_ops_view
 
 # =========================================================================
 # HEALTHCHECK ENDPOINT - For Render load balancer
@@ -72,22 +71,5 @@ urlpatterns = [
     path(ai_insights, include('apps.sales_insight.urls')),
     path(product_admin_key, include("product_admin.urls")),
 
-    # ==============================|| OPS TEST ENDPOINTS (TEMPORARY - DEV/STAGING ONLY) ||============================== //
-    
-    # ⚠️ WARNING: These endpoints are for testing timeout behavior and error handling.
-    # They should be REMOVED or DISABLED in production environments.
-    # 
-    # Usage:
-    # - GET/POST /ops/sleep/<seconds>/  → Sleep N seconds (test timeouts)
-    # - GET /ops/error/500/             → Test 500 Internal Server Error
-    # - GET /ops/error/404/             → Test 404 Not Found
-    # - GET /ops/health/                → Check ops endpoints availability
-    #
-    # See: apps/ops/views.py for implementation details
-    # See: frontend/src/components/ErrorTest/TestTimeoutButton.jsx for usage
-    
-    path('ops/sleep/<int:seconds>/', sleep_view, name='ops_sleep'),
-    path('ops/error/500/', error_500_view, name='ops_error_500'),
-    path('ops/error/404/', error_404_view, name='ops_error_404'),
-    path('ops/health/', health_ops_view, name='ops_health'),
+
 ]

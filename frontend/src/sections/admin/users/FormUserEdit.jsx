@@ -37,7 +37,8 @@ import { useGetUser, useGetUserRoles, useGetOrganizations, useGetTeams, updateUs
 // project imports
 import Avatar from 'components/@extended/Avatar';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
-import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
+import { displaySuccessSnackbar } from 'utils/displayError';
+import { handleFormikError } from 'utils/formErrorHandler';
 
 // utils
 import { isValidUUID } from 'utils/validators';
@@ -142,15 +143,12 @@ function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword 
 
         if (result.success) {
           displaySuccessSnackbar('User updated successfully');
-          setSubmitting(false);
           closeModal?.();
         } else {
-          displayErrorSnackbar(result);
-          setSubmitting(false);
+          handleFormikError(result, formik);
         }
       } catch (err) {
-        displayErrorSnackbar(err);
-        setSubmitting(false);
+        handleFormikError(err, formik);
       }
     }
   });

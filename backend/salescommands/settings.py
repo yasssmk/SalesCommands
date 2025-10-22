@@ -223,7 +223,6 @@ INSTALLED_APPS = [
     "phonenumber_field",
     'django_filters',
     'debug_toolbar',
-     'apps.ops',
 ]
 
 MIDDLEWARE = [

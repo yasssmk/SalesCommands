@@ -553,6 +553,66 @@ class ScopedQuerysetMixin:
         
         return queryset
     
+    def get_object(self):
+        """
+        Get single object with explicit 403 for permission denials.
+        
+        This override distinguishes between:
+        - Object not found (404): Resource doesn't exist in tenant
+        - Permission denied (403): Resource exists but user lacks permission
+        
+        The default DRF behavior only returns 404 when object is not in
+        the scoped queryset, which is misleading for users without permission.
+        
+        Returns:
+            Model instance if found and authorized
+            
+        Raises:
+            Http404: If object doesn't exist in the tenant
+            StandardizedPermissionDenied: If object exists but user lacks permission
+        """
+        from django.http import Http404
+        from core.exceptions import StandardizedPermissionDenied
+        from core.error_messages import CoreErrorMessages
+        
+        # Get the object ID from URL kwargs
+        pk = self.kwargs.get('pk')
+        if not pk:
+            raise Http404("No object ID provided")
+        
+        # Get the model class
+        model = self.queryset.model
+        
+        # Get client_id for tenant isolation
+        client_id = self.get_client_id() if hasattr(self, 'get_client_id') else None
+        
+        # STEP 1: Check if object exists in tenant (without scope filter)
+        try:
+            if client_id:
+                # Verify object exists in this tenant
+                obj = model.objects.get(
+                    pk=pk,
+                    client_account_id=client_id
+                )
+            else:
+                # Fallback if no client scoping (rare case)
+                obj = model.objects.get(pk=pk)
+        except model.DoesNotExist:
+            # Object truly doesn't exist in tenant → 404
+            raise Http404(f"No {model.__name__} matches the given query.")
+        
+        # STEP 2: Check if object is in scoped queryset (permission check)
+        scoped_qs = self.get_queryset()
+        
+        if not scoped_qs.filter(pk=pk).exists():
+            # Object exists in tenant but not in user's scope → 403
+            raise StandardizedPermissionDenied(
+                CoreErrorMessages.PERMISSION_DENIED
+            )
+        
+        # STEP 3: Object exists and user has permission → return it
+        return obj
+    
     def _get_action(self) -> str:
         """
         Get the current action being performed.

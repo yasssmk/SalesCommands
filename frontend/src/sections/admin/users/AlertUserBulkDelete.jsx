@@ -23,7 +23,7 @@ import DeleteFilled from '@ant-design/icons/DeleteFilled';
 
 export default function AlertUserBulkDelete({ selectedIds, open, handleClose, onDeleteComplete }) {
   const [deleting, setDeleting] = useState(false);
-  const [hadTimeout, setHadTimeout] = useState(false);  // ⭐ NOUVEAU: Flag pour tracker le timeout
+  const [hadTimeout, setHadTimeout] = useState(false);  // Flag pour tracker le timeout
   
   const userCount = selectedIds?.length || 0;
 
@@ -54,6 +54,7 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
         onSyncProgress,
         onSyncComplete
       );
+
       
       if (res?.success) {
         // ✅ Succès immédiat (pas de timeout)
@@ -66,8 +67,8 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
           handleClose?.();
           onDeleteComplete?.();
         }
-      } else {
-        // ⭐ NOUVEAU: Vérifier si c'est un timeout
+      } else if (res?.isTimeout) {
+        // Vérifier si c'est un timeout
         const isTimeout = res?.isTimeout || res?.status === 408 || res?.status === 504;
         
         if (isTimeout) {
@@ -77,7 +78,7 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
           // NE PAS afficher de snackbar d'erreur ici
         } else {
           // ❌ Erreur réelle (validation, permissions, etc.) → Afficher l'erreur
-          displayErrorSnackbar(res)
+          displayErrorSnackbar(res.message)
           // NE PAS fermer la modal en cas d'erreur réelle
         }
       }

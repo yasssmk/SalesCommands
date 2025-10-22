@@ -105,7 +105,7 @@ function ErrorDisplay({
 
   // Combined check for temporary errors
 //   const isTemporaryError = isNetwork || isServer || isTimeout || status === 403;
-  const isTemporaryError = isNetwork || isServer || isTimeout || status === 403;
+  const isTemporaryError = isNetwork || isServer || isTimeout
 
   // ✅ Debug log in development
   if (process.env.NODE_ENV === 'development') {
@@ -193,7 +193,7 @@ function ErrorDisplay({
             <Typography variant="body2" color="text.secondary">
               {globalFilter 
                 ? `No results for "${globalFilter}"` 
-                : emptyDescription}
+                : ''}
             </Typography>
           </Stack>
         </TableCell>
@@ -223,7 +223,7 @@ function ErrorDisplay({
         <TableCell colSpan={columns.length} align="center" sx={{ py: 6 }}>
           <Stack spacing={2} alignItems="center">
             <Typography variant="body2" color="text.secondary">
-              Unable to load data. Please try again.
+              You do not have the permission to access this data.
             </Typography>
             {isRetryable && (
               <Button

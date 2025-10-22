@@ -15,7 +15,7 @@
  * @module utils/formErrorHandler
  */
 
-import { displayErrorSnackbar } from './displayError';
+import { displayErrorSnackbar, displayWarningSnackbar } from './displayError';
 import { getErrorDisplayInfo } from './errorMessages';
 
 // ==============================|| HELPER FUNCTIONS ||============================== //
@@ -33,7 +33,156 @@ const isPlainObject = (obj) => {
 };
 
 /**
- * ✅ NEW: Parse field name from generic error message
+ * 
+ * Bulk operations have this structure AND a valid success field:
+ * {
+ *   success: true | 'partial' | false,  ← Must exist and be valid
+ *   summary: { requested, updated/created/deleted/archived, failed, skipped },
+ *   results: { success: [], failed: [], skipped: [] },
+ *   message: "..."
+ * }
+ * 
+ * @param {Object} data - Response data from backend
+ * @returns {boolean} true if bulk operation
+ */
+const isBulkOperation = (data) => {
+  if (!isPlainObject(data)) {
+    return false;
+  }
+  
+  const hasSummary = data.summary && isPlainObject(data.summary);
+  const hasResults = data.results && isPlainObject(data.results);
+  const hasValidSuccess = data.success !== undefined && 
+                         (data.success === true || 
+                          data.success === false || 
+                          data.success === 'partial');
+  
+  return hasSummary && hasResults && hasValidSuccess;
+};
+
+/**
+ * ✅ IMPROVED: Handle bulk operation partial success ONLY
+ * 
+ * This function should ONLY handle true partial successes (1-99%).
+ * Total failures (0%) should fall through to standard error handling.
+ * 
+ * @param {Object} data - Bulk operation response
+ * @param {Object} formik - Formik instance (for setSubmitting)
+ * @param {Object} options - Handler options
+ * @param {Function} onComplete - Optional callback to close modal after handling
+ * @returns {boolean} true if handled, false if should fall through
+ */
+const handleBulkPartialSuccess = (data, formik, options, onComplete) => {
+  const { summary, results, success, message: backendMessage } = data;
+  
+  // Extract counts
+  const requested = summary?.requested || 0;
+  const successCount = summary?.updated || summary?.created || summary?.deleted || summary?.archived || 0;
+  const failedCount = summary?.failed || 0;
+  const skippedCount = summary?.skipped || 0;
+  
+  // Calculate success rate
+  const successRate = requested > 0 ? (successCount / requested) * 100 : 0;
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.group('🔍 [handleBulkPartialSuccess] Processing bulk operation');
+    console.log('Success:', success);
+    console.log('Backend message:', backendMessage);
+    console.log('Summary:', summary);
+    console.log('Success rate:', `${successRate.toFixed(1)}%`);
+    console.log('Results:', results);
+  }
+  
+  // ====================================================================
+  // ⭐ CRITICAL: Si 0% de succès, ce n'est PAS un succès partiel
+  // Laisser le code de gestion d'erreur standard gérer ça
+  // ====================================================================
+  if (successRate === 0) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('⚠️ 0% success rate - delegating to standard error handling');
+      console.groupEnd();
+    }
+    
+    // Stop submitting state
+    if (options.setSubmittingFalse && formik?.setSubmitting) {
+      formik.setSubmitting(false);
+    }
+    
+    return false; // Indicate NOT handled, fall through
+  }
+  
+  // ====================================================================
+  // Determine severity and message (pour 1-99% seulement)
+  // ====================================================================
+  let severity;
+  let message;
+  
+  if (successRate < 50) {
+    // Mostly failed (1-49%) → RED ERROR
+    severity = 'error';
+    message = `Operation mostly failed: ${successCount}/${requested} succeeded`;
+  } else if (successRate < 100) {
+    // Partially successful (50-99%) → ORANGE WARNING
+    severity = 'warning';
+    message = `Partially complete: ${successCount}/${requested} succeeded`;
+  } else {
+    // 100% success should NOT reach this function
+    severity = 'info';
+    message = `Operation complete: ${successCount}/${requested} succeeded`;
+  }
+  
+  // ====================================================================
+  // Display snackbar with appropriate severity
+  // ====================================================================
+  if (severity === 'warning') {
+    displayWarningSnackbar(message);
+  } else if (severity === 'error') {
+    displayErrorSnackbar({ 
+      message,
+      status: 400
+    });
+  } else {
+    displayErrorSnackbar({ message, status: 200 });
+  }
+  
+  // ====================================================================
+  // Log failed items in dev for debugging
+  // ====================================================================
+  if (process.env.NODE_ENV === 'development' && results?.failed?.length > 0) {
+    console.group('❌ Failed Items Details');
+    results.failed.forEach((item, index) => {
+      console.log(`\n[${index + 1}] ${item.email || item.id || 'Unknown'}`);
+      if (item.errors && Array.isArray(item.errors)) {
+        item.errors.forEach(err => console.log(`   - ${err}`));
+      }
+    });
+    console.groupEnd();
+  }
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.groupEnd();
+  }
+  
+  // ====================================================================
+  // ⭐ NEW: Close modal after handling (even on partial failure)
+  // ====================================================================
+  if (onComplete && typeof onComplete === 'function') {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔒 Closing modal after bulk operation');
+    }
+    onComplete();
+  }
+  
+  // Stop submitting state
+  if (options.setSubmittingFalse && formik?.setSubmitting) {
+    formik.setSubmitting(false);
+  }
+  
+  return true; // Indicate handled
+};
+
+/**
+ * Parse field name from generic error message
  * 
  * Attempts to extract a field name from error messages like:
  * - "Role is required" → {role: "This field is required"}
@@ -409,7 +558,8 @@ export const handleFormikError = (error, formik, options = {}) => {
   const {
     showSnackbarWithFields = false,
     setSubmittingFalse = true,
-    fallbackMessage = null
+    fallbackMessage = null,
+    onComplete = null
   } = options;
   
   if (process.env.NODE_ENV === 'development') {
@@ -417,6 +567,63 @@ export const handleFormikError = (error, formik, options = {}) => {
     console.log('Error:', error);
     console.log('Options:', options);
   }
+  
+// ====================================================================
+// STEP 0: Check if this is a bulk operation (NEW)
+// ====================================================================
+let responseData = null;
+
+// Try to extract response data
+if (error?.response?.data) {
+  responseData = error.response.data;
+} else if (error && !error.response && isPlainObject(error)) {
+  // Direct result object (not Axios error)
+  responseData = error;
+}
+
+if (responseData && isBulkOperation(responseData)) {
+  const { success } = responseData;
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('✅ Bulk operation detected, success:', success);
+  }
+  
+  // Handle partial success or failure with some successes
+  if (success === 'partial' || success === false) {
+    // ⭐ NEW: Pass onComplete callback from options
+    const handled = handleBulkPartialSuccess(
+      responseData, 
+      formik, 
+      options,
+      options.onComplete  // ⭐ NEW: Pass the callback
+    );
+    
+    if (handled) {
+      if (process.env.NODE_ENV === 'development') {
+        console.groupEnd();
+      }
+      return; // Done - bulk operation handled
+    }
+    
+    // Si pas handled, on continue vers STEP 1 pour gestion standard
+    if (process.env.NODE_ENV === 'development') {
+      console.log('→ Falling through to standard error handling');
+    }
+  }
+  
+  // success === true should not reach handleFormikError
+  if (success === true) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('⚠️ Bulk operation with success=true passed to error handler');
+      console.groupEnd();
+    }
+    
+    if (setSubmittingFalse && formik?.setSubmitting) {
+      formik.setSubmitting(false);
+    }
+    return;
+  }
+}
   
   // ====================================================================
   // STEP 1: Normalize error object
@@ -448,7 +655,11 @@ export const handleFormikError = (error, formik, options = {}) => {
   // ====================================================================
   // STEP 3: Try to extract field-level errors (4XX validation only)
   // ====================================================================
-  const responseData = normalizedError?.response?.data;
+  // ⚠️ CORRECTION: Réutiliser responseData du STEP 0 si disponible
+  if (!responseData) {
+    responseData = normalizedError?.response?.data;
+  }
+  
   const fieldErrors = extractFieldErrors(responseData);
   
   if (process.env.NODE_ENV === 'development') {
@@ -475,8 +686,7 @@ export const handleFormikError = (error, formik, options = {}) => {
         }
       }
       
-      // ✅ NEW: Force field to be "touched" so error displays immediately
-      // Without this, server errors only show if user touched the field
+      // ✅ Force field to be "touched" so error displays immediately
       if (formik.setFieldTouched) {
         formik.setFieldTouched(field, true, false);
         
@@ -532,6 +742,21 @@ export const handleFormikError = (error, formik, options = {}) => {
   if (process.env.NODE_ENV === 'development') {
     console.log('📢 Snackbar shown:', snackbarMessage);
     console.groupEnd();
+  }
+
+  const shouldCloseModal = status >= 500 || status === 0 || status === 408;
+
+  if (shouldCloseModal && onComplete && typeof onComplete === 'function') {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔒 Closing modal after non-recoverable error (5XX/network/timeout)');
+    }
+    onComplete();
+  } else if (process.env.NODE_ENV === 'development') {
+    if (status >= 400 && status < 500 && status !== 408) {
+      console.log('ℹ️ Keeping modal open (4XX error - user may retry)');
+    } else {
+      console.log('ℹ️ Modal kept open (no onComplete callback provided)');
+    }
   }
   
   // Stop submitting state

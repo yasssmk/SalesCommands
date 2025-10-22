@@ -458,11 +458,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             # from rest_framework.response import Response
             # raise Http404("Ressource introuvable")
             # return Response(
-            #     {"detail": "Not Found"},
-            #     status=503
+            #     {"detail": "User Not Found"},
+            #     status=404
             # )
             # import time
-            # time.sleep(2)  # Simuler lenteur
+            # time.sleep(3)  # Simuler lenteur
             # from rest_framework.response import Response
             # return Response(
             #     {"detail": "Request timeout"},
@@ -498,6 +498,9 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         """
         try:
             with transaction.atomic():
+
+                # import time
+                # time.sleep(3)
                 user = self.get_object()
                 serializer = self.get_serializer(user, data=request.data, partial=True)
                 serializer.is_valid(raise_exception=True)
@@ -622,6 +625,23 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         """
         try:
             with transaction.atomic():
+
+                # raise PermissionDenied("Test 403: You do not have permission to view users")
+                raise Exception("Test 500: Simulated server error")
+                # from rest_framework.response import Response
+                # raise Http404("Ressource introuvable")
+                # return Response(
+                #     {"detail": "User Not Found"},
+                #     status=404
+                # )
+                # import time
+                # time.sleep(3)  # Simuler lenteur
+                # from rest_framework.response import Response
+                # return Response(
+                #     {"detail": "Request timeout"},
+                #     status=429
+                # )
+
                 user = self.get_object()
 
                 # Mémoriser le client avant suppression
@@ -789,6 +809,22 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             'event': 'bulk_create_users',
             'client_id': self.get_client_id()
         })
+
+        # raise PermissionDenied("Test 403: You do not have permission to view users")
+        # raise Exception("Test 500: Simulated server error")
+        # from rest_framework.response import Response
+        # raise Http404("Ressource introuvable")
+        # return Response(
+        #     {"detail": "sssmendouuu"},
+        #     status=429
+        # )
+        # import time
+        # time.sleep(3)  # Simuler lenteur
+        # from rest_framework.response import Response
+        # return Response(
+        #     {"detail": "Request timeout"},
+        #     status=429
+        # )
 
         try:
             # Validate input
@@ -968,7 +1004,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     invalidate_tag(client_id, 'users')
 
             # Build successful response
-            return self._build_bulk_success_response(results, len(users_data))
+            return self._build_bulk_success_response(results, len(users_data), operation='create')
 
         except StandardizedValidationError as e:
             # Extract message properly from detail dict
@@ -990,11 +1026,34 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         """
         Update multiple users in bulk
         """
-        ctx = ctx_from_request(request)
+        ctx = ctx_from_request(request) 
         ctx.update({
             'event': 'bulk_update_users',
             'client_id': self.get_client_id()
         })
+
+        # 🧪 DEBUG: Log ce qui est reçu
+        logger.info(f"🧪 [bulk_update] request.data type: {type(request.data)}")
+        logger.info(f"🧪 [bulk_update] request.data: {request.data}")
+        logger.info(f"🧪 [bulk_update] request.data.get('ids'): {request.data.get('ids')}")
+        logger.info(f"🧪 [bulk_update] request.data.get('patch'): {request.data.get('patch')}")
+        logger.info(f"🧪 [bulk_update] request.data.get('mode'): {request.data.get('mode')}")
+
+        # raise PermissionDenied("Test 403: You do not have permission to view users")
+        # raise Exception("Test 500: Simulated server error")
+        # from rest_framework.response import Response
+        # raise Http404("Ressource introuvable")
+        # return Response(
+        #     {"detail": "sssmendouuu"},
+        #     status=429
+        # )
+        # import time
+        # time.sleep(3)  # Simuler lenteur
+        # from rest_framework.response import Response
+        # return Response(
+        #     {"detail": "Request timeout"},
+        #     status=429
+        # )
 
         try:
             # ===== INPUT VALIDATION =====
@@ -1081,7 +1140,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
                 )
 
-            # ⭐ NOUVEAU: Désactiver signals pendant bulk operation
+            # Désactiver signals pendant bulk operation
             with disable_signals():
                 if mode == 'strict':
                     try:
@@ -1165,7 +1224,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     # ⭐ NOUVEAU: Invalidation unique en mode partial
                     invalidate_tag(client_id, 'users')
 
-            return self._build_bulk_success_response(results, len(ids))
+            return self._build_bulk_success_response(results, len(ids), operation='update')
 
         except StandardizedValidationError as e:
             # ✅ FIX: Extract message properly from detail dict
@@ -1196,6 +1255,8 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 total=0,
                 error_message='An unexpected error occurred. Please try again or contact support.'
             )
+
+
         
     @action(detail=False, methods=['delete'], url_path='bulk-delete')
     def bulk_delete(self, request):
@@ -1208,8 +1269,22 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             'client_id': self.get_client_id()
         })
 
-        import time
-        time.sleep(2)  # Simuler lenteur
+        # raise PermissionDenied("Test 403: You do not have permission to view users")
+        raise Exception("Test 500: Simulated server error")
+        # from rest_framework.response import Response
+        # raise Http404("Ressource introuvable")
+        # return Response(
+        #     {"detail": "sssmendouuu"},
+        #     status=429
+        # )
+        # import time
+        # time.sleep(3)  # Simuler lenteur
+        # from rest_framework.response import Response
+        # return Response(
+        #     {"detail": "Request timeout"},
+        #     status=429
+        # )
+
 
         try:
             # ===== INPUT VALIDATION =====
@@ -1442,16 +1517,18 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 success = True
                 message = f"Bulk delete: {success_count} user(s) deleted successfully"
 
-            return Response({
-                'success': success,
-                'summary': {
-                    'requested': len(ids),
-                    'deleted': success_count,
-                    'failed': failed_count
-                },
-                'results': clean_results,
-                'message': message
-            }, status=status_code)
+            # return Response({
+            #     'success': success,
+            #     'summary': {
+            #         'requested': len(ids),
+            #         'deleted': success_count,
+            #         'failed': failed_count
+            #     },
+            #     'results': clean_results,
+            #     'message': message
+            # }, status=status_code)
+
+            return self._build_bulk_success_response(results, len(ids), operation='delete')
 
         except StandardizedValidationError as e:
             # Extract message properly from detail dict
@@ -1733,17 +1810,19 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 success = True
                 message = f"Bulk archive: {success_count} user(s) archived successfully"
 
-            return Response({
-                'success': success,
-                'summary': {
-                    'requested': len(ids),
-                    'archived': success_count,
-                    'failed': failed_count,
-                    'skipped': skipped_count
-                },
-                'results': clean_results,
-                'message': message
-            }, status=status_code)
+            # return Response({
+            #     'success': success,
+            #     'summary': {
+            #         'requested': len(ids),
+            #         'archived': success_count,
+            #         'failed': failed_count,
+            #         'skipped': skipped_count
+            #     },
+            #     'results': clean_results,
+            #     'message': message
+            # }, status=status_code)
+
+            return self._build_bulk_success_response(results, len(ids), operation='archive')
 
         except StandardizedValidationError as e:
             # Extract message properly from detail dict
@@ -2049,79 +2128,170 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             'results': results
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    def _build_bulk_success_response(self, results, total):
+    def _build_bulk_success_response(self, results, total, operation='create'):
         """
         Build success/partial success response for bulk operation
+        
+        This method creates standardized responses for bulk operations with
+        intelligent status determination and operation-specific messaging.
+        
+        Args:
+            results (dict): Dict with 'success', 'failed', 'skipped' lists
+            total (int): Total number of items requested
+            operation (str): Type of operation - 'create', 'update', 'delete', or 'archive'
+        
+        Returns:
+            Response: DRF Response object with appropriate status code
+            
+        Response Format:
+            {
+                'success': True | 'partial' | False,
+                'message': str,
+                'summary': {
+                    'requested': int,
+                    'updated': int,  # or 'created', 'deleted', 'archived'
+                    'failed': int,
+                    'skipped': int
+                },
+                'results': {
+                    'success': [...],
+                    'failed': [...],
+                    'skipped': [...]
+                }
+            }
+        
+        Status Determination:
+            - success=True: 100% success (failed=0, skipped=0) → HTTP 200/201
+            - success='partial': Some succeeded (>0% but <100%) → HTTP 207
+            - success=False: Total failure (0% success) → HTTP 400
         """
-        success_count = len(results['success'])
-        failed_count = len(results['failed'])
+        from rest_framework import status
+        from rest_framework.response import Response
+        
+        # ====================================================================
+        # STEP 1: Count results
+        # ====================================================================
+        
+        success_count = len(results.get('success', []))
+        failed_count = len(results.get('failed', []))
         skipped_count = len(results.get('skipped', []))
-
-        # Log completion
+        
+        # ====================================================================
+        # STEP 2: Determine success status
+        # ====================================================================
+        
+        if failed_count == 0 and skipped_count == 0:
+            # ✅ Full success (100%)
+            success_status = True
+            status_code = status.HTTP_201_CREATED if operation == 'create' else status.HTTP_200_OK
+        elif success_count == 0:
+            # ❌ Total failure (0%)
+            success_status = False
+            status_code = status.HTTP_400_BAD_REQUEST
+        else:
+            # ⚠️ Partial success (>0% but <100%)
+            success_status = 'partial'
+            status_code = status.HTTP_207_MULTI_STATUS
+        
+        # ====================================================================
+        # STEP 3: Build operation-specific message
+        # ====================================================================
+        
+        # Map operation to past tense verb and label
+        OPERATION_LABELS = {
+            'create': ('created', 'Importing Users'),
+            'update': ('updated', 'Bulk Update'),
+            'delete': ('deleted', 'Bulk Delete'),
+            'archive': ('archived', 'Bulk Archive')
+        }
+        
+        verb, operation_label = OPERATION_LABELS.get(
+            operation, 
+            ('processed', 'Bulk Operation')  # Fallback
+        )
+        
+        # Construct message based on status
+        if success_status is True:
+            # Full success
+            message = f"{operation_label} complete"
+        elif success_status == 'partial':
+            # Partial success
+            message = f"{operation_label} partially complete"
+        else:
+            # Total failure
+            message = f"{operation_label} failed"
+        
+        # ====================================================================
+        # STEP 4: Clean results (convert ErrorDetail to strings)
+        # ====================================================================
+        
+        # CRITICAL: Convert all ErrorDetail objects to strings
+        # This prevents serialization issues in DRF Response
+        clean_results = {
+            'success': results.get('success', [])[:]  # Simple copy (no ErrorDetail here)
+        }
+        
+        # Clean failed items
+        clean_failed = []
+        for failed_item in results.get('failed', []):
+            clean_item = failed_item.copy()
+            if 'errors' in clean_item:
+                # Convert each ErrorDetail to string
+                clean_item['errors'] = [str(error) for error in clean_item['errors']]
+            clean_failed.append(clean_item)
+        clean_results['failed'] = clean_failed
+        
+        # Clean skipped items
+        clean_skipped = []
+        for skipped_item in results.get('skipped', []):
+            clean_item = skipped_item.copy()
+            if 'error' in clean_item:
+                # Convert ErrorDetail to string
+                clean_item['error'] = str(clean_item['error'])
+            if 'reason' in clean_item:
+                # Convert ErrorDetail to string
+                clean_item['reason'] = str(clean_item['reason'])
+            clean_skipped.append(clean_item)
+        clean_results['skipped'] = clean_skipped
+        
+        # ====================================================================
+        # STEP 5: Build summary with operation-specific key
+        # ====================================================================
+        
+        # Use verb as key name (e.g., 'updated', 'created', 'deleted')
+        summary = {
+            'requested': total,
+            verb: success_count,  # Dynamic key: 'created', 'updated', 'deleted', etc.
+            'failed': failed_count,
+            'skipped': skipped_count
+        }
+        
+        # ====================================================================
+        # STEP 6: Log completion
+        # ====================================================================
+        
         ctx = ctx_from_request(self.request)
         ctx.update({
-            'event': 'bulk_create_users_completed',
+            'event': f'bulk_{operation}_completed',
             'total': total,
             'success': success_count,
             'failed': failed_count,
-            'skipped': skipped_count
+            'skipped': skipped_count,
+            'success_status': str(success_status)
         })
-        logger.info("Bulk user creation completed", extra=ctx)
-
-        # ✅ IMPORTANT: Convertir TOUS les ErrorDetail en strings avant la Response
-        # Copie profonde pour éviter de modifier l'original
-        clean_results = {
-            'success': results['success'][:],  # Copie simple (pas d'ErrorDetail ici)
-            'failed': [],
-            'skipped': []
-        }
+        logger.info(f"Bulk {operation} completed", extra=ctx)
         
-        # Convertir les erreurs dans failed
-        for failed_item in results['failed']:
-            clean_item = failed_item.copy()
-            if 'errors' in clean_item:
-                # Convertir chaque ErrorDetail en string
-                clean_item['errors'] = [str(error) for error in clean_item['errors']]
-            clean_results['failed'].append(clean_item)
+        # ====================================================================
+        # STEP 7: Return Response
+        # ====================================================================
         
-        # Convertir les erreurs dans skipped
-        for skipped_item in results['skipped']:
-            clean_item = skipped_item.copy()
-            if 'error' in clean_item:
-                # Convertir ErrorDetail en string
-                clean_item['error'] = str(clean_item['error'])
-            clean_results['skipped'].append(clean_item)
-
-        # Determine HTTP status
-        if success_count == 0 and (failed_count > 0 or skipped_count > 0):
-            status_code = status.HTTP_400_BAD_REQUEST
-        elif failed_count > 0 or skipped_count > 0:
-            status_code = status.HTTP_207_MULTI_STATUS
-        else:
-            status_code = status.HTTP_201_CREATED
-
-        # Build message parts
-        message_parts = []
-        if success_count > 0:
-            message_parts.append(f"{success_count} created")
-        if failed_count > 0:
-            message_parts.append(f"{failed_count} failed")
-        if skipped_count > 0:
-            message_parts.append(f"{skipped_count} skipped")
-
         return Response({
-            'success': failed_count == 0 and skipped_count == 0,
-            'message': "Importing Users Complete",
-            'details': ", ".join(message_parts) if message_parts else "No users processed",
-            'summary': {
-                'total': total,
-                'success': success_count,
-                'failed': failed_count,
-                'skipped': skipped_count
-            },
-            'results': clean_results  # ✅ Utiliser les résultats nettoyés
+            'success': success_status,  # True | 'partial' | False
+            'message': message,
+            'summary': summary,
+            'results': clean_results
         }, status=status_code)
-    
+        
     # ====================================================
     
     def _can_grant_superuser(self, current_user):

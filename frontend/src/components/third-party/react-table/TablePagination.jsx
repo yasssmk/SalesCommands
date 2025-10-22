@@ -24,6 +24,7 @@ export default function TablePagination({
   const [open, setOpen] = useState(false);
   const MAX_PAGE_SIZE = 100;
   
+  
   // ✅ État local pour le TextField "Go to"
   const currentPageIndex = getState().pagination.pageIndex;
   const [pageInputValue, setPageInputValue] = useState(String(currentPageIndex + 1));

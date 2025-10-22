@@ -27,7 +27,8 @@ import { useFormik, Form, FormikProvider } from 'formik';
 
 // api
 import { useGetUserRoles, useGetOrganizations, useGetTeams, bulkUpdateUsers } from 'api/admin/users';
-import { displayErrorSnackbar, displaySuccessSnackbar, displayWarningSnackbar } from 'utils/displayError';
+import { displaySuccessSnackbar, displayWarningSnackbar } from 'utils/displayError';
+import { handleFormikError } from 'utils/formErrorHandler';
 
 // project imports
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
@@ -109,7 +110,7 @@ function buildPatchPayload(values) {
   if (values.apply_team && values.team) {
     patch.team = values.team;
   }
-  
+
   return patch;
 }
 
@@ -138,68 +139,54 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
   }, []);
 
   const formik = useFormik({
-    initialValues: buildInitialValues(),
-    validationSchema: BulkEditSchema,
-    onSubmit: async (values, { setSubmitting }) => {
-      try {
-        const patch = buildPatchPayload(values);
-        
-        // Check if at least one field is selected
-        if (Object.keys(patch).length === 0) {
-          displayWarningSnackbar('Please select at least one field to update');
-          setSubmitting(false);
-          return;
-        }
-
-        const result = await bulkUpdateUsers(
-          selectedUserIds, 
-          patch, 
-          'partial',
-          onSyncProgress,
-          onSyncComplete
-        );
-
-        if (result.success) {
-          // ✅ Succès immédiat (pas de timeout)
-          const { summary, message } = result;
-          
-          displaySuccessSnackbar(
-            message || `Bulk update: ${summary.updated} users updated`
-          );
-
-          // Fermer immédiatement si pas de sync
-          if (!syncing) {
-            setSubmitting(false);
-            closeModal?.();
-          }
-        } else {
-          // ⭐ NOUVEAU: Vérifier si c'est un timeout (flag vient de users.js)
-          if (result?.isTimeout) {
-            // ⭐ Timeout détecté → Le sync va démarrer, ne pas afficher d'erreur
-            console.log('[FormUserBulkEdit] Timeout detected, sync will start');
-            setHadTimeout(true);  // Flag pour afficher succès après sync
-            // NE PAS afficher de snackbar d'erreur ici
-          } else {
-            // ❌ Erreur réelle (validation, permissions, etc.) → Afficher l'erreur
-            const errorMessage = result?.message || result?.error?.message || result?.error || 'Failed to update users';
-            
-            displayErrorSnackbar(result);
-            
-            setSubmitting(false);
-            // NE PAS fermer le formulaire en cas d'erreur réelle
-          }
-        }
-      } catch (err) {
-        // ❌ Exception JS (pas un timeout)
-        const errorMsg = err?.message || 'Unexpected error';
-        
-        displayErrorSnackbar(err);
-        
+  initialValues: buildInitialValues(),
+  validationSchema: BulkEditSchema,
+  onSubmit: async (values, { setSubmitting }) => {
+    try {
+      const patch = buildPatchPayload(values);
+      
+      // Check if at least one field is selected
+      if (Object.keys(patch).length === 0) {
+        displayWarningSnackbar('Please select at least one field to update');
         setSubmitting(false);
+        return;
       }
-    }
-  });
 
+      const result = await bulkUpdateUsers(
+        selectedUserIds, 
+        patch, 
+        'partial',
+        onSyncProgress,
+        onSyncComplete
+      );
+
+      // ✅ Succès complet uniquement
+      if (result.success === true) {
+        displaySuccessSnackbar(`${result.summary.updated} users updated successfully`);
+        
+        if (!syncing) {
+          closeModal?.();
+        }
+      } 
+      // ⏱️ Timeout
+      else if (result.isTimeout) {
+        setHadTimeout(true);
+      } 
+      // ❌ Tout le reste (partial, false, errors)
+      else {
+        // Pass closeModal as onComplete callback
+        handleFormikError(result, formik, {
+          onComplete: closeModal  // 🔒 Ferme le modal après gestion
+        });
+      }
+    } catch (err) {
+      //Pass closeModal for exceptions too
+      handleFormikError(err, formik, {
+        onComplete: closeModal  // 🔒 Ferme le modal après gestion
+      });
+    }
+  }
+});
 
   const { errors, touched, handleSubmit, isSubmitting, setFieldValue, values } = formik;
 
