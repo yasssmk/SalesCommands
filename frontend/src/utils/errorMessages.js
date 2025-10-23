@@ -26,7 +26,7 @@ import { isRetryableError } from './retryLogic';
 const getSeverityFromStatus = (status) => {
   if (status === 401 || status === 408 || status === 429) return 'warning';
   if (status === 403) return 'error';
-  if (status === 404) return 'info';
+  if (status === 404) return 'warning';
   if (status >= 500) return 'error';
   if (status >= 400 && status < 500) return 'warning';
   return 'error'; // Default
@@ -225,7 +225,10 @@ export const getErrorDisplayInfo = (error) => {
   // ====================================================================
   // STEP 2: Extract status code
   // ====================================================================
-  const status = error?.response?.status || error?.status || 0;
+  const status = error?.response?.status || 
+               error?.status || 
+               error?.error?.status ||  // Bulk operation format
+               0;
   
   if (process.env.NODE_ENV === 'development') {
     console.group('🔍 [getErrorDisplayInfo] Processing error');

@@ -14,11 +14,25 @@ import { PopupTransition } from 'components/@extended/Transitions';
 import BulkOperationSyncDialog from 'components/bulk/BulkOperationSyncDialog';
 import { bulkDeleteUsers } from 'api/admin/users';
 import {  displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
+import { showSnackbar } from 'utils/snackbar';
 import { handleBulkError } from 'utils/bulkErrorHandler';
 import { useBulkOperationSync } from 'hooks/useBulkOperationSync';
 
 // assets
 import DeleteFilled from '@ant-design/icons/DeleteFilled';
+
+// ==============================|| HELPER ||============================== //
+
+/**
+ * Check if value is a plain object (not Array, not null)
+ */
+const isPlainObject = (obj) => {
+  return obj !== null && 
+         typeof obj === 'object' && 
+         !Array.isArray(obj) &&
+         Object.prototype.toString.call(obj) === '[object Object]';
+};
+
 
 // ==============================|| User - BULK DELETE ||============================== //
 
@@ -45,57 +59,63 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
     closeDelay: 300
   });
 
-  const deletehandler = async () => {
-    try {
-      setDeleting(true);
-      
-      const res = await bulkDeleteUsers(
-        selectedIds, 
-        'partial', 
-        onSyncProgress,
-        onSyncComplete
+ const deletehandler = async () => {
+  let apiError = null;  // ⭐ Store original error for handleBulkError
+  
+  try {
+    setDeleting(true);
+    
+    const res = await bulkDeleteUsers(
+      selectedIds, 
+      'partial', 
+      onSyncProgress,
+      onSyncComplete
+    );
+    
+    // ⭐ Store the error if res is not success
+    if (res && !res.success && !res.isTimeout) {
+      // Create an error-like object from the response for proper handling
+      apiError = res;
+    }
+    
+    if (res?.success === true) {
+      // ✅ Succès immédiat (pas de timeout)
+      displaySuccessSnackbar(
+        `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`
       );
-
       
-      if (res?.success === true) {
-        // ✅ Succès immédiat (pas de timeout)
-        displaySuccessSnackbar(
-          `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`
-        );
-        
-        // Fermer immédiatement si pas de sync
-        if (!syncing) {
+      // Fermer immédiatement si pas de sync
+      if (!syncing) {
+        handleClose?.();
+        onDeleteComplete?.();
+      }
+    } else if (res?.isTimeout) {
+      console.log('[AlertUserBulkDelete] Timeout detected, sync will start');
+      setHadTimeout(true);  // Flag pour afficher succès après sync
+      // NE PAS afficher de snackbar d'erreur ici
+    } else {
+      // ⭐ All errors (partial 1-99% or total 0%) handled by handleBulkError
+      handleBulkError(res, apiError, {
+        onComplete: () => {
           handleClose?.();
           onDeleteComplete?.();
         }
-      } else if (res?.isTimeout) {
-
-          console.log('[AlertUserBulkDelete] Timeout detected, sync will start');
-          setHadTimeout(true);  // Flag pour afficher succès après sync
-          // NE PAS afficher de snackbar d'erreur ici
-        } else {
-          handleBulkError(res, {
-          onComplete: () => {
-          handleClose?.();
-          onDeleteComplete?.();
-          }
-       });
-            }
-    } catch (err) {
-      console.error('[AlertUserBulkDelete] Exception:', err);
-      
-      // Utiliser handleBulkError si c'est une structure bulk
-      const handled = handleBulkError(err);
-      
-      if (!handled) {
-        // Pas une réponse bulk → erreur générique
-        displayErrorSnackbar(err);
-      }
-
-    } finally {
-      setDeleting(false);
+      });
     }
-  };
+  } catch (err) {
+    console.error('[AlertUserBulkDelete] Exception:', err);
+    
+    // For unexpected exceptions
+    displayErrorSnackbar(err);
+    
+    // Close modal
+    handleClose?.();
+    onDeleteComplete?.();
+
+  } finally {
+    setDeleting(false);
+  }
+};
 
   return (
     <Dialog

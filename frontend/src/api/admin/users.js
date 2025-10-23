@@ -1340,7 +1340,8 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
         console.log('[bulkDeleteUsers] returning structured error from backend');
         return {
           ...result.data,
-          success: false
+          success: false,
+          status: result.status 
         };
       }
     }
@@ -1505,7 +1506,8 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
         console.log('[bulkUpdateUsers] returning structured error from backend');
         return {
           ...result.data,
-          success: false
+          success: false,
+          status: result.status 
         };
       }
     }

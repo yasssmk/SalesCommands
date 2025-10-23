@@ -642,6 +642,21 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 #     status=429
                 # )
 
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    "event": "user_delete_not_found",
+                    "resource": "user",
+                    "target_id": str(kwargs.get('pk', '-')),
+                    "action": "delete",
+                    "scope": "client",
+                })
+                logger.info("user_delete_not_found", extra=ctx)
+
+                # return Response({
+                #     'success': False,
+                #     'error': UsersErrorMessages.USER_NOT_FOUND
+                # }, status=status.HTTP_404_NOT_FOUND)
+
                 user = self.get_object()
 
                 # Mémoriser le client avant suppression
@@ -1032,29 +1047,6 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             'client_id': self.get_client_id()
         })
 
-        # 🧪 DEBUG: Log ce qui est reçu
-        logger.info(f"🧪 [bulk_update] request.data type: {type(request.data)}")
-        logger.info(f"🧪 [bulk_update] request.data: {request.data}")
-        logger.info(f"🧪 [bulk_update] request.data.get('ids'): {request.data.get('ids')}")
-        logger.info(f"🧪 [bulk_update] request.data.get('patch'): {request.data.get('patch')}")
-        logger.info(f"🧪 [bulk_update] request.data.get('mode'): {request.data.get('mode')}")
-
-        # raise PermissionDenied("Test 403: You do not have permission to view users")
-        # raise Exception("Test 500: Simulated server error")
-        # from rest_framework.response import Response
-        # raise Http404("Ressource introuvable")
-        # return Response(
-        #     {"detail": "sssmendouuu"},
-        #     status=429
-        # )
-        # import time
-        # time.sleep(3)  # Simuler lenteur
-        # from rest_framework.response import Response
-        # return Response(
-        #     {"detail": "Request timeout"},
-        #     status=429
-        # )
-
         try:
             # ===== INPUT VALIDATION =====
             if not isinstance(request.data, dict):
@@ -1185,7 +1177,9 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         )
                 else:
                     # Partial mode
+                    totalCount = 0
                     for user_id in ids:
+                        totalCount += 1
                         if user_id in invalid_ids:
                             continue
                         user = users_dict[user_id]
@@ -1379,7 +1373,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     f"Strict mode: {len(protected_users)} protected user(s) found"
                 )
 
-            # ⭐ NOUVEAU: Désactiver signals pendant bulk operation
+            # Désactiver signals pendant bulk operation
             with disable_signals():
                 if mode == 'strict':
                     try:
@@ -1430,14 +1424,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         )
                 else:
                     # Partial mode
-                    testCount = 0
                     for user_id in ids:
                         
 
                         if user_id in invalid_ids:
                             continue
-                        
-                        testCount += 1
 
                         is_protected = any(p['id'] == user_id for p in protected_users)
                         if is_protected:
@@ -1453,9 +1444,6 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         
                         with transaction.atomic():
                             try:
-                                if testCount == 1:
-                                    print ("[TEST ERRASE]: HAHAHAHAHHAHAHAHAHAHAHAHHAHAHAXXXXXX")
-                                    raise Http404("Ressource introuvable")
                                 user_email = user.email
                                 user_name = user.get_full_name()
                                 user.delete()

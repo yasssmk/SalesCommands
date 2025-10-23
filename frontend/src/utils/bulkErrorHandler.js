@@ -14,7 +14,9 @@
  * @module utils/bulkErrorHandler
  */
 
-import { displayErrorSnackbar, displayWarningSnackbar } from './displayError';
+import { displayWarningSnackbar } from './displayError';
+import { showSnackbar } from './snackbar';
+import { getErrorDisplayInfo } from './errorMessages';
 
 // ==============================|| HELPER FUNCTIONS ||============================== //
 
@@ -67,7 +69,7 @@ const isBulkOperation = (data) => {
  * Analyzes bulk operation responses and displays appropriate snackbars.
  * 
  * **Behavior**:
- * - 0% success → ERROR snackbar with backend message
+ * - 0% success → ERROR snackbar with backend message (extracted from originalError)
  * - 1-99% success → WARNING snackbar with counts
  * - Always executes onComplete callback at the end
  * 
@@ -80,7 +82,7 @@ const isBulkOperation = (data) => {
  * } else if (res?.isTimeout) {
  *   // Wait for sync
  * } else {
- *   handleBulkError(res, { 
+ *   handleBulkError(res, null, { 
  *     onComplete: () => {
  *       closeModal();
  *       onComplete();
@@ -90,11 +92,12 @@ const isBulkOperation = (data) => {
  * ```
  * 
  * @param {Object} responseData - Bulk operation response from backend
+ * @param {Error} originalError - Original Axios error (optional, for 0% failures)
  * @param {Object} options - Handler options
  * @param {Function} options.onComplete - Callback to execute after displaying snackbar
  * @returns {boolean} true if handled, false if not a bulk operation
  */
-export function handleBulkError(responseData, options = {}) {
+export function handleBulkError(responseData, originalError = null, options = {}) {
   const { onComplete = null } = options;
   
   // ====================================================================
@@ -143,7 +146,8 @@ export function handleBulkError(responseData, options = {}) {
   const skippedCount = summary?.skipped || 0;
   
   // Calculate success rate
-  const successRate = requested > 0 ? (successCount / requested) * 100 : 0;
+  const successRate = requested > 0 ?
+                      (successCount / requested) * 100 : 0;
   
   if (process.env.NODE_ENV === 'development') {
     console.log('[handleBulkError] Counts:', {
@@ -163,15 +167,21 @@ export function handleBulkError(responseData, options = {}) {
   
   // Case 1: Total failure (0% success)
   if (successRate === 0) {
-    // Use backend message (most accurate and detailed)
-    const errorMessage = backendMessage || 
-                        `Operation failed: all ${requested} items failed`;
-    
     if (process.env.NODE_ENV === 'development') {
       console.log('[handleBulkError] Total failure (0%), displaying ERROR snackbar');
     }
-    
-    displayErrorSnackbar(errorMessage)
+    console.log ('[handleBulkError 12]', responseData)
+    const { message, severity } = getErrorDisplayInfo(responseData);
+    console.log ('[handleBulkError 2]', message, severity)
+  
+    // Display with appropriate severity
+    if (severity === 'error') {
+      showSnackbar.error(message);
+    } else if (severity === 'warning') {
+      showSnackbar.warning(message);
+    } else {
+      showSnackbar.info(message);
+    }
     
     snackbarDisplayed = true;
   }
@@ -219,8 +229,3 @@ export function handleBulkError(responseData, options = {}) {
   return snackbarDisplayed;
 }
 
-// ==============================|| DEFAULT EXPORT ||============================== //
-
-export default {
-  handleBulkError
-};

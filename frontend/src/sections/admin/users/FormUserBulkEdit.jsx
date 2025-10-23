@@ -174,15 +174,15 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
       } 
       // ❌ Tout le reste (partial, false, errors)
       else {
-        // Pass closeModal as onComplete callback
+        // ⭐ NEW: Pass closeModal as onComplete callback
         handleFormikError(result, formik, {
-          onComplete: closeModal  // 🔒 Ferme le modal après gestion
+          // onComplete: closeModal  // 🔒 Ferme le modal après gestion
         });
       }
     } catch (err) {
-      //Pass closeModal for exceptions too
+      // ⭐ NEW: Pass closeModal for exceptions too
       handleFormikError(err, formik, {
-        onComplete: closeModal  // 🔒 Ferme le modal après gestion
+        // onComplete: closeModal  // 🔒 Ferme le modal après gestion
       });
     }
   }
