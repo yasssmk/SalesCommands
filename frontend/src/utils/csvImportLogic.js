@@ -18,6 +18,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { parseCSVFile } from './csvParser';
 import { handleApiError } from './errorHandler';
+import { handleBulkError } from './bulkErrorHandler';
 
 // ==============================|| MAIN HOOK ||============================== //
 
@@ -144,181 +145,225 @@ export function useCSVImport(config, open = false) {
   }, [config, lookups]);
 
   // Handle import
-  const handleImport = useCallback(async () => {
-    if (!validationResult || validationResult.validRows.length === 0) {
-      console.warn('[useCSVImport] handleImport → no validRows, abort');
-      return;
-    }
+  // Handle import
+const handleImport = useCallback(async () => {
+  if (!validationResult || validationResult.validRows.length === 0) {
+    console.warn('[useCSVImport] handleImport → no validRows, abort');
+    return;
+  }
 
-    console.log(`[useCSVImport] Starting import for ${config.entity}`);
+  console.log(`[useCSVImport] Starting import for ${config.entity}`);
 
-    setImporting(true);
-    setImportResponse(null);
-    setParseError(null);
+  setImporting(true);
+  setImportResponse(null);
+  setParseError(null);
 
-    const totalToImport = validationResult.validRows.length;
-    const BATCH_SIZE = config.options?.batchSize || 50;
-    const BATCH_DELAY = config.options?.batchDelay || 50;
+  const totalToImport = validationResult.validRows.length;
+  const BATCH_SIZE = config.options?.batchSize || 50;
+  const BATCH_DELAY = config.options?.batchDelay || 50;
 
-    setImportProgress({
-      total: totalToImport,
-      processed: 0,
-      success: 0,
-      failed: 0,
-      skipped: 0
-    });
+  setImportProgress({
+    total: totalToImport,
+    processed: 0,
+    success: 0,
+    failed: 0,
+    skipped: 0
+  });
 
-    const apiData = config.prepareForAPI(validationResult.validRows);
+  const apiData = config.prepareForAPI(validationResult.validRows);
 
-    const cumulativeResults = {
-      success: [],
-      failed: [],
-      skipped: []
-    };
+  const cumulativeResults = {
+    success: [],
+    failed: [],
+    skipped: []
+  };
 
-    let topLevelHttpStatus = 0;
-    let topLevelErrorMessage = '';
+  let topLevelHttpStatus = 0;
+  let topLevelErrorMessage = '';
 
-    try {
-      for (let i = 0; i < apiData.length; i += BATCH_SIZE) {
-        const batch = apiData.slice(i, Math.min(i + BATCH_SIZE, apiData.length));
-        const batchIndex = i / BATCH_SIZE + 1;
+  try {
+    for (let i = 0; i < apiData.length; i += BATCH_SIZE) {
+      const batch = apiData.slice(i, Math.min(i + BATCH_SIZE, apiData.length));
+      const batchIndex = i / BATCH_SIZE + 1;
 
-        console.log(`[useCSVImport] Batch ${batchIndex} (${i + 1} → ${i + batch.length})`);
+      console.log(`[useCSVImport] Batch ${batchIndex} (${i + 1} → ${i + batch.length})`);
 
-        try {
-          const batchResponse = await config.bulkCreate(batch, 'partial');
-          console.debug('[useCSVImport] [BatchResponse]', batchResponse);
+      try {
+        const batchResponse = await config.bulkCreate(batch, 'partial');
+        console.debug('[useCSVImport] [BatchResponse]', batchResponse);
 
-          // No results returned
-          if (!batchResponse || (!batchResponse.results && batchResponse.success !== true)) {
-            const msg = batchResponse?.error
-              ? handleApiError(batchResponse.error)
-              : 'Bulk import request failed (no results)';
+        // Check if this is an error response (success: false)
+        if (batchResponse?.success === false) {
+          console.debug('[useCSVImport] Error response path - batchResponse structure:', {
+            success: batchResponse.success,
+            hasError: !!batchResponse?.error,
+            errorType: typeof batchResponse?.error,
+            errorKeys: batchResponse?.error ? Object.keys(batchResponse.error) : [],
+            batchResponseKeys: Object.keys(batchResponse)
+          });
 
-            const st = batchResponse?.error?.response?.status || batchResponse?.httpStatus || 0;
-            if (st) topLevelHttpStatus = st;
-            if (msg) topLevelErrorMessage = msg;
+          // Extract error object
+          const errorObj = batchResponse?.error;
+          
+          // Extract status (error object is plain { status, message, response })
+          const st = errorObj?.status ||
+                    errorObj?.response?.status ||
+                    batchResponse?.httpStatus ||
+                    batchResponse?.status ||
+                    0;
+          
+          // Extract message
+          const msg = errorObj?.message ||
+                     batchResponse?.message ||
+                     'Bulk import request failed';
 
-            console.warn('[useCSVImport] Batch error (no results):', { status: st, msg });
-
-            const failedBatch = batch.map((item, idx) => ({
-              row: i + idx + 1,
-              email: item?.email || '(unknown)',
-              errors: [msg || 'Request failed']
-            }));
-
-            cumulativeResults.failed.push(...failedBatch);
-          }
-          // Results returned
-          else if (batchResponse?.results) {
-            cumulativeResults.success.push(...(batchResponse.results.success || []));
-            cumulativeResults.failed.push(...(batchResponse.results.failed || []));
-            cumulativeResults.skipped.push(...(batchResponse.results.skipped || []));
-          }
-          // Success without details
-          else if (batchResponse?.success === true) {
-            console.warn('[useCSVImport] Success but no results array');
-            const skippedBatch = batch.map((item, idx) => ({
-              row: i + idx + 1,
-              email: item?.email || '(unknown)',
-              reason: 'No detailed results returned by server'
-            }));
-            cumulativeResults.skipped.push(...skippedBatch);
-          }
-
-          // Update progress
-          const processed = Math.min(i + BATCH_SIZE, apiData.length);
-          setImportProgress(prev => ({
-            ...prev,
-            processed,
-            success: cumulativeResults.success.length,
-            failed: cumulativeResults.failed.length,
-            skipped: cumulativeResults.skipped.length
-          }));
-
-          if (processed < apiData.length) {
-            await new Promise(r => setTimeout(r, BATCH_DELAY));
-          }
-        } catch (batchErr) {
-          const msg = handleApiError(batchErr);
-          const st = batchErr?.response?.status || 0;
+          // Store for finalResponse
           if (st) topLevelHttpStatus = st;
           if (msg) topLevelErrorMessage = msg;
 
-          console.error(`[useCSVImport] Batch ${batchIndex} exception`, { status: st, msg });
+          console.warn('[useCSVImport] Batch error (success: false):', { status: st, msg, errorObj });
 
+          // Mark entire batch as failed
           const failedBatch = batch.map((item, idx) => ({
             row: i + idx + 1,
             email: item?.email || '(unknown)',
-            errors: [msg || 'Batch import failed']
+            errors: [msg || 'Request failed']
           }));
+
           cumulativeResults.failed.push(...failedBatch);
-
-          const processed = Math.min(i + BATCH_SIZE, apiData.length);
-          setImportProgress(prev => ({
-            ...prev,
-            processed,
-            failed: cumulativeResults.failed.length
-          }));
         }
-      }
+        // Results returned with data
+        else if (batchResponse?.results) {
+          cumulativeResults.success.push(...(batchResponse.results.success || []));
+          cumulativeResults.failed.push(...(batchResponse.results.failed || []));
+          cumulativeResults.skipped.push(...(batchResponse.results.skipped || []));
+        }
+        // Success without details
+        else {
+          console.warn('[useCSVImport] Unexpected response format:', batchResponse);
+          const skippedBatch = batch.map((item, idx) => ({
+            row: i + idx + 1,
+            email: item?.email || '(unknown)',
+            reason: 'No detailed results returned by server'
+          }));
+          cumulativeResults.skipped.push(...skippedBatch);
+        }
 
-      const finalResponse = {
-        success: cumulativeResults.failed.length === 0 && cumulativeResults.skipped.length === 0,
-        message: `Import completed: ${cumulativeResults.success.length} created, ${cumulativeResults.failed.length} failed, ${cumulativeResults.skipped.length} skipped`,
-        summary: {
-          total: totalToImport,
+        // Update progress
+        const processed = Math.min(i + BATCH_SIZE, apiData.length);
+        setImportProgress(prev => ({
+          ...prev,
+          processed,
           success: cumulativeResults.success.length,
           failed: cumulativeResults.failed.length,
           skipped: cumulativeResults.skipped.length
-        },
-        results: cumulativeResults,
-        httpStatus: topLevelHttpStatus || undefined,
-        errorMessage: topLevelErrorMessage || undefined
-      };
+        }));
 
-      console.debug('[useCSVImport] FinalResponse', finalResponse);
-      setImportResponse(finalResponse);
+        if (processed < apiData.length) {
+          await new Promise(r => setTimeout(r, BATCH_DELAY));
+        }
+      } catch (batchErr) {
+        const msg = handleApiError(batchErr);
+        const st = batchErr?.response?.status || 0;
+        if (st) topLevelHttpStatus = st;
+        if (msg) topLevelErrorMessage = msg;
 
-      return finalResponse;
+        console.error(`[useCSVImport] Batch ${batchIndex} exception`, { status: st, msg });
 
-    } catch (err) {
-      const msg = handleApiError(err);
-      const st = err?.response?.status || 0;
+        const failedBatch = batch.map((item, idx) => ({
+          row: i + idx + 1,
+          email: item?.email || '(unknown)',
+          errors: [msg || 'Batch import failed']
+        }));
+        cumulativeResults.failed.push(...failedBatch);
 
-      console.error('[useCSVImport] handleImport global exception', { status: st, msg });
-
-      const errorResponse = {
-        success: false,
-        message: msg || 'Import failed',
-        summary: {
-          total: totalToImport,
-          success: 0,
-          failed: totalToImport,
-          skipped: 0
-        },
-        results: {
-          success: [],
-          failed: apiData.map((item, idx) => ({
-            row: idx + 1,
-            email: item?.email || '(unknown)',
-            errors: [msg || 'Import failed']
-          })),
-          skipped: []
-        },
-        httpStatus: st || undefined,
-        errorMessage: msg || undefined
-      };
-
-      setImportResponse(errorResponse);
-      return errorResponse;
-
-    } finally {
-      setImportProgress(prev => ({ ...prev, processed: totalToImport }));
-      setImporting(false);
+        const processed = Math.min(i + BATCH_SIZE, apiData.length);
+        setImportProgress(prev => ({
+          ...prev,
+          processed,
+          failed: cumulativeResults.failed.length
+        }));
+      }
     }
-  }, [config, validationResult]);
+
+    // Debug log before building response
+    console.debug('[useCSVImport] Before finalResponse:', { 
+      topLevelHttpStatus, 
+      topLevelErrorMessage,
+      successCount: cumulativeResults.success.length,
+      failedCount: cumulativeResults.failed.length
+    });
+
+    const finalResponse = {
+      success: cumulativeResults.failed.length === 0 && cumulativeResults.skipped.length === 0,
+      message: `Import completed: ${cumulativeResults.success.length} created, ${cumulativeResults.failed.length} failed, ${cumulativeResults.skipped.length} skipped`,
+      summary: {
+        total: totalToImport,
+        success: cumulativeResults.success.length,
+        failed: cumulativeResults.failed.length,
+        skipped: cumulativeResults.skipped.length
+      },
+      results: cumulativeResults,
+      httpStatus: topLevelHttpStatus || undefined,
+      errorMessage: topLevelErrorMessage || undefined
+    };
+
+    console.debug('[useCSVImport] FinalResponse', finalResponse);
+    setImportResponse(finalResponse);
+
+    // Display snackbar for 0% success (total failure)
+    if (finalResponse.success === false && finalResponse.summary.success === 0) {
+      console.log('[useCSVImport] 0% success detected → calling handleBulkError for snackbar');
+      handleBulkError(finalResponse, null, {
+        onComplete: null
+      });
+    }
+
+    return finalResponse;
+
+  } catch (err) {
+    const msg = handleApiError(err);
+    const st = err?.response?.status || 0;
+
+    console.error('[useCSVImport] handleImport global exception', { status: st, msg });
+
+    const errorResponse = {
+      success: false,
+      message: msg || 'Import failed',
+      summary: {
+        total: totalToImport,
+        success: 0,
+        failed: totalToImport,
+        skipped: 0
+      },
+      results: {
+        success: [],
+        failed: apiData.map((item, idx) => ({
+          row: idx + 1,
+          email: item?.email || '(unknown)',
+          errors: [msg || 'Import failed']
+        })),
+        skipped: []
+      },
+      httpStatus: st || undefined,
+      errorMessage: msg || undefined
+    };
+
+    setImportResponse(errorResponse);
+
+    // Display snackbar for 0% success in catch block
+    console.log('[useCSVImport] Exception with 0% success → calling handleBulkError for snackbar');
+    handleBulkError(errorResponse, null, {
+      onComplete: null
+    });
+
+    return errorResponse;
+
+  } finally {
+    setImportProgress(prev => ({ ...prev, processed: totalToImport }));
+    setImporting(false);
+  }
+}, [config, validationResult]);
 
   // Handle retry
   const handleRetry = useCallback(async () => {

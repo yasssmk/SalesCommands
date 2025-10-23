@@ -69,7 +69,7 @@ const isBulkOperation = (data) => {
  * Analyzes bulk operation responses and displays appropriate snackbars.
  * 
  * **Behavior**:
- * - 0% success → ERROR snackbar with backend message (extracted from originalError)
+ * - 0% success → ERROR snackbar with backend message (from errorMessage field)
  * - 1-99% success → WARNING snackbar with counts
  * - Always executes onComplete callback at the end
  * 
@@ -130,24 +130,28 @@ export function handleBulkError(responseData, originalError = null, options = {}
   }
   
   // ====================================================================
-  // STEP 2: Extract counts from summary
+  // STEP 2: Extract counts from summary (support both formats)
   // ====================================================================
   
-  const requested = summary?.requested || 0;
+  // ⭐ NEW: Support two formats
+  // Format 1 (bulk operations): { requested, created/updated/deleted/archived, failed, skipped }
+  // Format 2 (CSV import): { total, success, failed, skipped }
   
-  // The success count can be under different keys depending on operation
+  const requested = summary?.requested || summary?.total || 0;
+  
+  // Try Format 1 first (bulk ops), then Format 2 (CSV import)
   const successCount = summary?.updated || 
                       summary?.created || 
                       summary?.deleted || 
                       summary?.archived || 
+                      summary?.success ||  // ⭐ CSV import format
                       0;
   
   const failedCount = summary?.failed || 0;
   const skippedCount = summary?.skipped || 0;
   
   // Calculate success rate
-  const successRate = requested > 0 ?
-                      (successCount / requested) * 100 : 0;
+  const successRate = requested > 0 ? (successCount / requested) * 100 : 0;
   
   if (process.env.NODE_ENV === 'development') {
     console.log('[handleBulkError] Counts:', {
@@ -170,17 +174,43 @@ export function handleBulkError(responseData, originalError = null, options = {}
     if (process.env.NODE_ENV === 'development') {
       console.log('[handleBulkError] Total failure (0%), displaying ERROR snackbar');
     }
-    console.log ('[handleBulkError 12]', responseData)
-    const { message, severity } = getErrorDisplayInfo(responseData);
-    console.log ('[handleBulkError 2]', message, severity)
-  
+    
+    // ⭐ CRITICAL FIX: Use errorMessage field for 0% failures, not the summary message
+    const errorMessage = responseData.errorMessage || 
+                        responseData.message || 
+                        'Operation failed';
+    
+    // ⭐ Extract status for proper severity mapping
+    const status = responseData.httpStatus || 
+                  responseData.status || 
+                  0;
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[handleBulkError] Error details:', { 
+        errorMessage, 
+        status,
+        hasErrorMessage: !!responseData.errorMessage,
+        hasMessage: !!responseData.message
+      });
+    }
+    
+    // Map status to severity
+    let severity = 'error';
+    if (status === 404) {
+      severity = 'warning';
+    } else if (status === 403 || status >= 500) {
+      severity = 'error';
+    } else if (status >= 400) {
+      severity = 'warning';
+    }
+    
     // Display with appropriate severity
     if (severity === 'error') {
-      showSnackbar.error(message);
+      showSnackbar.error(errorMessage);
     } else if (severity === 'warning') {
-      showSnackbar.warning(message);
+      showSnackbar.warning(errorMessage);
     } else {
-      showSnackbar.info(message);
+      showSnackbar.info(errorMessage);
     }
     
     snackbarDisplayed = true;
@@ -228,4 +258,3 @@ export function handleBulkError(responseData, originalError = null, options = {}
   
   return snackbarDisplayed;
 }
-

@@ -31,6 +31,8 @@ import useLocalStorage from 'hooks/useLocalStorage';
 import UserCSVImportModal from 'sections/admin/users/UserCSVImportModal';
 import { displayErrorSnackbar, displaySuccessSnackbar, displayWarningSnackbar } from 'utils/displayError';
 
+import { notifyCSVImportOutcome } from 'utils/csvImportNotifications';
+
 // formatting
 import { formatDateTime } from 'config/formatters';
 
@@ -190,7 +192,7 @@ export default function UserListPage() {
     });
   }, []);
 
-  // ✅ NOUVEAU: Réinitialiser le tri quand la recherche change
+  // Réinitialiser le tri quand la recherche change
   // Évite les incohérences (ex: tri par "Team" alors que la recherche filtre les teams)
   useEffect(() => {
     if (search !== '') {
@@ -221,60 +223,34 @@ export default function UserListPage() {
         setCsvImportModal(true);
     }, []);
 
-   const handleImportCSV = useCallback((response) => {
-      // --- debug utile en dev
-      if (process.env.NODE_ENV === 'development') {
-        console.debug('[Users] onImport payload:', response);
-      }
 
-      // lecture sûre des compteurs
-      const failed  = Number(response?.summary?.failed  ?? 0);
-      const skipped = Number(response?.summary?.skipped ?? 0);
-      const success = Number(response?.summary?.success ?? 0);
+  const handleImportCSV = useCallback((response) => {
+    // Debug utile en dev
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('[Users] onImport payload:', response);
+    }
 
-      // succès "clean" = success>0 et aucun failed/skip
-      const isCleanSuccess = !!response?.success && failed === 0 && skipped === 0 && success > 0;
+    notifyCSVImportOutcome(response, {
+      entityLabel: 'user(s)'
+    });
 
-      // message backend prioritaire
-      const backendMessage = typeof response?.message === 'string' ? response.message.trim() : '';
+    // Force le refetch via revalidateMultiple (comme insertUser)
+    revalidateMultiple([
+      '/client/users/',           // Liste users (tous les appels)
+      '/client/client-accounts/'  // Stats seats
+    ]);
 
-      // fallback si pas de message backend
-      let fallback = '';
-      if (response?.summary) {
-        const parts = [];
-        parts.push(`${success} imported`);
-        if (failed  > 0) parts.push(`${failed} failed`);
-        if (skipped > 0) parts.push(`${skipped} skipped`);
-        fallback = parts.join(', ');
-      } else {
-        fallback = response?.success ? 'Import completed' : 'Import failed';
-      }
+    // ✅ Auto-fermeture SEULEMENT si succès clean (100% success, no failures/skips)
+    const failed = Number(response?.summary?.failed ?? 0);
+    const skipped = Number(response?.summary?.skipped ?? 0);
+    const success = Number(response?.summary?.success ?? 0);
+    const isCleanSuccess = !!response?.success && failed === 0 && skipped === 0 && success > 0;
 
-      const text = backendMessage || fallback;
-
-      // sévérité du toast
-      const hasIssues = failed > 0 || skipped > 0;
-      if (isCleanSuccess) {
-        displaySuccessSnackbar(text);
-      } else if (hasIssues) {
-        displayWarningSnackbar(text);
-      } else {
-        displayErrorSnackbar(response);
-      }
-
-      // ✅ CORRECTION : Force le refetch via revalidateMultiple (comme insertUser)
-      // Import nécessaire en haut du fichier : import { revalidateMultiple } from 'api/_swr';
-      revalidateMultiple([
-        '/client/users/',                   // Liste users (tous les appels)
-        '/client/client-accounts/'          // Stats seats
-      ]);
-
-      // ✅ auto-fermeture SEULEMENT si succès clean
-      if (isCleanSuccess) {
-        setCsvImportModal(false);
-      }
-      // sinon: on laisse la modale ouverte pour afficher le BulkImportReport
-    }, []);  // ✅ Dependencies vides car revalidateMultiple est stable
+    if (isCleanSuccess) {
+      setCsvImportModal(false);
+    }
+    // Sinon: on laisse la modale ouverte pour afficher le BulkImportReport
+  }, []); // ✅ Dependencies vides car notifyCSVImportOutcome et revalidateMultiple sont stables
 
     // +===== Selecion =========+ //
 

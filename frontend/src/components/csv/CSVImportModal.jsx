@@ -42,6 +42,7 @@ import CSVDataPreview from './CSVDataPreview';
 
 // utils
 import useCSVImport from 'utils/csvImportLogic';
+import { notifyCSVImportOutcome } from 'utils/csvImportNotifications';
 
 // assets
 import DownloadOutlined from '@ant-design/icons/DownloadOutlined';
@@ -95,27 +96,41 @@ export default function CSVImportModal({ config, open, onClose, onImport }) {
   const handleImportWithCallback = async () => {
     const result = await handleImport();
     
-    if (result && onImport) {
+    if (result) {
+    // notifications centralisées (pas de 0% ici, déjà géré par handleBulkError dans le hook)
+    notifyCSVImportOutcome(result, {
+      entityLabel: (config.entityDisplayPlural || config.entityPlural || 'items').toLowerCase()
+    });
+
+    if (onImport) {
       try {
         await onImport(result);
       } catch (err) {
         console.warn('[CSVImportModal] onImport callback error:', err);
       }
     }
-  };
+  }
+};
 
   // Handle retry with callback
   const handleRetryWithCallback = async () => {
     const result = await handleRetry();
     
-    if (result && onImport) {
+    if (result) {
+    // notifications centralisées pour le retry
+    notifyCSVImportOutcome(result, {
+      entityLabel: (config.entityDisplayPlural || config.entityPlural || 'items').toLowerCase()
+    });
+
+    if (onImport) {
       try {
         await onImport(result);
       } catch (err) {
         console.warn('[CSVImportModal] onImport callback error after retry:', err);
       }
     }
-  };
+  }
+};
 
   // Handle close
   const handleClose = () => {
