@@ -59,7 +59,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 from django.conf import settings
 from django.core.cache import cache
 from core.cache_utils import is_redis_healthy
@@ -543,6 +543,13 @@ def get_op(client_id: int, key: str) -> Optional[Dict[str, Any]]:
             except json.JSONDecodeError:
                 pass  # Keep as string if not JSON
         
+        error = op_decoded.get('error')
+        if error:
+            try:
+                op_decoded['error'] = json.loads(error)
+            except json.JSONDecodeError:
+                pass  # Keep as string if not JSON
+        
         return op_decoded
     
     except Exception as e:
@@ -624,7 +631,7 @@ def complete_op(
 def fail_op(
     client_id: int,
     key: str,
-    error: str,
+    error: Union[str, dict],
     ttl: int = DEFAULT_TTL
 ) -> bool:
     """
@@ -663,7 +670,7 @@ def fail_op(
             redis_key,
             mapping={
                 'status': OP_STATUS_FAILED,
-                'error': str(error),
+                'error': json.dumps(error) if isinstance(error, dict) else str(error),
                 'completed_at': now_iso
             }
         )

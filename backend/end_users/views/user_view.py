@@ -24,7 +24,16 @@ from ..serializers.user_serializer import (
 
 )
 import logging
+import json
+from django.urls import reverse
 from django.conf import settings
+
+from core.idempotency import (
+    start_op,
+    complete_op,
+    fail_op,
+    compute_payload_hash,
+    get_owner_from_request)
 
 from core.logging import get_logger, ctx_from_request
 from rest_framework.exceptions import PermissionDenied, APIException
@@ -814,241 +823,66 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         
     # =============== BULK ACTIONS =======================
 
-    @action(detail=False, methods=['post'], url_path='bulk-create')
-    def bulk_create(self, request):
-        """
-        Create multiple users in bulk - VERSION DEBUG
-        """
-        ctx = ctx_from_request(request)
-        ctx.update({
-            'event': 'bulk_create_users',
-            'client_id': self.get_client_id()
-        })
-
-        # raise PermissionDenied("Test 403: You do not have permission to view users")
-        # raise Exception("Test 500: Simulated server error")
-        # from rest_framework.response import Response
-        # raise Http404("Ressource introuvable")
-        # return Response(
-        #     {"detail": "sssmendouuu"},
-        #     status=429
-        # )
-        # import time
-        # time.sleep(3)  # Simuler lenteur
-        # from rest_framework.response import Response
-        # return Response(
-        #     {"detail": "Request timeout"},
-        #     status=429
-        # )
-
-        try:
-            # Validate input
-            if not isinstance(request.data, dict):
-                raise StandardizedValidationError("Request must be a JSON object")
-
-            users_data = request.data.get('users', [])
-            mode = request.data.get('mode', 'partial')
-
-            if not isinstance(users_data, list):
-                raise StandardizedValidationError("'users' must be a list")
-
-            if not users_data:
-                raise StandardizedValidationError("No users provided")
-
-            if mode not in ['partial', 'strict']:
-                raise StandardizedValidationError(
-                    f"Invalid mode '{mode}'. Choose 'partial' or 'strict'"
-                )
-
-            ctx['users_count'] = len(users_data)
-            ctx['mode'] = mode
-            logger.info("Starting bulk user creation", extra=ctx)
-
-            # Initialize results
-            results = {
-                'success': [],
-                'failed': [],
-                'skipped': []
-            }
-
-            # Pre-check for duplicate emails
-            seen_emails = {}
-            for idx, user_data in enumerate(users_data):
-                row_num = idx + 1
-                email = (user_data.get('email') or '').lower().strip()
-                if not email:
-                    continue
-                if email in seen_emails:
-                    results['skipped'].append({
-                        'row': row_num,
-                        'email': email,
-                        'error': f'Duplicate email in request (first at row {seen_emails[email]})'
-                    })
-                else:
-                    seen_emails[email] = row_num
-
-            if mode == 'strict' and results['skipped']:
-                return self._build_bulk_error_response(
-                    results, 
-                    len(users_data),
-                    f"Strict mode: {len(results['skipped'])} duplicate(s) found in request"
-                )
-
-            client_id = self.get_client_id()
-
-            # ⭐ NOUVEAU: Désactiver signals pendant bulk operation
-            with disable_signals():
-                if mode == 'strict':
-                    # All must succeed or none
-                    try:
-                        with transaction.atomic():
-                            for idx, user_data in enumerate(users_data):
-                                row_num = idx + 1
-                                
-                                if any(s['row'] == row_num for s in results['skipped']):
-                                    continue
-
-                                user_data = user_data.copy()
-                                user_data['client_account'] = client_id
-
-                                self._resolve_role_name(user_data)
-                                self._validate_superuser_modification(request.user, user_data)
-
-                                serializer = self.get_serializer(
-                                    data=user_data,
-                                    context=self.get_serializer_context()
-                                )
-                                serializer.is_valid(raise_exception=True)
-                                user = serializer.save()
-
-                                results['success'].append({
-                                    'row': row_num,
-                                    'email': user.email,
-                                    'id': str(user.id),
-                                    'name': user.get_full_name()
-                                })
-                            
-                            # ⭐ NOUVEAU: Invalidation unique APRÈS commit
-                            transaction.on_commit(
-                                lambda: invalidate_tag(client_id, 'users')
-                            )
-                            
-                    except Exception as e:
-                        error_msg = self._format_bulk_error_message(e)
-                        ctx['event'] = 'bulk_create_strict_mode_failed'
-                        ctx['error'] = error_msg
-                        logger.error("Bulk create strict mode failed", extra=ctx, exc_info=True)
-                        
-                        return self._build_bulk_error_response(
-                            {'success': [], 'failed': [], 'skipped': results['skipped']}, 
-                            len(users_data),
-                            f"Strict mode failed: {error_msg}"
-                        )
-                else:
-                    # Partial mode
-                    for idx, user_data in enumerate(users_data):
-                        row_num = idx + 1
-                        email_display = user_data.get('email', 'Unknown')
-
-                        if any(s['row'] == row_num for s in results['skipped']):
-                            continue
-
-                        with transaction.atomic():
-                            try:
-                                user_data = user_data.copy()
-                                user_data['client_account'] = client_id
-
-                                if 'email' in user_data and user_data['email']:
-                                    exists = User.objects.filter(
-                                        email__iexact=user_data['email']
-                                    ).exists()
-                                    if exists:
-                                        raise StandardizedValidationError(
-                                            f"Email address already exists"
-                                        )
-
-                                self._resolve_role_name(user_data)
-                                self._validate_superuser_modification(request.user, user_data)
-
-                                serializer = self.get_serializer(
-                                    data=user_data,
-                                    context=self.get_serializer_context()
-                                )
-
-                                if serializer.is_valid():
-                                    user = serializer.save()
-                                    results['success'].append({
-                                        'row': row_num,
-                                        'email': user.email,
-                                        'id': str(user.id),
-                                        'name': user.get_full_name()
-                                    })
-                                else:
-                                    errors = self._format_serializer_errors(serializer.errors)
-                                    results['failed'].append({
-                                        'row': row_num,
-                                        'email': email_display,
-                                        'errors': errors
-                                    })
-                                    transaction.set_rollback(True)
-                                    
-                            except StandardizedValidationError as e:
-                                error_msg = self._format_bulk_error_message(e)
-                                results['failed'].append({
-                                    'row': row_num,
-                                    'email': email_display,
-                                    'errors': [error_msg]
-                                })
-                                transaction.set_rollback(True)
-                                
-                            except Exception as e:
-                                ctx['event'] = 'bulk_create_unexpected_error'
-                                ctx['row'] = row_num
-                                ctx['error'] = str(e)
-                                logger.error("Unexpected error in bulk create", extra=ctx, exc_info=True)
-                                
-                                error_msg = self._format_bulk_error_message(e)
-                                results['failed'].append({
-                                    'row': row_num,
-                                    'email': email_display,
-                                    'errors': [error_msg]
-                                })
-                                transaction.set_rollback(True)
-                    
-                    # ⭐ NOUVEAU: Invalidation unique en mode partial
-                    invalidate_tag(client_id, 'users')
-
-            # Build successful response
-            return self._build_bulk_success_response(results, len(users_data), operation='create')
-
-        except StandardizedValidationError as e:
-            # Extract message properly from detail dict
-            if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                error_msg = e.detail.get('error', str(e))
-            else:
-                error_msg = str(e)
-            
-            # Use the existing _build_bulk_error_response helper
-            return self._build_bulk_error_response(
-                results={'success': [], 'failed': [], 'skipped': []},
-                total=0,
-                error_message=error_msg
-            )
-        
-
     @action(detail=False, methods=['patch'], url_path='bulk-update')
     def bulk_update(self, request):
-        """
-        Update multiple users in bulk
-        """
-        ctx = ctx_from_request(request) 
-        ctx.update({
-            'event': 'bulk_update_users',
-            'client_id': self.get_client_id()
-        })
+        """Bulk update users - IDEMPOTENT"""
+        idempotency_key = request.headers.get('Idempotency-Key')
+
+        if not idempotency_key:
+            return self._bulk_update_impl(request)
+
+        client_id = self.get_client_id()
 
         try:
-            # ===== INPUT VALIDATION =====
+            owner = get_owner_from_request(request)
+        except ValueError as e:
+            return Response({'error': 'Tenant required', 'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+
+        payload_hash = compute_payload_hash(request.data)
+
+        try:
+            op = start_op(client_id, idempotency_key, payload_hash, owner)
+        except ValueError as e:
+            return Response({'error': 'Idempotency conflict', 'detail': str(e), 'code': 'IDEMPOTENCY_CONFLICT'}, status=status.HTTP_409_CONFLICT)
+
+        if op:
+            if op['status'] == 'succeeded':
+                result_data = op.get('result', {})
+                if isinstance(result_data, dict) and 'data' in result_data:
+                    return Response(result_data['data'], status=result_data.get('http_status', status.HTTP_200_OK))
+                else:
+                    return Response(result_data, status=status.HTTP_200_OK)
+
+            elif op['status'] == 'failed':
+                err = op.get('result') or {}
+                return Response({
+                    'error': 'Operation failed',
+                    'detail': err.get('message', 'Unknown error')
+                }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
+
+            elif op['status'] == 'running':
+                return Response({'status': 'processing', 'message': 'Operation in progress', 'poll_url': reverse('ops:status', args=[idempotency_key])}, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
+
+        try:
+            result = self._bulk_update_impl(request)
+            complete_op(client_id, idempotency_key, {'data': result.data, 'http_status': result.status_code})
+            return result
+
+        except StandardizedValidationError as e:
+            fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_400_BAD_REQUEST})
+            raise
+        
+        except Exception as e:
+            fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR})
+            raise
+
+
+    def _bulk_update_impl(self, request):
+        """Internal implementation of bulk update"""
+        ctx = ctx_from_request(request) 
+        ctx.update({'event': 'bulk_update_users', 'client_id': self.get_client_id()})
+
+        try:
             if not isinstance(request.data, dict):
                 raise StandardizedValidationError("Request must be a JSON object")
 
@@ -1057,19 +891,13 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             mode = request.data.get('mode', 'partial')
 
             if not isinstance(ids, list):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs")
-                )
+                raise StandardizedValidationError(CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs"))
 
             if not ids:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.BULK_NO_DATA.format(entity="user IDs")
-                )
+                raise StandardizedValidationError(CoreErrorMessages.BULK_NO_DATA.format(entity="user IDs"))
 
             if len(ids) > 500:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users")
-                )
+                raise StandardizedValidationError(CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users"))
 
             if not isinstance(patch, dict):
                 raise StandardizedValidationError("Patch data must be a JSON object")
@@ -1084,185 +912,413 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             ctx['mode'] = mode
             logger.info("Starting bulk user update", extra=ctx)
 
-            # ===== VALIDATE ALLOWED FIELDS =====
             ALLOWED_FIELDS = {'is_active', 'is_superuser', 'role', 'team', 'organization'}
             invalid_fields = set(patch.keys()) - ALLOWED_FIELDS
-            
+
             if invalid_fields:
-                raise StandardizedValidationError(
-                    f"Fields not allowed in bulk update: {', '.join(invalid_fields)}. "
-                    f"Allowed fields: {', '.join(ALLOWED_FIELDS)}"
-                )
+                raise StandardizedValidationError(f"Fields not allowed in bulk update: {', '.join(invalid_fields)}. Allowed: {', '.join(ALLOWED_FIELDS)}")
 
-            # ===== SECURITY: PREVENT SELF-MODIFICATION =====
-            requester_id = str(request.user.id)
+            requester_id = request.user.id 
             if requester_id in ids:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.BULK_UPDATE_SELF_MODIFY
-                )
+                raise StandardizedValidationError(CoreErrorMessages.BULK_UPDATE_SELF_MODIFY)
 
-            # ===== FETCH USERS WITH TENANT SCOPING =====
             client_id = self.get_client_id()
-            users_qs = User.objects.filter(
-                id__in=ids,
-                client_account_id=client_id
-            ).select_related('role', 'team', 'organization', 'client_account')
+            users_qs = User.objects.filter(id__in=ids, client_account_id=client_id).select_related('role', 'team', 'organization', 'client_account')
             users_dict = {str(u.id): u for u in users_qs}
 
-            # ===== CHECK FOR INVALID IDS =====
             invalid_ids = set(ids) - set(users_dict.keys())
-            
-            results = {
-                'success': [],
-                'failed': [],
-                'skipped': [] 
-            }
+
+            results = {'success': [], 'failed': []}
 
             for invalid_id in invalid_ids:
-                results['failed'].append({
-                    'id': invalid_id,
-                    'email': 'Unknown',
-                    'errors': [CoreErrorMessages.BULK_UPDATE_INVALID_ID.format(id=invalid_id)]
-                })
+                results['failed'].append({'id': invalid_id, 'email': 'Unknown', 'errors': [CoreErrorMessages.BULK_UPDATE_INVALID_ID.format(id=invalid_id)]})
 
             if mode == 'strict' and invalid_ids:
-                return self._build_bulk_error_response(
-                    results,
-                    len(ids),
-                    f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
-                )
+                return self._build_bulk_error_response(results, len(ids), f"Strict mode: {len(invalid_ids)} invalid ID(s) found")
 
-            # Désactiver signals pendant bulk operation
-            with disable_signals():
-                if mode == 'strict':
+            if mode == 'strict':
+                with transaction.atomic():
                     try:
-                        with transaction.atomic():
-                            for user_id in ids:
-                                if user_id in invalid_ids:
-                                    continue
-                                user = users_dict[user_id]
-                                
-                                try:
-                                    self._validate_and_apply_patch(user, patch, client_id)
-                                    
-                                    results['success'].append({
-                                        'id': str(user.id),
-                                        'email': user.email,
-                                        'name': user.get_full_name()
-                                    })
-                                except StandardizedValidationError as e:
-                                    error_msg = self._format_bulk_error_message(e)
-                                    results['failed'].append({
-                                        'id': user_id,
-                                        'email': user.email,
-                                        'errors': [error_msg]
-                                    })
-                                    raise
+                        for user_id in ids:
+                            if user_id in invalid_ids:
+                                continue
+                            user = users_dict[user_id]
+
+                            try:
+                                self._validate_and_apply_patch(user, patch, client_id)
+                                results['success'].append({'id': str(user.id), 'email': user.email, 'name': user.get_full_name()})
+                            except StandardizedValidationError as e:
+                                error_msg = self._format_bulk_error_message(e)
+                                results['failed'].append({'id': user_id, 'email': user.email, 'errors': [error_msg]})
+                                raise
                             
-                            # ⭐ NOUVEAU: Invalidation unique APRÈS commit
-                            transaction.on_commit(
-                                lambda: invalidate_tag(client_id, 'users')
-                            )
-                            
+                        transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
+
                     except Exception as e:
                         error_msg = self._format_bulk_error_message(e)
                         ctx['event'] = 'bulk_update_strict_mode_failed'
                         ctx['error'] = error_msg
                         logger.error("Bulk update strict mode failed", extra=ctx, exc_info=True)
-                        
-                        return self._build_bulk_error_response(
-                            {'success': [], 'failed': results['failed']},
-                            len(ids),
-                            f"Strict mode failed: {error_msg}"
-                        )
-                else:
-                    # Partial mode
-                    totalCount = 0
-                    for user_id in ids:
-                        totalCount += 1
-                        if user_id in invalid_ids:
-                            continue
-                        user = users_dict[user_id]
-                        
-                        with transaction.atomic():
-                            try:
-                                self._validate_and_apply_patch(user, patch, client_id)
-                                
-                                results['success'].append({
-                                    'id': str(user.id),
-                                    'email': user.email,
-                                    'name': user.get_full_name()
-                                })
-                            except StandardizedValidationError as e:
-                                error_msg = self._format_bulk_error_message(e)
-                                results['failed'].append({
-                                    'id': user_id,
-                                    'email': user.email,
-                                    'errors': [error_msg]
-                                })
-                                transaction.set_rollback(True)
-                            except Exception as e:
-                                error_msg = self._format_bulk_error_message(e)
-                                results['failed'].append({
-                                    'id': user_id,
-                                    'email': user.email,
-                                    'errors': [error_msg]
-                                })
-                                transaction.set_rollback(True)
-                                
-                                ctx['event'] = 'bulk_update_unexpected_error'
-                                ctx['user_id'] = user_id
-                                ctx['error'] = str(e)
-                                logger.error("Unexpected error in bulk update", extra=ctx, exc_info=True)
+                        return self._build_bulk_error_response({'success': [], 'failed': results['failed']}, len(ids), f"Strict mode failed: {error_msg}")
+            else:
+                for user_id in ids:
+                    if user_id in invalid_ids:
+                        continue
                     
-                    # ⭐ NOUVEAU: Invalidation unique en mode partial
-                    invalidate_tag(client_id, 'users')
+                    user = users_dict[user_id]
+
+                    with transaction.atomic():
+                        try:
+                            self._validate_and_apply_patch(user, patch, client_id)
+                            results['success'].append({'id': str(user.id), 'email': user.email, 'name': user.get_full_name()})
+                        except StandardizedValidationError as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            results['failed'].append({'id': user_id, 'email': user.email, 'errors': [error_msg]})
+                            transaction.set_rollback(True)
+                            ctx['event'] = 'bulk_update_unexpected_error'
+                            ctx['user_id'] = user_id
+                            ctx['error'] = str(e)
+                            logger.error("Unexpected error in bulk update", extra=ctx, exc_info=True)
+
+                invalidate_tag(client_id, 'users')
+
+            success_count = len(results['success'])
+            failed_count = len(results['failed'])
+
+            ctx.update({'event': 'bulk_update_users_completed', 'requested': len(ids), 'updated': success_count, 'failed': failed_count})
+            logger.info("Bulk user update completed", extra=ctx)
 
             return self._build_bulk_success_response(results, len(ids), operation='update')
 
         except StandardizedValidationError as e:
-            # ✅ FIX: Extract message properly from detail dict
             if hasattr(e, 'detail') and isinstance(e.detail, dict):
                 error_msg = e.detail.get('error', str(e))
             else:
                 error_msg = str(e)
-            
-            ctx['event'] = 'bulk_update_validation_error'
-            ctx['error'] = error_msg
-            logger.warning("Bulk update validation error", extra=ctx)
-            
-            # ✅ Use bulk error response format (matches existing pattern)
-            return self._build_bulk_error_response(
-                results={'success': [], 'failed': [], 'skipped': []},
-                total=0,
-                error_message=error_msg
-            )
 
+            return self._build_bulk_error_response(results={'success': [], 'failed': [], 'skipped': []}, total=0, error_message=error_msg)
+
+
+    # =============================================================================
+    # BULK_CREATE - IDEMPOTENT VERSION
+    # =============================================================================
+
+    @action(detail=False, methods=['post'], url_path='bulk-create')
+    def bulk_create(self, request):
+        """Bulk create users - IDEMPOTENT"""
+        idempotency_key = request.headers.get('Idempotency-Key')
+
+        if not idempotency_key:
+            return self._bulk_create_impl(request)
+
+        client_id = self.get_client_id()
+
+        try:
+            owner = get_owner_from_request(request)
+        except ValueError as e:
+            return Response({'error': 'Tenant required', 'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+
+        payload_hash = compute_payload_hash(request.data)
+
+        try:
+            op = start_op(client_id, idempotency_key, payload_hash, owner)
+        except ValueError as e:
+            return Response({'error': 'Idempotency conflict', 'detail': str(e), 'code': 'IDEMPOTENCY_CONFLICT'}, status=status.HTTP_409_CONFLICT)
+
+        if op:
+            if op['status'] == 'succeeded':
+                result_data = op.get('result', {})
+                if isinstance(result_data, dict) and 'data' in result_data:
+                    return Response(result_data['data'], status=result_data.get('http_status', status.HTTP_201_CREATED))
+                else:
+                    return Response(result_data, status=status.HTTP_201_CREATED)
+
+            elif op['status'] == 'failed':
+                err = op.get('result') or {}
+                return Response({
+                    'error': 'Operation failed',
+                    'detail': err.get('message', 'Unknown error')
+                }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
+
+            elif op['status'] == 'running':
+                return Response({'status': 'processing', 'message': 'Operation in progress', 'poll_url': reverse('ops:status', args=[idempotency_key])}, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
+
+        try:
+            result = self._bulk_create_impl(request)
+            complete_op(client_id, idempotency_key, {'data': result.data, 'http_status': result.status_code})
+            return result
+
+        except StandardizedValidationError as e:
+            fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_400_BAD_REQUEST})
+            raise
+        
         except Exception as e:
-            ctx['event'] = 'bulk_update_fatal_error'
-            ctx['error'] = str(e)
-            logger.error("Fatal error in bulk update", extra=ctx, exc_info=True)
-            
-            # ✅ Use bulk error response format (matches existing pattern in bulk operations)
-            return self._build_bulk_error_response(
-                results={'success': [], 'failed': [], 'skipped': []},
-                total=0,
-                error_message='An unexpected error occurred. Please try again or contact support.'
-            )
+            fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR})
+            raise
+
+
+    def _bulk_create_impl(self, request):
+        """Internal implementation of bulk create"""
+        ctx = ctx_from_request(request)
+        ctx.update({'event': 'bulk_create_users', 'client_id': self.get_client_id()})
+
+        try:
+            if not isinstance(request.data, dict):
+                raise StandardizedValidationError("Request must be a JSON object")
+
+            users_data = request.data.get('users', [])
+            mode = request.data.get('mode', 'partial')
+
+            if not isinstance(users_data, list):
+                raise StandardizedValidationError("'users' must be a list")
+
+            if not users_data:
+                raise StandardizedValidationError("No users provided")
+
+            if len(users_data) > 500:
+                raise StandardizedValidationError(CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users"))
+
+            if mode not in ['partial', 'strict']:
+                raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
+
+            ctx['users_count'] = len(users_data)
+            ctx['mode'] = mode
+            logger.info("Starting bulk user create", extra=ctx)
+
+            client_id = self.get_client_id()
+            results = {'success': [], 'failed': [], 'skipped': []}
+
+            existing_emails = set(User.objects.filter(client_account_id=client_id, email__in=[u.get('email') for u in users_data if u.get('email')]).values_list('email', flat=True))
+
+            for idx, user_data in enumerate(users_data):
+                row_num = idx + 1
+                email = user_data.get('email')
+
+                if email and email in existing_emails:
+                    results['skipped'].append({'row': row_num, 'email': email, 'reason': 'Email already exists'})
+
+            if mode == 'strict':
+                if results['skipped']:
+                    return self._build_bulk_error_response(results, len(users_data), f"Strict mode: {len(results['skipped'])} duplicate email(s) found")
+
+                with transaction.atomic():
+                    try:
+                        for idx, user_data in enumerate(users_data):
+                            row_num = idx + 1
+                            email_display = user_data.get('email', 'Unknown')
+
+                            if any(s['row'] == row_num for s in results['skipped']):
+                                continue
+
+                            try:
+                                user_data['client_account'] = client_id
+                                self._validate_superuser_modification(request.user, user_data)
+
+                                serializer = self.get_serializer(data=user_data, context=self.get_serializer_context())
+                                serializer.is_valid(raise_exception=True)
+                                user = serializer.save()
+
+                                results['success'].append({'row': row_num, 'email': user.email, 'id': str(user.id), 'name': user.get_full_name()})
+
+                            except StandardizedValidationError as e:
+                                error_msg = self._format_bulk_error_message(e)
+                                results['failed'].append({'row': row_num, 'email': email_display, 'errors': [error_msg]})
+                                raise
+                            
+                        transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
+
+                    except Exception as e:
+                        error_msg = self._format_bulk_error_message(e)
+                        ctx['event'] = 'bulk_create_strict_mode_failed'
+                        ctx['error'] = error_msg
+                        logger.error("Bulk create strict mode failed", extra=ctx, exc_info=True)
+                        return self._build_bulk_error_response({'success': [], 'failed': [], 'skipped': results['skipped']}, len(users_data), f"Strict mode failed: {error_msg}")
+            else:
+                for idx, user_data in enumerate(users_data):
+                    row_num = idx + 1
+                    email_display = user_data.get('email', 'Unknown')
+
+                    if any(s['row'] == row_num for s in results['skipped']):
+                        continue
+
+                    with transaction.atomic():
+                        try:
+                            user_data['client_account'] = client_id
+                            self._validate_superuser_modification(request.user, user_data)
+
+                            serializer = self.get_serializer(data=user_data, context=self.get_serializer_context())
+                            serializer.is_valid(raise_exception=True)
+                            user = serializer.save()
+
+                            results['success'].append({'row': row_num, 'email': user.email, 'id': str(user.id), 'name': user.get_full_name()})
+
+                        except StandardizedValidationError as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            results['failed'].append({'row': row_num, 'email': email_display, 'errors': [error_msg]})
+                            transaction.set_rollback(True)
+
+                        except Exception as e:
+                            ctx['event'] = 'bulk_create_unexpected_error'
+                            ctx['row'] = row_num
+                            ctx['error'] = str(e)
+                            logger.error("Unexpected error in bulk create", extra=ctx, exc_info=True)
+
+                            error_msg = self._format_bulk_error_message(e)
+                            results['failed'].append({'row': row_num, 'email': email_display, 'errors': [error_msg]})
+                            transaction.set_rollback(True)
+
+                invalidate_tag(client_id, 'users')
+
+            return self._build_bulk_success_response(results, len(users_data), operation='create')
+
+        except StandardizedValidationError as e:
+            if hasattr(e, 'detail') and isinstance(e.detail, dict):
+                error_msg = e.detail.get('error', str(e))
+            else:
+                error_msg = str(e)
+
+            return self._build_bulk_error_response(results={'success': [], 'failed': [], 'skipped': []}, total=0, error_message=error_msg)
+
 
 
         
     @action(detail=False, methods=['delete'], url_path='bulk-delete')
     def bulk_delete(self, request):
         """
-        Physically delete multiple users in bulk (hard delete)
+        Physically delete multiple users in bulk (hard delete) - IDEMPOTENT VERSION
+        
+        This is the idempotency wrapper. The actual business logic is in _bulk_delete_impl().
+        
+        Idempotency:
+            - Without Idempotency-Key header → executes normally (backwards compatible)
+            - With Idempotency-Key header → idempotent execution (stores result for replay)
+        
+        Returns:
+            - 200 OK: Operation succeeded (with result)
+            - 202 Accepted: Operation still running (with poll_url)
+            - 400 Bad Request: Validation error
+            - 403 Forbidden: Tenant missing in strict mode
+            - 409 Conflict: Same key with different payload
+            - 500 Internal Server Error: Unexpected error
+        """
+        # 1. Extract Idempotency-Key header
+        idempotency_key = request.headers.get('Idempotency-Key')
+        
+        # 2. If no key → execute normally (backwards compatible)
+        if not idempotency_key:
+            return self._bulk_delete_impl(request)
+        
+        # 3. Get client_id and owner for idempotency
+        client_id = self.get_client_id()
+        
+        try:
+            owner = get_owner_from_request(request)
+        except ValueError as e:
+            # Tenant validation failed (strict mode)
+            return Response({
+                'error': 'Tenant required',
+                'detail': str(e)
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # 4. Compute payload hash
+        payload_hash = compute_payload_hash(request.data)
+        
+        # 5. Start operation (check idempotency)
+        try:
+            op = start_op(client_id, idempotency_key, payload_hash, owner)
+        except ValueError as e:
+            # Conflict: Same key, different payload
+            return Response({
+                'error': 'Idempotency conflict',
+                'detail': str(e),
+                'code': 'IDEMPOTENCY_CONFLICT'
+            }, status=status.HTTP_409_CONFLICT)
+        
+        # 6. If operation already exists, return cached result or status
+        if op:
+            if op['status'] == 'succeeded':
+                # Already completed successfully - return cached result
+                result_data = op.get('result', {})
+                
+                # Extract data and http_status if stored in new format
+                if isinstance(result_data, dict) and 'data' in result_data:
+                    return Response(
+                        result_data['data'],
+                        status=result_data.get('http_status', status.HTTP_200_OK)
+                    )
+                else:
+                    # Legacy format (just data)
+                    return Response(result_data, status=status.HTTP_200_OK)
+            
+            elif op['status'] == 'failed':
+                err = op.get('result') or {}
+                return Response({
+                    'error': 'Operation failed',
+                    'detail': err.get('message', 'Unknown error')
+                }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
+            
+            elif op['status'] == 'running':
+                # Still processing (concurrent request or retry during execution)
+                return Response({
+                    'status': 'processing',
+                    'message': 'Operation in progress',
+                    'poll_url': reverse('ops:status', args=[idempotency_key])
+                }, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
+        
+        # 7. New operation → Execute business logic
+        try:
+            result = self._bulk_delete_impl(request)
+            
+            # 8. Mark as completed with status code
+            complete_op(client_id, idempotency_key, {
+                'data': result.data,
+                'http_status': result.status_code
+            })
+            
+            return result
+        
+        except StandardizedValidationError as e:
+            fail_op(client_id, idempotency_key, {
+                'message': str(e),
+                'http_status': status.HTTP_400_BAD_REQUEST
+            })
+            raise
+
+        except Exception as e:
+            fail_op(client_id, idempotency_key, {
+                'message': str(e),
+                'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR
+            })
+            raise
+        
+    # ========================================================================
+    # ✅ BULK DELETE IMPLEMENTATION - LOGIQUE MÉTIER EXTRAITE
+    # ========================================================================
+    
+    def _bulk_delete_impl(self, request):
+        """
+        Internal implementation of bulk delete.
+        
+        This contains the actual business logic extracted from the original bulk_delete method.
+        Can be called directly (without idempotency) or via the idempotent wrapper.
+        
+        Args:
+            request: DRF Request object with:
+                - data.ids: List of user IDs to delete
+                - data.mode: 'partial' or 'strict'
+        
+        Returns:
+            Response: DRF Response with operation results
+        
+        Raises:
+            StandardizedValidationError: For validation errors
+            Exception: For unexpected errors
         """
         ctx = ctx_from_request(request)
         ctx.update({
             'event': 'bulk_delete_users_hard',
             'client_id': self.get_client_id()
         })
-
 
         try:
             # ===== INPUT VALIDATION =====
@@ -1293,7 +1349,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             logger.info("Starting bulk user delete (hard)", extra=ctx)
 
             # ===== SECURITY: PREVENT SELF-DELETE =====
-            requester_id = str(request.user.id)
+            requester_id = request.user.id 
             if requester_id in ids:
                 raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_SELF)
 
@@ -1357,76 +1413,27 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     f"Strict mode: {len(protected_users)} protected user(s) found"
                 )
 
-            # Désactiver signals pendant bulk operation
-            with disable_signals():
-                if mode == 'strict':
+            # ===== DELETE OPERATIONS =====
+            if mode == 'strict':
+                # Strict mode: All-or-nothing transaction
+                with transaction.atomic():
                     try:
-                        with transaction.atomic():
-                            for user_id in ids:
-                                if user_id in invalid_ids:
-                                    continue
-                                user = users_dict[user_id]
-                                
-                                try:
-                                    user_email = user.email
-                                    user_name = user.get_full_name()
-                                    user.delete()
-                                    
-                                    results['success'].append({
-                                        'id': user_id,
-                                        'email': user_email,
-                                        'name': user_name
-                                    })
-                                except Exception as e:
-                                    error_msg = self._format_bulk_error_message(e)
-                                    results['failed'].append({
-                                        'id': user_id,
-                                        'email': user.email,
-                                        'errors': [error_msg]
-                                    })
-                                    raise
+                        for user_id in ids:
+                            if user_id in invalid_ids:
+                                continue
                             
-                            # Ensure admin invariants
-                            client = User.objects.get(id=requester_id).client_account
-                            client.ensure_admin_invariants()
+                            is_protected = any(p['id'] == user_id for p in protected_users)
+                            if is_protected:
+                                protected_info = next(p for p in protected_users if p['id'] == user_id)
+                                results['failed'].append({
+                                    'id': user_id,
+                                    'email': protected_info['email'],
+                                    'errors': [protected_info['reason']]
+                                })
+                                continue
                             
-                            # ⭐ NOUVEAU: Invalidation unique APRÈS commit
-                            transaction.on_commit(
-                                lambda: invalidate_tag(client_id, 'users')
-                            )
+                            user = users_dict[user_id]
                             
-                    except Exception as e:
-                        error_msg = self._format_bulk_error_message(e)
-                        ctx['event'] = 'bulk_delete_strict_mode_failed'
-                        ctx['error'] = error_msg
-                        logger.error("Bulk delete strict mode failed", extra=ctx, exc_info=True)
-                        
-                        return self._build_bulk_error_response(
-                            {'success': [], 'failed': results['failed']},
-                            len(ids),
-                            f"Strict mode failed: {error_msg}"
-                        )
-                else:
-                    # Partial mode
-                    for user_id in ids:
-                        
-
-                        if user_id in invalid_ids:
-                            continue
-
-                        is_protected = any(p['id'] == user_id for p in protected_users)
-                        if is_protected:
-                            protected_info = next(p for p in protected_users if p['id'] == user_id)
-                            results['failed'].append({
-                                'id': user_id,
-                                'email': protected_info['email'],
-                                'errors': [protected_info['reason']]
-                            })
-                            continue
-                        
-                        user = users_dict[user_id]
-                        
-                        with transaction.atomic():
                             try:
                                 user_email = user.email
                                 user_name = user.get_full_name()
@@ -1444,22 +1451,80 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                                     'email': user.email,
                                     'errors': [error_msg]
                                 })
-                                transaction.set_rollback(True)
-                                
-                                ctx['event'] = 'bulk_delete_unexpected_error'
-                                ctx['user_id'] = user_id
-                                ctx['error'] = str(e)
-                                logger.error("Unexpected error in bulk delete", extra=ctx, exc_info=True)
-                    
-                    # Ensure admin invariants (partial mode)
-                    try:
+                                raise
+                            
+                        # Ensure admin invariants
                         client = User.objects.get(id=requester_id).client_account
                         client.ensure_admin_invariants()
+                        
+                        # Invalidation cache APRÈS commit
+                        transaction.on_commit(
+                            lambda: invalidate_tag(client_id, 'users')
+                        )
+                        
                     except Exception as e:
-                        logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
+                        error_msg = self._format_bulk_error_message(e)
+                        ctx['event'] = 'bulk_delete_strict_mode_failed'
+                        ctx['error'] = error_msg
+                        logger.error("Bulk delete strict mode failed", extra=ctx, exc_info=True)
+                        
+                        return self._build_bulk_error_response(
+                            {'success': [], 'failed': results['failed']},
+                            len(ids),
+                            f"Strict mode failed: {error_msg}"
+                        )
+            else:
+                # Partial mode: Best-effort deletion
+                for user_id in ids:
+                    if user_id in invalid_ids:
+                        continue
                     
-                    # ⭐ NOUVEAU: Invalidation unique en mode partial
-                    invalidate_tag(client_id, 'users')
+                    is_protected = any(p['id'] == user_id for p in protected_users)
+                    if is_protected:
+                        protected_info = next(p for p in protected_users if p['id'] == user_id)
+                        results['failed'].append({
+                            'id': user_id,
+                            'email': protected_info['email'],
+                            'errors': [protected_info['reason']]
+                        })
+                        continue
+                    
+                    user = users_dict[user_id]
+                    
+                    with transaction.atomic():
+                        try:
+                            user_email = user.email
+                            user_name = user.get_full_name()
+                            user.delete()
+                            
+                            results['success'].append({
+                                'id': user_id,
+                                'email': user_email,
+                                'name': user_name
+                            })
+                        except Exception as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            results['failed'].append({
+                                'id': user_id,
+                                'email': user.email,
+                                'errors': [error_msg]
+                            })
+                            transaction.set_rollback(True)
+                            
+                            ctx['event'] = 'bulk_delete_unexpected_error'
+                            ctx['user_id'] = user_id
+                            ctx['error'] = str(e)
+                            logger.error("Unexpected error in bulk delete", extra=ctx, exc_info=True)
+                
+                # Ensure admin invariants (partial mode)
+                try:
+                    client = User.objects.get(id=requester_id).client_account
+                    client.ensure_admin_invariants()
+                except Exception as e:
+                    logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
+                
+                # Invalidation cache en mode partial
+                invalidate_tag(client_id, 'users')
 
             # ===== BUILD RESPONSE =====
             success_count = len(results['success'])
@@ -1472,41 +1537,6 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 'failed': failed_count
             })
             logger.info("Bulk user deletion completed", extra=ctx)
-
-            clean_results = {
-                'success': results['success'][:],
-                'failed': []
-            }
-            
-            for failed_item in results['failed']:
-                clean_item = failed_item.copy()
-                if 'errors' in clean_item:
-                    clean_item['errors'] = [str(error) for error in clean_item['errors']]
-                clean_results['failed'].append(clean_item)
-
-            if success_count == 0 and failed_count > 0:
-                status_code = status.HTTP_400_BAD_REQUEST
-                success = False
-                message = f"Bulk delete failed: all {failed_count} user(s) failed"
-            elif failed_count > 0:
-                status_code = status.HTTP_200_OK
-                success = True
-                message = f"Bulk delete: {success_count} deleted, {failed_count} failed"
-            else:
-                status_code = status.HTTP_200_OK
-                success = True
-                message = f"Bulk delete: {success_count} user(s) deleted successfully"
-
-            # return Response({
-            #     'success': success,
-            #     'summary': {
-            #         'requested': len(ids),
-            #         'deleted': success_count,
-            #         'failed': failed_count
-            #     },
-            #     'results': clean_results,
-            #     'message': message
-            # }, status=status_code)
 
             return self._build_bulk_success_response(results, len(ids), operation='delete')
 

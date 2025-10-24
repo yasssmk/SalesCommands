@@ -17,6 +17,8 @@ from .views.role_views import UserRoleViewSet
 from .views.sales_quota_views import SalesQuotaViewSet
 from .views.sales_plan_views import SalesPlanViewSet  
 from .views.sales_milestone_views import SalesMilestoneViewSet
+from .views.user_view_bulk import UserBulkViewSet 
+
 
 app_name = 'client'
 
@@ -164,23 +166,19 @@ urlpatterns = [
     }), name='user-change-password'),
 
     # Création en lot
-    path('users/bulk-create/', UserViewSet.as_view({
+    path('users/bulk-create/', UserBulkViewSet.as_view({
         'post': 'bulk_create'
     }), name='user-bulk-create'),
 
     # Mise à jour en lot
-    path('users/bulk-update/', UserViewSet.as_view({
+    path('users/bulk-update/', UserBulkViewSet.as_view({
         'patch': 'bulk_update'
     }), name='user-bulk-update'),
 
     # Suppression en lot
-    path('users/bulk-delete/', UserViewSet.as_view({
+    path('users/bulk-delete/', UserBulkViewSet.as_view({
         'delete': 'bulk_delete'
     }), name='user-bulk-delete'),
-
-    path('users/bulk-soft-delete/', UserViewSet.as_view({
-        'delete': 'bulk_soft_delete'
-    }), name='user-bulk-soft-delete'),
     
     # =========================================================================
     # USER PERFORMANCE INTEGRATION - Intégration UserPerformanceService

@@ -14,9 +14,14 @@ from .views import (
     HealthCheckView
 )
 
+from core.views.operation_views import OperationStatusView
+
 app_name = 'ops'
 
 urlpatterns = [
+
+    path('<str:key>/', OperationStatusView.as_view(), name='status'),
+
     # =========================================================================
     # TIMEOUT TESTING
     # =========================================================================
