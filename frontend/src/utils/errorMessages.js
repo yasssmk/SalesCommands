@@ -202,124 +202,171 @@ const isValidMessage = (message) => {
  *   {errorInfo.message}
  * </Alert>
  */
+/**
+ * ✅ CRASH-PROOF: GET STRUCTURED ERROR INFO FOR UI DISPLAY
+ * 
+ * Combines backend message extraction with UI metadata.
+ * Reusable across all components that need to display errors.
+ * 
+ * ⚠️ ALWAYS RETURNS A VALID OBJECT - Never throws, never returns null
+ * ⚠️ WRAPPED IN TRY-CATCH - Handles all unexpected parsing failures
+ * 
+ * PRIORITY:
+ * 1. Backend message (if valid)
+ * 2. Fallback message (if backend invalid/missing)
+ * 3. Default error (only if catastrophic failure)
+ * 
+ * @param {Error|Object|null|undefined} error - Axios error object from API call
+ * @returns {Object} Structured error info (guaranteed to be valid object)
+ * @returns {string} return.title - User-friendly error title
+ * @returns {string} return.message - Detailed error message (from backend or fallback)
+ * @returns {string} return.severity - Material-UI severity level (info/warning/error)
+ * @returns {number} return.status - HTTP status code (0 if unknown)
+ * @returns {boolean} return.isRetryable - Whether retry makes sense for this error
+ * 
+ * @example
+ * const errorInfo = getErrorDisplayInfo(error);
+ * <Alert severity={errorInfo.severity}>
+ *   <AlertTitle>{errorInfo.title}</AlertTitle>
+ *   {errorInfo.message}
+ * </Alert>
+ */
 export const getErrorDisplayInfo = (error) => {
-  // ✅ DEFAULT FALLBACK (last resort only)
+  // ✅ DEFAULT FALLBACK (used when server down - status == 0) 
   const DEFAULT_ERROR = {
     title: 'Unexpected Error',
-    message: 'An unexpected error occurred. Please try again.',
+    message: 'Server Unavailable. Please try again.',
     severity: 'error',
     status: 0,
     isRetryable: false
   };
 
   // ====================================================================
-  // STEP 1: Validate error object
+  // 🛡️ TOP-LEVEL TRY-CATCH - Ensures function NEVER crashes
   // ====================================================================
-  if (!isValidError(error)) {
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('[getErrorDisplayInfo] Invalid error object:', error);
-    }
-    return DEFAULT_ERROR;
-  }
-
-  // ====================================================================
-  // STEP 2: Extract status code
-  // ====================================================================
-  const status = error?.response?.status || 
-               error?.status || 
-               error?.error?.status ||  // Bulk operation format
-               0;
-  
-  if (process.env.NODE_ENV === 'development') {
-    console.group('🔍 [getErrorDisplayInfo] Processing error');
-    console.log('Status:', status);
-    console.log('Error type:', error.constructor?.name);
-    console.log('Has response:', !!error.response);
-    console.log('Response data:', error.response?.data);
-  }
-
-  // ====================================================================
-  // STEP 3: Try to extract backend message using handleApiError
-  // ====================================================================
-  let backendMessage = null;
-  let extractionFailed = false;
-  
   try {
-    backendMessage = handleApiError(error);
+    // ================================================================
+    // STEP 1: Validate error object
+    // ================================================================
+    if (!isValidError(error)) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[getErrorDisplayInfo] Invalid error object:', error);
+      }
+      return DEFAULT_ERROR;
+    }
+
+    // ================================================================
+    // STEP 2: Extract status code
+    // ================================================================
+    const status = error?.response?.status || 
+                 error?.status || 
+                 error?.error?.status ||  // Bulk operation format
+                 0;
     
     if (process.env.NODE_ENV === 'development') {
-      console.log('handleApiError returned:', backendMessage);
-      console.log('Type:', typeof backendMessage);
+      console.group('🔍 [getErrorDisplayInfo] Processing error');
+      console.log('Status:', status);
+      console.log('Error type:', error.constructor?.name);
+      console.log('Has response:', !!error.response);
+      console.log('Response data:', error.response?.data);
     }
-  } catch (err) {
-    extractionFailed = true;
-    if (process.env.NODE_ENV === 'development') {
-      console.error('handleApiError threw exception:', err);
-    }
-  }
 
-  // ====================================================================
-  // STEP 4: Validate extracted message
-  // ====================================================================
-  const messageIsValid = isValidMessage(backendMessage);
-  
-  if (process.env.NODE_ENV === 'development') {
-    console.log('Message validation:', messageIsValid ? '✅ VALID' : '❌ INVALID');
-  }
-
-  // ====================================================================
-  // STEP 5: Choose final message (backend or fallback)
-  // ====================================================================
-  let finalMessage;
-  
-  if (messageIsValid) {
-    // ✅ Use backend message
-    finalMessage = backendMessage.trim();
+    // ================================================================
+    // STEP 3: Try to extract backend message using handleApiError
+    // ================================================================
+    let backendMessage = null;
+    let extractionFailed = false;
     
-    if (process.env.NODE_ENV === 'development') {
-      console.log('✅ Using backend message:', finalMessage);
-    }
-  } else {
-    // ❌ Use fallback based on error type
-    if (!error.response) {
-      // Network error (no response from server)
-      finalMessage = FALLBACK_MESSAGES.network;
+    try {
+      backendMessage = handleApiError(error);
       
       if (process.env.NODE_ENV === 'development') {
-        console.log('🌐 Network error detected, using fallback:', finalMessage);
+        console.log('handleApiError returned:', backendMessage);
+        console.log('Type:', typeof backendMessage);
+      }
+    } catch (err) {
+      extractionFailed = true;
+      if (process.env.NODE_ENV === 'development') {
+        console.error('handleApiError threw exception:', err);
+      }
+    }
+
+    // ================================================================
+    // STEP 4: Validate extracted backend message
+    // ================================================================
+    const messageIsValid = isValidMessage(backendMessage);
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Message validation:', messageIsValid ? '✅ VALID' : '❌ INVALID');
+    }
+
+    // ================================================================
+    // STEP 5: Choose final message (PRIORITY: backend → fallback)
+    // ================================================================
+    let finalMessage;
+    
+    if (messageIsValid) {
+      // ✅ PRIORITY 1: Use backend message
+      finalMessage = backendMessage.trim();
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Using backend message:', finalMessage);
       }
     } else {
-      // Server responded but message extraction failed
-      finalMessage = getFallbackMessage(status);
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`📋 Using status-based fallback (${status}):`, finalMessage);
+      // ❌ PRIORITY 2: Use fallback based on error type
+      if (!error.response) {
+        // Network error (no response from server)
+        finalMessage = FALLBACK_MESSAGES.network;
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🌐 Network error detected, using fallback:', finalMessage);
+        }
+      } else {
+        // Server responded but message extraction failed
+        finalMessage = getFallbackMessage(status);
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`📋 Using status-based fallback (${status}):`, finalMessage);
+        }
       }
     }
+
+    // ================================================================
+    // STEP 6: Determine if error is retryable
+    // ================================================================
+    const isRetryable = isRetryableError(error);
+
+    // ================================================================
+    // STEP 7: Build final result
+    // ================================================================
+    const result = {
+      title: getErrorTitle(error),
+      message: finalMessage,
+      severity: getSeverityFromStatus(status),
+      status,
+      isRetryable
+    };
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📤 Final result:', result);
+      console.groupEnd();
+    }
+
+    return result;
+
+  } catch (unexpectedError) {
+    // ================================================================
+    // 🚨 CATASTROPHIC FAILURE - Something went very wrong
+    // ================================================================
+    if (process.env.NODE_ENV === 'development') {
+      console.error('🚨 [getErrorDisplayInfo] CATASTROPHIC PARSING FAILURE:', unexpectedError);
+      console.error('Original error object:', error);
+      console.groupEnd();
+    }
+    
+    // ✅ CRITICAL: Always return valid object, never crash
+    return DEFAULT_ERROR;
   }
-
-  // ====================================================================
-  // STEP 6: Determine if error is retryable
-  // ====================================================================
-  const isRetryable = isRetryableError(error);
-
-  // ====================================================================
-  // STEP 7: Build final result
-  // ====================================================================
-  const result = {
-    title: getErrorTitle(error),
-    message: finalMessage,
-    severity: getSeverityFromStatus(status),
-    status,
-    isRetryable
-  };
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log('📤 Final result:', result);
-    console.groupEnd();
-  }
-
-  return result;
 };
 
 // ==============================|| SPECIFIC ERROR MESSAGES ||============================== //

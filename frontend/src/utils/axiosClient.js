@@ -125,6 +125,22 @@ function addInterceptorsToClient(client, profile) {
       // Generate and attach correlation ID
       const correlationId = generateCorrelationId();
       config.headers['X-Correlation-ID'] = correlationId;
+
+      // POST/PATCH/DELETE requests get automatic idempotency protection
+      const method = config.method?.toUpperCase();
+        if (['POST', 'PATCH', 'DELETE'].includes(method)) {
+          // Only inject if not already provided (allow manual override)
+          if (!config.headers['Idempotency-Key']) {
+            const idempotencyKey = generateCorrelationId(); // Use same UUID generator
+            config.headers['Idempotency-Key'] = idempotencyKey;
+            
+            if (process.env.NODE_ENV === 'development') {
+              debugLog(
+                `🔑 [${correlationId.slice(0, 8)}] Auto-injected Idempotency-Key: ${idempotencyKey.slice(0, 8)}...`
+              );
+            }
+          }
+      }
       
       config.metadata = {
         correlationId,

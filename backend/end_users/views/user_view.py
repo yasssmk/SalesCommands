@@ -825,7 +825,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             'client_id': self.get_client_id()
         })
 
-        raise PermissionDenied("Test 403: You do not have permission to view users")
+        # raise PermissionDenied("Test 403: You do not have permission to view users")
         # raise Exception("Test 500: Simulated server error")
         # from rest_framework.response import Response
         # raise Http404("Ressource introuvable")

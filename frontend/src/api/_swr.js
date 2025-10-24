@@ -122,32 +122,40 @@ export const shouldUseProgressiveRefetch = (result) => {
     console.log('[shouldUseProgressiveRefetch] Timeout detected → progressive refetch');
     return true;
   }
-  
-  // Cas 2 : Gateway timeout (504)
+
+  // ✅ PHASE 1: Cas 2 : Bad Gateway (502)
+  // Proxy error, backend peut encore traiter la requête
+  if (result.status === 502) {
+    console.log('[shouldUseProgressiveRefetch] 502 Bad Gateway → progressive refetch');
+    return true;
+  }
+
+  // Cas 3 : Gateway timeout (504)
   // Proxy/Gateway a timeout mais backend continue probablement
   if (result.status === 504) {
     console.log('[shouldUseProgressiveRefetch] 504 Gateway Timeout → progressive refetch');
     return true;
   }
-  
-  // Cas 3 : Accepted (202)
+
+  // Cas 4 : Accepted (202)
   // Backend a accepté l'opération mais traite en async
   if (result.status === 202) {
     console.log('[shouldUseProgressiveRefetch] 202 Accepted → progressive refetch');
     return true;
   }
-  
-  // Cas 4 (optionnel) : 500 avec succès partiel
+
+  // Cas 5 (optionnel) : 500 avec succès partiel
   // Décommenté si besoin : backend a échoué mais a traité une partie
   // if (result.status === 500 && result.data?.summary?.deleted > 0) {
   //   console.log('[shouldUseProgressiveRefetch] 500 with partial success → progressive refetch');
   //   return true;
   // }
-  
+
   // Tous les autres cas : revalidation immédiate suffit
   console.log('[shouldUseProgressiveRefetch] Standard response → immediate refetch');
   return false;
-};
+  ;
+}
 
 /**
  * ✅ HELPER CENTRALISÉ - REVALIDATION INTELLIGENTE APRÈS BULK OPERATION

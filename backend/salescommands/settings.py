@@ -134,11 +134,13 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
     # 🔗 Custom header for distributed tracing
     'x-correlation-id',
+    "Idempotency-Key",
 ]
 
 # Sans ceci, JavaScript ne peut PAS lire ces headers à cause de CORS
 CORS_EXPOSE_HEADERS = [
-    'Retry-After',      # ← CRITIQUE pour Phase 1 (429 throttling)
+    "Idempotency-Key",
+    'Retry-After',      # (429 throttling)
     'X-Request-ID',     # Pour debug/tracing
     'X-Correlation-ID', # Pour distributed tracing
 ]
@@ -223,6 +225,7 @@ INSTALLED_APPS = [
     "phonenumber_field",
     'django_filters',
     'debug_toolbar',
+    'ops'
 ]
 
 MIDDLEWARE = [
@@ -294,7 +297,7 @@ DATABASES = {
             # statement_timeout: Max time for a single SQL query (10s)
             # idle_in_transaction_session_timeout: Max idle time in transaction (10s)
             # Both timeouts prevent long-running queries and zombie connections
-            'options': '-c statement_timeout=10000 -c idle_in_transaction_session_timeout=10000'
+            'options': '-c statement_timeout=6000 -c idle_in_transaction_session_timeout=10000'
         }
     }
 }

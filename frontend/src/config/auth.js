@@ -92,7 +92,7 @@ export const authConfig = {
     CRITICAL: 8000,   // 8s - Critical GET requests (main data: users, accounts, contacts)
     WIDGET: 4000,     // 4s - Dashboard widgets, quick stats, non-critical data
     MUTATION: 10000,  // 10s - POST/PUT/PATCH/DELETE operations (form submissions)
-    BULK: 60000,      // 60s - Bulk operations (import/export, bulk delete/update)
+    BULK: 18000,      // 18s - Bulk operations (import/export, bulk delete/update)
     AUTH: 5000        // 5s - Authentication operations (login, refresh token)
   },
 
@@ -108,7 +108,7 @@ export const authConfig = {
    * @deprecated Use TIMEOUT_PROFILES.BULK instead
    * Previously defined but never used in the codebase
    */
-  BULK_OPERATION_TIMEOUT: 60000, // Now implemented in TIMEOUT_PROFILES.BULK
+  BULK_OPERATION_TIMEOUT: 18000, // Now implemented in TIMEOUT_PROFILES.BULK
   
   // ==============================|| RETRY CONFIGURATION ||============================== //
   

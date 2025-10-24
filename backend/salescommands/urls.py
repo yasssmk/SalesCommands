@@ -57,6 +57,9 @@ urlpatterns = [
     # Healthcheck (MUST be at top for performance)
     path('healthz/', healthz, name='healthz'),
 
+     # ✅ PHASE 1: Ops test endpoints (AJOUTER CETTE LIGNE)
+    path('ops/', include('ops.urls')),
+
     path('admin/', admin.site.urls),
     path(app_key+'accounts/', include('apps.accounts.urls')),
     path('leads/', include('apps.leads.urls')),

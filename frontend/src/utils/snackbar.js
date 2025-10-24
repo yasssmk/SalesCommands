@@ -40,6 +40,13 @@ const DEDUP_WINDOW_MS_500 = 45000 // 45 seconds
 const MAX_DEDUP_ENTRIES = 50; // Prevent unbounded growth
 
 /**
+ * BEHAVIOR:
+ * - Same message + same status within window → Suppressed (deduplicated)
+ * - Different message within window → Shown (NEW FIX)
+ * - Different status within window → Shown (NEW FIX)
+ * - 403 errors → Always shown (no dedup)
+ * - 500+ errors → 45s dedup window instead of 5s
+ * 
  * Check if a message should be suppressed (duplicate within dedup window)
  * @param {string} message - The snackbar message
  * @param {string|number} status - The severity/status identifier
@@ -53,14 +60,14 @@ function shouldShowMessage(message, status) {
   const is_500 = status >= 500;
   
   // Check if same message was shown recently
-  if (!is_403 && !is_500 & lastShown && (now - lastShown) < DEDUP_WINDOW_MS) {
+  if (!is_403 && !is_500 && lastShown && (now - lastShown) < DEDUP_WINDOW_MS) {
     if (process.env.NODE_ENV === 'development') {
       console.debug(`🔕 [Snackbar Dedup] Suppressed duplicate: "${message}" (${status})`);
     }
     return false; // Suppress
   }
 
-  if (is_500 & lastShown && (now - lastShown) < DEDUP_WINDOW_MS_500) {
+  if (is_500 && lastShown && (now - lastShown) < DEDUP_WINDOW_MS_500) {
     if (process.env.NODE_ENV === 'development') {
       console.debug(`🔕 [Snackbar Dedup Error 500] Suppressed duplicate: "${message}" (${status})`);
     }
@@ -72,7 +79,7 @@ function shouldShowMessage(message, status) {
   
   // Cleanup old entries to prevent unbounded growth
   if (_recentMessages.size > MAX_DEDUP_ENTRIES) {
-    const cutoffTime = now - DEDUP_WINDOW_MS;
+    const cutoffTime = now - Math.max(DEDUP_WINDOW_MS, DEDUP_WINDOW_MS_500);
     for (const [msgKey, timestamp] of _recentMessages.entries()) {
       if (timestamp < cutoffTime) {
         _recentMessages.delete(msgKey);

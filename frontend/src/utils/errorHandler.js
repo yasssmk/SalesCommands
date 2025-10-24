@@ -223,56 +223,89 @@ export const handleApiError = (axiosError) => {
   // 3. 5XX SERVER ERRORS (Generic fallbacks)
   // ==============================
   if (status >= 500) {
-    // Check if backend provided a custom message
-    let customMessage = null;
-    
-    if (typeof data === 'string' && data.trim().length > 0) {
-      customMessage = data.trim();
-    } else if (data?.detail && typeof data.detail === 'string') {
-      customMessage = data.detail;
-    } else if (data?.error && typeof data.error === 'string') {
-      customMessage = data.error;
-    }
-    
-    // Use custom message if valid, otherwise use status-based fallback
-    if (customMessage && customMessage.length > 0 && customMessage.length < 500) {
+    // Path 1: Plain string response
+  if (typeof data === 'string' && data.trim().length > 0 && data.length < 500) {
+    if (!data.trim().startsWith('<')) { // Avoid HTML error pages
       if (process.env.NODE_ENV === 'development') {
-        console.log('✅ Using custom 5XX message:', customMessage);
+        console.log('✅ Using custom 5XX string message:', data.trim());
         console.groupEnd();
       }
-      return customMessage;
+      return data.trim();
     }
-    
-    // Status-based fallbacks for 5XX
-    if (status === 503) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📋 503 Service Unavailable');
-        console.groupEnd();
-      }
-      return 'Service temporarily unavailable. Please try again shortly.';
-    }
-    if (status === 502) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📋 502 Bad Gateway');
-        console.groupEnd();
-      }
-      return 'Bad gateway. The server is temporarily unavailable.';
-    }
-    if (status === 504) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📋 504 Gateway Timeout');
-        console.groupEnd();
-      }
-      return 'Gateway timeout. The server took too long to respond.';
-    }
-    
-    // Generic 500
+  }
+  
+  // Path 2: data.detail
+  if (data?.detail && typeof data.detail === 'string') {
     if (process.env.NODE_ENV === 'development') {
-      console.log('📋 Generic 500 error');
+      console.log('✅ Using custom 5XX detail message:', data.detail);
       console.groupEnd();
     }
-    return 'Server error. Please try again later.';
+    return data.detail;
   }
+  
+  // Path 3: data.error
+  if (data?.error) {
+    if (typeof data.error === 'string') {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Using custom 5XX error message:', data.error);
+        console.groupEnd();
+      }
+      return data.error;
+    }
+    
+    // data.error as array
+    if (Array.isArray(data.error) && data.error.length > 0) {
+      const messages = extractAllMessages(data.error);
+      const result = concatenateMessages(messages);
+      if (result) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ Using custom 5XX error array:', result);
+          console.groupEnd();
+        }
+        return result;
+      }
+    }
+  }
+  
+  // Path 4: data.message
+  if (data?.message && typeof data.message === 'string') {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Using custom 5XX message field:', data.message);
+      console.groupEnd();
+    }
+    return data.message;
+  }
+  
+  // ✅ ONLY use fallbacks if ALL extraction paths failed
+  if (status === 503) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📋 503 Service Unavailable (fallback)');
+      console.groupEnd();
+    }
+    return 'Service temporarily unavailable. Please try again shortly.';
+  }
+  if (status === 502) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📋 502 Bad Gateway (fallback)');
+      console.groupEnd();
+    }
+    return 'Bad gateway. The server is temporarily unavailable.';
+  }
+  if (status === 504) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📋 504 Gateway Timeout (fallback)');
+      console.groupEnd();
+    }
+    return 'Gateway timeout. The server took too long to respond.';
+  }
+  
+  // Generic 500 fallback
+  if (process.env.NODE_ENV === 'development') {
+    console.log('📋 Generic 500 error (fallback)');
+    console.groupEnd();
+  }
+  return 'Server error. Please try again later.';
+}
 
   // ==============================
   // 4. DRF STANDARD FORMATS
