@@ -1,6 +1,7 @@
 // frontend/src/api/_swr.js
 
 import { mutate } from 'swr';
+import { pollOperationStatus } from 'utils/pollOperationStatus';
 
 // ==============================|| SWR HELPERS MULTI-TENANT ||============================== //
 
@@ -206,6 +207,68 @@ export const shouldUseProgressiveRefetch = (result) => {
 export const handleBulkRevalidation = async (result, prefixes, onSyncProgress = null, onSyncComplete = null) => {
   if (!Array.isArray(prefixes) || prefixes.length === 0) {
     console.error('[handleBulkRevalidation] Invalid prefixes:', prefixes);
+    return;
+  }
+
+  // ==============================
+  // CAS 202 ACCEPTED - POLLING D'ÉTAT BACKEND
+  // ==============================
+  
+  if (result?.data?.__is202) {
+    console.log('[handleBulkRevalidation] 202 Accepted detected → using pollOperationStatus');
+    
+    // Import dynamique pour éviter circular dependency
+    const { default: pollOperationStatus, extractKeyFromPollUrl } = await import('utils/pollOperationStatus');
+    
+    // Extraire la clé d'idempotence (priorité : metadata > poll_url parsing)
+    let idempotencyKey = result.data.__idempotency_key;
+    
+    if (!idempotencyKey && result.data.__poll_url) {
+      idempotencyKey = extractKeyFromPollUrl(result.data.__poll_url);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[handleBulkRevalidation] Extracted key from poll_url: ${idempotencyKey?.slice(0, 8)}...`);
+      }
+    }
+    
+    if (!idempotencyKey) {
+      console.error('[handleBulkRevalidation] 202 response missing both __idempotency_key and __poll_url');
+      // Fallback sur revalidation immédiate
+      revalidateMultiple(prefixes);
+      if (onSyncComplete) onSyncComplete();
+      return;
+    }
+    
+    // Appeler le helper de polling
+    const pollResult = await pollOperationStatus(idempotencyKey, {
+      initialRetryAfter: result.data.__retry_after_ms || 0,
+      onProgress: onSyncProgress
+    });
+    
+    // Traiter le résultat du polling
+    if (pollResult.status === 'succeeded') {
+      console.log('[handleBulkRevalidation] Operation succeeded → revalidating data');
+      revalidateMultiple(prefixes);
+    } else if (pollResult.status === 'failed') {
+      console.error('[handleBulkRevalidation] Operation failed:', pollResult.error);
+      // Même en cas d'échec, on revalide pour afficher l'état réel
+      revalidateMultiple(prefixes);
+    } else if (pollResult.status === 'still_running') {
+      console.warn('[handleBulkRevalidation] Operation still running after max attempts');
+      // Polling max atteint mais opération continue → revalider quand même
+      // L'UI peut afficher un message "still processing"
+      revalidateMultiple(prefixes);
+    }
+    
+    // Callback de fin de polling
+    if (onSyncComplete && typeof onSyncComplete === 'function') {
+      try {
+        onSyncComplete();
+      } catch (err) {
+        console.error('[handleBulkRevalidation] onComplete callback error:', err);
+      }
+    }
+    
+    // Retour immédiat : le cas 202 est géré
     return;
   }
 

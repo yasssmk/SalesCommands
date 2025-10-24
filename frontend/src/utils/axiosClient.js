@@ -78,7 +78,7 @@ const parseRetryAfter = (retryAfter) => {
 // ==============================|| AXIOS CLIENT FACTORY ||============================== //
 
 /**
- * ✅ NEW: Create an axios client with specific timeout and profile
+ * axios client with specific timeout and profile
  * 
  * Factory pattern allows multiple clients with different timeout configurations
  * while sharing the same interceptor logic.
@@ -104,7 +104,7 @@ function createAxiosClient(timeout, profile = 'default') {
 }
 
 /**
- * ✅ NEW: Add request and response interceptors to an axios client
+ * request and response interceptors to an axios client
  * 
  * Factorized interceptor logic to avoid duplication across multiple clients.
  * Handles:
@@ -145,7 +145,8 @@ function addInterceptorsToClient(client, profile) {
       config.metadata = {
         correlationId,
         startTime: performance.now(),
-        profile // Track which profile was used
+        profile,
+        idempotencyKey: config.headers['Idempotency-Key']
       };
       
       if (process.env.NODE_ENV === 'development') {
@@ -173,6 +174,49 @@ function addInterceptorsToClient(client, profile) {
       let duration = 0;
       if (startTime) {
         duration = performance.now() - startTime;
+      }
+
+      // ==============================
+      // ✅ STEP 6: HANDLE 202 ACCEPTED - ASYNC OPERATION
+      // ==============================
+      
+      if (response.status === 202) {
+        const pollUrl = response.data?.poll_url;
+        const retryAfterHeader = response.headers?.['retry-after'];
+        const idempotencyKey = response.config.metadata?.idempotencyKey;
+        
+        if (process.env.NODE_ENV === 'development') {
+          debugLog(
+            `📨 [${correlationId.slice(0, 8)}] [${requestProfile.toUpperCase()}] 202 ACCEPTED: ${response.config.url}`
+          );
+          debugLog(
+            `   poll_url: ${pollUrl || 'N/A'}, Retry-After: ${retryAfterHeader || 'N/A'}`
+          );
+        }
+        
+        // Enrich response.data with polling metadata
+        // This allows handleBulkRevalidation() to detect 202 and trigger polling
+        response.data.__is202 = true;
+        response.data.__poll_url = pollUrl;
+        response.data.__idempotency_key = idempotencyKey;
+        
+        // Parse and attach Retry-After hint
+        if (retryAfterHeader) {
+          const retryAfterMs = parseRetryAfter(retryAfterHeader);
+          response.data.__retry_after_ms = retryAfterMs;
+          
+          if (process.env.NODE_ENV === 'development') {
+            debugLog(
+              `   Retry-After parsed: ${retryAfterMs}ms (${(retryAfterMs / 1000).toFixed(1)}s)`
+            );
+          }
+        }
+        
+        if (process.env.NODE_ENV === 'development') {
+          debugLog(
+            `   Enriched with: __is202=true, __idempotency_key=${idempotencyKey?.slice(0, 8)}...`
+          );
+        }
       }
       
       if (process.env.NODE_ENV === 'development') {
