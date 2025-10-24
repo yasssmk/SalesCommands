@@ -1070,7 +1070,7 @@ class UserBulkViewSet(UserViewSet):
             ctx.update({
                 'event': 'bulk_create_users_completed',
                 'requested': len(users_data),
-                'created': success_count,
+                'summary_created': success_count,
                 'failed': failed_count,
                 'skipped': skipped_count
             })
@@ -1202,14 +1202,23 @@ class UserBulkViewSet(UserViewSet):
                 clean_item['reason'] = str(clean_item['reason'])
             clean_results['skipped'].append(clean_item)
 
+        # ✅ CORRECTIF A: Map operation to specific summary key
+        operation_key_map = {
+            'create': 'created',
+            'update': 'updated',
+            'delete': 'deleted',
+            'archive': 'archived',
+        }
+        operation_key = operation_key_map.get(operation, 'processed')
+
         return Response({
             'success': success_status,
             'message': message,
             'summary': {
                 'requested': total,
-                'success': success_count,
+                operation_key: success_count,  
                 'failed': failed_count,
-                'skipped': skipped_count
+                'skipped': skipped_count,
             },
             'results': clean_results
         }, status=status_code)

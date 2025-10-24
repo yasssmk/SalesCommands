@@ -821,1486 +821,1486 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         except Exception as e:
             return self.handle_exception(e)
         
-    # =============== BULK ACTIONS =======================
+    # =============== BULK ACTIONS ======================= A SUPPRIMER
 
-    @action(detail=False, methods=['patch'], url_path='bulk-update')
-    def bulk_update(self, request):
-        """Bulk update users - IDEMPOTENT"""
-        idempotency_key = request.headers.get('Idempotency-Key')
+    # @action(detail=False, methods=['patch'], url_path='bulk-update')
+    # def bulk_update(self, request):
+    #     """Bulk update users - IDEMPOTENT"""
+    #     idempotency_key = request.headers.get('Idempotency-Key')
 
-        if not idempotency_key:
-            return self._bulk_update_impl(request)
+    #     if not idempotency_key:
+    #         return self._bulk_update_impl(request)
 
-        client_id = self.get_client_id()
+    #     client_id = self.get_client_id()
 
-        try:
-            owner = get_owner_from_request(request)
-        except ValueError as e:
-            return Response({'error': 'Tenant required', 'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+    #     try:
+    #         owner = get_owner_from_request(request)
+    #     except ValueError as e:
+    #         return Response({'error': 'Tenant required', 'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
 
-        payload_hash = compute_payload_hash(request.data)
+    #     payload_hash = compute_payload_hash(request.data)
 
-        try:
-            op = start_op(client_id, idempotency_key, payload_hash, owner)
-        except ValueError as e:
-            return Response({'error': 'Idempotency conflict', 'detail': str(e), 'code': 'IDEMPOTENCY_CONFLICT'}, status=status.HTTP_409_CONFLICT)
+    #     try:
+    #         op = start_op(client_id, idempotency_key, payload_hash, owner)
+    #     except ValueError as e:
+    #         return Response({'error': 'Idempotency conflict', 'detail': str(e), 'code': 'IDEMPOTENCY_CONFLICT'}, status=status.HTTP_409_CONFLICT)
 
-        if op:
-            if op['status'] == 'succeeded':
-                result_data = op.get('result', {})
-                if isinstance(result_data, dict) and 'data' in result_data:
-                    return Response(result_data['data'], status=result_data.get('http_status', status.HTTP_200_OK))
-                else:
-                    return Response(result_data, status=status.HTTP_200_OK)
+    #     if op:
+    #         if op['status'] == 'succeeded':
+    #             result_data = op.get('result', {})
+    #             if isinstance(result_data, dict) and 'data' in result_data:
+    #                 return Response(result_data['data'], status=result_data.get('http_status', status.HTTP_200_OK))
+    #             else:
+    #                 return Response(result_data, status=status.HTTP_200_OK)
 
-            elif op['status'] == 'failed':
-                err = op.get('result') or {}
-                return Response({
-                    'error': 'Operation failed',
-                    'detail': err.get('message', 'Unknown error')
-                }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
+    #         elif op['status'] == 'failed':
+    #             err = op.get('result') or {}
+    #             return Response({
+    #                 'error': 'Operation failed',
+    #                 'detail': err.get('message', 'Unknown error')
+    #             }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
 
-            elif op['status'] == 'running':
-                return Response({'status': 'processing', 'message': 'Operation in progress', 'poll_url': reverse('ops:status', args=[idempotency_key])}, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
+    #         elif op['status'] == 'running':
+    #             return Response({'status': 'processing', 'message': 'Operation in progress', 'poll_url': reverse('ops:status', args=[idempotency_key])}, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
 
-        try:
-            result = self._bulk_update_impl(request)
-            complete_op(client_id, idempotency_key, {'data': result.data, 'http_status': result.status_code})
-            return result
+    #     try:
+    #         result = self._bulk_update_impl(request)
+    #         complete_op(client_id, idempotency_key, {'data': result.data, 'http_status': result.status_code})
+    #         return result
 
-        except StandardizedValidationError as e:
-            fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_400_BAD_REQUEST})
-            raise
+    #     except StandardizedValidationError as e:
+    #         fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_400_BAD_REQUEST})
+    #         raise
         
-        except Exception as e:
-            fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR})
-            raise
+    #     except Exception as e:
+    #         fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR})
+    #         raise
 
 
-    def _bulk_update_impl(self, request):
-        """Internal implementation of bulk update"""
-        ctx = ctx_from_request(request) 
-        ctx.update({'event': 'bulk_update_users', 'client_id': self.get_client_id()})
+    # def _bulk_update_impl(self, request):
+    #     """Internal implementation of bulk update"""
+    #     ctx = ctx_from_request(request) 
+    #     ctx.update({'event': 'bulk_update_users', 'client_id': self.get_client_id()})
 
-        try:
-            if not isinstance(request.data, dict):
-                raise StandardizedValidationError("Request must be a JSON object")
+    #     try:
+    #         if not isinstance(request.data, dict):
+    #             raise StandardizedValidationError("Request must be a JSON object")
 
-            ids = request.data.get('ids', [])
-            patch = request.data.get('patch', {})
-            mode = request.data.get('mode', 'partial')
+    #         ids = request.data.get('ids', [])
+    #         patch = request.data.get('patch', {})
+    #         mode = request.data.get('mode', 'partial')
 
-            if not isinstance(ids, list):
-                raise StandardizedValidationError(CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs"))
+    #         if not isinstance(ids, list):
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs"))
 
-            if not ids:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_NO_DATA.format(entity="user IDs"))
+    #         if not ids:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_NO_DATA.format(entity="user IDs"))
 
-            if len(ids) > 500:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users"))
+    #         if len(ids) > 500:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users"))
 
-            if not isinstance(patch, dict):
-                raise StandardizedValidationError("Patch data must be a JSON object")
+    #         if not isinstance(patch, dict):
+    #             raise StandardizedValidationError("Patch data must be a JSON object")
 
-            if not patch:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_UPDATE_NO_FIELDS)
+    #         if not patch:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_UPDATE_NO_FIELDS)
 
-            if mode not in ['partial', 'strict']:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
+    #         if mode not in ['partial', 'strict']:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
 
-            ctx['ids_count'] = len(ids)
-            ctx['mode'] = mode
-            logger.info("Starting bulk user update", extra=ctx)
+    #         ctx['ids_count'] = len(ids)
+    #         ctx['mode'] = mode
+    #         logger.info("Starting bulk user update", extra=ctx)
 
-            ALLOWED_FIELDS = {'is_active', 'is_superuser', 'role', 'team', 'organization'}
-            invalid_fields = set(patch.keys()) - ALLOWED_FIELDS
+    #         ALLOWED_FIELDS = {'is_active', 'is_superuser', 'role', 'team', 'organization'}
+    #         invalid_fields = set(patch.keys()) - ALLOWED_FIELDS
 
-            if invalid_fields:
-                raise StandardizedValidationError(f"Fields not allowed in bulk update: {', '.join(invalid_fields)}. Allowed: {', '.join(ALLOWED_FIELDS)}")
+    #         if invalid_fields:
+    #             raise StandardizedValidationError(f"Fields not allowed in bulk update: {', '.join(invalid_fields)}. Allowed: {', '.join(ALLOWED_FIELDS)}")
 
-            requester_id = request.user.id 
-            if requester_id in ids:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_UPDATE_SELF_MODIFY)
+    #         requester_id = request.user.id 
+    #         if requester_id in ids:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_UPDATE_SELF_MODIFY)
 
-            client_id = self.get_client_id()
-            users_qs = User.objects.filter(id__in=ids, client_account_id=client_id).select_related('role', 'team', 'organization', 'client_account')
-            users_dict = {str(u.id): u for u in users_qs}
+    #         client_id = self.get_client_id()
+    #         users_qs = User.objects.filter(id__in=ids, client_account_id=client_id).select_related('role', 'team', 'organization', 'client_account')
+    #         users_dict = {str(u.id): u for u in users_qs}
 
-            invalid_ids = set(ids) - set(users_dict.keys())
+    #         invalid_ids = set(ids) - set(users_dict.keys())
 
-            results = {'success': [], 'failed': []}
+    #         results = {'success': [], 'failed': []}
 
-            for invalid_id in invalid_ids:
-                results['failed'].append({'id': invalid_id, 'email': 'Unknown', 'errors': [CoreErrorMessages.BULK_UPDATE_INVALID_ID.format(id=invalid_id)]})
+    #         for invalid_id in invalid_ids:
+    #             results['failed'].append({'id': invalid_id, 'email': 'Unknown', 'errors': [CoreErrorMessages.BULK_UPDATE_INVALID_ID.format(id=invalid_id)]})
 
-            if mode == 'strict' and invalid_ids:
-                return self._build_bulk_error_response(results, len(ids), f"Strict mode: {len(invalid_ids)} invalid ID(s) found")
+    #         if mode == 'strict' and invalid_ids:
+    #             return self._build_bulk_error_response(results, len(ids), f"Strict mode: {len(invalid_ids)} invalid ID(s) found")
 
-            if mode == 'strict':
-                with transaction.atomic():
-                    try:
-                        for user_id in ids:
-                            if user_id in invalid_ids:
-                                continue
-                            user = users_dict[user_id]
+    #         if mode == 'strict':
+    #             with transaction.atomic():
+    #                 try:
+    #                     for user_id in ids:
+    #                         if user_id in invalid_ids:
+    #                             continue
+    #                         user = users_dict[user_id]
 
-                            try:
-                                self._validate_and_apply_patch(user, patch, client_id)
-                                results['success'].append({'id': str(user.id), 'email': user.email, 'name': user.get_full_name()})
-                            except StandardizedValidationError as e:
-                                error_msg = self._format_bulk_error_message(e)
-                                results['failed'].append({'id': user_id, 'email': user.email, 'errors': [error_msg]})
-                                raise
+    #                         try:
+    #                             self._validate_and_apply_patch(user, patch, client_id)
+    #                             results['success'].append({'id': str(user.id), 'email': user.email, 'name': user.get_full_name()})
+    #                         except StandardizedValidationError as e:
+    #                             error_msg = self._format_bulk_error_message(e)
+    #                             results['failed'].append({'id': user_id, 'email': user.email, 'errors': [error_msg]})
+    #                             raise
                             
-                        transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
+    #                     transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
 
-                    except Exception as e:
-                        error_msg = self._format_bulk_error_message(e)
-                        ctx['event'] = 'bulk_update_strict_mode_failed'
-                        ctx['error'] = error_msg
-                        logger.error("Bulk update strict mode failed", extra=ctx, exc_info=True)
-                        return self._build_bulk_error_response({'success': [], 'failed': results['failed']}, len(ids), f"Strict mode failed: {error_msg}")
-            else:
-                for user_id in ids:
-                    if user_id in invalid_ids:
-                        continue
+    #                 except Exception as e:
+    #                     error_msg = self._format_bulk_error_message(e)
+    #                     ctx['event'] = 'bulk_update_strict_mode_failed'
+    #                     ctx['error'] = error_msg
+    #                     logger.error("Bulk update strict mode failed", extra=ctx, exc_info=True)
+    #                     return self._build_bulk_error_response({'success': [], 'failed': results['failed']}, len(ids), f"Strict mode failed: {error_msg}")
+    #         else:
+    #             for user_id in ids:
+    #                 if user_id in invalid_ids:
+    #                     continue
                     
-                    user = users_dict[user_id]
+    #                 user = users_dict[user_id]
 
-                    with transaction.atomic():
-                        try:
-                            self._validate_and_apply_patch(user, patch, client_id)
-                            results['success'].append({'id': str(user.id), 'email': user.email, 'name': user.get_full_name()})
-                        except StandardizedValidationError as e:
-                            error_msg = self._format_bulk_error_message(e)
-                            results['failed'].append({'id': user_id, 'email': user.email, 'errors': [error_msg]})
-                            transaction.set_rollback(True)
-                            ctx['event'] = 'bulk_update_unexpected_error'
-                            ctx['user_id'] = user_id
-                            ctx['error'] = str(e)
-                            logger.error("Unexpected error in bulk update", extra=ctx, exc_info=True)
+    #                 with transaction.atomic():
+    #                     try:
+    #                         self._validate_and_apply_patch(user, patch, client_id)
+    #                         results['success'].append({'id': str(user.id), 'email': user.email, 'name': user.get_full_name()})
+    #                     except StandardizedValidationError as e:
+    #                         error_msg = self._format_bulk_error_message(e)
+    #                         results['failed'].append({'id': user_id, 'email': user.email, 'errors': [error_msg]})
+    #                         transaction.set_rollback(True)
+    #                         ctx['event'] = 'bulk_update_unexpected_error'
+    #                         ctx['user_id'] = user_id
+    #                         ctx['error'] = str(e)
+    #                         logger.error("Unexpected error in bulk update", extra=ctx, exc_info=True)
 
-                invalidate_tag(client_id, 'users')
+    #             invalidate_tag(client_id, 'users')
 
-            success_count = len(results['success'])
-            failed_count = len(results['failed'])
+    #         success_count = len(results['success'])
+    #         failed_count = len(results['failed'])
 
-            ctx.update({'event': 'bulk_update_users_completed', 'requested': len(ids), 'updated': success_count, 'failed': failed_count})
-            logger.info("Bulk user update completed", extra=ctx)
+    #         ctx.update({'event': 'bulk_update_users_completed', 'requested': len(ids), 'updated': success_count, 'failed': failed_count})
+    #         logger.info("Bulk user update completed", extra=ctx)
 
-            return self._build_bulk_success_response(results, len(ids), operation='update')
+    #         return self._build_bulk_success_response(results, len(ids), operation='update')
 
-        except StandardizedValidationError as e:
-            if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                error_msg = e.detail.get('error', str(e))
-            else:
-                error_msg = str(e)
+    #     except StandardizedValidationError as e:
+    #         if hasattr(e, 'detail') and isinstance(e.detail, dict):
+    #             error_msg = e.detail.get('error', str(e))
+    #         else:
+    #             error_msg = str(e)
 
-            return self._build_bulk_error_response(results={'success': [], 'failed': [], 'skipped': []}, total=0, error_message=error_msg)
+    #         return self._build_bulk_error_response(results={'success': [], 'failed': [], 'skipped': []}, total=0, error_message=error_msg)
 
 
-    # =============================================================================
-    # BULK_CREATE - IDEMPOTENT VERSION
-    # =============================================================================
+    # # =============================================================================
+    # # BULK_CREATE - IDEMPOTENT VERSION
+    # # =============================================================================
 
-    @action(detail=False, methods=['post'], url_path='bulk-create')
-    def bulk_create(self, request):
-        """Bulk create users - IDEMPOTENT"""
-        idempotency_key = request.headers.get('Idempotency-Key')
+    # @action(detail=False, methods=['post'], url_path='bulk-create')
+    # def bulk_create(self, request):
+    #     """Bulk create users - IDEMPOTENT"""
+    #     idempotency_key = request.headers.get('Idempotency-Key')
 
-        if not idempotency_key:
-            return self._bulk_create_impl(request)
+    #     if not idempotency_key:
+    #         return self._bulk_create_impl(request)
 
-        client_id = self.get_client_id()
+    #     client_id = self.get_client_id()
 
-        try:
-            owner = get_owner_from_request(request)
-        except ValueError as e:
-            return Response({'error': 'Tenant required', 'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+    #     try:
+    #         owner = get_owner_from_request(request)
+    #     except ValueError as e:
+    #         return Response({'error': 'Tenant required', 'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
 
-        payload_hash = compute_payload_hash(request.data)
+    #     payload_hash = compute_payload_hash(request.data)
 
-        try:
-            op = start_op(client_id, idempotency_key, payload_hash, owner)
-        except ValueError as e:
-            return Response({'error': 'Idempotency conflict', 'detail': str(e), 'code': 'IDEMPOTENCY_CONFLICT'}, status=status.HTTP_409_CONFLICT)
+    #     try:
+    #         op = start_op(client_id, idempotency_key, payload_hash, owner)
+    #     except ValueError as e:
+    #         return Response({'error': 'Idempotency conflict', 'detail': str(e), 'code': 'IDEMPOTENCY_CONFLICT'}, status=status.HTTP_409_CONFLICT)
 
-        if op:
-            if op['status'] == 'succeeded':
-                result_data = op.get('result', {})
-                if isinstance(result_data, dict) and 'data' in result_data:
-                    return Response(result_data['data'], status=result_data.get('http_status', status.HTTP_201_CREATED))
-                else:
-                    return Response(result_data, status=status.HTTP_201_CREATED)
+    #     if op:
+    #         if op['status'] == 'succeeded':
+    #             result_data = op.get('result', {})
+    #             if isinstance(result_data, dict) and 'data' in result_data:
+    #                 return Response(result_data['data'], status=result_data.get('http_status', status.HTTP_201_CREATED))
+    #             else:
+    #                 return Response(result_data, status=status.HTTP_201_CREATED)
 
-            elif op['status'] == 'failed':
-                err = op.get('result') or {}
-                return Response({
-                    'error': 'Operation failed',
-                    'detail': err.get('message', 'Unknown error')
-                }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
+    #         elif op['status'] == 'failed':
+    #             err = op.get('result') or {}
+    #             return Response({
+    #                 'error': 'Operation failed',
+    #                 'detail': err.get('message', 'Unknown error')
+    #             }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
 
-            elif op['status'] == 'running':
-                return Response({'status': 'processing', 'message': 'Operation in progress', 'poll_url': reverse('ops:status', args=[idempotency_key])}, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
+    #         elif op['status'] == 'running':
+    #             return Response({'status': 'processing', 'message': 'Operation in progress', 'poll_url': reverse('ops:status', args=[idempotency_key])}, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
 
-        try:
-            result = self._bulk_create_impl(request)
-            complete_op(client_id, idempotency_key, {'data': result.data, 'http_status': result.status_code})
-            return result
+    #     try:
+    #         result = self._bulk_create_impl(request)
+    #         complete_op(client_id, idempotency_key, {'data': result.data, 'http_status': result.status_code})
+    #         return result
 
-        except StandardizedValidationError as e:
-            fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_400_BAD_REQUEST})
-            raise
+    #     except StandardizedValidationError as e:
+    #         fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_400_BAD_REQUEST})
+    #         raise
         
-        except Exception as e:
-            fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR})
-            raise
+    #     except Exception as e:
+    #         fail_op(client_id, idempotency_key, {'message': str(e), 'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR})
+    #         raise
 
 
-    def _bulk_create_impl(self, request):
-        """Internal implementation of bulk create"""
-        ctx = ctx_from_request(request)
-        ctx.update({'event': 'bulk_create_users', 'client_id': self.get_client_id()})
+    # def _bulk_create_impl(self, request):
+    #     """Internal implementation of bulk create"""
+    #     ctx = ctx_from_request(request)
+    #     ctx.update({'event': 'bulk_create_users', 'client_id': self.get_client_id()})
 
-        try:
-            if not isinstance(request.data, dict):
-                raise StandardizedValidationError("Request must be a JSON object")
+    #     try:
+    #         if not isinstance(request.data, dict):
+    #             raise StandardizedValidationError("Request must be a JSON object")
 
-            users_data = request.data.get('users', [])
-            mode = request.data.get('mode', 'partial')
+    #         users_data = request.data.get('users', [])
+    #         mode = request.data.get('mode', 'partial')
 
-            if not isinstance(users_data, list):
-                raise StandardizedValidationError("'users' must be a list")
+    #         if not isinstance(users_data, list):
+    #             raise StandardizedValidationError("'users' must be a list")
 
-            if not users_data:
-                raise StandardizedValidationError("No users provided")
+    #         if not users_data:
+    #             raise StandardizedValidationError("No users provided")
 
-            if len(users_data) > 500:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users"))
+    #         if len(users_data) > 500:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users"))
 
-            if mode not in ['partial', 'strict']:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
+    #         if mode not in ['partial', 'strict']:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
 
-            ctx['users_count'] = len(users_data)
-            ctx['mode'] = mode
-            logger.info("Starting bulk user create", extra=ctx)
+    #         ctx['users_count'] = len(users_data)
+    #         ctx['mode'] = mode
+    #         logger.info("Starting bulk user create", extra=ctx)
 
-            client_id = self.get_client_id()
-            results = {'success': [], 'failed': [], 'skipped': []}
+    #         client_id = self.get_client_id()
+    #         results = {'success': [], 'failed': [], 'skipped': []}
 
-            existing_emails = set(User.objects.filter(client_account_id=client_id, email__in=[u.get('email') for u in users_data if u.get('email')]).values_list('email', flat=True))
+    #         existing_emails = set(User.objects.filter(client_account_id=client_id, email__in=[u.get('email') for u in users_data if u.get('email')]).values_list('email', flat=True))
 
-            for idx, user_data in enumerate(users_data):
-                row_num = idx + 1
-                email = user_data.get('email')
+    #         for idx, user_data in enumerate(users_data):
+    #             row_num = idx + 1
+    #             email = user_data.get('email')
 
-                if email and email in existing_emails:
-                    results['skipped'].append({'row': row_num, 'email': email, 'reason': 'Email already exists'})
+    #             if email and email in existing_emails:
+    #                 results['skipped'].append({'row': row_num, 'email': email, 'reason': 'Email already exists'})
 
-            if mode == 'strict':
-                if results['skipped']:
-                    return self._build_bulk_error_response(results, len(users_data), f"Strict mode: {len(results['skipped'])} duplicate email(s) found")
+    #         if mode == 'strict':
+    #             if results['skipped']:
+    #                 return self._build_bulk_error_response(results, len(users_data), f"Strict mode: {len(results['skipped'])} duplicate email(s) found")
 
-                with transaction.atomic():
-                    try:
-                        for idx, user_data in enumerate(users_data):
-                            row_num = idx + 1
-                            email_display = user_data.get('email', 'Unknown')
+    #             with transaction.atomic():
+    #                 try:
+    #                     for idx, user_data in enumerate(users_data):
+    #                         row_num = idx + 1
+    #                         email_display = user_data.get('email', 'Unknown')
 
-                            if any(s['row'] == row_num for s in results['skipped']):
-                                continue
+    #                         if any(s['row'] == row_num for s in results['skipped']):
+    #                             continue
 
-                            try:
-                                user_data['client_account'] = client_id
-                                self._validate_superuser_modification(request.user, user_data)
+    #                         try:
+    #                             user_data['client_account'] = client_id
+    #                             self._validate_superuser_modification(request.user, user_data)
 
-                                serializer = self.get_serializer(data=user_data, context=self.get_serializer_context())
-                                serializer.is_valid(raise_exception=True)
-                                user = serializer.save()
+    #                             serializer = self.get_serializer(data=user_data, context=self.get_serializer_context())
+    #                             serializer.is_valid(raise_exception=True)
+    #                             user = serializer.save()
 
-                                results['success'].append({'row': row_num, 'email': user.email, 'id': str(user.id), 'name': user.get_full_name()})
+    #                             results['success'].append({'row': row_num, 'email': user.email, 'id': str(user.id), 'name': user.get_full_name()})
 
-                            except StandardizedValidationError as e:
-                                error_msg = self._format_bulk_error_message(e)
-                                results['failed'].append({'row': row_num, 'email': email_display, 'errors': [error_msg]})
-                                raise
+    #                         except StandardizedValidationError as e:
+    #                             error_msg = self._format_bulk_error_message(e)
+    #                             results['failed'].append({'row': row_num, 'email': email_display, 'errors': [error_msg]})
+    #                             raise
                             
-                        transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
+    #                     transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
 
-                    except Exception as e:
-                        error_msg = self._format_bulk_error_message(e)
-                        ctx['event'] = 'bulk_create_strict_mode_failed'
-                        ctx['error'] = error_msg
-                        logger.error("Bulk create strict mode failed", extra=ctx, exc_info=True)
-                        return self._build_bulk_error_response({'success': [], 'failed': [], 'skipped': results['skipped']}, len(users_data), f"Strict mode failed: {error_msg}")
-            else:
-                for idx, user_data in enumerate(users_data):
-                    row_num = idx + 1
-                    email_display = user_data.get('email', 'Unknown')
+    #                 except Exception as e:
+    #                     error_msg = self._format_bulk_error_message(e)
+    #                     ctx['event'] = 'bulk_create_strict_mode_failed'
+    #                     ctx['error'] = error_msg
+    #                     logger.error("Bulk create strict mode failed", extra=ctx, exc_info=True)
+    #                     return self._build_bulk_error_response({'success': [], 'failed': [], 'skipped': results['skipped']}, len(users_data), f"Strict mode failed: {error_msg}")
+    #         else:
+    #             for idx, user_data in enumerate(users_data):
+    #                 row_num = idx + 1
+    #                 email_display = user_data.get('email', 'Unknown')
 
-                    if any(s['row'] == row_num for s in results['skipped']):
-                        continue
+    #                 if any(s['row'] == row_num for s in results['skipped']):
+    #                     continue
 
-                    with transaction.atomic():
-                        try:
-                            user_data['client_account'] = client_id
-                            self._validate_superuser_modification(request.user, user_data)
+    #                 with transaction.atomic():
+    #                     try:
+    #                         user_data['client_account'] = client_id
+    #                         self._validate_superuser_modification(request.user, user_data)
 
-                            serializer = self.get_serializer(data=user_data, context=self.get_serializer_context())
-                            serializer.is_valid(raise_exception=True)
-                            user = serializer.save()
+    #                         serializer = self.get_serializer(data=user_data, context=self.get_serializer_context())
+    #                         serializer.is_valid(raise_exception=True)
+    #                         user = serializer.save()
 
-                            results['success'].append({'row': row_num, 'email': user.email, 'id': str(user.id), 'name': user.get_full_name()})
+    #                         results['success'].append({'row': row_num, 'email': user.email, 'id': str(user.id), 'name': user.get_full_name()})
 
-                        except StandardizedValidationError as e:
-                            error_msg = self._format_bulk_error_message(e)
-                            results['failed'].append({'row': row_num, 'email': email_display, 'errors': [error_msg]})
-                            transaction.set_rollback(True)
+    #                     except StandardizedValidationError as e:
+    #                         error_msg = self._format_bulk_error_message(e)
+    #                         results['failed'].append({'row': row_num, 'email': email_display, 'errors': [error_msg]})
+    #                         transaction.set_rollback(True)
 
-                        except Exception as e:
-                            ctx['event'] = 'bulk_create_unexpected_error'
-                            ctx['row'] = row_num
-                            ctx['error'] = str(e)
-                            logger.error("Unexpected error in bulk create", extra=ctx, exc_info=True)
+    #                     except Exception as e:
+    #                         ctx['event'] = 'bulk_create_unexpected_error'
+    #                         ctx['row'] = row_num
+    #                         ctx['error'] = str(e)
+    #                         logger.error("Unexpected error in bulk create", extra=ctx, exc_info=True)
 
-                            error_msg = self._format_bulk_error_message(e)
-                            results['failed'].append({'row': row_num, 'email': email_display, 'errors': [error_msg]})
-                            transaction.set_rollback(True)
+    #                         error_msg = self._format_bulk_error_message(e)
+    #                         results['failed'].append({'row': row_num, 'email': email_display, 'errors': [error_msg]})
+    #                         transaction.set_rollback(True)
 
-                invalidate_tag(client_id, 'users')
+    #             invalidate_tag(client_id, 'users')
 
-            return self._build_bulk_success_response(results, len(users_data), operation='create')
+    #         return self._build_bulk_success_response(results, len(users_data), operation='create')
 
-        except StandardizedValidationError as e:
-            if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                error_msg = e.detail.get('error', str(e))
-            else:
-                error_msg = str(e)
+    #     except StandardizedValidationError as e:
+    #         if hasattr(e, 'detail') and isinstance(e.detail, dict):
+    #             error_msg = e.detail.get('error', str(e))
+    #         else:
+    #             error_msg = str(e)
 
-            return self._build_bulk_error_response(results={'success': [], 'failed': [], 'skipped': []}, total=0, error_message=error_msg)
+    #         return self._build_bulk_error_response(results={'success': [], 'failed': [], 'skipped': []}, total=0, error_message=error_msg)
 
 
 
         
-    @action(detail=False, methods=['delete'], url_path='bulk-delete')
-    def bulk_delete(self, request):
-        """
-        Physically delete multiple users in bulk (hard delete) - IDEMPOTENT VERSION
+    # @action(detail=False, methods=['delete'], url_path='bulk-delete')
+    # def bulk_delete(self, request):
+    #     """
+    #     Physically delete multiple users in bulk (hard delete) - IDEMPOTENT VERSION
         
-        This is the idempotency wrapper. The actual business logic is in _bulk_delete_impl().
+    #     This is the idempotency wrapper. The actual business logic is in _bulk_delete_impl().
         
-        Idempotency:
-            - Without Idempotency-Key header → executes normally (backwards compatible)
-            - With Idempotency-Key header → idempotent execution (stores result for replay)
+    #     Idempotency:
+    #         - Without Idempotency-Key header → executes normally (backwards compatible)
+    #         - With Idempotency-Key header → idempotent execution (stores result for replay)
         
-        Returns:
-            - 200 OK: Operation succeeded (with result)
-            - 202 Accepted: Operation still running (with poll_url)
-            - 400 Bad Request: Validation error
-            - 403 Forbidden: Tenant missing in strict mode
-            - 409 Conflict: Same key with different payload
-            - 500 Internal Server Error: Unexpected error
-        """
-        # 1. Extract Idempotency-Key header
-        idempotency_key = request.headers.get('Idempotency-Key')
+    #     Returns:
+    #         - 200 OK: Operation succeeded (with result)
+    #         - 202 Accepted: Operation still running (with poll_url)
+    #         - 400 Bad Request: Validation error
+    #         - 403 Forbidden: Tenant missing in strict mode
+    #         - 409 Conflict: Same key with different payload
+    #         - 500 Internal Server Error: Unexpected error
+    #     """
+    #     # 1. Extract Idempotency-Key header
+    #     idempotency_key = request.headers.get('Idempotency-Key')
         
-        # 2. If no key → execute normally (backwards compatible)
-        if not idempotency_key:
-            return self._bulk_delete_impl(request)
+    #     # 2. If no key → execute normally (backwards compatible)
+    #     if not idempotency_key:
+    #         return self._bulk_delete_impl(request)
         
-        # 3. Get client_id and owner for idempotency
-        client_id = self.get_client_id()
+    #     # 3. Get client_id and owner for idempotency
+    #     client_id = self.get_client_id()
         
-        try:
-            owner = get_owner_from_request(request)
-        except ValueError as e:
-            # Tenant validation failed (strict mode)
-            return Response({
-                'error': 'Tenant required',
-                'detail': str(e)
-            }, status=status.HTTP_403_FORBIDDEN)
+    #     try:
+    #         owner = get_owner_from_request(request)
+    #     except ValueError as e:
+    #         # Tenant validation failed (strict mode)
+    #         return Response({
+    #             'error': 'Tenant required',
+    #             'detail': str(e)
+    #         }, status=status.HTTP_403_FORBIDDEN)
         
-        # 4. Compute payload hash
-        payload_hash = compute_payload_hash(request.data)
+    #     # 4. Compute payload hash
+    #     payload_hash = compute_payload_hash(request.data)
         
-        # 5. Start operation (check idempotency)
-        try:
-            op = start_op(client_id, idempotency_key, payload_hash, owner)
-        except ValueError as e:
-            # Conflict: Same key, different payload
-            return Response({
-                'error': 'Idempotency conflict',
-                'detail': str(e),
-                'code': 'IDEMPOTENCY_CONFLICT'
-            }, status=status.HTTP_409_CONFLICT)
+    #     # 5. Start operation (check idempotency)
+    #     try:
+    #         op = start_op(client_id, idempotency_key, payload_hash, owner)
+    #     except ValueError as e:
+    #         # Conflict: Same key, different payload
+    #         return Response({
+    #             'error': 'Idempotency conflict',
+    #             'detail': str(e),
+    #             'code': 'IDEMPOTENCY_CONFLICT'
+    #         }, status=status.HTTP_409_CONFLICT)
         
-        # 6. If operation already exists, return cached result or status
-        if op:
-            if op['status'] == 'succeeded':
-                # Already completed successfully - return cached result
-                result_data = op.get('result', {})
+    #     # 6. If operation already exists, return cached result or status
+    #     if op:
+    #         if op['status'] == 'succeeded':
+    #             # Already completed successfully - return cached result
+    #             result_data = op.get('result', {})
                 
-                # Extract data and http_status if stored in new format
-                if isinstance(result_data, dict) and 'data' in result_data:
-                    return Response(
-                        result_data['data'],
-                        status=result_data.get('http_status', status.HTTP_200_OK)
-                    )
-                else:
-                    # Legacy format (just data)
-                    return Response(result_data, status=status.HTTP_200_OK)
+    #             # Extract data and http_status if stored in new format
+    #             if isinstance(result_data, dict) and 'data' in result_data:
+    #                 return Response(
+    #                     result_data['data'],
+    #                     status=result_data.get('http_status', status.HTTP_200_OK)
+    #                 )
+    #             else:
+    #                 # Legacy format (just data)
+    #                 return Response(result_data, status=status.HTTP_200_OK)
             
-            elif op['status'] == 'failed':
-                err = op.get('result') or {}
-                return Response({
-                    'error': 'Operation failed',
-                    'detail': err.get('message', 'Unknown error')
-                }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
+    #         elif op['status'] == 'failed':
+    #             err = op.get('result') or {}
+    #             return Response({
+    #                 'error': 'Operation failed',
+    #                 'detail': err.get('message', 'Unknown error')
+    #             }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
             
-            elif op['status'] == 'running':
-                # Still processing (concurrent request or retry during execution)
-                return Response({
-                    'status': 'processing',
-                    'message': 'Operation in progress',
-                    'poll_url': reverse('ops:status', args=[idempotency_key])
-                }, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
+    #         elif op['status'] == 'running':
+    #             # Still processing (concurrent request or retry during execution)
+    #             return Response({
+    #                 'status': 'processing',
+    #                 'message': 'Operation in progress',
+    #                 'poll_url': reverse('ops:status', args=[idempotency_key])
+    #             }, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
         
-        # 7. New operation → Execute business logic
-        try:
-            result = self._bulk_delete_impl(request)
+    #     # 7. New operation → Execute business logic
+    #     try:
+    #         result = self._bulk_delete_impl(request)
             
-            # 8. Mark as completed with status code
-            complete_op(client_id, idempotency_key, {
-                'data': result.data,
-                'http_status': result.status_code
-            })
+    #         # 8. Mark as completed with status code
+    #         complete_op(client_id, idempotency_key, {
+    #             'data': result.data,
+    #             'http_status': result.status_code
+    #         })
             
-            return result
+    #         return result
         
-        except StandardizedValidationError as e:
-            fail_op(client_id, idempotency_key, {
-                'message': str(e),
-                'http_status': status.HTTP_400_BAD_REQUEST
-            })
-            raise
+    #     except StandardizedValidationError as e:
+    #         fail_op(client_id, idempotency_key, {
+    #             'message': str(e),
+    #             'http_status': status.HTTP_400_BAD_REQUEST
+    #         })
+    #         raise
 
-        except Exception as e:
-            fail_op(client_id, idempotency_key, {
-                'message': str(e),
-                'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR
-            })
-            raise
+    #     except Exception as e:
+    #         fail_op(client_id, idempotency_key, {
+    #             'message': str(e),
+    #             'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR
+    #         })
+    #         raise
         
-    # ========================================================================
-    # ✅ BULK DELETE IMPLEMENTATION - LOGIQUE MÉTIER EXTRAITE
-    # ========================================================================
+    # # ========================================================================
+    # # ✅ BULK DELETE IMPLEMENTATION - LOGIQUE MÉTIER EXTRAITE
+    # # ========================================================================
     
-    def _bulk_delete_impl(self, request):
-        """
-        Internal implementation of bulk delete.
+    # def _bulk_delete_impl(self, request):
+    #     """
+    #     Internal implementation of bulk delete.
         
-        This contains the actual business logic extracted from the original bulk_delete method.
-        Can be called directly (without idempotency) or via the idempotent wrapper.
+    #     This contains the actual business logic extracted from the original bulk_delete method.
+    #     Can be called directly (without idempotency) or via the idempotent wrapper.
         
-        Args:
-            request: DRF Request object with:
-                - data.ids: List of user IDs to delete
-                - data.mode: 'partial' or 'strict'
+    #     Args:
+    #         request: DRF Request object with:
+    #             - data.ids: List of user IDs to delete
+    #             - data.mode: 'partial' or 'strict'
         
-        Returns:
-            Response: DRF Response with operation results
+    #     Returns:
+    #         Response: DRF Response with operation results
         
-        Raises:
-            StandardizedValidationError: For validation errors
-            Exception: For unexpected errors
-        """
-        ctx = ctx_from_request(request)
-        ctx.update({
-            'event': 'bulk_delete_users_hard',
-            'client_id': self.get_client_id()
-        })
+    #     Raises:
+    #         StandardizedValidationError: For validation errors
+    #         Exception: For unexpected errors
+    #     """
+    #     ctx = ctx_from_request(request)
+    #     ctx.update({
+    #         'event': 'bulk_delete_users_hard',
+    #         'client_id': self.get_client_id()
+    #     })
 
-        try:
-            # ===== INPUT VALIDATION =====
-            if not isinstance(request.data, dict):
-                raise StandardizedValidationError("Request must be a JSON object")
+    #     try:
+    #         # ===== INPUT VALIDATION =====
+    #         if not isinstance(request.data, dict):
+    #             raise StandardizedValidationError("Request must be a JSON object")
 
-            ids = request.data.get('ids', [])
-            mode = request.data.get('mode', 'partial')
+    #         ids = request.data.get('ids', [])
+    #         mode = request.data.get('mode', 'partial')
 
-            if not isinstance(ids, list):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs")
-                )
+    #         if not isinstance(ids, list):
+    #             raise StandardizedValidationError(
+    #                 CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs")
+    #             )
 
-            if not ids:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_NO_IDS)
+    #         if not ids:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_NO_IDS)
 
-            if len(ids) > 500:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users")
-                )
+    #         if len(ids) > 500:
+    #             raise StandardizedValidationError(
+    #                 CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users")
+    #             )
 
-            if mode not in ['partial', 'strict']:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
+    #         if mode not in ['partial', 'strict']:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
 
-            ctx['ids_count'] = len(ids)
-            ctx['mode'] = mode
-            logger.info("Starting bulk user delete (hard)", extra=ctx)
+    #         ctx['ids_count'] = len(ids)
+    #         ctx['mode'] = mode
+    #         logger.info("Starting bulk user delete (hard)", extra=ctx)
 
-            # ===== SECURITY: PREVENT SELF-DELETE =====
-            requester_id = request.user.id 
-            if requester_id in ids:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_SELF)
+    #         # ===== SECURITY: PREVENT SELF-DELETE =====
+    #         requester_id = request.user.id 
+    #         if requester_id in ids:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_SELF)
 
-            # ===== FETCH USERS WITH TENANT SCOPING =====
-            client_id = self.get_client_id()
-            users_qs = User.objects.filter(
-                id__in=ids,
-                client_account_id=client_id
-            ).select_related('role', 'team', 'organization', 'client_account')
-            users_dict = {str(u.id): u for u in users_qs}
+    #         # ===== FETCH USERS WITH TENANT SCOPING =====
+    #         client_id = self.get_client_id()
+    #         users_qs = User.objects.filter(
+    #             id__in=ids,
+    #             client_account_id=client_id
+    #         ).select_related('role', 'team', 'organization', 'client_account')
+    #         users_dict = {str(u.id): u for u in users_qs}
 
-            # ===== CHECK FOR INVALID IDS =====
-            invalid_ids = set(ids) - set(users_dict.keys())
+    #         # ===== CHECK FOR INVALID IDS =====
+    #         invalid_ids = set(ids) - set(users_dict.keys())
             
-            results = {
-                'success': [],
-                'failed': []
-            }
+    #         results = {
+    #             'success': [],
+    #             'failed': []
+    #         }
 
-            for invalid_id in invalid_ids:
-                results['failed'].append({
-                    'id': invalid_id,
-                    'email': 'Unknown',
-                    'errors': [CoreErrorMessages.BULK_DELETE_INVALID_ID.format(id=invalid_id)]
-                })
+    #         for invalid_id in invalid_ids:
+    #             results['failed'].append({
+    #                 'id': invalid_id,
+    #                 'email': 'Unknown',
+    #                 'errors': [CoreErrorMessages.BULK_DELETE_INVALID_ID.format(id=invalid_id)]
+    #             })
 
-            if mode == 'strict' and invalid_ids:
-                return self._build_bulk_error_response(
-                    results,
-                    len(ids),
-                    f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
-                )
+    #         if mode == 'strict' and invalid_ids:
+    #             return self._build_bulk_error_response(
+    #                 results,
+    #                 len(ids),
+    #                 f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
+    #             )
 
-            # ===== PRE-VALIDATION: CHECK FOR PROTECTED USERS =====
-            protected_users = []
+    #         # ===== PRE-VALIDATION: CHECK FOR PROTECTED USERS =====
+    #         protected_users = []
             
-            for user_id in ids:
-                if user_id in invalid_ids:
-                    continue
+    #         for user_id in ids:
+    #             if user_id in invalid_ids:
+    #                 continue
                     
-                user = users_dict[user_id]
+    #             user = users_dict[user_id]
                 
-                if user.is_last_active_admin():
-                    protected_users.append({
-                        'id': str(user.id),
-                        'email': user.email,
-                        'reason': CoreErrorMessages.BULK_DELETE_LAST_ADMIN.format(email=user.email)
-                    })
+    #             if user.is_last_active_admin():
+    #                 protected_users.append({
+    #                     'id': str(user.id),
+    #                     'email': user.email,
+    #                     'reason': CoreErrorMessages.BULK_DELETE_LAST_ADMIN.format(email=user.email)
+    #                 })
 
-            if mode == 'strict' and protected_users:
-                for protected in protected_users:
-                    results['failed'].append({
-                        'id': protected['id'],
-                        'email': protected['email'],
-                        'errors': [protected['reason']]
-                    })
+    #         if mode == 'strict' and protected_users:
+    #             for protected in protected_users:
+    #                 results['failed'].append({
+    #                     'id': protected['id'],
+    #                     'email': protected['email'],
+    #                     'errors': [protected['reason']]
+    #                 })
                 
-                return self._build_bulk_error_response(
-                    results,
-                    len(ids),
-                    f"Strict mode: {len(protected_users)} protected user(s) found"
-                )
+    #             return self._build_bulk_error_response(
+    #                 results,
+    #                 len(ids),
+    #                 f"Strict mode: {len(protected_users)} protected user(s) found"
+    #             )
 
-            # ===== DELETE OPERATIONS =====
-            if mode == 'strict':
-                # Strict mode: All-or-nothing transaction
-                with transaction.atomic():
-                    try:
-                        for user_id in ids:
-                            if user_id in invalid_ids:
-                                continue
+    #         # ===== DELETE OPERATIONS =====
+    #         if mode == 'strict':
+    #             # Strict mode: All-or-nothing transaction
+    #             with transaction.atomic():
+    #                 try:
+    #                     for user_id in ids:
+    #                         if user_id in invalid_ids:
+    #                             continue
                             
-                            is_protected = any(p['id'] == user_id for p in protected_users)
-                            if is_protected:
-                                protected_info = next(p for p in protected_users if p['id'] == user_id)
-                                results['failed'].append({
-                                    'id': user_id,
-                                    'email': protected_info['email'],
-                                    'errors': [protected_info['reason']]
-                                })
-                                continue
+    #                         is_protected = any(p['id'] == user_id for p in protected_users)
+    #                         if is_protected:
+    #                             protected_info = next(p for p in protected_users if p['id'] == user_id)
+    #                             results['failed'].append({
+    #                                 'id': user_id,
+    #                                 'email': protected_info['email'],
+    #                                 'errors': [protected_info['reason']]
+    #                             })
+    #                             continue
                             
-                            user = users_dict[user_id]
+    #                         user = users_dict[user_id]
                             
-                            try:
-                                user_email = user.email
-                                user_name = user.get_full_name()
-                                user.delete()
+    #                         try:
+    #                             user_email = user.email
+    #                             user_name = user.get_full_name()
+    #                             user.delete()
                                 
-                                results['success'].append({
-                                    'id': user_id,
-                                    'email': user_email,
-                                    'name': user_name
-                                })
-                            except Exception as e:
-                                error_msg = self._format_bulk_error_message(e)
-                                results['failed'].append({
-                                    'id': user_id,
-                                    'email': user.email,
-                                    'errors': [error_msg]
-                                })
-                                raise
+    #                             results['success'].append({
+    #                                 'id': user_id,
+    #                                 'email': user_email,
+    #                                 'name': user_name
+    #                             })
+    #                         except Exception as e:
+    #                             error_msg = self._format_bulk_error_message(e)
+    #                             results['failed'].append({
+    #                                 'id': user_id,
+    #                                 'email': user.email,
+    #                                 'errors': [error_msg]
+    #                             })
+    #                             raise
                             
-                        # Ensure admin invariants
-                        client = User.objects.get(id=requester_id).client_account
-                        client.ensure_admin_invariants()
+    #                     # Ensure admin invariants
+    #                     client = User.objects.get(id=requester_id).client_account
+    #                     client.ensure_admin_invariants()
                         
-                        # Invalidation cache APRÈS commit
-                        transaction.on_commit(
-                            lambda: invalidate_tag(client_id, 'users')
-                        )
+    #                     # Invalidation cache APRÈS commit
+    #                     transaction.on_commit(
+    #                         lambda: invalidate_tag(client_id, 'users')
+    #                     )
                         
-                    except Exception as e:
-                        error_msg = self._format_bulk_error_message(e)
-                        ctx['event'] = 'bulk_delete_strict_mode_failed'
-                        ctx['error'] = error_msg
-                        logger.error("Bulk delete strict mode failed", extra=ctx, exc_info=True)
+    #                 except Exception as e:
+    #                     error_msg = self._format_bulk_error_message(e)
+    #                     ctx['event'] = 'bulk_delete_strict_mode_failed'
+    #                     ctx['error'] = error_msg
+    #                     logger.error("Bulk delete strict mode failed", extra=ctx, exc_info=True)
                         
-                        return self._build_bulk_error_response(
-                            {'success': [], 'failed': results['failed']},
-                            len(ids),
-                            f"Strict mode failed: {error_msg}"
-                        )
-            else:
-                # Partial mode: Best-effort deletion
-                for user_id in ids:
-                    if user_id in invalid_ids:
-                        continue
+    #                     return self._build_bulk_error_response(
+    #                         {'success': [], 'failed': results['failed']},
+    #                         len(ids),
+    #                         f"Strict mode failed: {error_msg}"
+    #                     )
+    #         else:
+    #             # Partial mode: Best-effort deletion
+    #             for user_id in ids:
+    #                 if user_id in invalid_ids:
+    #                     continue
                     
-                    is_protected = any(p['id'] == user_id for p in protected_users)
-                    if is_protected:
-                        protected_info = next(p for p in protected_users if p['id'] == user_id)
-                        results['failed'].append({
-                            'id': user_id,
-                            'email': protected_info['email'],
-                            'errors': [protected_info['reason']]
-                        })
-                        continue
+    #                 is_protected = any(p['id'] == user_id for p in protected_users)
+    #                 if is_protected:
+    #                     protected_info = next(p for p in protected_users if p['id'] == user_id)
+    #                     results['failed'].append({
+    #                         'id': user_id,
+    #                         'email': protected_info['email'],
+    #                         'errors': [protected_info['reason']]
+    #                     })
+    #                     continue
                     
-                    user = users_dict[user_id]
+    #                 user = users_dict[user_id]
                     
-                    with transaction.atomic():
-                        try:
-                            user_email = user.email
-                            user_name = user.get_full_name()
-                            user.delete()
+    #                 with transaction.atomic():
+    #                     try:
+    #                         user_email = user.email
+    #                         user_name = user.get_full_name()
+    #                         user.delete()
                             
-                            results['success'].append({
-                                'id': user_id,
-                                'email': user_email,
-                                'name': user_name
-                            })
-                        except Exception as e:
-                            error_msg = self._format_bulk_error_message(e)
-                            results['failed'].append({
-                                'id': user_id,
-                                'email': user.email,
-                                'errors': [error_msg]
-                            })
-                            transaction.set_rollback(True)
+    #                         results['success'].append({
+    #                             'id': user_id,
+    #                             'email': user_email,
+    #                             'name': user_name
+    #                         })
+    #                     except Exception as e:
+    #                         error_msg = self._format_bulk_error_message(e)
+    #                         results['failed'].append({
+    #                             'id': user_id,
+    #                             'email': user.email,
+    #                             'errors': [error_msg]
+    #                         })
+    #                         transaction.set_rollback(True)
                             
-                            ctx['event'] = 'bulk_delete_unexpected_error'
-                            ctx['user_id'] = user_id
-                            ctx['error'] = str(e)
-                            logger.error("Unexpected error in bulk delete", extra=ctx, exc_info=True)
+    #                         ctx['event'] = 'bulk_delete_unexpected_error'
+    #                         ctx['user_id'] = user_id
+    #                         ctx['error'] = str(e)
+    #                         logger.error("Unexpected error in bulk delete", extra=ctx, exc_info=True)
                 
-                # Ensure admin invariants (partial mode)
-                try:
-                    client = User.objects.get(id=requester_id).client_account
-                    client.ensure_admin_invariants()
-                except Exception as e:
-                    logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
+    #             # Ensure admin invariants (partial mode)
+    #             try:
+    #                 client = User.objects.get(id=requester_id).client_account
+    #                 client.ensure_admin_invariants()
+    #             except Exception as e:
+    #                 logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
                 
-                # Invalidation cache en mode partial
-                invalidate_tag(client_id, 'users')
+    #             # Invalidation cache en mode partial
+    #             invalidate_tag(client_id, 'users')
 
-            # ===== BUILD RESPONSE =====
-            success_count = len(results['success'])
-            failed_count = len(results['failed'])
+    #         # ===== BUILD RESPONSE =====
+    #         success_count = len(results['success'])
+    #         failed_count = len(results['failed'])
 
-            ctx.update({
-                'event': 'bulk_delete_users_completed',
-                'requested': len(ids),
-                'deleted': success_count,
-                'failed': failed_count
-            })
-            logger.info("Bulk user deletion completed", extra=ctx)
+    #         ctx.update({
+    #             'event': 'bulk_delete_users_completed',
+    #             'requested': len(ids),
+    #             'deleted': success_count,
+    #             'failed': failed_count
+    #         })
+    #         logger.info("Bulk user deletion completed", extra=ctx)
 
-            return self._build_bulk_success_response(results, len(ids), operation='delete')
+    #         return self._build_bulk_success_response(results, len(ids), operation='delete')
 
-        except StandardizedValidationError as e:
-            # Extract message properly from detail dict
-            if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                error_msg = e.detail.get('error', str(e))
-            else:
-                error_msg = str(e)
+    #     except StandardizedValidationError as e:
+    #         # Extract message properly from detail dict
+    #         if hasattr(e, 'detail') and isinstance(e.detail, dict):
+    #             error_msg = e.detail.get('error', str(e))
+    #         else:
+    #             error_msg = str(e)
             
-            # Use the existing _build_bulk_error_response helper
-            return self._build_bulk_error_response(
-                results={'success': [], 'failed': [], 'skipped': []},
-                total=0,
-                error_message=error_msg
-            )
+    #         # Use the existing _build_bulk_error_response helper
+    #         return self._build_bulk_error_response(
+    #             results={'success': [], 'failed': [], 'skipped': []},
+    #             total=0,
+    #             error_message=error_msg
+    #         )
         
-    @action(detail=False, methods=['delete'], url_path='bulk-soft-delete')
-    def bulk_soft_delete(self, request):
-        """
-        Soft delete multiple users in bulk (set is_active=False)
-        """
-        ctx = ctx_from_request(request)
-        ctx.update({
-            'event': 'bulk_soft_delete_users',
-            'client_id': self.get_client_id()
-        })
+    # @action(detail=False, methods=['delete'], url_path='bulk-soft-delete')
+    # def bulk_soft_delete(self, request):
+    #     """
+    #     Soft delete multiple users in bulk (set is_active=False)
+    #     """
+    #     ctx = ctx_from_request(request)
+    #     ctx.update({
+    #         'event': 'bulk_soft_delete_users',
+    #         'client_id': self.get_client_id()
+    #     })
 
-        try:
-            # ===== INPUT VALIDATION =====
-            if not isinstance(request.data, dict):
-                raise StandardizedValidationError("Request must be a JSON object")
+    #     try:
+    #         # ===== INPUT VALIDATION =====
+    #         if not isinstance(request.data, dict):
+    #             raise StandardizedValidationError("Request must be a JSON object")
 
-            ids = request.data.get('ids', [])
-            mode = request.data.get('mode', 'partial')
+    #         ids = request.data.get('ids', [])
+    #         mode = request.data.get('mode', 'partial')
 
-            if not isinstance(ids, list):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs")
-                )
+    #         if not isinstance(ids, list):
+    #             raise StandardizedValidationError(
+    #                 CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs")
+    #             )
 
-            if not ids:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_NO_IDS)
+    #         if not ids:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_NO_IDS)
 
-            if len(ids) > 500:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users")
-                )
+    #         if len(ids) > 500:
+    #             raise StandardizedValidationError(
+    #                 CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users")
+    #             )
 
-            if mode not in ['partial', 'strict']:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
+    #         if mode not in ['partial', 'strict']:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
 
-            ctx['ids_count'] = len(ids)
-            ctx['mode'] = mode
-            logger.info("Starting bulk user soft delete", extra=ctx)
+    #         ctx['ids_count'] = len(ids)
+    #         ctx['mode'] = mode
+    #         logger.info("Starting bulk user soft delete", extra=ctx)
 
-            # ===== SECURITY: PREVENT SELF-DELETE =====
-            requester_id = str(request.user.id)
-            if requester_id in ids:
-                raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_SELF)
+    #         # ===== SECURITY: PREVENT SELF-DELETE =====
+    #         requester_id = str(request.user.id)
+    #         if requester_id in ids:
+    #             raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_SELF)
 
-            # ===== FETCH USERS WITH TENANT SCOPING =====
-            client_id = self.get_client_id()
-            users_qs = User.objects.filter(
-                id__in=ids,
-                client_account_id=client_id
-            ).select_related('role', 'team', 'organization', 'client_account')
-            users_dict = {str(u.id): u for u in users_qs}
+    #         # ===== FETCH USERS WITH TENANT SCOPING =====
+    #         client_id = self.get_client_id()
+    #         users_qs = User.objects.filter(
+    #             id__in=ids,
+    #             client_account_id=client_id
+    #         ).select_related('role', 'team', 'organization', 'client_account')
+    #         users_dict = {str(u.id): u for u in users_qs}
 
-            # ===== CHECK FOR INVALID IDS =====
-            invalid_ids = set(ids) - set(users_dict.keys())
+    #         # ===== CHECK FOR INVALID IDS =====
+    #         invalid_ids = set(ids) - set(users_dict.keys())
             
-            results = {
-                'success': [],
-                'failed': [],
-                'skipped': []
-            }
+    #         results = {
+    #             'success': [],
+    #             'failed': [],
+    #             'skipped': []
+    #         }
 
-            for invalid_id in invalid_ids:
-                results['failed'].append({
-                    'id': invalid_id,
-                    'email': 'Unknown',
-                    'errors': [CoreErrorMessages.BULK_DELETE_INVALID_ID.format(id=invalid_id)]
-                })
+    #         for invalid_id in invalid_ids:
+    #             results['failed'].append({
+    #                 'id': invalid_id,
+    #                 'email': 'Unknown',
+    #                 'errors': [CoreErrorMessages.BULK_DELETE_INVALID_ID.format(id=invalid_id)]
+    #             })
 
-            if mode == 'strict' and invalid_ids:
-                return self._build_bulk_error_response(
-                    results,
-                    len(ids),
-                    f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
-                )
+    #         if mode == 'strict' and invalid_ids:
+    #             return self._build_bulk_error_response(
+    #                 results,
+    #                 len(ids),
+    #                 f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
+    #             )
 
-            # ===== PRE-VALIDATION: CHECK FOR PROTECTED USERS & ALREADY INACTIVE =====
-            protected_users = []
+    #         # ===== PRE-VALIDATION: CHECK FOR PROTECTED USERS & ALREADY INACTIVE =====
+    #         protected_users = []
             
-            for user_id in ids:
-                if user_id in invalid_ids:
-                    continue
+    #         for user_id in ids:
+    #             if user_id in invalid_ids:
+    #                 continue
                     
-                user = users_dict[user_id]
+    #             user = users_dict[user_id]
                 
-                if not user.is_active:
-                    results['skipped'].append({
-                        'id': str(user.id),
-                        'email': user.email,
-                        'reason': 'Already inactive'
-                    })
-                    continue
+    #             if not user.is_active:
+    #                 results['skipped'].append({
+    #                     'id': str(user.id),
+    #                     'email': user.email,
+    #                     'reason': 'Already inactive'
+    #                 })
+    #                 continue
                 
-                if user.is_last_active_admin():
-                    protected_users.append({
-                        'id': str(user.id),
-                        'email': user.email,
-                        'reason': CoreErrorMessages.BULK_DELETE_LAST_ADMIN.format(email=user.email)
-                    })
+    #             if user.is_last_active_admin():
+    #                 protected_users.append({
+    #                     'id': str(user.id),
+    #                     'email': user.email,
+    #                     'reason': CoreErrorMessages.BULK_DELETE_LAST_ADMIN.format(email=user.email)
+    #                 })
 
-            if mode == 'strict' and (protected_users or results['skipped']):
-                for protected in protected_users:
-                    results['failed'].append({
-                        'id': protected['id'],
-                        'email': protected['email'],
-                        'errors': [protected['reason']]
-                    })
+    #         if mode == 'strict' and (protected_users or results['skipped']):
+    #             for protected in protected_users:
+    #                 results['failed'].append({
+    #                     'id': protected['id'],
+    #                     'email': protected['email'],
+    #                     'errors': [protected['reason']]
+    #                 })
                 
-                error_count = len(protected_users) + len(results['skipped'])
-                return self._build_bulk_error_response(
-                    results,
-                    len(ids),
-                    f"Strict mode: {error_count} user(s) cannot be archived"
-                )
+    #             error_count = len(protected_users) + len(results['skipped'])
+    #             return self._build_bulk_error_response(
+    #                 results,
+    #                 len(ids),
+    #                 f"Strict mode: {error_count} user(s) cannot be archived"
+    #             )
 
-            # ⭐ NOUVEAU: Désactiver signals pendant bulk operation
-            with disable_signals():
-                if mode == 'strict':
-                    try:
-                        with transaction.atomic():
-                            for user_id in ids:
-                                if user_id in invalid_ids:
-                                    continue
+    #         # ⭐ NOUVEAU: Désactiver signals pendant bulk operation
+    #         with disable_signals():
+    #             if mode == 'strict':
+    #                 try:
+    #                     with transaction.atomic():
+    #                         for user_id in ids:
+    #                             if user_id in invalid_ids:
+    #                                 continue
                                 
-                                if any(s['id'] == user_id for s in results['skipped']):
-                                    continue
+    #                             if any(s['id'] == user_id for s in results['skipped']):
+    #                                 continue
                                 
-                                user = users_dict[user_id]
+    #                             user = users_dict[user_id]
                                 
-                                try:
-                                    user.is_active = False
-                                    user.save(update_fields=['is_active', 'updated_at'])
+    #                             try:
+    #                                 user.is_active = False
+    #                                 user.save(update_fields=['is_active', 'updated_at'])
                                     
-                                    results['success'].append({
-                                        'id': str(user.id),
-                                        'email': user.email,
-                                        'name': user.get_full_name()
-                                    })
-                                except Exception as e:
-                                    error_msg = self._format_bulk_error_message(e)
-                                    results['failed'].append({
-                                        'id': user_id,
-                                        'email': user.email,
-                                        'errors': [error_msg]
-                                    })
-                                    raise
+    #                                 results['success'].append({
+    #                                     'id': str(user.id),
+    #                                     'email': user.email,
+    #                                     'name': user.get_full_name()
+    #                                 })
+    #                             except Exception as e:
+    #                                 error_msg = self._format_bulk_error_message(e)
+    #                                 results['failed'].append({
+    #                                     'id': user_id,
+    #                                     'email': user.email,
+    #                                     'errors': [error_msg]
+    #                                 })
+    #                                 raise
                             
-                            # Ensure admin invariants
-                            client = User.objects.get(id=requester_id).client_account
-                            client.ensure_admin_invariants()
+    #                         # Ensure admin invariants
+    #                         client = User.objects.get(id=requester_id).client_account
+    #                         client.ensure_admin_invariants()
                             
-                            # ⭐ NOUVEAU: Invalidation unique APRÈS commit
-                            transaction.on_commit(
-                                lambda: invalidate_tag(client_id, 'users')
-                            )
+    #                         # ⭐ NOUVEAU: Invalidation unique APRÈS commit
+    #                         transaction.on_commit(
+    #                             lambda: invalidate_tag(client_id, 'users')
+    #                         )
                             
-                    except Exception as e:
-                        error_msg = self._format_bulk_error_message(e)
-                        ctx['event'] = 'bulk_soft_delete_strict_mode_failed'
-                        ctx['error'] = error_msg
-                        logger.error("Bulk soft delete strict mode failed", extra=ctx, exc_info=True)
+    #                 except Exception as e:
+    #                     error_msg = self._format_bulk_error_message(e)
+    #                     ctx['event'] = 'bulk_soft_delete_strict_mode_failed'
+    #                     ctx['error'] = error_msg
+    #                     logger.error("Bulk soft delete strict mode failed", extra=ctx, exc_info=True)
                         
-                        return self._build_bulk_error_response(
-                            {'success': [], 'failed': results['failed'], 'skipped': results['skipped']},
-                            len(ids),
-                            f"Strict mode failed: {error_msg}"
-                        )
-                else:
-                    # Partial mode
-                    for user_id in ids:
-                        if user_id in invalid_ids:
-                            continue
+    #                     return self._build_bulk_error_response(
+    #                         {'success': [], 'failed': results['failed'], 'skipped': results['skipped']},
+    #                         len(ids),
+    #                         f"Strict mode failed: {error_msg}"
+    #                     )
+    #             else:
+    #                 # Partial mode
+    #                 for user_id in ids:
+    #                     if user_id in invalid_ids:
+    #                         continue
                         
-                        if any(s['id'] == user_id for s in results['skipped']):
-                            continue
+    #                     if any(s['id'] == user_id for s in results['skipped']):
+    #                         continue
                         
-                        is_protected = any(p['id'] == user_id for p in protected_users)
-                        if is_protected:
-                            protected_info = next(p for p in protected_users if p['id'] == user_id)
-                            results['failed'].append({
-                                'id': user_id,
-                                'email': protected_info['email'],
-                                'errors': [protected_info['reason']]
-                            })
-                            continue
+    #                     is_protected = any(p['id'] == user_id for p in protected_users)
+    #                     if is_protected:
+    #                         protected_info = next(p for p in protected_users if p['id'] == user_id)
+    #                         results['failed'].append({
+    #                             'id': user_id,
+    #                             'email': protected_info['email'],
+    #                             'errors': [protected_info['reason']]
+    #                         })
+    #                         continue
                         
-                        user = users_dict[user_id]
+    #                     user = users_dict[user_id]
                         
-                        with transaction.atomic():
-                            try:
-                                user.is_active = False
-                                user.save(update_fields=['is_active', 'updated_at'])
+    #                     with transaction.atomic():
+    #                         try:
+    #                             user.is_active = False
+    #                             user.save(update_fields=['is_active', 'updated_at'])
                                 
-                                results['success'].append({
-                                    'id': str(user.id),
-                                    'email': user.email,
-                                    'name': user.get_full_name()
-                                })
-                            except Exception as e:
-                                error_msg = self._format_bulk_error_message(e)
-                                results['failed'].append({
-                                    'id': user_id,
-                                    'email': user.email,
-                                    'errors': [error_msg]
-                                })
-                                transaction.set_rollback(True)
+    #                             results['success'].append({
+    #                                 'id': str(user.id),
+    #                                 'email': user.email,
+    #                                 'name': user.get_full_name()
+    #                             })
+    #                         except Exception as e:
+    #                             error_msg = self._format_bulk_error_message(e)
+    #                             results['failed'].append({
+    #                                 'id': user_id,
+    #                                 'email': user.email,
+    #                                 'errors': [error_msg]
+    #                             })
+    #                             transaction.set_rollback(True)
                                 
-                                ctx['event'] = 'bulk_soft_delete_unexpected_error'
-                                ctx['user_id'] = user_id
-                                ctx['error'] = str(e)
-                                logger.error("Unexpected error in bulk soft delete", extra=ctx, exc_info=True)
+    #                             ctx['event'] = 'bulk_soft_delete_unexpected_error'
+    #                             ctx['user_id'] = user_id
+    #                             ctx['error'] = str(e)
+    #                             logger.error("Unexpected error in bulk soft delete", extra=ctx, exc_info=True)
                     
-                    # Ensure admin invariants (partial mode)
-                    try:
-                        client = User.objects.get(id=requester_id).client_account
-                        client.ensure_admin_invariants()
-                    except Exception as e:
-                        logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
+    #                 # Ensure admin invariants (partial mode)
+    #                 try:
+    #                     client = User.objects.get(id=requester_id).client_account
+    #                     client.ensure_admin_invariants()
+    #                 except Exception as e:
+    #                     logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
                     
-                    # ⭐ NOUVEAU: Invalidation unique en mode partial
-                    invalidate_tag(client_id, 'users')
+    #                 # ⭐ NOUVEAU: Invalidation unique en mode partial
+    #                 invalidate_tag(client_id, 'users')
 
-            # ===== BUILD RESPONSE =====
-            success_count = len(results['success'])
-            failed_count = len(results['failed'])
-            skipped_count = len(results['skipped'])
+    #         # ===== BUILD RESPONSE =====
+    #         success_count = len(results['success'])
+    #         failed_count = len(results['failed'])
+    #         skipped_count = len(results['skipped'])
 
-            ctx.update({
-                'event': 'bulk_soft_delete_users_completed',
-                'requested': len(ids),
-                'archived': success_count,
-                'failed': failed_count,
-                'skipped': skipped_count
-            })
-            logger.info("Bulk user soft deletion completed", extra=ctx)
+    #         ctx.update({
+    #             'event': 'bulk_soft_delete_users_completed',
+    #             'requested': len(ids),
+    #             'archived': success_count,
+    #             'failed': failed_count,
+    #             'skipped': skipped_count
+    #         })
+    #         logger.info("Bulk user soft deletion completed", extra=ctx)
 
-            clean_results = {
-                'success': results['success'][:],
-                'failed': [],
-                'skipped': []
-            }
+    #         clean_results = {
+    #             'success': results['success'][:],
+    #             'failed': [],
+    #             'skipped': []
+    #         }
             
-            for failed_item in results['failed']:
-                clean_item = failed_item.copy()
-                if 'errors' in clean_item:
-                    clean_item['errors'] = [str(error) for error in clean_item['errors']]
-                clean_results['failed'].append(clean_item)
+    #         for failed_item in results['failed']:
+    #             clean_item = failed_item.copy()
+    #             if 'errors' in clean_item:
+    #                 clean_item['errors'] = [str(error) for error in clean_item['errors']]
+    #             clean_results['failed'].append(clean_item)
             
-            for skipped_item in results['skipped']:
-                clean_item = skipped_item.copy()
-                if 'reason' in clean_item:
-                    clean_item['reason'] = str(clean_item['reason'])
-                clean_results['skipped'].append(clean_item)
+    #         for skipped_item in results['skipped']:
+    #             clean_item = skipped_item.copy()
+    #             if 'reason' in clean_item:
+    #                 clean_item['reason'] = str(clean_item['reason'])
+    #             clean_results['skipped'].append(clean_item)
 
-            if success_count == 0 and failed_count > 0:
-                status_code = status.HTTP_400_BAD_REQUEST
-                success = False
-                message = f"Bulk archive failed: all {failed_count} user(s) failed"
-            elif failed_count > 0:
-                status_code = status.HTTP_200_OK
-                success = True
-                message = f"Bulk archive: {success_count} archived, {failed_count} failed"
-            else:
-                status_code = status.HTTP_200_OK
-                success = True
-                message = f"Bulk archive: {success_count} user(s) archived successfully"
+    #         if success_count == 0 and failed_count > 0:
+    #             status_code = status.HTTP_400_BAD_REQUEST
+    #             success = False
+    #             message = f"Bulk archive failed: all {failed_count} user(s) failed"
+    #         elif failed_count > 0:
+    #             status_code = status.HTTP_200_OK
+    #             success = True
+    #             message = f"Bulk archive: {success_count} archived, {failed_count} failed"
+    #         else:
+    #             status_code = status.HTTP_200_OK
+    #             success = True
+    #             message = f"Bulk archive: {success_count} user(s) archived successfully"
 
-            # return Response({
-            #     'success': success,
-            #     'summary': {
-            #         'requested': len(ids),
-            #         'archived': success_count,
-            #         'failed': failed_count,
-            #         'skipped': skipped_count
-            #     },
-            #     'results': clean_results,
-            #     'message': message
-            # }, status=status_code)
+    #         # return Response({
+    #         #     'success': success,
+    #         #     'summary': {
+    #         #         'requested': len(ids),
+    #         #         'archived': success_count,
+    #         #         'failed': failed_count,
+    #         #         'skipped': skipped_count
+    #         #     },
+    #         #     'results': clean_results,
+    #         #     'message': message
+    #         # }, status=status_code)
 
-            return self._build_bulk_success_response(results, len(ids), operation='archive')
+    #         return self._build_bulk_success_response(results, len(ids), operation='archive')
 
-        except StandardizedValidationError as e:
-            # Extract message properly from detail dict
-            if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                error_msg = e.detail.get('error', str(e))
-            else:
-                error_msg = str(e)
+    #     except StandardizedValidationError as e:
+    #         # Extract message properly from detail dict
+    #         if hasattr(e, 'detail') and isinstance(e.detail, dict):
+    #             error_msg = e.detail.get('error', str(e))
+    #         else:
+    #             error_msg = str(e)
             
-            # Use the existing _build_bulk_error_response helper
-            return self._build_bulk_error_response(
-                results={'success': [], 'failed': [], 'skipped': []},
-                total=0,
-                error_message=error_msg
-            )
+    #         # Use the existing _build_bulk_error_response helper
+    #         return self._build_bulk_error_response(
+    #             results={'success': [], 'failed': [], 'skipped': []},
+    #             total=0,
+    #             error_message=error_msg
+    #         )
             
-    def _validate_and_apply_patch(self, user, patch, client_id):
-        """
-        Validate and apply patch to a user
+    # def _validate_and_apply_patch(self, user, patch, client_id):
+    #     """
+    #     Validate and apply patch to a user
         
-        Args:
-            user: User instance to update
-            patch: Dict of fields to update
-            client_id: Current client ID for validation
+    #     Args:
+    #         user: User instance to update
+    #         patch: Dict of fields to update
+    #         client_id: Current client ID for validation
             
-        Raises:
-            StandardizedValidationError: If validation fails
-        """
-        from ..models import UserRole, Team, Organization
+    #     Raises:
+    #         StandardizedValidationError: If validation fails
+    #     """
+    #     from ..models import UserRole, Team, Organization
         
-        # Track what will change
-        changes = {}
+    #     # Track what will change
+    #     changes = {}
         
-        # ===== VALIDATE AND PREPARE CHANGES =====
+    #     # ===== VALIDATE AND PREPARE CHANGES =====
         
-        # 1. is_active
-        if 'is_active' in patch:
-            new_active = patch['is_active']
-            if not isinstance(new_active, bool):
-                raise StandardizedValidationError(
-                    "is_active must be a boolean"
-                )
+    #     # 1. is_active
+    #     if 'is_active' in patch:
+    #         new_active = patch['is_active']
+    #         if not isinstance(new_active, bool):
+    #             raise StandardizedValidationError(
+    #                 "is_active must be a boolean"
+    #             )
             
-            # Prevent deactivating last active admin
-            if new_active is False and user.is_active:
-                if user.is_last_active_admin():
-                    raise StandardizedValidationError(
-                        f"Cannot deactivate user '{user.email}': last active administrator. "
-                        "Promote another user first."
-                    )
+    #         # Prevent deactivating last active admin
+    #         if new_active is False and user.is_active:
+    #             if user.is_last_active_admin():
+    #                 raise StandardizedValidationError(
+    #                     f"Cannot deactivate user '{user.email}': last active administrator. "
+    #                     "Promote another user first."
+    #                 )
             
-            changes['is_active'] = new_active
+    #         changes['is_active'] = new_active
 
-        # 2. is_superuser
-        if 'is_superuser' in patch:
-            new_superuser = patch['is_superuser']
-            if not isinstance(new_superuser, bool):
-                raise StandardizedValidationError(
-                    "is_superuser must be a boolean"
-                )
+    #     # 2. is_superuser
+    #     if 'is_superuser' in patch:
+    #         new_superuser = patch['is_superuser']
+    #         if not isinstance(new_superuser, bool):
+    #             raise StandardizedValidationError(
+    #                 "is_superuser must be a boolean"
+    #             )
             
-            # Prevent removing superuser status from last superuser
-            if new_superuser is False and user.is_superuser:
-                if user.is_last_superuser():
-                    raise StandardizedValidationError(
-                        f"Cannot remove superuser status from user '{user.email}': last superuser. "
-                        "Promote another user first."
-                    )
+    #         # Prevent removing superuser status from last superuser
+    #         if new_superuser is False and user.is_superuser:
+    #             if user.is_last_superuser():
+    #                 raise StandardizedValidationError(
+    #                     f"Cannot remove superuser status from user '{user.email}': last superuser. "
+    #                     "Promote another user first."
+    #                 )
             
-            changes['is_superuser'] = new_superuser
-            # If promoting to superuser, must also have is_staff
-            if new_superuser is True:
-                changes['is_staff'] = True
+    #         changes['is_superuser'] = new_superuser
+    #         # If promoting to superuser, must also have is_staff
+    #         if new_superuser is True:
+    #             changes['is_staff'] = True
 
-        # 3. role
-        if 'role' in patch:
-            role_id = patch['role']
+    #     # 3. role
+    #     if 'role' in patch:
+    #         role_id = patch['role']
             
-            if role_id is None or role_id == '':
-                changes['role'] = None
-                changes['role_name'] = None
-            else:
-                # Validate UUID format
-                try:
-                    import uuid
-                    uuid.UUID(str(role_id))
-                except ValueError:
-                    raise StandardizedValidationError(
-                        f"Invalid role ID format: {role_id}"
-                    )
+    #         if role_id is None or role_id == '':
+    #             changes['role'] = None
+    #             changes['role_name'] = None
+    #         else:
+    #             # Validate UUID format
+    #             try:
+    #                 import uuid
+    #                 uuid.UUID(str(role_id))
+    #             except ValueError:
+    #                 raise StandardizedValidationError(
+    #                     f"Invalid role ID format: {role_id}"
+    #                 )
                 
-                # Fetch role
-                try:
-                    role = UserRole.objects.get(
-                        id=role_id,
-                        client_account_id=client_id
-                    )
-                    changes['role'] = role
-                    changes['role_name'] = role.name
-                except UserRole.DoesNotExist:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.BULK_CREATE_INVALID_ROLE.format(role=role_id)
-                    )
+    #             # Fetch role
+    #             try:
+    #                 role = UserRole.objects.get(
+    #                     id=role_id,
+    #                     client_account_id=client_id
+    #                 )
+    #                 changes['role'] = role
+    #                 changes['role_name'] = role.name
+    #             except UserRole.DoesNotExist:
+    #                 raise StandardizedValidationError(
+    #                     CoreErrorMessages.BULK_CREATE_INVALID_ROLE.format(role=role_id)
+    #                 )
 
-        # 4. organization
-        if 'organization' in patch:
-            org_id = patch['organization']
+    #     # 4. organization
+    #     if 'organization' in patch:
+    #         org_id = patch['organization']
             
-            if org_id is None or org_id == '':
-                changes['organization'] = None
-            else:
-                # Validate UUID format
-                try:
-                    import uuid
-                    uuid.UUID(str(org_id))
-                except ValueError:
-                    raise StandardizedValidationError(
-                        f"Invalid organization ID format: {org_id}"
-                    )
+    #         if org_id is None or org_id == '':
+    #             changes['organization'] = None
+    #         else:
+    #             # Validate UUID format
+    #             try:
+    #                 import uuid
+    #                 uuid.UUID(str(org_id))
+    #             except ValueError:
+    #                 raise StandardizedValidationError(
+    #                     f"Invalid organization ID format: {org_id}"
+    #                 )
                 
-                # Fetch organization
-                try:
-                    organization = Organization.objects.get(
-                        id=org_id,
-                        client_account_id=client_id
-                    )
-                    changes['organization'] = organization
-                except Organization.DoesNotExist:
-                    raise StandardizedValidationError(
-                        f"Organization '{org_id}' not found or doesn't belong to this client"
-                    )
+    #             # Fetch organization
+    #             try:
+    #                 organization = Organization.objects.get(
+    #                     id=org_id,
+    #                     client_account_id=client_id
+    #                 )
+    #                 changes['organization'] = organization
+    #             except Organization.DoesNotExist:
+    #                 raise StandardizedValidationError(
+    #                     f"Organization '{org_id}' not found or doesn't belong to this client"
+    #                 )
 
-        # 5. team
-        if 'team' in patch:
-            team_id = patch['team']
+    #     # 5. team
+    #     if 'team' in patch:
+    #         team_id = patch['team']
             
-            if team_id is None or team_id == '':
-                changes['team'] = None
-            else:
-                # Validate UUID format
-                try:
-                    import uuid
-                    uuid.UUID(str(team_id))
-                except ValueError:
-                    raise StandardizedValidationError(
-                        f"Invalid team ID format: {team_id}"
-                    )
+    #         if team_id is None or team_id == '':
+    #             changes['team'] = None
+    #         else:
+    #             # Validate UUID format
+    #             try:
+    #                 import uuid
+    #                 uuid.UUID(str(team_id))
+    #             except ValueError:
+    #                 raise StandardizedValidationError(
+    #                     f"Invalid team ID format: {team_id}"
+    #                 )
                 
-                # Fetch team
-                try:
-                    team = Team.objects.select_related('organization').get(
-                        id=team_id,
-                        organization__client_account_id=client_id
-                    )
+    #             # Fetch team
+    #             try:
+    #                 team = Team.objects.select_related('organization').get(
+    #                     id=team_id,
+    #                     organization__client_account_id=client_id
+    #                 )
                     
-                    # Verify team belongs to user's organization
-                    if user.organization and str(team.organization_id) != str(user.organization_id):
-                        raise StandardizedValidationError(
-                            f"Team '{team.name}' does not belong to user's organization"
-                        )
+    #                 # Verify team belongs to user's organization
+    #                 if user.organization and str(team.organization_id) != str(user.organization_id):
+    #                     raise StandardizedValidationError(
+    #                         f"Team '{team.name}' does not belong to user's organization"
+    #                     )
                     
-                    changes['team'] = team
-                except Team.DoesNotExist:
-                    raise StandardizedValidationError(
-                        f"Team '{team_id}' not found or doesn't belong to this client"
-                    )
+    #                 changes['team'] = team
+    #             except Team.DoesNotExist:
+    #                 raise StandardizedValidationError(
+    #                     f"Team '{team_id}' not found or doesn't belong to this client"
+    #                 )
 
-        # 4. first_name
-        if 'first_name' in patch:
-            first_name = patch['first_name']
-            if first_name is not None:
-                first_name = str(first_name).strip()
-                if len(first_name) > 50:
-                    raise StandardizedValidationError(
-                        "first_name must be 50 characters or less"
-                    )
-            changes['first_name'] = first_name
+    #     # 4. first_name
+    #     if 'first_name' in patch:
+    #         first_name = patch['first_name']
+    #         if first_name is not None:
+    #             first_name = str(first_name).strip()
+    #             if len(first_name) > 50:
+    #                 raise StandardizedValidationError(
+    #                     "first_name must be 50 characters or less"
+    #                 )
+    #         changes['first_name'] = first_name
 
-        # 5. last_name
-        if 'last_name' in patch:
-            last_name = patch['last_name']
-            if last_name is not None:
-                last_name = str(last_name).strip()
-                if len(last_name) > 50:
-                    raise StandardizedValidationError(
-                        "last_name must be 50 characters or less"
-                    )
-            changes['last_name'] = last_name
+    #     # 5. last_name
+    #     if 'last_name' in patch:
+    #         last_name = patch['last_name']
+    #         if last_name is not None:
+    #             last_name = str(last_name).strip()
+    #             if len(last_name) > 50:
+    #                 raise StandardizedValidationError(
+    #                     "last_name must be 50 characters or less"
+    #                 )
+    #         changes['last_name'] = last_name
 
-        # ===== APPLY CHANGES =====
-        if not changes:
-            raise StandardizedValidationError(
-                "No valid changes to apply"
-            )
+    #     # ===== APPLY CHANGES =====
+    #     if not changes:
+    #         raise StandardizedValidationError(
+    #             "No valid changes to apply"
+    #         )
 
-        for field, value in changes.items():
-            setattr(user, field, value)
+    #     for field, value in changes.items():
+    #         setattr(user, field, value)
         
-        user.save()
+    #     user.save()
     
-    def _resolve_role_name(self, user_data):
-        """
-        Convert role name to ID if needed
-        Modifies user_data in place
-        """
-        # Import at the beginning to avoid UnboundLocalError
-        from ..models import UserRole
-        import uuid
+    # def _resolve_role_name(self, user_data):
+    #     """
+    #     Convert role name to ID if needed
+    #     Modifies user_data in place
+    #     """
+    #     # Import at the beginning to avoid UnboundLocalError
+    #     from ..models import UserRole
+    #     import uuid
         
-        if 'role' not in user_data or not user_data['role']:
-            return
+    #     if 'role' not in user_data or not user_data['role']:
+    #         return
             
-        role_value = user_data['role']
+    #     role_value = user_data['role']
         
-        # If it's already None or empty, do nothing
-        if not role_value:
-            return
+    #     # If it's already None or empty, do nothing
+    #     if not role_value:
+    #         return
         
-        # If it's a string, check if it's a UUID or a name
-        if isinstance(role_value, str):
-            try:
-                # Try to parse as UUID
-                uuid.UUID(role_value)
-                # It's already a valid UUID, do nothing
-                return
-            except ValueError:
-                # It's not a UUID, it's probably a role name
-                # Search for the role by name
-                role = UserRole.objects.filter(
-                    client_account_id=self.get_client_id(),
-                    name__iexact=role_value.strip()
-                ).first()
+    #     # If it's a string, check if it's a UUID or a name
+    #     if isinstance(role_value, str):
+    #         try:
+    #             # Try to parse as UUID
+    #             uuid.UUID(role_value)
+    #             # It's already a valid UUID, do nothing
+    #             return
+    #         except ValueError:
+    #             # It's not a UUID, it's probably a role name
+    #             # Search for the role by name
+    #             role = UserRole.objects.filter(
+    #                 client_account_id=self.get_client_id(),
+    #                 name__iexact=role_value.strip()
+    #             ).first()
                 
-                if role:
-                    user_data['role'] = str(role.id)
-                else:
-                    # If role not found, raise exception
-                    raise StandardizedValidationError(
-                        f"Role '{role_value}' not found"
-                    )
+    #             if role:
+    #                 user_data['role'] = str(role.id)
+    #             else:
+    #                 # If role not found, raise exception
+    #                 raise StandardizedValidationError(
+    #                     f"Role '{role_value}' not found"
+    #                 )
 
-    def _format_bulk_error_message(self, error):
-        """
-        Format error message for user-friendly display
-        """
-        error_type = type(error).__name__
+    # def _format_bulk_error_message(self, error):
+    #     """
+    #     Format error message for user-friendly display
+    #     """
+    #     error_type = type(error).__name__
         
-        # Handle specific error types
-        if isinstance(error, StandardizedValidationError):
-            if hasattr(error, 'detail'):
-                if isinstance(error.detail, dict):
-                    return error.detail.get('error', str(error))
-                elif isinstance(error.detail, list):
-                    return ', '.join(str(x) for x in error.detail)
-                elif error.detail:
-                    return str(error.detail)
-            return str(error)
+    #     # Handle specific error types
+    #     if isinstance(error, StandardizedValidationError):
+    #         if hasattr(error, 'detail'):
+    #             if isinstance(error.detail, dict):
+    #                 return error.detail.get('error', str(error))
+    #             elif isinstance(error.detail, list):
+    #                 return ', '.join(str(x) for x in error.detail)
+    #             elif error.detail:
+    #                 return str(error.detail)
+    #         return str(error)
         
-        # Handle common Python errors
-        elif "UnboundLocalError" in error_type:
-            return "Internal configuration error. Please contact support."
-        elif "ValueError" in error_type and "UUID" in str(error):
-            return "Invalid ID format provided"
-        elif "DoesNotExist" in error_type:
-            return "Referenced resource not found"
-        elif "IntegrityError" in error_type:
-            return "Data integrity error. Check for duplicates or invalid references."
+    #     # Handle common Python errors
+    #     elif "UnboundLocalError" in error_type:
+    #         return "Internal configuration error. Please contact support."
+    #     elif "ValueError" in error_type and "UUID" in str(error):
+    #         return "Invalid ID format provided"
+    #     elif "DoesNotExist" in error_type:
+    #         return "Referenced resource not found"
+    #     elif "IntegrityError" in error_type:
+    #         return "Data integrity error. Check for duplicates or invalid references."
         
-        # Generic error
-        return "Processing failed. Please check your data and try again."
+    #     # Generic error
+    #     return "Processing failed. Please check your data and try again."
 
-    def _format_serializer_errors(self, errors):
-        """
-        Format DRF serializer errors into list of strings
-        """
-        formatted = []
-        for field, field_errors in errors.items():
-            if isinstance(field_errors, list):
-                for error in field_errors:
-                    if field == 'non_field_errors':
-                        formatted.append(str(error))
-                    else:
-                        # Make field names user-friendly
-                        field_name = field.replace('_', ' ').title()
-                        formatted.append(f"{field_name}: {error}")
-            else:
-                field_name = field.replace('_', ' ').title()
-                formatted.append(f"{field_name}: {field_errors}")
-        return formatted
+    # def _format_serializer_errors(self, errors):
+    #     """
+    #     Format DRF serializer errors into list of strings
+    #     """
+    #     formatted = []
+    #     for field, field_errors in errors.items():
+    #         if isinstance(field_errors, list):
+    #             for error in field_errors:
+    #                 if field == 'non_field_errors':
+    #                     formatted.append(str(error))
+    #                 else:
+    #                     # Make field names user-friendly
+    #                     field_name = field.replace('_', ' ').title()
+    #                     formatted.append(f"{field_name}: {error}")
+    #         else:
+    #             field_name = field.replace('_', ' ').title()
+    #             formatted.append(f"{field_name}: {field_errors}")
+    #     return formatted
 
-    def _build_bulk_error_response(self, results, total, error_message):
-        """
-        Build error response for bulk operation
-        """
-        return Response({
-            'success': False,
-            'message': error_message,
-            'summary': {
-                'total': total,
-                'success': len(results.get('success', [])),
-                'failed': len(results.get('failed', [])),
-                'skipped': len(results.get('skipped', []))
-            },
-            'results': results
-        }, status=status.HTTP_400_BAD_REQUEST)
+    # def _build_bulk_error_response(self, results, total, error_message):
+    #     """
+    #     Build error response for bulk operation
+    #     """
+    #     return Response({
+    #         'success': False,
+    #         'message': error_message,
+    #         'summary': {
+    #             'total': total,
+    #             'success': len(results.get('success', [])),
+    #             'failed': len(results.get('failed', [])),
+    #             'skipped': len(results.get('skipped', []))
+    #         },
+    #         'results': results
+    #     }, status=status.HTTP_400_BAD_REQUEST)
 
-    def _build_bulk_success_response(self, results, total, operation='create'):
-        """
-        Build success/partial success response for bulk operation
+    # def _build_bulk_success_response(self, results, total, operation='create'):
+    #     """
+    #     Build success/partial success response for bulk operation
         
-        This method creates standardized responses for bulk operations with
-        intelligent status determination and operation-specific messaging.
+    #     This method creates standardized responses for bulk operations with
+    #     intelligent status determination and operation-specific messaging.
         
-        Args:
-            results (dict): Dict with 'success', 'failed', 'skipped' lists
-            total (int): Total number of items requested
-            operation (str): Type of operation - 'create', 'update', 'delete', or 'archive'
+    #     Args:
+    #         results (dict): Dict with 'success', 'failed', 'skipped' lists
+    #         total (int): Total number of items requested
+    #         operation (str): Type of operation - 'create', 'update', 'delete', or 'archive'
         
-        Returns:
-            Response: DRF Response object with appropriate status code
+    #     Returns:
+    #         Response: DRF Response object with appropriate status code
             
-        Response Format:
-            {
-                'success': True | 'partial' | False,
-                'message': str,
-                'summary': {
-                    'requested': int,
-                    'updated': int,  # or 'created', 'deleted', 'archived'
-                    'failed': int,
-                    'skipped': int
-                },
-                'results': {
-                    'success': [...],
-                    'failed': [...],
-                    'skipped': [...]
-                }
-            }
+    #     Response Format:
+    #         {
+    #             'success': True | 'partial' | False,
+    #             'message': str,
+    #             'summary': {
+    #                 'requested': int,
+    #                 'updated': int,  # or 'created', 'deleted', 'archived'
+    #                 'failed': int,
+    #                 'skipped': int
+    #             },
+    #             'results': {
+    #                 'success': [...],
+    #                 'failed': [...],
+    #                 'skipped': [...]
+    #             }
+    #         }
         
-        Status Determination:
-            - success=True: 100% success (failed=0, skipped=0) → HTTP 200/201
-            - success='partial': Some succeeded (>0% but <100%) → HTTP 207
-            - success=False: Total failure (0% success) → HTTP 400
-        """
-        from rest_framework import status
-        from rest_framework.response import Response
+    #     Status Determination:
+    #         - success=True: 100% success (failed=0, skipped=0) → HTTP 200/201
+    #         - success='partial': Some succeeded (>0% but <100%) → HTTP 207
+    #         - success=False: Total failure (0% success) → HTTP 400
+    #     """
+    #     from rest_framework import status
+    #     from rest_framework.response import Response
         
-        # ====================================================================
-        # STEP 1: Count results
-        # ====================================================================
+    #     # ====================================================================
+    #     # STEP 1: Count results
+    #     # ====================================================================
         
-        success_count = len(results.get('success', []))
-        failed_count = len(results.get('failed', []))
-        skipped_count = len(results.get('skipped', []))
+    #     success_count = len(results.get('success', []))
+    #     failed_count = len(results.get('failed', []))
+    #     skipped_count = len(results.get('skipped', []))
         
-        # ====================================================================
-        # STEP 2: Determine success status
-        # ====================================================================
+    #     # ====================================================================
+    #     # STEP 2: Determine success status
+    #     # ====================================================================
         
-        if failed_count == 0 and skipped_count == 0:
-            # ✅ Full success (100%)
-            success_status = True
-            status_code = status.HTTP_201_CREATED if operation == 'create' else status.HTTP_200_OK
-        elif success_count == 0:
-            # ❌ Total failure (0%)
-            success_status = False
-            status_code = status.HTTP_400_BAD_REQUEST
-        else:
-            # ⚠️ Partial success (>0% but <100%)
-            success_status = 'partial'
-            status_code = status.HTTP_207_MULTI_STATUS
+    #     if failed_count == 0 and skipped_count == 0:
+    #         # ✅ Full success (100%)
+    #         success_status = True
+    #         status_code = status.HTTP_201_CREATED if operation == 'create' else status.HTTP_200_OK
+    #     elif success_count == 0:
+    #         # ❌ Total failure (0%)
+    #         success_status = False
+    #         status_code = status.HTTP_400_BAD_REQUEST
+    #     else:
+    #         # ⚠️ Partial success (>0% but <100%)
+    #         success_status = 'partial'
+    #         status_code = status.HTTP_207_MULTI_STATUS
         
-        # ====================================================================
-        # STEP 3: Build operation-specific message
-        # ====================================================================
+    #     # ====================================================================
+    #     # STEP 3: Build operation-specific message
+    #     # ====================================================================
         
-        # Map operation to past tense verb and label
-        OPERATION_LABELS = {
-            'create': ('created', 'Importing Users'),
-            'update': ('updated', 'Bulk Update'),
-            'delete': ('deleted', 'Bulk Delete'),
-            'archive': ('archived', 'Bulk Archive')
-        }
+    #     # Map operation to past tense verb and label
+    #     OPERATION_LABELS = {
+    #         'create': ('created', 'Importing Users'),
+    #         'update': ('updated', 'Bulk Update'),
+    #         'delete': ('deleted', 'Bulk Delete'),
+    #         'archive': ('archived', 'Bulk Archive')
+    #     }
         
-        verb, operation_label = OPERATION_LABELS.get(
-            operation, 
-            ('processed', 'Bulk Operation')  # Fallback
-        )
+    #     verb, operation_label = OPERATION_LABELS.get(
+    #         operation, 
+    #         ('processed', 'Bulk Operation')  # Fallback
+    #     )
         
-        # Construct message based on status
-        if success_status is True:
-            # Full success
-            message = f"{operation_label} complete"
-        elif success_status == 'partial':
-            # Partial success
-            message = f"{operation_label} partially complete"
-        else:
-            # Total failure
-            message = f"{operation_label} failed"
+    #     # Construct message based on status
+    #     if success_status is True:
+    #         # Full success
+    #         message = f"{operation_label} complete"
+    #     elif success_status == 'partial':
+    #         # Partial success
+    #         message = f"{operation_label} partially complete"
+    #     else:
+    #         # Total failure
+    #         message = f"{operation_label} failed"
         
-        # ====================================================================
-        # STEP 4: Clean results (convert ErrorDetail to strings)
-        # ====================================================================
+    #     # ====================================================================
+    #     # STEP 4: Clean results (convert ErrorDetail to strings)
+    #     # ====================================================================
         
-        # CRITICAL: Convert all ErrorDetail objects to strings
-        # This prevents serialization issues in DRF Response
-        clean_results = {
-            'success': results.get('success', [])[:]  # Simple copy (no ErrorDetail here)
-        }
+    #     # CRITICAL: Convert all ErrorDetail objects to strings
+    #     # This prevents serialization issues in DRF Response
+    #     clean_results = {
+    #         'success': results.get('success', [])[:]  # Simple copy (no ErrorDetail here)
+    #     }
         
-        # Clean failed items
-        clean_failed = []
-        for failed_item in results.get('failed', []):
-            clean_item = failed_item.copy()
-            if 'errors' in clean_item:
-                # Convert each ErrorDetail to string
-                clean_item['errors'] = [str(error) for error in clean_item['errors']]
-            clean_failed.append(clean_item)
-        clean_results['failed'] = clean_failed
+    #     # Clean failed items
+    #     clean_failed = []
+    #     for failed_item in results.get('failed', []):
+    #         clean_item = failed_item.copy()
+    #         if 'errors' in clean_item:
+    #             # Convert each ErrorDetail to string
+    #             clean_item['errors'] = [str(error) for error in clean_item['errors']]
+    #         clean_failed.append(clean_item)
+    #     clean_results['failed'] = clean_failed
         
-        # Clean skipped items
-        clean_skipped = []
-        for skipped_item in results.get('skipped', []):
-            clean_item = skipped_item.copy()
-            if 'error' in clean_item:
-                # Convert ErrorDetail to string
-                clean_item['error'] = str(clean_item['error'])
-            if 'reason' in clean_item:
-                # Convert ErrorDetail to string
-                clean_item['reason'] = str(clean_item['reason'])
-            clean_skipped.append(clean_item)
-        clean_results['skipped'] = clean_skipped
+    #     # Clean skipped items
+    #     clean_skipped = []
+    #     for skipped_item in results.get('skipped', []):
+    #         clean_item = skipped_item.copy()
+    #         if 'error' in clean_item:
+    #             # Convert ErrorDetail to string
+    #             clean_item['error'] = str(clean_item['error'])
+    #         if 'reason' in clean_item:
+    #             # Convert ErrorDetail to string
+    #             clean_item['reason'] = str(clean_item['reason'])
+    #         clean_skipped.append(clean_item)
+    #     clean_results['skipped'] = clean_skipped
         
-        # ====================================================================
-        # STEP 5: Build summary with operation-specific key
-        # ====================================================================
+    #     # ====================================================================
+    #     # STEP 5: Build summary with operation-specific key
+    #     # ====================================================================
         
-        # Use verb as key name (e.g., 'updated', 'created', 'deleted')
-        summary = {
-            'requested': total,
-            verb: success_count,  # Dynamic key: 'created', 'updated', 'deleted', etc.
-            'failed': failed_count,
-            'skipped': skipped_count
-        }
+    #     # Use verb as key name (e.g., 'updated', 'created', 'deleted')
+    #     summary = {
+    #         'requested': total,
+    #         verb: success_count,  # Dynamic key: 'created', 'updated', 'deleted', etc.
+    #         'failed': failed_count,
+    #         'skipped': skipped_count
+    #     }
         
-        # ====================================================================
-        # STEP 6: Log completion
-        # ====================================================================
+    #     # ====================================================================
+    #     # STEP 6: Log completion
+    #     # ====================================================================
         
-        ctx = ctx_from_request(self.request)
-        ctx.update({
-            'event': f'bulk_{operation}_completed',
-            'total': total,
-            'success': success_count,
-            'failed': failed_count,
-            'skipped': skipped_count,
-            'success_status': str(success_status)
-        })
-        logger.info(f"Bulk {operation} completed", extra=ctx)
+    #     ctx = ctx_from_request(self.request)
+    #     ctx.update({
+    #         'event': f'bulk_{operation}_completed',
+    #         'total': total,
+    #         'success': success_count,
+    #         'failed': failed_count,
+    #         'skipped': skipped_count,
+    #         'success_status': str(success_status)
+    #     })
+    #     logger.info(f"Bulk {operation} completed", extra=ctx)
         
-        # ====================================================================
-        # STEP 7: Return Response
-        # ====================================================================
+    #     # ====================================================================
+    #     # STEP 7: Return Response
+    #     # ====================================================================
         
-        return Response({
-            'success': success_status,  # True | 'partial' | False
-            'message': message,
-            'summary': summary,
-            'results': clean_results
-        }, status=status_code)
+    #     return Response({
+    #         'success': success_status,  # True | 'partial' | False
+    #         'message': message,
+    #         'summary': summary,
+    #         'results': clean_results
+    #     }, status=status_code)
         
     # ====================================================
     
