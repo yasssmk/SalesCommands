@@ -117,17 +117,18 @@ function buildPatchPayload(values) {
 // ==============================|| BULK EDIT USERS - FORM ||============================== //
 
 function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 }) {
+  const [processing, setProcessing] = useState(false); 
   const [loading, setLoading] = useState(false);
-  const [hadTimeout, setHadTimeout] = useState(false);  // ⭐ NOUVEAU: Flag pour tracker le timeout
+  const [hadTimeout, setHadTimeout] = useState(false);  
 
-  // ⭐ Hook centralisé avec snackbar de succès après sync
+  // Hook centralisé avec snackbar de succès après sync
   const { syncing, syncAttempt, onSyncProgress, onSyncComplete } = useBulkOperationSync({
     onComplete: () => {
-      // ⭐ Si timeout, afficher le snackbar de succès maintenant
+      // Si timeout, afficher le snackbar de succès maintenant
       if (hadTimeout) {
         displaySuccessSnackbar(`${selectedCount} user${selectedCount > 1 ? 's' : ''} updated successfully`);
       }
-      
+      setProcessing(false);
       closeModal?.();
       setHadTimeout(false);  // Reset le flag
     },
@@ -160,17 +161,24 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
         onSyncComplete
       );
 
+      if (result?.data?.__is202) {
+         console.log('[FormUserBulkEdit] 202 Accepted → entering processing state');
+         setProcessing(true);
+         return; // Le polling gère la suite
+       }
+
       // ✅ Succès complet uniquement
       if (result.success === true) {
         displaySuccessSnackbar(`${result.summary.updated} users updated successfully`);
         
-        if (!syncing) {
+        if (!syncing && !processing) {
           closeModal?.();
         }
       } 
       // ⏱️ Timeout
       else if (result.isTimeout) {
         setHadTimeout(true);
+        setProcessing(true); 
       } 
       // ❌ Tout le reste (partial, false, errors)
       else {
@@ -189,6 +197,7 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
 });
 
   const { errors, touched, handleSubmit, isSubmitting, setFieldValue, values } = formik;
+  const isProcessing = isSubmitting || processing || syncing;
 
   const { roles = [], rolesLoading } = useGetUserRoles();
   const { organizations: orgs = [], organizationsLoading } = useGetOrganizations();
@@ -252,7 +261,7 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
           <Divider />
 
           {/* ⭐ NOUVEAU: Affichage conditionnel simplifié */}
-          {syncing ? (
+          {isProcessing ? (
             // État: Sync en cours → Composant réutilisable
             <DialogContent>
               <BulkOperationSyncDialog 
@@ -542,7 +551,7 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
           <DialogActions sx={{ p: 2.5 }}>
             <Grid container justifyContent="space-between" alignItems="center">
               <Grid item>
-                {syncing ? (
+                {isProcessing ? (
                   <Typography variant="caption" color="text.secondary">
                     Please wait, synchronization in progress...
                   </Typography>
@@ -557,16 +566,16 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
                   <Button 
                     color="error" 
                     onClick={closeModal} 
-                    disabled={isSubmitting || syncing}
+                    disabled={isProcessing} 
                   >
                     Cancel
                   </Button>
                   <Button
                     type="submit"
                     variant="contained"
-                    disabled={isSubmitting || syncing || selectedFieldsCount === 0}
+                    disabled={isProcessing || selectedFieldsCount === 0} 
                   >
-                    {isSubmitting ? 'Updating...' : `Update ${selectedCount} User${selectedCount !== 1 ? 's' : ''}`}
+                    {isProcessing ? 'Processing...' : `Update ${selectedCount} User${selectedCount !== 1 ? 's' : ''}`}
                   </Button>
                 </Stack>
               </Grid>

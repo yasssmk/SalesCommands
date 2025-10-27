@@ -38,7 +38,8 @@ const isPlainObject = (obj) => {
 
 export default function AlertUserBulkDelete({ selectedIds, open, handleClose, onDeleteComplete }) {
   const [deleting, setDeleting] = useState(false);
-  const [hadTimeout, setHadTimeout] = useState(false);  // Flag pour tracker le timeout
+  const [processing, setProcessing] = useState(false);
+  const [hadTimeout, setHadTimeout] = useState(false);  
   
   const userCount = selectedIds?.length || 0;
 
@@ -52,12 +53,15 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
         );
       }
       
+      setProcessing(false);
       handleClose?.();
       onDeleteComplete?.();
       setHadTimeout(false);  // Reset le flag
     },
     closeDelay: 300
   });
+
+  const isProcessing = deleting || processing || syncing;
 
  const deletehandler = async () => {
   let apiError = null;  // ⭐ Store original error for handleBulkError
@@ -71,6 +75,12 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
       onSyncProgress,
       onSyncComplete
     );
+
+    if (res?.data?.__is202) {
+       console.log('[AlertUserBulkDelete] 202 Accepted → entering processing state');
+       setProcessing(true);
+       return;
+     }
     
     // ⭐ Store the error if res is not success
     if (res && !res.success && !res.isTimeout) {
@@ -85,14 +95,14 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
       );
       
       // Fermer immédiatement si pas de sync
-      if (!syncing) {
+      if (!isProcessing) {
         handleClose?.();
         onDeleteComplete?.();
       }
     } else if (res?.isTimeout) {
       console.log('[AlertUserBulkDelete] Timeout detected, sync will start');
       setHadTimeout(true);  // Flag pour afficher succès après sync
-      // NE PAS afficher de snackbar d'erreur ici
+      setProcessing(true);
     } else {
       // ⭐ All errors (partial 1-99% or total 0%) handled by handleBulkError
       handleBulkError(res, apiError, {
@@ -120,7 +130,7 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
   return (
     <Dialog
       open={open}
-      onClose={syncing ? undefined : handleClose}
+      onClose={isProcessing ? undefined : handleClose}
       keepMounted
       TransitionComponent={PopupTransition}
       maxWidth="xs"
@@ -128,7 +138,7 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
       aria-describedby="bulk-delete-description"
     >
       <DialogContent sx={{ mt: 2, my: 1 }}>
-        {syncing ? (
+        {isProcessing ?  (
           <BulkOperationSyncDialog 
             attempt={syncAttempt}
             maxAttempts={3}
@@ -175,7 +185,7 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
                 onClick={handleClose} 
                 color="secondary" 
                 variant="outlined" 
-                disabled={deleting}
+                disabled={isProcessing}
               >
                 Cancel
               </Button>
@@ -185,9 +195,9 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
                 variant="contained" 
                 onClick={deletehandler} 
                 autoFocus 
-                disabled={deleting}
+                disabled={isProcessing}
               >
-                {deleting ? 'Deleting...' : 'Delete'}
+                {isProcessing ? 'Processing...' : 'Delete'} 
               </Button>
             </Stack>
           </Stack>
