@@ -28,7 +28,7 @@ import { api } from 'utils/axiosClient';
 /**
  * Default polling configuration
  */
-const DEFAULT_CONFIG = {
+export const DEFAULT_CONFIG = {
   maxAttempts: 6,          // Total polling attempts (≈31s with default delays)
   baseDelay: 1000,         // Base delay in ms (1 second)
   maxDelay: 8000,          // Cap delay at 8 seconds

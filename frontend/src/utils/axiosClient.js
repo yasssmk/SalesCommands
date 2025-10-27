@@ -368,7 +368,7 @@ function addInterceptorsToClient(client, profile) {
       
       if (isTimeout) {
         error.isTimeout = true;
-        
+
         if (!error.response) {
           error.response = {
             status: 408,

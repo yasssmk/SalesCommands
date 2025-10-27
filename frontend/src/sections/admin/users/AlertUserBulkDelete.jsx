@@ -44,6 +44,8 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
   const userCount = selectedIds?.length || 0;
 
   const handleSyncComplete = useCallback(() => {
+
+  
   if (hadTimeout) {
     displaySuccessSnackbar(
       `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`

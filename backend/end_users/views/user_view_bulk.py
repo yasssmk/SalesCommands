@@ -15,6 +15,7 @@ Key Features:
 - Detailed logging and audit trail
 """
 
+import time
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
@@ -38,6 +39,17 @@ from ..models import User, UserRole, Team, Organization
 from .user_view import UserViewSet
 
 logger = get_logger(__name__)
+
+import os
+
+from decouple import config
+
+# LOG AU CHARGEMENT DU MODULE
+if config('SIMULATE_SLOW_DELETE', default='false') == 'true':
+    duration = config('SLOW_DELETE_DURATION', default='25')
+    logger.warning(f"⚠️ TEST MODE ACTIVATED: SIMULATE_SLOW_DELETE=true, duration={duration}s")
+else:
+    logger.info("Normal mode: SIMULATE_SLOW_DELETE not set")
 
 
 class UserBulkViewSet(UserViewSet):
@@ -431,6 +443,7 @@ class UserBulkViewSet(UserViewSet):
     # =========================================================================
     # BULK DELETE
     # =========================================================================
+
     
     @action(detail=False, methods=['delete'], url_path='bulk-delete')
     def bulk_delete(self, request):
@@ -477,18 +490,6 @@ class UserBulkViewSet(UserViewSet):
                 'code': 'IDEMPOTENCY_CONFLICT'
             }, status=status.HTTP_409_CONFLICT)
         
-        import os
-        if os.getenv('FORCE_202_FOR_TESTING') == 'true':
-            logger.info(f"[TEST MODE] Forcing 202 response for key={idempotency_key}")
-            return Response(
-                {
-                    'status': 'processing',
-                    'message': 'Operation in progress (test mode)',
-                    'poll_url': reverse('ops:status', args=[idempotency_key])
-                },
-                status=status.HTTP_202_ACCEPTED,
-                headers={'Retry-After': '2'}
-            )
 
         if op:
             if op['status'] == 'succeeded':
@@ -514,7 +515,7 @@ class UserBulkViewSet(UserViewSet):
                     'message': 'Operation in progress',
                     'poll_url': reverse('ops:status', args=[idempotency_key])
                 }, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
-
+        
         try:
             result = self._bulk_delete_impl(request)
             complete_op(
@@ -554,6 +555,7 @@ class UserBulkViewSet(UserViewSet):
         - Tenant scoping
         - Admin invariants enforcement
         """
+
         ctx = ctx_from_request(request)
         ctx.update({
             'event': 'bulk_delete_users_hard',
@@ -670,6 +672,7 @@ class UserBulkViewSet(UserViewSet):
                         
                         # ⭐ SET-BASED DELETE: 1 query instead of N
                         if valid_ids:
+
                             deleted_count = User.objects.filter(
                                 id__in=valid_ids,
                                 client_account_id=client_id
@@ -796,6 +799,7 @@ class UserBulkViewSet(UserViewSet):
                 total=0,
                 error_message=error_msg
             )
+
     
     # =========================================================================
     # BULK CREATE  

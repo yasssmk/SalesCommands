@@ -3,6 +3,7 @@
 
 import { openSnackbar as openSnackbarBase } from 'api/snackbar';
 import { getErrorDisplayInfo } from './errorMessages';
+import { isPollingActive } from 'api/_swr';
 
 /**
  * ✅ STANDARD DURATIONS (locked, no per-call overrides)
@@ -53,6 +54,14 @@ const MAX_DEDUP_ENTRIES = 50; // Prevent unbounded growth
  * @returns {boolean} true if message should be shown, false if suppressed
  */
 function shouldShowMessage(message, status) {
+
+   if (status === 408 && isPollingActive()) {
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('🔕 [Snackbar 408] Suppressed during polling, will show result after completion');
+    }
+    return false; // Suppress
+  }
+  
   const key = `${message}:${status}`;
   const now = Date.now();
   const lastShown = _recentMessages.get(key);

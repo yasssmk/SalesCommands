@@ -1213,13 +1213,15 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
         console.log('[createBulkUsers] returning structured error from backend');
         return {
           ...result.data,
-          success: false
+          success: false,
+          isTimeout: result.isTimeout || false
         };
       }
     }
 
     return {
       success: false,
+      isTimeout: result.isTimeout || false, 
       message: message,
       error: { status, message, response: result.response || null },
       summary: { total: users?.length ?? 0, success: 0, failed: users?.length ?? 0, skipped: 0 },
@@ -1341,13 +1343,15 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
         return {
           ...result.data,
           success: false,
-          status: result.status 
+          status: result.status,
+          isTimeout: result.isTimeout || false  
         };
       }
     }
 
     return {
       success: false,
+      isTimeout: result.isTimeout || false,
       message: message,
       error: { status, message, response: result.response || null },
       summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
@@ -1507,13 +1511,15 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
         return {
           ...result.data,
           success: false,
-          status: result.status 
+          status: result.status,
+          isTimeout: result.isTimeout || false  
         };
       }
     }
 
     return {
       success: false,
+      isTimeout: result.isTimeout || false,
       message: message,
       error: { status, message, response: result.response || null },
       summary: { requested: userIds.length, updated: 0, failed: userIds.length },

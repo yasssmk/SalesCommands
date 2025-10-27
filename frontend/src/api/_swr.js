@@ -1,7 +1,18 @@
 // frontend/src/api/_swr.js
 
 import { mutate } from 'swr';
-import { pollOperationStatus } from 'utils/pollOperationStatus';
+import { showSnackbar } from 'utils/snackbar';
+
+// ==============================|| POLLING STATE TRACKER ||============================== //
+
+/**
+ * ✅ Global state to track active progressive refetch operations
+ * Used by snackbar deduplication to suppress 408 errors during polling
+ */
+let _activePollingOperations = 0;
+
+export const isPollingActive = () => _activePollingOperations > 0;
+
 
 // ==============================|| SWR HELPERS MULTI-TENANT ||============================== //
 
@@ -234,7 +245,12 @@ export const handleBulkRevalidation = async (result, prefixes, onSyncProgress = 
       console.error('[handleBulkRevalidation] 202 response missing both __idempotency_key and __poll_url');
       // Fallback sur revalidation immédiate
       revalidateMultiple(prefixes);
-      if (onSyncComplete) onSyncComplete();
+      if (onSyncComplete) {
+        onSyncComplete({ 
+          success: false, 
+          error: 'Missing idempotency key for polling' 
+        });
+      }
       return;
     }
     
@@ -250,6 +266,9 @@ export const handleBulkRevalidation = async (result, prefixes, onSyncProgress = 
       revalidateMultiple(prefixes);
     } else if (pollResult.status === 'failed') {
       console.error('[handleBulkRevalidation] Operation failed:', pollResult.error);
+      const errorMessage = pollResult.error?.message || pollResult.error || 'Operation failed';
+      showSnackbar.error(errorMessage);
+
       // Même en cas d'échec, on revalide pour afficher l'état réel
       revalidateMultiple(prefixes);
     } else if (pollResult.status === 'still_running') {
@@ -336,43 +355,52 @@ export const refetchAfterBulkTimeout = async (prefixes, options = {}) => {
     delayMs: delay
   });
 
-  // Boucle de polling
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // 1. Attendre avant de refetch (laisser backend finir)
-    console.log(`[refetchAfterBulkTimeout] Waiting ${delay}ms before attempt ${attempt}/${maxAttempts}...`);
-    await new Promise(resolve => setTimeout(resolve, delay));
+    _activePollingOperations++;
+  
+  try {
 
-    // 2. Notifier la modal AVANT le refetch (pour afficher "attempt X")
-    if (onProgress && typeof onProgress === 'function') {
+    // Boucle de polling
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // 1. Attendre avant de refetch (laisser backend finir)
+      console.log(`[refetchAfterBulkTimeout] Waiting ${delay}ms before attempt ${attempt}/${maxAttempts}...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+
+      // 2. Notifier la modal AVANT le refetch (pour afficher "attempt X")
+      if (onProgress && typeof onProgress === 'function') {
+        try {
+          onProgress(attempt, maxAttempts);
+        } catch (err) {
+          console.error('[refetchAfterBulkTimeout] onProgress callback error:', err);
+        }
+      }
+
+      // 3. Refetch les données
+      console.log(`[refetchAfterBulkTimeout] Refetching attempt ${attempt}/${maxAttempts}...`);
+      revalidateMultiple(prefixes);
+
+      // 4. Attendre un court instant pour que SWR finisse le refetch
+      // (500ms pour laisser le temps aux requêtes réseau de se terminer)
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    console.log('[refetchAfterBulkTimeout] Polling completed successfully');
+    
+    // ⭐ NOUVEAU: Appeler onComplete APRÈS la fin de tous les refetch
+    if (onComplete && typeof onComplete === 'function') {
       try {
-        onProgress(attempt, maxAttempts);
+        console.log('[refetchAfterBulkTimeout] Calling onComplete callback');
+        onComplete();
       } catch (err) {
-        console.error('[refetchAfterBulkTimeout] onProgress callback error:', err);
+        console.error('[refetchAfterBulkTimeout] onComplete callback error:', err);
       }
     }
+    
+    return true;
 
-    // 3. Refetch les données
-    console.log(`[refetchAfterBulkTimeout] Refetching attempt ${attempt}/${maxAttempts}...`);
-    revalidateMultiple(prefixes);
-
-    // 4. Attendre un court instant pour que SWR finisse le refetch
-    // (500ms pour laisser le temps aux requêtes réseau de se terminer)
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-
-  console.log('[refetchAfterBulkTimeout] Polling completed successfully');
-  
-  // ⭐ NOUVEAU: Appeler onComplete APRÈS la fin de tous les refetch
-  if (onComplete && typeof onComplete === 'function') {
-    try {
-      console.log('[refetchAfterBulkTimeout] Calling onComplete callback');
-      onComplete();
-    } catch (err) {
-      console.error('[refetchAfterBulkTimeout] onComplete callback error:', err);
-    }
-  }
-  
-  return true;
+  } finally {
+    // Signal polling end (re-enable 408 snackbars)
+    _activePollingOperations--;
+  } 
 };
 
 // ==============================|| EXEMPLES D'USAGE ||============================== //
