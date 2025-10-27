@@ -1,5 +1,5 @@
 import PropTypes from 'prop-types';
-import { useState } from 'react';
+import { useState, useCallback  } from 'react';
 
 // material-ui
 import Button from '@mui/material/Button';
@@ -43,23 +43,41 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
   
   const userCount = selectedIds?.length || 0;
 
-  // ⭐ Hook centralisé avec snackbar de succès après sync
-  const { syncing, syncAttempt, onSyncProgress, onSyncComplete } = useBulkOperationSync({
-    onComplete: () => {
-      // ⭐ Si timeout, afficher le snackbar de succès maintenant
-      if (hadTimeout) {
-        displaySuccessSnackbar(
-          `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`
-        );
-      }
-      
-      setProcessing(false);
-      handleClose?.();
-      onDeleteComplete?.();
-      setHadTimeout(false);  // Reset le flag
-    },
+  const handleSyncComplete = useCallback(() => {
+  if (hadTimeout) {
+    displaySuccessSnackbar(
+      `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`
+    );
+  }
+  
+  setProcessing(false);
+  handleClose?.();
+  onDeleteComplete?.();
+  setHadTimeout(false);
+}, [hadTimeout, userCount, handleClose, onDeleteComplete]);
+
+const { syncing, syncAttempt, onSyncProgress, onSyncComplete } = useBulkOperationSync({
+    onComplete: handleSyncComplete,
     closeDelay: 300
   });
+
+//  // ⭐ Hook centralisé avec snackbar de succès après sync
+//   const { syncing, syncAttempt, onSyncProgress, onSyncComplete } = useBulkOperationSync({
+//     onComplete: () => {
+//       // ⭐ Si timeout, afficher le snackbar de succès maintenant
+//       if (hadTimeout) {
+//         displaySuccessSnackbar(
+//           `${userCount} user${userCount > 1 ? 's' : ''} deleted successfully`
+//         );
+//       }
+      
+//       setProcessing(false);
+//       handleClose?.();
+//       onDeleteComplete?.();
+//       setHadTimeout(false);  // Reset le flag
+//     },
+//     closeDelay: 300 
+//   });
 
   const isProcessing = deleting || processing || syncing;
 
@@ -141,7 +159,6 @@ export default function AlertUserBulkDelete({ selectedIds, open, handleClose, on
         {isProcessing ?  (
           <BulkOperationSyncDialog 
             attempt={syncAttempt}
-            maxAttempts={3}
             operation="delete"
           />
         ) : (

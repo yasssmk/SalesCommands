@@ -241,7 +241,7 @@ export const handleBulkRevalidation = async (result, prefixes, onSyncProgress = 
     // Appeler le helper de polling
     const pollResult = await pollOperationStatus(idempotencyKey, {
       initialRetryAfter: result.data.__retry_after_ms || 0,
-      onProgress: onSyncProgress
+      onProgress: onSyncProgress,
     });
     
     // Traiter le résultat du polling
@@ -281,7 +281,7 @@ export const handleBulkRevalidation = async (result, prefixes, onSyncProgress = 
       maxAttempts: 3,
       delay: 5000,
       onProgress: onSyncProgress,
-      onComplete: onSyncComplete  // ⭐ NOUVEAU: Callback de fin de polling
+      onComplete: onSyncComplete  
     });
   } else {
     // Opération terminée → Revalidation immédiate

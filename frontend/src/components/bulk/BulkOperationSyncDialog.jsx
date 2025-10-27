@@ -14,6 +14,8 @@ import Avatar from 'components/@extended/Avatar';
 // assets
 import SyncOutlined from '@ant-design/icons/SyncOutlined';
 
+import pollOperationStatus from 'utils/pollOperationStatus';
+
 /**
  * ✅ COMPOSANT RÉUTILISABLE - AFFICHAGE DU SYNC APRÈS BULK TIMEOUT
  * 
@@ -49,7 +51,7 @@ import SyncOutlined from '@ant-design/icons/SyncOutlined';
  */
 export default function BulkOperationSyncDialog({ 
   attempt = 1, 
-  maxAttempts = 3,
+  maxAttempts = pollOperationStatus.config.maxAttempts,
   operation = 'update',
   sx = {}
 }) {

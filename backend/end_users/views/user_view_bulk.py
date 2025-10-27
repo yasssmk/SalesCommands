@@ -476,6 +476,19 @@ class UserBulkViewSet(UserViewSet):
                 'detail': str(e),
                 'code': 'IDEMPOTENCY_CONFLICT'
             }, status=status.HTTP_409_CONFLICT)
+        
+        import os
+        if os.getenv('FORCE_202_FOR_TESTING') == 'true':
+            logger.info(f"[TEST MODE] Forcing 202 response for key={idempotency_key}")
+            return Response(
+                {
+                    'status': 'processing',
+                    'message': 'Operation in progress (test mode)',
+                    'poll_url': reverse('ops:status', args=[idempotency_key])
+                },
+                status=status.HTTP_202_ACCEPTED,
+                headers={'Retry-After': '2'}
+            )
 
         if op:
             if op['status'] == 'succeeded':

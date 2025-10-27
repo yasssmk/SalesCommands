@@ -123,12 +123,12 @@ class OperationStatusView(APIView):
                     "Tenant context required for operation status check"
                 )
             
-            try:
-                client_id = int(client_id)
-            except (ValueError, TypeError):
-                raise StandardizedValidationError(
-                    f"Invalid tenant ID: {client_id}"
-                )
+            # try:
+            #     client_id = int(client_id)
+            # except (ValueError, TypeError):
+            #     raise StandardizedValidationError(
+            #         f"Invalid tenant ID: {client_id}"
+            #     )
             
             logger.info(
                 f"Polling operation status: key={key}",

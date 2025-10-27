@@ -201,6 +201,7 @@ export async function pollOperationStatus(idempotencyKey, options = {}) {
     
     // Poll operation status
     try {
+      
       const result = await api.get(`/ops/${idempotencyKey}`);
       
       if (!result.success) {

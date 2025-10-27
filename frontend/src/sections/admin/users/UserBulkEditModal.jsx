@@ -2,6 +2,7 @@
 
 'use client';
 import PropTypes from 'prop-types';
+import { useCallback } from 'react';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -14,7 +15,9 @@ import MainCard from 'components/MainCard';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 
 export default function UserBulkEditModal({ open, modalToggler, selectedUserIds = [], selectedCount = 0 }) {
-  const closeModal = () => modalToggler(false);
+  const closeModal = useCallback(() => {
+    modalToggler(false);
+  }, [modalToggler]);
 
   // Validation : au moins 1 user sélectionné
   if (selectedCount === 0 || selectedUserIds.length === 0) {

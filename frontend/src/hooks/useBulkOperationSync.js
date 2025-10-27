@@ -142,6 +142,7 @@ export function useBulkOperationSync(options = {}) {
             console.error('[useBulkOperationSync] onComplete callback error:', err);
           }
         }
+        setSyncAttempt(0);
       }, closeDelay);
 
       return () => clearTimeout(timer);
