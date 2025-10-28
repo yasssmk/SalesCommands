@@ -264,6 +264,7 @@ export const handleBulkRevalidation = async (result, prefixes, onSyncProgress = 
     if (pollResult.status === 'succeeded') {
       console.log('[handleBulkRevalidation] Operation succeeded → revalidating data');
       revalidateMultiple(prefixes);
+      return pollResult.result;
     } else if (pollResult.status === 'failed') {
       console.error('[handleBulkRevalidation] Operation failed:', pollResult.error);
       const errorMessage = pollResult.error?.message || pollResult.error || 'Operation failed';

@@ -41,6 +41,11 @@ from .user_view import UserViewSet
 logger = get_logger(__name__)
 
 import os
+import os
+import threading
+from django.http import HttpRequest
+from rest_framework.request import Request as DRFRequest
+from django.contrib.auth import get_user_model
 
 from decouple import config
 
@@ -183,7 +188,7 @@ class UserBulkViewSet(UserViewSet):
             'event': 'bulk_update_users',
             'client_id': self.get_client_id()
         })
-
+        
         try:
             # ===== INPUT VALIDATION =====
             if not isinstance(request.data, dict):
@@ -273,11 +278,10 @@ class UserBulkViewSet(UserViewSet):
             
             # For set-based updates, we need to validate all users first
             valid_user_ids = []
-            
             for user_id in ids:
                 if user_id in invalid_ids:
                     continue
-                
+
                 user = users_dict[user_id]
                 
                 # Pre-validate this user for the updates
@@ -540,6 +544,7 @@ class UserBulkViewSet(UserViewSet):
                 {'message': str(e), 'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR}
             )
             raise
+
 
     def _bulk_delete_impl(self, request):
         """
@@ -804,6 +809,7 @@ class UserBulkViewSet(UserViewSet):
     # =========================================================================
     # BULK CREATE  
     # =========================================================================
+        
     
     @action(detail=False, methods=['post'], url_path='bulk-create')
     def bulk_create(self, request):

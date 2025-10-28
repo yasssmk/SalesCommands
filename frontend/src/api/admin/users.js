@@ -1188,22 +1188,73 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
   try {
     console.log('[createBulkUsers] start', { count: users?.length ?? 0, mode });
 
-    // ✅ STEP 4.2: Use 'bulk' profile instead of hardcoded timeout
     result = await api.post('/client/users/bulk-create/', 
       { users, mode }, 
-      { profile: 'bulk' }  // ⭐ CHANGED: Was { timeout: authConfig.BULK_OPERATION_TIMEOUT }
+      { profile: 'bulk' }
     );
 
+    console.log('[createBulkUsers] API response received:', {
+      success: result.success,
+      status: result.status,
+      hasData: !!result.data,
+      is202: result?.data?.__is202
+    });
+
+    // ✅ CAS 202 : Attendre le polling AVANT de retourner
+    if (result?.data?.__is202) {
+      console.log('[createBulkUsers] 🔄 202 detected, starting polling...');
+      
+      const finalResult = await handleBulkRevalidation(
+        result,
+        [endpoints.users, '/client/client-accounts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+
+      console.log('[createBulkUsers] 📥 Polling complete:', {
+        hasFinalResult: !!finalResult,
+        finalResultType: typeof finalResult,
+        hasData: finalResult?.data !== undefined,
+        dataKeys: finalResult?.data ? Object.keys(finalResult.data) : [],
+        fullStructure: finalResult
+      });
+
+      // handleBulkRevalidation retourne pollResult.result = { data: {...}, http_status: 201 }
+      if (finalResult?.data) {
+        console.log('[createBulkUsers] ✅ Returning polling result');
+        return finalResult.data;
+      }
+
+      // Peut-être que finalResult EST directement le data ?
+      if (finalResult && (finalResult.summary || finalResult.results)) {
+        console.log('[createBulkUsers] ✅ Returning finalResult directly (no nesting)');
+        return finalResult;
+      }
+
+      // Si pas de data, fallback sur erreur
+      console.error('[createBulkUsers] ❌ finalResult missing data structure');
+      return {
+        success: false,
+        message: 'Polling completed but no result data',
+        summary: { total: users?.length ?? 0, success: 0, failed: users?.length ?? 0, skipped: 0 },
+        results: { success: [], failed: [], skipped: [] }
+      };
+    }
+
+    // ✅ CAS SYNC : Retourner immédiatement
     if (result.success) {
-      console.log('[createBulkUsers] ok', { 
+      console.log('[createBulkUsers] ✅ Sync success', { 
         status: result.status ?? 200,
         created: result.data?.summary?.success ?? 0
       });
 
+      // Revalidation immédiate pour mode sync
+      revalidateMultiple([endpoints.users, '/client/client-accounts/']);
+      
       return result.data;
     }
 
-    // Gestion d'erreur structurée
+    // ❌ Gestion d'erreur
     const status = result.status || 0;
     const message = result.error || 'Bulk create failed';
     console.error('[createBulkUsers] api.post error', { status, message });
@@ -1253,17 +1304,8 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
         skipped: []
       }
     };
-  } finally {
-    // ⭐ Revalidation intelligente standardisée
-    await handleBulkRevalidation(
-      result,
-      [endpoints.users, '/client/client-accounts/'],
-      onSyncProgress,
-      onSyncComplete
-    );
   }
 };
-
 // ==============================|| MODIFICATION 2: bulkDeleteUsers ||============================== //
 
 /**
@@ -1284,12 +1326,8 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
   let result = null;
 
   try {
-    console.log('[bulkDeleteUsers] start', { 
-      count: userIds?.length ?? 0, 
-      mode 
-    });
+    console.log('[bulkDeleteUsers] start', { count: userIds?.length ?? 0, mode });
 
-    // ✅ Validation: Vérifier que userIds est un array non vide
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return {
         success: false,
@@ -1299,7 +1337,6 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
       };
     }
 
-    // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
     const invalidIds = userIds.filter(id => !isValidUUID(id));
     if (invalidIds.length > 0) {
       console.error('[bulkDeleteUsers] invalid UUIDs', { count: invalidIds.length });
@@ -1309,30 +1346,70 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
         summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
         results: {
           success: [],
-          failed: invalidIds.map(id => ({
-            id,
-            errors: ['Invalid UUID format']
-          }))
+          failed: invalidIds.map(id => ({ id, errors: ['Invalid UUID format'] }))
         }
       };
     }
 
-    // ✅ STEP 4.2: Use 'bulk' profile instead of hardcoded 30s timeout
     result = await api.delete('/client/users/bulk-delete/', {
       data: { ids: userIds, mode },
-      profile: 'bulk'  // ⭐ CHANGED: Was timeout: 30000
+      profile: 'bulk'
     });
 
+    console.log('[bulkDeleteUsers] API response received:', {
+      success: result.success,
+      status: result.status,
+      hasData: !!result.data,
+      is202: result?.data?.__is202
+    });
+
+    // ✅ CAS 202 : Attendre le polling
+    if (result?.data?.__is202) {
+      console.log('[bulkDeleteUsers] 🔄 202 detected, starting polling...');
+      
+      const finalResult = await handleBulkRevalidation(
+        result,
+        [endpoints.users, '/client/client-accounts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+
+      console.log('[bulkDeleteUsers] 📥 Polling complete:', {
+        hasFinalResult: !!finalResult,
+        hasData: finalResult?.data !== undefined
+      });
+
+      if (finalResult?.data) {
+        console.log('[bulkDeleteUsers] ✅ Returning polling result');
+        return finalResult.data;
+      }
+
+      if (finalResult && (finalResult.summary || finalResult.results)) {
+        console.log('[bulkDeleteUsers] ✅ Returning finalResult directly');
+        return finalResult;
+      }
+
+      console.error('[bulkDeleteUsers] ❌ finalResult missing data');
+      return {
+        success: false,
+        message: 'Polling completed but no result data',
+        summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    // ✅ CAS SYNC
     if (result.success) {
-      console.log('[bulkDeleteUsers] ok', { 
+      console.log('[bulkDeleteUsers] ✅ Sync success', { 
         status: result.status ?? 200,
         deleted: result.data?.summary?.deleted ?? 0
       });
 
+      revalidateMultiple([endpoints.users, '/client/client-accounts/']);
       return result.data;
     }
 
-    // ✅ Gestion d'erreur structurée
+    // ❌ Gestion erreur
     const status = result.status || 0;
     const message = result.error || 'Bulk delete failed';
     console.error('[bulkDeleteUsers] api.delete error', { status, message });
@@ -1357,17 +1434,13 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
       summary: { requested: userIds.length, deleted: 0, failed: userIds.length },
       results: {
         success: [],
-        failed: userIds.map(id => ({
-          id,
-          errors: [message]
-        }))
+        failed: userIds.map(id => ({ id, errors: [message] }))
       }
     };
 
   } catch (err) {
     console.error('[bulkDeleteUsers] thrown', err);
     
-    // ⭐ NOUVEAU: Détecter si c'est un timeout
     const isTimeout = 
       err?.code === 'ECONNABORTED' || 
       err?.message?.toLowerCase()?.includes('timeout') ||
@@ -1386,20 +1459,9 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
       summary: { requested: userIds?.length ?? 0, deleted: 0, failed: userIds?.length ?? 0 },
       results: {
         success: [],
-        failed: (userIds || []).map(id => ({
-          id,
-          errors: [err?.message || 'Unknown error']
-        }))
+        failed: (userIds || []).map(id => ({ id, errors: [err?.message || 'Unknown error'] }))
       }
     };
-  } finally {
-    // ⭐ Revalidation intelligente standardisée
-    await handleBulkRevalidation(
-      result,
-      [endpoints.users, '/client/client-accounts/'],
-      onSyncProgress,
-      onSyncComplete
-    );
   }
 };
 
@@ -1424,11 +1486,10 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
   try {
     console.log('[bulkUpdateUsers] start', { 
       count: userIds?.length ?? 0, 
-      mode,
-      fields: Object.keys(patchData || {})
+      mode, 
+      fields: Object.keys(patchData || {}) 
     });
 
-    // ✅ Validation: Vérifier que userIds est un array non vide
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return {
         success: false,
@@ -1438,7 +1499,6 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
       };
     }
 
-    // ✅ Validation: Vérifier que tous les IDs sont des UUIDs valides
     const invalidIds = userIds.filter(id => !isValidUUID(id));
     if (invalidIds.length > 0) {
       console.error('[bulkUpdateUsers] invalid UUIDs', { count: invalidIds.length });
@@ -1448,59 +1508,71 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
         summary: { requested: userIds.length, updated: 0, failed: userIds.length },
         results: {
           success: [],
-          failed: invalidIds.map(id => ({
-            id,
-            errors: ['Invalid UUID format']
-          }))
+          failed: invalidIds.map(id => ({ id, errors: ['Invalid UUID format'] }))
         }
       };
     }
 
-    // ✅ Validation: Vérifier les UUID fields dans patchData
-    const uuidFields = ['role', 'organization', 'team'];
-    for (const field of uuidFields) {
-      const value = patchData[field];
-      
-      if (!value || value === '') continue;
-      
-      if (!isValidUUID(value)) {
-        return {
-          success: false,
-          message: `Invalid ${field} ID format in patch data`,
-          summary: { requested: userIds.length, updated: 0, failed: userIds.length },
-          results: {
-            success: [],
-            failed: userIds.map(id => ({
-              id,
-              errors: [`Invalid ${field} ID format`]
-            }))
-          }
-        };
-      }
-    }
-
-    // ✅ Sanitization: Nettoyer les champs string
-    const sanitized = sanitizeObject(patchData, ['first_name', 'last_name']);
-
-    // ✅ STEP 4.2: Use 'bulk' profile instead of hardcoded timeout
     result = await api.patch('/client/users/bulk-update/', {
       ids: userIds,
-      patch: sanitized,
+      patch: patchData,
       mode
-    }, {
-      profile: 'bulk'  // ⭐ CHANGED: Was timeout: authConfig.BULK_OPERATION_TIMEOUT
+    }, { profile: 'bulk' });
+
+    console.log('[bulkUpdateUsers] API response received:', {
+      success: result.success,
+      status: result.status,
+      hasData: !!result.data,
+      is202: result?.data?.__is202
     });
 
+    // ✅ CAS 202 : Attendre le polling
+    if (result?.data?.__is202) {
+      console.log('[bulkUpdateUsers] 🔄 202 detected, starting polling...');
+      
+      const finalResult = await handleBulkRevalidation(
+        result,
+        [endpoints.users, '/client/client-accounts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+
+      console.log('[bulkUpdateUsers] 📥 Polling complete:', {
+        hasFinalResult: !!finalResult,
+        hasData: finalResult?.data !== undefined
+      });
+
+      if (finalResult?.data) {
+        console.log('[bulkUpdateUsers] ✅ Returning polling result');
+        return finalResult.data;
+      }
+
+      if (finalResult && (finalResult.summary || finalResult.results)) {
+        console.log('[bulkUpdateUsers] ✅ Returning finalResult directly');
+        return finalResult;
+      }
+
+      console.error('[bulkUpdateUsers] ❌ finalResult missing data');
+      return {
+        success: false,
+        message: 'Polling completed but no result data',
+        summary: { requested: userIds.length, updated: 0, failed: userIds.length },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    // ✅ CAS SYNC
     if (result.success) {
-      console.log('[bulkUpdateUsers] ok', { 
+      console.log('[bulkUpdateUsers] ✅ Sync success', { 
         status: result.status ?? 200,
         updated: result.data?.summary?.updated ?? 0
       });
 
+      revalidateMultiple([endpoints.users, '/client/client-accounts/']);
       return result.data;
     }
 
-    // ✅ Gestion d'erreur structurée
+    // ❌ Gestion erreur
     const status = result.status || 0;
     const message = result.error || 'Bulk update failed';
     console.error('[bulkUpdateUsers] api.patch error', { status, message });
@@ -1511,8 +1583,7 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
         return {
           ...result.data,
           success: false,
-          status: result.status,
-          isTimeout: result.isTimeout || false  
+          isTimeout: result.isTimeout || false
         };
       }
     }
@@ -1525,17 +1596,13 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
       summary: { requested: userIds.length, updated: 0, failed: userIds.length },
       results: {
         success: [],
-        failed: userIds.map(id => ({
-          id,
-          errors: [message]
-        }))
+        failed: userIds.map(id => ({ id, errors: [message] }))
       }
     };
 
   } catch (err) {
     console.error('[bulkUpdateUsers] thrown', err);
     
-    // ⭐ NOUVEAU: Détecter si c'est un timeout
     const isTimeout = 
       err?.code === 'ECONNABORTED' || 
       err?.message?.toLowerCase()?.includes('timeout') ||
@@ -1543,7 +1610,7 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
       err?.response?.status === 504;
     
     if (isTimeout) {
-      console.log('[bulkUpdateUsers] Timeout detected, sync will be triggered');
+      console.log('[bulkUpdateUsers] Timeout detected');
     }
     
     return {
@@ -1554,20 +1621,9 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
       summary: { requested: userIds?.length ?? 0, updated: 0, failed: userIds?.length ?? 0 },
       results: {
         success: [],
-        failed: (userIds || []).map(id => ({
-          id,
-          errors: [err?.message || 'Unknown error']
-        }))
+        failed: (userIds || []).map(id => ({ id, errors: [err?.message || 'Unknown error'] }))
       }
     };
-  } finally {
-    // ⭐ Revalidation intelligente standardisée
-    await handleBulkRevalidation(
-      result,
-      [endpoints.users, '/client/client-accounts/'],
-      onSyncProgress,
-      onSyncComplete
-    );
   }
 };
 
