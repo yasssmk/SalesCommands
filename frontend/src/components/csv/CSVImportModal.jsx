@@ -99,17 +99,23 @@ export default function CSVImportModal({ config, open, onClose, onImport }) {
     if (result) {
     // notifications centralisées (pas de 0% ici, déjà géré par handleBulkError dans le hook)
     notifyCSVImportOutcome(result, {
-      entityLabel: (config.entityDisplayPlural || config.entityPlural || 'items').toLowerCase()
+      entityLabel: (config.entityDisplayPlural || config.entityPlural || 'items').toLowerCase(),
+      suppressWarning: result?.isPending || result?.status === 'pending'
     });
 
     if (onImport) {
-      try {
-        await onImport(result);
-      } catch (err) {
-        console.warn('[CSVImportModal] onImport callback error:', err);
+        try {
+          await onImport(result);
+        } catch (err) {
+          console.warn('[CSVImportModal] onImport callback error:', err);
+        }
+      }
+
+      if (result?.isPending || result?.status === 'pending') {
+        // Close dialog immediately to avoid trapping user in disabled state
+        onClose();
       }
     }
-  }
 };
 
   // Handle retry with callback

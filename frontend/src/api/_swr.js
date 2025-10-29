@@ -264,7 +264,18 @@ export const handleBulkRevalidation = async (result, prefixes, onSyncProgress = 
     if (pollResult.status === 'succeeded') {
       console.log('[handleBulkRevalidation] Operation succeeded → revalidating data');
       revalidateMultiple(prefixes);
+      
+      // ⭐ Appeler le callback avant de retourner
+      if (onSyncComplete && typeof onSyncComplete === 'function') {
+        try {
+          onSyncComplete({ success: true });
+        } catch (err) {
+          console.error('[handleBulkRevalidation] onComplete callback error:', err);
+        }
+      }
+      
       return pollResult.result;
+
     } else if (pollResult.status === 'failed') {
       console.error('[handleBulkRevalidation] Operation failed:', pollResult.error);
       const errorMessage = pollResult.error?.message || pollResult.error || 'Operation failed';
@@ -272,25 +283,65 @@ export const handleBulkRevalidation = async (result, prefixes, onSyncProgress = 
 
       // Même en cas d'échec, on revalide pour afficher l'état réel
       revalidateMultiple(prefixes);
+
+      // ⭐ Appeler le callback
+      if (onSyncComplete && typeof onSyncComplete === 'function') {
+        try {
+          onSyncComplete();
+        } catch (err) {
+          console.error('[handleBulkRevalidation] onComplete callback error:', err);
+        }
+      }
+      
+      // ⭐ RETOURNER un objet cohérent avec le cas succeeded
+      return {
+      data: {
+        success: false,
+        message: errorMessage,
+        summary: { requested: 0, deleted: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      }
+    };
+
     } else if (pollResult.status === 'still_running') {
       console.warn('[handleBulkRevalidation] Operation still running after max attempts');
-      // Polling max atteint mais opération continue → revalider quand même
-      // L'UI peut afficher un message "still processing"
+      
+      // ⚠️ Afficher un snackbar warning pour informer l'utilisateur
+      const warningMessage = pollResult.message || 
+        'Operation is taking longer than expected. It will complete in the background and data will refresh automatically.';
+      
+      showSnackbar.warning(warningMessage);
       revalidateMultiple(prefixes);
-    }
-    
-    // Callback de fin de polling
-    if (onSyncComplete && typeof onSyncComplete === 'function') {
-      try {
-        onSyncComplete();
-      } catch (err) {
-        console.error('[handleBulkRevalidation] onComplete callback error:', err);
+      
+      // ⭐ Appeler le callback
+      if (onSyncComplete && typeof onSyncComplete === 'function') {
+        try {
+          onSyncComplete({ success: false, status: 'pending' });
+        } catch (err) {
+          console.error('[handleBulkRevalidation] onComplete callback error:', err);
+        }
       }
-    }
+      
+      // ⭐ RETOURNER un objet cohérent avec le cas succeeded
+      return {
+      data: {
+        success: false, // Pas une vraie erreur, juste un timeout de polling
+        status: 'pending',
+        message: warningMessage,
+        summary: { requested: 0, deleted: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      }
+    };
+  }
     
+    // ⭐ IMPORTANT : Fermer le bloc if (result?.data?.__is202)
     // Retour immédiat : le cas 202 est géré
     return;
   }
+
+  // ==============================
+  // CAS NON-202 - GESTION CLASSIQUE
+  // ==============================
 
   // Décision intelligente basée sur le type d'erreur/statut
   if (shouldUseProgressiveRefetch(result)) {

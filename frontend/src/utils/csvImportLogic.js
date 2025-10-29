@@ -178,6 +178,7 @@ const handleImport = useCallback(async () => {
     skipped: []
   };
 
+  let pendingResponse = null;
   let topLevelHttpStatus = 0;
   let topLevelErrorMessage = '';
 
@@ -191,6 +192,33 @@ const handleImport = useCallback(async () => {
       try {
         const batchResponse = await config.bulkCreate(batch, 'partial');
         console.debug('[useCSVImport] [BatchResponse]', batchResponse);
+
+        if (!pendingResponse && (batchResponse?.isPending || batchResponse?.status === 'pending')) {
+          const pendingMessage = batchResponse?.message ||
+            'Operation still in progress. It will complete in the background.';
+
+          pendingResponse = {
+            ...batchResponse,
+            isPending: true,
+            status: batchResponse?.status || 'pending',
+            message: pendingMessage,
+            results: batchResponse?.results || {
+              success: [],
+              failed: [],
+              skipped: []
+            },
+            summary: batchResponse?.summary
+          };
+
+          const processed = Math.min(i + batch.length, apiData.length);
+          setImportProgress(prev => ({
+            ...prev,
+            processed
+          }));
+
+          break;
+        }
+
 
         // Check if this is an error response (success: false)
         if (batchResponse?.success === false) {
@@ -284,6 +312,42 @@ const handleImport = useCallback(async () => {
           failed: cumulativeResults.failed.length
         }));
       }
+    }
+
+    if (pendingResponse) {
+      const normalizedResults = pendingResponse.results || {
+        success: [...cumulativeResults.success],
+        failed: [...cumulativeResults.failed],
+        skipped: [...cumulativeResults.skipped]
+      };
+
+      const normalizedSummary = pendingResponse.summary && Object.keys(pendingResponse.summary).length > 0
+        ? {
+            total: pendingResponse.summary.total ?? pendingResponse.summary.requested ?? totalToImport,
+            success: pendingResponse.summary.success ??
+                     pendingResponse.summary.created ??
+                     pendingResponse.summary.updated ??
+                     pendingResponse.summary.deleted ??
+                     pendingResponse.summary.archived ??
+                     (normalizedResults.success?.length || 0),
+            failed: pendingResponse.summary.failed ?? (normalizedResults.failed?.length || 0),
+            skipped: pendingResponse.summary.skipped ?? (normalizedResults.skipped?.length || 0)
+          }
+        : {
+            total: totalToImport,
+            success: normalizedResults.success?.length || 0,
+            failed: normalizedResults.failed?.length || 0,
+            skipped: normalizedResults.skipped?.length || 0
+          };
+
+      const responseToReturn = {
+        ...pendingResponse,
+        results: normalizedResults,
+        summary: normalizedSummary
+      };
+
+      setImportResponse(null);
+      return responseToReturn;
     }
 
     // Debug log before building response

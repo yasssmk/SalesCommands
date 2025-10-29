@@ -13,7 +13,7 @@ import Avatar from 'components/@extended/Avatar';
 import { PopupTransition } from 'components/@extended/Transitions';
 import BulkOperationSyncDialog from 'components/bulk/BulkOperationSyncDialog';
 import { bulkDeleteUsers } from 'api/admin/users';
-import {  displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
+import { displayErrorSnackbar, displaySuccessSnackbar, displayWarningSnackbar } from 'utils/displayError';
 import { showSnackbar } from 'utils/snackbar';
 import { handleBulkError } from 'utils/bulkErrorHandler';
 import { useBulkOperationSync } from 'hooks/useBulkOperationSync';
@@ -119,6 +119,18 @@ const { syncing, syncAttempt, onSyncProgress, onSyncComplete } = useBulkOperatio
         handleClose?.();
         onDeleteComplete?.();
       }
+    } else if (res?.isPending) {
+      const pendingMessage =
+        res.message ||
+        'Operation still in progress. It will complete in the background.';
+
+      displayWarningSnackbar(pendingMessage);
+
+      if (!isProcessing) {
+        handleClose?.();
+        onDeleteComplete?.();
+      }
+      
     } else if (res?.isTimeout) {
       console.log('[AlertUserBulkDelete] Timeout detected, sync will start');
       setHadTimeout(true);  // Flag pour afficher succès après sync

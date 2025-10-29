@@ -174,7 +174,17 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
         if (!syncing && !processing) {
           closeModal?.();
         }
-      } 
+      } else if (result.isPending) {
+        const pendingMessage =
+          result.message ||
+          'Operation still in progress. It will complete in the background.';
+
+        displayWarningSnackbar(pendingMessage);
+
+        if (!syncing && !processing) {
+          closeModal?.();
+        }
+      }
       // ⏱️ Timeout
       else if (result.isTimeout) {
         setHadTimeout(true);
@@ -266,7 +276,6 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
             <DialogContent>
               <BulkOperationSyncDialog 
                 attempt={syncAttempt}
-                maxAttempts={3}
                 operation="update"
               />
             </DialogContent>

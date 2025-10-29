@@ -1222,6 +1222,16 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
       // handleBulkRevalidation retourne pollResult.result = { data: {...}, http_status: 201 }
       if (finalResult?.data) {
         console.log('[createBulkUsers] ✅ Returning polling result');
+        if (finalResult.data?.status === 'pending') {
+          console.log('[createBulkUsers] ⏳ Polling reached max attempts, marking operation as pending');
+          return {
+            ...finalResult.data,
+            success: false,
+            status: finalResult.data.status || 'pending',
+            isPending: true
+          };
+        }
+
         return finalResult.data;
       }
 
@@ -1381,6 +1391,16 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
 
       if (finalResult?.data) {
         console.log('[bulkDeleteUsers] ✅ Returning polling result');
+        if (finalResult.data?.status === 'pending') {
+          console.log('[bulkDeleteUsers] ⏳ Polling reached max attempts, marking operation as pending');
+          return {
+            ...finalResult.data,
+            success: false,
+            status: finalResult.data.status || 'pending',
+            isPending: true
+          };
+        }
+
         return finalResult.data;
       }
 
@@ -1544,6 +1564,15 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
 
       if (finalResult?.data) {
         console.log('[bulkUpdateUsers] ✅ Returning polling result');
+        if (finalResult.data?.status === 'pending') {
+          console.log('[bulkUpdateUsers] ⏳ Polling reached max attempts, marking operation as pending');
+          return {
+            ...finalResult.data,
+            success: false,
+            status: finalResult.data.status || 'pending',
+            isPending: true
+          };
+        }
         return finalResult.data;
       }
 

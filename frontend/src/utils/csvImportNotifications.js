@@ -105,6 +105,15 @@ export function notifyCSVImportOutcome(response, options = {}) {
     return { shown: false, kind: 'none' };
   }
 
+  if (response?.isPending || response?.status === 'pending') {
+    const msg = response?.message ||
+      'Operation is still in progress. It will complete in the background.';
+
+    displayWarningSnackbar(msg);
+    return { shown: true, kind: 'warning', message: msg };
+  }
+
+
   const { requested, success, failed, skipped } = extractCounts(response);
 
   // Détecter les cas
