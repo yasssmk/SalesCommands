@@ -118,7 +118,7 @@ function buildPatchPayload(values) {
 
 function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 }) {
   const [processing, setProcessing] = useState(false); 
-  const [loading, setLoading] = useState(false);
+  // const [loading, setLoading] = useState(false);
   const [hadTimeout, setHadTimeout] = useState(false);  
 
   // Hook centralisé avec snackbar de succès après sync
@@ -135,9 +135,9 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
     closeDelay: 300
   });
 
-  useEffect(() => {
-    setLoading(false);
-  }, []);
+  // useEffect(() => {
+  //   setLoading(false);
+  // }, []);
 
   const formik = useFormik({
   initialValues: buildInitialValues(),
@@ -233,7 +233,8 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
     }
   }, [values.apply_team, values.team, teams]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const anyLoading = loading || rolesLoading || organizationsLoading || teamsLoading;
+  // const anyLoading = loading || rolesLoading || organizationsLoading || teamsLoading;
+  const anyLoading = rolesLoading || organizationsLoading || teamsLoading;
 
   if (anyLoading) {
     return (

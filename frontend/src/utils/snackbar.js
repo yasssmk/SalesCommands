@@ -37,7 +37,7 @@ const STANDARD_ANCHOR = {
  */
 const _recentMessages = new Map(); // key: `${message}:${status}`, value: timestamp
 const DEDUP_WINDOW_MS = 5000; // 5 seconds
-const DEDUP_WINDOW_MS_500 = 45000 // 45 seconds
+const DEDUP_WINDOW_MS_500 = 45000; // 45 seconds
 const MAX_DEDUP_ENTRIES = 50; // Prevent unbounded growth
 
 /**

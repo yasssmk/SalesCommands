@@ -17,6 +17,7 @@
 
 import { displayErrorSnackbar, displayWarningSnackbar } from './displayError';
 import { getErrorDisplayInfo } from './errorMessages';
+import { showSnackbar } from './snackbar';
 
 // ==============================|| HELPER FUNCTIONS ||============================== //
 

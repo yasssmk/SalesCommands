@@ -30,13 +30,17 @@ from core.idempotency import (
     get_owner_from_request,
     compute_payload_hash
 )
-from core.exceptions import StandardizedValidationError
+from core.exceptions import StandardizedValidationError, StandardizedPermissionDenied
 from core.error_messages import CoreErrorMessages
 from core.cache_utils import invalidate_tag
 from core.logging import get_logger, ctx_from_request
 
 from ..models import User, UserRole, Team, Organization
 from .user_view import UserViewSet
+
+from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
+
 
 logger = get_logger(__name__)
 
@@ -148,82 +152,6 @@ class UserBulkViewSet(UserViewSet):
                     'message': 'Operation in progress',
                     'poll_url': reverse('ops:status', args=[idempotency_key])
                 }, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
-        
-        # ⭐ FORCE 202 FOR TESTING ⭐
-        if config('FORCE_202_FOR_TESTING', default='false') == 'true':
-            logger.warning(f"🔧 [TEST] Force 202 mode activated for bulk_update key={idempotency_key}")
-            
-            # Copy ALL request data (not just specific fields)
-            request_data = {
-                'data': dict(request.data),  # ✅ Toutes les données de la requête
-                'client_id': client_id,
-                'user_id': str(request.user.id),
-                'idempotency_key': idempotency_key
-            }
-            
-            # Launch background processing
-            def background_update():
-                try:
-                    logger.info(f"🔧 [TEST] Background thread started for bulk_update key={idempotency_key}")
-                    
-                    # Sleep to simulate async operation
-                    sleep_duration = int(config('FORCE_202_SLEEP', default='12'))
-                    logger.info(f"🔧 [TEST] Sleeping {sleep_duration}s...")
-                    time.sleep(sleep_duration)
-                    logger.info(f"🔧 [TEST] Sleep completed")
-                    
-                    # Execute the actual update
-                    from django.contrib.auth import get_user_model
-                    User = get_user_model()
-                    user = User.objects.get(id=request_data['user_id'])
-                    
-                    # Create a mock request for _bulk_update_impl
-                    class MockRequest:
-                        def __init__(self, data, user, client_id):
-                            self.data = data
-                            self.user = user
-                            self.client_id = client_id
-                            self.META = {}
-                    
-                    mock_request = MockRequest(
-                        data=request_data['data'],  # ✅ Passer les données complètes
-                        user=user,
-                        client_id=request_data['client_id']
-                    )
-                    
-                    # Execute update
-                    result = self._bulk_update_impl(mock_request)
-                    
-                    # Mark as completed
-                    complete_op(
-                        request_data['client_id'],
-                        request_data['idempotency_key'],
-                        {'data': result.data, 'http_status': result.status_code}
-                    )
-                    
-                    logger.info(f"✅ [TEST] Background update completed for key={idempotency_key}")
-                    
-                except Exception as e:
-                    logger.error(f"❌ [TEST] Background update failed: {e}", exc_info=True)
-                    fail_op(
-                        request_data['client_id'],
-                        request_data['idempotency_key'],
-                        {'message': str(e), 'http_status': 500}
-                    )
-            
-            # Start background thread
-            thread = threading.Thread(target=background_update, daemon=True)
-            thread.start()
-            
-            # Return 202 immediately
-            return Response({
-                'status': 'accepted',
-                'message': 'Operation in progress',
-                'poll_url': reverse('ops:status', args=[idempotency_key]),
-                '__idempotency_key': idempotency_key,
-                '__is202': True,
-                '__retry_after_ms': 2000
-            }, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
 
         try:
             result = self._bulk_update_impl(request)
@@ -355,7 +283,7 @@ class UserBulkViewSet(UserViewSet):
             
             # For set-based updates, we need to validate all users first
             valid_user_ids = []
-            for user_id in ids:
+            for idx, user_id in enumerate(ids):
                 if user_id in invalid_ids:
                     continue
 
@@ -562,6 +490,7 @@ class UserBulkViewSet(UserViewSet):
 
         payload_hash = compute_payload_hash(request.data)
 
+
         try:
             op = start_op(client_id, idempotency_key, payload_hash, owner)
         except ValueError as e:
@@ -570,7 +499,7 @@ class UserBulkViewSet(UserViewSet):
                 'detail': str(e),
                 'code': 'IDEMPOTENCY_CONFLICT'
             }, status=status.HTTP_409_CONFLICT)
-        
+
 
         if op:
             if op['status'] == 'succeeded':
@@ -596,89 +525,7 @@ class UserBulkViewSet(UserViewSet):
                     'message': 'Operation in progress',
                     'poll_url': reverse('ops:status', args=[idempotency_key])
                 }, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
-            
-        # ⭐ FORCE 202 FOR TESTING ⭐
-        if config('FORCE_202_FOR_TESTING', default='false') == 'true':
-            logger.warning(f"🔧 [TEST] Force 202 mode activated for key={idempotency_key}")
-            
-            # Copy necessary data for background processing
-            request_data = {
-                'ids': request.data.get('ids', []),
-                'mode': request.data.get('mode', 'partial'),
-                'client_id': client_id,
-                'user_id': str(request.user.id),
-                'idempotency_key': idempotency_key
-            }
-            
-            # Launch background processing
-            def background_delete():
-                try:
-                    logger.info(f"🔧 [TEST] Background thread started for key={idempotency_key}")
-                    
-                    # Sleep to simulate async operation
-                    sleep_duration = int(config('FORCE_202_SLEEP', default='12'))
-                    logger.info(f"🔧 [TEST] Sleeping {sleep_duration}s...")
-                    time.sleep(sleep_duration)
-                    logger.info(f"🔧 [TEST] Sleep completed")
-
-                     # ⭐ SIMULER UN ÉCHEC
-                    raise Exception("Simulated backend failure")
-                    
-                    # Execute the actual delete
-                    # Note: We need to reconstruct a minimal request-like object
-                    from django.contrib.auth import get_user_model
-                    User = get_user_model()
-                    user = User.objects.get(id=request_data['user_id'])
-                    
-                    # Create a mock request for _bulk_delete_impl
-                    class MockRequest:
-                        def __init__(self, data, user, client_id):
-                            self.data = data
-                            self.user = user
-                            self.client_id = client_id
-                            self.META = {} 
-                    
-                    mock_request = MockRequest(
-                        data={'ids': request_data['ids'], 'mode': request_data['mode']},
-                        user=user,
-                        client_id=request_data['client_id']
-                    )
-                    
-                    # Execute delete
-                    result = self._bulk_delete_impl(mock_request)
-                    
-                    # Mark as completed
-                    complete_op(
-                        request_data['client_id'],
-                        request_data['idempotency_key'],
-                        {'data': result.data, 'http_status': result.status_code}
-                    )
-                    
-                    logger.info(f"✅ [TEST] Background delete completed for key={idempotency_key}")
-                    
-                except Exception as e:
-                    logger.error(f"❌ [TEST] Background delete failed: {e}", exc_info=True)
-                    fail_op(
-                        request_data['client_id'],
-                        request_data['idempotency_key'],
-                        {'message': str(e), 'http_status': 500}
-                    )
-            
-            # Start background thread
-            thread = threading.Thread(target=background_delete, daemon=True)
-            thread.start()
-            
-            # Return 202 immediately
-            return Response({
-                'status': 'accepted',
-                'message': 'Operation in progress',
-                'poll_url': reverse('ops:status', args=[idempotency_key]),
-                '__idempotency_key': idempotency_key,
-                '__is202': True,
-                '__retry_after_ms': 2000
-            }, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})  
-
-        # ==============================================================================  
+             
         
         try:
             result = self._bulk_delete_impl(request)
@@ -791,7 +638,7 @@ class UserBulkViewSet(UserViewSet):
             # ===== PRE-VALIDATION: CHECK FOR PROTECTED USERS =====
             protected_users = []
             
-            for user_id in ids:
+            for idx, user_id in enumerate(ids):
                 if user_id in invalid_ids:
                     continue
                     
@@ -998,6 +845,8 @@ class UserBulkViewSet(UserViewSet):
 
         client_id = self.get_client_id()
 
+        
+
         try:
             owner = get_owner_from_request(request)
         except ValueError as e:
@@ -1007,6 +856,7 @@ class UserBulkViewSet(UserViewSet):
             }, status=status.HTTP_403_FORBIDDEN)
 
         payload_hash = compute_payload_hash(request.data)
+
 
         try:
             op = start_op(client_id, idempotency_key, payload_hash, owner)
@@ -1041,83 +891,7 @@ class UserBulkViewSet(UserViewSet):
                     'message': 'Operation in progress',
                     'poll_url': reverse('ops:status', args=[idempotency_key])
                 }, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
-            
-        # ⭐ FORCE 202 FOR TESTING ⭐
-        if config('FORCE_202_FOR_TESTING', default='false') == 'true':
-            logger.warning(f"🔧 [TEST] Force 202 mode activated for bulk_create key={idempotency_key}")
-            
-            # Copy ALL request data (not just specific fields)
-            request_data = {
-                'data': dict(request.data),  # ✅ Toutes les données de la requête
-                'client_id': client_id,
-                'user_id': str(request.user.id),
-                'idempotency_key': idempotency_key
-            }
-            
-            # Launch background processing
-            def background_create():
-                try:
-                    logger.info(f"🔧 [TEST] Background thread started for bulk_create key={idempotency_key}")
-                    
-                    # Sleep to simulate async operation
-                    sleep_duration = int(config('FORCE_202_SLEEP', default='12'))
-                    logger.info(f"🔧 [TEST] Sleeping {sleep_duration}s...")
-                    time.sleep(sleep_duration)
-                    logger.info(f"🔧 [TEST] Sleep completed")
-                    
-                    # Execute the actual create
-                    from django.contrib.auth import get_user_model
-                    User = get_user_model()
-                    user = User.objects.get(id=request_data['user_id'])
-                    
-                    # Create a mock request for _bulk_create_impl
-                    class MockRequest:
-                        def __init__(self, data, user, client_id):
-                            self.data = data
-                            self.user = user
-                            self.client_id = client_id
-                            self.META = {}
-                    
-                    mock_request = MockRequest(
-                        data=request_data['data'],  # ✅ Passer les données complètes
-                        user=user,
-                        client_id=request_data['client_id']
-                    )
-                    
-                    # Execute create
-                    result = self._bulk_create_impl(mock_request)
-                    
-                    # Mark as completed
-                    complete_op(
-                        request_data['client_id'],
-                        request_data['idempotency_key'],
-                        {'data': result.data, 'http_status': result.status_code}
-                    )
-                    
-                    logger.info(f"✅ [TEST] Background create completed for key={idempotency_key}")
-                    
-                except Exception as e:
-                    logger.error(f"❌ [TEST] Background create failed: {e}", exc_info=True)
-                    fail_op(
-                        request_data['client_id'],
-                        request_data['idempotency_key'],
-                        {'message': str(e), 'http_status': 500}
-                    )
-            
-            # Start background thread
-            thread = threading.Thread(target=background_create, daemon=True)
-            thread.start()
-            
-            # Return 202 immediately
-            return Response({
-                'status': 'accepted',
-                'message': 'Operation in progress',
-                'poll_url': reverse('ops:status', args=[idempotency_key]),
-                '__idempotency_key': idempotency_key,
-                '__is202': True,
-                '__retry_after_ms': 2000
-            }, status=status.HTTP_202_ACCEPTED, headers={'Retry-After': '2'})
-
+        
         try:
             result = self._bulk_create_impl(request)
             complete_op(
@@ -1214,6 +988,8 @@ class UserBulkViewSet(UserViewSet):
                             row_num = idx + 1
                             email = user_data.get('email', '').lower()
 
+                            
+
                             # Check for existing email
                             if email in existing_emails:
                                 results['skipped'].append({
@@ -1258,6 +1034,7 @@ class UserBulkViewSet(UserViewSet):
             else:
                 # Partial mode: Best-effort creation
                 for idx, user_data in enumerate(users_data):
+                    
                     row_num = idx + 1
                     email_display = user_data.get('email', 'Unknown')
 

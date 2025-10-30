@@ -14,24 +14,23 @@ import { PopupTransition } from 'components/@extended/Transitions';
 import BulkOperationSyncDialog from 'components/bulk/BulkOperationSyncDialog';
 import { bulkDeleteUsers } from 'api/admin/users';
 import { displayErrorSnackbar, displaySuccessSnackbar, displayWarningSnackbar } from 'utils/displayError';
-import { showSnackbar } from 'utils/snackbar';
 import { handleBulkError } from 'utils/bulkErrorHandler';
 import { useBulkOperationSync } from 'hooks/useBulkOperationSync';
 
 // assets
 import DeleteFilled from '@ant-design/icons/DeleteFilled';
 
-// ==============================|| HELPER ||============================== //
+// // ==============================|| HELPER ||============================== //
 
-/**
- * Check if value is a plain object (not Array, not null)
- */
-const isPlainObject = (obj) => {
-  return obj !== null && 
-         typeof obj === 'object' && 
-         !Array.isArray(obj) &&
-         Object.prototype.toString.call(obj) === '[object Object]';
-};
+// /**
+//  * Check if value is a plain object (not Array, not null)
+//  */
+// const isPlainObject = (obj) => {
+//   return obj !== null && 
+//          typeof obj === 'object' && 
+//          !Array.isArray(obj) &&
+//          Object.prototype.toString.call(obj) === '[object Object]';
+// };
 
 
 // ==============================|| User - BULK DELETE ||============================== //

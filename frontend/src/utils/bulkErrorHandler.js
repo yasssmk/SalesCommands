@@ -175,24 +175,35 @@ export function handleBulkError(responseData, originalError = null, options = {}
       console.log('[handleBulkError] Total failure (0%), displaying ERROR snackbar');
     }
     
-    // ⭐ CRITICAL FIX: Use errorMessage field for 0% failures, not the summary message
-    const errorMessage = responseData.errorMessage || 
-                        responseData.message || 
-                        'Operation failed';
+    // // ⭐ CRITICAL FIX: Use errorMessage field for 0% failures, not the summary message
+    // const errorMessage = responseData.errorMessage || 
+    //                     responseData.message || 
+    //                     'Operation failed';
     
-    // ⭐ Extract status for proper severity mapping
-    const status = responseData.httpStatus || 
-                  responseData.status || 
-                  0;
+    // // ⭐ Extract status for proper severity mapping
+    // const status = responseData.httpStatus || 
+    //               responseData.status || 
+    //               0;
+    
+    // if (process.env.NODE_ENV === 'development') {
+    //   console.log('[handleBulkError] Error details:', { 
+    //     errorMessage, 
+    //     status,
+    //     hasErrorMessage: !!responseData.errorMessage,
+    //     hasMessage: !!responseData.message
+    //   });
+    // }
+    const errorInfo = getErrorDisplayInfo(responseData);
+    const errorMessage = errorInfo.message || 'Operation failed';
+    const status = errorInfo.status || 0;
     
     if (process.env.NODE_ENV === 'development') {
-      console.log('[handleBulkError] Error details:', { 
+      console.log('[handleBulkError] Error info from getErrorDisplayInfo:', { 
         errorMessage, 
         status,
-        hasErrorMessage: !!responseData.errorMessage,
-        hasMessage: !!responseData.message
       });
     }
+  
     
     // Map status to severity
     let severity = 'error';
