@@ -21,7 +21,7 @@ const initialState = {
   transition: 'Fade',
   close: false,
   actionButton: false,
-  maxStack: 3,
+  maxStack: 5,
   dense: false,
   iconVariant: 'usedefault',
   autoHideDuration: 3000 

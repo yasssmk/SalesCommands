@@ -47,6 +47,7 @@ import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
 import TestErrorButton from 'components/ErrorTest/TestErrorButton';
 import TestRateLimitButton from 'components/ErrorTest/TestRateLimitButton'
 import TestTimeoutButton from 'components/ErrorTest/TestTimeoutButton';
+import TestMultiSnackbar from 'components/ErrorTest/TestMultiSnackbar';
 
 const COLUMN_TO_BACKEND_FIELD = {
   'full_name': 'last_name',      
@@ -587,6 +588,8 @@ const handleBulkDeleteComplete = useCallback(() => {
         handleClose={() => setBulkDeleteAlert(false)}  // ← Juste fermer
         onDeleteComplete={handleBulkDeleteComplete}     // ← Juste vider
       />
+
+      {/* <TestMultiSnackbar />  */}
 
       {/* Test Error Button (dev only) */}
       {/* {process.env.NODE_ENV === 'development' && <TestRateLimitButton/>} */}

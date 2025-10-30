@@ -95,6 +95,10 @@ function createAxiosClient(timeout, profile = 'default') {
       'Content-Type': 'application/json',
     },
     withCredentials: true,
+
+    // ✅ Security: DoS protection via data size limits (CVE-2024-39338)
+    maxContentLength: 50 * 1024 * 1024,  // 50MB response limit
+    maxBodyLength: 10 * 1024 * 1024,      // 10MB request limit
   });
 
   // Attach interceptors to this client
