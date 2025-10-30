@@ -74,6 +74,7 @@ export default function CSVImportModal({ config, open, onClose, onImport }) {
     handleImport,
     handleRetry,
     handleDownloadSample,
+    resetState,
     setFile,
     setParsedData,
     setValidationResult,
@@ -146,19 +147,23 @@ export default function CSVImportModal({ config, open, onClose, onImport }) {
   };
 
   // Handle new import
+  // const handleNewImport = () => {
+  //   setFile(null);
+  //   setParsedData(null);
+  //   setValidationResult(null);
+  //   setParseError(null);
+  //   setImportProgress({
+  //     total: 0,
+  //     processed: 0,
+  //     success: 0,
+  //     failed: 0,
+  //     skipped: 0
+  //   });
+  //   setImportResponse(null);
+  // };
+
   const handleNewImport = () => {
-    setFile(null);
-    setParsedData(null);
-    setValidationResult(null);
-    setParseError(null);
-    setImportProgress({
-      total: 0,
-      processed: 0,
-      success: 0,
-      failed: 0,
-      skipped: 0
-    });
-    setImportResponse(null);
+    resetState(); // Utilise la fonction du hook qui gère tout
   };
 
   return (
@@ -288,7 +293,7 @@ export default function CSVImportModal({ config, open, onClose, onImport }) {
           )}
 
           {/* Import Progress */}
-          {importProgress.total > 0 && (
+          {/* {importProgress.total > 0 && (
             <Grid item xs={12}>
               <BulkProgressBar
                 operation={`Importing ${entityDisplayPlural}`}
@@ -300,7 +305,7 @@ export default function CSVImportModal({ config, open, onClose, onImport }) {
                 variant={importing ? 'default' : 'inline'}
               />
             </Grid>
-          )}
+          )} */}
 
           {/* Import Report */}
           {importResponse && importResponse.results && (
@@ -335,7 +340,7 @@ export default function CSVImportModal({ config, open, onClose, onImport }) {
           <Grid item />
           <Grid item>
             {/* New Import button after success */}
-            {importResponse && importProgress.success > 0 && (
+            {importResponse && (
               <Button
                 variant="outlined"
                 onClick={handleNewImport}

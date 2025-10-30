@@ -13,7 +13,7 @@
 import { isValidUUID } from 'utils/validators';
 
 // API imports
-import axiosClient from 'utils/axiosClient';
+import { api } from 'utils/axiosClient';
 
 // ==============================|| API FETCHERS ||============================== //
 
@@ -21,7 +21,7 @@ import axiosClient from 'utils/axiosClient';
  * Fetch all roles for the current tenant
  */
 const fetchRoles = async () => {
-  const response = await axiosClient.get('/client/roles/');
+  const response = await api.get('/client/roles/');
   return response.data?.results || [];
 };
 
@@ -29,7 +29,7 @@ const fetchRoles = async () => {
  * Fetch all organizations for the current tenant
  */
 const fetchOrganizations = async () => {
-  const response = await axiosClient.get('/client/organizations/');
+  const response = await api.get('/client/organizations/');
   return response.data?.results || [];
 };
 
@@ -42,7 +42,7 @@ const fetchTeams = async (organizationId = null) => {
   if (organizationId) {
     url += `?organization=${organizationId}`;
   }
-  const response = await axiosClient.get(url);
+  const response = await api.get(url);
   return response.data?.results || [];
 };
 
@@ -323,6 +323,7 @@ export const resolveUserRelations = (userRow, lookups) => {
 
   // Resolve role
   if (userRow.role) {
+    resolved._originalRole = userRow.role;
     const roleResult = resolveRole(userRow.role, lookups);
     if (roleResult.id) {
       resolved.role = roleResult.id;
@@ -337,6 +338,7 @@ export const resolveUserRelations = (userRow, lookups) => {
   // Resolve organization
   let orgId = null;
   if (userRow.organization) {
+    resolved._originalOrganization = userRow.organization;
     const orgResult = resolveOrganization(userRow.organization, lookups);
     if (orgResult.id) {
       resolved.organization = orgResult.id;
@@ -351,6 +353,7 @@ export const resolveUserRelations = (userRow, lookups) => {
 
   // Resolve team (needs organization if provided by name)
   if (userRow.team) {
+    resolved._originalTeam = userRow.team;
     const teamResult = resolveTeam(userRow.team, orgId, lookups);
     if (teamResult.id) {
       resolved.team = teamResult.id;

@@ -89,13 +89,19 @@ export default function CSVDataPreview({
                       color="success" 
                     />
                   </TableCell>
-                  {headers.map((header) => (
-                    <TableCell key={header}>
-                      {row[header]?.toString() || '-'}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
+                  {headers.map((header) => {
+                    // Convention: si _original{Header} existe, l'afficher (ex: _originalRole)
+                    const originalKey = `_original${header.charAt(0).toUpperCase() + header.slice(1)}`;
+                    const displayValue = row[originalKey] || row[header];
+                    
+                    return (
+                      <TableCell key={header}>
+                        {displayValue?.toString() || '-'}
+                      </TableCell>
+                    );
+                  })}
+                  </TableRow>   
+                ))} 
               
               {/* Invalid rows (red background) */}
               {invalidRows.slice(0, invalidToShow).map((row) => (
@@ -112,11 +118,17 @@ export default function CSVDataPreview({
                       color="error" 
                     />
                   </TableCell>
-                  {headers.map((header) => (
-                    <TableCell key={header}>
-                      {row[header]?.toString() || '-'}
-                    </TableCell>
-                  ))}
+                  {headers.map((header) => {
+                    // Convention: si _original{Header} existe, l'afficher (ex: _originalRole)
+                    const originalKey = `_original${header.charAt(0).toUpperCase() + header.slice(1)}`;
+                    const displayValue = row[originalKey] || row[header];
+                    
+                    return (
+                      <TableCell key={header}>
+                        {displayValue?.toString() || '-'}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               ))}
 
