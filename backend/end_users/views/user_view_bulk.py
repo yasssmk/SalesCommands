@@ -306,6 +306,22 @@ class UserBulkViewSet(UserViewSet):
             # ===== APPLY UPDATES =====
             with disable_signals():
                 if mode == 'strict':
+
+                    validated_fks = {}
+                    if complex_updates:
+                        try:
+                            validated_fks = self._prevalidate_fks(complex_updates, client_id)
+                        except StandardizedValidationError as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            ctx['event'] = 'bulk_update_fk_validation_failed'
+                            ctx['error'] = error_msg
+                            logger.error("FK validation failed in strict mode", extra=ctx, exc_info=True)
+                            return self._build_bulk_error_response(
+                                {'success': [], 'failed': results['failed']},
+                                len(ids),
+                                f"Strict mode failed: {error_msg}"
+                            )
+                    
                     with transaction.atomic():
                         try:
                             # ⭐ SET-BASED UPDATE for simple fields (1 query instead of N)
@@ -326,10 +342,8 @@ class UserBulkViewSet(UserViewSet):
                                     ).update(**update_fields)
                             
                             # Complex fields (FK) need individual updates for validation
-                            if complex_updates and valid_user_ids:
-                                for user_id in valid_user_ids:
-                                    user = users_dict[user_id]
-                                    self._validate_and_apply_patch(user, complex_updates, client_id)
+                            if validated_fks and valid_user_ids:
+                                self._apply_fk_updates_setbased(valid_user_ids, validated_fks, client_id)
                             
                             # Build success results
                             for user_id in valid_user_ids:
@@ -373,25 +387,28 @@ class UserBulkViewSet(UserViewSet):
                                 client_account_id=client_id
                             ).update(**update_fields)
                     
-                    # Complex fields need individual handling
-                    if complex_updates:
-                        for user_id in valid_user_ids:
-                            user = users_dict[user_id]
+                    # Validate then apply SET-BASED (NEW OPTIMIZATION)
+                    if complex_updates and valid_user_ids:
+                        # Try to validate FKs for all users
+                        try:
+                            validated_fks = self._prevalidate_fks(complex_updates, client_id)
+                            
+                            # If validation succeeds, apply to all valid users in one go
                             with transaction.atomic():
-                                try:
-                                    self._validate_and_apply_patch(user, complex_updates, client_id)
-                                except StandardizedValidationError as e:
-                                    error_msg = self._format_bulk_error_message(e)
-                                    results['failed'].append({
-                                        'id': user_id,
-                                        'email': user.email,
-                                        'errors': [error_msg]
-                                    })
-                                    transaction.set_rollback(True)
-                                    
-                                    # Remove from valid_user_ids if failed
-                                    if user_id in valid_user_ids:
-                                        valid_user_ids.remove(user_id)
+                                self._apply_fk_updates_setbased(valid_user_ids, validated_fks, client_id)
+                                
+                        except StandardizedValidationError as e:
+                            # If FK validation fails globally, it affects all users
+                            error_msg = self._format_bulk_error_message(e)
+                            for user_id in valid_user_ids:
+                                user = users_dict[user_id]
+                                results['failed'].append({
+                                    'id': user_id,
+                                    'email': user.email,
+                                    'errors': [error_msg]
+                                })
+                            # Clear valid_user_ids since all FK updates failed
+                            valid_user_ids = []
                     
                     # Build success results
                     for user_id in valid_user_ids:
@@ -1241,6 +1258,175 @@ class UserBulkViewSet(UserViewSet):
             'results': clean_results
         }, status=status_code)
     
+
+
+    def _prevalidate_fks(self, patch, client_id):
+        """
+        Pre-validate and fetch all FK instances in bulk (1 query per FK type).
+        
+        This method eliminates N×3 SELECT queries by validating all FKs upfront.
+        Used by bulk_update to optimize FK validation before set-based UPDATE.
+        
+        Args:
+            patch: Dict containing FK fields to update (role, team, organization)
+            client_id: Current client ID for validation
+            
+        Returns:
+            Dict with validated instances: {'role': UserRole(...), 'team': Team(...), ...}
+            Empty dict if no FK fields in patch
+            
+        Raises:
+            StandardizedValidationError: If any FK validation fails
+            
+        Example:
+            patch = {'role': 'uuid-123', 'team': 'uuid-456'}
+            result = self._prevalidate_fks(patch, client_id)
+            # result = {'role': <UserRole obj>, 'team': <Team obj>}
+        """
+        validated_fks = {}
+        
+        # ===== ROLE VALIDATION =====
+        if 'role' in patch:
+            role_id = patch['role']
+            
+            if role_id is None or role_id == '':
+                validated_fks['role'] = None
+                validated_fks['role_name'] = None
+            else:
+                # Validate UUID format
+                try:
+                    import uuid
+                    uuid.UUID(str(role_id))
+                except ValueError:
+                    raise StandardizedValidationError(f"Invalid role ID format: {role_id}")
+                
+                # Fetch role (1 SELECT for all users)
+                try:
+                    role = UserRole.objects.get(id=role_id, client_account_id=client_id)
+                    validated_fks['role'] = role
+                    validated_fks['role_name'] = role.name
+                except UserRole.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.BULK_CREATE_INVALID_ROLE.format(role=role_id)
+                    )
+        
+        # ===== ORGANIZATION VALIDATION =====
+        if 'organization' in patch:
+            org_id = patch['organization']
+            
+            if org_id is None or org_id == '':
+                validated_fks['organization'] = None
+            else:
+                # Validate UUID format
+                try:
+                    import uuid
+                    uuid.UUID(str(org_id))
+                except ValueError:
+                    raise StandardizedValidationError(f"Invalid organization ID format: {org_id}")
+                
+                # Fetch organization (1 SELECT for all users)
+                try:
+                    org = Organization.objects.get(id=org_id, client_account_id=client_id)
+                    validated_fks['organization'] = org
+                except Organization.DoesNotExist:
+                    raise StandardizedValidationError(f"Organization with ID '{org_id}' not found")
+        
+        # ===== TEAM VALIDATION =====
+        if 'team' in patch:
+            team_id = patch['team']
+            
+            if team_id is None or team_id == '':
+                validated_fks['team'] = None
+            else:
+                # Validate UUID format
+                try:
+                    import uuid
+                    uuid.UUID(str(team_id))
+                except ValueError:
+                    raise StandardizedValidationError(f"Invalid team ID format: {team_id}")
+                
+                # Fetch team (1 SELECT for all users)
+                try:
+                    team = Team.objects.get(id=team_id)
+                    # Validate team belongs to client
+                    if str(team.organization.client_account_id) != str(client_id):
+                        raise StandardizedValidationError("Team does not belong to your organization")
+                    validated_fks['team'] = team
+                except Team.DoesNotExist:
+                    raise StandardizedValidationError(f"Team with ID '{team_id}' not found")
+        
+        return validated_fks
+    
+    def _apply_fk_updates_setbased(self, valid_user_ids, validated_fks, client_id):
+        """
+        Apply FK updates using set-based UPDATE queries (1 query per FK field).
+        
+        This eliminates N UPDATE queries by using WHERE id IN (...) pattern.
+        Replaces the loop with individual .save() calls.
+        
+        Args:
+            valid_user_ids: List of user IDs to update
+            validated_fks: Dict with pre-validated FK instances from _prevalidate_fks()
+            client_id: Current client ID for tenant scoping
+            
+        Returns:
+            int: Total number of users updated
+            
+        Example:
+            validated_fks = {'role': <UserRole obj>, 'team': None}
+            count = self._apply_fk_updates_setbased([id1, id2, id3], validated_fks, client_id)
+            # Executes: UPDATE users SET role_id='...' WHERE id IN (id1, id2, id3)
+            #           UPDATE users SET team_id=NULL WHERE id IN (id1, id2, id3)
+        """
+        if not valid_user_ids or not validated_fks:
+            return 0
+        
+        updated_count = 0
+        base_queryset = User.objects.filter(
+            id__in=valid_user_ids,
+            client_account_id=client_id
+        )
+        
+        # ===== ROLE UPDATE (SET-BASED) =====
+        if 'role' in validated_fks:
+            role_value = validated_fks['role']
+            
+            if role_value is None:
+                # Set role to NULL
+                count = base_queryset.update(role=None, role_name=None)
+            else:
+                # Set role to the validated instance
+                count = base_queryset.update(
+                    role=role_value,
+                    role_name=validated_fks.get('role_name')
+                )
+            
+            updated_count = max(updated_count, count)
+        
+        # ===== ORGANIZATION UPDATE (SET-BASED) =====
+        if 'organization' in validated_fks:
+            org_value = validated_fks['organization']
+            
+            if org_value is None:
+                count = base_queryset.update(organization=None)
+            else:
+                count = base_queryset.update(organization=org_value)
+            
+            updated_count = max(updated_count, count)
+        
+        # ===== TEAM UPDATE (SET-BASED) =====
+        if 'team' in validated_fks:
+            team_value = validated_fks['team']
+            
+            if team_value is None:
+                count = base_queryset.update(team=None)
+            else:
+                count = base_queryset.update(team=team_value)
+            
+            updated_count = max(updated_count, count)
+        
+        return updated_count
+
     def _validate_and_apply_patch(self, user, patch, client_id):
         """
         Validate and apply patch to a user (for complex FK updates).
