@@ -275,7 +275,7 @@ function ReusableTable({
           value={globalFilter ?? ''}
           onFilterChange={(value) => setGlobalFilter(String(value))}
           placeholder={loading ? 'Loading...' : searchPlaceholder}
-          disabled={loading || !!error}
+          disabled={!!error}
         />
 
         <Stack 

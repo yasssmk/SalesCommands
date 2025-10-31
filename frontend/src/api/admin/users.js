@@ -1,13 +1,12 @@
 // frontend/src/api/admin/users.js
 
-import useSWR, { mutate } from 'swr';
-import { useMemo, useEffect } from 'react';
+import useSWR from 'swr';
+import { useMemo, useRef } from 'react';
 import { useAuth } from 'hooks/useAuth';
-import { authConfig } from 'config/auth';
 import { debounce } from 'lodash';
 
 // utils
-import axiosClient, { api } from 'utils/axiosClient';
+import { api } from 'utils/axiosClient';
 import { 
   tenantKey, 
   revalidateByPrefix, 
@@ -106,6 +105,7 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
 export function useGetUsers(options = {}) {
   const { tenantId } = useAuth();
   const { page = 1, pageSize = 10, search = '', ordering = '' } = options;
+  
 
   const urlWithParams = useMemo(() => {
     return buildUrlWithParams(endpoints.users, { 
@@ -118,7 +118,13 @@ export function useGetUsers(options = {}) {
 
   // ✅ STANDARDISÉ: Utilise toujours tenantKey()
   const swrKey = tenantKey(urlWithParams, tenantId);
-  const { data, isLoading, error, isValidating } = useSWR(swrKey);
+  // const { data, isLoading, error, isValidating } = useSWR(swrKey);
+  const { data, isLoading, error, isValidating } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+    dedupingInterval: 5000, // Évite les requêtes dupliquées pendant 5s
+  });
 
   const memoizedValue = useMemo(
     () => ({

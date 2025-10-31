@@ -14,7 +14,7 @@ import SearchOutlined from '@ant-design/icons/SearchOutlined';
 export default function DebouncedInput({
   value: initialValue,
   onFilterChange,
-  debounce = 500,
+  debounce = 600,
   size,
   startAdornment = <SearchOutlined />,
   ...props
