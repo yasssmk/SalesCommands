@@ -21,7 +21,6 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db import transaction
 from django.urls import reverse
-from django.core.exceptions import ValidationError
 
 from core.idempotency import (
     start_op,
@@ -30,36 +29,17 @@ from core.idempotency import (
     get_owner_from_request,
     compute_payload_hash
 )
-from core.exceptions import StandardizedValidationError, StandardizedPermissionDenied
+from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-from core.cache_utils import invalidate_tag
+from core.cache_utils import invalidate_tag, disable_signals
 from core.logging import get_logger, ctx_from_request
-
 from ..models import User, UserRole, Team, Organization
 from .user_view import UserViewSet
 
-from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 
 logger = get_logger(__name__)
-
-import os
-import os
-import threading
-from django.http import HttpRequest
-from rest_framework.request import Request as DRFRequest
-from django.contrib.auth import get_user_model
-
-from decouple import config
-
-# LOG AU CHARGEMENT DU MODULE
-if config('SIMULATE_SLOW_DELETE', default='false') == 'true':
-    duration = config('SLOW_DELETE_DURATION', default='25')
-    duration_202 = config('FORCE_202_SLEEP')
-    logger.warning(f"⚠️ TEST MODE ACTIVATED: SIMULATE_SLOW_DELETE=true, duration={duration}s, duration_202={duration_202} ")
-else:
-    logger.info("Normal mode: SIMULATE_SLOW_DELETE not set")
 
 
 class UserBulkViewSet(UserViewSet):
@@ -324,105 +304,106 @@ class UserBulkViewSet(UserViewSet):
                         )
 
             # ===== APPLY UPDATES =====
-            if mode == 'strict':
-                with transaction.atomic():
-                    try:
-                        # ⭐ SET-BASED UPDATE for simple fields (1 query instead of N)
-                        if simple_updates and valid_user_ids:
-                            update_fields = {}
-                            if 'is_active' in simple_updates:
-                                update_fields['is_active'] = simple_updates['is_active']
-                            if 'is_superuser' in simple_updates:
-                                update_fields['is_superuser'] = simple_updates['is_superuser']
-                                # If promoting to superuser, also set is_staff
-                                if simple_updates['is_superuser'] is True:
-                                    update_fields['is_staff'] = True
+            with disable_signals():
+                if mode == 'strict':
+                    with transaction.atomic():
+                        try:
+                            # ⭐ SET-BASED UPDATE for simple fields (1 query instead of N)
+                            if simple_updates and valid_user_ids:
+                                update_fields = {}
+                                if 'is_active' in simple_updates:
+                                    update_fields['is_active'] = simple_updates['is_active']
+                                if 'is_superuser' in simple_updates:
+                                    update_fields['is_superuser'] = simple_updates['is_superuser']
+                                    # If promoting to superuser, also set is_staff
+                                    if simple_updates['is_superuser'] is True:
+                                        update_fields['is_staff'] = True
+                                
+                                if update_fields:
+                                    User.objects.filter(
+                                        id__in=valid_user_ids,
+                                        client_account_id=client_id
+                                    ).update(**update_fields)
                             
-                            if update_fields:
-                                User.objects.filter(
-                                    id__in=valid_user_ids,
-                                    client_account_id=client_id
-                                ).update(**update_fields)
-                        
-                        # Complex fields (FK) need individual updates for validation
-                        if complex_updates and valid_user_ids:
+                            # Complex fields (FK) need individual updates for validation
+                            if complex_updates and valid_user_ids:
+                                for user_id in valid_user_ids:
+                                    user = users_dict[user_id]
+                                    self._validate_and_apply_patch(user, complex_updates, client_id)
+                            
+                            # Build success results
                             for user_id in valid_user_ids:
                                 user = users_dict[user_id]
-                                self._validate_and_apply_patch(user, complex_updates, client_id)
+                                # Refresh from DB to get updated values
+                                user.refresh_from_db()
+                                results['success'].append({
+                                    'id': str(user.id),
+                                    'email': user.email,
+                                    'name': user.get_full_name()
+                                })
+                            
+                            # Invalidate cache after commit
+                            transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
+
+                        except Exception as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            ctx['event'] = 'bulk_update_strict_mode_failed'
+                            ctx['error'] = error_msg
+                            logger.error("Bulk update strict mode failed", extra=ctx, exc_info=True)
+                            return self._build_bulk_error_response(
+                                {'success': [], 'failed': results['failed']},
+                                len(ids),
+                                f"Strict mode failed: {error_msg}"
+                            )
+                else:
+                    # Partial mode: Best-effort updates
+                    # ⭐ SET-BASED UPDATE for simple fields
+                    if simple_updates and valid_user_ids:
+                        update_fields = {}
+                        if 'is_active' in simple_updates:
+                            update_fields['is_active'] = simple_updates['is_active']
+                        if 'is_superuser' in simple_updates:
+                            update_fields['is_superuser'] = simple_updates['is_superuser']
+                            if simple_updates['is_superuser'] is True:
+                                update_fields['is_staff'] = True
                         
-                        # Build success results
+                        if update_fields:
+                            User.objects.filter(
+                                id__in=valid_user_ids,
+                                client_account_id=client_id
+                            ).update(**update_fields)
+                    
+                    # Complex fields need individual handling
+                    if complex_updates:
                         for user_id in valid_user_ids:
                             user = users_dict[user_id]
-                            # Refresh from DB to get updated values
-                            user.refresh_from_db()
-                            results['success'].append({
-                                'id': str(user.id),
-                                'email': user.email,
-                                'name': user.get_full_name()
-                            })
-                        
-                        # Invalidate cache after commit
-                        transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
-
-                    except Exception as e:
-                        error_msg = self._format_bulk_error_message(e)
-                        ctx['event'] = 'bulk_update_strict_mode_failed'
-                        ctx['error'] = error_msg
-                        logger.error("Bulk update strict mode failed", extra=ctx, exc_info=True)
-                        return self._build_bulk_error_response(
-                            {'success': [], 'failed': results['failed']},
-                            len(ids),
-                            f"Strict mode failed: {error_msg}"
-                        )
-            else:
-                # Partial mode: Best-effort updates
-                # ⭐ SET-BASED UPDATE for simple fields
-                if simple_updates and valid_user_ids:
-                    update_fields = {}
-                    if 'is_active' in simple_updates:
-                        update_fields['is_active'] = simple_updates['is_active']
-                    if 'is_superuser' in simple_updates:
-                        update_fields['is_superuser'] = simple_updates['is_superuser']
-                        if simple_updates['is_superuser'] is True:
-                            update_fields['is_staff'] = True
+                            with transaction.atomic():
+                                try:
+                                    self._validate_and_apply_patch(user, complex_updates, client_id)
+                                except StandardizedValidationError as e:
+                                    error_msg = self._format_bulk_error_message(e)
+                                    results['failed'].append({
+                                        'id': user_id,
+                                        'email': user.email,
+                                        'errors': [error_msg]
+                                    })
+                                    transaction.set_rollback(True)
+                                    
+                                    # Remove from valid_user_ids if failed
+                                    if user_id in valid_user_ids:
+                                        valid_user_ids.remove(user_id)
                     
-                    if update_fields:
-                        User.objects.filter(
-                            id__in=valid_user_ids,
-                            client_account_id=client_id
-                        ).update(**update_fields)
-                
-                # Complex fields need individual handling
-                if complex_updates:
+                    # Build success results
                     for user_id in valid_user_ids:
                         user = users_dict[user_id]
-                        with transaction.atomic():
-                            try:
-                                self._validate_and_apply_patch(user, complex_updates, client_id)
-                            except StandardizedValidationError as e:
-                                error_msg = self._format_bulk_error_message(e)
-                                results['failed'].append({
-                                    'id': user_id,
-                                    'email': user.email,
-                                    'errors': [error_msg]
-                                })
-                                transaction.set_rollback(True)
-                                
-                                # Remove from valid_user_ids if failed
-                                if user_id in valid_user_ids:
-                                    valid_user_ids.remove(user_id)
-                
-                # Build success results
-                for user_id in valid_user_ids:
-                    user = users_dict[user_id]
-                    user.refresh_from_db()
-                    results['success'].append({
-                        'id': str(user.id),
-                        'email': user.email,
-                        'name': user.get_full_name()
-                    })
-                
-                invalidate_tag(client_id, 'users')
+                        user.refresh_from_db()
+                        results['success'].append({
+                            'id': str(user.id),
+                            'email': user.email,
+                            'name': user.get_full_name()
+                        })
+                    
+                    invalidate_tag(client_id, 'users')
 
             success_count = len(results['success'])
             failed_count = len(results['failed'])
@@ -670,22 +651,85 @@ class UserBulkViewSet(UserViewSet):
             valid_ids = set(ids) - invalid_ids - protected_ids
 
             # ===== DELETE OPERATIONS =====
-            if mode == 'strict':
-                # Strict mode: All-or-nothing transaction
-                with transaction.atomic():
-                    try:
-                        # Store user info before deletion for response
-                        users_info = {}
-                        for user_id in valid_ids:
-                            user = users_dict[user_id]
-                            users_info[user_id] = {
-                                'email': user.email,
-                                'name': user.get_full_name()
-                            }
-                        
-                        # ⭐ SET-BASED DELETE: 1 query instead of N
-                        if valid_ids:
+            with disable_signals():
+                if mode == 'strict':
+                    # Strict mode: All-or-nothing transaction
+                    with transaction.atomic():
+                        try:
+                            # Store user info before deletion for response
+                            users_info = {}
+                            for user_id in valid_ids:
+                                user = users_dict[user_id]
+                                users_info[user_id] = {
+                                    'email': user.email,
+                                    'name': user.get_full_name()
+                                }
+                            
+                            # ⭐ SET-BASED DELETE: 1 query instead of N
+                            if valid_ids:
 
+                                deleted_count = User.objects.filter(
+                                    id__in=valid_ids,
+                                    client_account_id=client_id
+                                ).delete()[0]
+                                
+                                # Build success results
+                                for user_id in valid_ids:
+                                    info = users_info[user_id]
+                                    results['success'].append({
+                                        'id': user_id,
+                                        'email': info['email'],
+                                        'name': info['name']
+                                    })
+                            
+                            # Add protected users to failed
+                            for protected in protected_users:
+                                results['failed'].append({
+                                    'id': protected['id'],
+                                    'email': protected['email'],
+                                    'errors': [protected['reason']]
+                                })
+                            
+                            # Ensure admin invariants
+                            client = User.objects.get(id=requester_id).client_account
+                            client.ensure_admin_invariants()
+                            
+                            # Invalidation cache APRÈS commit
+                            transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
+                            
+                        except Exception as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            ctx['event'] = 'bulk_delete_strict_mode_failed'
+                            ctx['error'] = error_msg
+                            logger.error("Bulk delete strict mode failed", extra=ctx, exc_info=True)
+                            
+                            return self._build_bulk_error_response(
+                                {'success': [], 'failed': results['failed']},
+                                len(ids),
+                                f"Strict mode failed: {error_msg}"
+                            )
+                else:
+                    # Partial mode: Best-effort deletion
+                    # Store user info before deletion
+                    users_info = {}
+                    for user_id in valid_ids:
+                        user = users_dict[user_id]
+                        users_info[user_id] = {
+                            'email': user.email,
+                            'name': user.get_full_name()
+                        }
+                    
+                    # Add protected users to failed first
+                    for protected in protected_users:
+                        results['failed'].append({
+                            'id': protected['id'],
+                            'email': protected['email'],
+                            'errors': [protected['reason']]
+                        })
+                    
+                    # ⭐ SET-BASED DELETE: 1 query instead of N
+                    try:
+                        if valid_ids:
                             deleted_count = User.objects.filter(
                                 id__in=valid_ids,
                                 client_account_id=client_id
@@ -700,92 +744,30 @@ class UserBulkViewSet(UserViewSet):
                                     'name': info['name']
                                 })
                         
-                        # Add protected users to failed
-                        for protected in protected_users:
-                            results['failed'].append({
-                                'id': protected['id'],
-                                'email': protected['email'],
-                                'errors': [protected['reason']]
-                            })
+                        # Ensure admin invariants (partial mode)
+                        try:
+                            client = User.objects.get(id=requester_id).client_account
+                            client.ensure_admin_invariants()
+                        except Exception as e:
+                            logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
                         
-                        # Ensure admin invariants
-                        client = User.objects.get(id=requester_id).client_account
-                        client.ensure_admin_invariants()
-                        
-                        # Invalidation cache APRÈS commit
-                        transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
+                        # Invalidation cache en mode partial
+                        invalidate_tag(client_id, 'users')
                         
                     except Exception as e:
                         error_msg = self._format_bulk_error_message(e)
-                        ctx['event'] = 'bulk_delete_strict_mode_failed'
-                        ctx['error'] = error_msg
-                        logger.error("Bulk delete strict mode failed", extra=ctx, exc_info=True)
+                        ctx['event'] = 'bulk_delete_unexpected_error'
+                        ctx['error'] = str(e)
+                        logger.error("Unexpected error in bulk delete", extra=ctx, exc_info=True)
                         
-                        return self._build_bulk_error_response(
-                            {'success': [], 'failed': results['failed']},
-                            len(ids),
-                            f"Strict mode failed: {error_msg}"
-                        )
-            else:
-                # Partial mode: Best-effort deletion
-                # Store user info before deletion
-                users_info = {}
-                for user_id in valid_ids:
-                    user = users_dict[user_id]
-                    users_info[user_id] = {
-                        'email': user.email,
-                        'name': user.get_full_name()
-                    }
-                
-                # Add protected users to failed first
-                for protected in protected_users:
-                    results['failed'].append({
-                        'id': protected['id'],
-                        'email': protected['email'],
-                        'errors': [protected['reason']]
-                    })
-                
-                # ⭐ SET-BASED DELETE: 1 query instead of N
-                try:
-                    if valid_ids:
-                        deleted_count = User.objects.filter(
-                            id__in=valid_ids,
-                            client_account_id=client_id
-                        ).delete()[0]
-                        
-                        # Build success results
+                        # Mark all as failed if set-based delete fails
                         for user_id in valid_ids:
-                            info = users_info[user_id]
-                            results['success'].append({
+                            info = users_info.get(user_id, {'email': 'Unknown', 'name': 'Unknown'})
+                            results['failed'].append({
                                 'id': user_id,
                                 'email': info['email'],
-                                'name': info['name']
+                                'errors': [error_msg]
                             })
-                    
-                    # Ensure admin invariants (partial mode)
-                    try:
-                        client = User.objects.get(id=requester_id).client_account
-                        client.ensure_admin_invariants()
-                    except Exception as e:
-                        logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
-                    
-                    # Invalidation cache en mode partial
-                    invalidate_tag(client_id, 'users')
-                    
-                except Exception as e:
-                    error_msg = self._format_bulk_error_message(e)
-                    ctx['event'] = 'bulk_delete_unexpected_error'
-                    ctx['error'] = str(e)
-                    logger.error("Unexpected error in bulk delete", extra=ctx, exc_info=True)
-                    
-                    # Mark all as failed if set-based delete fails
-                    for user_id in valid_ids:
-                        info = users_info.get(user_id, {'email': 'Unknown', 'name': 'Unknown'})
-                        results['failed'].append({
-                            'id': user_id,
-                            'email': info['email'],
-                            'errors': [error_msg]
-                        })
 
             # ===== BUILD RESPONSE =====
             success_count = len(results['success'])
@@ -980,124 +962,123 @@ class UserBulkViewSet(UserViewSet):
             )
 
             # ===== CREATE USERS =====
-            if mode == 'strict':
-                # Strict mode: All-or-nothing
-                with transaction.atomic():
-                    try:
-                        for idx, user_data in enumerate(users_data):
-                            row_num = idx + 1
-                            email = user_data.get('email', '').lower()
-
-                            
-
-                            # Check for existing email
-                            if email in existing_emails:
-                                results['skipped'].append({
-                                    'row': row_num,
-                                    'email': email,
-                                    'reason': f"Email '{email}' already exists"
-                                })
-                                continue
-
-                            # Validate superuser modification
-                            self._validate_superuser_modification(request.user, user_data)
-
-                            # Create user via serializer
-                            serializer = self.get_serializer(
-                                data=user_data,
-                                context=self.get_serializer_context()
-                            )
-                            serializer.is_valid(raise_exception=True)
-                            user = serializer.save()
-
-                            results['success'].append({
-                                'row': row_num,
-                                'email': user.email,
-                                'id': str(user.id),
-                                'name': user.get_full_name()
-                            })
-                        
-                        # Invalidate cache after commit
-                        transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
-                        
-                    except Exception as e:
-                        error_msg = self._format_bulk_error_message(e)
-                        ctx['event'] = 'bulk_create_strict_mode_failed'
-                        ctx['error'] = error_msg
-                        logger.error("Bulk create strict mode failed", extra=ctx, exc_info=True)
-                        
-                        return self._build_bulk_error_response(
-                            {'success': [], 'failed': [], 'skipped': results['skipped']}, 
-                            len(users_data),
-                            f"Strict mode failed: {error_msg}"
-                        )
-            else:
-                # Partial mode: Best-effort creation
-                for idx, user_data in enumerate(users_data):
-                    
-                    row_num = idx + 1
-                    email_display = user_data.get('email', 'Unknown')
-
-                    # Skip if already in skipped list
-                    if any(s['row'] == row_num for s in results['skipped']):
-                        continue
-
+            with disable_signals():
+                if mode == 'strict':
+                    # Strict mode: All-or-nothing
                     with transaction.atomic():
                         try:
-                            email = user_data.get('email', '').lower()
+                            for idx, user_data in enumerate(users_data):
+                                row_num = idx + 1
+                                email = user_data.get('email', '').lower()
 
-                            # Check for existing email
-                            if email in existing_emails:
-                                results['skipped'].append({
+                                # Check for existing email
+                                if email in existing_emails:
+                                    results['skipped'].append({
+                                        'row': row_num,
+                                        'email': email,
+                                        'reason': f"Email '{email}' already exists"
+                                    })
+                                    continue
+
+                                # Validate superuser modification
+                                self._validate_superuser_modification(request.user, user_data)
+
+                                # Create user via serializer
+                                serializer = self.get_serializer(
+                                    data=user_data,
+                                    context=self.get_serializer_context()
+                                )
+                                serializer.is_valid(raise_exception=True)
+                                user = serializer.save()
+
+                                results['success'].append({
                                     'row': row_num,
-                                    'email': email,
-                                    'reason': f"Email '{email}' already exists"
+                                    'email': user.email,
+                                    'id': str(user.id),
+                                    'name': user.get_full_name()
                                 })
-                                continue
-
-                            # Validate superuser modification
-                            self._validate_superuser_modification(request.user, user_data)
-
-                            # Create user
-                            serializer = self.get_serializer(
-                                data=user_data,
-                                context=self.get_serializer_context()
-                            )
-                            serializer.is_valid(raise_exception=True)
-                            user = serializer.save()
-
-                            results['success'].append({
-                                'row': row_num,
-                                'email': user.email,
-                                'id': str(user.id),
-                                'name': user.get_full_name()
-                            })
-
-                        except StandardizedValidationError as e:
-                            error_msg = self._format_bulk_error_message(e)
-                            results['failed'].append({
-                                'row': row_num,
-                                'email': email_display,
-                                'errors': [error_msg]
-                            })
-                            transaction.set_rollback(True)
+                            
+                            # Invalidate cache after commit
+                            transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
                             
                         except Exception as e:
-                            ctx['event'] = 'bulk_create_unexpected_error'
-                            ctx['row'] = row_num
-                            ctx['error'] = str(e)
-                            logger.error("Unexpected error in bulk create", extra=ctx, exc_info=True)
-                            
                             error_msg = self._format_bulk_error_message(e)
-                            results['failed'].append({
-                                'row': row_num,
-                                'email': email_display,
-                                'errors': [error_msg]
-                            })
-                            transaction.set_rollback(True)
-                
-                # Invalidate cache in partial mode
-                invalidate_tag(client_id, 'users')
+                            ctx['event'] = 'bulk_create_strict_mode_failed'
+                            ctx['error'] = error_msg
+                            logger.error("Bulk create strict mode failed", extra=ctx, exc_info=True)
+                            
+                            return self._build_bulk_error_response(
+                                {'success': [], 'failed': [], 'skipped': results['skipped']}, 
+                                len(users_data),
+                                f"Strict mode failed: {error_msg}"
+                            )
+                else:
+                    # Partial mode: Best-effort creation
+                    for idx, user_data in enumerate(users_data):
+                        
+                        row_num = idx + 1
+                        email_display = user_data.get('email', 'Unknown')
+
+                        # Skip if already in skipped list
+                        if any(s['row'] == row_num for s in results['skipped']):
+                            continue
+
+                        with transaction.atomic():
+                            try:
+                                email = user_data.get('email', '').lower()
+
+                                # Check for existing email
+                                if email in existing_emails:
+                                    results['skipped'].append({
+                                        'row': row_num,
+                                        'email': email,
+                                        'reason': f"Email '{email}' already exists"
+                                    })
+                                    continue
+
+                                # Validate superuser modification
+                                self._validate_superuser_modification(request.user, user_data)
+
+                                # Create user
+                                serializer = self.get_serializer(
+                                    data=user_data,
+                                    context=self.get_serializer_context()
+                                )
+                                serializer.is_valid(raise_exception=True)
+                                user = serializer.save()
+
+                                results['success'].append({
+                                    'row': row_num,
+                                    'email': user.email,
+                                    'id': str(user.id),
+                                    'name': user.get_full_name()
+                                })
+
+                            except StandardizedValidationError as e:
+                                error_msg = self._format_bulk_error_message(e)
+                                results['failed'].append({
+                                    'row': row_num,
+                                    'email': email_display,
+                                    'errors': [error_msg]
+                                })
+                                transaction.set_rollback(True)
+                                
+                            except Exception as e:
+                                ctx['event'] = 'bulk_create_unexpected_error'
+                                ctx['row'] = row_num
+                                ctx['error'] = str(e)
+                                logger.error("Unexpected error in bulk create", extra=ctx, exc_info=True)
+                                
+                                error_msg = self._format_bulk_error_message(e)
+                                results['failed'].append({
+                                    'row': row_num,
+                                    'email': email_display,
+                                    'errors': [error_msg]
+                                })
+                                transaction.set_rollback(True)
+                    
+                    # Invalidate cache in partial mode
+                    invalidate_tag(client_id, 'users')
 
             # ===== BUILD RESPONSE =====
             success_count = len(results['success'])

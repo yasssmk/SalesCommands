@@ -47,6 +47,14 @@ _redis_health_cache = {"healthy": None, "expires_at": 0}
 # Thread-local flag pour désactiver les signals de cache
 _signals_disabled = threading.local()
 
+# Runtime flag to enable/disable bulk signal optimization
+# Set to False to rollback to old behavior (signals always fire)
+BULK_SIGNALS_DISABLED = getattr(
+    settings,
+    'BULK_SIGNALS_DISABLED',
+    True  # True by default (signals disabled during bulk = optimized behavior)
+)
+
 
 def _is_redis_backend() -> bool:
     """
@@ -246,6 +254,15 @@ def disable_signals():
         ...     User.objects.bulk_create([user1, user2, user3])
         ...     invalidate_tag(42, 'users')  # Single invalidation
     """
+    # Check runtime flag - if disabled, signals will fire normally
+    if not BULK_SIGNALS_DISABLED:
+        logger.info(
+            "BULK_SIGNALS_DISABLED=False: Signals will fire normally (rollback mode)"
+        )
+        # Don't disable signals, just yield without modification
+        yield
+        return
+    
     # Set flag to disable signals
     _signals_disabled.value = True
     
