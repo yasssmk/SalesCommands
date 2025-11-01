@@ -161,62 +161,62 @@ export function isValidEmail(email) {
 
 // ==============================|| CSV ROW SANITIZATION ||============================== //
 
-/**
- * Sanitize a user row from CSV import (client-side).
- * - Email required + format
- * - Names normalized
- * - Password optional (>=8 if provided)
- * - Role/Organization/Team kept as trimmed strings (resolved later)
- * - is_active accepts boolean-ish values
- */
-export function sanitizeUserRow(rawRow) {
-  const issues = [];
-  const clean = {};
+// /**
+//  * Sanitize a user row from CSV import (client-side).
+//  * - Email required + format
+//  * - Names normalized
+//  * - Password optional (>=8 if provided)
+//  * - Role/Organization/Team kept as trimmed strings (resolved later)
+//  * - is_active accepts boolean-ish values
+//  */
+// export function sanitizeUserRow(rawRow) {
+//   const issues = [];
+//   const clean = {};
 
-  // Email (required)
-  if (rawRow.email) {
-    const email = sanitizeEmail(rawRow.email);
-    if (email && isValidEmail(email)) {
-      clean.email = email;
-    } else {
-      issues.push('Invalid email format');
-    }
-  } else {
-    issues.push('Email is required');
-  }
+//   // Email (required)
+//   if (rawRow.email) {
+//     const email = sanitizeEmail(rawRow.email);
+//     if (email && isValidEmail(email)) {
+//       clean.email = email;
+//     } else {
+//       issues.push('Invalid email format');
+//     }
+//   } else {
+//     issues.push('Email is required');
+//   }
 
-  // Names (optional)
-  clean.first_name = normalizeName(rawRow.first_name);
-  clean.last_name = normalizeName(rawRow.last_name);
+//   // Names (optional)
+//   clean.first_name = normalizeName(rawRow.first_name);
+//   clean.last_name = normalizeName(rawRow.last_name);
 
-  // Password (optional, >= 8)
-  if (rawRow.password) {
-    const pwd = trimString(rawRow.password);
-    if (pwd && pwd.length >= 8) {
-      clean.password = pwd;
-    } else {
-      issues.push('Password must be at least 8 characters');
-    }
-  }
+//   // Password (optional, >= 8)
+//   if (rawRow.password) {
+//     const pwd = trimString(rawRow.password);
+//     if (pwd && pwd.length >= 8) {
+//       clean.password = pwd;
+//     } else {
+//       issues.push('Password must be at least 8 characters');
+//     }
+//   }
 
-  // Role / Organization / Team (optional, resolved later)
-  if (rawRow.role) clean.role = trimString(rawRow.role);
-  if (rawRow.organization) clean.organization = trimString(rawRow.organization);
-  if (rawRow.team) clean.team = trimString(rawRow.team);
+//   // Role / Organization / Team (optional, resolved later)
+//   if (rawRow.role) clean.role = trimString(rawRow.role);
+//   if (rawRow.organization) clean.organization = trimString(rawRow.organization);
+//   if (rawRow.team) clean.team = trimString(rawRow.team);
 
-  // Active status (optional)
-  if (
-    rawRow.is_active !== undefined &&
-    rawRow.is_active !== null &&
-    rawRow.is_active !== ''
-  ) {
-    const bool = toBooleanLoose(rawRow.is_active);
-    if (bool !== null) clean.is_active = bool;
-    else issues.push(`Invalid active status value: "${rawRow.is_active}"`);
-  }
+//   // Active status (optional)
+//   if (
+//     rawRow.active !== undefined &&
+//     rawRow.active !== null &&
+//     rawRow.active !== ''
+//   ) {
+//     const bool = toBooleanLoose(rawRow.active);
+//     if (bool !== null) clean.active = bool;
+//     else issues.push(`Invalid active status value: "${rawRow.active}"`);
+//   }
 
-  return { clean, issues };
-}
+//   return { clean, issues };
+// }
 
 // ==============================|| ID VALIDATION ||============================== //
 
@@ -298,9 +298,6 @@ export default {
 
   // Email
   isValidEmail,
-
-  // CSV
-  sanitizeUserRow,
 
   // ID
   isValidId,

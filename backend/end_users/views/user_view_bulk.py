@@ -258,7 +258,7 @@ class UserBulkViewSet(UserViewSet):
             simple_fields = {'is_active', 'is_superuser'}
             complex_fields = {'role', 'team', 'organization'}
             
-            simple_updates = {k: v for k, v in patch.items() if k in simple_fields}
+            simple_updates = {k: v for k, v in patch.items() if k in simple_fields and k not in ['is_active', 'is_superuser']}
             complex_updates = {k: v for k, v in patch.items() if k in complex_fields}
             
             # For set-based updates, we need to validate all users first
@@ -324,22 +324,70 @@ class UserBulkViewSet(UserViewSet):
                     
                     with transaction.atomic():
                         try:
-                            # ⭐ SET-BASED UPDATE for simple fields (1 query instead of N)
+                            # SET-BASED UPDATE for simple fields (1 query instead of N)
                             if simple_updates and valid_user_ids:
                                 update_fields = {}
-                                if 'is_active' in simple_updates:
-                                    update_fields['is_active'] = simple_updates['is_active']
-                                if 'is_superuser' in simple_updates:
-                                    update_fields['is_superuser'] = simple_updates['is_superuser']
-                                    # If promoting to superuser, also set is_staff
-                                    if simple_updates['is_superuser'] is True:
-                                        update_fields['is_staff'] = True
+                                # if 'is_active' in simple_updates:
+                                #     update_fields['is_active'] = simple_updates['is_active']
+                                # if 'is_superuser' in simple_updates:
+                                #     update_fields['is_superuser'] = simple_updates['is_superuser']
+                                #     # If promoting to superuser, also set is_staff
+                                #     if simple_updates['is_superuser'] is True:
+                                #         update_fields['is_staff'] = True
                                 
                                 if update_fields:
                                     User.objects.filter(
                                         id__in=valid_user_ids,
                                         client_account_id=client_id
                                     ).update(**update_fields)
+                                
+                            if 'is_active' in patch:
+                                if patch['is_active'] is True:
+                                    validation_result = self._validate_bulk_activation_seats(
+                                        client_id=client_id,
+                                        user_ids_to_activate=valid_user_ids,
+                                        mode=mode
+                                    )
+                                    
+                                    if validation_result['allowed_ids']:
+                                        User.objects.filter(
+                                            id__in=validation_result['allowed_ids'],
+                                            client_account_id=client_id
+                                        ).update(is_active=True)
+                                    
+                                    for user_id in validation_result['denied_ids']:
+                                        user = users_dict[user_id]
+                                        results['failed'].append({
+                                            'id': str(user.id),
+                                            'email': user.email,
+                                            'errors': [validation_result['warning']]
+                                        })
+                                    
+                                    valid_user_ids = [uid for uid in valid_user_ids 
+                                                    if uid not in validation_result['denied_ids']]
+                                else:
+                                    User.objects.filter(
+                                        id__in=valid_user_ids,
+                                        client_account_id=client_id
+                                    ).update(is_active=False)
+                            
+                            if 'is_superuser' in patch:
+                                # Valider permissions + dernier superuser
+                                self._validate_superuser_modification(
+                                    current_user=request.user,
+                                    request_data=patch,
+                                    target_user_ids=valid_user_ids
+                                )
+                                
+                                # Si validation OK, UPDATE
+                                update_fields = {'is_superuser': patch['is_superuser']}
+                                if patch['is_superuser'] is True:
+                                    update_fields['is_staff'] = True
+                                
+                                User.objects.filter(
+                                    id__in=valid_user_ids,
+                                    client_account_id=client_id
+                                ).update(**update_fields)
                             
                             # Complex fields (FK) need individual updates for validation
                             if validated_fks and valid_user_ids:
@@ -374,19 +422,69 @@ class UserBulkViewSet(UserViewSet):
                     # ⭐ SET-BASED UPDATE for simple fields
                     if simple_updates and valid_user_ids:
                         update_fields = {}
-                        if 'is_active' in simple_updates:
-                            update_fields['is_active'] = simple_updates['is_active']
-                        if 'is_superuser' in simple_updates:
-                            update_fields['is_superuser'] = simple_updates['is_superuser']
-                            if simple_updates['is_superuser'] is True:
-                                update_fields['is_staff'] = True
+                        # if 'is_active' in simple_updates:
+                        #     update_fields['is_active'] = simple_updates['is_active']
+                        # if 'is_superuser' in simple_updates:
+                        #     update_fields['is_superuser'] = simple_updates['is_superuser']
+                        #     if simple_updates['is_superuser'] is True:
+                        #         update_fields['is_staff'] = True
                         
                         if update_fields:
                             User.objects.filter(
                                 id__in=valid_user_ids,
                                 client_account_id=client_id
                             ).update(**update_fields)
+
+                    if 'is_active' in patch:
+
+                        if patch['is_active'] is True:
+                            validation_result = self._validate_bulk_activation_seats(
+                                client_id=client_id,
+                                user_ids_to_activate=valid_user_ids,
+                                mode=mode
+                            )
+                            
+                            if validation_result['allowed_ids']:
+                                User.objects.filter(
+                                    id__in=validation_result['allowed_ids'],
+                                    client_account_id=client_id
+                                ).update(is_active=True)
+                            
+                            for user_id in validation_result['denied_ids']:
+                                user = users_dict[user_id]
+                                results['failed'].append({
+                                    'id': str(user.id),
+                                    'email': user.email,
+                                    'errors': [validation_result['warning']]
+                                })
+                            
+                            valid_user_ids = [uid for uid in valid_user_ids 
+                                            if uid not in validation_result['denied_ids']]
+                        else:
+                            User.objects.filter(
+                                id__in=valid_user_ids,
+                                client_account_id=client_id
+                            ).update(is_active=False)
                     
+                    if 'is_superuser' in patch:
+                                # Valider permissions + dernier superuser
+                                self._validate_superuser_modification(
+                                    current_user=request.user,
+                                    request_data=patch,
+                                    target_user_ids=valid_user_ids
+                                )
+                                
+                                # Si validation OK, UPDATE
+                                update_fields = {'is_superuser': patch['is_superuser']}
+                                if patch['is_superuser'] is True:
+                                    update_fields['is_staff'] = True
+                                
+                                User.objects.filter(
+                                    id__in=valid_user_ids,
+                                    client_account_id=client_id
+                                ).update(**update_fields)
+
+
                     # Validate then apply SET-BASED (NEW OPTIMIZATION)
                     if complex_updates and valid_user_ids:
                         # Try to validate FKs for all users
@@ -978,6 +1076,26 @@ class UserBulkViewSet(UserViewSet):
                 ).values_list('email', flat=True)
             )
 
+            # ===== VALIDATION SEATS POUR USERS ACTIFS =====
+            validation_result = self._validate_bulk_creation_seats(
+                client_id=client_id,
+                users_data=users_data,
+                mode=mode
+            )
+
+            # En mode partial : forcer is_active=False pour users excédentaires
+            if mode == 'partial' and validation_result['warning']:
+                active_count = 0
+                max_allowed = validation_result['max_active_allowed']
+                
+                for user_data in users_data:
+                    if user_data.get('is_active', True):  # Default True
+                        active_count += 1
+                        if active_count > max_allowed:
+                            user_data['is_active'] = False
+                            user_data['_forced_inactive'] = True  # Flag pour logging
+
+
             # ===== CREATE USERS =====
             with disable_signals():
                 if mode == 'strict':
@@ -1357,6 +1475,68 @@ class UserBulkViewSet(UserViewSet):
         
         return validated_fks
     
+    def _validate_bulk_creation_seats(self, client_id, users_data, mode):
+        """
+        Valide si la création masse respecte les sièges disponibles.
+        
+        Args:
+            client_id: ID du client tenant
+            users_data: Liste des dicts users à créer
+            mode: 'strict' ou 'partial'
+        
+        Returns:
+            dict: {
+                'can_proceed': True,
+                'max_active_allowed': int (nombre max d'actifs autorisés),
+                'active_requested': int,
+                'available_seats': int,
+                'warning': str ou None
+            }
+        
+        Raises:
+            StandardizedValidationError: Si mode strict et dépassement
+        """
+        from ..models import ClientAccount
+        
+        # Calculer sièges disponibles
+        client = ClientAccount.objects.get(id=client_id)
+        available_seats = client.max_users - client.count_active_users()
+        
+        # Compter users actifs demandés (is_active par défaut = True)
+        active_requested = sum(
+            1 for user_data in users_data 
+            if user_data.get('is_active', True)
+        )
+        
+        # Validation selon le mode
+        if active_requested > available_seats:
+            if mode == 'strict':
+                raise StandardizedValidationError(
+                    f"Cannot create {active_requested} active user(s). "
+                    f"Only {available_seats} seat(s) available. "
+                    f"Set is_active=false for some users or increase max_users limit."
+                )
+            else:  # partial mode
+                return {
+                    'can_proceed': True,
+                    'max_active_allowed': available_seats,
+                    'active_requested': active_requested,
+                    'available_seats': available_seats,
+                    'warning': (
+                        f"Only {available_seats} seat(s) available. "
+                        f"{active_requested - available_seats} user(s) will be created inactive."
+                    )
+                }
+        
+        # Assez de sièges pour tous
+        return {
+            'can_proceed': True,
+            'max_active_allowed': active_requested,
+            'active_requested': active_requested,
+            'available_seats': available_seats,
+            'warning': None
+        }
+        
     def _apply_fk_updates_setbased(self, valid_user_ids, validated_fks, client_id):
         """
         Apply FK updates using set-based UPDATE queries (1 query per FK field).
@@ -1518,7 +1698,81 @@ class UserBulkViewSet(UserViewSet):
             
             user.save(update_fields=update_fields)
     
-    def _validate_superuser_modification(self, current_user, request_data, target_user=None):
+    def _validate_bulk_activation_seats(self, client_id, user_ids_to_activate, mode):
+        """
+        Valide si l'activation masse respecte les sièges disponibles.
+        
+        Args:
+            client_id: ID du client tenant
+            user_ids_to_activate: Liste des IDs users à activer
+            mode: 'strict' ou 'partial'
+        
+        Returns:
+            dict: {
+                'allowed_ids': [ids pouvant être activés],
+                'denied_ids': [ids ne pouvant pas être activés],
+                'available_seats': int,
+                'requested': int,
+                'warning': str ou None
+            }
+        
+        Raises:
+            StandardizedValidationError: Si mode strict et dépassement
+        """
+        from ..models import ClientAccount
+        
+        # Récupérer client et calculer sièges disponibles
+        client = ClientAccount.objects.get(id=client_id)
+        available_seats = client.max_users - client.count_active_users()
+        
+        # Identifier users actuellement INACTIFS qui vont devenir actifs
+        users_to_activate_qs = User.objects.filter(
+            id__in=user_ids_to_activate,
+            client_account_id=client_id,
+            is_active=False  # Seulement ceux qui changent d'état
+        ).order_by('created_at')  # FIFO : premiers créés = premiers activés
+        
+        count_to_activate = users_to_activate_qs.count()
+        
+        # Validation selon le mode
+        if count_to_activate > available_seats:
+            if mode == 'strict':
+                raise StandardizedValidationError(
+                    f"Cannot activate {count_to_activate} user(s). "
+                    f"Only {available_seats} seat(s) available. "
+                    f"Deactivate other users or increase max_users limit."
+                )
+            else:  # partial mode
+                # Activer seulement les X premiers (FIFO)
+                allowed_ids = list(
+                    users_to_activate_qs[:available_seats].values_list('id', flat=True)
+                )
+                denied_ids = list(
+                    users_to_activate_qs[available_seats:].values_list('id', flat=True)
+                )
+                
+                return {
+                    'allowed_ids': [str(uid) for uid in allowed_ids],
+                    'denied_ids': [str(uid) for uid in denied_ids],
+                    'available_seats': available_seats,
+                    'requested': count_to_activate,
+                    'warning': (
+                        f"Only {available_seats} seat(s) available. "
+                        f"{len(denied_ids)} user(s) could not be activated."
+                    )
+                }
+        
+        # Tous les users peuvent être activés
+        all_ids = [str(uid) for uid in users_to_activate_qs.values_list('id', flat=True)]
+        return {
+            'allowed_ids': all_ids,
+            'denied_ids': [],
+            'available_seats': available_seats,
+            'requested': count_to_activate,
+            'warning': None
+        }
+    
+    def _validate_superuser_modification(self, current_user, request_data, target_user=None, target_user_ids=None):
         """
         Validate if the current user can modify superuser status.
         
@@ -1545,16 +1799,22 @@ class UserBulkViewSet(UserViewSet):
                 )
         
         # If removing superuser status, check it's not the last one
-        if target_user and target_user.is_superuser:
-            if request_data.get('is_superuser') is False:
-                client = target_user.client_account
-                other_superusers = User.objects.filter(
-                    client_account_id=client.id,
-                    is_superuser=True
-                ).exclude(id=target_user.id).count()
-                
-                if other_superusers == 0:
-                    raise StandardizedValidationError(
-                        "Cannot remove superuser status from the last superuser. "
-                        "Promote another user to superuser first."
-                    )
+        elif target_user_ids and request_data.get('is_superuser') is False:
+            # Identifier superusers actuels dans le batch
+            current_superusers_in_batch = User.objects.filter(
+                id__in=target_user_ids,
+                client_account_id=current_user.client_account_id,
+                is_superuser=True
+            ).values_list('id', flat=True)
+            
+            # Compter autres superusers HORS du batch
+            other_superusers = User.objects.filter(
+                client_account_id=current_user.client_account_id,
+                is_superuser=True
+            ).exclude(id__in=current_superusers_in_batch).count()
+            
+            if other_superusers == 0:
+                raise StandardizedValidationError(
+                    "Cannot remove superuser status from the last superuser(s). "
+                    "Promote another user to superuser first."
+                )

@@ -1,4 +1,4 @@
-email,password,first_name,last_name,role
-bouskap1zzqa@companya.com,password123,Bouskap,Goku,Admin
-bouskap2zzaq@companya.com,password123,Bouskap,Gohan,Admin
-bouskap3zzq@companya.com,password123,Bouskap,Goten,Admin
+email,password,first_name,last_name,role,active
+cccsskap1zzqa@companya.com,password123,Bouskap,Goku,Admin,true
+ccckassp2zzaq@companya.com,password123,Bouskap,Gohan,Admin,true
+ccckap3sszzq@companya.com,password123,Bouskap,Goten,Admin,true

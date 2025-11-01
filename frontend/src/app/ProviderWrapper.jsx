@@ -115,7 +115,7 @@ const swrGlobalConfig = {
   // === OPTIONS DE REVALIDATION ===
   revalidateIfStale: false,       // Pas de revalidation automatique si données périmées
   revalidateOnFocus: false,       // Pas de revalidation au focus de la fenêtre
-  revalidateOnReconnect: true,    // ✅ CHANGÉ: Revalidation à la reconnexion réseau
+  revalidateOnReconnect: false,    // pas Revalidation à la reconnexion réseau
 
   // Fige TOUTES les revalidations (auto + manuelles) pendant un cooldown 429
   isPaused: isPausedNow,

@@ -11,7 +11,13 @@
  */
 
 // Utils
-import { sanitizeUserRow } from 'utils/validators';
+import { 
+  sanitizeEmail, 
+  isValidEmail, 
+  normalizeName, 
+  trimString, 
+  toBooleanLoose 
+} from 'utils/validators';
 import { resolveUserRelations, getAvailableValues } from './resolvers';
 
 // ==============================|| COLUMN DEFINITIONS ||============================== //
@@ -35,20 +41,78 @@ export function getUserCSVColumns() {
     { key: 'last_name', label: 'Last Name', required: false },
     { key: 'role', label: 'Role', required: false },
     { key: 'team', label: 'Team', required: false },
-    { key: 'is_active', label: 'Active', required: false },
-    { key: 'is_superuser', label: 'Superuser', required: false }
+    { key: 'active', label: 'Active', required: false },
   ];
 }
 
-export function getUserCSVGuidelines (){
+export function getUserCSVGuidelines(){
   return [
   'Required fields: Email (*), Password (*)',
   'Active Status accepted values: true/false, 1/0, yes/no, y/n, on/off',
-  'SUPERUSER accepted values: true/false, 1/0, yes/no, y/n, on/off',
   'Role / Team accept either name or ID (case-insensitive)',
   'Password must be at least 8 characters'
 ];
 }
+
+// ==============================|| CSV ROW SANITIZATION ||============================== //
+
+/**
+ * Sanitize a user row from CSV import (client-side).
+ * - Email required + format
+ * - Names normalized
+ * - Password optional (>=8 if provided)
+ * - Role/Organization/Team kept as trimmed strings (resolved later)
+ * - is_active accepts boolean-ish values
+ */
+export function sanitizeUserRow(rawRow) {
+  const issues = [];
+  const clean = {};
+
+  // Email (required)
+  if (rawRow.email) {
+    const email = sanitizeEmail(rawRow.email);
+    if (email && isValidEmail(email)) {
+      clean.email = email;
+    } else {
+      issues.push('Invalid email format');
+    }
+  } else {
+    issues.push('Email is required');
+  }
+
+  // Names (optional)
+  clean.first_name = normalizeName(rawRow.first_name);
+  clean.last_name = normalizeName(rawRow.last_name);
+
+  // Password (optional, >= 8)
+  if (rawRow.password) {
+    const pwd = trimString(rawRow.password);
+    if (pwd && pwd.length >= 8) {
+      clean.password = pwd;
+    } else {
+      issues.push('Password must be at least 8 characters');
+    }
+  }
+
+  // Role / Organization / Team (optional, resolved later)
+  if (rawRow.role) clean.role = trimString(rawRow.role);
+  if (rawRow.organization) clean.organization = trimString(rawRow.organization);
+  if (rawRow.team) clean.team = trimString(rawRow.team);
+
+  // Active status (optional)
+  if (
+    rawRow.active !== undefined &&
+    rawRow.active !== null &&
+    rawRow.active !== ''
+  ) {
+    const bool = toBooleanLoose(rawRow.active);
+    if (bool !== null) clean.active = bool;
+    else issues.push(`Invalid active status value: "${rawRow.active}"`);
+  }
+
+  return { clean, issues };
+}
+
 
 // ==============================|| VALIDATION ||============================== //
 
@@ -168,8 +232,7 @@ export function generateSampleCSV(lookups) {
       last_name: 'Doe',
       role: availableValues?.roles?.[1] || 'Admin',
       team: availableValues?.teams?.[0]?.name || 'Admin Team',
-      is_active: 'true',
-      is_superuser: 'false'
+      active: 'true',
     },
     {
       email: 'jane.smith@example.com',
@@ -178,8 +241,7 @@ export function generateSampleCSV(lookups) {
       last_name: 'Smith',
       role: availableValues?.roles?.[0] || 'Account Executive',
       team: availableValues?.teams?.[1]?.name || 'Sale Team',
-      is_active: 'yes',
-      is_superuser: 'no'
+      active: 'yes',
     },
     {
       email: 'bob.wilson@example.com',
@@ -188,8 +250,7 @@ export function generateSampleCSV(lookups) {
       last_name: 'Wilson',
       role: '',
       team: '',
-      is_active: '1',
-      is_superuser: '0'
+      active: '1',
     }
   ];
 
@@ -235,8 +296,8 @@ export function prepareUserDataForAPI(validatedRows) {
     if (userData.last_name) payload.last_name = userData.last_name;
     if (userData.role) payload.role = userData.role;
     if (userData.team) payload.team = userData.team;
-    if (userData.is_active !== undefined) payload.is_active = userData.is_active;
-    if (userData.is_superuser !== undefined) payload.is_superuser = userData.is_superuser;
+    if (userData.active !== undefined) payload.active = userData.active;
+
 
     // NOTE: organization is NOT included (auto-assigned by backend from team)
 
