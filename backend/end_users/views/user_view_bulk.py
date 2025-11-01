@@ -311,6 +311,16 @@ class UserBulkViewSet(UserViewSet):
                     if complex_updates:
                         try:
                             validated_fks = self._prevalidate_fks(complex_updates, client_id)
+
+                            if 'role' in validated_fks:
+                                self._validate_bulk_role_change_last_admin(
+                                    client_id=client_id,
+                                    user_ids_changing_role=valid_user_ids,
+                                    users_dict=users_dict,
+                                    new_role_name=validated_fks.get('role_name'),
+                                    mode='strict'
+                                )
+
                         except StandardizedValidationError as e:
                             error_msg = self._format_bulk_error_message(e)
                             ctx['event'] = 'bulk_update_fk_validation_failed'
@@ -366,6 +376,13 @@ class UserBulkViewSet(UserViewSet):
                                     valid_user_ids = [uid for uid in valid_user_ids 
                                                     if uid not in validation_result['denied_ids']]
                                 else:
+                                    self._validate_bulk_deactivation_last_admin(
+                                        client_id=client_id,
+                                        user_ids_to_deactivate=valid_user_ids,
+                                        users_dict=users_dict,
+                                        mode='strict'
+                                    )
+                                    
                                     User.objects.filter(
                                         id__in=valid_user_ids,
                                         client_account_id=client_id
@@ -461,6 +478,35 @@ class UserBulkViewSet(UserViewSet):
                             valid_user_ids = [uid for uid in valid_user_ids 
                                             if uid not in validation_result['denied_ids']]
                         else:
+
+                            validation_result = self._validate_bulk_deactivation_last_admin(
+                                client_id=client_id,
+                                user_ids_to_deactivate=valid_user_ids,
+                                users_dict=users_dict,
+                                mode='partial'
+                            )
+                            
+                            # Désactiver seulement allowed_ids (admins exclus automatiquement)
+                            if validation_result['allowed_ids']:
+                                User.objects.filter(
+                                    id__in=validation_result['allowed_ids'],
+                                    client_account_id=client_id
+                                ).update(is_active=False)
+                            
+                            # Ajouter denied_ids (derniers admins) dans failed avec warning
+                            for user_id in validation_result['denied_ids']:
+                                user = users_dict[user_id]
+                                results['failed'].append({
+                                    'id': str(user.id),
+                                    'email': user.email,
+                                    'errors': [validation_result['warning']]
+                                })
+                            
+                            # Mettre à jour valid_user_ids pour exclure denied
+                            # (important pour la suite du traitement)
+                            valid_user_ids = [uid for uid in valid_user_ids 
+                                            if uid not in validation_result['denied_ids']]
+                            
                             User.objects.filter(
                                 id__in=valid_user_ids,
                                 client_account_id=client_id
@@ -490,6 +536,30 @@ class UserBulkViewSet(UserViewSet):
                         # Try to validate FKs for all users
                         try:
                             validated_fks = self._prevalidate_fks(complex_updates, client_id)
+
+                            if 'role' in validated_fks:
+                                validation_result = self._validate_bulk_role_change_last_admin(
+                                    client_id=client_id,
+                                    user_ids_changing_role=valid_user_ids,
+                                    users_dict=users_dict,
+                                    new_role_name=validated_fks.get('role_name'),
+                                    mode='partial'
+                                )
+                                
+                                # Filtrer valid_user_ids pour exclure les derniers admins protégés
+                                if validation_result['denied_ids']:
+                                    # Ajouter denied_ids (derniers admins) dans failed avec warning
+                                    for user_id in validation_result['denied_ids']:
+                                        user = users_dict[user_id]
+                                        results['failed'].append({
+                                            'id': str(user.id),
+                                            'email': user.email,
+                                            'errors': [validation_result['warning']]
+                                        })
+                                    
+                                    # Mettre à jour valid_user_ids pour exclure denied
+                                    valid_user_ids = [uid for uid in valid_user_ids 
+                                                    if uid not in validation_result['denied_ids']]
                             
                             # If validation succeeds, apply to all valid users in one go
                             with transaction.atomic():
@@ -519,6 +589,16 @@ class UserBulkViewSet(UserViewSet):
                         })
                     
                     invalidate_tag(client_id, 'users')
+
+                    try:
+                        requester_id = str(request.user.id)
+                        client = User.objects.get(id=requester_id).client_account
+                        client.ensure_admin_invariants()
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to ensure admin invariants after bulk update: {e}",
+                            extra=ctx
+                        )
 
             success_count = len(results['success'])
             failed_count = len(results['failed'])
@@ -1094,6 +1174,45 @@ class UserBulkViewSet(UserViewSet):
                         if active_count > max_allowed:
                             user_data['is_active'] = False
                             user_data['_forced_inactive'] = True  # Flag pour logging
+            
+            # ===== PREMIER USER ADMIN WARNING =====
+            from ..models import ClientAccount
+            client = ClientAccount.objects.get(id=client_id)
+
+            if client.users.count() == 0 and users_data:
+                # C'est le premier user du tenant
+                first_user_data = users_data[0]
+                
+                is_superuser = first_user_data.get('is_superuser', False)
+                role_id = first_user_data.get('role')
+                
+                # Vérifier si Admin role
+                is_admin_role = False
+                if role_id:
+                    try:
+                        from ..models import UserRole
+                        role = UserRole.objects.get(id=role_id, client_account_id=client_id)
+                        is_admin_role = (role.name == 'Admin')
+                    except UserRole.DoesNotExist:
+                        pass
+                
+                if not is_superuser and not is_admin_role:
+                    # ⚠️ WARNING : Premier user sans admin
+                    logger.warning(
+                        f"Creating first user for client '{client.name}' "
+                        f"without superuser or Admin role. "
+                        f"Email: {first_user_data.get('email', 'N/A')}. "
+                        f"Serializer will auto-promote to Admin in individual mode, "
+                        f"but bulk mode may skip this logic.",
+                        extra={
+                            'event': 'first_user_without_admin',
+                            'client_id': str(client_id),
+                            'client_name': client.name,
+                            'user_email': first_user_data.get('email', 'N/A'),
+                            'mode': mode
+                        }
+                    )
+
 
 
             # ===== CREATE USERS =====
@@ -1135,6 +1254,9 @@ class UserBulkViewSet(UserViewSet):
                             
                             # Invalidate cache after commit
                             transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
+
+                            client = ClientAccount.objects.get(id=client_id)
+                            client.ensure_admin_invariants()
                             
                         except Exception as e:
                             error_msg = self._format_bulk_error_message(e)
@@ -1214,6 +1336,15 @@ class UserBulkViewSet(UserViewSet):
                     
                     # Invalidate cache in partial mode
                     invalidate_tag(client_id, 'users')
+
+                    try:
+                        client = ClientAccount.objects.get(id=client_id)
+                        client.ensure_admin_invariants()
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to ensure admin invariants after bulk create: {e}",
+                            extra=ctx
+                        )
 
             # ===== BUILD RESPONSE =====
             success_count = len(results['success'])
@@ -1818,3 +1949,270 @@ class UserBulkViewSet(UserViewSet):
                     "Cannot remove superuser status from the last superuser(s). "
                     "Promote another user to superuser first."
                 )
+            
+    def _validate_bulk_deactivation_last_admin(
+        self, 
+        client_id, 
+        user_ids_to_deactivate, 
+        users_dict,
+        mode
+    ):
+        """
+        Valide qu'on ne désactive pas le dernier admin actif du tenant.
+        
+        Un admin = is_superuser=True OU role.name='Admin'
+        
+        Args:
+            client_id: ID du client tenant
+            user_ids_to_deactivate: Liste des IDs users à désactiver
+            users_dict: Dict {user_id: User obj} pour éviter requêtes supplémentaires
+            mode: 'strict' ou 'partial'
+        
+        Returns (mode partial):
+            dict: {
+                'allowed_ids': [ids pouvant être désactivés],
+                'denied_ids': [ids protégés - derniers admins],
+                'warning': str ou None
+            }
+        
+        Raises (mode strict):
+            StandardizedValidationError: Si désactivation affecte dernier admin actif
+        
+        SQL Impact: +1 COUNT query (admins actifs hors du batch)
+        
+        Exemples:
+            # Mode strict - 1 seul admin actif dans tenant
+            >>> self._validate_bulk_deactivation_last_admin(
+            ...     client_id='abc123',
+            ...     user_ids_to_deactivate=['admin-id', 'user2'],
+            ...     users_dict={...},
+            ...     mode='strict'
+            ... )
+            StandardizedValidationError: "Cannot deactivate 1 admin(s)..."
+            
+            # Mode partial - exclure dernier admin
+            >>> result = self._validate_bulk_deactivation_last_admin(
+            ...     client_id='abc123',
+            ...     user_ids_to_deactivate=['admin-id', 'user2'],
+            ...     users_dict={...},
+            ...     mode='partial'
+            ... )
+            >>> result
+            {
+                'allowed_ids': ['user2'],
+                'denied_ids': ['admin-id'],
+                'warning': "1 admin(s) cannot be deactivated (last active admin)"
+            }
+        """
+        from django.db.models import Q
+        
+        # ===== ÉTAPE 1 : Identifier admins actifs DANS le batch =====
+        admins_in_batch = []
+        for user_id in user_ids_to_deactivate:
+            user = users_dict.get(user_id)
+            if not user:
+                continue
+            
+            # Vérifier si user est actif ET admin
+            if user.is_active:
+                # Admin = superuser OU rôle Admin
+                is_admin = user.is_superuser or (user.role and user.role.name == 'Admin')
+                if is_admin:
+                    admins_in_batch.append(user_id)
+        
+        # Si aucun admin dans le batch, pas de risque
+        if not admins_in_batch:
+            return {
+                'allowed_ids': list(user_ids_to_deactivate),
+                'denied_ids': [],
+                'warning': None
+            }
+        
+        # ===== ÉTAPE 2 : Compter admins actifs HORS du batch =====
+        # On compte les users actifs avec (is_superuser=True OU role.name='Admin')
+        # qui ne sont PAS dans le batch
+        other_active_admins_count = User.objects.filter(
+            client_account_id=client_id,
+            is_active=True
+        ).filter(
+            Q(is_superuser=True) | Q(role__name='Admin')
+        ).exclude(id__in=admins_in_batch).count()
+        
+        # ===== ÉTAPE 3 : Décision selon mode =====
+        if other_active_admins_count == 0:
+            # Problème : on va désactiver le(s) dernier(s) admin(s)
+            
+            if mode == 'strict':
+                # Mode strict : erreur immédiate, transaction annulée
+                raise StandardizedValidationError(
+                    f"Cannot deactivate {len(admins_in_batch)} admin(s). "
+                    f"At least one active admin must remain in the organization. "
+                    f"Promote another user to admin or activate an inactive admin before proceeding."
+                )
+            else:
+                # Mode partial : exclure les admins du batch, désactiver les autres
+                allowed_ids = [
+                    uid for uid in user_ids_to_deactivate 
+                    if uid not in admins_in_batch
+                ]
+                
+                return {
+                    'allowed_ids': allowed_ids,
+                    'denied_ids': admins_in_batch,
+                    'warning': (
+                        f"{len(admins_in_batch)} admin(s) cannot be deactivated "
+                        f"(last active admin). Promote another user to admin first."
+                    )
+                }
+        
+        # Pas de problème : il reste d'autres admins actifs
+        return {
+            'allowed_ids': list(user_ids_to_deactivate),
+            'denied_ids': [],
+            'warning': None
+        }
+    
+    def _validate_bulk_role_change_last_admin(
+        self, 
+        client_id, 
+        user_ids_changing_role,
+        users_dict,
+        new_role_name,
+        mode
+    ):
+        """
+        Valide qu'on ne retire pas le rôle Admin au dernier Admin du tenant.
+        
+        Un tenant doit toujours avoir au moins un admin (role='Admin' OU is_superuser=True).
+        Cette validation empêche le changement de rôle si cela retire le dernier Admin.
+        
+        Args:
+            client_id: ID du client tenant
+            user_ids_changing_role: Liste des IDs users changeant de rôle
+            users_dict: Dict {user_id: User obj} pour éviter requêtes supplémentaires
+            new_role_name: Nom du nouveau rôle (None si suppression, 'Admin' si reste admin)
+            mode: 'strict' ou 'partial'
+        
+        Returns (mode partial):
+            dict: {
+                'allowed_ids': [ids pouvant changer de rôle],
+                'denied_ids': [ids protégés - derniers Admins],
+                'warning': str ou None
+            }
+        
+        Raises (mode strict):
+            StandardizedValidationError: Si changement affecte dernier Admin
+        
+        SQL Impact: +1 COUNT query (conditionnel, seulement si role change)
+        
+        Exemples:
+            # Mode strict - Changement rôle Admin → Sales Rep (dernier Admin)
+            >>> self._validate_bulk_role_change_last_admin(
+            ...     client_id='abc123',
+            ...     user_ids_changing_role=['admin-id'],
+            ...     users_dict={...},
+            ...     new_role_name='Sales Rep',
+            ...     mode='strict'
+            ... )
+            StandardizedValidationError: "Cannot change role for 1 admin(s)..."
+            
+            # Mode partial - Exclure dernier Admin du changement
+            >>> result = self._validate_bulk_role_change_last_admin(
+            ...     client_id='abc123',
+            ...     user_ids_changing_role=['admin-id', 'user2'],
+            ...     users_dict={...},
+            ...     new_role_name='Manager',
+            ...     mode='partial'
+            ... )
+            >>> result
+            {
+                'allowed_ids': ['user2'],
+                'denied_ids': ['admin-id'],
+                'warning': "1 admin(s) role cannot be changed (last Admin role)"
+            }
+            
+            # Pas de problème - Changement vers Admin
+            >>> result = self._validate_bulk_role_change_last_admin(
+            ...     new_role_name='Admin',  # On reste/devient Admin
+            ...     ...
+            ... )
+            >>> result
+            {'allowed_ids': [...], 'denied_ids': [], 'warning': None}
+        """
+        from django.db.models import Q
+        
+        # ===== ÉTAPE 1 : Si nouveau rôle = Admin, pas de problème =====
+        if new_role_name == 'Admin':
+            # On reste Admin ou on devient Admin → OK
+            return {
+                'allowed_ids': list(user_ids_changing_role),
+                'denied_ids': [],
+                'warning': None
+            }
+        
+        # ===== ÉTAPE 2 : Identifier users avec rôle Admin actuellement DANS le batch =====
+        admins_in_batch = []
+        for user_id in user_ids_changing_role:
+            user = users_dict.get(user_id)
+            if not user:
+                continue
+            
+            # Vérifier si user a actuellement le rôle Admin
+            # (is_superuser n'est pas affecté par le changement de rôle, donc on ne le compte pas ici)
+            if user.role and user.role.name == 'Admin':
+                admins_in_batch.append(user_id)
+        
+        # Si aucun Admin dans le batch, pas de risque
+        if not admins_in_batch:
+            return {
+                'allowed_ids': list(user_ids_changing_role),
+                'denied_ids': [],
+                'warning': None
+            }
+        
+        # ===== ÉTAPE 3 : Compter autres admins (rôle Admin OU superuser) HORS du batch =====
+        # Un tenant est sécurisé s'il a au moins un user actif avec :
+        # - role.name == 'Admin' OU
+        # - is_superuser == True
+        # qui n'est PAS dans le batch de changement de rôle
+        
+        other_admins_count = User.objects.filter(
+            client_account_id=client_id,
+            is_active=True  # On ne compte que les actifs
+        ).filter(
+            Q(role__name='Admin') | Q(is_superuser=True)
+        ).exclude(id__in=admins_in_batch).count()
+        
+        # ===== ÉTAPE 4 : Décision selon mode =====
+        if other_admins_count == 0:
+            # Problème : on va retirer le rôle Admin au(x) dernier(s) Admin(s)
+            
+            if mode == 'strict':
+                # Mode strict : erreur immédiate, transaction annulée
+                raise StandardizedValidationError(
+                    f"Cannot change role for {len(admins_in_batch)} admin(s). "
+                    f"At least one Admin role must remain in the organization. "
+                    f"Promote another user to Admin or create a new admin before changing these roles."
+                )
+            else:
+                # Mode partial : exclure les derniers admins du changement de rôle
+                allowed_ids = [
+                    uid for uid in user_ids_changing_role 
+                    if uid not in admins_in_batch
+                ]
+                
+                return {
+                    'allowed_ids': allowed_ids,
+                    'denied_ids': admins_in_batch,
+                    'warning': (
+                        f"{len(admins_in_batch)} admin(s) role cannot be changed "
+                        f"(last Admin role in organization). Promote another user to Admin first."
+                    )
+                }
+        
+        # Pas de problème : il reste d'autres admins actifs (role ou superuser)
+        return {
+            'allowed_ids': list(user_ids_changing_role),
+            'denied_ids': [],
+            'warning': None
+        }
