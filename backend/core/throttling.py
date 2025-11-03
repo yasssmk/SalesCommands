@@ -428,6 +428,73 @@ class BurstRateThrottle(UserRateThrottle):
             self.rate = '10/minute'
             self.num_requests, self.duration = self.parse_rate(self.rate)
 
+class StandardRateThrottle(UserRateThrottle):
+    """
+    Standard throttle for regular GET operations (list/search/filter).
+    More permissive than BurstRateThrottle to avoid blocking normal users.
+    
+    Usage: For GET endpoints where users perform searches, filtering, sorting.
+    Example: User searches + applies 2 filters + sorts = ~3-5 requests
+    
+    Rate: 30/minute (configurable via settings)
+    
+    This throttle replaces BurstRateThrottle on read-heavy endpoints to prevent
+    false positives where legitimate usage triggers 429 errors.
+    """
+    scope = 'standard'
+    
+    def __init__(self):
+        """Initialize with standard rate from settings or default."""
+        super().__init__()
+        # Try to get rate from settings, fall back to hardcoded
+        try:
+            from django.conf import settings
+            rates = settings.REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
+            custom_rate = rates.get(self.scope)
+            if custom_rate:
+                self.rate = custom_rate
+            else:
+                self.rate = '30/minute'  # Fallback default
+            self.num_requests, self.duration = self.parse_rate(self.rate)
+        except Exception:
+            self.rate = '30/minute'
+            self.num_requests, self.duration = self.parse_rate(self.rate)
+
+
+class BulkOperationThrottle(UserRateThrottle):
+    """
+    Strict throttle for bulk operations (bulk create/update/delete).
+    Prevents abuse of resource-intensive bulk endpoints.
+    
+    Usage: For POST bulk operations that process 10-500 items at once.
+    Example: Bulk create 100 users, bulk update 200 accounts
+    
+    Rate: 3/minute (configurable via settings)
+    
+    This throttle is separate from StandardRateThrottle to:
+    - Limit expensive bulk operations independently
+    - Prevent spam/abuse of bulk endpoints
+    - Allow normal GET operations without affecting bulk limits
+    """
+    scope = 'bulk'
+    
+    def __init__(self):
+        """Initialize with bulk rate from settings or default."""
+        super().__init__()
+        # Try to get rate from settings, fall back to hardcoded
+        try:
+            from django.conf import settings
+            rates = settings.REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
+            custom_rate = rates.get(self.scope)
+            if custom_rate:
+                self.rate = custom_rate
+            else:
+                self.rate = '3/minute'  # Fallback default (strict for bulk)
+            self.num_requests, self.duration = self.parse_rate(self.rate)
+        except Exception:
+            self.rate = '3/minute'
+            self.num_requests, self.duration = self.parse_rate(self.rate)
+
 
 class RegistrationThrottle(AnonRateThrottle):
     """

@@ -21,7 +21,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db import transaction
 from django.urls import reverse
-
+from core.throttling import BulkOperationThrottle
 
 from core.idempotency import (
     start_op,
@@ -59,6 +59,7 @@ class UserBulkViewSet(UserViewSet):
     # =========================================================================
     # BULK UPDATE
     # =========================================================================
+    throttle_classes = [BulkOperationThrottle]
     
     @action(detail=False, methods=['patch'], url_path='bulk-update')
     def bulk_update(self, request):
@@ -174,6 +175,8 @@ class UserBulkViewSet(UserViewSet):
             'event': 'bulk_update_users',
             'client_id': self.get_client_id()
         })
+
+        detailed = request.query_params.get('detailed', 'false').lower() == 'true'
         
         try:
             # ===== INPUT VALIDATION =====
@@ -617,7 +620,7 @@ class UserBulkViewSet(UserViewSet):
             })
             logger.info("Bulk user update completed", extra=ctx)
 
-            return self._build_bulk_success_response(results, len(ids), operation='update')
+            return self._build_bulk_success_response(results, len(ids), operation='update', detailed=detailed)
 
         except StandardizedValidationError as e:
             if hasattr(e, 'detail') and isinstance(e.detail, dict):
@@ -755,6 +758,8 @@ class UserBulkViewSet(UserViewSet):
             'event': 'bulk_delete_users_hard',
             'client_id': self.get_client_id()
         })
+
+        detailed = request.query_params.get('detailed', 'false').lower() == 'true'
 
         try:
             # ===== INPUT VALIDATION =====
@@ -982,7 +987,7 @@ class UserBulkViewSet(UserViewSet):
             })
             logger.info("Bulk user deletion completed", extra=ctx)
 
-            return self._build_bulk_success_response(results, len(ids), operation='delete')
+            return self._build_bulk_success_response(results, len(ids), operation='delete', detailed=detailed)
 
         except StandardizedValidationError as e:
             if hasattr(e, 'detail') and isinstance(e.detail, dict):
@@ -1861,80 +1866,101 @@ class UserBulkViewSet(UserViewSet):
             'results': results
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    def _build_bulk_success_response(self, results, total, operation='create'):
-        """
-        Build standardized success response for bulk operations.
-        
-        Intelligently determines HTTP status code based on results:
-        - 200/201: All succeeded
-        - 207: Partial success (some failed)
-        - 400: All failed
-        
-        Args:
-            results: Dict with 'success', 'failed', 'skipped' arrays
-            total: Total number of items requested
-            operation: Operation type ('create', 'update', 'delete', 'archive')
+    def _build_bulk_success_response(self, results, total, operation='create', detailed=False):
+            """
+            Build standardized success response for bulk operations.
             
-        Returns:
-            Response object with appropriate status code
-        """
-        success_count = len(results.get('success', []))
-        failed_count = len(results.get('failed', []))
-        skipped_count = len(results.get('skipped', []))
+            Intelligently determines HTTP status code based on results:
+            - 200/201: All succeeded
+            - 207: Partial success (some failed)
+            - 400: All failed
+            
+            Args:
+                results: Dict with 'success', 'failed', 'skipped' arrays
+                total: Total number of items requested
+                operation: Operation type ('create', 'update', 'delete', 'archive')
+                detailed: If False (default), return IDs only for fast response.
+                        If True, return full objects with all fields.
+                
+            Returns:
+                Response object with appropriate status code
+            """
+            success_count = len(results.get('success', []))
+            failed_count = len(results.get('failed', []))
+            skipped_count = len(results.get('skipped', []))
 
-        # Determine status
-        if success_count == 0 and failed_count > 0:
-            status_code = status.HTTP_400_BAD_REQUEST
-            success_status = False
-            message = f"Bulk {operation} failed: all {failed_count} item(s) failed"
-        elif failed_count > 0 or skipped_count > 0:
-            status_code = status.HTTP_207_MULTI_STATUS
-            success_status = 'partial'
-            message = f"Bulk {operation}: {success_count} succeeded, {failed_count} failed, {skipped_count} skipped"
-        else:
-            status_code = status.HTTP_201_CREATED if operation == 'create' else status.HTTP_200_OK
-            success_status = True
-            message = f"Bulk {operation}: {success_count} item(s) processed successfully"
+            # Determine status
+            if success_count == 0 and failed_count > 0:
+                status_code = status.HTTP_400_BAD_REQUEST
+                success_status = False
+                message = f"Bulk {operation} failed: all {failed_count} item(s) failed"
+            elif failed_count > 0 or skipped_count > 0:
+                status_code = status.HTTP_207_MULTI_STATUS
+                success_status = 'partial'
+                message = f"Bulk {operation}: {success_count} succeeded, {failed_count} failed, {skipped_count} skipped"
+            else:
+                status_code = status.HTTP_201_CREATED if operation == 'create' else status.HTTP_200_OK
+                success_status = True
+                message = f"Bulk {operation}: {success_count} item(s) processed successfully"
 
-        # Clean results
-        clean_results = {
-            'success': results.get('success', []),
-            'failed': [],
-            'skipped': []
-        }
-        
-        for failed_item in results.get('failed', []):
-            clean_item = failed_item.copy()
-            if 'errors' in clean_item:
-                clean_item['errors'] = [str(error) for error in clean_item['errors']]
-            clean_results['failed'].append(clean_item)
-        
-        for skipped_item in results.get('skipped', []):
-            clean_item = skipped_item.copy()
-            if 'reason' in clean_item:
-                clean_item['reason'] = str(clean_item['reason'])
-            clean_results['skipped'].append(clean_item)
+            # ===== PHASE 2.G: FAST vs DETAILED MODE =====
+            if not detailed:
+                # FAST MODE: IDs only (reduces payload by ~90%)
+                # Extract ID from dict or use value directly if already an ID
+                clean_results = {
+                    'success': [
+                        item.get('id') if isinstance(item, dict) else str(item) 
+                        for item in results.get('success', [])
+                    ],
+                    'failed': [
+                        item.get('id') if isinstance(item, dict) else str(item) 
+                        for item in results.get('failed', [])
+                    ],
+                    'skipped': [
+                        item.get('id') if isinstance(item, dict) else str(item) 
+                        for item in results.get('skipped', [])
+                    ]
+                }
+            else:
+                # DETAILED MODE: Full objects (backward compatibility)
+                clean_results = {
+                    'success': results.get('success', []),
+                    'failed': [],
+                    'skipped': []
+                }
+                
+                for failed_item in results.get('failed', []):
+                    clean_item = failed_item.copy()
+                    if 'errors' in clean_item:
+                        clean_item['errors'] = [str(error) for error in clean_item['errors']]
+                    clean_results['failed'].append(clean_item)
+                
+                for skipped_item in results.get('skipped', []):
+                    clean_item = skipped_item.copy()
+                    if 'reason' in clean_item:
+                        clean_item['reason'] = str(clean_item['reason'])
+                    clean_results['skipped'].append(clean_item)
 
-        # ✅ CORRECTIF A: Map operation to specific summary key
-        operation_key_map = {
-            'create': 'created',
-            'update': 'updated',
-            'delete': 'deleted',
-            'archive': 'archived',
-        }
-        operation_key = operation_key_map.get(operation, 'processed')
+            # Map operation to specific summary key
+            operation_key_map = {
+                'create': 'created',
+                'update': 'updated',
+                'delete': 'deleted',
+                'archive': 'archived',
+            }
+            operation_key = operation_key_map.get(operation, 'processed')
 
-        return Response({
-            'success': success_status,
-            'message': message,
-            'summary': {
-                'requested': total,
-                operation_key: success_count,  
-                'failed': failed_count,
-                'skipped': skipped_count,
-            },
-            'results': clean_results
-        }, status=status_code)
+            return Response({
+                'success': success_status,
+                'message': message,
+                'summary': {
+                    'requested': total,
+                    operation_key: success_count,  
+                    'failed': failed_count,
+                    'skipped': skipped_count,
+                },
+                'results': clean_results
+            }, status=status_code)
     
 
 

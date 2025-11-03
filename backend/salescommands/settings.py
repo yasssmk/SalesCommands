@@ -173,6 +173,8 @@ if DEBUG:
         'sensitive': '30/hour',  # Opérations sensibles
         'burst': '100/minute',    # Anti-burst
         'registration': '5/hour', # Inscriptions
+        'standard': '50/minute',  # GET endpoints (list/search/filter) - permissif en DEV
+        'bulk': '5/minute',       # POST bulk operations - permissif en DEV pour tests
     }
 else:
     # Production: Plus restrictif
@@ -184,6 +186,8 @@ else:
         'sensitive': '10/hour',  
         'burst': '10/minute',
         'registration': '3/hour',
+        'standard': '30/minute',  #  GET endpoints - évite blocage utilisateurs normaux
+        'bulk': '3/minute',       # POST bulk operations - strict pour limiter abuse'
     }
 
 
@@ -397,7 +401,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
-        'core.throttling.BurstRateThrottle',  # 🔹 anti-burst par minute (auth only)
+        'core.throttling.StandardRateThrottle',  # 🔹 anti-burst par minute (auth only)
     ] if THROTTLING_ENABLED else [],
 
     'DEFAULT_THROTTLE_RATES': THROTTLE_RATES if THROTTLING_ENABLED else {},
