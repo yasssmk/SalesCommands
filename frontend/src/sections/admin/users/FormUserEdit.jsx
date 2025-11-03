@@ -415,6 +415,11 @@ function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword 
                         sx={{ mt: 0 }} 
                       />
                       </Stack>
+                      {touched.is_active && errors.is_active && (
+                        <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
+                          {errors.is_active}
+                        </Typography>
+                      )}
                   </Grid>
                   
                   <Grid item xs={12}>
@@ -431,6 +436,11 @@ function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword 
                         sx={{ mt: 0 }} 
                       />
                     </Stack>
+                    {touched.is_superuser && errors.is_superuser && (
+                      <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
+                        {errors.is_superuser}
+                      </Typography>
+                    )}
                   </Grid>
 
                   <Grid item xs={12}>

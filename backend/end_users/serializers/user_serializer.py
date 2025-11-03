@@ -281,62 +281,62 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                 raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
         return value
     
-    def validate_is_superuser(self, value):
-        """
-        Validate that only Admin or SuperUser can grant/revoke superuser status
-        This is a double-check in addition to view-level validation
-        """
-        request = self.context.get('request')
+    # def validate_is_superuser(self, value):
+    #     """
+    #     Validate that only Admin or SuperUser can grant/revoke superuser status
+    #     This is a double-check in addition to view-level validation
+    #     """
+    #     request = self.context.get('request')
         
-        # Si pas de request dans le contexte (cas rare), on laisse passer
-        # La validation sera faite au niveau de la vue
-        if not request or not hasattr(request, 'user'):
-            return value
+    #     # Si pas de request dans le contexte (cas rare), on laisse passer
+    #     # La validation sera faite au niveau de la vue
+    #     if not request or not hasattr(request, 'user'):
+    #         return value
         
-        current_user = request.user
+    #     current_user = request.user
         
-        # Récupérer l'instance si c'est une mise à jour
-        is_update = self.instance is not None
+    #     # Récupérer l'instance si c'est une mise à jour
+    #     is_update = self.instance is not None
         
-        # Si on essaie de définir/modifier is_superuser
-        if is_update:
-            # Check si la valeur change réellement
-            if self.instance.is_superuser == value:
-                # Pas de changement, on laisse passer
-                return value
+    #     # Si on essaie de définir/modifier is_superuser
+    #     if is_update:
+    #         # Check si la valeur change réellement
+    #         if self.instance.is_superuser == value:
+    #             # Pas de changement, on laisse passer
+    #             return value
         
-        # Vérifier les permissions pour changer is_superuser
-        can_grant = False
+    #     # Vérifier les permissions pour changer is_superuser
+    #     can_grant = False
         
-        # SuperUsers peuvent accorder le statut superuser
-        if current_user.is_superuser:
-            can_grant = True
-        # Users avec rôle Admin peuvent accorder le statut superuser  
-        elif current_user.role and current_user.role.name == 'Admin':
-            can_grant = True
+    #     # SuperUsers peuvent accorder le statut superuser
+    #     if current_user.is_superuser:
+    #         can_grant = True
+    #     # Users avec rôle Admin peuvent accorder le statut superuser  
+    #     elif current_user.role and current_user.role.name == 'Admin':
+    #         can_grant = True
             
-        if not can_grant:
-            raise StandardizedValidationError(
-                "Only administrators and superusers can grant or revoke superuser status"
-            )
+    #     if not can_grant:
+    #         raise StandardizedValidationError(
+    #             "Only administrators and superusers can grant or revoke superuser status"
+    #         )
         
-        # Si on retire le statut superuser, vérifier que ce n'est pas le dernier
-        if is_update and self.instance.is_superuser and value is False:
-            # IMPORTANT: Utiliser le client_id du contexte pour garantir le multi-tenant
-            client_id = self._get_client_id_from_context()
+    #     # Si on retire le statut superuser, vérifier que ce n'est pas le dernier
+    #     if is_update and self.instance.is_superuser and value is False:
+    #         # IMPORTANT: Utiliser le client_id du contexte pour garantir le multi-tenant
+    #         client_id = self._get_client_id_from_context()
             
-            other_superusers = User.objects.filter(
-                client_account_id=client_id,
-                is_superuser=True
-            ).exclude(id=self.instance.id).count()
+    #         other_superusers = User.objects.filter(
+    #             client_account_id=client_id,
+    #             is_superuser=True
+    #         ).exclude(id=self.instance.id).count()
             
-            if other_superusers == 0:
-                raise StandardizedValidationError(
-                    "Cannot remove superuser status from the last superuser. "
-                    "Promote another user to superuser first."
-                )
+    #         if other_superusers == 0:
+    #             raise StandardizedValidationError(
+    #                 "Cannot remove superuser status from the last superuser. "
+    #                 "Promote another user to superuser first."
+    #             )
         
-        return value
+    #     return value
     
     def validate_is_staff(self, value):
         """
