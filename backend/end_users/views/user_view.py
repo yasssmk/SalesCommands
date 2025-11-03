@@ -25,9 +25,10 @@ from ..serializers.user_serializer import (
 )
 import logging
 import json
+
 from django.urls import reverse
 from django.conf import settings
-
+import uuid as _uuid
 from core.idempotency import (
     start_op,
     complete_op,

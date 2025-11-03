@@ -22,6 +22,7 @@ from rest_framework import status
 from django.db import transaction
 from django.urls import reverse
 
+
 from core.idempotency import (
     start_op,
     complete_op, 
@@ -423,6 +424,11 @@ class UserBulkViewSet(UserViewSet):
                             
                             # Invalidate cache after commit
                             transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
+
+                            requester_id = str(request.user.id)
+                            client = User.objects.get(id=requester_id).client_account
+                            client.ensure_admin_invariants()
+
 
                         except Exception as e:
                             error_msg = self._format_bulk_error_message(e)
@@ -1093,6 +1099,352 @@ class UserBulkViewSet(UserViewSet):
                 {'message': str(e), 'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR}
             )
             raise
+    
+    def _preload_bulk_create_fks(self, users_data, client_id):
+        """
+       Preload all FKs in 3 SELECT queries instead of N×3.
+
+        This method eliminates N×3 SELECT queries by loading all referenced FKs upfront.
+        Used by _bulk_create_impl to optimize FK validation before user creation loop.
+
+        Performance Impact:
+        - Before: 100 users × 3 FKs = ~300 SELECT queries
+        - After: 3 SELECT queries (1 per FK type)
+        - Speedup: ~100x for FK validation phase
+
+        Args:
+            users_data: List of user dicts to create
+            client_id: Current client ID for tenant scoping
+
+        Returns:
+            Dict with lookup maps:
+            {
+                'roles_map': {role_id: UserRole instance, ...},
+                'teams_map': {team_id: Team instance, ...},
+                'orgs_map': {org_id: Organization instance, ...},
+                'stats': {
+                    'unique_roles': int,
+                    'unique_teams': int,
+                    'unique_orgs': int,
+                    'total_fks_preloaded': int
+                }
+            }
+
+        Example:
+            users_data = [
+                {'email': 'a@test.com', 'role': 'uuid-1', 'team': 'uuid-2'},
+                {'email': 'b@test.com', 'role': 'uuid-1', 'team': 'uuid-3'},
+                {'email': 'c@test.com', 'role': 'uuid-4'},
+            ]
+
+            result = self._preload_bulk_create_fks(users_data, client_id)
+            # result['roles_map'] = {'uuid-1': <Role obj>, 'uuid-4': <Role obj>}
+            # result['teams_map'] = {'uuid-2': <Team obj>, 'uuid-3': <Team obj>}
+            # result['stats'] = {'unique_roles': 2, 'unique_teams': 2, ...}
+        """
+        # ===== EXTRACT UNIQUE FK IDS FROM PAYLOAD =====
+        role_ids = set()
+        team_ids = set()
+        org_ids = set()
+
+        for user_data in users_data:
+            # Extract role ID if present and not null/empty
+            role_id = user_data.get('role')
+            if role_id and role_id != '':
+                role_ids.add(str(role_id))
+
+            # Extract team ID if present and not null/empty
+            team_id = user_data.get('team')
+            if team_id and team_id != '':
+                team_ids.add(str(team_id))
+
+            # Extract organization ID if present and not null/empty
+            org_id = user_data.get('organization')
+            if org_id and org_id != '':
+                org_ids.add(str(org_id))
+
+        # ===== PRELOAD ROLES (1 SELECT) =====
+        roles_map = {}
+        if role_ids:
+            logger.info(
+                f"[PHASE 2.E.1] Preloading {len(role_ids)} unique roles for bulk create",
+                extra={'client_id': str(client_id), 'role_ids_count': len(role_ids)}
+            )
+
+            roles = UserRole.objects.filter(
+                id__in=role_ids,
+                client_account_id=client_id
+            )
+
+            # Build lookup map: {str(id): instance}
+            roles_map = {str(role.id): role for role in roles}
+
+            logger.info(
+                f"[PHASE 2.E.1] Preloaded {len(roles_map)} roles successfully",
+                extra={'client_id': str(client_id), 'loaded_count': len(roles_map)}
+            )
+
+        # ===== PRELOAD TEAMS (1 SELECT with select_related for org validation) =====
+        teams_map = {}
+        if team_ids:
+            logger.info(
+                f"[PHASE 2.E.1] Preloading {len(team_ids)} unique teams for bulk create",
+                extra={'client_id': str(client_id), 'team_ids_count': len(team_ids)}
+            )
+
+            teams = Team.objects.filter(
+                id__in=team_ids,
+                organization__client_account_id=client_id  # Scoped via organization
+            ).select_related('organization')  # Avoid N+1 for org validation
+
+            # Build lookup map: {str(id): instance}
+            teams_map = {str(team.id): team for team in teams}
+
+            logger.info(
+                f"[PHASE 2.E.1] Preloaded {len(teams_map)} teams successfully",
+                extra={'client_id': str(client_id), 'loaded_count': len(teams_map)}
+            )
+
+        # ===== PRELOAD ORGANIZATIONS (1 SELECT) =====
+        orgs_map = {}
+        if org_ids:
+            logger.info(
+                f"[PHASE 2.E.1] Preloading {len(org_ids)} unique organizations for bulk create",
+                extra={'client_id': str(client_id), 'org_ids_count': len(org_ids)}
+            )
+
+            orgs = Organization.objects.filter(
+                id__in=org_ids,
+                client_account_id=client_id
+            )
+
+            # Build lookup map: {str(id): instance}
+            orgs_map = {str(org.id): org for org in orgs}
+
+            logger.info(
+                f"[PHASE 2.E.1] Preloaded {len(orgs_map)} organizations successfully",
+                extra={'client_id': str(client_id), 'loaded_count': len(orgs_map)}
+            )
+
+        # ===== BUILD RESULT WITH STATS =====
+        result = {
+            'roles_map': roles_map,
+            'teams_map': teams_map,
+            'orgs_map': orgs_map,
+            'stats': {
+                'unique_roles': len(role_ids),
+                'unique_teams': len(team_ids),
+                'unique_orgs': len(org_ids),
+                'total_fks_preloaded': len(roles_map) + len(teams_map) + len(orgs_map),
+                'preloaded_roles': len(roles_map),
+                'preloaded_teams': len(teams_map),
+                'preloaded_orgs': len(orgs_map)
+            }
+        }
+
+        logger.info(
+            f"[PHASE 2.E.1] FK preloading completed for bulk create",
+            extra={
+                'client_id': str(client_id),
+                **result['stats']
+            }
+        )
+
+        return result
+    
+    def _validate_bulk_create_fks_in_memory(self, users_data, roles_map, teams_map, orgs_map, mode, client_id):
+        """
+        ⭐ Validate FKs in memory without SQL queries.
+        
+        This method validates all FK references using preloaded maps from _preload_bulk_create_fks().
+        No database queries are executed during validation - everything happens in memory.
+        
+        Performance Impact:
+        - Before: N×3 SELECT queries during validation loop
+        - After: 0 SELECT queries (pure in-memory validation)
+        - Speedup: ~100x for FK validation phase
+        
+        Args:
+            users_data: List of user dicts to create
+            roles_map: Preloaded roles map {role_id: UserRole instance}
+            teams_map: Preloaded teams map {team_id: Team instance}
+            orgs_map: Preloaded orgs map {org_id: Organization instance}
+            mode: 'strict' or 'partial'
+            client_id: Current client ID for logging
+            
+        Returns:
+            Tuple (valid_users, failed_users):
+            - valid_users: List of (row_num, user_data) tuples that passed validation
+            - failed_users: List of dicts with {'row': int, 'email': str, 'errors': [str]}
+            
+        Raises:
+            StandardizedValidationError: If mode='strict' and any FK validation fails
+            
+        Example:
+            valid, failed = self._validate_bulk_create_fks_in_memory(
+                users_data, roles_map, teams_map, orgs_map, 'partial', client_id
+            )
+            # valid = [(1, user_data_1), (3, user_data_3), ...]
+            # failed = [{'row': 2, 'email': 'bad@test.com', 'errors': ['Role not found']}]
+        """
+        valid_users = []
+        failed_users = []
+        
+        logger.info(
+            f"[PHASE 2.E.2] Starting in-memory FK validation for {len(users_data)} users",
+            extra={
+                'client_id': str(client_id),
+                'mode': mode,
+                'users_count': len(users_data),
+                'roles_available': len(roles_map),
+                'teams_available': len(teams_map),
+                'orgs_available': len(orgs_map)
+            }
+        )
+        
+        # ===== VALIDATE EACH USER IN MEMORY =====
+        for idx, user_data in enumerate(users_data):
+            row_num = idx + 1
+            errors = []
+            email = user_data.get('email', 'Unknown')
+            
+            # ===== VALIDATE ROLE FK =====
+            role_id = user_data.get('role')
+            if role_id and role_id != '':
+                role_id_str = str(role_id)
+                
+                # Check if role exists in preloaded map
+                if role_id_str not in roles_map:
+                    error_msg = f"Role '{role_id}' not found in your organization"
+                    errors.append(error_msg)
+                    
+                    logger.warning(
+                        f"[PHASE 2.E.2] Row {row_num}: Invalid role FK",
+                        extra={
+                            'client_id': str(client_id),
+                            'row': row_num,
+                            'email': email,
+                            'role_id': role_id_str,
+                            'available_roles': list(roles_map.keys())
+                        }
+                    )
+            
+            # ===== VALIDATE TEAM FK =====
+            team_id = user_data.get('team')
+            if team_id and team_id != '':
+                team_id_str = str(team_id)
+                
+                # Check if team exists in preloaded map
+                if team_id_str not in teams_map:
+                    error_msg = f"Team '{team_id}' not found or doesn't belong to your organization"
+                    errors.append(error_msg)
+                    
+                    logger.warning(
+                        f"[PHASE 2.E.2] Row {row_num}: Invalid team FK",
+                        extra={
+                            'client_id': str(client_id),
+                            'row': row_num,
+                            'email': email,
+                            'team_id': team_id_str,
+                            'available_teams': list(teams_map.keys())
+                        }
+                    )
+            
+            # ===== VALIDATE ORGANIZATION FK =====
+            org_id = user_data.get('organization')
+            if org_id and org_id != '':
+                org_id_str = str(org_id)
+                
+                # Check if organization exists in preloaded map
+                if org_id_str not in orgs_map:
+                    error_msg = f"Organization '{org_id}' not found in your organization"
+                    errors.append(error_msg)
+                    
+                    logger.warning(
+                        f"[PHASE 2.E.2] Row {row_num}: Invalid organization FK",
+                        extra={
+                            'client_id': str(client_id),
+                            'row': row_num,
+                            'email': email,
+                            'org_id': org_id_str,
+                            'available_orgs': list(orgs_map.keys())
+                        }
+                    )
+            
+            # ===== ADDITIONAL VALIDATION: Team belongs to Organization =====
+            if team_id and team_id != '' and org_id and org_id != '':
+                team_id_str = str(team_id)
+                org_id_str = str(org_id)
+                
+                # Both must be valid first
+                if team_id_str in teams_map and org_id_str in orgs_map:
+                    team_instance = teams_map[team_id_str]
+                    org_instance = orgs_map[org_id_str]
+                    
+                    # Check if team belongs to the specified organization
+                    if str(team_instance.organization.id) != org_id_str:
+                        error_msg = (
+                            f"Team '{team_id}' does not belong to organization '{org_id}'. "
+                            f"Team belongs to organization '{team_instance.organization.name}'"
+                        )
+                        errors.append(error_msg)
+                        
+                        logger.warning(
+                            f"[PHASE 2.E.2] Row {row_num}: Team-Organization mismatch",
+                            extra={
+                                'client_id': str(client_id),
+                                'row': row_num,
+                                'email': email,
+                                'team_id': team_id_str,
+                                'requested_org_id': org_id_str,
+                                'actual_org_id': str(team_instance.organization.id),
+                                'actual_org_name': team_instance.organization.name
+                            }
+                        )
+            
+            # ===== HANDLE VALIDATION RESULTS =====
+            if errors:
+                # User has FK validation errors
+                failed_users.append({
+                    'row': row_num,
+                    'email': email,
+                    'errors': errors
+                })
+                
+                # In strict mode: fail fast on first error
+                if mode == 'strict':
+                    error_summary = '; '.join(errors)
+                    logger.error(
+                        f"[PHASE 2.E.2] Strict mode: FK validation failed at row {row_num}",
+                        extra={
+                            'client_id': str(client_id),
+                            'row': row_num,
+                            'email': email,
+                            'errors': errors,
+                            'mode': mode
+                        }
+                    )
+                    raise StandardizedValidationError(
+                        f"Row {row_num} ({email}): {error_summary}"
+                    )
+            else:
+                # User passed all FK validations
+                valid_users.append((row_num, user_data))
+        
+        # ===== LOG VALIDATION SUMMARY =====
+        logger.info(
+            f"[PHASE 2.E.2] In-memory FK validation completed",
+            extra={
+                'client_id': str(client_id),
+                'mode': mode,
+                'total_users': len(users_data),
+                'valid_users': len(valid_users),
+                'failed_users': len(failed_users),
+                'validation_success_rate': f"{(len(valid_users)/len(users_data)*100):.1f}%"
+            }
+        )
+        
+        return valid_users, failed_users
 
     def _bulk_create_impl(self, request):
         """
@@ -1102,6 +1454,8 @@ class UserBulkViewSet(UserViewSet):
         Already optimal - Django's serializer.save() uses bulk_create internally.
         No further optimization needed here.
         """
+
+
         ctx = ctx_from_request(request)
         ctx.update({
             'event': 'bulk_create_users',
@@ -1212,7 +1566,82 @@ class UserBulkViewSet(UserViewSet):
                             'mode': mode
                         }
                     )
-
+            
+            # Preload all FKs in 3 SELECT queries
+            fk_preload_result = self._preload_bulk_create_fks(users_data, client_id)
+            
+            roles_map = fk_preload_result['roles_map']
+            teams_map = fk_preload_result['teams_map']
+            orgs_map = fk_preload_result['orgs_map']
+            
+            logger.info(
+                "[PHASE 2.E] FK preloading stats",
+                extra={
+                    'client_id': str(client_id),
+                    **fk_preload_result['stats']
+                }
+            )
+            
+            # Validate FKs in memory (0 SQL queries)
+            try:
+                valid_users_with_fks, failed_fk_validations = self._validate_bulk_create_fks_in_memory(
+                    users_data=users_data,
+                    roles_map=roles_map,
+                    teams_map=teams_map,
+                    orgs_map=orgs_map,
+                    mode=mode,
+                    client_id=client_id
+                )
+                
+                # Add FK validation failures to results
+                results['failed'].extend(failed_fk_validations)
+                
+                logger.info(
+                    "[PHASE 2.E] FK validation completed",
+                    extra={
+                        'client_id': str(client_id),
+                        'valid_users': len(valid_users_with_fks),
+                        'failed_fk_validations': len(failed_fk_validations)
+                    }
+                )
+                
+            except StandardizedValidationError as e:
+                # Strict mode failed - FK validation error
+                logger.error(
+                    "[PHASE 2.E] Strict mode FK validation failed",
+                    extra={
+                        'client_id': str(client_id),
+                        'error': str(e)
+                    }
+                )
+                raise
+            
+            # Override users_data with only valid users for creation loop
+            # This ensures we only process users that passed FK validation
+            if mode == 'partial':
+                # In partial mode: only create valid users, skip failed ones
+                users_data_to_create = [user_data for _, user_data in valid_users_with_fks]
+                
+                logger.info(
+                    "[PHASE 2.E] Partial mode: proceeding with valid users only",
+                    extra={
+                        'client_id': str(client_id),
+                        'original_count': len(users_data),
+                        'valid_count': len(users_data_to_create),
+                        'skipped_count': len(failed_fk_validations)
+                    }
+                )
+            else:
+                # In strict mode: all users passed validation or exception was raised
+                users_data_to_create = [user_data for _, user_data in valid_users_with_fks]
+                
+                logger.info(
+                    "[PHASE 2.E] Strict mode: all users passed FK validation",
+                    extra={
+                        'client_id': str(client_id),
+                        'valid_count': len(users_data_to_create)
+                    }
+                )
 
 
             # ===== CREATE USERS =====
@@ -1271,7 +1700,7 @@ class UserBulkViewSet(UserViewSet):
                             )
                 else:
                     # Partial mode: Best-effort creation
-                    for idx, user_data in enumerate(users_data):
+                    for idx, user_data in enumerate(users_data_to_create):
                         
                         row_num = idx + 1
                         email_display = user_data.get('email', 'Unknown')
