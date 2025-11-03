@@ -1597,7 +1597,7 @@ class UserBulkViewSet(UserViewSet):
                 results['failed'].extend(failed_fk_validations)
                 
                 logger.info(
-                    "[PHASE 2.E] FK validation completed",
+                    "FK validation completed",
                     extra={
                         'client_id': str(client_id),
                         'valid_users': len(valid_users_with_fks),
@@ -1623,7 +1623,7 @@ class UserBulkViewSet(UserViewSet):
                 users_data_to_create = [user_data for _, user_data in valid_users_with_fks]
                 
                 logger.info(
-                    "[PHASE 2.E] Partial mode: proceeding with valid users only",
+                    "Partial mode: proceeding with valid users only",
                     extra={
                         'client_id': str(client_id),
                         'original_count': len(users_data),
@@ -1636,7 +1636,7 @@ class UserBulkViewSet(UserViewSet):
                 users_data_to_create = [user_data for _, user_data in valid_users_with_fks]
                 
                 logger.info(
-                    "[PHASE 2.E] Strict mode: all users passed FK validation",
+                    "Strict mode: all users passed FK validation",
                     extra={
                         'client_id': str(client_id),
                         'valid_count': len(users_data_to_create)
