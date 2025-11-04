@@ -84,39 +84,56 @@ export default function Breadcrumbs({
   }
 
   useEffect(() => {
-    navigation?.items?.map((menu) => {
-      if (menu.type && menu.type === 'group') {
-        if (menu?.url && menu.url === customLocation) {
-          setMain(menu);
-          setItem(menu);
-        } else {
-          getCollapse(menu);
+  let found = false;
+  
+  navigation?.items?.forEach((menu) => {
+    if (menu.type && menu.type === 'group') {
+      if (menu?.url && menu.url === customLocation) {
+        setMain(menu);
+        setItem(menu);
+        found = true;
+      } else {
+        if (getCollapse(menu)) {
+          found = true;
         }
       }
-      return false;
-    });
+    }
   });
 
+  // Si aucune correspondance trouvée, réinitialiser les states
+  if (!found) {
+    setMain(undefined);
+    setItem(undefined);
+  }
+});
+
   // set active item state
-  const getCollapse = (menu) => {
-    if (!custom && menu.children) {
-      menu.children.filter((collapse) => {
-        if (collapse.type && collapse.type === 'collapse') {
-          getCollapse(collapse);
-          if (collapse.url === customLocation) {
-            setMain(collapse);
-            setItem(collapse);
-          }
-        } else if (collapse.type && collapse.type === 'item') {
-          if (customLocation === collapse.url) {
-            setMain(menu);
-            setItem(collapse);
-          }
+const getCollapse = (menu) => {
+  if (!custom && menu.children) {
+    let found = false;
+    menu.children.forEach((collapse) => {
+      if (collapse.type && collapse.type === 'collapse') {
+        // Appel récursif
+        if (getCollapse(collapse)) {
+          found = true;
         }
-        return false;
-      });
-    }
-  };
+        if (collapse.url === customLocation) {
+          setMain(collapse);
+          setItem(collapse);
+          found = true;
+        }
+      } else if (collapse.type && collapse.type === 'item') {
+        if (customLocation === collapse.url) {
+          setMain(menu);
+          setItem(collapse);
+          found = true;
+        }
+      }
+    });
+    return found;
+  }
+  return false;
+};
 
   // item separator
   const SeparatorIcon = separator;
