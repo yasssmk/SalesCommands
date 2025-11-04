@@ -395,6 +395,7 @@ def audit_log(action: str, module: str, user, scope: str, allowed: bool, **extra
     timestamp = datetime.now().isoformat()
     user_id = user.id if user and hasattr(user, 'id') else None
     username = str(user) if user else 'anonymous'
+    user_display = str(user_id) if user_id else 'anonymous'
     
     # Format: [PERMISSION] timestamp | action | module | user | scope | allowed
     print(f"[PERMISSION] {timestamp} | {action} | {module} | {username}({user_id}) | {scope} | {'ALLOWED' if allowed else 'DENIED'}")

@@ -30,6 +30,7 @@ from core.idempotency import (
     get_owner_from_request,
     compute_payload_hash
 )
+from core.logging.helpers import safe_user_context, safe_user_data_context
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.cache_utils import invalidate_tag, disable_signals
@@ -464,12 +465,13 @@ class UserBulkViewSet(UserViewSet):
                     if 'is_active' in patch:
 
                         if patch['is_active'] is True:
-                            validation_result = self._validate_bulk_activation_seats(
-                                client_id=client_id,
-                                user_ids_to_activate=valid_user_ids,
-                                mode=mode
-                            )
-                            
+                            with transaction.atomic(): 
+                                validation_result = self._validate_bulk_activation_seats(
+                                    client_id=client_id,
+                                    user_ids_to_activate=valid_user_ids,
+                                    mode=mode
+                                )
+                                
                             if validation_result['allowed_ids']:
                                 User.objects.filter(
                                     id__in=validation_result['allowed_ids'],
@@ -488,20 +490,21 @@ class UserBulkViewSet(UserViewSet):
                                             if uid not in validation_result['denied_ids']]
                         else:
 
-                            validation_result = self._validate_bulk_deactivation_last_admin(
-                                client_id=client_id,
-                                user_ids_to_deactivate=valid_user_ids,
-                                users_dict=users_dict,
-                                mode='partial'
-                            )
-                            
-                            # Désactiver seulement allowed_ids (admins exclus automatiquement)
-                            if validation_result['allowed_ids']:
-                                User.objects.filter(
-                                    id__in=validation_result['allowed_ids'],
-                                    client_account_id=client_id
-                                ).update(is_active=False)
-                            
+                            with transaction.atomic():
+                                validation_result = self._validate_bulk_deactivation_last_admin(
+                                    client_id=client_id,
+                                    user_ids_to_deactivate=valid_user_ids,
+                                    users_dict=users_dict,
+                                    mode='partial'
+                                )
+                                
+                                # Désactiver seulement allowed_ids (admins exclus automatiquement)
+                                if validation_result['allowed_ids']:
+                                    User.objects.filter(
+                                        id__in=validation_result['allowed_ids'],
+                                        client_account_id=client_id
+                                    ).update(is_active=False)
+                                
                             # Ajouter denied_ids (derniers admins) dans failed avec warning
                             for user_id in validation_result['denied_ids']:
                                 user = users_dict[user_id]
@@ -516,10 +519,10 @@ class UserBulkViewSet(UserViewSet):
                             valid_user_ids = [uid for uid in valid_user_ids 
                                             if uid not in validation_result['denied_ids']]
                             
-                            User.objects.filter(
-                                id__in=valid_user_ids,
-                                client_account_id=client_id
-                            ).update(is_active=False)
+                            # User.objects.filter(
+                            #     id__in=valid_user_ids,
+                            #     client_account_id=client_id
+                            # ).update(is_active=False)
                     
                     if 'is_superuser' in patch:
                                 # Valider permissions + dernier superuser
@@ -597,7 +600,6 @@ class UserBulkViewSet(UserViewSet):
                             'name': user.get_full_name()
                         })
                     
-                    invalidate_tag(client_id, 'users')
 
                     try:
                         requester_id = str(request.user.id)
@@ -608,6 +610,11 @@ class UserBulkViewSet(UserViewSet):
                             f"Failed to ensure admin invariants after bulk update: {e}",
                             extra=ctx
                         )
+
+                    # ✅ SECURITY FIX: Invalidate cache AFTER all transactions are committed
+                    # This ensures cache is only invalidated if all database writes succeed
+                    # If any transaction rolls back, cache invalidation won't happen
+                    transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
 
             success_count = len(results['success'])
             failed_count = len(results['failed'])
@@ -985,8 +992,10 @@ class UserBulkViewSet(UserViewSet):
                         except Exception as e:
                             logger.warning(f"Failed to ensure admin invariants: {e}", extra=ctx)
                         
-                        # Invalidation cache en mode partial
-                        invalidate_tag(client_id, 'users')
+                        # ✅ SECURITY FIX: Invalidate cache AFTER all transactions are committed
+                        # This ensures cache is only invalidated if the DELETE succeeds and commits
+                        # If the outer try block fails, cache invalidation won't happen
+                        transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
                         
                     except Exception as e:
                         error_msg = self._format_bulk_error_message(e)
@@ -1352,11 +1361,11 @@ class UserBulkViewSet(UserViewSet):
                     errors.append(error_msg)
                     
                     logger.warning(
-                        f"[PHASE 2.E.2] Row {row_num}: Invalid role FK",
+                        f" Row {row_num}: Invalid role FK",
                         extra={
                             'client_id': str(client_id),
                             'row': row_num,
-                            'email': email,
+                            'user_id': user_data.get('id', 'pending'),
                             'role_id': role_id_str,
                             'available_roles': list(roles_map.keys())
                         }
@@ -1373,11 +1382,11 @@ class UserBulkViewSet(UserViewSet):
                     errors.append(error_msg)
                     
                     logger.warning(
-                        f"[PHASE 2.E.2] Row {row_num}: Invalid team FK",
+                        f" Row {row_num}: Invalid team FK",
                         extra={
                             'client_id': str(client_id),
                             'row': row_num,
-                            'email': email,
+                            'user_id': user_data.get('id', 'pending'),
                             'team_id': team_id_str,
                             'available_teams': list(teams_map.keys())
                         }
@@ -1398,7 +1407,7 @@ class UserBulkViewSet(UserViewSet):
                         extra={
                             'client_id': str(client_id),
                             'row': row_num,
-                            'email': email,
+                            'user_id': user_data.get('id', 'pending'),
                             'org_id': org_id_str,
                             'available_orgs': list(orgs_map.keys())
                         }
@@ -1423,11 +1432,11 @@ class UserBulkViewSet(UserViewSet):
                         errors.append(error_msg)
                         
                         logger.warning(
-                            f"[PHASE 2.E.2] Row {row_num}: Team-Organization mismatch",
+                            f"Row {row_num}: Team-Organization mismatch",
                             extra={
                                 'client_id': str(client_id),
                                 'row': row_num,
-                                'email': email,
+                                'user_id': user_data.get('id', 'pending'),
                                 'team_id': team_id_str,
                                 'requested_org_id': org_id_str,
                                 'actual_org_id': str(team_instance.organization.id),
@@ -1448,11 +1457,11 @@ class UserBulkViewSet(UserViewSet):
                 if mode == 'strict':
                     error_summary = '; '.join(errors)
                     logger.error(
-                        f"[PHASE 2.E.2] Strict mode: FK validation failed at row {row_num}",
+                        f"Strict mode: FK validation failed at row {row_num}",
                         extra={
                             'client_id': str(client_id),
                             'row': row_num,
-                            'email': email,
+                            'user_id': user_data.get('id', 'pending'),
                             'errors': errors,
                             'mode': mode
                         }
@@ -1466,7 +1475,7 @@ class UserBulkViewSet(UserViewSet):
         
         # ===== LOG VALIDATION SUMMARY =====
         logger.info(
-            f"[PHASE 2.E.2] In-memory FK validation completed",
+            f"In-memory FK validation completed",
             extra={
                 'client_id': str(client_id),
                 'mode': mode,
@@ -1494,6 +1503,8 @@ class UserBulkViewSet(UserViewSet):
             'event': 'bulk_create_users',
             'client_id': self.get_client_id()
         })
+
+        detailed = True 
 
         try:
             # ===== INPUT VALIDATION =====
@@ -1595,7 +1606,8 @@ class UserBulkViewSet(UserViewSet):
                             'event': 'first_user_without_admin',
                             'client_id': str(client_id),
                             'client_name': client.name,
-                            'user_email': first_user_data.get('email', 'N/A'),
+                            # 'user_email': first_user_data.get('email', 'N/A'),
+                            **safe_user_data_context(first_user_data),
                             'mode': mode
                         }
                     )
@@ -1608,7 +1620,7 @@ class UserBulkViewSet(UserViewSet):
             orgs_map = fk_preload_result['orgs_map']
             
             logger.info(
-                "[PHASE 2.E] FK preloading stats",
+                "FK preloading stats",
                 extra={
                     'client_id': str(client_id),
                     **fk_preload_result['stats']
@@ -1641,7 +1653,7 @@ class UserBulkViewSet(UserViewSet):
             except StandardizedValidationError as e:
                 # Strict mode failed - FK validation error
                 logger.error(
-                    "[PHASE 2.E] Strict mode FK validation failed",
+                    "Strict mode FK validation failed",
                     extra={
                         'client_id': str(client_id),
                         'error': str(e)
@@ -1795,9 +1807,6 @@ class UserBulkViewSet(UserViewSet):
                                     'errors': [error_msg]
                                 })
                                 transaction.set_rollback(True)
-                    
-                    # Invalidate cache in partial mode
-                    invalidate_tag(client_id, 'users')
 
                     try:
                         client = ClientAccount.objects.get(id=client_id)
@@ -1807,6 +1816,12 @@ class UserBulkViewSet(UserViewSet):
                             f"Failed to ensure admin invariants after bulk create: {e}",
                             extra=ctx
                         )
+                    
+                    # ✅ SECURITY FIX: Invalidate cache AFTER all transactions are committed
+                    # This ensures cache is only invalidated if all individual user creations succeed
+                    # Each user has its own transaction.atomic() in the loop above
+                    # The on_commit callback will execute after ALL these mini-transactions are done
+                    transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
 
             # ===== BUILD RESPONSE =====
             success_count = len(results['success'])
@@ -1822,7 +1837,7 @@ class UserBulkViewSet(UserViewSet):
             })
             logger.info("Bulk user creation completed", extra=ctx)
 
-            return self._build_bulk_success_response(results, len(users_data), operation='create')
+            return self._build_bulk_success_response(results, len(users_data), operation='create', detailed=detailed )
 
         except StandardizedValidationError as e:
             if hasattr(e, 'detail') and isinstance(e.detail, dict):
@@ -1931,7 +1946,7 @@ class UserBulkViewSet(UserViewSet):
                 success_status = True
                 message = f"Bulk {operation}: {success_count} item(s) processed successfully"
 
-            # ===== PHASE 2.G: FAST vs DETAILED MODE =====
+            # ===== FAST vs DETAILED MODE =====
             if not detailed:
                 # FAST MODE: IDs only (reduces payload by ~90%)
                 # Extract ID from dict or use value directly if already an ID
@@ -2441,9 +2456,13 @@ class UserBulkViewSet(UserViewSet):
         mode
     ):
         """
-        Valide qu'on ne désactive pas le dernier admin actif du tenant.
+        Validate that we don't deactivate the last active admin of the tenant.
         
-        Un admin = is_superuser=True OU role.name='Admin'
+        SECURITY: This function uses select_for_update() to prevent TOCTOU race condition.
+        The admin count query locks the rows to ensure no concurrent transaction can
+        deactivate admins between the COUNT check and the UPDATE operation.
+        
+        An admin = is_superuser=True OR role.name='Admin'
         
         Args:
             client_id: ID du client tenant
@@ -2461,9 +2480,12 @@ class UserBulkViewSet(UserViewSet):
         Raises (mode strict):
             StandardizedValidationError: Si désactivation affecte dernier admin actif
         
-        SQL Impact: +1 COUNT query (admins actifs hors du batch)
+        SQL Impact: +1 SELECT FOR UPDATE query (admins actifs hors du batch)
         
-        Exemples:
+        IMPORTANT: This function MUST be called within a transaction.atomic() block
+        for the select_for_update() lock to be effective.
+        
+        Examples:
             # Mode strict - 1 seul admin actif dans tenant
             >>> self._validate_bulk_deactivation_last_admin(
             ...     client_id='abc123',
@@ -2511,15 +2533,27 @@ class UserBulkViewSet(UserViewSet):
                 'warning': None
             }
         
-        # ===== ÉTAPE 2 : Compter admins actifs HORS du batch =====
-        # On compte les users actifs avec (is_superuser=True OU role.name='Admin')
-        # qui ne sont PAS dans le batch
-        other_active_admins_count = User.objects.filter(
-            client_account_id=client_id,
-            is_active=True
-        ).filter(
-            Q(is_superuser=True) | Q(role__name='Admin')
-        ).exclude(id__in=admins_in_batch).count()
+        # ===== ÉTAPE 2 : Compter admins actifs HORS du batch avec lock =====
+        # SECURITY FIX: Use select_for_update() to prevent TOCTOU race condition
+        # This locks the admin rows until the end of the transaction, preventing
+        # concurrent transactions from deactivating admins between CHECK and UPDATE
+        #
+        # Note: We convert to list() instead of .count() because select_for_update()
+        # doesn't work with .count(). The performance impact is minimal since we're
+        # typically dealing with a small number of admins (< 100 per tenant).
+        other_active_admins = list(
+            User.objects.filter(
+                client_account_id=client_id,
+                is_active=True
+            ).filter(
+                Q(is_superuser=True) | Q(role__name='Admin')
+            ).exclude(
+                id__in=admins_in_batch
+            ).select_for_update()  # ✅ LOCK to prevent race condition
+            .only('id')  # Performance: only fetch IDs, not full objects
+        )
+        
+        other_active_admins_count = len(other_active_admins)
         
         # ===== ÉTAPE 3 : Décision selon mode =====
         if other_active_admins_count == 0:
