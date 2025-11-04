@@ -874,10 +874,24 @@ class UserBulkViewSet(UserViewSet):
                             # ⭐ SET-BASED DELETE: 1 query instead of N
                             if valid_ids:
 
-                                deleted_count = User.objects.filter(
+                                deleted_count,  deleted_by_model = User.objects.filter(
                                     id__in=valid_ids,
                                     client_account_id=client_id
-                                ).delete()[0]
+                                ).delete()
+
+                                # Log structuré des cascades
+                                cascade_summary = ', '.join([
+                                    f"{model.split('.')[-1]}={count}" 
+                                    for model, count in deleted_by_model.items() 
+                                    if model != 'end_users.User'
+                                ])
+
+                                logger.info(
+                                    f"[Bulk Delete - Strict Mode] Successfully deleted {len(valid_ids)} users | "
+                                    f"Total objects: {deleted_count} | "
+                                    f"Cascades: {cascade_summary or 'none'}",
+                                    extra=ctx
+                                )
                                 
                                 # Build success results
                                 for user_id in valid_ids:
@@ -936,10 +950,24 @@ class UserBulkViewSet(UserViewSet):
                     # ⭐ SET-BASED DELETE: 1 query instead of N
                     try:
                         if valid_ids:
-                            deleted_count = User.objects.filter(
+                            deleted_count, deleted_by_model = User.objects.filter(
                                 id__in=valid_ids,
                                 client_account_id=client_id
-                            ).delete()[0]
+                            ).delete()
+
+                            # Log structuré des cascades
+                            cascade_summary = ', '.join([
+                                f"{model.split('.')[-1]}={count}" 
+                                for model, count in deleted_by_model.items() 
+                                if model != 'end_users.User'
+                            ])
+
+                            logger.info(
+                                f"[Bulk Delete - Partial Mode] Successfully deleted {len(valid_ids)} users | "
+                                f"Total objects: {deleted_count} | "
+                                f"Cascades: {cascade_summary or 'none'}",
+                                extra=ctx
+                            )
                             
                             # Build success results
                             for user_id in valid_ids:

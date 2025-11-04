@@ -109,7 +109,7 @@ const swrGlobalConfig = {
   fetcher: swrFetcher,
   
   // === OPTIONS DE CACHE ===
-  dedupingInterval: 2000,        // Évite les requêtes dupliquées pendant 2s
+  dedupingInterval: 5000,        // Évite les requêtes dupliquées pendant 2s
   keepPreviousData: true,         // Garde les données précédentes pendant le rechargement
   
   // === OPTIONS DE REVALIDATION ===
@@ -194,7 +194,7 @@ const swrGlobalConfig = {
   return isRetryableError(error);
 },
   
-  errorRetryCount: 3, // Max 3 tentatives
+  errorRetryCount: 2, // Max 2 tentatives
   
   // === CALLBACKS ENRICHIS AVEC MONITORING ===
   

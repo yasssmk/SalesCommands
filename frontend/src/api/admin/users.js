@@ -123,7 +123,7 @@ export function useGetUsers(options = {}) {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     shouldRetryOnError: true,
-    dedupingInterval: 5000, // Évite les requêtes dupliquées pendant 5s
+    // dedupingInterval: 5000, // Évite les requêtes dupliquées pendant 5s - redondant avec ProviderWrapper
   });
 
   const memoizedValue = useMemo(
