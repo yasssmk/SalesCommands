@@ -28,6 +28,8 @@ from collections import defaultdict
 from contextlib import contextmanager
 from django.core.cache import cache
 from django.conf import settings
+from typing import Sequence, Union
+from django.db import transaction
 import logging
 
 logger = logging.getLogger(__name__)
@@ -262,6 +264,7 @@ def disable_signals():
         # Don't disable signals, just yield without modification
         yield
         return
+        
     
     # Set flag to disable signals
     _signals_disabled.value = True
@@ -290,6 +293,88 @@ def are_signals_disabled() -> bool:
         True
     """
     return getattr(_signals_disabled, 'value', False)
+
+
+
+@contextmanager
+def disable_signals_with_invalidation(
+    client_id: int,
+    namespaces: Union[str, Sequence[str]],
+    *,
+    invalidate_on_error: bool = False,
+):
+    """
+    Désactive temporairement les signaux (si BULK_SIGNALS_DISABLED=True) et invalide automatiquement les tags.
+    - Invalidation auto :
+        • en transaction : via transaction.on_commit()
+        • hors transaction : immédiate
+    - Top-level only : une seule invalidation si contextes imbriqués
+    - Par défaut, pas d’invalidation si exception (invalidate_on_error=False)
+    """
+    if not client_id:
+        raise ValueError("disable_signals_with_invalidation() requires a valid client_id")
+
+    if isinstance(namespaces, str):
+        namespaces = [namespaces]
+
+    def _invalidate_all():
+        for ns in namespaces:
+            try:
+                new_version = invalidate_tag(client_id, ns)
+                logger.info(
+                    "Auto-invalidation effectuée",
+                    extra={"client_id": client_id, "namespace": ns, "new_version": new_version}
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Auto-invalidation échouée pour namespace '{ns}': {e}",
+                    exc_info=settings.DEBUG
+                )
+
+    def _schedule_invalidation():
+        # Si on est dans une transaction: invalider après commit
+        try:
+            if transaction.get_connection().in_atomic_block:
+                transaction.on_commit(_invalidate_all)
+                return
+        except Exception:
+            # Fallback si pas de connection active
+            pass
+        _invalidate_all()
+
+    # --- CAS 1 : signaux actifs (BULK_SIGNALS_DISABLED=False) ---
+    # -> on laisse les signaux s'exécuter, mais on conserve l'invalidation auto pour éviter le stale cache
+    if not BULK_SIGNALS_DISABLED:
+        logger.info("BULK_SIGNALS_DISABLED=False: signals actifs + invalidation auto")
+        success = False
+        try:
+            yield
+            success = True
+        finally:
+            if success or invalidate_on_error:
+                _schedule_invalidation()
+        return
+
+    # --- CAS 2 : signaux désactivés (BULK_SIGNALS_DISABLED=True) ---
+    was_disabled = are_signals_disabled()
+    top_level = not was_disabled
+    _signals_disabled.value = True
+
+    success = False
+    try:
+        yield
+        success = True
+    finally:
+        if top_level:
+            _signals_disabled.value = False
+
+            if success or invalidate_on_error:
+                _schedule_invalidation()
+            else:
+                logger.info(
+                    "Auto-invalidation annulée (exception détectée et invalidate_on_error=False)",
+                    extra={"client_id": client_id, "namespaces": list(namespaces)}
+                )
 
 
 # ============================================================================
