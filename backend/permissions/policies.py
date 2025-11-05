@@ -12,7 +12,7 @@ configuration that still goes through the central permission system.
 from typing import Dict, Any, Optional, Tuple, List
 from django.db.models import Q
 from django.contrib.auth import get_user_model
-
+from .constants import ACTION_TO_CRUD
 from .compat import get_auth_ctx, AuthContext
 
 import logging
@@ -169,15 +169,6 @@ def resolve_action_policy(
             "grant_superuser": {"crud": "update", "tier": "admin"},
         }
     """
-    # Default CRUD mapping for standard actions
-    DEFAULT_CRUD_MAP = {
-        'list': 'read',
-        'retrieve': 'read',
-        'create': 'create',
-        'update': 'update',
-        'partial_update': 'update',
-        'destroy': 'delete',
-    }
     
     # Check if there's a custom policy for this action
     if action_policies and action in action_policies:
@@ -187,7 +178,7 @@ def resolve_action_policy(
         crud_action = policy.get('crud')
         if not crud_action:
             logger.error(f"Action policy for '{action}' missing 'crud' key")
-            crud_action = DEFAULT_CRUD_MAP.get(action, 'read')
+            crud_action = ACTION_TO_CRUD.get(action, 'read')
         
         # Extract required tier (optional)
         required_tier = policy.get('tier')
@@ -198,7 +189,7 @@ def resolve_action_policy(
         return (crud_action, required_tier, scope)
     
     # No custom policy - use defaults
-    crud_action = DEFAULT_CRUD_MAP.get(action, 'read')
+    crud_action = ACTION_TO_CRUD.get(action, 'read')
     return (crud_action, None, None)
 
 

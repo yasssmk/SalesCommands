@@ -304,12 +304,89 @@ def disable_signals_with_invalidation(
     invalidate_on_error: bool = False,
 ):
     """
-    Désactive temporairement les signaux (si BULK_SIGNALS_DISABLED=True) et invalide automatiquement les tags.
-    - Invalidation auto :
-        • en transaction : via transaction.on_commit()
-        • hors transaction : immédiate
-    - Top-level only : une seule invalidation si contextes imbriqués
-    - Par défaut, pas d’invalidation si exception (invalidate_on_error=False)
+    Context manager to disable signals (if BULK_SIGNALS_DISABLED=True) and automatically invalidate cache tags.
+    
+    Cache Invalidation Strategy:
+        - Inside transaction: invalidation happens AFTER the outermost transaction commits
+        - Outside transaction: invalidation is immediate
+        - On rollback: invalidation SKIPPED (unless invalidate_on_error=True)
+    
+    Nested Contexts:
+        - Top-level only: if multiple disable_signals_with_invalidation() are nested,
+          only the outermost context will trigger invalidation to avoid redundant calls
+    
+    Args:
+        client_id: Client account ID for cache scoping
+        namespaces: Single namespace (str) or multiple namespaces (list) to invalidate
+                   Examples: 'users' or ['users', 'teams']
+        invalidate_on_error: If True, invalidate cache even if exception occurs (default: False)
+    
+    Transaction Behavior Examples:
+        # Example 1: Inside transaction - invalidation AFTER commit
+        with disable_signals_with_invalidation(client_id, ['users']):
+            with transaction.atomic():
+                User.objects.bulk_update(...)  # Cache NOT invalidated yet
+            # Cache invalidated HERE (after transaction commits)
+        
+        # Example 2: Nested transactions - invalidation after OUTERMOST commit
+        with transaction.atomic():  # Outer transaction
+            with disable_signals_with_invalidation(client_id, ['users']):
+                with transaction.atomic():  # Inner savepoint
+                    User.objects.create(...)
+                # Cache NOT invalidated yet (inner commit)
+            # Cache NOT invalidated yet (wrapper's on_commit callback registered)
+        # Cache invalidated HERE (after outer transaction commits)
+        
+        # Example 3: Rollback - NO invalidation (default behavior)
+        try:
+            with disable_signals_with_invalidation(client_id, ['users']):
+                with transaction.atomic():
+                    User.objects.create(...)
+                    raise Exception("Force rollback")
+        except:
+            pass
+        # Cache NOT invalidated (transaction rolled back)
+        
+        # Example 4: Force invalidation even on error
+        try:
+            with disable_signals_with_invalidation(client_id, ['users'], 
+                                                  invalidate_on_error=True):
+                with transaction.atomic():
+                    User.objects.create(...)
+                    raise Exception("Error but cache still invalidated")
+        except:
+            pass
+        # Cache invalidated despite exception
+    
+    Nested Context Examples:
+        # Example 5: Nested contexts - only outermost invalidates
+        with disable_signals_with_invalidation(client_id, ['users']):  # Outer
+            User.objects.create(...)
+            with disable_signals_with_invalidation(client_id, ['teams']):  # Inner
+                Team.objects.create(...)
+            # 'teams' NOT invalidated here (inner context)
+        # Both 'users' and 'teams' invalidated HERE (outer context only)
+    
+    Usage Examples:
+        # Single namespace
+        with disable_signals_with_invalidation(client_id, 'users'):
+            User.objects.bulk_create([...])
+        
+        # Multiple namespaces
+        with disable_signals_with_invalidation(client_id, ['users', 'teams']):
+            User.objects.bulk_update([...])
+            Team.objects.bulk_update([...])
+        
+        # With error handling
+        with disable_signals_with_invalidation(client_id, 'users', 
+                                              invalidate_on_error=True):
+            risky_operation()
+    
+    Note:
+        - If BULK_SIGNALS_DISABLED=False, signals fire normally but cache is still invalidated
+        - Cache invalidation uses transaction.on_commit() to ensure atomicity
+        - If no transaction is active, invalidation happens immediately
+        - Always validates client_id is provided (raises ValueError if None)
     """
     if not client_id:
         raise ValueError("disable_signals_with_invalidation() requires a valid client_id")

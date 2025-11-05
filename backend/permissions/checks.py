@@ -11,15 +11,17 @@ Decision based ONLY on explicit role flags (is_admin/is_manager/is_individual).
 from typing import Optional, Union, TYPE_CHECKING
 from django.db.models import Model
 from rest_framework.request import Request
-
+import logging
 from .registry import get_scope as registry_get_scope
 from .config import is_enabled, is_module_enabled
 from .compat import get_auth_ctx, AuthContext
+from .constants import normalize_action
 
 # Type hints only - avoid circular imports
 if TYPE_CHECKING:
     from django.contrib.auth.models import AbstractBaseUser
 
+logger = logging.getLogger(__name__)
 
 def check_permission(
     user_or_request: Union['AbstractBaseUser', Request],
@@ -44,27 +46,16 @@ def check_permission(
     """
     # Skip if system disabled
     if not is_enabled():
-        print(f"[CHECKS] Permissions system disabled - allowing access")
+        logger.info(f"[CHECKS] Permissions system disabled - allowing access")
         return 'client'
     
     # Skip if module disabled
     if not is_module_enabled(module):
-        print(f"[CHECKS] Module {module} not enabled - allowing access")
+        logger.info(f"[CHECKS] Module {module} not enabled - allowing access")
         return 'client'
     
-    # Normalize PATCH to UPDATE
-    if action == 'patch':
-        action = 'update'
-        print(f"[CHECKS] Normalized PATCH to UPDATE")
-    
-    # Handle list/retrieve as read
-    if action in ['list', 'retrieve']:
-        action = 'read'
-    elif action == 'partial_update':
-        action = 'update'
-    elif action == 'destroy':
-        action = 'delete'
-    
+    action = normalize_action(action)
+
     # Get auth context (no DB queries)
     if isinstance(user_or_request, Request):
         ctx = get_auth_ctx(user_or_request)
@@ -87,13 +78,13 @@ def check_permission(
                     'is_individual': getattr(role, 'is_individual', False),
                 }]
     
-    print(f"[CHECKS] Permission check: module={module}, action={action}, "
+    logger.debug(f"[CHECKS] Permission check: module={module}, action={action}, "
           f"user_id={ctx.user_id}, client_id={ctx.client_id}, "
           f"roles={len(ctx.roles)}, is_superuser={ctx.is_superuser}")
     
     # Not authenticated = deny
     if not ctx.is_authenticated:
-        print(f"[CHECKS] User not authenticated - DENY")
+        logger.warning(f"[CHECKS] User not authenticated - DENY")
         return None
     
     # Determine effective tier from UNION of role flags
@@ -111,7 +102,7 @@ def check_permission(
             if role.get('is_individual'):
                 has_individual = True
     
-    print(f"[CHECKS] Role union: admin={has_admin}, manager={has_manager}, "
+    logger.debug(f"[CHECKS] Role union: admin={has_admin}, manager={has_manager}, "
           f"individual={has_individual}")
     
     # Determine effective tier (highest privilege wins)
@@ -123,30 +114,30 @@ def check_permission(
         effective_tier = 'individual'
     else:
         # No valid tier = deny
-        print(f"[CHECKS] No valid tier found - DENY")
+        logger.warning(f"[CHECKS] No valid tier found - DENY")
         return None
     
-    print(f"[CHECKS] Effective tier: {effective_tier}")
+    logger.debug(f"[CHECKS] Effective tier: {effective_tier}")
     
     # Get scope from registry
     scope = registry_get_scope(module, action, effective_tier)
     
-    print(f"[CHECKS] Registry returned scope: {scope} for {module}/{action}/{effective_tier}")
+    logger.warning(f"[CHECKS] Registry returned scope: {scope} for {module}/{action}/{effective_tier}")
     
     # Validate scope
     if scope not in ['client', 'team', 'mine', 'none']:
-        print(f"[CHECKS] Invalid scope '{scope}' - DENY")
+        logger.warning(f"[CHECKS] Invalid scope '{scope}' - DENY")
         return None
     
     if scope == 'none':
-        print(f"[CHECKS] Scope is 'none' - DENY")
+        logger.warning(f"[CHECKS] Scope is 'none' - DENY")
         return None
     
     # Admin scope limited to tenant (never cross-tenant)
     if effective_tier == 'admin' and scope == 'client':
-        print(f"[CHECKS] Admin scope limited to tenant (client)")
+        logger.info(f"[CHECKS] Admin scope limited to tenant (client)")
     
-    print(f"[CHECKS] Final decision: scope={scope}")
+    logger.debug(f"[CHECKS] Final decision: scope={scope}")
     return scope
 
 
@@ -208,7 +199,7 @@ def resolve_tier(user: 'AbstractBaseUser') -> str:
     Returns:
         'individual' always (least privilege)
     """
-    print(f"[CHECKS] WARNING: resolve_tier() is DEPRECATED - use role flags directly")
+    logger.warning(f"[CHECKS] WARNING: resolve_tier() is DEPRECATED - use role flags directly")
     
     # Return least privilege always
     return 'individual'

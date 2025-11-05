@@ -18,7 +18,7 @@ import logging
 from django.conf import settings
 from django.http import Http404 
 from rest_framework.exceptions import Throttled
-
+from permissions.constants import normalize_action
 
 # Import robuste de get_correlation_id avec double fallback
 try:
@@ -367,44 +367,6 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         except Exception as exc:
             return self.handle_exception(exc)
 
-    # def handle_exception(self, exc):
-    #     """Centralized error handling for all API views"""
-        
-    #     print('MAMA')
-    #     if isinstance(exc, ParseError):
-    #         formatted_detail = StandardizedValidationError._format_detail(
-    #             CoreErrorMessages.INVALID_DATA.format(detail="Malformed JSON in request body")
-    #         )
-    #         return Response(
-    #             formatted_detail,
-    #             status=status.HTTP_400_BAD_REQUEST
-    #         )
-        
-    #     if isinstance(exc, AuthenticationFailed):
-    #         return Response(
-    #             StandardizedValidationError._format_detail(AuthErrorMessages.AUTH_REQUIRED),
-    #             status=status.HTTP_401_UNAUTHORIZED
-    #         )
-
-    #     if isinstance(exc, PermissionDenied):
-    #         return Response(
-    #             StandardizedValidationError._format_detail(CoreErrorMessages.PERMISSION_DENIED),
-    #             status=status.HTTP_403_FORBIDDEN
-    #         )
-
-    #     if isinstance(exc, (DRFValidationError, DjangoValidationError)):
-    #         detail = exc.detail if hasattr(exc, 'detail') else exc.message_dict
-    #         return Response(
-    #             StandardizedValidationError._format_detail(detail),
-    #             status=status.HTTP_400_BAD_REQUEST
-    #         )
-
-    #     # Log unexpected errors
-    #     return Response(
-    #         StandardizedValidationError._format_detail(CoreErrorMessages.UNEXPECTED_ERROR),
-    #         status=status.HTTP_500_INTERNAL_SERVER_ERROR
-    #     )
-
 
     def handle_exception(self, exc):
         """Centralized error handling for all API views"""
@@ -483,33 +445,36 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
         import traceback
         import sys
         
-        # Print a visible header to make the error stand out
-        print("\n" + "="*50)
-        print("ERROR DETAILS:")
-        print("="*50)
-        
-        # Print the exception type and message
-        print(f"Exception Type: {type(exc).__name__}")
-        print(f"Exception Message: {str(exc)}")
-        
-        # Print the full traceback
-        print("\nTraceback:")
-        traceback.print_exception(type(exc), exc, exc.__traceback__)
-        
-        # If the exception has a 'detail' attribute, print it
-        if hasattr(exc, 'detail'):
-            print(f"\nException Details: {exc.detail}")
-        
-        # Additional debugging for certain types of errors
-        if isinstance(exc, StandardizedValidationError):
-            print(f"\nStandardizedValidationError Details: {exc.detail}")
-        
-        print("="*50 + "\n")
+        if settings.DEBUG:
+            # Print a visible header to make the error stand out
+            print("\n" + "="*50)
+            print("ERROR DETAILS:")
+            print("="*50)
+            
+            # Print the exception type and message
+            print(f"Exception Type: {type(exc).__name__}")
+            print(f"Exception Message: {str(exc)}")
+            
+            # Print the full traceback
+            print("\nTraceback:")
+            traceback.print_exception(type(exc), exc, exc.__traceback__)
+            
+            # If the exception has a 'detail' attribute, print it
+            if hasattr(exc, 'detail'):
+                print(f"\nException Details: {exc.detail}")
+            
+            # Additional debugging for certain types of errors
+            if isinstance(exc, StandardizedValidationError):
+                print(f"\nStandardizedValidationError Details: {exc.detail}")
+            
+            print("="*50 + "\n")
 
         if isinstance(exc, Http404):
 
-            action_map = {'GET': 'retrieve', 'PATCH': 'update', 'PUT': 'update', 'DELETE': 'delete'}
-            action = action_map.get(getattr(request, 'method', 'GET'), 'read')
+            # action_map = {'GET': 'retrieve', 'PATCH': 'update', 'PUT': 'update', 'DELETE': 'delete'}
+            # action = action_map.get(getattr(request, 'method', 'GET'), 'read')
+            method = getattr(request, 'method', 'GET')
+            action = normalize_action(method)
             target_id = '-'
             try:
                 if hasattr(self, 'kwargs') and isinstance(self.kwargs, dict):

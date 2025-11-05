@@ -7,6 +7,8 @@ Note: Les actions bypassed (change_password, grant_superuser) sont gérées
 directement dans UserViewSet via l'attribut bypassed_actions.
 """
 
+from permissions.constants import normalize_action
+
 # Mapping des actions custom vers actions CRUD standard
 # Les actions bypassed ne sont PAS dans ce mapping car elles
 # gèrent leur propre logique
@@ -32,18 +34,21 @@ ACTION_MAPPINGS = {
 
 def get_action_mapping(action: str) -> str:
     """
-    Get the CRUD mapping for a custom action.
+    Get the CRUD mapping for an action.
+    
+    Priority order:
+    1. Custom actions (bulk_*, stats, performance, etc) → ACTION_MAPPINGS
+    2. Standard CRUD actions (list, retrieve, patch, etc) → normalize_action()
     
     Args:
-        action: Custom action name
+        action: Action name (custom or standard)
         
     Returns:
-        Mapped CRUD action or original action if no mapping
-        
-    Note:
-        Actions not in ACTION_MAPPINGS are either:
-        - Standard CRUD actions (list, retrieve, create, update, destroy)
-        - Bypassed actions (handled by ViewSet.bypassed_actions)
-        - Unknown actions (will use default permissions)
+        Mapped CRUD action ('create'|'read'|'update'|'delete')
     """
-    return ACTION_MAPPINGS.get(action, action)
+    # Check custom mappings first
+    if action in ACTION_MAPPINGS:
+        return ACTION_MAPPINGS[action]
+    
+    # Fallback to centralized normalization for standard CRUD actions
+    return normalize_action(action)

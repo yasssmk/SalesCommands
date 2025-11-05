@@ -24,7 +24,7 @@ from .policies import (
     resolve_scope_profile,
     ScopeProfiles
 )
-
+from .constants import normalize_action
 import logging
 
 # Import robuste de get_correlation_id
@@ -102,26 +102,25 @@ class ScopedPermission(permissions.BasePermission):
             return True
 
         # Resolve action (normalize PATCH -> update)
-        action = self._get_action(view)
-        if action == 'patch':
-            action = 'update'
+        raw_action = self._get_action(view)
+
 
         logger.debug("permission_check_start", extra={
             **base_extra,
             'biz_module': module,
-            'action': action,
+            'action': raw_action,
         })
 
         # Custom action policy first
         action_policies = getattr(view, 'action_policies', {})
-        if action in action_policies:
+        if raw_action in action_policies:
             logger.debug("using_action_policy", extra={
                 **base_extra,
                 'biz_module': module,
-                'action': action,
+                'action': raw_action,
             })
             is_permitted, scope = check_action_policy_permission(
-                action_policies, action, request, module
+                action_policies, raw_action, request, module
             )
 
             if is_permitted:
@@ -130,20 +129,29 @@ class ScopedPermission(permissions.BasePermission):
                 logger.debug("permission_granted", extra={
                     **base_extra,
                     'biz_module': module,
-                    'action': action,
+                    'action': raw_action,
                     'source': 'action_policy',
                 })
             else:
                 logger.info("permission_denied", extra={
                     **base_extra,
                     'biz_module': module,
-                    'action': action,
+                    'action': raw_action,
                     'reason_code': 'action_policy_denied',
                 })
             return is_permitted
+        
+        # If no custom policy, normalize action for standard registry
+        action = normalize_action(raw_action)
+
+        logger.debug("permission_check_start", extra={
+            **base_extra,
+            'biz_module': module,
+            'action': action,  # Action normalisée
+        })
 
         # Standard registry check
-        result = has_permission(request, module, action)
+        result = has_permission(request, module, raw_action)
 
         if not result:
             logger.info("permission_denied", extra={
@@ -191,33 +199,16 @@ class ScopedPermission(permissions.BasePermission):
         Returns:
             Action name (defaults to CRUD mapping)
         """
-        # For ViewSets, use the action attribute
+        # For ViewSets, use the action attribute (raw, no normalization)
         if hasattr(view, 'action'):
-            # Map certain actions to their CRUD equivalents
-            action_map = {
-                'list': 'read',
-                'retrieve': 'read',
-                'create': 'create',
-                'update': 'update',
-                'partial_update': 'update',  # PATCH = UPDATE
-                'destroy': 'delete',
-            }
-            return action_map.get(view.action, view.action)
+            return view.action  # Returns 'bulk_update', 'list', etc
         
-        # For APIView, check request method
+        # For APIView, check request method (raw HTTP method)
         if hasattr(view, 'request'):
-            method_map = {
-                'GET': 'read',
-                'POST': 'create',
-                'PUT': 'update',
-                'PATCH': 'update',  # PATCH = UPDATE
-                'DELETE': 'delete',
-            }
-            return method_map.get(view.request.method, 'read')
+            return view.request.method  # Returns 'PATCH', 'GET', etc
         
-        # Default to read (most restrictive for queries)
+        # Default fallback
         return 'read'
-
 
 class ScopedQuerysetMixin:
     """
@@ -619,29 +610,18 @@ class ScopedQuerysetMixin:
         
         Returns:
             Action name (defaults to CRUD mapping)
+            
+        Notes:
+            REFACTORED: Now uses centralized normalize_action() from constants.py
+            Previously had 14 lines of duplicated mapping logic
         """
-        # For ViewSets, use the action attribute
+        # For ViewSets, use the action attribute (raw, no normalization)
         if hasattr(self, 'action'):
-            action_map = {
-                'list': 'read',
-                'retrieve': 'read',
-                'create': 'create',
-                'update': 'update',
-                'partial_update': 'update',  # PATCH = UPDATE
-                'destroy': 'delete',
-            }
-            return action_map.get(self.action, self.action)
+            return self.action  # Returns 'bulk_update', 'list', etc
         
-        # For APIView, check request method
+        # For APIView, check request method (raw HTTP method)
         if hasattr(self, 'request'):
-            method_map = {
-                'GET': 'read',
-                'POST': 'create',
-                'PUT': 'update',
-                'PATCH': 'update',  # PATCH = UPDATE
-                'DELETE': 'delete',
-            }
-            return method_map.get(self.request.method, 'read')
+            return self.request.method  # Returns 'PATCH', 'GET', etc
         
         # Default to read
         return 'read'

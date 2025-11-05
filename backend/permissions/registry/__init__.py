@@ -9,6 +9,7 @@ Missing entries return 'none' (deny-by-default).
 """
 
 from typing import Dict, Literal
+import logging
 
 # Import individual registries
 from .end_users_registry import END_USERS_REGISTRY
@@ -20,10 +21,14 @@ from .opportunities_registry import OPPORTUNITIES_REGISTRY
 from .products_registry import PRODUCTS_REGISTRY
 from .campaigns_registry import CAMPAIGNS_REGISTRY
 
+from ..constants import normalize_action
+logger = logging.getLogger(__name__)
+
 Action = Literal['create', 'read', 'update', 'delete']
 Tier = Literal['admin', 'manager', 'individual']
 Scope = Literal['client', 'team', 'mine', 'none']
 ModulePermissions = Dict[Action, Dict[Tier, Scope]]
+
 
 # ============================================================================
 # COMBINED REGISTRY
@@ -48,9 +53,9 @@ def build_registry() -> Dict:
     registry.update(LEADS_REGISTRY)
     registry.update(OPPORTUNITIES_REGISTRY)
     
-    print(f"[REGISTRY] Built registry with {len(registry)} modules")
+    logger.debug(f"Built registry with {len(registry)} modules")
     for module in registry.keys():
-        print(f"[REGISTRY]   - {module}")
+        logger.debug(f"  - {module}")
     
     return registry
 
@@ -75,43 +80,32 @@ def get_scope(module: str, action: str, tier: str) -> Scope:
         Scope ('client', 'team', 'mine', 'none')
         Returns 'none' for any missing entries (deny-by-default)
     """
-    # CRITICAL: Always map PATCH to UPDATE
-    if action == 'patch':
-        action = 'update'
-        print(f"[REGISTRY] Mapped PATCH to UPDATE")
+    action = normalize_action(action)
     
-    # Also handle common action aliases
-    if action == 'list':
-        action = 'read'
-    elif action == 'retrieve': 
-        action = 'read'
-    elif action in ['update', 'partial_update']:
-        action = 'update'
-    elif action == 'destroy':
-        action = 'delete'
-    
-    print(f"[REGISTRY] Looking up: module={module}, action={action}, tier={tier}")
-    
+    # ✅ REFACTORED: logger.debug() instead of print()
+    logger.debug(f"Looking up permission: module={module}, action={action}, tier={tier}")
+
+
     # Get module permissions
     module_perms = REGISTRY.get(module)
     if not module_perms:
-        print(f"[REGISTRY] Module '{module}' not found - DENY")
+        logger.debug(f"Module '{module}' not found in registry - returning 'none'")
         return 'none'  # Module not found - deny
     
     # Get action permissions
     action_perms = module_perms.get(action)
     if not action_perms:
-        print(f"[REGISTRY] Action '{action}' not found in module '{module}' - DENY")
+        logger.debug(f"Action '{action}' not found in module '{module}' - returning 'none'")
         return 'none'  # Action not found - deny
     
     # Get tier scope
     scope = action_perms.get(tier, 'none')
     
-    print(f"[REGISTRY] Found scope: {scope} for {module}/{action}/{tier}")
+    logger.debug(f"Found scope: {scope} for {module}/{action}/{tier}")
     
     # Validate scope value
     if scope not in ['client', 'team', 'mine', 'none']:
-        print(f"[REGISTRY] Invalid scope '{scope}' - returning 'none'")
+        logger.warning(f"Invalid scope '{scope}' in registry for {module}/{action}/{tier} - returning 'none'")
         return 'none'
     
     return scope
