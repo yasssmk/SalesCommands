@@ -223,6 +223,7 @@ def check_action_policy_permission(
     # Check tier requirement first
     if required_tier:
         user_tier = ctx.tier
+        print(f"[VERIFICATION DU TIER]: {user_tier}")
         
         # Tier hierarchy: admin > manager > individual
         tier_levels = {'admin': 3, 'manager': 2, 'individual': 1}

@@ -47,6 +47,11 @@ ACTION_TO_CRUD: dict[str, CrudAction] = {
     'update': 'update',         # PUT /resources/{id}/
     'partial_update': 'update', # PATCH /resources/{id}/
     'destroy': 'delete',        # DELETE /resources/{id}/
+
+    # Bulk operations (CRITICAL for permission checks)
+    'bulk_create': 'create',
+    'bulk_update': 'update',
+    'bulk_delete': 'delete',
     
     # Edge cases - normalized forms
     'patch': 'update',          # Lowercase PATCH (rare but supported)

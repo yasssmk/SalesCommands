@@ -126,14 +126,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # ===== BULK ACTIONS =====
         'bulk_create': {
             'crud': 'create',
+            'tier': 'admin', 
             'scope': 'client'     # Admin can create users in their client
         },
         'bulk_update': {
             'crud': 'update',
+            'tier': 'admin',
             'scope': 'client'     # Admin can update users in their client
         },
         'bulk_delete': {
             'crud': 'delete',
+            'tier': 'admin', 
             'scope': 'client'     # Admin can delete users in their client
         },
     }
