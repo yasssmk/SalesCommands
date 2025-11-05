@@ -63,6 +63,7 @@ from typing import Any, Dict, Optional, Union
 from django.conf import settings
 from django.core.cache import cache
 from core.cache_utils import is_redis_healthy
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -91,15 +92,149 @@ OP_STATUS_FAILED = 'failed'
 # PAYLOAD HASH
 # ============================================================================
 
+
+def normalize_payload(payload: Any) -> Any:
+    """
+    Recursively normalize payload structure to ensure consistent hashing.
+    
+    Normalizes payload by sorting lists of comparable elements (strings, numbers, UUIDs)
+    to guarantee that semantically identical payloads produce the same hash, regardless
+    of element order.
+    
+    Rules:
+    - Lists of primitives (str, int, float, UUID) → sorted
+    - Lists of dicts → preserved order (semantic meaning may depend on order)
+    - Nested structures → recursively normalized
+    - Dicts → keys already sorted by json.dumps(sort_keys=True)
+    - Non-comparable types → preserved order (defensive)
+    
+    Args:
+        payload: Any JSON-serializable data structure
+    
+    Returns:
+        Normalized payload with sorted lists where applicable
+    
+    Examples:
+        >>> normalize_payload({"ids": ["def", "abc"]})
+        {"ids": ["abc", "def"]}
+        
+        >>> normalize_payload({"users": [{"id": 2}, {"id": 1}]})
+        {"users": [{"id": 2}, {"id": 1}]}  # Preserved order (list of dicts)
+        
+        >>> normalize_payload({"nested": {"ids": [3, 1, 2]}})
+        {"nested": {"ids": [1, 2, 3]}}
+    """
+    # Handle None and primitives (already normalized)
+    if payload is None or isinstance(payload, (bool, int, float, str)):
+        return payload
+    
+    # Handle lists
+    if isinstance(payload, list):
+        # First, recursively normalize all elements
+        normalized_elements = [normalize_payload(item) for item in payload]
+        
+        # Check if list contains only comparable primitives
+        # If so, sort the list for consistent ordering
+        if normalized_elements and _is_sortable_list(normalized_elements):
+            try:
+                # Convert UUIDs to strings for comparison
+                sortable_items = [
+                    str(item) if isinstance(item, uuid.UUID) else item
+                    for item in normalized_elements
+                ]
+                # Sort and return
+                return sorted(sortable_items)
+            except (TypeError, AttributeError):
+                # Fallback: if sorting fails, preserve original order
+                return normalized_elements
+        else:
+            # List contains complex objects (dicts, nested lists, mixed types)
+            # Preserve order as it may be semantically meaningful
+            return normalized_elements
+    
+    # Handle dictionaries (recursively normalize values)
+    if isinstance(payload, dict):
+        return {
+            key: normalize_payload(value)
+            for key, value in payload.items()
+        }
+    
+    # Handle other types (tuples, sets, custom objects)
+    # Convert to serializable format
+    if isinstance(payload, (tuple, set)):
+        # Convert to list and normalize
+        return normalize_payload(list(payload))
+    
+    # For any other type, convert to string (defensive fallback)
+    # This handles UUIDs, dates, custom objects, etc.
+    return str(payload)
+
+
+def _is_sortable_list(items: list) -> bool:
+    """
+    Check if a list contains only sortable primitive types.
+    
+    A list is sortable if:
+    - All elements are of the same comparable type (str, int, float)
+    - OR all elements are string-convertible primitives (including UUIDs)
+    - AND no element is a dict or nested list
+    
+    Args:
+        items: List of normalized elements
+    
+    Returns:
+        True if list can be safely sorted, False otherwise
+    
+    Examples:
+        >>> _is_sortable_list(["abc", "def"])
+        True
+        
+        >>> _is_sortable_list([1, 2, 3])
+        True
+        
+        >>> _is_sortable_list([{"id": 1}, {"id": 2}])
+        False
+        
+        >>> _is_sortable_list(["abc", 123])
+        False  # Mixed types
+    """
+    if not items:
+        return False
+    
+    # Check if any element is a complex type (dict or list)
+    if any(isinstance(item, (dict, list)) for item in items):
+        return False
+    
+    # Get types of all elements
+    types_set = set(type(item) for item in items)
+    
+    # Single type → sortable if it's a primitive
+    if len(types_set) == 1:
+        first_type = types_set.pop()
+        return first_type in (str, int, float, bool)
+    
+    # Mixed types → check if all are numeric (int/float can be compared)
+    if types_set <= {int, float}:
+        return True
+    
+    # Mixed types with strings → not safely sortable
+    # (e.g., ["abc", 123] would raise TypeError)
+    return False
+
 def compute_payload_hash(payload: Any) -> str:
     """
     Compute SHA-256 hash of request payload for idempotency check.
     
-    Uses canonical JSON representation:
+    Uses canonical JSON representation with normalized structure:
+    - Lists of primitives sorted alphabetically (for consistent ordering)
     - Keys sorted alphabetically
     - No whitespace
     - UTF-8 encoding
     - Handles non-serializable objects with str() fallback
+    
+    The normalization ensures that semantically identical payloads produce
+    the same hash regardless of list element ordering:
+        {"ids": ["abc", "def"]} ≡ {"ids": ["def", "abc"]} → same hash
     
     Args:
         payload: Request data (dict, list, or any JSON-serializable type)
@@ -110,13 +245,15 @@ def compute_payload_hash(payload: Any) -> str:
     Example:
         >>> compute_payload_hash({"ids": [1, 2, 3], "mode": "partial"})
         'a1b2c3d4...'
-        >>> compute_payload_hash({"mode": "partial", "ids": [1, 2, 3]})
-        'a1b2c3d4...'  # Same hash (keys sorted)
+        >>> compute_payload_hash({"mode": "partial", "ids": [3, 2, 1]})
+        'a1b2c3d4...'  # Same hash (keys sorted + list sorted)
     """
     try:
+        normalized_payload = normalize_payload(payload)
+
         # Canonical JSON: sorted keys, compact, UTF-8
         canonical = json.dumps(
-            payload,
+            normalized_payload,
             sort_keys=True,
             separators=(',', ':'),
             ensure_ascii=False,
