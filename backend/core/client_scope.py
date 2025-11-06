@@ -13,6 +13,9 @@ from core.exceptions import (
     StandardizedPermissionDenied,
     StandardizedAuthenticationFailed,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ClientScopeManager:
     """
@@ -204,9 +207,15 @@ class ClientScopeManager:
             
             # Add debugging for development
             if settings.DEBUG:
-                print(f"Filtering queryset for client {client_id}")
-                print(f"Original count: {queryset.count()}")
-                print(f"Filtered count: {filtered_queryset.count()}")
+                logger.debug(
+                    "queryset_client_filtering",
+                    extra={
+                        'client_id': str(client_id),
+                        'original_count': queryset.count(),
+                        'filtered_count': filtered_queryset.count(),
+                        'event': 'client_scope_filter'
+                    }
+                )
                 
             return filtered_queryset
 
@@ -218,7 +227,11 @@ class ClientScopeManager:
             self.validate_client_id(instance)
             return instance
         except Exception as e:
-            print(f"Error in perform_create: {str(e)}", exc_info=True)
+            logger.error(
+                "perform_create_failed",
+                extra={'error': str(e)},
+                exc_info=True
+            )
             raise StandardizedValidationError(str(e))
 
     def perform_update(self, serializer):
@@ -242,7 +255,11 @@ class ClientScopeManager:
             self.validate_client_id(instance)
             instance.delete(client_id=self.get_client_id())
         except Exception as e:
-            print(f"Error in perform_delete: {str(e)}", exc_info=True)
+            logger.error(
+                "perform_delete_failed",
+                extra={'error': str(e)},
+                exc_info=True
+            )
             raise StandardizedValidationError(str(e))
 
     def check_object_permissions(self, request, obj):

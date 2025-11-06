@@ -20,9 +20,6 @@ export default function ChangePasswordView() {
   const params = useParams();
   const userId = params?.id;
 
-  console.log('Params:', params); // Debug
-  console.log('UserId:', userId); 
-
   return (
     <AuthWrapper>
       <Grid container spacing={3}>

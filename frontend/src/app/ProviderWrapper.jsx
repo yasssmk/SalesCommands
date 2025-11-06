@@ -228,8 +228,9 @@ onError: (error, key, config) => {
   
   // Auth errors: just log (auth interceptor handles these)
   if (status === 401 || status === 403) {
-    console.warn('[SWR] Auth error detected:', status);
-    // Note: No snackbar for auth errors - let auth interceptor handle user notification
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[SWR] Auth error detected:', status);
+    }
     return;
   }
   

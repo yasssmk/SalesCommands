@@ -27,11 +27,8 @@ export default function SignIn() {
   const [flashError, setFlashError] = useState(null);
 
   useEffect(() => {
-    console.log('🔍 [DEBUG] Login mounted, checking flash...'); // DEBUG
-    console.log('🔍 [DEBUG] sessionStorage authFlash:', sessionStorage.getItem('authFlash')); // DEBUG
-    
+
     const flash = getAuthFlash();
-    console.log('🔍 [DEBUG] getAuthFlash returned:', flash); // DEBUG
     
     if (flash) {
       setFlashError(flash);
