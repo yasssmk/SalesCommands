@@ -263,6 +263,7 @@ export const getErrorDisplayInfo = (error) => {
                  error?.error?.status ||  // Bulk operation format
                  0;
     
+    
     if (process.env.NODE_ENV === 'development') {
       console.group('🔍 [getErrorDisplayInfo] Processing error');
       console.log('Status:', status);

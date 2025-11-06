@@ -111,6 +111,8 @@ const handleBulkPartialSuccess = (data, formik, options, onComplete) => {
     
     return false; // Indicate NOT handled, fall through
   }
+
+
   
   // ====================================================================
   // Determine severity and message (pour 1-99% seulement)
@@ -376,7 +378,21 @@ const extractFieldErrors = (data) => {
   }
   
   // ✅ NEW: Try to parse generic error messages that mention field names
-  const nonFieldKeys = ['detail', 'error', 'message', 'non_field_errors'];
+  const nonFieldKeys = [
+    'detail', 
+    'error', 
+    'message', 
+    'non_field_errors',
+    // ✅ Bulk operation metadata (not form fields)
+    'success',
+    'summary', 
+    'results',  // ← CRITIQUE: contient UUIDs, pas field errors
+    'status',
+    'httpStatus',
+    'isTimeout',
+    'is202',
+    'hasData'
+  ];
   const hasOnlyNonFieldKeys = Object.keys(data).every(key => nonFieldKeys.includes(key));
   
   if (hasOnlyNonFieldKeys) {
@@ -637,7 +653,7 @@ if (responseData && isBulkOperation(responseData)) {
     normalizedError = new Error(error.error || error.message);
     normalizedError.response = {
       status: error.status,
-      data: error.data || { detail: error.error }
+      data: error.data || error || { detail: error.error }
     };
     normalizedError.status = error.status;
   }

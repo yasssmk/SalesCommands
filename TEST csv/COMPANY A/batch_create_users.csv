@@ -1,5 +1,5 @@
-email,password,first_name,last_name,role
-qwerty121@companya.com,password123,San,Goku,account executive
-qwerty221@companya.com,password123,John,Doe,Direction
-qwerty321@companya.com,password123,Jane,Smith,Team Manager
+email,password,first_name,last_name,role,active
+qwertyzizi121@companya.com,password123,San,Goku,account executive,true
+qwertyzizi221@companya.com,password123,John,Doe,Direction,true
+qwertyzizi321@companya.com,password123,Jane,Smith,Team Manager,true
 

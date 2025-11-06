@@ -123,7 +123,7 @@ class UserBulkViewSet(UserViewSet):
             elif op['status'] == 'failed':
                 err = op.get('result') or {}
                 return Response({
-                    'error': 'Operation failed',
+                    'error': 'Operation failedAA',
                     'detail': err.get('message', 'Unknown error')
                 }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
 
@@ -1095,7 +1095,7 @@ class UserBulkViewSet(UserViewSet):
             elif op['status'] == 'failed':
                 err = op.get('result') or {}
                 return Response({
-                    'error': 'Operation failed',
+                    'error': 'Operation failedBB',
                     'detail': err.get('message', 'Unknown error')
                 }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
 
@@ -2327,7 +2327,23 @@ class UserBulkViewSet(UserViewSet):
             if success_count == 0 and failed_count > 0:
                 status_code = status.HTTP_400_BAD_REQUEST
                 success_status = False
-                message = f"Bulk {operation} failed: all {failed_count} item(s) failed"
+                # message = f"Bulk {operation} failed: all {failed_count} item(s) failed"
+                failed_items = results.get('failed', [])
+                extracted_message = None
+                
+                if failed_items:
+                    first_failed = failed_items[0]
+                    if isinstance(first_failed, dict) and 'errors' in first_failed:
+                        errors_list = first_failed['errors']
+                        if errors_list and len(errors_list) > 0:
+                            extracted_message = str(errors_list[0])
+                
+                # Use extracted message if available, otherwise fallback to generic
+                if extracted_message:
+                    message = extracted_message
+                else:
+                    message = f"Bulk {operation} failed: all {failed_count} item(s) failed"
+                    
             elif failed_count > 0 or skipped_count > 0:
                 status_code = status.HTTP_207_MULTI_STATUS
                 success_status = 'partial'
@@ -2532,9 +2548,10 @@ class UserBulkViewSet(UserViewSet):
         if active_requested > available_seats:
             if mode == 'strict':
                 raise StandardizedValidationError(
-                    f"Cannot create {active_requested} active user(s). "
-                    f"Only {available_seats} seat(s) available. "
-                    f"Set is_active=false for some users or increase max_users limit."
+                    # f"Cannot create {active_requested} active user(s). "
+                    # f"Only {available_seats} seat(s) available. "
+                    # f"Set is_active=false for some users or increase max_users limit."
+                    CoreErrorMessages.SEAT_LIMIT_REACHED  
                 )
             else:  # partial mode
                 return {
@@ -2542,10 +2559,7 @@ class UserBulkViewSet(UserViewSet):
                     'max_active_allowed': available_seats,
                     'active_requested': active_requested,
                     'available_seats': available_seats,
-                    'warning': (
-                        f"Only {available_seats} seat(s) available. "
-                        f"{active_requested - available_seats} user(s) will be created inactive."
-                    )
+                    'warning': (str(CoreErrorMessages.SEAT_LIMIT_REACHED))
                 }
         
         # Assez de sièges pour tous
@@ -2776,10 +2790,7 @@ class UserBulkViewSet(UserViewSet):
                     'denied_ids': [str(uid) for uid in denied_ids],
                     'available_seats': available_seats,
                     'requested': count_to_activate,
-                    'warning': (
-                        f"Only {available_seats} seat(s) available. "
-                        f"{len(denied_ids)} user(s) could not be activated."
-                    )
+                    'warning': str(CoreErrorMessages.SEAT_LIMIT_REACHED)
                 }
         
         # Tous les users peuvent être activés

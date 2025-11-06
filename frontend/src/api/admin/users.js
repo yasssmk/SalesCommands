@@ -1617,6 +1617,7 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
         console.log('[bulkUpdateUsers] returning structured error from backend');
         return {
           ...result.data,
+          status: status,
           success: false,
           isTimeout: result.isTimeout || false
         };

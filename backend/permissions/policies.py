@@ -222,14 +222,41 @@ def check_action_policy_permission(
     
     # Check tier requirement first
     if required_tier:
-        user_tier = ctx.tier
-        print(f"[VERIFICATION DU TIER]: {user_tier}")
+        # CRITICAL: Calculate effective tier from role flags (NOT from ctx.tier which is legacy)
+        # Same logic as check_permission() in checks.py
+        has_admin = ctx.is_superuser  # Superuser always admin
+        has_manager = False
+        has_individual = False
         
+        # Check all roles for flags (union/additive)
+        for role in ctx.roles:
+            if isinstance(role, dict):
+                if role.get('is_admin'):
+                    has_admin = True
+                if role.get('is_manager'):
+                    has_manager = True
+                if role.get('is_individual'):
+                    has_individual = True
+        
+        # Determine effective tier (highest privilege wins)
+        if has_admin:
+            effective_tier = 'admin'
+        elif has_manager:
+            effective_tier = 'manager'
+        elif has_individual:
+            effective_tier = 'individual'
+        else:
+            # No valid tier = deny
+            logger.warning(f"Action '{action}' requires tier '{required_tier}', but user has no valid tier")
+            return (False, 'none')
+        
+        logger.debug(f"[TIER CHECK] Action '{action}' requires tier '{required_tier}', user has effective tier '{effective_tier}'")
+    
         # Tier hierarchy: admin > manager > individual
         tier_levels = {'admin': 3, 'manager': 2, 'individual': 1}
         
-        if tier_levels.get(user_tier, 0) < tier_levels.get(required_tier, 999):
-            logger.debug(f"Action '{action}' requires tier '{required_tier}', user has '{user_tier}'")
+        if tier_levels.get(effective_tier, 0) < tier_levels.get(required_tier, 999):
+            logger.debug(f"Action '{action}' DENIED: requires tier '{required_tier}', user has '{effective_tier}'")
             return (False, 'none')
     
     # If scope is a profile name, resolve it

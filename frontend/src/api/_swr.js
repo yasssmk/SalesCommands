@@ -278,7 +278,7 @@ export const handleBulkRevalidation = async (result, prefixes, onSyncProgress = 
 
     } else if (pollResult.status === 'failed') {
       console.error('[handleBulkRevalidation] Operation failed:', pollResult.error);
-      const errorMessage = pollResult.error?.message || pollResult.error || 'Operation failed';
+      const errorMessage = pollResult.error?.message || pollResult.error || 'Operation failed ZZ';
       showSnackbar.error(errorMessage);
 
       // Même en cas d'échec, on revalide pour afficher l'état réel

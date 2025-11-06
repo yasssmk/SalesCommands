@@ -201,10 +201,10 @@ export function handleBulkError(responseData, originalError = null, options = {}
     // ---
 
     // ✅ EXTRACT MESSAGE DIRECTLY FROM RESPONSE DATA
-    const errorMessage = responseData.errorMessage || 
+    const errorMessage = responseData.errorMessage || responseData.message ||
                     'Operation failed';
 
-    const status = responseData.httpStatus || 
+    const status = responseData.httpStatus || responseData.error.status ||
                   responseData.status || 
                   0;
     
