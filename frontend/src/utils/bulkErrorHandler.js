@@ -200,12 +200,13 @@ export function handleBulkError(responseData, originalError = null, options = {}
 
     // ---
 
+    console.log('[RESPONSE FORMAT]', {responseData})
     // ✅ EXTRACT MESSAGE DIRECTLY FROM RESPONSE DATA
     const errorMessage = responseData.errorMessage || responseData.message ||
-                    'Operation failed';
+                    'Operation failed XXX';
 
-    const status = responseData.httpStatus || responseData.error.status ||
-                  responseData.status || 
+    const status = responseData.httpStatus || 
+                  responseData.status || responseData.error?.status ||
                   0;
     
     if (process.env.NODE_ENV === 'development') {
