@@ -377,7 +377,7 @@ const handleImport = useCallback(async () => {
 
     // Display snackbar for 0% success (total failure)
     if (finalResponse.success === false && finalResponse.summary.success === 0) {
-      console.log('[useCSVImport] 0% success detected → calling handleBulkError for snackbar');
+      console.log('[useCSVImport XXXX] 0% success detected → calling handleBulkError for snackbar');
       handleBulkError(finalResponse, null, {
         onComplete: null
       });
@@ -416,7 +416,7 @@ const handleImport = useCallback(async () => {
     setImportResponse(errorResponse);
 
     // Display snackbar for 0% success in catch block
-    console.log('[useCSVImport] Exception with 0% success → calling handleBulkError for snackbar');
+    console.log('[useCSVImport ZZZZ] Exception with 0% success → calling handleBulkError for snackbar', {errorResponse});
     handleBulkError(errorResponse, null, {
       onComplete: null
     });

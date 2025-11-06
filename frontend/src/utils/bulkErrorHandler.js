@@ -99,7 +99,6 @@ const isBulkOperation = (data) => {
  */
 export function handleBulkError(responseData, originalError = null, options = {}) {
   const { onComplete = null } = options;
-  
   // ====================================================================
   // STEP 1: Validate input
   // ====================================================================
@@ -193,9 +192,21 @@ export function handleBulkError(responseData, originalError = null, options = {}
     //     hasMessage: !!responseData.message
     //   });
     // }
-    const errorInfo = getErrorDisplayInfo(responseData);
-    const errorMessage = errorInfo.message || 'Operation failed';
-    const status = errorInfo.status || 0;
+
+   // ---- 
+    // const errorInfo = getErrorDisplayInfo(responseData);
+    // const errorMessage = errorInfo.errorMessage || 'Operation failed';
+    // const status = errorInfo.status || 0;
+
+    // ---
+
+    // ✅ EXTRACT MESSAGE DIRECTLY FROM RESPONSE DATA
+    const errorMessage = responseData.errorMessage || 
+                    'Operation failed';
+
+    const status = responseData.httpStatus || 
+                  responseData.status || 
+                  0;
     
     if (process.env.NODE_ENV === 'development') {
       console.log('[handleBulkError] Error info from getErrorDisplayInfo:', { 
