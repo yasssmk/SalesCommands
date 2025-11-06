@@ -81,15 +81,6 @@ def _log_boot_once():
     
     # Log at INFO level so it's visible in production logs
     logger.info(message)
-    
-    # Also log to console in DEBUG mode for immediate visibility
-    try:
-        from django.conf import settings
-        if settings.DEBUG:
-            import sys
-            print(f"[PERMISSIONS] {message}", file=sys.stderr)
-    except:
-        pass  # Fail silently if settings not available
 
 
 def get_auth_ctx(request) -> AuthContext:

@@ -149,17 +149,18 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Get users for the current client with optimized queries"""
-        print(f"[UserViewSet] get_queryset called - action: {self.action}")
+        logger.debug("get_queryset_called", extra={
+            'action': self.action,
+            'view': 'UserViewSet'
+        })
 
         queryset = super().get_queryset()
 
-        print(f"[UserViewSet] Queryset count after super: {queryset.count()}")
-
-        # Debug pour comprendre ce qui se passe
-        print(f"[DEBUG] Action: {self.action}")
-        print(f"[DEBUG] User tier: {getattr(self.request, '_user_tier', 'unknown')}")
-        print(f"[DEBUG] Queryset count before: {queryset.count()}")
-        print(f"[DEBUG] Queryset count after super: {queryset.count()}")
+        logger.debug("queryset_filtered", extra={
+            'action': self.action,
+            'count': queryset.count(),
+            'user_tier': getattr(self.request, '_user_tier', 'unknown')
+        })
         
         # Optimiser selon l'action
         if self.action == 'list':
@@ -177,17 +178,14 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 )
             )
             
-            if settings.DEBUG:
-                print("[UserViewSet] Applied list optimizations: select_related + annotations for is_manager")
+            logger.debug("Applied list optimizations", extra={'action': 'list'})
         
         elif self.action == 'retrieve':
             # ✅ OPTIMISATION: Pas de prefetch_related pour retrieve simple
             queryset = queryset.select_related(
                 'client_account', 'role', 'team', 'organization'
             )
-            # ❌ SUPPRIMÉ: .prefetch_related('managed_teams', 'managed_organizations')
-            if settings.DEBUG:
-                print("[UserViewSet] Applied retrieve optimizations: select_related only (no prefetch)")
+            logger.debug("Applied retrieve optimizations", extra={'action': 'retrieve'})
         
         elif self.action in ['managed_users_performance', 'managers']:
             # Garder prefetch seulement pour les actions qui en ont vraiment besoin
@@ -196,8 +194,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             ).prefetch_related(
                 'managed_teams', 'managed_organizations'
             )
-            if settings.DEBUG:
-                print("[UserViewSet] Applied full optimizations for manager actions")
+            logger.debug("Applied full optimizations", extra={'action': self.action})
         
         else:
             # Autres actions: select_related basique

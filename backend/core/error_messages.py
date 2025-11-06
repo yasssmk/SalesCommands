@@ -85,7 +85,7 @@ class CoreErrorMessages:
     BULK_STRICT_MODE_FAILED = _("Bulk operation failed in strict mode: {error_count} errors found")
     
     # Bulk Create specific
-    BULK_CREATE_DUPLICATE_EMAIL = _("Email '{email}' already exists")
+    BULK_CREATE_DUPLICATE_EMAIL = _(" A user with this email already exists")
     BULK_CREATE_INVALID_ROLE = _("Role '{role}' not found in your organization")
     BULK_CREATE_INVALID_TEAM = _("Team '{team}' not found or doesn't belong to organization '{org}'")
     BULK_CREATE_PASSWORD_REQUIRED = _("Password is required for new users")
@@ -101,8 +101,8 @@ class CoreErrorMessages:
     BULK_DELETE_NO_IDS = _("No IDs provided for bulk delete")
     BULK_DELETE_INVALID_ID = _("User with ID '{id}' not found or already deleted")
     BULK_DELETE_SELF = _("Cannot delete your own account")
-    BULK_DELETE_LAST_ADMIN = _("Cannot delete user '{email}': last admin in organization")
-    BULK_DELETE_PROTECTED = _("Cannot delete protected user '{email}'")
+    BULK_DELETE_LAST_ADMIN = _("Cannot delete user: last admin in organization")
+    BULK_DELETE_PROTECTED = _("Cannot delete protected user")
     
     # Bulk Operation Results
     BULK_OPERATION_TIMEOUT = _("Bulk operation timed out after processing {processed} of {total} items")

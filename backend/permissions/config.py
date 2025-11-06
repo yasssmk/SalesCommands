@@ -19,7 +19,9 @@ from typing import Dict, Any, Optional, List
 from django.conf import settings
 from django.core.signals import setting_changed
 from django.dispatch import receiver
+from core.logging import get_logger
 
+logger = get_logger(__name__)
 
 # Default configuration
 DEFAULT_CONFIG = {
@@ -389,17 +391,28 @@ def audit_log(action: str, module: str, user, scope: str, allowed: bool, **extra
     if not is_audit_enabled():
         return
     
-    # Use print statements for now (replace with proper logging later)
-    from datetime import datetime
-    
-    timestamp = datetime.now().isoformat()
     user_id = user.id if user and hasattr(user, 'id') else None
-    username = str(user) if user else 'anonymous'
     user_display = str(user_id) if user_id else 'anonymous'
+
+    log_context = {
+        'event': 'permission_check',
+        'action': action,
+        'module': module,
+        'user_id': user_display,
+        'scope': scope,
+        'allowed': allowed,
+    }
+
+    logger.info(
+        f"Permission check: {action} on {module} for user {user_display} | "
+        f"scope={scope} | {'ALLOWED' if allowed else 'DENIED'}",
+        extra=log_context
+    )
     
-    # Format: [PERMISSION] timestamp | action | module | user | scope | allowed
-    print(f"[PERMISSION] {timestamp} | {action} | {module} | {username}({user_id}) | {scope} | {'ALLOWED' if allowed else 'DENIED'}")
-    
-    # Print extra context if in debug mode
+    #  Debug context with sanitization
     if is_debug_enabled() and extra:
-        print(f"[PERMISSION-DEBUG] Context: {extra}")
+        # Note: extra dict should already be sanitized by caller
+        # but we log at debug level to avoid exposing in production
+        debug_context = {**log_context, 'debug_context': extra}
+        logger.debug("Permission check debug context", extra=debug_context)
+    

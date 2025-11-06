@@ -997,22 +997,21 @@ class UserBulkViewSet(UserViewSet):
                         client = User.objects.get(id=requester_id_local).client_account
                         client.ensure_admin_invariants()
                     except Exception as e:
-                        logger.warning(
-                            f"Failed to ensure admin invariants after bulk update: {e}",
-                            extra=ctx
-                        )
+                        ctx_safe = {**ctx, 'error': str(e)[:200]}
+                        logger.warning("Failed to ensure admin invariants", extra=ctx_safe)
 
             # ===== BUILD RESPONSE =====
             success_count = len(results['success'])
             failed_count = len(results['failed'])
 
-            ctx.update({
+            ctx_safe = {
+                **ctx,
                 'event': 'bulk_update_users_completed',
                 'requested': len(ids),
                 'updated': success_count,
                 'failed': failed_count
-            })
-            logger.info("Bulk user update completed", extra=ctx)
+            }
+            logger.info("Bulk user update completed", extra=ctx_safe)
 
             return self._build_bulk_success_response(results, len(ids), operation='update', detailed=detailed)
 
@@ -1358,12 +1357,13 @@ class UserBulkViewSet(UserViewSet):
                                 if model != 'end_users.User'
                             ])
 
-                            logger.info(
-                                f"[Bulk Delete - Partial Mode] Successfully deleted {len(valid_ids)} users | "
-                                f"Total objects: {deleted_count} | "
-                                f"Cascades: {cascade_summary or 'none'}",
-                                extra=ctx
-                            )
+                            ctx_safe = {
+                                **ctx,
+                                'deleted_users': len(valid_ids),
+                                'total_objects': deleted_count,
+                                'cascade_summary': cascade_summary or 'none'
+                            }
+                            logger.info("Bulk delete completed", extra=ctx_safe)
                             
                             # Build success results
                             for user_id in valid_ids:
@@ -1988,7 +1988,7 @@ class UserBulkViewSet(UserViewSet):
                     logger.warning(
                         f"Creating first user for client '{client.name}' "
                         f"without superuser or Admin role. "
-                        f"Email: {first_user_data.get('email', 'N/A')}. "
+                        # f"Email: {first_user_data.get('email', 'N/A')}. "
                         f"Serializer will auto-promote to Admin in individual mode, "
                         f"but bulk mode may skip this logic.",
                         extra={
@@ -2093,7 +2093,7 @@ class UserBulkViewSet(UserViewSet):
                                     results['skipped'].append({
                                         'row': row_num,
                                         'email': email,
-                                        'reason': f"Email '{email}' already exists"
+                                        'reason': "A user with this email already exists"
                                     })
                                     continue
 
@@ -2152,7 +2152,7 @@ class UserBulkViewSet(UserViewSet):
                                     results['skipped'].append({
                                         'row': row_num,
                                         'email': email,
-                                        'reason': f"Email '{email}' already exists"
+                                        'reason': "A user with this email already exists"
                                     })
                                     continue
 
@@ -2224,7 +2224,9 @@ class UserBulkViewSet(UserViewSet):
                 'failed': failed_count,
                 'skipped': skipped_count
             })
-            logger.info("Bulk user creation completed", extra=ctx)
+
+            ctx_safe = {**ctx, 'success_count': len(results['success'])}
+            logger.info("Bulk user creation completed", extra=ctx_safe)
 
             return self._build_bulk_success_response(results, len(users_data), operation='create', detailed=detailed )
 

@@ -17,7 +17,8 @@ from ...serializers.user_serializer import (
 )
 import logging
 from permissions import compat
-from core.logging import get_logger, ctx_from_request 
+from core.logging import get_logger, ctx_from_request
+from core.logging.sanitize import mask_email
 
 logger = get_logger(__name__)
 
@@ -64,7 +65,7 @@ class UserLoginView(BaseAPIView):
             # Log the blocked attempt
             ctx = ctx_from_request(request)
             ctx.update({
-                'email': (email[:3] + '***') if email else '-',
+                'email': mask_email(email) if email else '-',
                 'event': 'login_blocked_throttled',
                 'wait_seconds': wait_seconds,
                 'violated_key': throttle_result.get('violated_key', '-')
