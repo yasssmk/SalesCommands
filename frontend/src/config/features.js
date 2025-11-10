@@ -36,7 +36,7 @@ export const FEATURES = {
   USER_MANAGEMENT: true, // Ready for production
   TEAM_MANAGEMENT: false, // In development
   ORGANIZATION_MANAGEMENT: false, // In development  
-  ROLES_PERMISSIONS: false, // In development
+  ROLES_PERMISSIONS: true, 
   
   // CRM features (future)
   LEADS_MANAGEMENT: false,

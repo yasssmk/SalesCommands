@@ -33,6 +33,7 @@ import {
 } from '@tanstack/react-table';
 
 // project-import
+import ExpandingUserDetail from 'sections/admin/users/ExpandingUserDetail';
 import MainCard from 'components/MainCard';
 import ScrollX from 'components/ScrollX';
 import IconButton from 'components/@extended/IconButton';
