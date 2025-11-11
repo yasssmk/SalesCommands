@@ -140,6 +140,28 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             'scope': 'client'     # Admin can delete users in their client
         },
     }
+
+    def _success_response(self, data, status_code=status.HTTP_200_OK):
+        """Return a standardized success response payload."""
+        return Response({'success': True, 'data': data}, status=status_code)
+
+    def _get_locked_user(self, pk=None):
+        """Retrieve a user instance locked for update within the current transaction."""
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup_value = pk or self.kwargs.get(lookup_url_kwarg)
+
+        if lookup_value is None:
+            raise Http404
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        try:
+            obj = queryset.select_for_update().get(**{self.lookup_field: lookup_value})
+        except User.DoesNotExist:
+            raise Http404
+
+        self.check_object_permissions(self.request, obj)
+        return obj
     
     def get_serializer_class(self):
         """Choisir le serializer selon l'action"""
@@ -252,7 +274,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Récupérer un utilisateur spécifique par son ID
         GET /client/users/{id}/
         
-        Cache: 180s sur les données sérialisées
+        Cache: 300s sur les données sérialisées
         """
         from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
         # raise Exception("Test 500: Server error on retrieve")
@@ -276,7 +298,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 logger.info("user_retrieve", extra=ctx)
 
                 serializer = UserSerializer(user)
-                return Response({"success": True, "data": serializer.data})
+                return self._success_response(serializer.data)
 
             except (User.DoesNotExist, Http404):
                 ctx = ctx_from_request(request)
@@ -312,8 +334,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             try:
                 user = self.get_object()
                 is_self = str(user.id) == str(request.user.id)
-                
-                # Log
+
                 ctx = ctx_from_request(request)
                 ctx.update({
                     "target_user_id": str(user.id),
@@ -322,10 +343,13 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
                 })
                 logger.info("user_retrieve", extra=ctx)
-                
+
                 serializer = UserSerializer(user)
-                return {"success": True, "data": serializer.data}
-                
+                return {
+                    "data": serializer.data,
+                    "status": status.HTTP_200_OK,
+                }
+
             except (User.DoesNotExist, Http404):
                 ctx = ctx_from_request(request)
                 ctx.update({
@@ -336,32 +360,35 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     "scope": "client",
                 })
                 logger.info("user_retrieve_not_found", extra=ctx)
-                # Retourner dict avec flag d'erreur
-                return {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND, "status": 404}
+                return {
+                    "error": CoreErrorMessages.OBJECT_NOT_FOUND,
+                    "status": status.HTTP_404_NOT_FOUND,
+                }
         
         # Cache les données
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=180,  # 3 minutes
+            ttl=300,
             tag=(client_id, 'users')
         )
-        
-        # Gérer le cas 404 depuis le cache
-        if not cached_data.get('success'):
+
+        status_code = cached_data.get('status', status.HTTP_200_OK)
+
+        if 'error' in cached_data:
             return Response(
                 {"success": False, "error": cached_data.get('error')},
-                status=status.HTTP_404_NOT_FOUND,
+                status=status_code,
             )
-        
-        return Response(cached_data)
+
+        return self._success_response(cached_data.get('data'), status_code=status_code)
         
     def list(self, request, *args, **kwargs):
         """
         Liste des utilisateurs avec cache applicatif
         GET /client/users/
         
-        Cache: 120s sur les données sérialisées (dict Python, pas Response)
+        Cache: 300s sur les données sérialisées (dict Python, pas Response)
         """
         from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
         # raise PermissionDenied("Test 403: You do not have permission to view users")
@@ -391,7 +418,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 "role_name": getattr(request.user, 'role_name', '-') if getattr(request, 'user', None) else '-',
             })
             logger.info("user_list", extra=ctx)
-            return response
+            return self._success_response(response.data)
 
         
         # Construire clé de cache
@@ -413,35 +440,42 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         def producer():
             queryset = self.filter_queryset(self.get_queryset())
             page = self.paginate_queryset(queryset)
-            
+
             if page is not None:
                 serializer = self.get_serializer(page, many=True)
                 # Retourner un dict Python simple (sérialisable par Redis)
                 return {
-                    'results': serializer.data,
-                    'count': self.paginator.page.paginator.count,
-                    'next': self.paginator.get_next_link(),
-                    'previous': self.paginator.get_previous_link(),
+                    'data': {
+                        'results': serializer.data,
+                        'count': self.paginator.page.paginator.count,
+                        'next': self.paginator.get_next_link(),
+                        'previous': self.paginator.get_previous_link(),
+                    },
+                    'status': status.HTTP_200_OK,
                 }
-            
+
             # Pas de pagination
             serializer = self.get_serializer(queryset, many=True)
-            return serializer.data
+            return {
+                'data': serializer.data,
+                'status': status.HTTP_200_OK,
+            }
         
         # Cache les données (dict Python, pas Response)
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=120,
+            ttl=300,
             tag=(client_id, 'users')
         )
-        
+
         # Logging
         ctx = ctx_from_request(request)
-        if isinstance(cached_data, dict) and 'count' in cached_data:
-            total = cached_data['count']
-        elif isinstance(cached_data, list):
-            total = len(cached_data)
+        payload = cached_data.get('data') if isinstance(cached_data, dict) else None
+        if isinstance(payload, dict) and 'count' in payload:
+            total = payload['count']
+        elif isinstance(payload, list):
+            total = len(payload)
         else:
             total = '-'
         
@@ -452,8 +486,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         })
         logger.info("user_list", extra=ctx)
         
-        # Construire Response depuis les données cachées
-        return Response(cached_data)
+        return self._success_response(payload)
 
         
     def create(self, request, *args, **kwargs):
@@ -491,14 +524,12 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             })
             logger.info("user_create_success", extra=ctx)
 
-            return Response(
-                {
-                    "success": True,
-                    'message': f'User "{user.get_full_name()}" created successfully',
-                    "data": UserSerializer(user).data,
-                },
-                status=status.HTTP_201_CREATED,
-            )
+            response_payload = {
+                'message': f'User "{user.get_full_name()}" created successfully',
+                'user': UserSerializer(user).data,
+            }
+
+            return self._success_response(response_payload, status_code=status.HTTP_201_CREATED)
 
     
     def partial_update(self, request, *args, **kwargs):
@@ -511,7 +542,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
                 # import time
                 # time.sleep(3)
-                user = self.get_object()
+                user = self._get_locked_user(pk=kwargs.get(self.lookup_field) or kwargs.get(self.lookup_url_kwarg or self.lookup_field))
                 serializer = self.get_serializer(user, data=request.data, partial=True)
                 serializer.is_valid(raise_exception=True)
                 updated_user = serializer.save()
@@ -528,11 +559,13 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 })
                 logger.info("user_update_success", extra=ctx)
 
-                return Response({
-                    "success": True,
+                response_payload = {
                     'message': f'User "{updated_user.get_full_name()}" updated successfully',
-                    "data": UserSerializer(updated_user).data,
-                })
+                    'changed_fields': changed_fields,
+                    'user': UserSerializer(updated_user).data,
+                }
+
+                return self._success_response(response_payload)
 
         except (User.DoesNotExist, Http404):
 
@@ -615,11 +648,10 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             logger.info("password_change_success", extra=ctx)
             
             
-            return Response({
-                'success': True,
+            return self._success_response({
                 'message': 'Password changed successfully',
                 'user': {
-                    'id': str(user.id),  
+                    'id': str(user.id),
                     'email': user.email,
                     'name': user.get_full_name()
                 }
@@ -667,7 +699,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 #     'error': UsersErrorMessages.USER_NOT_FOUND
                 # }, status=status.HTTP_404_NOT_FOUND)
 
-                user = self.get_object()
+                user = self._get_locked_user(pk=kwargs.get(self.lookup_field) or kwargs.get(self.lookup_url_kwarg or self.lookup_field))
 
                 # Mémoriser le client avant suppression
                 client = user.client_account
@@ -693,10 +725,9 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 # Filet de sécurité: s'assurer qu'un admin existe toujours
                 client.ensure_admin_invariants()
 
-                return Response({
-                    'success': True,
+                return self._success_response({
                     'message': f'User "{user_name}" deleted successfully'
-                }, status=status.HTTP_204_NO_CONTENT)
+                })
 
         except (User.DoesNotExist, Http404):
 
@@ -740,7 +771,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         """
         try:
             with transaction.atomic():
-                user = self.get_object()
+                user = self._get_locked_user(pk=pk)
 
                 # Mémoriser le client et infos avant modification
                 client = user.client_account
@@ -792,8 +823,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 # Filet de sécurité: s'assurer qu'un admin actif existe toujours
                 client.ensure_admin_invariants()
 
-                return Response({
-                    'success': True,
+                return self._success_response({
                     'message': f'User "{user_name}" archived successfully',
                     'user': {
                         'id': str(user.id),
@@ -801,7 +831,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         'name': user_name,
                         'is_active': user.is_active
                     }
-                }, status=status.HTTP_200_OK)
+                })
 
         except (User.DoesNotExist, Http404):
             ctx = ctx_from_request(request)
@@ -852,7 +882,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             if target_user and target_user.is_superuser and request_data.get('is_superuser') is False:
                 # This will be double-checked in the serializer, but good to check here too
                 client = target_user.client_account
-                other_superusers = client.users.filter(
+                other_superusers = client.users.select_for_update().filter(
                     is_superuser=True
                 ).exclude(id=target_user.id).count()
                 
@@ -874,9 +904,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     
         client = user.client_account
         
+        client_users = client.users.select_for_update()
+
         # Check if this is the last superuser
         if user.is_superuser:
-            other_superusers = client.users.filter(
+            other_superusers = client_users.filter(
                 is_superuser=True
             ).exclude(id=user.id).count()
             
@@ -891,7 +923,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         if user.role and user.role.name == 'Admin':
             # Compter les autres admins ou superusers
             from django.db.models import Q
-            other_admins_or_super = client.users.filter(
+            other_admins_or_super = client_users.filter(
                 Q(role__name='Admin') | Q(is_superuser=True)
             ).exclude(id=user.id).count()
             
@@ -979,10 +1011,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 client_id=self.get_client_id()
             )
             
-            return Response({
-                'success': True,
-                'data': performance_data
-            })
+            return self._success_response(performance_data)
             
         except Exception as e:
             raise StandardizedValidationError(
@@ -1080,15 +1109,16 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 client_id=self.get_client_id()
             )
             
-            return Response({
-                'success': True,
-                'data': team_performance,
+            response_payload = {
+                'team_performance': team_performance,
                 'team_info': {
                     'id': str(user.team.id),
                     'name': user.team.name,
                     'organization': user.team.organization.name
                 }
-            })
+            }
+
+            return self._success_response(response_payload)
             
         except Exception as e:
             raise StandardizedValidationError(
@@ -1125,18 +1155,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # Récupérer les utilisateurs managés
         managed_users = manager.get_managed_users()
         if not managed_users.exists():
-            return Response({
-                'success': True,
-                'data': {
-                    'manager': {
-                        'id': str(manager.id),
-                        'name': manager.get_full_name(),
-                        'is_manager': manager.is_manager()
-                    },
-                    'managed_users': [],
-                    'message': 'No managed users found'
-                }
-            })
+            empty_payload = {
+                'manager': {
+                    'id': str(manager.id),
+                    'name': manager.get_full_name(),
+                    'is_manager': manager.is_manager()
+                },
+                'managed_users': [],
+                'message': 'No managed users found'
+            }
+
+            return self._success_response(empty_payload)
         
         managed_user_ids = list(managed_users.values_list('id', flat=True))
         
@@ -1170,16 +1199,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 client_id=self.get_client_id()
             )
             
-            return Response({
-                'success': True,
-                'data': consolidated_performance,
+            response_payload = {
+                'consolidated_performance': consolidated_performance,
                 'manager_info': {
                     'id': str(manager.id),
                     'name': manager.get_full_name(),
                     'managed_teams': list(manager.managed_teams.values('id', 'name')),
                     'managed_organizations': list(manager.managed_organizations.values('id', 'name'))
                 }
-            })
+            }
+
+            return self._success_response(response_payload)
             
         except Exception as e:
             raise StandardizedValidationError(
@@ -1217,11 +1247,12 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     'managed_users_count': manager.get_managed_users().count()
                 })
             
-            return Response({
-                'success': True,
-                'data': managers_data,
+            payload = {
+                'managers': managers_data,
                 'total_managers': len(managers_data)
-            })
+            }
+
+            return self._success_response(payload)
         
         # Construire clé de cache
         client_id = self.get_client_id()
@@ -1255,9 +1286,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 })
             
             return {
-                'success': True,
-                'data': managers_data,
-                'total_managers': len(managers_data)
+                'data': {
+                    'managers': managers_data,
+                    'total_managers': len(managers_data)
+                },
+                'status': status.HTTP_200_OK,
             }
         
         # Cache les données
@@ -1268,7 +1301,12 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             tag=(client_id, 'users')
         )
         
-        return Response(cached_data)
+        if isinstance(cached_data, dict):
+            payload = cached_data.get('data', cached_data)
+        else:
+            payload = cached_data
+
+        return self._success_response(payload)
     
     @action(detail=False, methods=['get'], url_path='superusers')
     def superusers(self, request):
@@ -1341,9 +1379,8 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     is_active=True
                 ).exclude(is_superuser=True).count()
                 
-                return Response({
-                    'success': True,
-                    'data': superusers_data,
+                payload = {
+                    'superusers': superusers_data,
                     'statistics': {
                         'total_superusers': total_superusers,
                         'active_superusers': active_superusers,
@@ -1351,12 +1388,14 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         'admin_role_users_non_super': admin_role_users,
                         'total_administrators': active_superusers + admin_role_users
                     },
-                'permissions_info': {
+                    'permissions_info': {
                         'description': 'Superusers have full administrative rights within this tenant',
                         'can_grant_superuser': self._can_grant_superuser(request.user),
                         'current_user_is_superuser': request.user.is_superuser
                     }
-                })
+                }
+
+                return self._success_response(payload)
                 
             except Exception as e:
                 return self.handle_exception(e)
@@ -1420,20 +1459,22 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 ).exclude(is_superuser=True).count()
                 
                 return {
-                    'success': True,
-                    'data': superusers_data,
-                    'statistics': {
-                        'total_superusers': total_superusers,
-                        'active_superusers': active_superusers,
-                        'inactive_superusers': inactive_superusers,
-                        'admin_role_users_non_super': admin_role_users,
-                        'total_administrators': active_superusers + admin_role_users
+                    'data': {
+                        'superusers': superusers_data,
+                        'statistics': {
+                            'total_superusers': total_superusers,
+                            'active_superusers': active_superusers,
+                            'inactive_superusers': inactive_superusers,
+                            'admin_role_users_non_super': admin_role_users,
+                            'total_administrators': active_superusers + admin_role_users
+                        },
+                        'permissions_info': {
+                            'description': 'Superusers have full administrative rights within this tenant',
+                            'can_grant_superuser': self._can_grant_superuser(request.user),
+                            'current_user_is_superuser': request.user.is_superuser
+                        }
                     },
-                'permissions_info': {
-                        'description': 'Superusers have full administrative rights within this tenant',
-                        'can_grant_superuser': self._can_grant_superuser(request.user),
-                        'current_user_is_superuser': request.user.is_superuser
-                    }
+                    'status': status.HTTP_200_OK,
                 }
                 
             except Exception as e:
@@ -1447,7 +1488,12 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             tag=(client_id, 'users')
         )
         
-        return Response(cached_data)
+        if isinstance(cached_data, dict):
+            payload = cached_data.get('data', cached_data)
+        else:
+            payload = cached_data
+
+        return self._success_response(payload)
     
     @action(detail=False, methods=['post'], url_path='grant-superuser', throttle_classes=[SensitiveActionThrottle, StandardRateThrottle])
     def grant_superuser(self, request):  
@@ -1480,38 +1526,35 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     CoreErrorMessages.REQUIRED_FIELD.format(field='user_id')
                 )
             
-            # Récupérer l'utilisateur cible
             client_id = self.get_client_id()
-            try:
-                target_user = User.objects.get(
-                    id=user_id,
-                    client_account_id=client_id
-                )
-            except User.DoesNotExist:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.OBJECT_NOT_FOUND
-                )
-            
-            # Vérifier qu'on ne modifie pas son propre statut
-            if target_user == request.user:
-                raise StandardizedValidationError(
-                    "You cannot modify your own superuser status"
-                )
-            
-            # Si on retire le statut, vérifier que ce n'est pas le dernier
-            if not grant and target_user.is_superuser:
-                other_superusers = User.objects.filter(
-                    client_account_id=client_id,
-                    is_superuser=True
-                ).exclude(id=target_user.id).count()
-                
-                if other_superusers == 0:
-                    raise StandardizedValidationError(
-                        "Cannot remove superuser status from the last superuser"
-                    )
-            
-            # Appliquer le changement
+
             with transaction.atomic():
+                try:
+                    target_user = User.objects.select_for_update().get(
+                        id=user_id,
+                        client_account_id=client_id
+                    )
+                except User.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.OBJECT_NOT_FOUND
+                    )
+
+                if target_user == request.user:
+                    raise StandardizedValidationError(
+                        "You cannot modify your own superuser status"
+                    )
+
+                if not grant and target_user.is_superuser:
+                    other_superusers = User.objects.select_for_update().filter(
+                        client_account_id=client_id,
+                        is_superuser=True
+                    ).exclude(id=target_user.id).count()
+
+                    if other_superusers == 0:
+                        raise StandardizedValidationError(
+                            "Cannot remove superuser status from the last superuser"
+                        )
+
                 target_user.is_superuser = grant
                 if grant:
                     target_user.is_staff = True  # Superuser doit avoir is_staff
@@ -1525,12 +1568,10 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     "event": "superuser_status_changed",
                 })
                 logger.info("superuser_status_changed", extra=ctx)
-                
-                # Assurer les invariants
+
                 target_user.client_account.ensure_admin_invariants()
-            
-            return Response({
-                'success': True,
+
+            response_payload = {
                 'message': f"Superuser status {'granted' if grant else 'revoked'} successfully",
                 'user': {
                     'id': str(target_user.id),
@@ -1539,7 +1580,9 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     'is_superuser': target_user.is_superuser,
                     'is_staff': target_user.is_staff
                 }
-            })
+            }
+
+            return self._success_response(response_payload)
             
         except Exception as e:
             return self.handle_exception(e)

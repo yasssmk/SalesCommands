@@ -8,6 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count, Q, Prefetch, F
 from django.db import transaction
 from django.utils import timezone
+from django.http import Http404
 from core.cache_utils import (
     build_drf_cache_key,
     cache_get_set,
@@ -91,12 +92,39 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     ordering_fields = ['name', 'created_at', 'updated_at']
     ordering = ['name']
 
+    def _success_response(self, data=None, *, status_code=status.HTTP_200_OK, message=None, **extra):
+        """Return a standardized success payload."""
+        payload = {'success': True, 'data': data}
+        if message:
+            payload['message'] = message
+        if extra:
+            payload.update(extra)
+        return Response(payload, status=status_code)
+
+    def _get_locked_role(self, pk=None):
+        """Retrieve a role instance locked for update within the current transaction."""
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup_value = pk or self.kwargs.get(lookup_url_kwarg)
+
+        if lookup_value is None:
+            raise Http404
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        try:
+            obj = queryset.select_for_update().get(**{self.lookup_field: lookup_value})
+        except UserRole.DoesNotExist:
+            raise Http404
+
+        self.check_object_permissions(self.request, obj)
+        return obj
+
     def _other_admin_roles_exist(self, role: UserRole) -> bool:
         """Check if another admin-tier role exists for the same client."""
         if role is None:
             return False
 
-        return UserRole.objects.filter(
+        return UserRole.objects.select_for_update().filter(
             client_account_id=role.client_account_id,
             is_admin=True,
         ).exclude(pk=role.pk).exists()
@@ -337,7 +365,7 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=120,
+            ttl=300,
             tag=(client_id, 'roles'),
         )
 
@@ -358,11 +386,11 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # Validation et création
         serializer = self.get_serializer(data=request.data, context=self.get_serializer_context())
         serializer.is_valid(raise_exception=True)
-        
+
         # Transaction pour garantir l'intégrité
         with transaction.atomic():
             instance = serializer.save()
-            
+
             client_id = instance.client_account_id
             transaction.on_commit(lambda: self._invalidate_role_cache(client_id))
 
@@ -377,11 +405,11 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # Retourner avec le serializer complet pour affichage
         full_serializer = RoleSerializer(instance, context=self.get_serializer_context())
         
-        return Response({
-            'success': True,
-            'message': f"Role '{instance.name}' created successfully",
-            'data': full_serializer.data
-        }, status=status.HTTP_201_CREATED)
+        return self._success_response(
+            full_serializer.data,
+            status_code=status.HTTP_201_CREATED,
+            message=f"Role '{instance.name}' created successfully",
+        )
     
     def retrieve(self, request, *args, **kwargs):
         """
@@ -414,10 +442,7 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 )
             data['active_users'] = list(active_users)
         
-        return Response({
-            'success': True,
-            'data': data
-        })
+        return self._success_response(data)
     
     def update(self, request, *args, **kwargs):
         """
@@ -428,40 +453,42 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # self.check_admin_permission()
         
         partial = kwargs.pop('partial', False)
-        instance = self.get_object()
+        changed_fields = []
+        data = request.data
 
-        if self._is_last_admin_role(instance):
-            raise StandardizedValidationError(
-                CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED + " - Cannot modify the last admin role"
-            )
-      
-        # Protection du rôle Admin système
-        if instance.name == 'Admin':
-            # Empêcher de renommer le rôle Admin
-            new_name = request.data.get('name')
-            if new_name and new_name != 'Admin':
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED + " - Cannot rename the Admin role"
-                )
-            
-            # Empêcher de désactiver les permissions critiques
-            if request.data.get('read', None) == False:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable read permission for Admin role"
-                )
-            if request.data.get('write', None) == False or request.data.get('create', None) == False:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable write/create permission for Admin role"
-                )
-        
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-
-        changed_fields = sorted(serializer.validated_data.keys())
-        
         with transaction.atomic():
+            instance = self._get_locked_role()
+
+            if self._is_last_admin_role(instance):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED + " - Cannot modify the last admin role"
+                )
+
+            # Protection du rôle Admin système
+            if instance.name == 'Admin':
+                # Empêcher de renommer le rôle Admin
+                new_name = data.get('name')
+                if new_name and new_name != 'Admin':
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot rename the Admin role"
+                    )
+
+                # Empêcher de désactiver les permissions critiques
+                if data.get('read', None) is False:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable read permission for Admin role"
+                    )
+                if data.get('write', None) is False or data.get('create', None) is False:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable write/create permission for Admin role"
+                    )
+
+            serializer = self.get_serializer(instance, data=data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            changed_fields = sorted(serializer.validated_data.keys())
+
             instance = serializer.save()
-            
+
             client_id = instance.client_account_id
             transaction.on_commit(lambda: self._invalidate_role_cache(client_id))
 
@@ -474,12 +501,12 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         })
         logger.info('role_update_success', extra=ctx)
 
-        
-        return Response({
-            'success': True,
-            'message': f"Role '{instance.name}' updated successfully",
-            'data': serializer.data
-        })
+        response_serializer = RoleSerializer(instance, context=self.get_serializer_context())
+
+        return self._success_response(
+            response_serializer.data,
+            message=f"Role '{instance.name}' updated successfully",
+        )
     
     def partial_update(self, request, *args, **kwargs):
         """
@@ -489,42 +516,43 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # # Vérifier les permissions admin
         # self.check_admin_permission()
         
-        instance = self.get_object()
+        changed_fields = []
+        data = request.data
 
-        if self._is_last_admin_role(instance):
-            raise StandardizedValidationError(
-                CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED + " - Cannot modify the last admin role"
-            )
-       
-        # Protection du rôle Admin - empêcher de désactiver des permissions critiques
-        if instance.name == 'Admin':
-            # Vérifier si on essaie de désactiver des permissions critiques
-            if request.data.get('read', None) == False:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable read permission for Admin role"
-                )
-            if request.data.get('write', None) == False or request.data.get('create', None) == False:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable write/create permission for Admin role"
-                )
-            if request.data.get('modify', None) == False or request.data.get('update', None) == False:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable modify/update permission for Admin role"
-                )
-            if request.data.get('delete', None) == False:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable delete permission for Admin role"
-                )
-        
-        # Utiliser le serializer spécialisé pour PATCH
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-
-        changed_fields = sorted(serializer.validated_data.keys())
-        
         with transaction.atomic():
+            instance = self._get_locked_role()
+
+            if self._is_last_admin_role(instance):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED + " - Cannot modify the last admin role"
+                )
+
+            # Protection du rôle Admin - empêcher de désactiver des permissions critiques
+            if instance.name == 'Admin':
+                if data.get('read', None) is False:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable read permission for Admin role"
+                    )
+                if data.get('write', None) is False or data.get('create', None) is False:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable write/create permission for Admin role"
+                    )
+                if data.get('modify', None) is False or data.get('update', None) is False:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable modify/update permission for Admin role"
+                    )
+                if data.get('delete', None) is False:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable delete permission for Admin role"
+                    )
+
+            serializer = self.get_serializer(instance, data=data, partial=True)
+            serializer.is_valid(raise_exception=True)
+
+            changed_fields = sorted(serializer.validated_data.keys())
+
             instance = serializer.save()
-            
+
             client_id = instance.client_account_id
             transaction.on_commit(lambda: self._invalidate_role_cache(client_id))
 
@@ -537,12 +565,12 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         })
         logger.info('role_partial_update_success', extra=ctx)
 
-        
-        return Response({
-            'success': True,
-            'message': f"Role '{instance.name}' permissions updated successfully",
-            'data': serializer.data
-        })
+        response_serializer = RoleSerializer(instance, context=self.get_serializer_context())
+
+        return self._success_response(
+            response_serializer.data,
+            message=f"Role '{instance.name}' permissions updated successfully",
+        )
     
     def destroy(self, request, *args, **kwargs):
         """
@@ -556,34 +584,32 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         # # Vérifier les permissions admin
         # self.check_admin_permission()
         
-        instance = self.get_object()
-        
+        role_name = None
+        role_id = None
+        client_id = None
+
         # Validations métier avant suppression
         with transaction.atomic():
-             # 1. Empêcher la suppression du dernier rôle admin du client
+            instance = self._get_locked_role()
+
+            # 1. Empêcher la suppression du dernier rôle admin du client
             if self._is_last_admin_role(instance):
                 raise StandardizedValidationError(
                     CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED + " - Cannot delete the last admin role"
                 )
-            
+
             # 2. Vérifier qu'aucun utilisateur actif n'a ce rôle
             active_users_count = instance.users.filter(is_active=True).count()
-            if active_users_count is None:
-                prefetched_users = getattr(instance, 'prefetched_active_users', None)
-                if prefetched_users is not None:
-                    active_users_count = len(prefetched_users)
-                else:
-                    active_users_count = instance.users.filter(is_active=True).count()
             if active_users_count > 0:
                 raise StandardizedValidationError(
                     CoreErrorMessages.OBJECT_IN_USE.format(
                         fields=f"{active_users_count} active user(s) still have this role"
                     )
                 )
-            
+
             # 3. Dissocier les utilisateurs inactifs (soft delete)
             instance.users.filter(is_active=False).update(role=None, role_name=None)
-            
+
             # Log avant suppression
             role_name = instance.name
             role_id = instance.id
@@ -638,15 +664,16 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             organization_name=F('organization__name')
         )
         
-        return Response({
-            'success': True,
+        payload = {
             'role': {
                 'id': str(role.id),
                 'name': role.name
             },
             'users': list(users_data),
             'total_count': users_qs.count()
-        })
+        }
+
+        return self._success_response(payload)
     
     @action(detail=False, methods=['get'])
     def summary(self, request):
@@ -711,16 +738,15 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         if not admin_roles:
             critical_roles.append({'warning': 'No admin role defined!'})
         
-        return Response({
-            'success': True,
-            'summary': {
-                'statistics': stats,
-                'role_distribution': list(role_distribution),
-                'critical_roles': critical_roles,
-                'client_id': str(client_id),
-                'generated_at': timezone.now().isoformat()
-            }
-        })
+        data = {
+            'statistics': stats,
+            'role_distribution': list(role_distribution),
+            'critical_roles': critical_roles,
+            'client_id': str(client_id),
+            'generated_at': timezone.now().isoformat()
+        }
+
+        return self._success_response(data)
     
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None):
@@ -766,8 +792,8 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
         serializer = RoleSerializer(new_role, context=self.get_serializer_context())
         
-        return Response({
-            'success': True,
-            'message': f"Role '{new_role.name}' created as duplicate of '{source_role.name}'",
-            'data': serializer.data
-        }, status=status.HTTP_201_CREATED)
+        return self._success_response(
+            serializer.data,
+            status_code=status.HTTP_201_CREATED,
+            message=f"Role '{new_role.name}' created as duplicate of '{source_role.name}'",
+        )
