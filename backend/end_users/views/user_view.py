@@ -343,7 +343,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=180,  # 3 minutes
+            ttl=300,  # 5 minutes
             tag=(client_id, 'users')
         )
         
@@ -361,7 +361,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Liste des utilisateurs avec cache applicatif
         GET /client/users/
         
-        Cache: 120s sur les données sérialisées (dict Python, pas Response)
+        Cache: 300s sur les données sérialisées (dict Python, pas Response)
         """
         from core.cache_utils import build_drf_cache_key, cache_get_set, get_permissions_version, _is_redis_backend
         # raise PermissionDenied("Test 403: You do not have permission to view users")
@@ -418,21 +418,26 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 serializer = self.get_serializer(page, many=True)
                 # Retourner un dict Python simple (sérialisable par Redis)
                 return {
-                    'results': serializer.data,
-                    'count': self.paginator.page.paginator.count,
-                    'next': self.paginator.get_next_link(),
-                    'previous': self.paginator.get_previous_link(),
+                    'success': True,
+                    'data': {
+                        'results': serializer.data,
+                        'count': self.paginator.page.paginator.count,
+                        'next': self.paginator.get_next_link(),
+                        'previous': self.paginator.get_previous_link(),
+                    }
                 }
             
             # Pas de pagination
             serializer = self.get_serializer(queryset, many=True)
-            return serializer.data
-        
+            return {
+                'success': True,
+                'data': serializer.data
+            }
         # Cache les données (dict Python, pas Response)
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=120,
+            ttl=300,
             tag=(client_id, 'users')
         )
         
@@ -667,7 +672,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 #     'error': UsersErrorMessages.USER_NOT_FOUND
                 # }, status=status.HTTP_404_NOT_FOUND)
 
-                user = self.get_object()
+                # user = self.get_object()
+
+                user = User.objects.select_for_update().filter(
+                    id=kwargs.get('pk'),
+                    client_account_id=self.get_client_id()
+                ).first()
+                
+                if not user:
+                    raise StandardizedValidationError(
+                        UsersErrorMessages.USER_NOT_FOUND
+                    )
 
                 # Mémoriser le client avant suppression
                 client = user.client_account
@@ -740,7 +755,15 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         """
         try:
             with transaction.atomic():
-                user = self.get_object()
+                user = User.objects.select_for_update().filter(
+                    id=pk,
+                    client_account_id=self.get_client_id()
+                ).first()
+                
+                if not user:
+                   raise StandardizedValidationError(
+                        UsersErrorMessages.USER_NOT_FOUND
+                    )
 
                 # Mémoriser le client et infos avant modification
                 client = user.client_account
@@ -758,10 +781,19 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 
                 # 2. Empêcher de supprimer le dernier admin actif
                 if user.is_active and user.is_last_active_admin():
-                    raise StandardizedValidationError(
-                        f"Cannot archive user '{user.email}': last active administrator. "
-                        "Promote another user to admin first."
-                    )
+                    from django.db.models import Q
+                    other_active_admins = User.objects.select_for_update().filter(
+                        client_account_id=client.id,
+                        is_active=True
+                    ).filter(
+                        Q(is_superuser=True) | Q(role__name='Admin')
+                    ).exclude(id=user.id).count()
+                    
+                    if other_active_admins == 0:
+                        raise StandardizedValidationError(
+                            f"Cannot archive user '{user.email}': last active administrator. "
+                            "Promote another user to admin first."
+                        )
                 
                 # 3. Vérifier les permissions superuser
                 if user.is_superuser and not request.user.is_superuser:
@@ -876,7 +908,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         
         # Check if this is the last superuser
         if user.is_superuser:
-            other_superusers = client.users.filter(
+            other_superusers = client.users.select_for_update().filter(
                 is_superuser=True
             ).exclude(id=user.id).count()
             

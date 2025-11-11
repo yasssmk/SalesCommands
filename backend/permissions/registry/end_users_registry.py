@@ -78,7 +78,7 @@ END_USERS_REGISTRY: Dict[str, ModulePermissions] = {
         },
         'update': {
             'admin': 'client',      # Admin can update any organization
-            'manager': 'noe',       # Manager cannot update  organization
+            'manager': 'none',       # Manager cannot update  organization
             'individual': 'none',    # Individuals cannot update organizations
         },
         'delete': {

@@ -150,7 +150,10 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
         return {
             'success': True,
-            'data': serializer.data,
+            'data': {
+                'results': serializer.data, 
+                'count': len(serializer.data),
+            },
             'metadata': metadata,
         }
 
@@ -713,13 +716,27 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         
         return Response({
             'success': True,
-            'summary': {
+            'data': {
                 'statistics': stats,
                 'role_distribution': list(role_distribution),
                 'critical_roles': critical_roles,
                 'client_id': str(client_id),
                 'generated_at': timezone.now().isoformat()
             }
+        })
+    
+    @action(detail=False, methods=['get'], url_path='permissions-matrix')
+    def permissions_matrix(self, request):
+        """Retourne la matrice complète des permissions (REGISTRY)."""
+        from permissions.registry import REGISTRY
+        
+        ctx = ctx_from_request(request)
+        ctx.update({'event': 'permissions_matrix_retrieve'})
+        logger.info('permissions_matrix_retrieve', extra=ctx)
+        
+        return Response({
+            'success': True,
+            'data': REGISTRY
         })
     
     @action(detail=True, methods=['post'])

@@ -293,18 +293,26 @@ WSGI_APPLICATION = 'salescommands.wsgi.application'
 
 
 # Database
+# DATABASES = {
+#     'default': {
+#         **env.db(),  # Load connection params from DATABASE_URL env var
+#         'OPTIONS': {
+#             # PostgreSQL connection options for Supabase
+#             # statement_timeout: Max time for a single SQL query (10s)
+#             # idle_in_transaction_session_timeout: Max idle time in transaction (10s)
+#             # Both timeouts prevent long-running queries and zombie connections
+#             'options': '-c statement_timeout=6000 -c idle_in_transaction_session_timeout=10000'
+#         }
+#     }
+# }
+
 DATABASES = {
-    'default': {
-        **env.db(),  # Load connection params from DATABASE_URL env var
-        'OPTIONS': {
-            # PostgreSQL connection options for Supabase
-            # statement_timeout: Max time for a single SQL query (10s)
-            # idle_in_transaction_session_timeout: Max idle time in transaction (10s)
-            # Both timeouts prevent long-running queries and zombie connections
-            'options': '-c statement_timeout=6000 -c idle_in_transaction_session_timeout=10000'
-        }
-    }
+    "default": env.db("DATABASE_URL")
 }
+DATABASES["default"]["OPTIONS"] = {
+    "options": "-c statement_timeout=6000 -c idle_in_transaction_session_timeout=10000"
+}
+
 
 # ==============================
 # API CACHE CONFIGURATION

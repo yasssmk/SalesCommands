@@ -196,31 +196,43 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         """
         UPDATED: Check if user is the last superuser instead of last admin role.
         This prevents lockout by ensuring at least one superuser exists.
+        
+        ✅ SECURITY: Uses select_for_update() to prevent TOCTOU race conditions
+        IMPORTANT: Must be called within transaction.atomic() block
         """
         client = user.client_account
         # Check if this is the last superuser (active or inactive) to prevent total lockout
         if user.is_superuser:
-            # Count other superusers besides this one
-            other_superusers = client.users.filter(
-                is_superuser=True
-            ).exclude(id=user.id).count()
-            return other_superusers == 0
+            # ✅ VERROU: Count other superusers with pessimistic lock
+            # Convert to list() because select_for_update() doesn't work with count()
+            # Performance impact is minimal (typically < 10 superusers per tenant)
+            other_superusers = list(
+                client.users.select_for_update().filter(
+                    is_superuser=True
+                ).exclude(id=user.id).values_list('id', flat=True)
+            )
+            return len(other_superusers) == 0
         return False
     
     def _is_last_active_admin(self, user):
         """
         Check if user is the last ACTIVE superuser.
         Used for preventing deactivation of the last active superuser.
+        
+        ✅ SECURITY: Uses select_for_update() to prevent TOCTOU race conditions
+        IMPORTANT: Must be called within transaction.atomic() block
         """
         client = user.client_account
         # Check if this is the last active superuser
         if user.is_superuser and user.is_active:
-            # Count other active superusers besides this one
-            other_active_superusers = client.users.filter(
-                is_superuser=True,
-                is_active=True
-            ).exclude(id=user.id).count()
-            return other_active_superusers == 0
+            # ✅ VERROU: Count other active superusers with pessimistic lock
+            other_active_superusers = list(
+                client.users.select_for_update().filter(
+                    is_superuser=True,
+                    is_active=True
+                ).exclude(id=user.id).values_list('id', flat=True)
+            )
+            return len(other_active_superusers) == 0
         return False
         
     def get_role_permissions(self, obj):
@@ -239,7 +251,18 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         return obj.is_manager()
     
     def get_managed_users_count(self, obj):
-        """Nombre d'utilisateurs managés"""
+        """
+        Nombre d'utilisateurs managés
+        
+        ✅ OPTIMIZATION: Uses annotation if available to avoid N+1 queries
+        The queryset in UserViewSet.list() should include this annotation:
+            .annotate(managed_users_count=Count('managed_teams__members', distinct=True))
+        """
+        # Try to use pre-computed annotation first (if available from queryset)
+        if hasattr(obj, 'managed_users_count_annotated'):
+            return obj.managed_users_count_annotated
+        
+        # Fallback to method call (less efficient but functional)
         return obj.get_managed_users().count()
     
     # === VALIDATION MÉTIER ===
@@ -507,11 +530,22 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     def update(self, instance, validated_data):
         """
         UPDATED: Handle superuser validation instead of admin role validation
+        
+        ✅ SECURITY: All validations use select_for_update() to prevent TOCTOU
+        Transaction is handled by the calling view (ViewSet.update/partial_update)
         """
+        from django.db import transaction
+        
+        # ✅ Ensure we're in a transaction (defensive check)
+        if not transaction.get_connection().in_atomic_block:
+            raise StandardizedValidationError(
+                "Serializer update must be called within transaction.atomic() block"
+            )
+        
         client = instance.client_account
 
         # === RÈGLE DERNIER SUPERUSER ===
-        is_last_superuser = self._is_last_admin(instance)  # Using renamed method
+        is_last_superuser = self._is_last_admin(instance)
         is_last_active_superuser = self._is_last_active_admin(instance)
 
         # Tentative de retrait du statut superuser ?
@@ -554,12 +588,14 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             # Seulement bloquer si on retire le rôle admin à quelqu'un qui n'est PAS superuser
             # et qui est le dernier admin
             if old_is_admin_role and not new_is_admin_role and not instance.is_superuser:
-                # Compter les autres admins (par rôle ou superuser)
-                other_admins = client.users.filter(
-                    models.Q(role__name=admin_role.name) | models.Q(is_superuser=True)
-                ).exclude(id=instance.id).count()
+                from django.db.models import Q
+                other_admins = list(
+                    client.users.select_for_update().filter(
+                        Q(role__name=admin_role.name) | Q(is_superuser=True)
+                    ).exclude(id=instance.id).values_list('id', flat=True)
+                )
                 
-                if other_admins == 0:
+                if len(other_admins) == 0:
                     raise StandardizedValidationError(CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED)
 
         # Appliquer les autres champs

@@ -2832,23 +2832,29 @@ class UserBulkViewSet(UserViewSet):
         # If removing superuser status, check it's not the last one
         elif target_user_ids and request_data.get('is_superuser') is False:
             # Identifier superusers actuels dans le batch
-            current_superusers_in_batch = User.objects.filter(
+            current_superusers_in_batch = list(
+            User.objects.filter(
                 id__in=target_user_ids,
                 client_account_id=current_user.client_account_id,
                 is_superuser=True
             ).values_list('id', flat=True)
-            
-            # Compter autres superusers HORS du batch
-            other_superusers = User.objects.filter(
+        )
+        
+        # ✅ VERROU: Compter autres superusers HORS du batch avec lock pessimiste
+        # Convert to list() because select_for_update() doesn't work with count()
+        # Performance impact is minimal (typically < 10 superusers per tenant)
+        other_superusers = list(
+            User.objects.select_for_update().filter(
                 client_account_id=current_user.client_account_id,
                 is_superuser=True
-            ).exclude(id__in=current_superusers_in_batch).count()
-            
-            if other_superusers == 0:
-                raise StandardizedValidationError(
-                    "Cannot remove superuser status from the last superuser(s). "
-                    "Promote another user to superuser first."
-                )
+            ).exclude(id__in=current_superusers_in_batch).values_list('id', flat=True)
+        )
+        
+        if len(other_superusers) == 0:
+            raise StandardizedValidationError(
+                "Cannot remove superuser status from the last superuser(s). "
+                "Promote another user to superuser first."
+            )
             
     def _validate_bulk_deactivation_last_admin(
         self, 
@@ -3095,12 +3101,16 @@ class UserBulkViewSet(UserViewSet):
         # - is_superuser == True
         # qui n'est PAS dans le batch de changement de rôle
         
-        other_admins_count = User.objects.filter(
-            client_account_id=client_id,
-            is_active=True  # On ne compte que les actifs
-        ).filter(
-            Q(role__name='Admin') | Q(is_superuser=True)
-        ).exclude(id__in=admins_in_batch).count()
+        other_admins = list(
+            User.objects.select_for_update().filter(
+                client_account_id=client_id,
+                is_active=True  # On ne compte que les actifs
+            ).filter(
+                Q(role__name='Admin') | Q(is_superuser=True)
+            ).exclude(id__in=admins_in_batch).values_list('id', flat=True)
+        )
+
+        other_admins_count = len(other_admins)
         
         # ===== ÉTAPE 4 : Décision selon mode =====
         if other_admins_count == 0:
