@@ -11,7 +11,7 @@ import Stack from '@mui/material/Stack';
 
 // project-imports
 import FormRoleAdd from './FormRoleAdd';
-// import FormRoleEdit from './FormRoleEdit';
+import FormRoleEdit from './FormRoleEdit';
 import MainCard from 'components/MainCard';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 
@@ -25,7 +25,7 @@ export default function UserModal({ open, modalToggler, role }) {
   const roleForm = useMemo(() => {
     if (loading) return null;
     return role && role.id ? (
-      <FormUserEdit role={role} roleId={role.id} closeModal={closeModal} />
+      <FormRoleEdit role={role} roleId={role.id} closeModal={closeModal} />
     ) : (
       <FormRoleAdd closeModal={closeModal} />
     );

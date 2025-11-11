@@ -137,6 +137,9 @@ function RoleTable({
         disableSortBy: true,
         enableSorting: false,
         cell: ({ row }) => {
+          const role = row.original;
+          const isAdminRole = Boolean(role?.is_admin);
+
           return (
             <Stack direction="row" alignItems="center" justifyContent="center" spacing={0}>
               <Tooltip title="View">
@@ -150,16 +153,19 @@ function RoleTable({
                   <EyeOutlined />
                 </IconButton>
               </Tooltip>
-              <Tooltip title="Edit">
-                <IconButton
-                  color="secondary"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (onEdit) onEdit(row.original);
-                  }}
-                >
-                  <EditOutlined />
-                </IconButton>
+              <Tooltip title={isAdminRole ? 'Admin role cannot be edited' : 'Edit'}>
+                <span>
+                  <IconButton
+                    color="secondary"
+                    disabled={isAdminRole}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onEdit) onEdit(row.original);
+                    }}
+                  >
+                    <EditOutlined />
+                  </IconButton>
+                </span>
               </Tooltip>
               <Tooltip title="Delete">
                 <IconButton

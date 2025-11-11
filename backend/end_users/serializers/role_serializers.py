@@ -5,8 +5,21 @@ from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
+from core.logging import get_logger, ctx_from_request
 from ..models import UserRole
 
+
+def _has_other_admin_roles(role: UserRole) -> bool:
+    """Return True when another admin-tier role exists for the same client."""
+    if role is None:
+        return False
+
+    return UserRole.objects.filter(
+        client_account_id=role.client_account_id,
+        is_admin=True,
+    ).exclude(pk=role.pk).exists()
+
+logger = get_logger(__name__)
 
 class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
@@ -63,6 +76,8 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     
     def get_users_count(self, obj):
         """Nombre total d'utilisateurs avec ce rôle"""
+        if hasattr(obj, 'users_count'):
+            return obj.users_count
         if hasattr(obj, '_prefetched_users_count'):
             return obj._prefetched_users_count
         return obj.users.count()
@@ -71,6 +86,8 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         """Nombre d'utilisateurs actifs avec ce rôle"""
         if hasattr(obj, 'active_users_count'):
             return obj.active_users_count
+        if hasattr(obj, 'prefetched_active_users'):
+            return len(obj.prefetched_active_users)
         return obj.users.filter(is_active=True).count()
     
     def to_internal_value(self, data):
@@ -213,6 +230,11 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                                     f"These would be active after update: {', '.join(active_tiers)}"
                             )
                         )
+                
+                if (self.instance.is_admin or self.instance.name == 'Admin') and not _has_other_admin_roles(self.instance):
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED + " - Cannot modify the last admin role"
+                    )
             
             # === Validation des permissions logiques ===
             # Si on peut delete, on devrait pouvoir modify
@@ -238,13 +260,18 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         """
         instance = super().create(validated_data)
         
-        # Log pour audit
-        user = self.context.get('request').user if self.context.get('request') else None
-        if user:
-            user_email = user.email if hasattr(user, 'email') else str(user)
-            tier = instance.get_tier() if hasattr(instance, 'get_tier') else 'unknown'
-            print(f"[AUDIT] Role '{instance.name}' (tier: {tier}) created by {user_email} for client {instance.client_account_id}")
-        
+        request = self.context.get('request') if self.context else None
+        if request and getattr(request, 'user', None):
+            ctx = ctx_from_request(request)
+            ctx.update({
+                'event': 'role_serializer_create',
+                'role_id': str(instance.id),
+                'role_name': instance.name,
+                'tier': instance.get_tier() if hasattr(instance, 'get_tier') else 'unknown',
+                'client_id': str(getattr(instance, 'client_account_id', '-')),
+            })
+            logger.info('role_serializer_create', extra=ctx)
+
         return instance
     
     def update(self, instance, validated_data):
@@ -262,13 +289,23 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                     CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable write permission for Admin role"
                 )
         
+        if (instance.is_admin or instance.name == 'Admin') and not _has_other_admin_roles(instance):
+            raise StandardizedValidationError(
+                CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED + " - Cannot modify the last admin role"
+            )
+        
         instance = super().update(instance, validated_data)
         
-        # Log pour audit
-        user = self.context.get('request').user if self.context.get('request') else None
-        if user:
-            user_email = user.email if hasattr(user, 'email') else str(user)
-            print(f"[AUDIT] Role '{instance.name}' updated by {user_email}")
+        request = self.context.get('request') if self.context else None
+        if request and getattr(request, 'user', None):
+            ctx = ctx_from_request(request)
+            ctx.update({
+                'event': 'role_serializer_update',
+                'role_id': str(instance.id),
+                'role_name': instance.name,
+                'fields_updated': sorted(validated_data.keys()),
+            })
+            logger.info('role_serializer_update', extra=ctx)
         
         return instance
     
@@ -388,8 +425,17 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
                 )
             
             # Log l'action
-            print(f"[INFO] Creating role '{attrs.get('name')}' with tier: "
-                f"admin={is_admin}, manager={is_manager}, individual={is_individual}")
+            request = self.context.get('request') if self.context else None
+            if request:
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    'event': 'role_create_validate',
+                    'role_name': attrs.get('name'),
+                    'is_admin': bool(is_admin),
+                    'is_manager': bool(is_manager),
+                    'is_individual': bool(is_individual),
+                })
+                logger.info('role_create_validate', extra=ctx)
             
             # Validation cohérence permissions
             if attrs['delete'] and not attrs['modify']:
@@ -538,10 +584,22 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
                         )
                     )
                 
-                # Log le changement
-                print(f"[INFO] Updating role tiers - Final state: "
-                    f"admin={final_is_admin}, manager={final_is_manager}, "
-                    f"individual={final_is_individual}")
+                request = self.context.get('request') if self.context else None
+                if request:
+                    ctx = ctx_from_request(request)
+                    ctx.update({
+                        'event': 'role_update_validate',
+                        'role_id': str(getattr(instance, 'id', '-')),
+                        'final_is_admin': bool(final_is_admin),
+                        'final_is_manager': bool(final_is_manager),
+                        'final_is_individual': bool(final_is_individual),
+                    })
+                    logger.info('role_update_validate', extra=ctx)
+            
+            if (instance.is_admin or instance.name == 'Admin') and not _has_other_admin_roles(instance):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED + " - Cannot modify the last admin role"
+                )
             
             # === VALIDATION DES PERMISSIONS ===
             # Si delete est activé, modify devrait l'être aussi
@@ -585,9 +643,17 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             # Ajout des champs canoniques
             'create': instance.write,
             'update': instance.modify,
-            'users_count': instance.users.filter(is_active=True).count(),
+            'users_count': self._get_active_users_count(instance),
             'updated_at': instance.updated_at.isoformat()
         }
+    
+    @staticmethod
+    def _get_active_users_count(instance):
+        if hasattr(instance, 'active_users_count'):
+            return instance.active_users_count
+        if hasattr(instance, 'prefetched_active_users'):
+            return len(instance.prefetched_active_users)
+        return instance.users.filter(is_active=True).count()
 
 
 class RoleListSerializer(serializers.ModelSerializer):
