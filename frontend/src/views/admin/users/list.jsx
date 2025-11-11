@@ -19,7 +19,6 @@ import UserModal from 'sections/admin/users/UserModal';
 import UserBulkEditModal from 'sections/admin/users/UserBulkEditModal';
 import AlertUserDelete from 'sections/admin/users/AlertUserDelete';
 import AlertUserBulkDelete from 'sections/admin/users/AlertUserBulkDelete';
-import UserTable from 'sections/admin/users/UserTable';
 import ReusableTable from 'components/table/Table';
 import SeatsSummary from 'sections/admin/users/SeatsSummary';
 

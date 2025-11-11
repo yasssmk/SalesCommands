@@ -45,46 +45,52 @@ const FEATURE_FLAGS = {
  * Tous les messages en anglais comme demandé dans les règles
  */
 const admin = {
-  id: 'administration',
-  title: 'administration', // Clé i18n au lieu du texte hardcodé
+  id: 'administration-group',
+  title: 'administration',
   type: 'group',
-  icon: icons.SettingOutlined,
   children: [
     {
-      id: 'user-management',
-      title: 'user-management', // Clé i18n
-      type: 'item',
-      url: '/admin/users',
-      icon: icons.UserOutlined,
-      breadcrumbs: true,
-      wip: false,
-    },
-    {
-      id: 'team-management', 
-      title: 'team-management', // Clé i18n
-      type: 'item',
-      // Don't use the URL if disabled - it prevents accidental navigation
-      url: isFeatureEnabled('TEAM_MANAGEMENT') 
-        ? '/admin/teams' 
-        : '#',
-      icon: icons.TeamOutlined,
-      breadcrumbs: false,
-      disabled: !isFeatureEnabled('TEAM_MANAGEMENT'),
-      tooltip: !isFeatureEnabled('TEAM_MANAGEMENT') ? 'Soon' : null,
-    },
-    {
-      id: 'roles-permissions',
-      title: 'roles-permissions', // Clé i18n
-      type: 'item',
-      url: isFeatureEnabled('ROLES_PERMISSIONS') 
-        ? '/admin/roles' 
-        : '#',
-      icon: icons.SafetyOutlined,
-      breadcrumbs: false,
-      disabled: !isFeatureEnabled('ROLES_PERMISSIONS'),
-      tooltip: !isFeatureEnabled('ROLES_PERMISSIONS') ? 'Soon' : null,
+      id: 'administration-collapse',        
+      title: 'administration',               
+      type: 'collapse',                      
+      icon: icons.SettingOutlined,          
+      breadcrumbs: true,                     
+      children: [
+        {
+          id: 'user-management',
+          title: 'user-management',
+          type: 'item',
+          url: '/admin/users',
+          icon: icons.UserOutlined,
+          breadcrumbs: true,
+        },
+        {
+          id: 'team-management', 
+          title: 'team-management',
+          type: 'item',
+          url: isFeatureEnabled('TEAM_MANAGEMENT') 
+            ? '/admin/teams' 
+            : '#',
+          icon: icons.TeamOutlined,
+          breadcrumbs: true,
+          disabled: !isFeatureEnabled('TEAM_MANAGEMENT'),
+          tooltip: !isFeatureEnabled('TEAM_MANAGEMENT') ? 'Soon' : null,
+        },
+        {
+          id: 'roles-permissions',
+          title: 'roles-permissions',
+          type: 'item',
+          url: isFeatureEnabled('ROLES_PERMISSIONS') 
+            ? '/admin/roles' 
+            : '#',
+          icon: icons.SafetyOutlined,
+          breadcrumbs: true,
+          disabled: !isFeatureEnabled('ROLES_PERMISSIONS'),
+          tooltip: !isFeatureEnabled('ROLES_PERMISSIONS') ? 'Soon' : null,
+        }
+      ]
     }
-  ] // Show all items
+  ]
 };
 
 export default admin;

@@ -6,11 +6,12 @@
 **Pré-requis**: Lire [MODULE_STANDARDIZATION_GUIDE.md](./MODULE_STANDARDIZATION_GUIDE.md)
 
 ---
-## PHASE 0: CONCEPTION DU FRONT END  
+## PHASE 0: CONCEPTION DU FRONT END 
+- [ ] Menu drawer - Activer 
 - [ ] Choix des composants - Composant MUI qui vient du modele
 - [ ] Design UX - A quoi le page va ressembler
 - [ ] User experience - comportement de TOUT les composants (pagination, tri, search, modale, ...)
-- [ ] i18n & Breadcrumb
+- [ ] i18n & Breadcrumb ( home / sous menu / page)
           
 ## PHASE 1: CONCEPTION & SETUP (Jour 1 - 4h)
 

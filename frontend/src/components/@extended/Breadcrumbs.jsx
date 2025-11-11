@@ -149,17 +149,67 @@ const getCollapse = (menu) => {
   // collapse item
   if (!custom && main && main.type === 'collapse' && main.breadcrumbs === true) {
     CollapseIcon = main.icon ? main.icon : ApartmentOutlined;
-    mainContent = (
-      <NextLink href={main.url} passHref legacyBehavior>
-        <Typography
-          variant={location === main.url ? 'subtitle1' : 'h6'}
-          sx={{ textDecoration: 'none', cursor: 'pointer' }}
-          color={location === main.url ? 'text.primary' : 'text.secondary'}
-        >
-          {icons && <CollapseIcon style={iconSX} />}
-          {getTranslatedTitle(main.title)}
-        </Typography>
-      </NextLink>
+  //   mainContent = (
+  //     <NextLink href={main.url} passHref legacyBehavior>
+  //       <Typography
+  //         variant={location === main.url ? 'subtitle1' : 'h6'}
+  //         sx={{ textDecoration: 'none', cursor: 'pointer' }}
+  //         color={location === main.url ? 'text.primary' : 'text.secondary'}
+  //       >
+  //         {icons && <CollapseIcon style={iconSX} />}
+  //         {getTranslatedTitle(main.title)}
+  //       </Typography>
+  //     </NextLink>
+  //   );
+
+  //   breadcrumbContent = (
+  //     <MainCard
+  //       border={card}
+  //       sx={card === false ? { mb: 3, bgcolor: 'inherit', backgroundImage: 'none', ...sx } : { mb: 3, ...sx }}
+  //       {...others}
+  //       content={card}
+  //       shadow="none"
+  //     >
+  //       <Grid
+  //         container
+  //         direction={rightAlign ? 'row' : 'column'}
+  //         justifyContent={rightAlign ? 'space-between' : 'flex-start'}
+  //         alignItems={rightAlign ? 'center' : 'flex-start'}
+  //         spacing={1}
+           
+  //       >
+  //         <Grid >
+  //           <MuiBreadcrumbs aria-label="breadcrumb" maxItems={maxItems || 8} separator={separatorIcon}>
+  //             <NextLink href="/" passHref legacyBehavior>
+  //               <Typography color="text.secondary" variant="h6" sx={{ textDecoration: 'none', cursor: 'pointer' }}>
+  //                 {icons && <HomeOutlined style={iconSX} />}
+  //                 {icon && !icons && <HomeFilled style={{ ...iconSX, marginRight: 0 }} />}
+  //                 {(!icon || icons) && 'Home'}
+  //               </Typography>
+  //             </NextLink>
+  //             {mainContent}
+  //           </MuiBreadcrumbs>
+  //         </Grid>
+  //         {title && titleBottom && (
+  //           <Grid sx={{ mt: card === false ? 0.25 : 1 }}>
+  //             <Typography variant="h2">{getTranslatedTitle(main.title)}</Typography>
+  //           </Grid>
+  //         )}
+  //       </Grid>
+  //       {card === false && divider !== false && <Divider sx={{ mt: 2 }} />}
+  //     </MainCard>
+  //   );
+  // }
+
+  mainContent = (
+      <Typography
+        variant="h6"
+        sx={{ textDecoration: 'none' }}
+        color="text.secondary"
+      >
+        {icons && <CollapseIcon style={iconSX} />}
+        {getTranslatedTitle(main.title)}
+      </Typography>
     );
 
     breadcrumbContent = (

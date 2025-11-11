@@ -12,10 +12,10 @@ import Typography from '@mui/material/Typography';
 import Divider from '@mui/material/Divider';
 
 // project imports
-import Breadcrumbs from 'components/@extended/Breadcrumbs';
 import RoleTable from 'sections/admin/roles/RoleTable';
 import PermissionsMatrix from 'sections/admin/roles/PermissionsMatrix';
 import useLocalStorage from 'hooks/useLocalStorage';
+import RoleModal from 'sections/admin/roles/RoleModal';
 
 // ==============================|| MOCK DATA ||============================== //
 
@@ -93,6 +93,10 @@ export default function RolesListPage() {
 
   // Selected tier for matrix preview
   const [previewTier, setPreviewTier] = useState('manager');
+
+  // Modal states
+  const [roleModal, setRoleModal] = useState(false);
+  const [selectedRole, setSelectedRole] = useState(null);
 
   // ==============================|| MOCK DATA PROCESSING ||============================== //
 
@@ -197,8 +201,8 @@ export default function RolesListPage() {
    * Handle opening "Add Role" modal
    */
   const handleAddRole = useCallback(() => {
-    console.log('📝 Add Role clicked - Modal will open here');
-    // TODO: setRoleModal(true) in next phase
+    setSelectedRole(null)
+    setRoleModal(true);
   }, []);
 
   /**
@@ -213,8 +217,8 @@ export default function RolesListPage() {
    * Handle editing role
    */
   const handleEditRole = useCallback((role) => {
-    console.log('✏️ Edit Role:', role);
-    // TODO: setSelectedRole(role) + setRoleModal(true) in next phase
+    setSelectedRole(role);
+    setRoleModal(true); 
   }, []);
 
   /**
@@ -237,14 +241,6 @@ export default function RolesListPage() {
 
   return (
     <>
-      {/* Breadcrumb Navigation */}
-      <Breadcrumbs 
-        custom 
-        heading="Roles & Permissions"
-        links={breadcrumbLinks}
-        divider={true}
-      />
-
       {/* Main Content */}
       <Grid container spacing={3}>
         
@@ -268,6 +264,12 @@ export default function RolesListPage() {
             onDelete={handleDeleteRole}
           />
         </Grid>
+
+        <RoleModal 
+          open={roleModal} 
+          modalToggler={setRoleModal} 
+          role={selectedRole} 
+        />
 
         {/* Permissions Matrix Preview Section */}
         <Grid item xs={12}>
