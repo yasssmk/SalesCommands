@@ -34,7 +34,7 @@ import { displaySuccessSnackbar } from 'utils/displayError';
 import { handleFormikError } from 'utils/formErrorHandler';
 
 // api hooks
-// import { insertRole } from 'api/admin/roles';
+import { insertRole } from 'api/admin/roles';
 
 // assets
 import InfoCircleOutlined from '@ant-design/icons/InfoCircleOutlined';

@@ -16,54 +16,12 @@ import RoleTable from 'sections/admin/roles/RoleTable';
 import PermissionsMatrix from 'sections/admin/roles/PermissionsMatrix';
 import useLocalStorage from 'hooks/useLocalStorage';
 import RoleModal from 'sections/admin/roles/RoleModal';
+import AlertRoleDelete from 'sections/admin/roles/AlertRoleDelete';
 import { useGetRoles } from 'api/admin/roles';
 import { useAuth } from 'hooks/useAuth';
 import { tenantKey } from 'api/_swr';
 
-// ==============================|| MOCK DATA ||============================== //
 
-/**
- * Mock roles data for development
- * This will be replaced by real API calls in next phase
- */
-const MOCK_ROLES = [
-  {
-    id: 1,
-    name: 'Sales Manager',
-    is_admin: false,
-    is_manager: true,
-    is_individual: false,
-    users_count: 5,
-    created_at: '2024-01-15T10:30:00Z'
-  },
-  {
-    id: 2,
-    name: 'Account Executive',
-    is_admin: false,
-    is_manager: false,
-    is_individual: true,
-    users_count: 12,
-    created_at: '2024-01-20T14:45:00Z'
-  },
-  {
-    id: 3,
-    name: 'System Administrator',
-    is_admin: true,
-    is_manager: false,
-    is_individual: false,
-    users_count: 2,
-    created_at: '2024-01-10T09:00:00Z'
-  },
-  {
-    id: 4,
-    name: 'Team Lead',
-    is_admin: false,
-    is_manager: true,
-    is_individual: false,
-    users_count: 8,
-    created_at: '2024-02-01T11:20:00Z'
-  }
-];
 // ==============================|| SORT FIELD MAPPING ||============================== //
 
 /**
@@ -120,6 +78,8 @@ export default function RolesListPage() {
   // Modal states
   const [roleModal, setRoleModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState(null);
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [roleToDelete, setRoleToDelete] = useState(null);
 
   // ==============================|| COMPUTE ORDERING STRING ||============================== //
 
@@ -227,9 +187,9 @@ export default function RolesListPage() {
    * Handle deleting role
    */
   const handleDeleteRole = useCallback((role) => {
-    console.log('🗑️ Delete Role:', role);
-    // TODO: Implement AlertRoleDelete in next phase
-  }, []);
+      setRoleToDelete(role);
+      setDeleteModal(true);
+    }, []);
 
   // ==============================|| RENDER ||============================== //
 
@@ -265,6 +225,17 @@ export default function RolesListPage() {
           modalToggler={setRoleModal} 
           role={selectedRole} 
         />
+
+        {/* Role Delete Confirmation */}
+        <AlertRoleDelete
+          role={roleToDelete}
+          open={deleteModal}
+          handleClose={() => {
+            setDeleteModal(false);
+            setRoleToDelete(null);
+          }}
+        />
+
 
         {/* Permissions Matrix Preview Section */}
         <Grid item xs={12}>

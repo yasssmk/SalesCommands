@@ -34,7 +34,7 @@ import { displaySuccessSnackbar } from 'utils/displayError';
 import { handleFormikError } from 'utils/formErrorHandler';
 
 // api hooks
-// import { updateRole } from 'api/admin/roles';
+import { updateRole } from 'api/admin/roles';
 
 // assets
 import InfoCircleOutlined from '@ant-design/icons/InfoCircleOutlined';
@@ -116,9 +116,7 @@ function FormRoleEdit({ closeModal, role: initialRole }) {
       setIsSubmitting(true);
       try {
         const payload = sanitizePayload(values);
-        // TODO: replace with real API call once backend endpoint is ready
-        // const result = await updateRole(initialRole.id, payload);
-        const result = { success: true };
+        const result = await updateRole(initialRole.id, payload);
 
         if (result.success) {
           displaySuccessSnackbar('Role updated successfully');

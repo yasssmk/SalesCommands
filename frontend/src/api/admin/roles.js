@@ -4,7 +4,7 @@ import useSWR, { mutate } from 'swr';
 import { useMemo } from 'react';
 import { useAuth } from 'hooks/useAuth';
 import { api } from 'utils/axiosClient';
-import { tenantKey } from 'api/_swr';
+import { tenantKey, revalidateMultiple } from 'api/_swr';
 
 // ==============================|| ENDPOINTS ||============================== //
 
@@ -126,7 +126,9 @@ export async function insertRole(payload) {
 
     if (result.success) {
       // Revalider le cache
-      mutate((key) => Array.isArray(key) && key[0]?.includes('/client/roles'));
+     revalidateMultiple([
+        endpoints.roles  
+      ]);
       return { success: true, data: result.data };
     }
 
@@ -144,8 +146,11 @@ export async function updateRole(roleId, payload) {
     const result = await api.patch(endpoints.roleDetail(roleId), payload);
 
     if (result.success) {
-      // Revalider le cache
-      mutate((key) => Array.isArray(key) && key[0]?.includes('/client/roles'));
+      // Revalidation avec revalidateMultiple
+      revalidateMultiple([
+        endpoints.roles,                      // Liste roles
+        `${endpoints.roles}${roleId}/`        // Role spécifique
+      ]);
       return { success: true, data: result.data };
     }
 
@@ -163,8 +168,10 @@ export async function deleteRole(roleId) {
     const result = await api.delete(endpoints.roleDetail(roleId));
 
     if (result.success || result.status === 204) {
-      // Revalider le cache
-      mutate((key) => Array.isArray(key) && key[0]?.includes('/client/roles'));
+      //Revalidation avec revalidateMultiple
+      revalidateMultiple([
+        endpoints.roles  // Liste roles
+      ]);
       return { success: true };
     }
 

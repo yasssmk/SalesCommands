@@ -280,12 +280,76 @@ return cache_get_set(key, producer, ttl=300, tag=(client_id, 'entities'))
 - update{Entity}(id, data)
 - delete{Entity}(id)
 - bulk operations functions
+
 ```
+// ✅ CRITICAL: Revalidation croisée
+// Si votre module a des relations avec d'autres modules, 
+// TOUJOURS invalider les caches dépendants
+
+// Exemple: Si {entities} référencent des Users
+export async function create{Entity}(data) {
+  const result = await api.post(endpoints.{entities}, data);
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.{entities},      // ✅ Module principal
+      '/client/users/',          // ✅ Module dépendant
+      '/client/other-module/'    // ✅ Autres modules impactés
+    ]);
+    return { success: true, data: result.data };
+  }
+  
+  return { success: false, error: result.error };
+}
 
 **✅ Checklist:**
 - [ ] tenantKey() utilisé
 - [ ] swrFetcher configuré
 - [ ] Memoization avec useMemo
+
+## 6.1.1 Identifier Relations Cross-Module (CRITICAL)
+
+**Avant d'implémenter les mutations, TOUJOURS identifier les dépendances:**
+
+**Questions à se poser:**
+- Est-ce que d'autres modules affichent un COUNT de mes entités ?
+  - Exemple: User a `role` FK → Page Roles affiche `users_count`
+  - ✅ Action: Invalider `/client/roles/` après create/update/delete User
+
+- Est-ce que mes entités référencent d'autres modules via FK ?
+  - Exemple: Task a FK `assigned_to` (User)
+  - ✅ Action: Invalider `/client/users/` si on change assigned_to
+
+- Est-ce que d'autres modules filtrent par mes entités ?
+  - Exemple: Activities filtrées par Contact
+  - ✅ Action: Invalider `/client/activities/` après update Contact
+
+**Template de vérification:**
+```javascript
+// Pour CHAQUE mutation (create, update, delete, bulk):
+// 1. Module principal
+revalidateMultiple([
+  endpoints.{myModule},           // ✅ Toujours
+  
+  // 2. Modules qui affichent COUNT de mes entités
+  '/client/{module-with-count}/', // Si existe
+  
+  // 3. Modules que je référence via FK
+  '/client/{fk-module}/',         // Si mes entités ont FK
+  
+  // 4. Stats globales impactées
+  '/client/client-accounts/',     // Si impacte seats/quotas
+]);
+```
+
+**✅ Checklist Relations:**
+- [ ] Liste exhaustive des modules référençant le mien
+- [ ] Liste exhaustive des modules référencés par le mien
+- [ ] Revalidation dans create{Entity}()
+- [ ] Revalidation dans update{Entity}()
+- [ ] Revalidation dans delete{Entity}()
+- [ ] Revalidation dans TOUTES bulk operations
+
 
 ### 6.2 Table Component
 **Référence**: Guide §8.2 Component Pattern

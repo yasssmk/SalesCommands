@@ -792,6 +792,157 @@ def invalidate_cache_on_delete(sender, instance, **kwargs):
     pass
 ```
 
+### 5.5 Cross-Module Cache Invalidation
+
+**RÈGLE CRITIQUE: Toujours invalider les caches des modules dépendants**
+
+**Concept:**
+Quand une entité change dans le module A et que le module B affiche des informations dérivées de A (counts, stats, listes filtrées), le cache de B DOIT être invalidé.
+
+**Pattern Frontend (SWR):**
+```javascript
+// frontend/src/api/admin/{module}.js
+
+import { revalidateMultiple } from 'api/_swr';
+
+// ✅ CORRECT: Revalidation croisée
+export async function updateUser(userId, userData) {
+  const result = await api.patch(`${endpoints.users}${userId}/`, userData);
+
+  if (result.success) {
+    // Invalider TOUS les modules impactés
+    revalidateMultiple([
+      endpoints.users,                     // Module principal
+      `${endpoints.users}${userId}/`,      // Entité spécifique
+      '/client/client-accounts/',          // Stats seats
+      '/client/roles/'                     // ✅ Roles.users_count impacté
+    ]);
+
+    return { success: true, user: result.data };
+  }
+  
+  return { success: false, error: result.error };
+}
+```
+
+**❌ INCORRECT: Oublier modules dépendants**
+```javascript
+// ❌ BAD: Seulement module principal
+export async function updateUser(userId, userData) {
+  const result = await api.patch(`${endpoints.users}${userId}/`, userData);
+
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.users
+      // ❌ OUBLI: /client/roles/ reste stale!
+    ]);
+  }
+}
+```
+
+**Scénarios typiques nécessitant revalidation croisée:**
+
+**Scénario 1: Compteurs (counts)**
+```javascript
+// User a FK role → Page Roles affiche users_count
+// ✅ Mutation User DOIT invalider /client/roles/
+
+export async function createUser(userData) {
+  const result = await api.post(endpoints.users, userData);
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.users,
+      '/client/roles/'          // ✅ users_count change
+    ]);
+  }
+}
+```
+
+**Scénario 2: Foreign Keys**
+```javascript
+// Task a FK assigned_to (User) → Changer assigned_to
+// ✅ Mutation Task DOIT invalider /client/users/
+
+export async function updateTask(taskId, taskData) {
+  const result = await api.patch(`${endpoints.tasks}${taskId}/`, taskData);
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.tasks,
+      '/client/users/'          // ✅ User.tasks_count peut changer
+    ]);
+  }
+}
+```
+
+**Scénario 3: Filtres/Recherches**
+```javascript
+// Contact change → Activities filtrées par contact stale
+// ✅ Mutation Contact DOIT invalider /client/activities/
+
+export async function updateContact(contactId, contactData) {
+  const result = await api.patch(`${endpoints.contacts}${contactId}/`, contactData);
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.contacts,
+      '/client/activities/'     // ✅ Filtres contact à jour
+    ]);
+  }
+}
+```
+
+**Scénario 4: Quotas/Stats Globales**
+```javascript
+// User créé → Stats global seats_used change
+// ✅ Mutation User DOIT invalider /client/client-accounts/
+
+export async function createUser(userData) {
+  const result = await api.post(endpoints.users, userData);
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.users,
+      '/client/client-accounts/'  // ✅ seats_used incrémenté
+    ]);
+  }
+}
+```
+
+**✅ CHECKLIST Revalidation Croisée:**
+- [ ] Cartographier TOUTES les relations FK sortantes
+- [ ] Identifier modules affichant COUNT de mes entités
+- [ ] Identifier modules filtrant/recherchant mes entités
+- [ ] Ajouter revalidation dans create{Entity}()
+- [ ] Ajouter revalidation dans update{Entity}()
+- [ ] Ajouter revalidation dans delete{Entity}()
+- [ ] Ajouter revalidation dans TOUTES bulk operations
+- [ ] Tester: modifier entité → vérifier autres pages à jour
+
+**Pattern Backend (Optionnel):**
+Si invalidation côté backend, signal peut aussi invalider modules croisés:
+```python
+# backend/{module}/signals/cache_invalidation.py
+
+@receiver(post_save, sender='{module}.{Entity}')
+def invalidate_cache_on_save(sender, instance, **kwargs):
+    if are_signals_disabled():
+        return
+    
+    client_id = getattr(instance, "client_account_id", None)
+    if not client_id:
+        return
+    
+    def _invalidate():
+        # Module principal
+        invalidate_tag(client_id, '{module_name}')
+        
+        # ✅ Modules dépendants
+        if hasattr(instance, 'role_id'):
+            invalidate_tag(client_id, 'roles')
+```
+
 ---
 
 ## 6. PERMISSIONS & AUTHORIZATION
@@ -1191,19 +1342,80 @@ export function useGet{Entities}(params = {}) {
   };
 }
 
+/**
+ * CREATE ENTITY
+ * ✅ CRITICAL: Always revalidate related modules
+ */
 export async function create{Entity}(data) {
-  const url = tenantKey('/{module}/{entities}/');
-  return await api.post(url, data);
+  try {
+    const url = tenantKey('/{module}/{entities}/');
+    const result = await api.post(url, data);
+
+    if (result.success) {
+      // ✅ Revalidate main module + related modules
+      revalidateMultiple([
+        '/{module}/{entities}/',        // Main module
+        '/client/related-module/'       // Related modules (if any)
+      ]);
+      
+      return { success: true, data: result.data };
+    }
+
+    return { success: false, error: result.error };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }
 
+/**
+ * UPDATE ENTITY
+ * ✅ CRITICAL: Revalidate specific entity + list + related modules
+ */
 export async function update{Entity}(id, data) {
-  const url = tenantKey(`/{module}/{entities}/${id}/`);
-  return await api.patch(url, data);
+  try {
+    const url = tenantKey(`/{module}/{entities}/${id}/`);
+    const result = await api.patch(url, data);
+
+    if (result.success) {
+      // ✅ Revalidate main module + specific entity + related modules
+      revalidateMultiple([
+        '/{module}/{entities}/',        // List
+        `/{module}/{entities}/${id}/`,  // Specific entity
+        '/client/related-module/'       // Related modules (if any)
+      ]);
+      
+      return { success: true, data: result.data };
+    }
+
+    return { success: false, error: result.error };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }
 
+/**
+ * DELETE ENTITY
+ * ✅ CRITICAL: Revalidate main module + related modules
+ */
 export async function delete{Entity}(id) {
-  const url = tenantKey(`/{module}/{entities}/${id}/`);
-  return await api.delete(url);
+  try {
+    const url = tenantKey(`/{module}/{entities}/${id}/`);
+    const result = await api.delete(url);
+
+    if (result.success || result.status === 204) {
+      // ✅ Revalidate main module + related modules
+      revalidateMultiple([
+        '/{module}/{entities}/',        // Main module
+        '/client/related-module/'       // Related modules (if any)
+      ]);
+      
+      return { success: true };
+    }
+
+    return { success: false, error: result.error };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }
 ```
 
@@ -1539,6 +1751,37 @@ class Test{Entity}CRUD:
 - [ ] Race conditions (TOCTOU)
 - [ ] Cache invalidation
 - [ ] PII sanitization in logs
+
+**✅ Test Cross-Module Revalidation (Frontend):**
+```javascript
+// Test manuel critique - À faire pour chaque nouveau module
+
+describe('Cross-Module Cache Revalidation', () => {
+  test('Creating {entity} invalidates related module cache', async () => {
+    // 1. Charger page du module dépendant (ex: Roles)
+    // 2. Noter la valeur d'un count (ex: users_count = 5)
+    // 3. Créer une entité qui impacte ce count (ex: User avec role X)
+    // 4. Retourner sur page du module dépendant
+    // 5. ✅ VÉRIFIER: users_count = 6 (mise à jour automatique)
+    // 6. ❌ SI users_count = 5 → revalidation manquante!
+  });
+
+  test('Updating {entity} invalidates related module cache', async () => {
+    // Même pattern pour update
+  });
+
+  test('Deleting {entity} invalidates related module cache', async () => {
+    // Même pattern pour delete
+  });
+});
+```
+
+**Scénario de test typique:**
+1. Ouvrir page Roles → Noter `users_count` pour "Manager" = 10
+2. Créer nouveau User avec role="Manager"
+3. Retourner sur page Roles
+4. ✅ ATTENDU: `users_count` pour "Manager" = 11 (sans F5)
+5. ❌ SI = 10 → Bug: revalidation `/client/roles/` manquante
 
 ---
 
