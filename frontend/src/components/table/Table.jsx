@@ -93,6 +93,7 @@ import PlusOutlined from '@ant-design/icons/PlusOutlined';
  * @param {string} props.emptyDescription - Empty state description
  * @param {ReactNode} props.expandedRowContent - Function to render expanded row content
  * @param {boolean} props.enableExpanding - Enable row expansion (default: false)
+ * @param {boolean} props.enableImport - Enable import CSV button (default: true)
  */
 function ReusableTable({ 
   data, 
@@ -120,7 +121,8 @@ function ReusableTable({
   emptyMessage = 'No data found',
   emptyDescription = 'Start by adding your first item to the system',
   expandedRowContent = null,
-  enableExpanding = false
+  enableExpanding = false,
+  enableImport = true
 }) {
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
@@ -323,6 +325,7 @@ function ReusableTable({
               exportData={exportData}                  
               exportHeaders={headers}                  
               exportFilename={exportFilename}
+              enableImport={enableImport}
             />
           </Stack>
         </Stack>
@@ -475,7 +478,8 @@ ReusableTable.propTypes = {
   emptyMessage: PropTypes.string,
   emptyDescription: PropTypes.string,
   expandedRowContent: PropTypes.func,
-  enableExpanding: PropTypes.bool
+  enableExpanding: PropTypes.bool,
+  enableImport: PropTypes.bool
 };
 
 export default ReusableTable;

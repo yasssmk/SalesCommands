@@ -149,7 +149,7 @@ function RoleTable({
 
           return (
             <Stack direction="row" alignItems="center" justifyContent="center" spacing={0}>
-              <Tooltip title="View">
+              {/* <Tooltip title="View">
                 <IconButton
                   color="secondary"
                   onClick={(e) => {
@@ -159,7 +159,7 @@ function RoleTable({
                 >
                   <EyeOutlined />
                 </IconButton>
-              </Tooltip>
+              </Tooltip> */}
               <Tooltip title={isAdminRole ? 'Admin role cannot be edited' : 'Edit'}>
                 <span>
                   <IconButton
@@ -216,6 +216,7 @@ function RoleTable({
       exportFilename="roles-list.csv"
       emptyMessage="No roles found"
       emptyDescription="Start by creating your first role to manage user permissions"
+      enableImport={false}
     />
   );
 }

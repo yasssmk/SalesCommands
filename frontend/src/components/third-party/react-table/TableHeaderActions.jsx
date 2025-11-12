@@ -35,7 +35,8 @@ export default function TableHeaderActions({
   onImport,
   exportData = [],
   exportHeaders = [],
-  exportFilename = 'export.csv'
+  exportFilename = 'export.csv',
+  enableImport = true
 }) {
 
   console.log('🔵 TableHeaderActions render:', { 
@@ -157,17 +158,19 @@ export default function TableHeaderActions({
           </ListItemText>
         </MenuItem>
 
-        <Divider />
+        {enableImport && <Divider />}
 
         {/* Import CSV */}
-        <MenuItem onClick={handleImportClick} sx={{ py: 1 }}>
-          <ListItemIcon>
-            <DownloadOutlined style={{ fontSize: '18px', color: theme.palette.text.secondary }} />
-          </ListItemIcon>
-          <ListItemText>
-            <Typography variant="h6" color="text.secondary">Import CSV</Typography>
-          </ListItemText>
-        </MenuItem>
+        {enableImport && (
+          <MenuItem onClick={handleImportClick} sx={{ py: 1 }}>
+            <ListItemIcon>
+              <DownloadOutlined style={{ fontSize: '18px', color: theme.palette.text.secondary }} />
+            </ListItemIcon>
+            <ListItemText>
+              <Typography variant="h6" color="text.secondary">Import CSV</Typography>
+            </ListItemText>
+          </MenuItem>
+        )}
       </Menu>
     </Box>
   );
@@ -180,5 +183,6 @@ TableHeaderActions.propTypes = {
   onImport: PropTypes.func,
   exportData: PropTypes.array,
   exportHeaders: PropTypes.array,
-  exportFilename: PropTypes.string
+  exportFilename: PropTypes.string,
+  enableImport: PropTypes.bool
 };
