@@ -10,6 +10,12 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Divider from '@mui/material/Divider';
+import Button from '@mui/material/Button';
+import Collapse from '@mui/material/Collapse';
+import Stack from '@mui/material/Stack';
+
+import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
+import EyeOutlined from '@ant-design/icons/EyeOutlined';
 
 // project imports
 import RoleTable from 'sections/admin/roles/RoleTable';
@@ -20,6 +26,7 @@ import AlertRoleDelete from 'sections/admin/roles/AlertRoleDelete';
 import { useGetRoles } from 'api/admin/roles';
 import { useAuth } from 'hooks/useAuth';
 import { tenantKey } from 'api/_swr';
+import TierBadge from 'sections/admin/roles/TierBadge';
 
 
 // ==============================|| SORT FIELD MAPPING ||============================== //
@@ -80,6 +87,9 @@ export default function RolesListPage() {
   const [selectedRole, setSelectedRole] = useState(null);
   const [deleteModal, setDeleteModal] = useState(false);
   const [roleToDelete, setRoleToDelete] = useState(null);
+
+  // Matrix visibility state
+  const [showMatrix, setShowMatrix] = useState(true);
 
   // ==============================|| COMPUTE ORDERING STRING ||============================== //
 
@@ -191,6 +201,20 @@ export default function RolesListPage() {
       setDeleteModal(true);
     }, []);
 
+  /**
+   * Handle toggling permissions matrix visibility
+   */
+  const handleToggleMatrix = useCallback(() => {
+    setShowMatrix((prev) => !prev);
+  }, []);
+
+  /**
+   * Handle changing preview tier
+   */
+  const handleTierChange = useCallback((tier) => {
+    setPreviewTier(tier);
+  }, []);
+
   // ==============================|| RENDER ||============================== //
 
   return (
@@ -236,28 +260,100 @@ export default function RolesListPage() {
           }}
         />
 
-
-        {/* Permissions Matrix Preview Section */}
+       {/* Permissions Matrix Preview Section */}
         <Grid item xs={12}>
           <Card>
             <CardContent>
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="h5" gutterBottom>
-                  Permissions Matrix Preview
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  This matrix shows the permissions structure for the "{previewTier}" tier.
-                  Permissions are defined at the system level and automatically applied to all roles of the same tier.
-                </Typography>
+              {/* Header with Title and Show/Hide Button */}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Box>
+                  <Typography variant="h5" gutterBottom>
+                    Permissions Matrix Preview
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    View the complete permissions structure for each tier level
+                  </Typography>
+                </Box>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={showMatrix ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                  onClick={handleToggleMatrix}
+                  sx={{ minWidth: 120 }}
+                >
+                  {showMatrix ? 'Hide' : 'Show'}
+                </Button>
               </Box>
-              
-              <Divider sx={{ mb: 3 }} />
-              
-              <PermissionsMatrix tier={previewTier} showLegend={true} />
+
+              {/* Tier Selection Buttons */}
+              <Collapse in={showMatrix}>
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
+                    Select Tier to Preview:
+                  </Typography>
+                  <Stack direction="row" spacing={2}>
+                    <Box
+                      onClick={() => handleTierChange('admin')}
+                      sx={{
+                        cursor: 'pointer',
+                        opacity: previewTier === 'admin' ? 1 : 0.5,
+                        transform: previewTier === 'admin' ? 'scale(1.05)' : 'scale(1)',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          opacity: 1,
+                          transform: 'scale(1.05)'
+                        }
+                      }}
+                    >
+                      <TierBadge tier="admin" size="medium" />
+                    </Box>
+                    <Box
+                      onClick={() => handleTierChange('manager')}
+                      sx={{
+                        cursor: 'pointer',
+                        opacity: previewTier === 'manager' ? 1 : 0.5,
+                        transform: previewTier === 'manager' ? 'scale(1.05)' : 'scale(1)',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          opacity: 1,
+                          transform: 'scale(1.05)'
+                        }
+                      }}
+                    >
+                      <TierBadge tier="manager" size="medium" />
+                    </Box>
+                    <Box
+                      onClick={() => handleTierChange('individual')}
+                      sx={{
+                        cursor: 'pointer',
+                        opacity: previewTier === 'individual' ? 1 : 0.5,
+                        transform: previewTier === 'individual' ? 'scale(1.05)' : 'scale(1)',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          opacity: 1,
+                          transform: 'scale(1.05)'
+                        }
+                      }}
+                    >
+                      <TierBadge tier="individual" size="medium" />
+                    </Box>
+                  </Stack>
+                </Box>
+
+                <Divider sx={{ mb: 3 }} />
+
+                {/* Permissions Matrix */}
+                <Box>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    This matrix shows the permissions structure for the <strong>"{previewTier}"</strong> tier.
+                    Permissions are defined at the system level and automatically applied to all roles of the same tier.
+                  </Typography>
+                  <PermissionsMatrix tier={previewTier} showLegend={true} />
+                </Box>
+              </Collapse>
             </CardContent>
           </Card>
         </Grid>
-
       </Grid>
     </>
   );

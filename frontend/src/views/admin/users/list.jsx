@@ -454,7 +454,7 @@ const handleBulkDeleteComplete = useCallback(() => {
 
           return (
             <Stack direction="row" alignItems="center" justifyContent="center" spacing={0}>
-              <Tooltip title="View">
+              {/* <Tooltip title="View">
                 <IconButton
                   color="secondary.500"
                   onClick={(e) => {
@@ -464,7 +464,7 @@ const handleBulkDeleteComplete = useCallback(() => {
                 >
                   {collapseIcon}
                 </IconButton>
-              </Tooltip>
+              </Tooltip> */}
               <Tooltip title="Edit">
                 <IconButton
                   color="secondary.500"

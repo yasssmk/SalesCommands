@@ -102,7 +102,7 @@ function PermissionsMatrix({ tier, showLegend = true, compact = false }) {
     }
 
     return (
-      <Stack direction="row" spacing={1} alignItems="center">
+      <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ width: '100%' }}>
         <IconComponent 
           fontSize="small" 
           color={config.color}
@@ -167,7 +167,7 @@ function PermissionsMatrix({ tier, showLegend = true, compact = false }) {
                 hover
                 sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
               >
-                <TableCell component="th" scope="row">
+                <TableCell component="th" scope="row" >
                   <Typography variant="body2" fontWeight={500}>
                     {formatModuleName(module)}
                   </Typography>
@@ -176,7 +176,7 @@ function PermissionsMatrix({ tier, showLegend = true, compact = false }) {
                   const scope = getScope(module, action, tier);
                   return (
                     <TableCell key={action} align="center">
-                      <ScopeCell scope={scope} />
+                      <ScopeCell scope={scope}  />
                     </TableCell>
                   );
                 })}
