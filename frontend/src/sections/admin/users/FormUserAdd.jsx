@@ -30,7 +30,8 @@ import * as Yup from 'yup';
 import { useFormik, Form, FormikProvider } from 'formik';
 
 // api hooks
-import { useGetUserRoles, useGetOrganizations, useGetTeams, insertUser } from 'api/admin/users';
+import { useGetOrganizations, useGetTeams, insertUser } from 'api/admin/users';
+import { useGetUserRoles } from 'api/admin/roles';
 
 // project imports
 import Avatar from 'components/@extended/Avatar';

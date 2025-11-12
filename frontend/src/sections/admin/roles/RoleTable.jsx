@@ -55,19 +55,26 @@ function RoleTable({
 }) {
   const theme = useTheme();
 
-  // ==============================|| HELPER: GET TIER FROM FLAGS ||============================== //
+  // ==============================|| SORT MAPPING ||============================== //
   
   /**
    * Convert role flags to tier string
    * Backend has is_admin, is_manager, is_individual flags
    * Frontend uses single tier value for simplicity
    */
-  const getTierFromFlags = (role) => {
-    if (role.is_admin) return 'admin';
-    if (role.is_manager) return 'manager';
-    if (role.is_individual) return 'individual';
-    return 'individual'; // Default fallback
-  };
+  // const getTierFromFlags = (role) => {
+  //   if (role.is_admin) return 'admin';
+  //   if (role.is_manager) return 'manager';
+  //   if (role.is_individual) return 'individual';
+  //   return 'individual'; // Default fallback
+  // };
+
+  const SORT_FIELD_MAP = {
+  name: 'name',
+  tier: 'tier', 
+  users_count: 'users_count',
+  created_at: 'created_at'
+};
 
   // ==============================|| COLUMNS DEFINITION ||============================== //
 
@@ -92,8 +99,8 @@ function RoleTable({
         header: 'Tier',
         accessorKey: 'tier',
         enableSorting: true,
-        cell: ({ row }) => {
-          const tier = getTierFromFlags(row.original);
+        cell: ({ getValue}) => {
+          const tier = getValue();;
           return <TierBadge tier={tier} />;
         }
       },

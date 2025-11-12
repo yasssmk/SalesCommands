@@ -26,7 +26,8 @@ import * as Yup from 'yup';
 import { useFormik, Form, FormikProvider } from 'formik';
 
 // api
-import { useGetUserRoles, useGetOrganizations, useGetTeams, bulkUpdateUsers } from 'api/admin/users';
+import { useGetOrganizations, useGetTeams, bulkUpdateUsers } from 'api/admin/users';
+import { useGetUserRoles } from 'api/admin/roles';
 import { displaySuccessSnackbar, displayWarningSnackbar } from 'utils/displayError';
 import { handleFormikError } from 'utils/formErrorHandler';
 

@@ -69,7 +69,7 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             return 'manager'
         elif obj.is_individual:
             return 'individual'
-        return 'unknown'
+        return 'individual'
     
     def get_client_account(self, obj):
         return self.client_id
@@ -670,7 +670,7 @@ class RoleListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name',
             'read', 'write', 'modify', 'delete',
-            'is_admin', 'is_manager', 'is_individual',
+            'tier', 'is_admin', 'is_manager', 'is_individual',
             'tier',
             'users_count'
         ]
@@ -683,7 +683,7 @@ class RoleListSerializer(serializers.ModelSerializer):
             return 'manager'
         elif obj.is_individual:
             return 'individual'
-        return 'unknown'
+        return 'individual'
     
     def to_representation(self, instance):
         """Ajouter les champs canoniques en sortie"""

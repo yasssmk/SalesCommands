@@ -397,7 +397,7 @@ def audit_log(action: str, module: str, user, scope: str, allowed: bool, **extra
     log_context = {
         'event': 'permission_check',
         'action': action,
-        'module': module,
+        'biz_module': module,
         'user_id': user_display,
         'scope': scope,
         'allowed': allowed,

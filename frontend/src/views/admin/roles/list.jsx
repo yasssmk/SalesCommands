@@ -16,6 +16,9 @@ import RoleTable from 'sections/admin/roles/RoleTable';
 import PermissionsMatrix from 'sections/admin/roles/PermissionsMatrix';
 import useLocalStorage from 'hooks/useLocalStorage';
 import RoleModal from 'sections/admin/roles/RoleModal';
+import { useGetRoles } from 'api/admin/roles';
+import { useAuth } from 'hooks/useAuth';
+import { tenantKey } from 'api/_swr';
 
 // ==============================|| MOCK DATA ||============================== //
 
@@ -61,6 +64,18 @@ const MOCK_ROLES = [
     created_at: '2024-02-01T11:20:00Z'
   }
 ];
+// ==============================|| SORT FIELD MAPPING ||============================== //
+
+/**
+ * Map frontend column IDs to backend field names
+ * Backend uses is_admin for tier sorting
+ */
+const COLUMN_TO_BACKEND_FIELD = {
+  name: 'name',
+  tier: 'tier',           
+  users_count: 'users_count',
+  created_at: 'created_at'
+};
 
 // ==============================|| ROLES & PERMISSIONS - LIST ||============================== //
 
@@ -78,17 +93,25 @@ const MOCK_ROLES = [
  * @page
  */
 export default function RolesListPage() {
+
+  const { tenantId } = useAuth();
   
   // ==============================|| STATE MANAGEMENT ||============================== //
 
-  // Pagination state
+  // Pagination state with localStorage persistence
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useLocalStorage('roles-page-size', 10);
+  
+  // Validate pageSize
+  const validPageSize = useMemo(() => {
+    const size = Number(pageSize);
+    return !isNaN(size) && size > 0 ? size : 10;
+  }, [pageSize]);
   
   // Search state
   const [search, setSearch] = useState('');
   
-  // Sorting state
+  // Sorting state (TanStack Table format)
   const [sorting, setSorting] = useState([]);
 
   // Selected tier for matrix preview
@@ -98,87 +121,66 @@ export default function RolesListPage() {
   const [roleModal, setRoleModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState(null);
 
-  // ==============================|| MOCK DATA PROCESSING ||============================== //
+  // ==============================|| COMPUTE ORDERING STRING ||============================== //
 
   /**
-   * Filter and paginate mock data
-   * This simulates server-side filtering and pagination
+   * Convert TanStack sorting to Django ordering format
+   * Example: [{id: 'name', desc: true}] → '-name'
    */
-  const processedData = useMemo(() => {
-    let filtered = [...MOCK_ROLES];
-
-    // Apply search filter
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filtered = filtered.filter(role => 
-        role.name.toLowerCase().includes(searchLower)
-      );
+  const ordering = useMemo(() => {
+    if (!sorting || !Array.isArray(sorting) || sorting.length === 0) {
+      return '';
     }
 
-    // Apply sorting
-    if (sorting.length > 0) {
-      const { id: sortKey, desc } = sorting[0];
-      filtered.sort((a, b) => {
-        let aVal = a[sortKey];
-        let bVal = b[sortKey];
+    return sorting
+      .map(({ id, desc }) => {
+        const backendField = COLUMN_TO_BACKEND_FIELD[id] || id;
+        return desc ? `-${backendField}` : backendField;
+      })
+      .join(',');
+  }, [sorting]);
 
-        // Handle tier sorting (convert flags to tier string)
-        if (sortKey === 'tier') {
-          const getTier = (role) => {
-            if (role.is_admin) return 'admin';
-            if (role.is_manager) return 'manager';
-            return 'individual';
-          };
-          aVal = getTier(a);
-          bVal = getTier(b);
-        }
+  // ==============================|| API DATA FETCHING ||============================== //
 
-        // String comparison
-        if (typeof aVal === 'string') {
-          return desc 
-            ? bVal.localeCompare(aVal)
-            : aVal.localeCompare(bVal);
-        }
+  /**
+   * Fetch roles from API with pagination, search, and sorting
+   */
+  const {
+    roles = [],
+    rolesCount = 0,
+    rolesLoading = false,
+    rolesError = null
+  } = useGetRoles(page, validPageSize, search, ordering) || {};
 
-        // Numeric comparison
-        return desc ? bVal - aVal : aVal - bVal;
-      });
-    }
-
-    // Calculate pagination
-    const totalCount = filtered.length;
-    const startIndex = (page - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
-    const paginatedData = filtered.slice(startIndex, endIndex);
-
-    return {
-      data: paginatedData,
-      totalCount
-    };
-  }, [search, sorting, page, pageSize]);
-
-  const { data: roles, totalCount: rolesCount } = processedData;
+  // Build SWR key for cache revalidation
+  const params = new URLSearchParams();
+  if (page) params.append('page', page);
+  if (validPageSize) params.append('page_size', validPageSize);
+  if (search) params.append('search', search);
+  if (ordering) params.append('ordering', ordering);
+  
+  const swrKey = tenantKey(`/client/roles/?${params.toString()}`, tenantId);
 
   // ==============================|| HANDLERS ||============================== //
 
   /**
-   * Handle pagination changes
+   * Handle pagination changes from table
    */
   const handlePaginationChange = useCallback(
     ({ page: newPage, pageSize: newPageSize }) => {
       setPage(newPage);
       
       const size = Number(newPageSize);
-      if (!isNaN(size) && size > 0 && size !== pageSize) {
+      if (!isNaN(size) && size > 0 && size !== validPageSize) {
         setPageSize(size);
         setPage(1); // Reset to first page on page size change
       }
     },
-    [pageSize, setPageSize]
+    [validPageSize, setPageSize]
   );
 
   /**
-   * Handle search changes
+   * Handle search changes from table
    */
   const handleSearchChange = useCallback((searchTerm) => {
     setSearch(searchTerm);
@@ -186,7 +188,7 @@ export default function RolesListPage() {
   }, []);
 
   /**
-   * Handle sorting changes
+   * Handle sorting changes from table
    */
   const handleSortingChange = useCallback((updaterOrValue) => {
     setSorting((prevSorting) => {
@@ -201,7 +203,7 @@ export default function RolesListPage() {
    * Handle opening "Add Role" modal
    */
   const handleAddRole = useCallback(() => {
-    setSelectedRole(null)
+    setSelectedRole(null);
     setRoleModal(true);
   }, []);
 
@@ -210,7 +212,7 @@ export default function RolesListPage() {
    */
   const handleViewRole = useCallback((role) => {
     console.log('👁️ View Role:', role);
-    // TODO: setSelectedRole(role) + setViewModal(true) in next phase
+    // TODO: Implement RoleViewModal in next phase
   }, []);
 
   /**
@@ -226,16 +228,8 @@ export default function RolesListPage() {
    */
   const handleDeleteRole = useCallback((role) => {
     console.log('🗑️ Delete Role:', role);
-    // TODO: setUserDeleteId(role.id) + setDeleteAlert(true) in next phase
+    // TODO: Implement AlertRoleDelete in next phase
   }, []);
-
-  // ==============================|| BREADCRUMBS ||============================== //
-
-  const breadcrumbLinks = [
-    { title: 'Dashboard', to: '/' },
-    { title: 'Administration', to: '/admin' },
-    { title: 'Roles & Permissions' }
-  ];
 
   // ==============================|| RENDER ||============================== //
 
@@ -248,13 +242,13 @@ export default function RolesListPage() {
         <Grid item xs={12}>
           <RoleTable
             data={roles}
-            loading={false}
-            error={null}
-            swrKey={null}
+            loading={rolesLoading}
+            error={rolesError}
+            swrKey={swrKey}
             modalToggler={handleAddRole}
             totalCount={rolesCount}
             currentPage={page}
-            initialPageSize={pageSize}
+            initialPageSize={validPageSize}
             onPaginationChange={handlePaginationChange}
             onSearchChange={handleSearchChange}
             sorting={sorting}
@@ -265,6 +259,7 @@ export default function RolesListPage() {
           />
         </Grid>
 
+        {/* Role Add/Edit Modal */}
         <RoleModal 
           open={roleModal} 
           modalToggler={setRoleModal} 

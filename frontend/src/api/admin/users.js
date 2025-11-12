@@ -260,39 +260,6 @@ export function useGetTeams(filters = {}, enabled = true) {
 }
 
 /**
- * ✅ GET USER ROLES - Clé tenant standardisée
- */
-export function useGetUserRoles() {
-  const { tenantId } = useAuth(); 
-  
-  // ✅ STANDARDISÉ: tenantKey()
-  const swrKey = tenantKey(endpoints.roles, tenantId);
-  
-  // const { data, isLoading, error } = useSWR(
-  //   swrKey, 
-  //   fetcher,
-  //   {
-  //     revalidateIfStale: false,
-  //     revalidateOnFocus: false,
-  //     revalidateOnReconnect: false
-  //   }
-  // );
-
-  const { data, isLoading, error } = useSWR(swrKey);
-
-  const memoizedValue = useMemo(
-    () => ({
-      roles: data?.results || [],
-      rolesLoading: isLoading,
-      rolesError: error
-    }),
-    [data, isLoading, error]
-  );
-
-  return memoizedValue;
-}
-
-/**
  * ✅ GET CLIENT SEATS STATS - Clé tenant standardisée
  * seats = client.max_users
  * seats_used = # active users

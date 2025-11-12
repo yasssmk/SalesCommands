@@ -96,7 +96,7 @@ class ScopedPermission(permissions.BasePermission):
         if not is_module_enabled(module):
             logger.debug("module_not_enabled", extra={
                 **base_extra,
-                'module': module,
+                'biz_module': module,
                 'view': view.__class__.__name__,
             })
             return True
