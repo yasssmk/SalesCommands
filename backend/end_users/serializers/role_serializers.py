@@ -46,7 +46,7 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         fields = [
             'id', 'name',
             # Permissions réelles du modèle
-            'read', 'write', 'modify', 'delete',
+            'read', 'write', 'modify', 'can_delete',
             # Champs de tier - IMPORTANT : doivent être dans fields
             'is_admin', 'is_manager', 'is_individual',
             'tier',
@@ -238,7 +238,7 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             
             # === Validation des permissions logiques ===
             # Si on peut delete, on devrait pouvoir modify
-            if attrs.get('delete', False) and not attrs.get('modify', False):
+            if attrs.get('can_delete', False) and not attrs.get('modify', False):
                 attrs['modify'] = True
             
             # Si on peut modify ou write, on devrait pouvoir read
@@ -318,6 +318,7 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         # Ajouter les champs canoniques en sortie
         data['create'] = instance.write
         data['update'] = instance.modify
+        data['delete'] = instance.can_delete 
         
         return data
 
@@ -332,7 +333,7 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         model = UserRole
         fields = [
             'name',
-            'read', 'write', 'modify', 'delete',
+            'read', 'write', 'modify', 'can_delete',
             # IMPORTANT: Inclure les champs de tier dans fields
             'is_admin', 'is_manager', 'is_individual'
         ]
@@ -341,7 +342,7 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             'read': {'required': False, 'default': True},
             'write': {'required': False, 'default': False},
             'modify': {'required': False, 'default': False},
-            'delete': {'required': False, 'default': False},
+            'can_delete': {'required': False, 'default': False},
             # PAS de default pour les tiers - on gère ça dans validate()
             'is_admin': {'required': False},
             'is_manager': {'required': False},
@@ -389,7 +390,7 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             attrs.setdefault('read', True)
             attrs.setdefault('write', False)
             attrs.setdefault('modify', False)
-            attrs.setdefault('delete', False)
+            attrs.setdefault('can_delete', False)
             
             # VALIDATION STRICTE DES TIERS - PAS DE FALLBACK
             # Récupérer les valeurs fournies ou False par défaut
@@ -438,7 +439,7 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
                 logger.info('role_create_validate', extra=ctx)
             
             # Validation cohérence permissions
-            if attrs['delete'] and not attrs['modify']:
+            if attrs['can_delete'] and not attrs['modify']:
                 attrs['modify'] = True
             
             if (attrs['modify'] or attrs['write']) and not attrs['read']:
@@ -481,6 +482,7 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         data['create'] = instance.write
         data['update'] = instance.modify
         data['tier'] = instance.get_tier() if hasattr(instance, 'get_tier') else None
+        data['delete'] = instance.can_delete
         return data
 
 class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -493,7 +495,7 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         model = UserRole
         fields = [
             # Permissions modifiables
-            'read', 'write', 'modify', 'delete',
+            'read', 'write', 'modify', 'can_delete',
             # Tiers modifiables
             'is_admin', 'is_manager', 'is_individual'
         ]
@@ -501,7 +503,7 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             'read': {'required': False},
             'write': {'required': False},
             'modify': {'required': False},
-            'delete': {'required': False},
+            'can_delete': {'required': False},
             'is_admin': {'required': False},
             'is_manager': {'required': False},
             'is_individual': {'required': False}
@@ -603,7 +605,7 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             
             # === VALIDATION DES PERMISSIONS ===
             # Si delete est activé, modify devrait l'être aussi
-            current_delete = attrs.get('delete', instance.delete if instance else False)
+            current_delete = attrs.get('can_delete', instance.delete if instance else False)
             current_modify = attrs.get('modify', instance.modify if instance else False)
             
             if current_delete and not current_modify:
@@ -634,7 +636,8 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             'read': instance.read,
             'write': instance.write,
             'modify': instance.modify,
-            'delete': instance.delete,
+            'can_delete': instance.can_delete, 
+            'delete': instance.can_delete,
             # Tiers
             'is_admin': instance.is_admin,
             'is_manager': instance.is_manager,
@@ -669,7 +672,7 @@ class RoleListSerializer(serializers.ModelSerializer):
         model = UserRole
         fields = [
             'id', 'name',
-            'read', 'write', 'modify', 'delete',
+            'read', 'write', 'modify', 'can_delete',
             'tier', 'is_admin', 'is_manager', 'is_individual',
             'tier',
             'users_count'
@@ -691,6 +694,7 @@ class RoleListSerializer(serializers.ModelSerializer):
         # Format canonique
         data['create'] = instance.write
         data['update'] = instance.modify
+        data['delete'] = instance.can_delete
         return data
 
 

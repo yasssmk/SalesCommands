@@ -242,7 +242,7 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                 'read': obj.role.read,
                 'write': obj.role.write,
                 'modify': obj.role.modify,
-                'delete': obj.role.delete
+                'delete': obj.role.can_delete
             }
         return {}
     

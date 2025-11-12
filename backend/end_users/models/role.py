@@ -19,7 +19,7 @@ class UserRole(BaseModel):
     read = models.BooleanField(default=True)
     write = models.BooleanField(default=False)
     modify = models.BooleanField(default=False)
-    delete = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
 
     # Champs de tier - exactement UN doit être True
     is_admin = models.BooleanField(
@@ -127,7 +127,7 @@ class UserRole(BaseModel):
                 'read': self.read,
                 'write': self.write,
                 'modify': self.modify,
-                'delete': self.delete,
+                'delete': self.can_delete,
             },
             'tier_flags': {
                 'is_admin': self.is_admin,
