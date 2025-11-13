@@ -15,11 +15,11 @@ import FormRoleEdit from './FormRoleEdit';
 import MainCard from 'components/MainCard';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 
-// import { useGetRoles } from 'api/admin/roles';
+import { useGetRoles } from 'api/admin/roles';
 
-export default function UserModal({ open, modalToggler, role }) {
-//   const { rolesLoading: loading } = useGetRoles() ;
-  const loading = false
+export default function RoleModal({ open, modalToggler, role }) {
+  const { rolesLoading: loading } = useGetRoles() ;
+
   const closeModal = () => modalToggler(false);
 
   const roleForm = useMemo(() => {
@@ -84,7 +84,7 @@ export default function UserModal({ open, modalToggler, role }) {
   );
 }
 
-UserModal.propTypes = {
+RoleModal.propTypes = {
   open: PropTypes.bool,
   modalToggler: PropTypes.func,
   role: PropTypes.any

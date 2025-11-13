@@ -497,7 +497,7 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             # Permissions modifiables
             'read', 'write', 'modify', 'can_delete',
             # Tiers modifiables
-            'is_admin', 'is_manager', 'is_individual'
+            'is_admin', 'is_manager', 'is_individual', 'name'
         ]
         extra_kwargs = {
             'read': {'required': False},

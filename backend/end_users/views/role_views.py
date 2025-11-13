@@ -590,6 +590,8 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         try:
             pk = kwargs.get('pk')
             client_id = self.get_client_id()
+
+            print(f'REQUEST CHANGE ROLE: {request.data}')
             
             with transaction.atomic():
                 # ✅ TOCTOU prevention: Lock row AVANT validation

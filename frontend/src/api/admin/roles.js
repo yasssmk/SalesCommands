@@ -1,10 +1,11 @@
 // frontend/src/api/admin/roles.js
 
-import useSWR, { mutate } from 'swr';
+import useSWR from 'swr';
 import { useMemo } from 'react';
 import { useAuth } from 'hooks/useAuth';
 import { api } from 'utils/axiosClient';
 import { tenantKey, revalidateMultiple } from 'api/_swr';
+import { sanitizeObject } from 'utils/validators';
 
 // ==============================|| ENDPOINTS ||============================== //
 
@@ -14,24 +15,58 @@ const endpoints = {
   permissionsMatrix: '/client/roles/permissions-matrix/'
 };
 
+// ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
+
+/**
+ * Construit une URL avec query params pour la pagination serveur
+ * @param {string} baseUrl - URL de base
+ * @param {Object} params - Paramètres optionnels {page, pageSize, search, ordering}
+ * @returns {string} URL avec query string
+ */
+const buildUrlWithParams = (baseUrl, params = {}) => {
+  const { page, pageSize, search, ordering } = params;
+  const queryParams = new URLSearchParams();
+  
+  if (page !== undefined && page !== null) {
+    queryParams.append('page', page);
+  }
+  
+  if (pageSize !== undefined && pageSize !== null) {
+    queryParams.append('page_size', pageSize);
+  }
+  
+  if (search !== undefined && search !== null && search !== '') {
+    queryParams.append('search', search);
+  }
+
+  if (ordering !== undefined && ordering !== null && ordering !== '') {
+    queryParams.append('ordering', ordering);
+  }
+  
+  const queryString = queryParams.toString();
+  return queryString ? `${baseUrl}?${queryString}` : baseUrl;
+};
+
 // ==============================|| HOOKS DE LECTURE ||============================== //
 
 /**
  * GET ROLES - Liste paginée avec filtres
  */
-export function useGetRoles(page = 1, pageSize = 10, search = '', ordering = '') {
+export function useGetRoles(options = {}) {
   const { tenantId } = useAuth();
+  const { page = 1, pageSize = 10, search = '', ordering = '' } = options;
 
-  const params = new URLSearchParams();
-  if (page) params.append('page', page);
-  if (pageSize) params.append('page_size', pageSize);
-  if (search) params.append('search', search);
-  if (ordering) params.append('ordering', ordering);
+  const urlWithParams = useMemo(() => {
+    return buildUrlWithParams(endpoints.roles, { page, pageSize, search, ordering });
+  }, [page, pageSize, search, ordering]);
 
-  const url = `${endpoints.roles}?${params.toString()}`;
-  const swrKey = tenantKey(url, tenantId);
+  const swrKey = tenantKey(urlWithParams, tenantId);
 
-  const { data, isLoading, error } = useSWR(swrKey);
+  const { data, isLoading, error, isValidating } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
 
   const memoizedValue = useMemo(
     () => ({
@@ -39,77 +74,102 @@ export function useGetRoles(page = 1, pageSize = 10, search = '', ordering = '')
       roles: data?.data?.results || data?.results || [],
       rolesCount: data?.data?.count || data?.count || 0,
       rolesLoading: isLoading,
-      rolesError: error
+      rolesError: error,
+      rolesValidating: isValidating,
+      rolesEmpty: !isLoading && (!data?.results?.length)
     }),
-    [data, isLoading, error]
+    [data, isLoading, error, isValidating]
   );
 
   return memoizedValue;
 }
 
 /**
- * GET ROLE - Détails d'un rôle spécifique
+ * ✅ GET ROLE - Détails d'un rôle spécifique
+ * 
+ * @param {string} roleId - ID du rôle à récupérer
+ * @returns {Object} {role, roleLoading, roleError, roleValidating}
  */
 export function useGetRole(roleId) {
   const { tenantId } = useAuth();
 
   const swrKey = roleId && tenantId ? tenantKey(endpoints.roleDetail(roleId), tenantId) : null;
 
-  const { data, isLoading, error } = useSWR(swrKey);
+  const { data, isLoading, error, isValidating } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
 
   const memoizedValue = useMemo(
     () => ({
-      role: data?.data || data,
+      role: data,
       roleLoading: isLoading,
-      roleError: error
+      roleError: error,
+      roleValidating: isValidating
     }),
-    [data, isLoading, error]
+    [data, isLoading, error, isValidating]
   );
 
   return memoizedValue;
 }
 
 /**
- * GET USER ROLES - Pour dropdowns dans formulaires
+ * ✅ GET USER ROLES - Pour dropdowns dans formulaires
  * MIGRÉ depuis api/admin/users.js
+ * 
+ * @returns {Object} {roles, rolesLoading, rolesError, rolesValidating, rolesEmpty}
  */
 export function useGetUserRoles() {
   const { tenantId } = useAuth();
 
   const swrKey = tenantKey(endpoints.roles, tenantId);
 
-  const { data, isLoading, error } = useSWR(swrKey);
+  const { data, isLoading, error, isValidating } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
 
   const memoizedValue = useMemo(
     () => ({
       // Support both formats: data.data.results and data.results
       roles: data?.data?.results || data?.results || [],
       rolesLoading: isLoading,
-      rolesError: error
+      rolesError: error,
+      rolesValidating: isValidating,
+      rolesEmpty: !isLoading && (!data?.results?.length)
     }),
-    [data, isLoading, error]
+    [data, isLoading, error, isValidating]
   );
 
   return memoizedValue;
 }
 
 /**
- * GET PERMISSIONS MATRIX - Registre complet
+ * ✅ GET PERMISSIONS MATRIX - Registre complet
+ * 
+ * @returns {Object} {matrix, matrixLoading, matrixError, matrixValidating}
  */
 export function useGetPermissionsMatrix() {
   const { tenantId } = useAuth();
 
   const swrKey = tenantKey(endpoints.permissionsMatrix, tenantId);
 
-  const { data, isLoading, error } = useSWR(swrKey);
+  const { data, isLoading, error, isValidating } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
 
   const memoizedValue = useMemo(
     () => ({
       matrix: data?.data || {},
       matrixLoading: isLoading,
-      matrixError: error
+      matrixError: error,
+      matrixValidating: isValidating
     }),
-    [data, isLoading, error]
+    [data, isLoading, error, isValidating]
   );
 
   return memoizedValue;
@@ -121,20 +181,24 @@ export function useGetPermissionsMatrix() {
  * INSERT ROLE - Créer un nouveau rôle
  */
 export async function insertRole(payload) {
-  try {
-    const result = await api.post(endpoints.roles, payload);
-
-    if (result.success) {
-      // Revalider le cache
-     revalidateMultiple([
-        endpoints.roles  
-      ]);
-      return { success: true, data: result.data };
-    }
-
-    return { success: false, error: result.error };
-  } catch (error) {
-    return { success: false, error: error.message };
+  // Sanitize string fields
+  // const sanitized = sanitizeObject(payload, ['name']);
+  
+  const result = await api.post(endpoints.roles, payload);
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.roles,
+      '/client/users/'
+    ]);
+    return { success: true, data: result.data };
+  } else {
+    return { 
+      success: false, 
+      error: result.error,
+      status: result.status || 0,
+      response: result.response || null
+    };
   }
 }
 
@@ -142,21 +206,25 @@ export async function insertRole(payload) {
  * UPDATE ROLE - Modifier un rôle existant
  */
 export async function updateRole(roleId, payload) {
-  try {
-    const result = await api.patch(endpoints.roleDetail(roleId), payload);
-
-    if (result.success) {
-      // Revalidation avec revalidateMultiple
-      revalidateMultiple([
-        endpoints.roles,                      // Liste roles
-        `${endpoints.roles}${roleId}/`        // Role spécifique
-      ]);
-      return { success: true, data: result.data };
-    }
-
-    return { success: false, error: result.error };
-  } catch (error) {
-    return { success: false, error: error.message };
+  // Sanitize string fields
+  // const sanitized = sanitizeObject(payload, ['name']);
+  
+  const result = await api.patch(endpoints.roleDetail(roleId), payload);
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.roles,
+      endpoints.roleDetail(roleId),
+      '/client/users/'
+    ]);
+    return { success: true, data: result.data };
+  } else {
+    return { 
+      success: false, 
+      error: result.error,
+      status: result.status || 0,
+      response: result.response || null
+    };
   }
 }
 
@@ -164,19 +232,20 @@ export async function updateRole(roleId, payload) {
  * DELETE ROLE - Supprimer un rôle
  */
 export async function deleteRole(roleId) {
-  try {
-    const result = await api.delete(endpoints.roleDetail(roleId));
-
-    if (result.success || result.status === 204) {
-      //Revalidation avec revalidateMultiple
-      revalidateMultiple([
-        endpoints.roles  // Liste roles
-      ]);
-      return { success: true };
-    }
-
-    return { success: false, error: result.error };
-  } catch (error) {
-    return { success: false, error: error.message };
+  const result = await api.delete(endpoints.roleDetail(roleId));
+  
+  if (result.success || result.status === 204) {
+    revalidateMultiple([
+      endpoints.roles,
+      '/client/users/'
+    ]);
+    return { success: true, status: result.status ?? 204 };
+  } else {
+    return { 
+      success: false, 
+      error: result.error,
+      status: result.status || 0,
+      response: result.response || null
+    };
   }
 }
