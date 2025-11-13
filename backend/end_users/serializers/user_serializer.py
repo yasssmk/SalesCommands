@@ -590,12 +590,12 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             if old_is_admin_role and not new_is_admin_role and not instance.is_superuser:
                 from django.db.models import Q
                 other_admins = list(
-                    client.users.select_for_update().filter(
+                    client.users.filter(
                         Q(role__name=admin_role.name) | Q(is_superuser=True)
                     ).exclude(id=instance.id).values_list('id', flat=True)
                 )
                 
-                if len(other_admins) == 0:
+                if len(other_admins) == 1:
                     raise StandardizedValidationError(CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED)
 
         # Appliquer les autres champs

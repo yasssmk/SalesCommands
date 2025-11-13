@@ -22,7 +22,8 @@ def create_default_roles(sender, instance, created, **kwargs):
                 # Tier explicite: Admin
                 "is_admin": True,
                 "is_manager": False,
-                "is_individual": False
+                "is_individual": False,
+                "is_locked": True
             },
             {
                 "name": "Direction",

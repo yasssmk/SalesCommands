@@ -89,7 +89,7 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['read', 'write', 'modify', 'can_delete']
     search_fields = ['name']
-    ordering_fields = ['name', 'created_at', 'updated_at']
+    ordering_fields = ['name', 'created_at', 'updated_at', 'users_count']
     ordering = ['name']
 
     def _other_admin_roles_exist(self, role: UserRole) -> bool:
@@ -526,6 +526,12 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         'success': False,
                         'error': CoreErrorMessages.OBJECT_NOT_FOUND
                     }, status=status.HTTP_404_NOT_FOUND)
+                
+                # === PROTECTION DES RÔLES VERROUILLÉS ===
+                if instance.is_locked:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot modify a system role"
+                    )
 
                 # Validations métier (protected by lock)
                 if self._is_last_admin_role(instance):
@@ -590,8 +596,6 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         try:
             pk = kwargs.get('pk')
             client_id = self.get_client_id()
-
-            print(f'REQUEST CHANGE ROLE: {request.data}')
             
             with transaction.atomic():
                 # ✅ TOCTOU prevention: Lock row AVANT validation
@@ -615,6 +619,11 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         'success': False,
                         'error': CoreErrorMessages.OBJECT_NOT_FOUND
                     }, status=status.HTTP_404_NOT_FOUND)
+                
+                if instance.is_locked:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot modify a system role"
+                    )
 
                 # Validations métier (protected by lock)
                 if self._is_last_admin_role(instance):
@@ -707,6 +716,12 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         'success': False,
                         'error': CoreErrorMessages.OBJECT_NOT_FOUND
                     }, status=status.HTTP_404_NOT_FOUND)
+                
+                # === PROTECTION DES RÔLES VERROUILLÉS ===
+                if instance.is_locked:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot delete a system role"
+                    )
                 
                 # Validations métier (protected by lock)
                 if self._is_last_admin_role(instance):
@@ -942,6 +957,12 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         'success': False,
                         'error': CoreErrorMessages.OBJECT_NOT_FOUND
                     }, status=status.HTTP_404_NOT_FOUND)
+                
+                # === PROTECTION DES RÔLES VERROUILLÉS ADMIN ===
+                if source_role.is_locked and source_role.is_admin:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.PERMISSION_DENIED + " - Cannot duplicate the system admin role"
+                    )
                 
                 new_name = request.data.get('name')
                 

@@ -2844,7 +2844,7 @@ class UserBulkViewSet(UserViewSet):
         # Convert to list() because select_for_update() doesn't work with count()
         # Performance impact is minimal (typically < 10 superusers per tenant)
         other_superusers = list(
-            User.objects.select_for_update().filter(
+            User.objects.filter(
                 client_account_id=current_user.client_account_id,
                 is_superuser=True
             ).exclude(id__in=current_superusers_in_batch).values_list('id', flat=True)

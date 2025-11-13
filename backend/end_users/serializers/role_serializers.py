@@ -124,6 +124,14 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         
         # Normaliser le nom (trim et capitalisation)
         value = value.strip()
+
+        # === PROTECTION DES RÔLES VERROUILLÉS ===
+        if self.instance and self.instance.is_locked:
+            if value != self.instance.name:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.PERMISSION_DENIED + " - Cannot modify a system role"
+                )
+        
         
         # Récupérer le client_id depuis le contexte
         client_id = self._get_client_id_from_context()
@@ -385,12 +393,34 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             # Récupérer le client_id
             client_id = self._get_client_id_from_context()
             attrs['client_account_id'] = client_id
+
+             # === VALIDATION LIMITE 10 RÔLES PAR TENANT ===
+            existing_roles_count = UserRole.objects.filter(
+                client_account_id=client_id
+            ).count()
+            
+            if existing_roles_count >= 10:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_DATA.format(
+                        detail="Maximum 10 roles per tenant reached. Please delete an existing role before creating a new one."
+                    )
+                )
+            
+            # === VALIDATION INTERDICTION DE CRÉER UN RÔLE ADMIN ===
+            is_admin = attrs.get('is_admin', False)
+            
+            if is_admin:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_DATA.format(
+                        detail="Cannot create an admin role. Only one admin role per tenant is allowed (created by default)."
+                    )
+                )
             
             # Valeurs par défaut pour les permissions
             attrs.setdefault('read', True)
             attrs.setdefault('write', False)
             attrs.setdefault('modify', False)
-            attrs.setdefault('can_delete', False)
+            attrs.setdefault('can_delete', False)            
             
             # VALIDATION STRICTE DES TIERS - PAS DE FALLBACK
             # Récupérer les valeurs fournies ou False par défaut

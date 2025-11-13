@@ -35,6 +35,11 @@ class UserRole(BaseModel):
         help_text="Individual tier - personal access"
     )
 
+    is_locked = models.BooleanField(
+        default=False,
+        help_text="System role - cannot be modified or deleted"
+    )
+
     # Référence vers ClientAccount pour compatibilité
     client_account = models.ForeignKey(
         ClientAccount,
