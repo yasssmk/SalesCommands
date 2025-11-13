@@ -53,7 +53,7 @@ const EditSchema = Yup.object().shape({
       'Name can only contain letters, numbers, spaces, hyphens and underscores'
     ),
   tier: Yup.string()
-    .oneOf(['admin', 'manager', 'individual'], 'Invalid tier selection')
+    .oneOf(['manager', 'individual'], 'Invalid tier selection')
     .required('Tier is required')
 });
 
@@ -137,12 +137,12 @@ function FormRoleEdit({ closeModal, role: initialRole }) {
 
   const radioOptions = useMemo(
     () => [
-      {
-        value: 'admin',
-        title: 'Admin',
-        description: 'Full access to everything across the entire organization',
-        borderColor: theme.palette.error.main
-      },
+      // {
+      //   value: 'admin',
+      //   title: 'Admin',
+      //   description: 'Full access to everything across the entire organization',
+      //   borderColor: theme.palette.error.main
+      // },
       {
         value: 'manager',
         title: 'Manager',

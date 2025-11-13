@@ -183,6 +183,7 @@ export default function NavItem({ item, level, isParents = false }) {
               height: 36,
               alignItems: 'center',
               justifyContent: 'center',
+              mr: 1,
               '&:hover': {
                 bgcolor: mode === ThemeMode.DARK ? 'secondary.light' : 'secondary.lighter'
               }

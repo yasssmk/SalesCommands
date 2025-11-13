@@ -276,6 +276,7 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Liste tous les rôles du client.
         Accessible à tous les utilisateurs authentifiés.
         """
+    
         client_id = self.get_client_id()
         queryset = self.filter_queryset(self.get_queryset())
         ctx = ctx_from_request(request)

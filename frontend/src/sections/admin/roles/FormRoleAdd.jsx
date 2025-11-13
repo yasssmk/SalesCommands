@@ -56,7 +56,7 @@ const CreateSchema = Yup.object().shape({
       'Name can only contain letters, numbers, spaces, hyphens and underscores'
     ),
   tier: Yup.string()
-    .oneOf(['admin', 'manager', 'individual'], 'Invalid tier selection')
+    .oneOf(['manager', 'individual'], 'Invalid tier selection')
     .required('Tier is required')
 });
 
@@ -189,7 +189,7 @@ function FormRoleAdd({ closeModal }) {
                   onChange={(e) => setFieldValue('tier', e.target.value)}
                 >
                   {/* Admin Option */}
-                  <FormControlLabel
+                  {/* <FormControlLabel
                     value="admin"
                     control={<Radio />}
                     label={
@@ -211,7 +211,7 @@ function FormRoleAdd({ closeModal }) {
                         bgcolor: 'action.hover'
                       }
                     }}
-                  />
+                  /> */}
 
                   {/* Manager Option */}
                   <FormControlLabel

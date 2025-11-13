@@ -39,6 +39,7 @@ DEFAULT_CONFIG = {
         'pipelines': False,
         'templates': False,
         'users': True,
+        'roles': True,
         'products': False,
     },
     'AUDIT_LOGGER': 'permissions.audit',  # Logger name for audit logs

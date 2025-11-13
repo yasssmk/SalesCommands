@@ -169,7 +169,7 @@ export default function NavGroup({
   });
 
   const moreItems = remItems.map((itemRem, i) => (
-    <Fragment key={i}>
+    <Box key={i}>
       {itemRem.url ? (
         <NavItem item={itemRem} level={1} />
       ) : (
@@ -205,7 +205,7 @@ export default function NavGroup({
             );
         }
       })}
-    </Fragment>
+    </Box>
   ));
 
   // menu list collapse & items
@@ -299,11 +299,11 @@ export default function NavGroup({
                   <Transitions in={openMini} {...TransitionProps}>
                     <Paper sx={{ mt: 0.5, py: 1.25, boxShadow: theme.shadows[8], backgroundImage: 'none' }}>
                       <ClickAwayListener onClickAway={handleClose}>
-                        <>
+                        <Box>
                           <SimpleBar sx={{ minWidth: 200, overflowX: 'hidden', overflowY: 'auto', maxHeight: 'calc(100vh - 170px)' }}>
                             {currentItem.id !== lastItemId ? items : moreItems}
                           </SimpleBar>
-                        </>
+                        </Box>
                       </ClickAwayListener>
                     </Paper>
                   </Transitions>

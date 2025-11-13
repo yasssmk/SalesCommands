@@ -125,15 +125,12 @@ function RoleTable({
         header: 'Created',
         accessorKey: 'created_at',
         enableSorting: true,
-        cell: ({ getValue }) => {
-          const value = getValue();
-          return (
-            <Typography variant="body2" color="text.secondary">
-              {value ? formatDateTime(value) : 'N/A'}
-            </Typography>
-          );
-        }
-      },
+        cell: ({ getValue }) => (
+          <Typography variant="body2" color="text.secondary">
+            {formatDateTime(getValue())}
+          </Typography>
+                )
+        },
 
       // Column 5: Actions
       {

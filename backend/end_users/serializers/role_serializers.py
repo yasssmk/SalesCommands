@@ -402,7 +402,7 @@ class RoleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             if existing_roles_count >= 10:
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_DATA.format(
-                        detail="Maximum 10 roles per tenant reached. Please delete an existing role before creating a new one."
+                        detail="Maximum 10 roles reached. Please delete an existing role before creating a new one."
                     )
                 )
             
@@ -574,12 +574,27 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         try:
             instance = self.instance
             
+            # === PROTECTION DES RÔLES VERROUILLÉS ===
+            if instance.is_locked:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.PERMISSION_DENIED + " - Cannot modify a system role"
+                )
+            
             # === VALIDATION DES TIERS ===
             # Vérifier si des tiers sont fournis dans la requête
             tier_fields_in_request = []
             for field in ['is_admin', 'is_manager', 'is_individual']:
                 if field in attrs:
                     tier_fields_in_request.append(field)
+        
+            # === INTERDICTION DE CHANGER UN RÔLE EN ADMIN ===
+            if 'is_admin' in attrs and attrs['is_admin'] is True:
+                if not instance.is_admin:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_DATA.format(
+                            detail="Cannot change an existing role to admin tier. Only one admin role per tenant is allowed."
+                        )
+                    )
             
             # Si au moins un tier est fourni, valider
             if tier_fields_in_request:
@@ -705,7 +720,7 @@ class RoleListSerializer(serializers.ModelSerializer):
             'read', 'write', 'modify', 'can_delete',
             'tier', 'is_admin', 'is_manager', 'is_individual',
             'tier',
-            'users_count'
+            'users_count', 'created_at', 'updated_at'
         ]
     
     def get_tier(self, obj):

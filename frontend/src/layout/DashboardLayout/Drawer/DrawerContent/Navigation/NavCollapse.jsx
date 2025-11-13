@@ -306,6 +306,7 @@ export default function NavCollapse({ menu, level, parentId, setSelectedItems, s
                     height: 36,
                     alignItems: 'center',
                     justifyContent: 'center',
+                    mr: 1,
                     '&:hover': {
                       bgcolor: mode === ThemeMode.DARK ? 'secondary.light' : 'secondary.lighter'
                     }
@@ -403,7 +404,7 @@ export default function NavCollapse({ menu, level, parentId, setSelectedItems, s
                       }}
                     >
                       <ClickAwayListener onClickAway={handleClose}>
-                        <>
+                        <Box>
                           <SimpleBar
                             sx={{
                               overflowX: 'hidden',
@@ -413,7 +414,7 @@ export default function NavCollapse({ menu, level, parentId, setSelectedItems, s
                           >
                             {navCollapse}
                           </SimpleBar>
-                        </>
+                        </Box>
                       </ClickAwayListener>
                     </Paper>
                   </Transitions>
@@ -514,7 +515,7 @@ export default function NavCollapse({ menu, level, parentId, setSelectedItems, s
                     }}
                   >
                     <ClickAwayListener onClickAway={handleClose}>
-                      <>
+                      <Box>
                         <SimpleBar
                           sx={{
                             overflowX: 'hidden',
@@ -524,7 +525,7 @@ export default function NavCollapse({ menu, level, parentId, setSelectedItems, s
                         >
                           {navCollapse}
                         </SimpleBar>
-                      </>
+                      </Box>
                     </ClickAwayListener>
                   </Paper>
                 </Transitions>
