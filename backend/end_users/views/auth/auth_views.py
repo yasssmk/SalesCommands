@@ -15,9 +15,9 @@ from ...models import User
 from ...serializers.user_serializer import (
     UserSerializer
 )
-import logging
 from permissions import compat
 from core.logging import get_logger, ctx_from_request
+from core.logging.audit import audit_log
 from core.logging.sanitize import mask_email
 
 logger = get_logger(__name__)

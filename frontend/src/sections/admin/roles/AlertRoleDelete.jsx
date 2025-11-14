@@ -39,7 +39,8 @@ export default function AlertRoleDelete({ role, open, handleClose }) {
 
   // Check if role has assigned users
   const hasUsers = role?.users_count > 0;
-  const canDelete = !hasUsers;
+  const isLocked = role?.is_admin === true || role?.name === 'Admin';
+  const canDelete = !hasUsers && !isLocked;
 
   const deleteHandler = async () => {
     if (!canDelete) return;
@@ -80,10 +81,24 @@ export default function AlertRoleDelete({ role, open, handleClose }) {
 
           <Stack spacing={2} sx={{ width: 1 }}>
             <Typography variant="h4" align="center">
-              {hasUsers ? 'Cannot Delete Role' : 'Are you sure you want to delete?'}
+              {hasUsers || isLocked ? 'Cannot Delete Role' : 'Are you sure you want to delete?'}
             </Typography>
 
-            {hasUsers ? (
+            {isLocked ? (
+              // Error message for locked/admin role
+              <Alert severity="error" icon={<WarningOutlined />}>
+                <Typography variant="body2">
+                  The{' '}
+                  <Typography component="span" variant="subtitle2">
+                    &quot;{role?.name}&quot;
+                  </Typography>
+                  {' '}role is a system role and cannot be deleted.
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  This role is essential for system administration and must always exist.
+                </Typography>
+              </Alert>
+            ) : hasUsers ? (
               // Warning message when users are assigned
               <Alert severity="warning" icon={<WarningOutlined />}>
                 <Typography variant="body2" gutterBottom>
@@ -120,7 +135,7 @@ export default function AlertRoleDelete({ role, open, handleClose }) {
               color="secondary" 
               variant="outlined"
             >
-              {hasUsers ? 'Close' : 'Cancel'}
+              {(hasUsers || isLocked)? 'Close' : 'Cancel'}
             </Button>
             <Button
               fullWidth

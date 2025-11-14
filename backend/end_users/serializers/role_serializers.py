@@ -303,6 +303,9 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             )
         
         instance = super().update(instance, validated_data)
+
+        if 'name' in validated_data:
+            instance.users.update(role_name=instance.name)
         
         request = self.context.get('request') if self.context else None
         if request and getattr(request, 'user', None):
@@ -673,6 +676,16 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_DATA.format(detail=str(e))
             )
+    def update(self, instance, validated_data):
+        """Mise à jour avec synchronisation role_name"""
+        instance = super().update(instance, validated_data)
+        
+        # Si le nom a changé, synchroniser role_name sur tous les users
+        if 'name' in validated_data:
+            instance.users.update(role_name=instance.name)
+        
+        return instance
+
     
     def to_representation(self, instance):
         """Retour en format canonique après PATCH"""

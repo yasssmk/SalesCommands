@@ -49,7 +49,7 @@ import UpOutlined from '@ant-design/icons/UpOutlined';
 const CreateSchema = Yup.object().shape({
   name: Yup.string()
     .required('Role name is required')
-    .min(2, 'Name must be at least 2 characters')
+    .min(3, 'Name must be at least 3 characters')
     .max(50, 'Name must be less than 50 characters')
     .matches(
       /^[a-zA-Z0-9\s\-_]+$/,

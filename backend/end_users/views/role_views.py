@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count, Q, Prefetch, F
+from django.db.models import Case, When, Value, CharField
 from django.db import transaction
 from django.utils import timezone
 from django.http import Http404
@@ -90,8 +91,9 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['read', 'write', 'modify', 'can_delete']
     search_fields = ['name']
-    ordering_fields = ['name', 'created_at', 'updated_at', 'users_count']
+    ordering_fields = ['name', 'tier', 'created_at', 'updated_at', 'users_count']
     ordering = ['name']
+
 
     def _other_admin_roles_exist(self, role: UserRole) -> bool:
         """Check if another admin-tier role exists for the same client."""
@@ -205,13 +207,20 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
         # Préparer les annotations communes pour supprimer les .count() côté serializers
         queryset = queryset.annotate(
-            users_count=Count('users', distinct=True),
-            active_users_count=Count(
-                'users',
-                filter=Q(users__is_active=True),
-                distinct=True,
-            ),
+        users_count=Count('users', distinct=True),
+        active_users_count=Count(
+            'users',
+            filter=Q(users__is_active=True),
+            distinct=True,
+        ),
+        tier=Case(
+            When(is_admin=True, then=Value('admin')),
+            When(is_manager=True, then=Value('manager')),
+            When(is_individual=True, then=Value('individual')),
+            default=Value('individual'),
+            output_field=CharField()
         )
+    )
 
         # Optimisations spécifiques selon l'action demandée
         if self.action in ['retrieve', 'update', 'partial_update', 'destroy', 'duplicate']:
