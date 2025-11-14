@@ -514,12 +514,18 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         if not self.is_superuser:
             return False
         
-        other_superusers = User.objects.filter(
+        # other_superusers = User.objects.filter(
+        #     client_account_id=self.client_account_id,
+        #     is_superuser=True
+        # ).exclude(id=self.id).count()
+        
+        # return other_superusers == 0
+        qs = User.objects.select_for_update().filter(
             client_account_id=self.client_account_id,
             is_superuser=True
-        ).exclude(id=self.id).count()
-        
-        return other_superusers == 0
+        ).exclude(id=self.id)
+
+        return not qs.exists()
     
     def is_last_active_admin(self):
         """
@@ -532,11 +538,19 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
             return False
         
         from django.db.models import Q
-        other_active_admins = User.objects.filter(
+        # other_active_admins = User.objects.filter(
+        #     client_account_id=self.client_account_id,
+        #     is_active=True
+        # ).filter(
+        #     Q(is_superuser=True) | Q(role__name='Admin')
+        # ).exclude(id=self.id).count()
+        
+        # return other_active_admins == 0
+        qs = User.objects.select_for_update().filter(
             client_account_id=self.client_account_id,
             is_active=True
         ).filter(
             Q(is_superuser=True) | Q(role__name='Admin')
-        ).exclude(id=self.id).count()
-        
-        return other_active_admins == 0
+        ).exclude(id=self.id)
+
+        return not qs.exists()

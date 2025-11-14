@@ -607,49 +607,6 @@ if "throttle" in CACHES:
 
 
 # =========================================================================
-# LOGGING FOR THROTTLING (OPTIONNEL MAIS UTILE)
-# =========================================================================
-
-# Ajouter dans votre configuration de logging existante
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        # ... vos formatters existants ...
-    },
-    'handlers': {
-        # ... vos handlers existants ...
-        
-        # Handler spécifique pour le throttling
-        'throttle_file': {
-            'level': 'WARNING',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': BASE_DIR / 'logs' / 'throttle.log',
-            'maxBytes': 1024 * 1024 * 5,  # 5 MB
-            'backupCount': 3,
-            'formatter': 'verbose',
-        },
-    },
-    'loggers': {
-        # ... vos loggers existants ...
-        
-        # Logger pour le throttling
-        'rest_framework.throttling': {
-            'handlers': ['throttle_file', 'console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        
-        # Logger pour les tentatives de login bloquées
-        'core.throttling': {
-            'handlers': ['throttle_file', 'console'],
-            'level': 'WARNING',
-            'propagate': False,
-        },
-    },
-}
-
-# =========================================================================
 # THROTTLE WHITELIST (OPTIONNEL)
 # =========================================================================
 
@@ -793,15 +750,14 @@ LOGGING_EXCLUDED_PATHS = {
     # '/api/v1/internal/metrics',
 }
 
-
 # =========================================================================
-# LOGGING CONFIGURATION - MVP
+# LOGGING CONFIGURATION - MVP + AUDIT + THROTTLING
 # =========================================================================
 
 
 import time
+import logging
 import logging.handlers
-from pathlib import Path
 import datetime
 
 class UTCFormatter(logging.Formatter):
@@ -944,21 +900,19 @@ class SafeExtraFilter(logging.Filter):
             return '[EMAIL_REDACTED]'
 
 
-# Logging configuration
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     
-    # Formatters
     'formatters': {
         'structured': {
-            '()': UTCFormatter,  # Force UTC timestamps
+            '()': UTCFormatter,
             'format': (
                 'timestamp=%(asctime)s '
                 'level=%(levelname)s '
                 'logger=%(name)s '
                 'msg="%(message)s" '
-                # 🔹 Champs d'audit SOC 2
+                # 🔹 Audit
                 'event=%(event)s '
                 'action=%(action)s '
                 'actor_id=%(actor_id)s '
@@ -968,7 +922,7 @@ LOGGING = {
                 'fields_changed=%(fields_changed)s '
                 'outcome=%(outcome)s '
                 'reason="%(reason)s" '
-                # 🔹 Contexte HTTP existant
+                # 🔹 Contexte HTTP
                 'file=%(module)s '
                 'line=%(lineno)d '
                 'func=%(funcName)s '
@@ -984,127 +938,144 @@ LOGGING = {
         }
     },
     
-    # Filters
     'filters': {
         'safe_extra': {
             '()': SafeExtraFilter,
         }
     },
     
-    # Handlers (will be set conditionally below)
     'handlers': {},
     
-    # Loggers
     'loggers': {
-        # Project root logger (catches all backend.* loggers)
         'backend': {
-            'handlers': [],  # Will be set below
+            'handlers': [],
             'level': 'DEBUG' if DEBUG else 'INFO',
             'propagate': False,
         },
-        
-        # Django system loggers
         'django': {
-            'handlers': [],  # Will be set below
+            'handlers': [],
             'level': 'INFO',
             'propagate': False,
         },
         'django.request': {
-            'handlers': [],  # Will be set below
+            'handlers': [],
             'level': 'ERROR',
             'propagate': False,
         },
         'django.server': {
-            'handlers': [],  # Will be set below
-            'level': 'WARNING',  # Reduce noise from dev server
-            'propagate': False,
-        },
-        'django.db.backends': {
-            'handlers': [],  # Will be set below
+            'handlers': [],
             'level': 'WARNING',
             'propagate': False,
         },
-
-        # 🔹 Logger dédié aux événements d'audit (SOC 2)
+        'django.db.backends': {
+            'handlers': [],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # 🔹 Audit app
         'audit': {
-            'handlers': [],  # Will be set below
+            'handlers': [],
             'level': 'INFO',
             'propagate': False,
         },
-        
-        # 🔹 Logger pour les audits de permissions (si PERMISSIONS_CONFIG['AUDIT_LOGGER'] utilisé)
         'permissions.audit': {
-            'handlers': [],  # Will be set below
+            'handlers': [],
             'level': 'INFO',
+            'propagate': False,
+        },
+        # 🔹 Throttling
+        'rest_framework.throttling': {
+            'handlers': [],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'core.throttling': {
+            'handlers': [],
+            'level': 'WARNING',
             'propagate': False,
         },
     },
-    # Root logger (catches everything else)
+    
     'root': {
-        'handlers': [],  # Will be set below
-        'level': 'DEBUG' if DEBUG else 'INFO',  # Changed from WARNING
+        'handlers': [],
+        'level': 'DEBUG' if DEBUG else 'INFO',
     }
 }
 
-# Determine if file logging should be enabled (via ENV variable)
-enable_file_logs = os.getenv('ENABLE_FILE_LOGS', '').lower() in {'1', 'true', 'yes'}
-logs_dir = Path(BASE_DIR / 'logs')
-use_files = enable_file_logs and logs_dir.exists()
+# ==========
+# HANDLERS
+# ==========
 
-# Console handler (always present)
+# ✅ Crée toujours le dossier logs/ pour ne pas l'oublier
+logs_dir = BASE_DIR / 'logs'
+logs_dir.mkdir(parents=True, exist_ok=True)
+
+enable_file_logs = os.getenv('ENABLE_FILE_LOGS', '').lower() in {'1', 'true', 'yes'}
+use_files = enable_file_logs
+
 LOGGING['handlers']['console'] = {
     'class': 'logging.StreamHandler',
     'formatter': 'structured',
     'filters': ['safe_extra'],
 }
 
-# Add file handlers if enabled and directory exists
 if use_files:
     LOGGING['handlers']['file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': str(logs_dir / 'app.log'),
-        'maxBytes': 10 * 1024 * 1024,  # 10MB
+        'maxBytes': 10 * 1024 * 1024,
         'backupCount': 5,
         'formatter': 'structured',
         'filters': ['safe_extra'],
     }
-
     LOGGING['handlers']['error_file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': str(logs_dir / 'error.log'),
-        'maxBytes': 10 * 1024 * 1024,  # 10MB
+        'maxBytes': 10 * 1024 * 1024,
         'backupCount': 5,
         'formatter': 'structured',
         'filters': ['safe_extra'],
         'level': 'WARNING',
     }
-
-    # 🔹 Handler pour les logs d'audit SOC 2 (user/role/bulk/etc.)
     LOGGING['handlers']['audit_file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': str(logs_dir / 'audit.log'),
-        'maxBytes': 10 * 1024 * 1024,  # 10MB
+        'maxBytes': 10 * 1024 * 1024,
         'backupCount': 10,
         'formatter': 'structured',
         'filters': ['safe_extra'],
         'level': 'INFO',
     }
+    LOGGING['handlers']['throttle_file'] = {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': str(logs_dir / 'throttle.log'),
+        'maxBytes': 5 * 1024 * 1024,
+        'backupCount': 3,
+        'formatter': 'structured',
+        'filters': ['safe_extra'],
+        'level': 'WARNING',
+    }
 
-    active_handlers = ['console', 'file', 'error_file', 'audit_file']
-else:
-    active_handlers = ['console']
+active_handlers = ['console'] + (['file', 'error_file'] if use_files else [])
 
-# Apply handlers to all loggers
-for logger_name in LOGGING['loggers']:
-    LOGGING['loggers'][logger_name]['handlers'] = active_handlers
+# ==========
+# ASSIGNATION DES HANDLERS
+# ==========
+
+for logger_name, logger_cfg in LOGGING['loggers'].items():
+    if logger_name in ('audit', 'permissions.audit'):
+        # Audit → console + audit_file
+        logger_cfg['handlers'] = ['console'] + (['audit_file'] if use_files else [])
+    elif logger_name in ('rest_framework.throttling', 'core.throttling'):
+        # Throttling → console + throttle_file
+        logger_cfg['handlers'] = ['console'] + (['throttle_file'] if use_files else [])
+    else:
+        # Le reste → console + app/error logs
+        logger_cfg['handlers'] = active_handlers
+
 LOGGING['root']['handlers'] = active_handlers
 
-# Log configuration status (only in DEBUG)
 if DEBUG:
     import sys
     config_msg = f"Logging configured: file_logs={use_files}, handlers={active_handlers}"
-    if not use_files and enable_file_logs:
-        config_msg += f" (logs/ directory not found)"
     print(f"[LOGGING] {config_msg}", file=sys.stderr)
-
-
