@@ -847,7 +847,18 @@ class SafeExtraFilter(logging.Filter):
         'path': '-',
         'status_code': '-',
         'duration_ms': '-',
-        'remote_ip': '-'
+        'remote_ip': '-',
+
+        # 🔹 Champs d'audit SOC 2
+        'event': '-',
+        'action': '-',
+        'actor_id': '-',
+        'target_type': '-',
+        'target_id': '-',
+        'target_count': '-',
+        'fields_changed': '-',
+        'outcome': '-',
+        'reason': '-',
     }
     
     # Sensitive keys to mask (case-insensitive substring match)
@@ -943,11 +954,32 @@ LOGGING = {
         'structured': {
             '()': UTCFormatter,  # Force UTC timestamps
             'format': (
-                'timestamp=%(asctime)s level=%(levelname)s logger=%(name)s '
-                'msg="%(message)s" file=%(module)s line=%(lineno)d func=%(funcName)s '
-                'correlation_id=%(correlation_id)s user_id=%(user_id)s client_id=%(client_id)s '
-                'method=%(method)s path="%(path)s" status=%(status_code)s '
-                'duration_ms=%(duration_ms)s ip=%(remote_ip)s'
+                'timestamp=%(asctime)s '
+                'level=%(levelname)s '
+                'logger=%(name)s '
+                'msg="%(message)s" '
+                # 🔹 Champs d'audit SOC 2
+                'event=%(event)s '
+                'action=%(action)s '
+                'actor_id=%(actor_id)s '
+                'target_type=%(target_type)s '
+                'target_id=%(target_id)s '
+                'target_count=%(target_count)s '
+                'fields_changed=%(fields_changed)s '
+                'outcome=%(outcome)s '
+                'reason="%(reason)s" '
+                # 🔹 Contexte HTTP existant
+                'file=%(module)s '
+                'line=%(lineno)d '
+                'func=%(funcName)s '
+                'correlation_id=%(correlation_id)s '
+                'user_id=%(user_id)s '
+                'client_id=%(client_id)s '
+                'method=%(method)s '
+                'path="%(path)s" '
+                'status=%(status_code)s '
+                'duration_ms=%(duration_ms)s '
+                'ip=%(remote_ip)s'
             )
         }
     },
@@ -992,8 +1024,21 @@ LOGGING = {
             'level': 'WARNING',
             'propagate': False,
         },
+
+        # 🔹 Logger dédié aux événements d'audit (SOC 2)
+        'audit': {
+            'handlers': [],  # Will be set below
+            'level': 'INFO',
+            'propagate': False,
+        },
+        
+        # 🔹 Logger pour les audits de permissions (si PERMISSIONS_CONFIG['AUDIT_LOGGER'] utilisé)
+        'permissions.audit': {
+            'handlers': [],  # Will be set below
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
-    
     # Root logger (catches everything else)
     'root': {
         'handlers': [],  # Will be set below
@@ -1018,23 +1063,35 @@ if use_files:
     LOGGING['handlers']['file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': str(logs_dir / 'app.log'),
-        'maxBytes': 5 * 1024 * 1024,  # 5MB
+        'maxBytes': 10 * 1024 * 1024,  # 10MB
         'backupCount': 5,
         'formatter': 'structured',
         'filters': ['safe_extra'],
     }
+
     LOGGING['handlers']['error_file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': str(logs_dir / 'error.log'),
-        'maxBytes': 5 * 1024 * 1024,  # 5MB
+        'maxBytes': 10 * 1024 * 1024,  # 10MB
         'backupCount': 5,
         'formatter': 'structured',
         'filters': ['safe_extra'],
-        'level': 'ERROR',
+        'level': 'WARNING',
     }
-    active_handlers = ['console', 'file', 'error_file']
+
+    # 🔹 Handler pour les logs d'audit SOC 2 (user/role/bulk/etc.)
+    LOGGING['handlers']['audit_file'] = {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': str(logs_dir / 'audit.log'),
+        'maxBytes': 10 * 1024 * 1024,  # 10MB
+        'backupCount': 10,
+        'formatter': 'structured',
+        'filters': ['safe_extra'],
+        'level': 'INFO',
+    }
+
+    active_handlers = ['console', 'file', 'error_file', 'audit_file']
 else:
-    # Console only (default for PaaS or when file logs disabled)
     active_handlers = ['console']
 
 # Apply handlers to all loggers

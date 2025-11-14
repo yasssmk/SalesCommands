@@ -57,7 +57,7 @@ class RoleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         ]
         read_only_fields = [
             'id', 'client_account', 'client_id', 'client_account_name',
-            'users_count', 'active_users_count', 'tier',
+            'users_count', 'active_users_count', 'tier', 'is_locked',
             'created_at', 'updated_at'
         ]
     
@@ -529,6 +529,7 @@ class RoleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             # Tiers modifiables
             'is_admin', 'is_manager', 'is_individual', 'name'
         ]
+        read_only_fields = ['client_account', 'is_locked']
         extra_kwargs = {
             'read': {'required': False},
             'write': {'required': False},

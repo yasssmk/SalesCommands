@@ -23,8 +23,6 @@ from ..serializers.user_serializer import (
     UserListSerializer,
 
 )
-import logging
-import json
 
 from django.urls import reverse
 from django.conf import settings
@@ -37,6 +35,7 @@ from core.idempotency import (
     get_owner_from_request)
 
 from core.logging import get_logger, ctx_from_request
+from core.logging.audit import audit_log
 from rest_framework.exceptions import PermissionDenied, APIException
 
 logger = get_logger(__name__)
@@ -337,7 +336,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 })
                 logger.info("user_retrieve_not_found", extra=ctx)
                 # Retourner dict avec flag d'erreur
-                return {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND, "status": 404}
+                return {"success": False, "error": UsersErrorMessages.USER_NOT_FOUND, "status": 404}
         
         # Cache les données
         cached_data = cache_get_set(
@@ -443,13 +442,20 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         
         # Logging
         ctx = ctx_from_request(request)
-        if isinstance(cached_data, dict) and 'count' in cached_data:
-            total = cached_data['count']
+        if isinstance(cached_data, dict):
+            if isinstance(cached_data.get('data'), dict) and 'count' in cached_data['data']:
+                total = cached_data['data']['count']
+            elif 'count' in cached_data:
+                total = cached_data['count']
+            elif isinstance(cached_data.get('data'), list):
+                total = len(cached_data['data'])
+            else:
+                total = '-'
         elif isinstance(cached_data, list):
             total = len(cached_data)
         else:
             total = '-'
-        
+
         ctx.update({
             "event": "user_list",
             "result_count": total,
@@ -488,13 +494,15 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             user = serializer.save()
 
-            ctx = ctx_from_request(request)
-            ctx.update({
-                "new_user_id": str(user.id),
-                "event": "user_create_success",
-                "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
-            })
-            logger.info("user_create_success", extra=ctx)
+            audit_log(
+                event='user_create_success',
+                action='create',
+                actor_id=str(request.user.id),
+                client_id=str(user.client_account_id),
+                target_type='user',
+                target_id=str(user.id),
+                outcome='success',
+            )
 
             return Response(
                 {
@@ -523,15 +531,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
                 changed_fields = sorted([k for k in serializer.validated_data.keys()])
 
-                ctx = ctx_from_request(request)
-                ctx.update({
-                    "target_user_id": str(user.id),
-                    "changed_fields": changed_fields,
-                    "is_self": str(user.id) == str(request.user.id),
-                    "event": "user_update_success",
-                    "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
-                })
-                logger.info("user_update_success", extra=ctx)
+                audit_log(
+                    event='user_update_success',
+                    action='partial_update',
+                    actor_id=str(request.user.id),
+                    client_id=str(updated_user.client_account_id),
+                    target_type='user',
+                    target_id=str(user.id),
+                    fields_changed=changed_fields,
+                    outcome='success',
+                    extra={'is_self': str(user.id) == str(request.user.id)}
+                )
 
                 return Response({
                     "success": True,
@@ -541,15 +551,15 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
         except (User.DoesNotExist, Http404):
 
-            ctx = ctx_from_request(request)
-            ctx.update({
-                "event": "user_update_not_found",
-                "resource": "user",
-                "target_id": str(kwargs.get('pk', '-')),
-                "action": "update",
-                "scope": "client",
-            })
-            logger.info("user_update_not_found", extra=ctx)
+            audit_log(
+                event='user_update_not_found',
+                action='partial_update',
+                actor_id=str(request.user.id),
+                client_id=str(self.get_client_id()),
+                target_type='user',
+                target_id=str(kwargs.get('pk', '-')),
+                outcome='not_found',
+            )
 
             return Response(
                 {"success": False, "error": UsersErrorMessages.USER_NOT_FOUND},
@@ -609,6 +619,20 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             # Mettre à jour le mot de passe
             serializer.update_password(user, serializer.validated_data)
 
+            audit_log(
+                event='user_password_change_success',
+                action='change_password',
+                actor_id=str(request.user.id),
+                client_id=str(user.client_account_id),
+                target_type='user',
+                target_id=str(user.id),
+                outcome='success',
+                extra={
+                    'is_self': is_self,
+                    'is_admin': is_admin,
+                }
+)
+
             ctx = ctx_from_request(request)
             ctx.update({
                 "actor_user_id": str(request.user.id),
@@ -657,32 +681,34 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 #     status=429
                 # )
 
-                ctx = ctx_from_request(request)
-                ctx.update({
-                    "event": "user_delete_not_found",
-                    "resource": "user",
-                    "target_id": str(kwargs.get('pk', '-')),
-                    "action": "delete",
-                    "scope": "client",
-                })
-                logger.info("user_delete_not_found", extra=ctx)
-
                 # return Response({
                 #     'success': False,
                 #     'error': UsersErrorMessages.USER_NOT_FOUND
                 # }, status=status.HTTP_404_NOT_FOUND)
-
-                # user = self.get_object()
+                
+                client_id = self.get_client_id()
+                user_id = kwargs.get('pk')
 
                 user = User.objects.select_for_update().filter(
-                    id=kwargs.get('pk'),
-                    client_account_id=self.get_client_id()
+                    id=user_id,
+                    client_account_id=client_id
                 ).first()
                 
                 if not user:
-                    raise StandardizedValidationError(
-                        UsersErrorMessages.USER_NOT_FOUND
+                    audit_log(
+                        event='user_delete_not_found',
+                        action='delete',
+                        actor_id=str(request.user.id),
+                        client_id=str(client_id),
+                        target_type='user',
+                        target_id=str(user_id or '-'),
+                        outcome='not_found',
                     )
+
+                    return Response({
+                        'success': False,
+                        'error': UsersErrorMessages.USER_NOT_FOUND
+                    }, status=status.HTTP_404_NOT_FOUND)
 
                 # Mémoriser le client avant suppression
                 client = user.client_account
@@ -690,45 +716,31 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 # Validation client scoping
                 self.validate_client_id(user)
 
-                # Vérifications métier avant suppression
+                # Vérifications métier avant suppression (TOCTOU-safe via modèle)
                 self._validate_user_deletion(user)
 
                 user_name = user.get_full_name()
                 user.delete()
 
-                ctx = ctx_from_request(request)
-                ctx.update({
-                    "target_user_id": str(user.id),
-                    "deleted_user_name": user_name,
-                    "event": "user_delete_success",
-                    "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
-                })
-                logger.info("user_delete_success", extra=ctx)
+                audit_log(
+                    event='user_delete_success',
+                    action='delete',
+                    actor_id=str(request.user.id),
+                    client_id=str(client.id),
+                    target_type='user',
+                    target_id=str(user.id),
+                    outcome='success',
+                )
 
                 # Filet de sécurité: s'assurer qu'un admin existe toujours
                 client.ensure_admin_invariants()
 
+                # Je te mets 200 pour garder le message dans le body
                 return Response({
                     'success': True,
-                    'message': f'User "{user_name}" deleted successfully'
-                }, status=status.HTTP_204_NO_CONTENT)
+                    'message': f'User \"{user_name}\" deleted successfully'
+                }, status=status.HTTP_200_OK)
 
-        except (User.DoesNotExist, Http404):
-
-            ctx = ctx_from_request(request)
-            ctx.update({
-                "event": "user_delete_not_found",
-                "resource": "user",
-                "target_id": str(kwargs.get('pk', '-')),
-                "action": "delete",
-                "scope": "client",
-            })
-            logger.info("user_delete_not_found", extra=ctx)
-
-            return Response({
-                'success': False,
-                'error': UsersErrorMessages.USER_NOT_FOUND
-            }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return self.handle_exception(e)
 
@@ -779,21 +791,12 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         "Cannot archive your own account. Please ask another administrator."
                     )
                 
-                # 2. Empêcher de supprimer le dernier admin actif
+                # 2. Empêcher d'archiver le dernier admin actif (TOCTOU-safe via is_last_active_admin)
                 if user.is_active and user.is_last_active_admin():
-                    from django.db.models import Q
-                    other_active_admins = User.objects.select_for_update().filter(
-                        client_account_id=client.id,
-                        is_active=True
-                    ).filter(
-                        Q(is_superuser=True) | Q(role__name='Admin')
-                    ).exclude(id=user.id).count()
-                    
-                    if other_active_admins == 0:
-                        raise StandardizedValidationError(
-                            f"Cannot archive user '{user.email}': last active administrator. "
-                            "Promote another user to admin first."
-                        )
+                    raise StandardizedValidationError(
+                        f"Cannot archive user '{user.email}': last active administrator. "
+                        "Promote another user to admin first."
+                    )
                 
                 # 3. Vérifier les permissions superuser
                 if user.is_superuser and not request.user.is_superuser:
@@ -810,16 +813,16 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 user.save(update_fields=['is_active', 'updated_at'])
 
                 # Logging
-                ctx = ctx_from_request(request)
-                ctx.update({
-                    "target_user_id": str(user.id),
-                    "archived_user_name": user_name,
-                    "archived_user_email": user_email,
-                    "was_already_inactive": was_already_inactive,
-                    "event": "user_soft_delete_success",
-                    "role_name": request.user.role_name if hasattr(request.user, 'role_name') else '-',
-                })
-                logger.info("user_soft_delete_success", extra=ctx)
+                audit_log(
+                    event='user_soft_delete_success',
+                    action='soft_delete',
+                    actor_id=str(request.user.id),
+                    client_id=str(client.id),
+                    target_type='user',
+                    target_id=str(user.id),
+                    outcome='success',
+                    extra={'was_already_inactive': was_already_inactive}
+                )
 
                 # Filet de sécurité: s'assurer qu'un admin actif existe toujours
                 client.ensure_admin_invariants()
@@ -836,15 +839,15 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 }, status=status.HTTP_200_OK)
 
         except (User.DoesNotExist, Http404):
-            ctx = ctx_from_request(request)
-            ctx.update({
-                "event": "user_soft_delete_not_found",
-                "resource": "user",
-                "target_id": str(pk),
-                "action": "soft_delete",
-                "scope": "client",
-            })
-            logger.info("user_soft_delete_not_found", extra=ctx)
+            audit_log(
+                event='user_soft_delete_not_found',
+                action='soft_delete',
+                actor_id=str(request.user.id),
+                client_id=str(self.get_client_id()),
+                target_type='user',
+                target_id=str(pk),
+                outcome='not_found',
+            )
 
             return Response({
                 'success': False,
@@ -853,6 +856,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             
         except Exception as e:
             return self.handle_exception(e)
+
     
     def _can_grant_superuser(self, current_user):
         """
@@ -896,41 +900,30 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     
     def _validate_user_deletion(self, user):
         """
-        Valider si l'utilisateur peut être supprimé
-        UPDATED: Prevent deletion of last superuser
+        Valider si l'utilisateur peut être supprimé.
+        Utilise les méthodes modèle TOCTOU-safe pour les invariants :
+        - Ne pas supprimer le dernier superuser
+        - Ne pas supprimer le dernier admin actif (Admin role ou superuser)
         """
+        # Empêcher la suppression de son propre compte
         if user.id == self.request.user.id:
             raise StandardizedValidationError(
                 CoreErrorMessages.SELF_DELETE_FORBIDDEN
             )
     
-        client = user.client_account
-        
-        # Check if this is the last superuser
-        if user.is_superuser:
-            other_superusers = client.users.select_for_update().filter(
-                is_superuser=True
-            ).exclude(id=user.id).count()
-            
-            if other_superusers == 0:
-                raise StandardizedValidationError(
-                    "Cannot delete the last superuser. "
-                    "Promote another user to superuser first."
-                )
-        
-        # Ancienne logique pour les rôles (conservée pour compatibilité)
-        # Si c'est le dernier admin ET qu'il n'y a pas de superuser
-        if user.role and user.role.name == 'Admin':
-            # Compter les autres admins ou superusers
-            from django.db.models import Q
-            other_admins_or_super = client.users.filter(
-                Q(role__name='Admin') | Q(is_superuser=True)
-            ).exclude(id=user.id).count()
-            
-            if other_admins_or_super == 0:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.LAST_ADMIN_REQUIRED
-                )
+        # 1) Invariant "au moins un superuser" par tenant
+        if user.is_last_superuser():
+            raise StandardizedValidationError(
+                "Cannot delete the last superuser. "
+                "Promote another user to superuser first."
+            )
+
+        # 2) Invariant "au moins un admin actif (role Admin OU superuser)"
+        if user.is_last_active_admin():
+            # On garde ta sémantique existante
+            raise StandardizedValidationError(
+                CoreErrorMessages.LAST_ADMIN_REQUIRED
+            )
     
     @action(detail=True, methods=['get'])
     def performance(self, request, pk=None):
@@ -1549,14 +1542,16 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     target_user.is_staff = True  # Superuser doit avoir is_staff
                 target_user.save(update_fields=['is_superuser', 'is_staff', 'updated_at'])
 
-                ctx = ctx_from_request(request)
-                ctx.update({
-                    "target_user_id": str(target_user.id),
-                    "client_id": client_id,
-                    "granted": bool(grant),
-                    "event": "superuser_status_changed",
-                })
-                logger.info("superuser_status_changed", extra=ctx)
+                audit_log(
+                    event='superuser_status_changed',
+                    action='grant_superuser',
+                    actor_id=str(request.user.id),
+                    client_id=str(client_id),
+                    target_type='user',
+                    target_id=str(target_user.id),
+                    outcome='success',
+                    extra={'granted': bool(grant)}
+                )
                 
                 # Assurer les invariants
                 target_user.client_account.ensure_admin_invariants()

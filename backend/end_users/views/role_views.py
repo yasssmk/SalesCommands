@@ -21,6 +21,7 @@ from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
 from core.jwt_helpers import CustomJWTAuthentication
 from core.logging import get_logger, ctx_from_request
+from core.logging.audit import audit_log
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from ..models import UserRole, User
 from ..serializers.role_serializers import (
@@ -119,6 +120,29 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
         invalidate_tag(client_id, 'roles')
         invalidate_tag(client_id, 'users')
+    
+    def _invalidate_all_related_caches(self, client_id):
+        """
+        Invalidate all caches related to roles.
+        
+        When a role changes, we must invalidate:
+        - Role cache (list, details)
+        - User cache (users cache their permissions via role)
+        
+        Args:
+            client_id: Client UUID
+        """
+        # Role cache
+        self._invalidate_role_cache(client_id)
+        
+        # User cache (permissions derived from role)
+        invalidate_tag(client_id, 'users')  # ← FIX: format correct (client_id, tag)
+        
+        logger.info('cache_invalidation_role_users', extra={
+            'event': 'cache_invalidation',
+            'client_id': str(client_id),
+            'tags': ['roles', 'users']
+        })
 
     def _serialize_list_queryset(self, queryset, client_id):
         """Serialize the queryset with metadata for list responses (cache friendly)."""
@@ -157,75 +181,6 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             },
             'metadata': metadata,
         }
-
-    # def _build_summary_payload(self, client_id):
-    #     """Generate the summary payload with aggregates for caching."""
-    #     roles = UserRole.objects.filter(client_account_id=client_id)
-
-    #     annotated_roles = roles.annotate(
-    #         active_users=Count('users', filter=Q(users__is_active=True), distinct=True)
-    #     )
-
-    #     tier_distribution = roles.aggregate(
-    #         admin=Count('id', filter=Q(is_admin=True)),
-    #         manager=Count('id', filter=Q(is_manager=True)),
-    #         individual=Count('id', filter=Q(is_individual=True)),
-    #     )
-
-    #     permissions_distribution = roles.aggregate(
-    #         read=Count('id', filter=Q(read=True)),
-    #         write=Count('id', filter=Q(write=True)),
-    #         modify=Count('id', filter=Q(modify=True)),
-    #         delete=Count('id', filter=Q(delete=True)),
-    #     )
-
-    #     total_roles = roles.count()
-    #     total_users_with_roles = User.objects.filter(
-    #         client_account_id=client_id,
-    #         role__isnull=False,
-    #         is_active=True,
-    #     ).count()
-
-    #     stats = {
-    #         'total_roles': total_roles,
-    #         'total_users_with_roles': total_users_with_roles,
-    #         'permissions_distribution': permissions_distribution,
-    #         'tier_distribution': tier_distribution,
-    #     }
-
-    #     role_distribution = list(
-    #         annotated_roles.values(
-    #             'name', 'is_admin', 'is_manager', 'is_individual', 'active_users'
-    #         ).order_by('-active_users')
-    #     )
-
-    #     admin_roles = list(
-    #         annotated_roles.filter(is_admin=True).values('name', 'active_users')
-    #     )
-
-    #     critical_roles = [
-    #         {
-    #             'role': admin_role['name'],
-    #             'tier': 'admin',
-    #             'active_users': admin_role['active_users'],
-    #             'warning': 'Only one admin user' if admin_role['active_users'] == 1 else None,
-    #         }
-    #         for admin_role in admin_roles
-    #     ]
-
-    #     if not admin_roles:
-    #         critical_roles.append({'warning': 'No admin role defined!'})
-
-    #     return {
-    #         'success': True,
-    #         'summary': {
-    #             'statistics': stats,
-    #             'role_distribution': role_distribution,
-    #             'critical_roles': critical_roles,
-    #             'client_id': str(client_id) if client_id else None,
-    #             'generated_at': timezone.now().isoformat(),
-    #         },
-    #     }
 
     def get_serializer_class(self):
         """
@@ -335,15 +290,18 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 instance = serializer.save()
                 
                 client_id = instance.client_account_id
-                transaction.on_commit(lambda: self._invalidate_role_cache(client_id))
+                transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
 
-            ctx = ctx_from_request(request)
-            ctx.update({
-                'event': 'role_create_success',
-                'role_id': str(instance.id),
-                'role_name': instance.name,
-            })
-            logger.info('role_create_success', extra=ctx)
+            audit_log(
+                event='role_create_success',
+                action='create',
+                actor_id=str(request.user.id),
+                client_id=str(instance.client_account_id),
+                target_type='role',
+                target_id=str(instance.id),
+                outcome='success',
+                extra={'role_name': instance.name}
+            )
             
             # Retourner avec le serializer complet pour affichage
             full_serializer = RoleSerializer(instance, context=self.get_serializer_context())
@@ -540,39 +498,25 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED + " - Cannot modify the last admin role"
                     )
                 
-                # Protection du rôle Admin système
-                if instance.name == 'Admin':
-                    new_name = request.data.get('name')
-                    if new_name and new_name != 'Admin':
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.PERMISSION_DENIED + " - Cannot rename the Admin role"
-                        )
-                    
-                    if request.data.get('read', None) == False:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable read permission for Admin role"
-                        )
-                    if request.data.get('write', None) == False or request.data.get('create', None) == False:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable write/create permission for Admin role"
-                        )
-                
                 serializer = self.get_serializer(instance, data=request.data, partial=partial)
                 serializer.is_valid(raise_exception=True)
 
                 changed_fields = sorted(serializer.validated_data.keys())
                 instance = serializer.save()
                 
-                transaction.on_commit(lambda: self._invalidate_role_cache(client_id))
+                transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
 
-            ctx = ctx_from_request(request)
-            ctx.update({
-                'event': 'role_update_success',
-                'role_id': str(instance.id),
-                'role_name': instance.name,
-                'fields_updated': changed_fields,
-            })
-            logger.info('role_update_success', extra=ctx)
+            audit_log(
+                event='role_update_success',
+                action='update',
+                actor_id=str(request.user.id),
+                client_id=str(client_id),
+                target_type='role',
+                target_id=str(instance.id),
+                fields_changed=changed_fields,
+                outcome='success',
+                extra={'role_name': instance.name}
+            )
             
             return Response({
                 'success': True,
@@ -606,15 +550,15 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 ).first()
                 
                 if not instance:
-                    ctx = ctx_from_request(request)
-                    ctx.update({
-                        'event': 'role_partial_update_not_found',
-                        'resource': 'role',
-                        'target_id': str(pk),
-                        'action': 'partial_update',
-                        'scope': 'client',
-                    })
-                    logger.info('role_partial_update_not_found', extra=ctx)
+                    audit_log(
+                        event='role_partial_update_not_found',
+                        action='partial_update',
+                        actor_id=str(request.user.id),
+                        client_id=str(client_id),
+                        target_type='role',
+                        target_id=str(pk),
+                        outcome='not_found',
+                    )
                     
                     return Response({
                         'success': False,
@@ -632,41 +576,25 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                         CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED + " - Cannot modify the last admin role"
                     )
                 
-                # Protection du rôle Admin - empêcher de désactiver des permissions critiques
-                if instance.name == 'Admin':
-                    if request.data.get('read', None) == False:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable read permission for Admin role"
-                        )
-                    if request.data.get('write', None) == False or request.data.get('create', None) == False:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable write/create permission for Admin role"
-                        )
-                    if request.data.get('modify', None) == False or request.data.get('update', None) == False:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable modify/update permission for Admin role"
-                        )
-                    if request.data.get('delete', None) == False:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.PERMISSION_DENIED + " - Cannot disable delete permission for Admin role"
-                        )
-                
                 serializer = self.get_serializer(instance, data=request.data, partial=True)
                 serializer.is_valid(raise_exception=True)
 
                 changed_fields = sorted(serializer.validated_data.keys())
                 instance = serializer.save()
                 
-                transaction.on_commit(lambda: self._invalidate_role_cache(client_id))
+                transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
 
-            ctx = ctx_from_request(request)
-            ctx.update({
-                'event': 'role_partial_update_success',
-                'role_id': str(instance.id),
-                'role_name': instance.name,
-                'fields_updated': changed_fields,
-            })
-            logger.info('role_partial_update_success', extra=ctx)
+            audit_log(
+                event='role_partial_update_success',
+                action='partial_update',
+                actor_id=str(request.user.id),
+                client_id=str(client_id),
+                target_type='role',
+                target_id=str(instance.id),
+                fields_changed=changed_fields,
+                outcome='success',
+                extra={'role_name': instance.name}
+            )
             
             return Response({
                 'success': True,
@@ -703,15 +631,15 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 ).first()
                 
                 if not instance:
-                    ctx = ctx_from_request(request)
-                    ctx.update({
-                        'event': 'role_delete_not_found',
-                        'resource': 'role',
-                        'target_id': str(pk),
-                        'action': 'delete',
-                        'scope': 'client',
-                    })
-                    logger.info('role_delete_not_found', extra=ctx)
+                    audit_log(
+                        event='role_delete_not_found',
+                        action='delete',
+                        actor_id=str(request.user.id),
+                        client_id=str(client_id),
+                        target_type='role',
+                        target_id=str(pk),
+                        outcome='not_found',
+                    )
                     
                     return Response({
                         'success': False,
@@ -731,13 +659,12 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     )
                 
                 # Vérifier qu'aucun utilisateur actif n'a ce rôle
-                active_users_count = instance.users.filter(is_active=True).count()
-                if active_users_count is None:
-                    prefetched_users = getattr(instance, 'prefetched_active_users', None)
-                    if prefetched_users is not None:
-                        active_users_count = len(prefetched_users)
-                    else:
-                        active_users_count = instance.users.filter(is_active=True).count()
+                if hasattr(instance, 'active_users_count'):
+                    active_users_count = instance.active_users_count
+                elif hasattr(instance, 'prefetched_active_users'):
+                    active_users_count = len(instance.prefetched_active_users)
+                else:
+                    active_users_count = instance.users.filter(is_active=True).count()
                         
                 if active_users_count > 0:
                     raise StandardizedValidationError(
@@ -755,15 +682,18 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
                 # Suppression effective - utiliser QuerySet car le champ 'delete' masque la méthode
                 instance.delete()
-                transaction.on_commit(lambda: self._invalidate_role_cache(client_id))
+                transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
             
-            ctx = ctx_from_request(request)
-            ctx.update({
-                'event': 'role_delete_success',
-                'role_id': str(role_id),
-                'role_name': role_name,
-            })
-            logger.info('role_delete_success', extra=ctx)
+            audit_log(
+                event='role_delete_success',
+                action='delete',
+                actor_id=str(request.user.id),
+                client_id=str(client_id),
+                target_type='role',
+                target_id=str(role_id),
+                outcome='success',
+                extra={'role_name': role_name}
+            )
             
             # HTTP 204 ne doit pas avoir de body selon la spec REST
             return Response(status=status.HTTP_204_NO_CONTENT)
@@ -993,16 +923,21 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                     is_manager=source_role.is_manager,
                     is_individual=source_role.is_individual
                 )
-                transaction.on_commit(lambda: self._invalidate_role_cache(client_id))
+                transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
             
-            ctx = ctx_from_request(request)
-            ctx.update({
-                'event': 'role_duplicate_success',
-                'source_role_id': str(source_role.id),
-                'new_role_id': str(new_role.id),
-                'role_name': new_role.name,
-            })
-            logger.info('role_duplicate_success', extra=ctx)
+            audit_log(
+                event='role_duplicate_success',
+                action='duplicate',
+                actor_id=str(request.user.id),
+                client_id=str(client_id),
+                target_type='role',
+                target_id=str(new_role.id),
+                outcome='success',
+                extra={
+                    'role_name': new_role.name,
+                    'source_role_id': str(source_role.id)
+                }
+            )
 
             serializer = RoleSerializer(new_role, context=self.get_serializer_context())
             

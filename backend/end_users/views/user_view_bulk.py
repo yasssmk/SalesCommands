@@ -34,6 +34,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.cache_utils import disable_signals_with_invalidation
 from core.logging import get_logger, ctx_from_request
+from core.logging.audit import audit_log
 from ..models import User, UserRole, Team, Organization
 from .user_view import UserViewSet
 
@@ -123,7 +124,7 @@ class UserBulkViewSet(UserViewSet):
             elif op['status'] == 'failed':
                 err = op.get('result') or {}
                 return Response({
-                    'error': 'Operation failedAA',
+                    'error': 'Operation failed',
                     'detail': err.get('message', 'Unknown error')
                 }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
 
@@ -158,486 +159,6 @@ class UserBulkViewSet(UserViewSet):
                 {'message': str(e), 'http_status': status.HTTP_500_INTERNAL_SERVER_ERROR}
             )
             raise
-
-    # def _bulk_update_impl(self, request):
-    #     """
-    #     Internal implementation of bulk update with SQL SET-BASED optimization.
-        
-    #     OPTIMIZATION APPLIED:
-    #     - Simple fields (is_active, is_superuser): UPDATE WHERE id IN (...)
-    #     - FK fields (role, team, organization): Individual updates with validation
-        
-    #     This reduces N queries to 1 query for simple field updates.
-    #     """
-    #     ctx = ctx_from_request(request) 
-    #     ctx.update({
-    #         'event': 'bulk_update_users',
-    #         'client_id': self.get_client_id()
-    #     })
-
-    #     detailed = request.query_params.get('detailed', 'false').lower() == 'true'
-        
-    #     try:
-    #         # ===== INPUT VALIDATION =====
-    #         if not isinstance(request.data, dict):
-    #             raise StandardizedValidationError("Request must be a JSON object")
-
-    #         ids = request.data.get('ids', [])
-    #         patch = request.data.get('patch', {})
-    #         mode = request.data.get('mode', 'partial')
-
-    #         if not isinstance(ids, list):
-    #             raise StandardizedValidationError(
-    #                 CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="user IDs")
-    #             )
-
-    #         if not ids:
-    #             raise StandardizedValidationError(
-    #                 CoreErrorMessages.BULK_NO_DATA.format(entity="user IDs")
-    #             )
-
-    #         if len(ids) > 500:
-    #             raise StandardizedValidationError(
-    #                 CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="users")
-    #             )
-
-    #         if not isinstance(patch, dict):
-    #             raise StandardizedValidationError("Patch data must be a JSON object")
-
-    #         if not patch:
-    #             raise StandardizedValidationError(CoreErrorMessages.BULK_UPDATE_NO_FIELDS)
-
-    #         if mode not in ['partial', 'strict']:
-    #             raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
-
-    #         ctx['ids_count'] = len(ids)
-    #         ctx['mode'] = mode
-    #         logger.info("Starting bulk user update", extra=ctx)
-
-    #         # ===== VALIDATE ALLOWED FIELDS =====
-    #         ALLOWED_FIELDS = {'is_active', 'is_superuser', 'role', 'team', 'organization'}
-    #         invalid_fields = set(patch.keys()) - ALLOWED_FIELDS
-
-    #         if invalid_fields:
-    #             raise StandardizedValidationError(
-    #                 f"Fields not allowed in bulk update: {', '.join(invalid_fields)}. "
-    #                 f"Allowed: {', '.join(ALLOWED_FIELDS)}"
-    #             )
-
-    #         # ===== SECURITY: PREVENT SELF-MODIFICATION =====
-    #         requester_id = str(request.user.id)
-    #         if requester_id in ids:
-    #             raise StandardizedValidationError(CoreErrorMessages.BULK_UPDATE_SELF_MODIFY)
-
-    #         # ===== FETCH USERS WITH TENANT SCOPING =====
-    #         client_id = self.get_client_id()
-    #         users_qs = User.objects.filter(
-    #             id__in=ids,
-    #             client_account_id=client_id
-    #         ).select_related('role', 'team', 'organization', 'client_account')
-    #         users_dict = {str(u.id): u for u in users_qs}
-
-    #         # ===== CHECK FOR INVALID IDS =====
-    #         invalid_ids = set(ids) - set(users_dict.keys())
-
-    #         results = {'success': [], 'failed': []}
-
-    #         for invalid_id in invalid_ids:
-    #             results['failed'].append({
-    #                 'id': invalid_id,
-    #                 'email': 'Unknown',
-    #                 'errors': [CoreErrorMessages.BULK_UPDATE_INVALID_ID.format(id=invalid_id)]
-    #             })
-
-    #         if mode == 'strict' and invalid_ids:
-    #             return self._build_bulk_error_response(
-    #                 results,
-    #                 len(ids),
-    #                 f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
-    #             )
-
-    #         # ===== PRE-VALIDATION FOR SET-BASED UPDATES =====
-    #         # Separate simple fields (can use set-based UPDATE) from complex fields
-    #         simple_fields = {'is_active', 'is_superuser'}
-    #         complex_fields = {'role', 'team', 'organization'}
-            
-    #         simple_updates = {k: v for k, v in patch.items() if k in simple_fields and k not in ['is_active', 'is_superuser']}
-    #         complex_updates = {k: v for k, v in patch.items() if k in complex_fields}
-            
-    #         # For set-based updates, we need to validate all users first
-    #         valid_user_ids = []
-    #         for idx, user_id in enumerate(ids):
-    #             if user_id in invalid_ids:
-    #                 continue
-
-    #             user = users_dict[user_id]
-                
-    #             # Pre-validate this user for the updates
-    #             try:
-    #                 # Validate simple field updates
-    #                 if 'is_active' in simple_updates:
-    #                     new_active = simple_updates['is_active']
-    #                     if new_active is False and user.is_active and user.is_last_active_admin():
-    #                         raise StandardizedValidationError(
-    #                             f"Cannot deactivate user '{user.email}': last active administrator"
-    #                         )
-                    
-    #                 if 'is_superuser' in simple_updates:
-    #                     new_superuser = simple_updates['is_superuser']
-    #                     if new_superuser is False and user.is_superuser and user.is_last_superuser():
-    #                         raise StandardizedValidationError(
-    #                             f"Cannot remove superuser status from '{user.email}': last superuser"
-    #                         )
-                    
-    #                 # If validation passes, add to valid list
-    #                 valid_user_ids.append(user_id)
-                    
-    #             except StandardizedValidationError as e:
-    #                 results['failed'].append({
-    #                     'id': user_id,
-    #                     'email': user.email,
-    #                     'errors': [str(e)]
-    #                 })
-                    
-    #                 if mode == 'strict':
-    #                     return self._build_bulk_error_response(
-    #                         results,
-    #                         len(ids),
-    #                         f"Strict mode validation failed: {str(e)}"
-    #                     )
-
-    #         # ===== APPLY UPDATES =====
-    #         with disable_signals_with_invalidation(client_id, ['users']):
-    #             if mode == 'strict':
-
-    #                 validated_fks = {}
-    #                 if complex_updates:
-    #                     try:
-    #                         validated_fks = self._prevalidate_fks(complex_updates, client_id)
-
-    #                         if 'role' in validated_fks:
-    #                             self._validate_bulk_role_change_last_admin(
-    #                                 client_id=client_id,
-    #                                 user_ids_changing_role=valid_user_ids,
-    #                                 users_dict=users_dict,
-    #                                 new_role_name=validated_fks.get('role_name'),
-    #                                 mode='strict'
-    #                             )
-
-    #                     except StandardizedValidationError as e:
-    #                         error_msg = self._format_bulk_error_message(e)
-    #                         ctx['event'] = 'bulk_update_fk_validation_failed'
-    #                         ctx['error'] = error_msg
-    #                         logger.error("FK validation failed in strict mode", extra=ctx, exc_info=True)
-    #                         return self._build_bulk_error_response(
-    #                             {'success': [], 'failed': results['failed']},
-    #                             len(ids),
-    #                             f"Strict mode failed: {error_msg}"
-    #                         )
-                    
-    #                 with transaction.atomic():
-    #                     try:
-    #                         # SET-BASED UPDATE for simple fields (1 query instead of N)
-    #                         if simple_updates and valid_user_ids:
-    #                             update_fields = {}
-    #                             # if 'is_active' in simple_updates:
-    #                             #     update_fields['is_active'] = simple_updates['is_active']
-    #                             # if 'is_superuser' in simple_updates:
-    #                             #     update_fields['is_superuser'] = simple_updates['is_superuser']
-    #                             #     # If promoting to superuser, also set is_staff
-    #                             #     if simple_updates['is_superuser'] is True:
-    #                             #         update_fields['is_staff'] = True
-                                
-    #                             if update_fields:
-    #                                 User.objects.filter(
-    #                                     id__in=valid_user_ids,
-    #                                     client_account_id=client_id
-    #                                 ).update(**update_fields)
-                                
-    #                         if 'is_active' in patch:
-    #                             if patch['is_active'] is True:
-    #                                 validation_result = self._validate_bulk_activation_seats(
-    #                                     client_id=client_id,
-    #                                     user_ids_to_activate=valid_user_ids,
-    #                                     mode=mode
-    #                                 )
-                                    
-    #                                 if validation_result['allowed_ids']:
-    #                                     User.objects.filter(
-    #                                         id__in=validation_result['allowed_ids'],
-    #                                         client_account_id=client_id
-    #                                     ).update(is_active=True)
-                                    
-    #                                 for user_id in validation_result['denied_ids']:
-    #                                     user = users_dict[user_id]
-    #                                     results['failed'].append({
-    #                                         'id': str(user.id),
-    #                                         'email': user.email,
-    #                                         'errors': [validation_result['warning']]
-    #                                     })
-                                    
-    #                                 valid_user_ids = [uid for uid in valid_user_ids 
-    #                                                 if uid not in validation_result['denied_ids']]
-    #                             else:
-    #                                 self._validate_bulk_deactivation_last_admin(
-    #                                     client_id=client_id,
-    #                                     user_ids_to_deactivate=valid_user_ids,
-    #                                     users_dict=users_dict,
-    #                                     mode='strict'
-    #                                 )
-                                    
-    #                                 User.objects.filter(
-    #                                     id__in=valid_user_ids,
-    #                                     client_account_id=client_id
-    #                                 ).update(is_active=False)
-                            
-    #                         if 'is_superuser' in patch:
-    #                             # Valider permissions + dernier superuser
-    #                             self._validate_superuser_modification(
-    #                                 current_user=request.user,
-    #                                 request_data=patch,
-    #                                 target_user_ids=valid_user_ids
-    #                             )
-                                
-    #                             # Si validation OK, UPDATE
-    #                             update_fields = {'is_superuser': patch['is_superuser']}
-    #                             if patch['is_superuser'] is True:
-    #                                 update_fields['is_staff'] = True
-                                
-    #                             User.objects.filter(
-    #                                 id__in=valid_user_ids,
-    #                                 client_account_id=client_id
-    #                             ).update(**update_fields)
-                            
-    #                         # Complex fields (FK) need individual updates for validation
-    #                         if validated_fks and valid_user_ids:
-    #                             self._apply_fk_updates_setbased(valid_user_ids, validated_fks, client_id)
-                            
-    #                         # Build success results
-    #                         for user_id in valid_user_ids:
-    #                             user = users_dict[user_id]
-    #                             # Refresh from DB to get updated values
-    #                             user.refresh_from_db()
-    #                             results['success'].append({
-    #                                 'id': str(user.id),
-    #                                 'email': user.email,
-    #                                 'name': user.get_full_name()
-    #                             })
-                            
-    #                         # Invalidate cache after commit
-    #                         # transaction.on_commit(lambda: invalidate_tag(client_id, 'users')) // on utilise maintenant disable_signals_with_invalidation(client_id, ['users'])
-
-    #                         requester_id = str(request.user.id)
-    #                         client = User.objects.get(id=requester_id).client_account
-    #                         client.ensure_admin_invariants()
-
-
-    #                     except Exception as e:
-    #                         error_msg = self._format_bulk_error_message(e)
-    #                         ctx['event'] = 'bulk_update_strict_mode_failed'
-    #                         ctx['error'] = error_msg
-    #                         logger.error("Bulk update strict mode failed", extra=ctx, exc_info=True)
-    #                         return self._build_bulk_error_response(
-    #                             {'success': [], 'failed': results['failed']},
-    #                             len(ids),
-    #                             f"Strict mode failed: {error_msg}"
-    #                         )
-    #             else:
-    #                 # Partial mode: Best-effort updates
-    #                 # ⭐ SET-BASED UPDATE for simple fields
-    #                 if simple_updates and valid_user_ids:
-    #                     update_fields = {}
-    #                     # if 'is_active' in simple_updates:
-    #                     #     update_fields['is_active'] = simple_updates['is_active']
-    #                     # if 'is_superuser' in simple_updates:
-    #                     #     update_fields['is_superuser'] = simple_updates['is_superuser']
-    #                     #     if simple_updates['is_superuser'] is True:
-    #                     #         update_fields['is_staff'] = True
-                        
-    #                     if update_fields:
-    #                         User.objects.filter(
-    #                             id__in=valid_user_ids,
-    #                             client_account_id=client_id
-    #                         ).update(**update_fields)
-
-    #                 if 'is_active' in patch:
-
-    #                     if patch['is_active'] is True:
-    #                         with transaction.atomic(): 
-    #                             validation_result = self._validate_bulk_activation_seats(
-    #                                 client_id=client_id,
-    #                                 user_ids_to_activate=valid_user_ids,
-    #                                 mode=mode
-    #                             )
-                                
-    #                         if validation_result['allowed_ids']:
-    #                             User.objects.filter(
-    #                                 id__in=validation_result['allowed_ids'],
-    #                                 client_account_id=client_id
-    #                             ).update(is_active=True)
-                            
-    #                         for user_id in validation_result['denied_ids']:
-    #                             user = users_dict[user_id]
-    #                             results['failed'].append({
-    #                                 'id': str(user.id),
-    #                                 'email': user.email,
-    #                                 'errors': [validation_result['warning']]
-    #                             })
-                            
-    #                         valid_user_ids = [uid for uid in valid_user_ids 
-    #                                         if uid not in validation_result['denied_ids']]
-    #                     else:
-
-    #                         with transaction.atomic():
-    #                             validation_result = self._validate_bulk_deactivation_last_admin(
-    #                                 client_id=client_id,
-    #                                 user_ids_to_deactivate=valid_user_ids,
-    #                                 users_dict=users_dict,
-    #                                 mode='partial'
-    #                             )
-                                
-    #                             # Désactiver seulement allowed_ids (admins exclus automatiquement)
-    #                             if validation_result['allowed_ids']:
-    #                                 User.objects.filter(
-    #                                     id__in=validation_result['allowed_ids'],
-    #                                     client_account_id=client_id
-    #                                 ).update(is_active=False)
-                                
-    #                         # Ajouter denied_ids (derniers admins) dans failed avec warning
-    #                         for user_id in validation_result['denied_ids']:
-    #                             user = users_dict[user_id]
-    #                             results['failed'].append({
-    #                                 'id': str(user.id),
-    #                                 'email': user.email,
-    #                                 'errors': [validation_result['warning']]
-    #                             })
-                            
-    #                         # Mettre à jour valid_user_ids pour exclure denied
-    #                         # (important pour la suite du traitement)
-    #                         valid_user_ids = [uid for uid in valid_user_ids 
-    #                                         if uid not in validation_result['denied_ids']]
-                            
-    #                         # User.objects.filter(
-    #                         #     id__in=valid_user_ids,
-    #                         #     client_account_id=client_id
-    #                         # ).update(is_active=False)
-                    
-    #                 if 'is_superuser' in patch:
-    #                             # Valider permissions + dernier superuser
-    #                             self._validate_superuser_modification(
-    #                                 current_user=request.user,
-    #                                 request_data=patch,
-    #                                 target_user_ids=valid_user_ids
-    #                             )
-                                
-    #                             # Si validation OK, UPDATE
-    #                             update_fields = {'is_superuser': patch['is_superuser']}
-    #                             if patch['is_superuser'] is True:
-    #                                 update_fields['is_staff'] = True
-                                
-    #                             User.objects.filter(
-    #                                 id__in=valid_user_ids,
-    #                                 client_account_id=client_id
-    #                             ).update(**update_fields)
-
-
-    #                 # Validate then apply SET-BASED (NEW OPTIMIZATION)
-    #                 if complex_updates and valid_user_ids:
-    #                     # Try to validate FKs for all users
-    #                     try:
-    #                         validated_fks = self._prevalidate_fks(complex_updates, client_id)
-
-    #                         if 'role' in validated_fks:
-    #                             validation_result = self._validate_bulk_role_change_last_admin(
-    #                                 client_id=client_id,
-    #                                 user_ids_changing_role=valid_user_ids,
-    #                                 users_dict=users_dict,
-    #                                 new_role_name=validated_fks.get('role_name'),
-    #                                 mode='partial'
-    #                             )
-                                
-    #                             # Filtrer valid_user_ids pour exclure les derniers admins protégés
-    #                             if validation_result['denied_ids']:
-    #                                 # Ajouter denied_ids (derniers admins) dans failed avec warning
-    #                                 for user_id in validation_result['denied_ids']:
-    #                                     user = users_dict[user_id]
-    #                                     results['failed'].append({
-    #                                         'id': str(user.id),
-    #                                         'email': user.email,
-    #                                         'errors': [validation_result['warning']]
-    #                                     })
-                                    
-    #                                 # Mettre à jour valid_user_ids pour exclure denied
-    #                                 valid_user_ids = [uid for uid in valid_user_ids 
-    #                                                 if uid not in validation_result['denied_ids']]
-                            
-    #                         # If validation succeeds, apply to all valid users in one go
-    #                         with transaction.atomic():
-    #                             self._apply_fk_updates_setbased(valid_user_ids, validated_fks, client_id)
-                                
-    #                     except StandardizedValidationError as e:
-    #                         # If FK validation fails globally, it affects all users
-    #                         error_msg = self._format_bulk_error_message(e)
-    #                         for user_id in valid_user_ids:
-    #                             user = users_dict[user_id]
-    #                             results['failed'].append({
-    #                                 'id': user_id,
-    #                                 'email': user.email,
-    #                                 'errors': [error_msg]
-    #                             })
-    #                         # Clear valid_user_ids since all FK updates failed
-    #                         valid_user_ids = []
-                    
-    #                 # Build success results
-    #                 for user_id in valid_user_ids:
-    #                     user = users_dict[user_id]
-    #                     user.refresh_from_db()
-    #                     results['success'].append({
-    #                         'id': str(user.id),
-    #                         'email': user.email,
-    #                         'name': user.get_full_name()
-    #                     })
-                    
-
-    #                 try:
-    #                     requester_id = str(request.user.id)
-    #                     client = User.objects.get(id=requester_id).client_account
-    #                     client.ensure_admin_invariants()
-    #                 except Exception as e:
-    #                     logger.warning(
-    #                         f"Failed to ensure admin invariants after bulk update: {e}",
-    #                         extra=ctx
-    #                     )
-
-    #                 # ✅ SECURITY FIX: Invalidate cache AFTER all transactions are committed
-    #                 # This ensures cache is only invalidated if all database writes succeed
-    #                 # If any transaction rolls back, cache invalidation won't happen
-    #                 # transaction.on_commit(lambda: invalidate_tag(client_id, 'users'))
-
-    #         success_count = len(results['success'])
-    #         failed_count = len(results['failed'])
-
-    #         ctx.update({
-    #             'event': 'bulk_update_users_completed',
-    #             'requested': len(ids),
-    #             'updated': success_count,
-    #             'failed': failed_count
-    #         })
-    #         logger.info("Bulk user update completed", extra=ctx)
-
-    #         return self._build_bulk_success_response(results, len(ids), operation='update', detailed=detailed)
-
-    #     except StandardizedValidationError as e:
-    #         if hasattr(e, 'detail') and isinstance(e.detail, dict):
-    #             error_msg = e.detail.get('error', str(e))
-    #         else:
-    #             error_msg = str(e)
-            
-    #         return self._build_bulk_error_response(
-    #             results={'success': [], 'failed': []},
-    #             total=0,
-    #             error_message=error_msg
-    #         )
 
     def _bulk_update_impl(self, request):
         """
@@ -690,9 +211,16 @@ class UserBulkViewSet(UserViewSet):
             if mode not in ['partial', 'strict']:
                 raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
 
-            ctx['ids_count'] = len(ids)
-            ctx['mode'] = mode
-            logger.info("Starting bulk user update", extra=ctx)
+            audit_log(
+                event='bulk_update_users',
+                action='bulk_update',
+                actor_id=str(request.user.id),
+                client_id=str(self.get_client_id()),
+                target_type='user',
+                target_count=len(ids),
+                outcome='started',
+                extra={'mode': mode}
+            )
 
             # ===== VALIDATE ALLOWED FIELDS =====
             ALLOWED_FIELDS = {'is_active', 'is_superuser', 'role', 'team', 'organization'}
@@ -1004,14 +532,19 @@ class UserBulkViewSet(UserViewSet):
             success_count = len(results['success'])
             failed_count = len(results['failed'])
 
-            ctx_safe = {
-                **ctx,
-                'event': 'bulk_update_users_completed',
-                'requested': len(ids),
-                'updated': success_count,
-                'failed': failed_count
-            }
-            logger.info("Bulk user update completed", extra=ctx_safe)
+            audit_log(
+                event='bulk_update_users_completed',
+                action='bulk_update',
+                actor_id=str(request.user.id),
+                client_id=str(self.get_client_id()),
+                target_type='user',
+                target_count=len(ids),
+                outcome='success',
+                extra={
+                    'updated': success_count,
+                    'failed': failed_count
+                }
+            )
 
             return self._build_bulk_success_response(results, len(ids), operation='update', detailed=detailed)
 
@@ -1095,7 +628,7 @@ class UserBulkViewSet(UserViewSet):
             elif op['status'] == 'failed':
                 err = op.get('result') or {}
                 return Response({
-                    'error': 'Operation failedBB',
+                    'error': 'Operation failed',
                     'detail': err.get('message', 'Unknown error')
                 }, status=err.get('http_status', status.HTTP_500_INTERNAL_SERVER_ERROR))
 
@@ -1181,9 +714,16 @@ class UserBulkViewSet(UserViewSet):
             if mode not in ['partial', 'strict']:
                 raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
 
-            ctx['ids_count'] = len(ids)
-            ctx['mode'] = mode
-            logger.info("Starting bulk user delete (hard)", extra=ctx)
+            audit_log(
+                event='bulk_delete_users',
+                action='bulk_delete',
+                actor_id=str(request.user.id),
+                client_id=str(self.get_client_id()),
+                target_type='user',
+                target_count=len(ids),
+                outcome='started',
+                extra={'mode': mode}
+            )
 
             # ===== SECURITY: PREVENT SELF-DELETE =====
             requester_id = str(request.user.id)
@@ -1218,19 +758,22 @@ class UserBulkViewSet(UserViewSet):
                 )
 
             # ===== PRE-VALIDATION: CHECK FOR PROTECTED USERS =====
+            validation = self._validate_bulk_delete_last_admin(
+                client_id=client_id,
+                user_ids_to_delete=ids,
+                users_dict=users_dict,
+                mode=mode
+            )
+            
             protected_users = []
             
-            for idx, user_id in enumerate(ids):
-                if user_id in invalid_ids:
-                    continue
-                    
-                user = users_dict[user_id]
-                
-                if user.is_last_active_admin():
+            if validation['protected_ids']:
+                for user_id in validation['protected_ids']:
+                    user = users_dict[user_id]
                     protected_users.append({
                         'id': str(user.id),
                         'email': user.email,
-                        'reason': CoreErrorMessages.BULK_DELETE_LAST_ADMIN.format(email=user.email)
+                        'reason': validation['warning']
                     })
 
             if mode == 'strict' and protected_users:
@@ -1246,7 +789,6 @@ class UserBulkViewSet(UserViewSet):
                     len(ids),
                     f"Strict mode: {len(protected_users)} protected user(s) found"
                 )
-
             # ===== CALCULATE VALID IDS FOR SET-BASED DELETE =====
             protected_ids = {p['id'] for p in protected_users}
             valid_ids = set(ids) - invalid_ids - protected_ids
@@ -1405,13 +947,19 @@ class UserBulkViewSet(UserViewSet):
             success_count = len(results['success'])
             failed_count = len(results['failed'])
 
-            ctx.update({
-                'event': 'bulk_delete_users_completed',
-                'requested': len(ids),
-                'deleted': success_count,
-                'failed': failed_count
-            })
-            logger.info("Bulk user deletion completed", extra=ctx)
+            audit_log(
+                event='bulk_delete_users_completed',
+                action='bulk_delete',
+                actor_id=str(request.user.id),
+                client_id=str(self.get_client_id()),
+                target_type='user',
+                target_count=len(ids),
+                outcome='success',
+                extra={
+                    'deleted': success_count,
+                    'failed': failed_count
+                }
+            )
 
             return self._build_bulk_success_response(results, len(ids), operation='delete', detailed=detailed)
 
@@ -1886,7 +1434,6 @@ class UserBulkViewSet(UserViewSet):
         No further optimization needed here.
         """
 
-
         ctx = ctx_from_request(request)
         ctx.update({
             'event': 'bulk_create_users',
@@ -1923,6 +1470,18 @@ class UserBulkViewSet(UserViewSet):
 
             # ===== PREPARE CLIENT ID =====
             client_id = self.get_client_id()
+
+            # ===== LOG DÉBUT OPÉRATION =====
+            audit_log(
+                event='bulk_create_users',
+                action='bulk_create',
+                actor_id=str(request.user.id),
+                client_id=str(client_id),
+                target_type='user',
+                target_count=len(users_data),
+                outcome='started',
+                extra={'mode': mode}
+            )
 
             results = {'success': [], 'failed': [], 'skipped': []}
 
@@ -2217,16 +1776,20 @@ class UserBulkViewSet(UserViewSet):
             failed_count = len(results['failed'])
             skipped_count = len(results['skipped'])
 
-            ctx.update({
-                'event': 'bulk_create_users_completed',
-                'requested': len(users_data),
-                'summary_created': success_count,
-                'failed': failed_count,
-                'skipped': skipped_count
-            })
-
-            ctx_safe = {**ctx, 'success_count': len(results['success'])}
-            logger.info("Bulk user creation completed", extra=ctx_safe)
+            audit_log(
+                event='bulk_create_users_completed',
+                action='bulk_create',
+                actor_id=str(request.user.id),
+                client_id=str(client_id),
+                target_type='user',
+                target_count=len(users_data),
+                outcome='success',
+                extra={
+                    'created': success_count,
+                    'failed': failed_count,
+                    'skipped': skipped_count
+                }
+            )
 
             return self._build_bulk_success_response(results, len(users_data), operation='create', detailed=detailed )
 
@@ -2803,59 +2366,178 @@ class UserBulkViewSet(UserViewSet):
             'warning': None
         }
     
-    def _validate_superuser_modification(self, current_user, request_data, target_user=None, target_user_ids=None):
+    def _validate_superuser_modification(
+        self,
+        current_user,
+        request_data,
+        target_user=None,
+        target_user_ids=None,
+    ):
         """
         Validate if the current user can modify superuser status.
-        
-        Called before create or update operations that involve is_superuser field.
-        Only superusers or Admin role users can grant/revoke superuser status.
-        
-        Args:
-            current_user: User making the request
-            request_data: Data being submitted (may contain is_superuser)
-            target_user: User being modified (None for create operations)
-            
-        Raises:
-            StandardizedValidationError: If validation fails
+
+        Utilisé :
+        - pour la création / mise à jour d'un user (target_user)
+        - pour les opérations bulk (target_user_ids)
+
+        Règles :
+        - Seuls les superusers OU les utilisateurs avec rôle "Admin"
+            peuvent modifier le champ is_superuser.
+        - On ne peut jamais retirer le statut superuser au dernier superuser
+            du tenant (single ou bulk).
         """
+        # Rien à faire si le champ n'est pas dans la requête
         if 'is_superuser' not in request_data:
             return
-        
-        # Check if current user can grant superuser
-        if not current_user.is_superuser:
-            # Check if user has Admin role
-            if not (current_user.role and current_user.role.name == 'Admin'):
-                raise StandardizedValidationError(
-                    "Only superusers and admins can grant/revoke superuser status"
-                )
-        
-        # If removing superuser status, check it's not the last one
-        elif target_user_ids and request_data.get('is_superuser') is False:
-            # Identifier superusers actuels dans le batch
-            current_superusers_in_batch = list(
-            User.objects.filter(
-                id__in=target_user_ids,
-                client_account_id=current_user.client_account_id,
-                is_superuser=True
-            ).values_list('id', flat=True)
+
+        new_value = request_data.get('is_superuser')
+
+        # 1) DROITS : superuser OU rôle Admin
+        is_admin_role = bool(
+            getattr(current_user, 'role', None)
+            and current_user.role
+            and current_user.role.name == 'Admin'
         )
-        
-        # ✅ VERROU: Compter autres superusers HORS du batch avec lock pessimiste
-        # Convert to list() because select_for_update() doesn't work with count()
-        # Performance impact is minimal (typically < 10 superusers per tenant)
-        other_superusers = list(
-            User.objects.filter(
-                client_account_id=current_user.client_account_id,
-                is_superuser=True
-            ).exclude(id__in=current_superusers_in_batch).values_list('id', flat=True)
-        )
-        
-        if len(other_superusers) == 0:
+        if not (current_user.is_superuser or is_admin_role):
             raise StandardizedValidationError(
-                "Cannot remove superuser status from the last superuser(s). "
-                "Promote another user to superuser first."
+                "Only superusers and admins can grant/revoke superuser status"
             )
-            
+
+        # Si on ne fait que GRANT (is_superuser=True), pas de risque de "dernier superuser"
+        if new_value is not False:
+            return
+
+        # 2) PROTECTION : DERNIER SUPERUSER EN MODE BULK
+        if target_user_ids:
+            # Superusers dans le batch
+            current_superusers_in_batch = list(
+                User.objects.filter(
+                    id__in=target_user_ids,
+                    client_account_id=current_user.client_account_id,
+                    is_superuser=True,
+                ).values_list('id', flat=True)
+            )
+
+            if current_superusers_in_batch:
+                # Superusers actifs hors du batch
+                other_superusers = User.objects.filter(
+                    client_account_id=current_user.client_account_id,
+                    is_superuser=True,
+                ).exclude(id__in=current_superusers_in_batch).count()
+
+                if other_superusers == 0:
+                    raise StandardizedValidationError(
+                        "Cannot remove superuser status from the last superuser(s). "
+                        "Promote another user to superuser first."
+                    )
+
+        # 3) PROTECTION : DERNIER SUPERUSER EN MODE SINGLE TARGET
+        if target_user is not None and target_user.is_superuser and new_value is False:
+            client = target_user.client_account
+            other_superusers = client.users.filter(
+                is_superuser=True
+            ).exclude(id=target_user.id).count()
+
+            if other_superusers == 0:
+                raise StandardizedValidationError(
+                    "Cannot remove superuser status from the last superuser. "
+                    "Promote another user to superuser first."
+                )
+
+
+    def _validate_bulk_delete_last_admin(
+        self,
+        client_id,
+        user_ids_to_delete,
+        users_dict,
+        mode
+    ):
+        """
+        Valide qu'on ne supprime pas le dernier admin actif du tenant
+        (superuser OU rôle Admin).
+
+        SECURITY: utilise select_for_update() sur les autres admins actifs
+        pour éviter le TOCTOU entre le COUNT et le DELETE.
+
+        Args:
+            client_id: ID du client tenant
+            user_ids_to_delete: Liste des IDs users à supprimer
+            users_dict: Dict {user_id: User obj} déjà chargés
+            mode: 'strict' ou 'partial'
+
+        Returns:
+            dict:
+                {
+                    'protected_ids': [ids d'admins protégés],
+                    'warning': str ou None
+                }
+
+        Raises (mode strict):
+            StandardizedValidationError si suppression affecte le dernier admin actif.
+        """
+        from django.db.models import Q
+
+        # 1) Identifier les admins actifs DANS le batch
+        admins_in_batch = []
+        for user_id in user_ids_to_delete:
+            user = users_dict.get(user_id)
+            if not user:
+                continue
+
+            # On ne protège que les admins ACTIFS
+            if not user.is_active:
+                continue
+
+            # Admin = superuser OU rôle Admin
+            is_admin = user.is_superuser or (user.role and user.role.name == 'Admin')
+            if is_admin:
+                admins_in_batch.append(user_id)
+
+        # Aucun admin dans le batch => rien à protéger
+        if not admins_in_batch:
+            return {
+                'protected_ids': [],
+                'warning': None
+            }
+
+        # 2) Compter les autres admins actifs HORS du batch avec lock
+        other_active_admins = list(
+            User.objects.filter(
+                client_account_id=client_id,
+                is_active=True
+            ).filter(
+                Q(is_superuser=True) | Q(role__name='Admin')
+            ).exclude(
+                id__in=admins_in_batch
+            ).select_for_update()  # 🔒 lock pour éviter TOCTOU
+            .only('id')
+        )
+        other_active_admins_count = len(other_active_admins)
+
+        # 3) Décision selon mode
+        if other_active_admins_count == 0:
+            # On est en train de supprimer le(s) dernier(s) admin(s)
+            warning = (
+                f"{len(admins_in_batch)} admin(s) cannot be deleted "
+                f"(last active admin). Promote another user to admin first."
+            )
+
+            if mode == 'strict':
+                raise StandardizedValidationError(warning)
+
+            # Mode partial : on marque ces admins comme protégés
+            return {
+                'protected_ids': admins_in_batch,
+                'warning': warning
+            }
+
+        # Il reste au moins un autre admin actif
+        return {
+            'protected_ids': [],
+            'warning': None
+        }
+
+
     def _validate_bulk_deactivation_last_admin(
         self, 
         client_id, 
