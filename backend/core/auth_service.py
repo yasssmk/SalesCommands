@@ -6,6 +6,7 @@ from .jwt_helpers import JWTHelpers
 import logging
 
 from core.logging import get_logger, ctx_from_request, get_correlation_id
+from core.logging.audit import audit_log
 from core.error_messages import CoreErrorMessages
 
 try:
@@ -54,14 +55,57 @@ class AuthService:
             )
         except self.user_model.DoesNotExist:
             logger.warning("login_failed_user_not_found", extra=log_context)
+
+            audit_log(
+                event='login_failed',
+                action='login',
+                actor_id='-',
+                client_id='-',
+                target_type='session',
+                outcome='failed',
+                extra={
+                    'origin': self.origin,
+                    'reason': 'user_not_found'
+                }
+            )
+            
+
             raise AuthenticationFailed("Invalid email or password")
 
         if not check_password(password, user.password):
             logger.warning("login_failed_invalid_password", extra=log_context)
+
+            audit_log(
+                event='login_failed',
+                action='login',
+                actor_id=str(user.id),
+                client_id=str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else '-',
+                target_type='session',
+                outcome='failed',
+                extra={
+                    'origin': self.origin,
+                    'reason': 'invalid_password'
+                }
+            )
+
             raise AuthenticationFailed("Invalid email or password")
 
         if not user.is_active:
             logger.warning("login_failed_account_disabled", extra=log_context)
+
+            audit_log(
+                event='login_failed',
+                action='login',
+                actor_id=str(user.id),
+                client_id=str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else '-',
+                target_type='session',
+                outcome='failed',
+                extra={
+                    'origin': self.origin,
+                    'reason': 'account_disabled'
+                }
+            )
+
             raise PermissionDenied
 
         # Update last_login
@@ -98,6 +142,20 @@ class AuthService:
         # Log successful login
         log_context['role_name'] = user.role_name if hasattr(user, 'role_name') else '-'
         logger.info("login_success", extra=log_context)
+
+        audit_log(
+            event='login_success',
+            action='login',
+            actor_id=str(user.id),
+            client_id=str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else '-',
+            target_type='session',
+            outcome='success',
+            extra={
+                'origin': self.origin,
+                'role_name': user.role_name if hasattr(user, 'role_name') else '-'
+            }
+        )
+
         return user
 
     def register_user(self, data):
@@ -119,6 +177,20 @@ class AuthService:
 
         if self.user_model.objects.filter(email=email).exists():
             logger.warning("registration_failed_email_exists", extra=log_context)
+
+            audit_log(
+                event='registration_failed',
+                action='register',
+                actor_id='-',
+                client_id='-',
+                target_type='user',
+                outcome='failed',
+                extra={
+                    'origin': self.origin,
+                    'reason': 'email_exists'
+                }
+            )
+
             raise AuthenticationFailed("User with this email already exists.")
 
         serializer = self.serializer_class(data=data)
@@ -135,12 +207,37 @@ class AuthService:
             log_context['role_name'] = user.role_name if hasattr(user, 'role_name') else '-'
 
             logger.info("registration_success", extra=log_context)
+            audit_log(
+                event='registration_success',
+                action='register',
+                actor_id=str(user.id),
+                client_id=str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else '-',
+                target_type='user',
+                outcome='success',
+                extra={
+                    'origin': self.origin,
+                    'role_name': user.role_name if hasattr(user, 'role_name') else '-'
+                }
+            )
+
             return self.serializer_class(user).data
 
         logger.warning("registration_failed_validation", extra={
             **log_context,
             'errors': str(serializer.errors)[:200]
         })
+        audit_log(
+            event='registration_failed',
+            action='register',
+            actor_id='-',
+            client_id='-',
+            target_type='user',
+            outcome='failed',
+            extra={
+                'origin': self.origin,
+                'reason': 'validation_error'
+            }
+        )
         raise AuthenticationFailed(serializer.errors)
 
     def refresh_tokens(self, request, response):
@@ -163,6 +260,20 @@ class AuthService:
         refresh_token = request.COOKIES.get('refresh_token')
         if not refresh_token:
             logger.warning("token_refresh_failed_missing", extra=log_context)
+
+            audit_log(
+                event='token_refresh_failed',
+                action='token_refresh',
+                actor_id='-',
+                client_id='-',
+                target_type='session',
+                outcome='failed',
+                extra={
+                    'origin': self.origin,
+                    'reason': 'missing_token'
+                }
+            )
+
             raise AuthenticationFailed("Refresh token is missing")
 
         try:
@@ -173,6 +284,19 @@ class AuthService:
             user_id = token_result.get('user_id')
             if not user_id:
                 logger.warning("token_refresh_failed_invalid", extra=log_context)
+
+                audit_log(
+                    event='token_refresh_failed',
+                    action='token_refresh',
+                    actor_id='-',
+                    client_id='-',
+                    target_type='session',
+                    outcome='failed',
+                    extra={
+                        'origin': self.origin,
+                        'reason': 'invalid_token'
+                    }
+                )
                 raise AuthenticationFailed("Invalid token: no user identifier")
 
             # Get the user instance
@@ -200,6 +324,20 @@ class AuthService:
                     **log_context,
                     'user_id': str(user_id)
                 })
+
+                audit_log(
+                    event='token_refresh_failed',
+                    action='token_refresh',
+                    actor_id=str(user_id),
+                    client_id=str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else '-',
+                    target_type='session',
+                    outcome='failed',
+                    extra={
+                        'origin': self.origin,
+                        'reason': 'account_disabled'
+                    }
+                )
+
                 raise AuthenticationFailed("User account is deactivated")
 
             user_data = {
@@ -218,6 +356,19 @@ class AuthService:
                 'client_id': str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else '-',
                 'role_name': user.role_name if hasattr(user, 'role_name') else '-'
             })
+
+            audit_log(
+                event='token_refresh_success',
+                action='token_refresh',
+                actor_id=str(user.id),
+                client_id=str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else '-',
+                target_type='session',
+                outcome='success',
+                extra={
+                    'origin': self.origin,
+                    'role_name': user.role_name if hasattr(user, 'role_name') else '-'
+                }
+            )
 
             return {
                 "message": "Token refreshed successfully",
@@ -256,6 +407,17 @@ class AuthService:
         response['Expires'] = '0'
 
         logger.info("logout_success", extra=log_context)
+
+        audit_log(
+            event='logout_success',
+            action='logout',
+            actor_id=str(request.user.id) if hasattr(request, 'user') and request.user else '-',
+            client_id=str(request.user.client_account_id) if hasattr(request, 'user') and hasattr(request.user, 'client_account_id') and request.user.client_account_id else '-',
+            target_type='session',
+            outcome='success',
+            extra={'origin': self.origin}
+        )
+
         return {'message': 'Successfully logged out'}
 
     def enforce_permissions(self, request, required_origin):

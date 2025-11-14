@@ -471,6 +471,17 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 ).first()
                 
                 if not instance:
+
+                    audit_log(
+                        event='role_update_not_found',
+                        action='update',
+                        actor_id=str(request.user.id),
+                        client_id=str(client_id),
+                        target_type='role',
+                        target_id=str(pk),
+                        outcome='not_found',
+                    )
+                    
                     ctx = ctx_from_request(request)
                     ctx.update({
                         'event': 'role_update_not_found',
@@ -604,6 +615,8 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             
         except Exception as e:
             return self.handle_exception(e)
+        
+    
     
     def destroy(self, request, *args, **kwargs):
         """
@@ -616,13 +629,28 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             - Cannot delete last admin role
             - Cannot delete role with active users
         
-        ⚠️  Note: UserRole model has a BooleanField named 'delete' that shadows
-        the inherited delete() method. We use QuerySet.delete() instead.
         """
         try:
             pk = kwargs.get('pk')
             client_id = self.get_client_id()
-            
+
+            from rest_framework.exceptions import PermissionDenied, APIException
+            from rest_framework.response import Response
+
+            # raise PermissionDenied("Test 403: You do not have permission to view users")
+            # raise Exception("Test 500: Simulated server error")
+            # raise Http404("Ressource introuvable")
+            # return Response(
+            #         {"detail": "Request timeout"},
+            #         status=429
+            #     )
+            # import time
+            # time.sleep(45)  # Simuler lenteur
+
+            # raise StandardizedValidationError(
+            #         CoreErrorMessages.LAST_ADMIN_ROLE_LOCKED
+            #     )
+     
             with transaction.atomic():
                 # ✅ TOCTOU prevention: Lock row AVANT validation
                 instance = UserRole.objects.select_for_update().filter(
@@ -884,6 +912,16 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 ).first()
                 
                 if not source_role:
+                    audit_log(
+                        event='role_duplicate_not_found',
+                        action='duplicate',
+                        actor_id=str(request.user.id),
+                        client_id=str(client_id),
+                        target_type='role',
+                        target_id=str(pk),
+                        outcome='not_found',
+                    )
+
                     return Response({
                         'success': False,
                         'error': CoreErrorMessages.OBJECT_NOT_FOUND
