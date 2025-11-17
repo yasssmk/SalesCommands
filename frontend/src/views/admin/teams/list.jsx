@@ -118,17 +118,19 @@ export default function TeamsListPage() {
         <Box sx={{ p: 2 }}>
           <Grid container spacing={2}>
             
-            <Grid item xs={12} md={4}>
-              <GenericTreeView
-                data={mockTeams}
-                selectedId={selectedTeamId}
-                onSelect={handleTeamSelect}
-                searchTerm={search}
-                height="600px"
-              />
+            <Grid item xs={12} md={4} sx={{ display: 'flex' }}>
+              <Box sx={{ width: '100%', minHeight: 500 }}>
+                <GenericTreeView
+                  data={mockTeams}
+                  selectedId={selectedTeamId}
+                  onSelect={handleTeamSelect}
+                  searchTerm={search}
+                  height="100%"
+                />
+              </Box>
             </Grid>
 
-            <Grid item xs={12} md={8}>
+            <Grid item xs={12} md={8} sx={{ display: 'flex' }}>
               <TeamInfoPanel
                 team={selectedTeam}
                 onEdit={handleEdit}

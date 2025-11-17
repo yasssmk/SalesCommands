@@ -4,10 +4,9 @@ import PropTypes from 'prop-types';
 import { useState, useMemo, useCallback } from 'react';
 
 // material-ui
-import { useTheme, alpha } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
 
 // mui x tree view
 import { RichTreeView } from '@mui/x-tree-view/RichTreeView';
@@ -15,9 +14,8 @@ import { RichTreeView } from '@mui/x-tree-view/RichTreeView';
 // icons
 import { DownOutlined, RightOutlined } from '@ant-design/icons';
 
-/**
- * GenericTreeView - Composant réutilisable pour données hiérarchiques
- */
+// ==================== MAIN COMPONENT ====================
+
 function GenericTreeView({
   data,
   selectedId,
@@ -27,27 +25,12 @@ function GenericTreeView({
   searchTerm = '',
   filterFunction,
   height = '600px',
-  maxHeight = '800px',
+  maxHeight = '800px'
 }) {
   const theme = useTheme();
   const [expandedIds, setExpandedIds] = useState(defaultExpandedIds);
 
-  // ==================== HANDLERS ====================
-
- const handleSelectChange = useCallback((event, nodeId) => {
-  if (!nodeId) return;
-  const node = findNodeById(data, nodeId);
-  if (node && onSelect) {
-    onSelect(nodeId, node);
-  }
-}, [data, onSelect]);
-
-  const handleExpandedItemsChange = useCallback((event, nodeIds) => {
-    setExpandedIds(nodeIds);
-    if (onExpand) onExpand(nodeIds);
-  }, [onExpand]);
-
-  // ==================== FILTERING ====================
+  // -------- FILTERING --------
 
   const filteredData = useMemo(() => {
     if (!searchTerm || searchTerm.trim() === '') return data;
@@ -57,22 +40,66 @@ function GenericTreeView({
 
   const autoExpandedIds = useMemo(() => {
     if (!searchTerm || searchTerm.trim() === '') return expandedIds;
+
     const ids = new Set(expandedIds);
+
     const addParentIds = (nodes) => {
-      nodes.forEach(node => {
+      (nodes || []).forEach((node) => {
         if (node.children && node.children.length > 0) {
           ids.add(node.id);
           addParentIds(node.children);
         }
       });
     };
+
     addParentIds(filteredData);
     return Array.from(ids);
   }, [filteredData, searchTerm, expandedIds]);
 
-  // ==================== EMPTY STATE ====================
+  // -------- TRANSFORM TO MUI ITEMS --------
+  // On ne donne à RichTreeView que { id, label, children }
+  // et on garantit que label est une string.
 
-  if (!filteredData || filteredData.length === 0) {
+  const treeItems = useMemo(() => {
+    const toTreeViewItems = (nodes) =>
+      (nodes || []).map((node) => ({
+        id: node.id,
+        label:
+          typeof node.label === 'string'
+            ? node.label
+            : typeof node.name === 'string'
+            ? node.name
+            : String(node.label ?? node.name ?? ''),
+        children: node.children ? toTreeViewItems(node.children) : undefined
+      }));
+
+    return toTreeViewItems(filteredData);
+  }, [filteredData]);
+
+  // -------- HANDLERS --------
+
+  const handleSelectChange = useCallback(
+    (event, itemId) => {
+      if (!itemId) return;
+      const node = findNodeById(data, itemId);
+      if (node && onSelect) {
+        onSelect(itemId, node);
+      }
+    },
+    [data, onSelect]
+  );
+
+  const handleExpandedItemsChange = useCallback(
+    (event, itemIds) => {
+      setExpandedIds(itemIds);
+      if (onExpand) onExpand(itemIds);
+    },
+    [onExpand]
+  );
+
+  // -------- EMPTY STATE --------
+
+  if (!treeItems || treeItems.length === 0) {
     return (
       <Box
         sx={{
@@ -93,7 +120,7 @@ function GenericTreeView({
     );
   }
 
-  // ==================== MAIN ====================
+  // -------- RENDER --------
 
   return (
     <Box
@@ -103,22 +130,28 @@ function GenericTreeView({
         overflow: 'auto',
         border: `1px solid ${theme.palette.divider}`,
         borderRadius: 1,
-        p: 1
+        p: 1,
+        // Style simple et cohérent, sans toucher à l’indentation
+        '& .MuiTreeItem-label': {
+          ...theme.typography.subtitle1, // Typpgraphie - font
+          color: theme.palette.text.secondary // Typpgraphie - Color
+        }
       }}
     >
       <RichTreeView
-        id="generic-tree-view"
-        items={filteredData}
+        items={treeItems}
         selectedItems={selectedId}
         onSelectedItemsChange={handleSelectChange}
         expandedItems={autoExpandedIds}
         onExpandedItemsChange={handleExpandedItemsChange}
+        itemChildrenIndentation={24} // décalage visuel clair pour les sous-niveaux
         slots={{
-            collapseIcon: DownOutlined,
-            expandIcon: RightOutlined
+          collapseIcon: DownOutlined,
+          expandIcon: RightOutlined
         }}
-        getItemLabel={(item) => item.name}
-        />
+        // getItemLabel doit renvoyer une STRING → on renvoie item.label
+        getItemLabel={(item) => item.label}
+      />
     </Box>
   );
 }
@@ -126,8 +159,9 @@ function GenericTreeView({
 // ==================== UTILITIES ====================
 
 function findNodeById(nodes, id) {
+  if (!nodes) return null;
   for (const node of nodes) {
-    if (node.id === id) return node;
+    if (String(node.id) === String(id)) return node;
     if (node.children) {
       const found = findNodeById(node.children, id);
       if (found) return found;
@@ -141,9 +175,12 @@ function defaultFilterFunction(node, searchTerm) {
 }
 
 function filterTree(nodes, filterFn) {
-  return nodes.reduce((acc, node) => {
+  return (nodes || []).reduce((acc, node) => {
     const matches = filterFn(node);
-    const filteredChildren = node.children ? filterTree(node.children, filterFn) : [];
+    const filteredChildren = node.children
+      ? filterTree(node.children, filterFn)
+      : [];
+
     if (matches || filteredChildren.length > 0) {
       acc.push({ ...node, children: filteredChildren });
     }
@@ -154,19 +191,23 @@ function filterTree(nodes, filterFn) {
 // ==================== PROP TYPES ====================
 
 GenericTreeView.propTypes = {
-  data: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    name: PropTypes.string.isRequired,
-    children: PropTypes.array
-  })).isRequired,
-  selectedId: PropTypes.string,
+  data: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+      name: PropTypes.string.isRequired,
+      children: PropTypes.array
+    })
+  ).isRequired,
+  selectedId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   onSelect: PropTypes.func,
-  defaultExpandedIds: PropTypes.arrayOf(PropTypes.string),
+  defaultExpandedIds: PropTypes.arrayOf(
+    PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+  ),
   onExpand: PropTypes.func,
   searchTerm: PropTypes.string,
   filterFunction: PropTypes.func,
   height: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  maxHeight: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  maxHeight: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
 };
 
 export default GenericTreeView;
