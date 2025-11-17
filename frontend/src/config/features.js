@@ -34,7 +34,7 @@ export const FEATURES = {
   
   // Administration features
   USER_MANAGEMENT: true, // Ready for production
-  TEAM_MANAGEMENT: false, // In development
+  TEAM_MANAGEMENT: true, // In development
   ORGANIZATION_MANAGEMENT: false, // In development  
   ROLES_PERMISSIONS: true, 
   

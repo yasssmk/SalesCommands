@@ -283,7 +283,7 @@ export default function RolesListPage() {
         enableSorting: true,
         cell: ({ getValue }) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Typography variant="subtitle1" fontWeight={500}>
+            <Typography variant="subtitle1">
               {getValue() || 'Unnamed Role'}
             </Typography>
           </Stack>
