@@ -130,10 +130,17 @@ urlpatterns = [
         'delete': 'destroy'
     }), name='team-detail'),
     
-    # Team Actions
-    path('teams/<int:pk>/members-performance-summary/', TeamViewSet.as_view({
-        'get': 'members_performance_summary'
-    }), name='team-members-performance-summary'),
+    path('teams/<uuid:pk>/members/', TeamViewSet.as_view({
+        'get': 'members'
+    }), name='team-members'),
+
+    path('teams/summary/', TeamViewSet.as_view({
+        'get': 'summary'
+    }), name='team-summary'),
+
+    path('teams/<uuid:pk>/duplicate/', TeamViewSet.as_view({
+        'post': 'duplicate'
+    }), name='team-duplicate'),
     
     # =========================================================================
     # USERS MANAGEMENT - Gestion des utilisateurs et performances
