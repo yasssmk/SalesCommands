@@ -1,9 +1,10 @@
 // frontend/src/sections/admin/teams/TeamInfoPanel.jsx
 
 import PropTypes from 'prop-types';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
 // material-ui
+import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
@@ -12,12 +13,20 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Grid from '@mui/material/Grid';
+import Link from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
 // project imports
 import MainCard from 'components/MainCard';
+
+// api hooks
+import { useGetUsers } from 'api/admin/users';
+
+// mock data (TEMPORARY - teams only)
+import { mockTeams, flattenTeams } from 'views/admin/teams/mockTeamsData';
+
 
 // icons
 import { TeamOutlined } from '@ant-design/icons';
@@ -33,16 +42,35 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
   const [isEditing, setIsEditing] = useState(false);
   const [formValues, setFormValues] = useState({
     name: '',
-    description: ''
+    description: '',
+    manager: null,      // User object or null
+    parent_team: null   // Team object or null
   });
+
+  // ===============API=============================
+
+  const { users = [], usersLoading } = useGetUsers({ 
+    pageSize: 1000  // ✅ Fetch up to 1000 users for search
+  });
+
+  const allTeams = useMemo(() => flattenTeams(mockTeams), []); // MOCK DATA
+  
+  // Filter out current team to prevent circular reference
+  const availableParentTeams = useMemo(() => {
+    if (!team) return allTeams;
+    return allTeams.filter(t => t.id !== team.id);
+  }, [allTeams, team]);
 
   // ==================== HANDLERS ====================
 
   const handleEditClick = () => {
+    console.log(" USERS LIST : ", {users})
     if (team) {
       setFormValues({
         name: team.name || '',
-        description: team.description || ''
+        description: team.description || '',
+        manager: team.manager || null,
+        parent_team: team.parent || null
       });
       setIsEditing(true);
     }
@@ -50,10 +78,19 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
 
   const handleCancelEdit = () => {
     setIsEditing(false);
-    setFormValues({ name: '', description: '' });
+    setFormValues({ name: '', description: '', manager: null, parent_team: null });
   };
 
   const handleSaveEdit = () => {
+
+    console.log('Team to update:', {
+      id: team.id,
+      name: formValues.name.trim(),
+      description: formValues.description.trim(),
+      manager: formValues.manager?.id || null,
+      parent_team: formValues.parent_team?.id || null
+    });
+
     if (onEdit && team) {
       onEdit({ ...team, ...formValues });
     }
@@ -161,19 +198,59 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
           <Grid item xs={12}>
             <Stack spacing={1}>
               <Typography variant="subtitle1">Manager</Typography>
-              {team.manager ? (
-                <Stack spacing={0.5}>
-                  <Typography variant="h6">
-                    {team.manager.first_name} {team.manager.last_name}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {team.manager.email}
-                  </Typography>
-                </Stack>
+              {isEditing ? (
+                <Autocomplete
+                  fullWidth
+                  options={users}  // ✅ Tous les users (jusqu'à 1000)
+                  getOptionLabel={(option) => 
+                    `${option.first_name} ${option.last_name} (${option.email}, ${option.role_name})`
+                  }
+                  value={formValues.manager}
+                  onChange={(event, newValue) => {
+                    setFormValues(prev => ({ ...prev, manager: newValue }));
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder="Search by name or email..."
+                    />
+                  )}
+                  isOptionEqualToValue={(option, value) => option.id === value?.id}
+                  noOptionsText="No users found"
+                  loading={usersLoading}
+                  filterOptions={(options, { inputValue }) => {
+                    if (!inputValue) {
+                      return options.slice(0, 5);  // Vide : 5 premiers
+                    }
+                    
+                    // Filtrer parmi TOUS les users (1000), retourner 5 résultats
+                    const searchLower = inputValue.toLowerCase();
+                    return options
+                      .filter(user => 
+                        user.first_name?.toLowerCase().includes(searchLower) ||
+                        user.last_name?.toLowerCase().includes(searchLower) ||
+                        user.email?.toLowerCase().includes(searchLower)
+                      )
+                      .slice(0, 5);  // Max 5 résultats affichés
+                  }}
+                />
               ) : (
-                <Typography variant="h6" color="text.disabled">
-                  No Manager
-                </Typography>
+                <>
+                  {team.manager ? (
+                    <Stack spacing={0.5}>
+                      <Typography variant="h6">
+                        {team.manager.first_name} {team.manager.last_name}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {team.manager.email}
+                      </Typography>
+                    </Stack>
+                  ) : (
+                    <Typography variant="h6" color="text.disabled">
+                      No Manager
+                    </Typography>
+                  )}
+                </>
               )}
             </Stack>
           </Grid>
@@ -182,9 +259,49 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
           <Grid item xs={12}>
             <Stack spacing={1}>
               <Typography variant="subtitle1">Parent Team</Typography>
-              <Typography variant="h6" color={team.parent ? 'text.primary' : 'text.disabled'}>
-                {team.parent ? 'Has Parent' : 'No Parent (Root Team)'}
-              </Typography>
+              {isEditing ? (
+                <Autocomplete
+                  fullWidth
+                  options={availableParentTeams}  
+                  getOptionLabel={(option) => option.name}
+                  value={formValues.parent_team}
+                  onChange={(event, newValue) => {
+                    setFormValues(prev => ({ ...prev, parent_team: newValue }));
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      placeholder="Search team name..."
+                    />
+                  )}
+                  isOptionEqualToValue={(option, value) => option.id === value?.id}
+                  noOptionsText="No teams found"
+                  filterOptions={(options, { inputValue }) => {
+                    if (!inputValue) {
+                      // Si pas de recherche, afficher les 5 premières teams
+                      return options.slice(0, 5);
+                    }
+                    
+                    // Filtrer sur TOUTES les teams, puis prendre les 5 premiers résultats
+                    const searchLower = inputValue.toLowerCase();
+                    return options
+                      .filter(team => team.name?.toLowerCase().includes(searchLower))
+                      .slice(0, 5);  // ✅ Max 5 résultats APRÈS filtrage
+                  }}
+                />
+              ) : (
+                <>
+                  {team.parent ? (
+                    <Typography variant="h6" color="text.primary">
+                      {typeof team.parent === 'object' ? team.parent.name : 'Has Parent'}
+                    </Typography>
+                  ) : (
+                    <Typography variant="h6" color="text.disabled">
+                      No Parent (Root Team)
+                    </Typography>
+                  )}
+                </>
+              )}
             </Stack>
           </Grid>
 
@@ -192,9 +309,15 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
           <Grid item xs={12}>
             <Stack spacing={1}>
               <Typography variant="subtitle1">Team Members</Typography>
-              <Typography variant="h6">
-                {team.member_count || 0} member{team.member_count !== 1 ? 's' : ''}
-              </Typography>
+              <Link
+                href={`/admin/users?team=${team.id}`}
+                underline="hover"
+                sx={{ cursor: 'pointer' }}
+              >
+                <Typography variant="h6" color="primary">
+                  {team.member_count || 0} member{team.member_count !== 1 ? 's' : ''}
+                </Typography>
+              </Link>
             </Stack>
           </Grid>
 
@@ -227,7 +350,7 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
                     Cancel
                   </Button>
                   <Button variant="contained" onClick={handleSaveEdit}>
-                    Save Changes
+                    Save
                   </Button>
                 </>
               ) : (

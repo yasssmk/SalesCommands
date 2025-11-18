@@ -15,8 +15,8 @@ import Tooltip from '@mui/material/Tooltip';
 import MainCard from 'components/MainCard';
 import GenericTreeView from 'components/tree/GenericTreeView';
 import TeamInfoPanel from 'sections/admin/teams/TeamInfoPanel';
-// import TeamModal from 'sections/admin/teams/TeamModal';
-// import AlertTeamDelete from 'sections/admin/teams/AlertTeamDelete';
+import TeamModal from 'sections/admin/teams/TeamModal';
+import AlertTeamDelete from 'sections/admin/teams/AlertTeamDelete';
 import { DebouncedInput } from 'components/third-party/react-table';
 
 // icons
@@ -36,7 +36,6 @@ export default function TeamsListPage() {
   const [search, setSearch] = useState('');
   const [teamModal, setTeamModal] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
-  const [teamToEdit, setTeamToEdit] = useState(null);
   const [teamToDelete, setTeamToDelete] = useState(null);
 
   // ==================== COMPUTED ====================
@@ -53,7 +52,6 @@ export default function TeamsListPage() {
   }, []);
 
   const handleAddTeam = useCallback(() => {
-    setTeamToEdit(null);
     setTeamModal(true);
   }, []);
 
@@ -77,9 +75,10 @@ export default function TeamsListPage() {
     setTeamToDelete(null);
   }, []);
 
-  const handleSuccess = useCallback(() => {
-    // TODO: Mutate SWR when backend ready
-    console.log('Operation successful');
+  const handleDeleteSuccess = useCallback(() => {
+      setDeleteModal(false);
+      setTeamToDelete(null);
+      setSelectedTeamId(null); 
   }, []);
 
 
@@ -143,24 +142,20 @@ export default function TeamsListPage() {
 
       </MainCard>
 
-      {/* Modals
-      {teamModal && (
-        <TeamModal
-          open={teamModal}
-          onClose={handleCloseModal}
-          team={teamToEdit}
-          onSuccess={handleSuccess}
+      <TeamModal
+        open={teamModal}
+        modalToggler={setTeamModal}
+        team={null}
+      />
+
+      {/* Delete Team Confirmation */}
+      {teamToDelete && (
+        <AlertTeamDelete
+          team={teamToDelete}
+          open={deleteModal}
+          handleClose={handleDeleteSuccess}
         />
       )}
-
-      {deleteModal && (
-        <AlertTeamDelete
-          open={deleteModal}
-          onClose={handleCloseDeleteModal}
-          team={teamToDelete}
-          onSuccess={handleSuccess}
-        />
-      )} */}
     </>
   );
 }
