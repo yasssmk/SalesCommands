@@ -25,7 +25,7 @@ import { DebouncedInput } from 'components/third-party/react-table';
 import { useGetTeams, updateTeam, deleteTeam } from 'api/admin/teams';
 
 // utils
-import { displayErrorSnackbar } from 'utils/displayError';
+import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
 // icons
 import { PlusOutlined } from '@ant-design/icons';
@@ -73,65 +73,44 @@ export default function TeamsListPage() {
   }, []);
 
   const handleEdit = useCallback(
-  async (payload) => {
-    // payload: { id, name, description, manager, parent_team }
-    try {
-      const { id, ...data } = payload;
+    async (payload) => {
+      try {
+        const { id, ...data } = payload;
+        const result = await updateTeam(id, data);
 
-      const result = await updateTeam(id, data);
+        if (!result.success) {
+          displayErrorSnackbar(result.error || 'Failed to update team.');
+          return;
+        }
 
-      if (!result.success) {
-        displayErrorSnackbar(result.error || 'Failed to update team.');
-        return;
+        displaySuccessSnackbar('Team updated successfully');
+
+        // ✅ Attendre que SWR revalide (court délai)
+        setTimeout(() => {
+          // Retrouver la team mise à jour dans la liste revalidée
+          const updatedTeam = teams?.find(t => t.id === id);
+          if (updatedTeam) {
+            setSelectedTeam(updatedTeam);
+          }
+        }, 300); // 300ms pour laisser SWR revalider
+
+      } catch (err) {
+        console.error('Update team error:', err);
+        displayErrorSnackbar('An unexpected error occurred while updating the team.');
       }
-      // Optionally: you can show a success snackbar here
-      // and SWR will revalidate using your existing logic
-    } catch (err) {
-      console.error('Update team error:', err);
-      displayErrorSnackbar('An unexpected error occurred while updating the team.');
-    }
-  },
-  []
-);
+    },
+    [teams] // ✅ Dependency: teams
+  );
 
 
   const handleDelete = useCallback((team) => {
     setTeamToDelete(team);
     setDeleteModal(true);
-  }, []);
-
-  const handleCloseModal = useCallback(() => {
-    setTeamModal(false);
-    setTeamToEdit(null);
-  }, []);
-
-  const handleCloseDeleteModal = useCallback(() => {
-    setDeleteModal(false);
-    setTeamToDelete(null);
-  }, []);
-
-  const handleConfirmDelete = useCallback(async () => {
-    if (!teamToDelete) return;
-
-    try {
-      const result = await deleteTeam(teamToDelete.id);
-
-      if (!result.success) {
-        displayErrorSnackbar(result.error || 'Failed to delete team.');
-        return;
-      }
-
-      // If delete succeeded:
-      setDeleteModal(false);
-      setTeamToDelete(null);
+    if (team.id === selectedTeamId) {
       setSelectedTeamId(null);
-      // SWR revalidation is already handled in deleteTeam (revalidateMultiple)
-    } catch (err) {
-      console.error('Delete team error:', err);
-      displayErrorSnackbar('An unexpected error occurred while deleting the team.');
+      setSelectedTeam(null);
     }
-  }, [teamToDelete]);
-
+  }, [selectedTeamId]);
 
   // ==================== RENDER ====================
 
@@ -235,14 +214,18 @@ export default function TeamsListPage() {
       />
 
       {/* Delete Team Confirmation */}
-      {teamToDelete && (
-        <AlertTeamDelete
+      {deleteModal && teamToDelete && (
+      <AlertTeamDelete
         team={teamToDelete}
         open={deleteModal}
-        onCancel={handleCloseDeleteModal}
-        onConfirm={handleConfirmDelete}
+        handleClose={() => {
+          setDeleteModal(false);
+          setTeamToDelete(null);
+          setSelectedTeamId(null);
+          setSelectedTeam(null);
+        }}
       />
-      )}
+    )}
     </>
   );
 }
