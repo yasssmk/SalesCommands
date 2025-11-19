@@ -25,18 +25,26 @@ function GenericTreeView({
   searchTerm = '',
   filterFunction,
   height = '600px',
-  maxHeight = '800px'
+  maxHeight = '800px',
+  parentField // optional: name of the field that holds the parent (e.g. "parent_team")
 }) {
   const theme = useTheme();
   const [expandedIds, setExpandedIds] = useState(defaultExpandedIds);
 
   // -------- FILTERING --------
 
+  // If parentField is provided, we build a tree from a flat list.
+  const structuredData = useMemo(() => {
+    if (!data) return [];
+    if (!parentField) return data;
+    return buildTreeFromFlat(data, parentField);
+  }, [data, parentField]);
+
   const filteredData = useMemo(() => {
-    if (!searchTerm || searchTerm.trim() === '') return data;
+    if (!searchTerm || searchTerm.trim() === '') return structuredData;
     const filter = filterFunction || defaultFilterFunction;
-    return filterTree(data, (node) => filter(node, searchTerm));
-  }, [data, searchTerm, filterFunction]);
+    return filterTree(structuredData, (node) => filter(node, searchTerm));
+  }, [structuredData, searchTerm, filterFunction]);
 
   const autoExpandedIds = useMemo(() => {
     if (!searchTerm || searchTerm.trim() === '') return expandedIds;
@@ -81,12 +89,12 @@ function GenericTreeView({
   const handleSelectChange = useCallback(
     (event, itemId) => {
       if (!itemId) return;
-      const node = findNodeById(data, itemId);
+      const node = findNodeById(structuredData, itemId);
       if (node && onSelect) {
         onSelect(itemId, node);
       }
     },
-    [data, onSelect]
+    [structuredData, onSelect]
   );
 
   const handleExpandedItemsChange = useCallback(
@@ -96,6 +104,38 @@ function GenericTreeView({
     },
     [onExpand]
   );
+
+  // ---------- UTILITIES ---------
+
+  function buildTreeFromFlat(nodes, parentField) {
+  if (!nodes || nodes.length === 0) return [];
+
+  // Clone nodes and initialize children
+  const map = new Map();
+  nodes.forEach((node) => {
+    map.set(node.id, { ...node, children: [] });
+  });
+
+  const roots = [];
+
+  map.forEach((node) => {
+    // parentField can point to an object (e.g. { id, name }) or a raw id
+    const parentValue = parentField ? node[parentField] : null;
+    const parentId =
+      parentValue && typeof parentValue === 'object'
+        ? parentValue.id
+        : parentValue;
+
+    if (parentId && map.has(parentId)) {
+      map.get(parentId).children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+
+  return roots;
+}
+
 
   // -------- EMPTY STATE --------
 
@@ -207,7 +247,10 @@ GenericTreeView.propTypes = {
   searchTerm: PropTypes.string,
   filterFunction: PropTypes.func,
   height: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  maxHeight: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+  maxHeight: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  // Optional field name used to derive hierarchy from a flat list (e.g. "parent_team")
+  parentField: PropTypes.string
 };
+
 
 export default GenericTreeView;

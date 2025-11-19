@@ -273,6 +273,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             - Strict validation via serializer
         """
         try:
+            print(f"REQUEST DATA CREATE: {request.data}")
             serializer = self.get_serializer(
                 data=request.data,
                 context=self.get_serializer_context()
@@ -295,7 +296,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 target_type='team',
                 target_id=str(instance.id),
                 outcome='success',
-                extra={'name': instance.name}
+                extra={'team_name': instance.name}
             )
             
             ctx = ctx_from_request(request)
@@ -306,15 +307,10 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             })
             logger.info('team_created', extra=ctx)
             
-            full_serializer = TeamSerializer(
-                instance,
-                context=self.get_serializer_context()
-            )
-            
             return Response({
                 'success': True,
                 'message': f"Team '{instance.name}' created successfully",
-                'data': full_serializer.data
+                'data': serializer.data
             }, status=status.HTTP_201_CREATED)
         
         except Exception as e:

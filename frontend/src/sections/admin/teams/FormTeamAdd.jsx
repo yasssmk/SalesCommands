@@ -25,24 +25,11 @@ import { useFormik, Form, FormikProvider } from 'formik';
 
 // project imports
 import { displaySuccessSnackbar } from 'utils/displayError';
+import { insertTeam } from 'api/admin/teams';
+import { useGetTeams } from 'api/admin/teams';
+import { handleFormikError } from 'utils/formErrorHandler';
+import AsyncUserSelect from 'components/AsyncSelection/AsyncUserSelect';
 
-// ============================================
-// 🟡 MOCK DATA - TO REPLACE WITH API HOOKS
-// ============================================
-const mockTeams = [
-  { id: '1', name: 'Sales Team' },
-  { id: '2', name: 'Marketing Team' },
-  { id: '3', name: 'Engineering Team' },
-  { id: '4', name: 'Product Team' },
-  { id: '5', name: 'Customer Success Team' }
-];
-
-const mockUsers = [
-  { id: '1', first_name: 'John', last_name: 'Doe', email: 'john@example.com' },
-  { id: '2', first_name: 'Jane', last_name: 'Smith', email: 'jane@example.com' },
-  { id: '3', first_name: 'Michael', last_name: 'Johnson', email: 'michael@example.com' },
-  { id: '4', first_name: 'Sarah', last_name: 'Williams', email: 'sarah@example.com' }
-];
 
 // ============================================
 // FORM VALUES & VALIDATION
@@ -50,7 +37,7 @@ const mockUsers = [
 const buildInitialValues = () => ({
   name: '',
   parent_team: '',    // nullable - root teams have no parent
-  manager: ''         // nullable - teams can have no manager
+  manager: null         // REQUIRED per backend business rules
 });
 
 const CreateSchema = Yup.object().shape({
@@ -59,7 +46,10 @@ const CreateSchema = Yup.object().shape({
     .min(2, 'Team name must be at least 2 characters')
     .max(100, 'Team name must not exceed 100 characters'),
   parent_team: Yup.string().nullable(),
-  manager: Yup.string().nullable()
+  manager: Yup.object()
+    .nullable()
+    .required('Manager is required')
+    .test('has-id', 'Manager is required', (value) => value?.id != null)
 });
 
 // ============================================
@@ -81,6 +71,10 @@ function FormTeamAdd({ closeModal }) {
   const theme = useTheme();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ==============================|| API HOOKS ||============================== //
+
+  const { teams = [], teamsLoading } = useGetTeams();
+
   // ==============================|| FORMIK SETUP ||============================== //
 
   const formik = useFormik({
@@ -90,47 +84,23 @@ function FormTeamAdd({ closeModal }) {
     onSubmit: async (values) => {
       setIsSubmitting(true);
       
-      // ============================================
-      // 🔴 FINAL VERSION (API ready) - COMMENTED FOR NOW
-      // ============================================
-      // try {
-      //   const payload = {
-      //     name: values.name.trim(),
-      //     parent_team: values.parent_team || null,
-      //     manager: values.manager || null
-      //   };
-      //   
-      //   const result = await insertTeam(payload);
-      //   
-      //   if (result.success) {
-      //     displaySuccessSnackbar('Team created successfully');
-      //     closeModal?.();
-      //   } else {
-      //     handleFormikError(result, formik);
-      //   }
-      // } catch (err) {
-      //   handleFormikError(err, formik);
-      // } finally {
-      //   setIsSubmitting(false);
-      // }
-
-      // ============================================
-      // 🟡 TEMPORARY VERSION (UX only) - TO DELETE WHEN API READY
-      // ============================================
       try {
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        console.log('Team to create:', {
+        const payload = {
           name: values.name.trim(),
           parent_team: values.parent_team || null,
-          manager: values.manager || null
-        });
+          manager: values.manager?.id // Required, no null fallback
+        };
         
-        displaySuccessSnackbar('Team created successfully (MOCK)');
-        closeModal?.();
+        const result = await insertTeam(payload);
+        
+        if (result.success) {
+          displaySuccessSnackbar('Team created successfully');
+          closeModal?.();
+        } else {
+          handleFormikError(result, formik);
+        }
       } catch (err) {
-        console.error('Mock error:', err);
+        handleFormikError(err, formik);
       } finally {
         setIsSubmitting(false);
       }
@@ -138,20 +108,6 @@ function FormTeamAdd({ closeModal }) {
   });
 
   const { errors, touched, handleSubmit, getFieldProps, values } = formik;
-
-  // ============================================
-  // 🔴 FINAL VERSION - COMMENTED FOR NOW
-  // ============================================
-  // const { teams = [], teamsLoading } = useGetTeams();
-  // const { users = [], usersLoading } = useGetUsers();
-  // const anyLoading = teamsLoading || usersLoading;
-
-  // ============================================
-  // 🟡 TEMPORARY VERSION - MOCK DATA
-  // ============================================
-  const teams = mockTeams;
-  const users = mockUsers;
-  const anyLoading = false;
 
   // ==============================|| RENDER ||============================== //
 
@@ -195,7 +151,7 @@ function FormTeamAdd({ closeModal }) {
                     id="parent-team"
                     displayEmpty
                     {...getFieldProps('parent_team')}
-                    disabled={anyLoading}
+                    disabled={teamsLoading}
                   >
                     <MenuItem value="">
                       <em>None (Root-level team)</em>
@@ -218,27 +174,16 @@ function FormTeamAdd({ closeModal }) {
             
             <Grid item xs={12} md={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="manager">Manager</InputLabel>
-                <FormControl fullWidth error={Boolean(touched.manager && errors.manager)}>
-                  <Select
-                    id="manager"
-                    displayEmpty
-                    {...getFieldProps('manager')}
-                    disabled={anyLoading}
-                  >
-                    <MenuItem value="">
-                      <em>None</em>
-                    </MenuItem>
-                    {users.map((user) => (
-                      <MenuItem key={user.id} value={user.id}>
-                        {user.first_name} {user.last_name} ({user.email})
-                      </MenuItem>
-                    ))}
-                  </Select>
-                  {touched.manager && errors.manager && (
-                    <FormHelperText error>{errors.manager}</FormHelperText>
-                  )}
-                </FormControl>
+                <InputLabel htmlFor="manager">Manager *</InputLabel>
+                <AsyncUserSelect
+                  value={values.manager}
+                  onChange={(event, newValue) => {
+                    formik.setFieldValue('manager', newValue);
+                  }}
+                  placeholder="Search by name or email..."
+                  error={Boolean(touched.manager && errors.manager)}
+                  helperText={touched.manager && errors.manager}
+                />
               </Stack>
             </Grid>
 

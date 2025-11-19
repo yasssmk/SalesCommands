@@ -14,7 +14,8 @@ import Typography from '@mui/material/Typography';
 // project import
 import Avatar from 'components/@extended/Avatar';
 import { PopupTransition } from 'components/@extended/Transitions';
-import { displaySuccessSnackbar } from 'utils/displayError';
+import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
+import { deleteTeam } from 'api/admin/teams';
 
 // assets
 import DeleteFilled from '@ant-design/icons/DeleteFilled';
@@ -44,39 +45,29 @@ export default function AlertTeamDelete({ team, open, handleClose }) {
   const canDelete = !hasChildren && !hasMembers;
 
   const deleteHandler = async () => {
-    if (!canDelete) return;
+    if (!canDelete || !team?.id) return;
 
     try {
       setDeleting(true);
-      
-      // ============================================
-      // 🔴 FINAL VERSION (API ready) - COMMENTED FOR NOW
-      // ============================================
-      // const res = await deleteTeam(team.id);
-      // 
-      // if (res?.success) {
-      //   displaySuccessSnackbar('Team deleted successfully');
-      //   handleClose?.();
-      // } else {
-      //   displayErrorSnackbar(res);
-      //   // Do NOT close modal on error
-      // }
 
-      // ============================================
-      // 🟡 TEMPORARY VERSION (UX only) - TO DELETE WHEN API READY
-      // ============================================
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      console.log('Team to delete:', team.id);
-      displaySuccessSnackbar('Team deleted successfully (MOCK)');
-      handleClose?.();
-      
+      const res = await deleteTeam(team.id);
+
+      if (res?.success) {
+        displaySuccessSnackbar('Team deleted successfully');
+        // Parent will reset selection and close the dialog
+        handleClose?.();
+      } else {
+        displayErrorSnackbar(res?.error || 'Failed to delete team.');
+        // Do NOT close modal on error
+      }
     } catch (err) {
-      console.error('Mock delete error:', err);
+      console.error('Delete team error:', err);
+      displayErrorSnackbar('An unexpected error occurred while deleting the team.');
     } finally {
       setDeleting(false);
     }
   };
+
 
   return (
     <Dialog

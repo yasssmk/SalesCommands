@@ -18,6 +18,10 @@ class TeamListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Relations as simple objects (frontend-friendly)
     manager = serializers.SerializerMethodField(read_only=True)
     parent_team = serializers.SerializerMethodField(read_only=True)
+
+     # Counters
+    members_count = serializers.SerializerMethodField(read_only=True)
+    active_members_count = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Team
@@ -39,13 +43,19 @@ class TeamListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     def get_manager(self, obj):
         """
         Return manager as minimal object.
-        Compatible with frontend usage: row.original.manager?.name
+        Compatible avec TeamInfoPanel qui attend :
+        - first_name
+        - last_name
+        - email
         """
         if obj.manager:
             return {
                 'id': str(obj.manager_id),
+                'first_name': obj.manager.first_name,
+                'last_name': obj.manager.last_name,
+                'email': obj.manager.email,
                 'name': obj.manager.get_full_name(),
-                'role_name': obj.manager.role_name 
+                'role_name': getattr(obj.manager, 'role_name', None),
             }
         return None
     
@@ -60,6 +70,28 @@ class TeamListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 'name': obj.parent_team.name
             }
         return None
+    
+    def get_members_count(self, obj):
+        """
+        Retrieve count from queryset annotation if available.
+        Fallback to .count() if no annotation (less performant).
+        """
+        if hasattr(obj, 'members_count'):
+            return obj.members_count
+        if hasattr(obj, '_prefetched_members_count'):
+            return obj._prefetched_members_count
+        return obj.members.count()
+
+    def get_active_members_count(self, obj):
+        """
+        Retrieve active count from annotation if available.
+        Fallback to filtered count if no annotation.
+        """
+        if hasattr(obj, 'active_members_count'):
+            return obj.active_members_count
+        if hasattr(obj, 'prefetched_active_members'):
+            return len(obj.prefetched_active_members)
+        return obj.members.filter(is_active=True).count()
 
 
 
@@ -299,7 +331,7 @@ class TeamCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
     """
     
     # Write-only field for parent team
-    parent_id = serializers.UUIDField(
+    parent_team = serializers.UUIDField(
         source='parent_team_id',
         required=False,
         allow_null=True,
@@ -311,7 +343,7 @@ class TeamCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         model = Team
         fields = [
             'name', 'description',
-            'manager', 'parent_id'
+            'manager', 'parent_team'
         ]
         extra_kwargs = {
             'name': {'required': True},
@@ -474,7 +506,7 @@ class TeamUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         - Name uniqueness check (exclude current instance)
     """
     
-    parent_id = serializers.UUIDField(
+    parent_team = serializers.UUIDField(
         source='parent_team_id',
         required=False,
         allow_null=True,
@@ -484,7 +516,7 @@ class TeamUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
     
     class Meta:
         model = Team
-        fields = ['name', 'description', 'manager', 'parent_id']
+        fields = ['name', 'description', 'manager', 'parent_team']
         extra_kwargs = {
             'name': {'required': False},
             'description': {

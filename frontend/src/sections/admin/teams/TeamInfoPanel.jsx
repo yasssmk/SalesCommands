@@ -20,13 +20,7 @@ import Typography from '@mui/material/Typography';
 
 // project imports
 import MainCard from 'components/MainCard';
-
-// api hooks
-import { useGetUsers } from 'api/admin/users';
-
-// mock data (TEMPORARY - teams only)
-import { mockTeams, flattenTeams } from 'views/admin/teams/mockTeamsData';
-
+import AsyncUserSelect from 'components/AsyncSelection/AsyncUserSelect';
 
 // icons
 import { TeamOutlined } from '@ant-design/icons';
@@ -38,7 +32,7 @@ import { formatDateTime } from 'config/formatters';
  * TeamInfoPanel - Affiche les détails d'une team sélectionnée
  * Standardisé selon les patterns exacts des modals Role/User
  */
-function TeamInfoPanel({ team, onEdit, onDelete }) {
+function TeamInfoPanel({ team, onEdit, onDelete, allTeams  }) {
   const [isEditing, setIsEditing] = useState(false);
   const [formValues, setFormValues] = useState({
     name: '',
@@ -49,11 +43,8 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
 
   // ===============API=============================
 
-  const { users = [], usersLoading } = useGetUsers({ 
-    pageSize: 1000  // ✅ Fetch up to 1000 users for search
-  });
 
-  const allTeams = useMemo(() => flattenTeams(mockTeams), []); // MOCK DATA
+  const flatTeams = useMemo(() => allTeams || [], [allTeams]);
   
   // Filter out current team to prevent circular reference
   const availableParentTeams = useMemo(() => {
@@ -64,13 +55,12 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
   // ==================== HANDLERS ====================
 
   const handleEditClick = () => {
-    console.log(" USERS LIST : ", {users})
     if (team) {
       setFormValues({
         name: team.name || '',
         description: team.description || '',
         manager: team.manager || null,
-        parent_team: team.parent || null
+        parent_team: team.parent_team || null
       });
       setIsEditing(true);
     }
@@ -82,20 +72,24 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
   };
 
   const handleSaveEdit = () => {
+    if (!team) return;
 
-    console.log('Team to update:', {
+    const payload = {
       id: team.id,
       name: formValues.name.trim(),
-      description: formValues.description.trim(),
+      description: formValues.description?.trim() || '',
       manager: formValues.manager?.id || null,
       parent_team: formValues.parent_team?.id || null
-    });
+    };
 
-    if (onEdit && team) {
-      onEdit({ ...team, ...formValues });
+    console.log('Team to update (payload):', payload);
+
+    if (onEdit) {
+      onEdit(payload);
     }
     setIsEditing(false);
   };
+
 
   const handleFieldChange = (field) => (event) => {
     setFormValues(prev => ({
@@ -199,42 +193,14 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
             <Stack spacing={1}>
               <Typography variant="subtitle1">Manager</Typography>
               {isEditing ? (
-                <Autocomplete
-                  fullWidth
-                  options={users}  // ✅ Tous les users (jusqu'à 1000)
-                  getOptionLabel={(option) => 
-                    `${option.first_name} ${option.last_name} (${option.email}, ${option.role_name})`
-                  }
-                  value={formValues.manager}
-                  onChange={(event, newValue) => {
-                    setFormValues(prev => ({ ...prev, manager: newValue }));
-                  }}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder="Search by name or email..."
-                    />
-                  )}
-                  isOptionEqualToValue={(option, value) => option.id === value?.id}
-                  noOptionsText="No users found"
-                  loading={usersLoading}
-                  filterOptions={(options, { inputValue }) => {
-                    if (!inputValue) {
-                      return options.slice(0, 5);  // Vide : 5 premiers
-                    }
-                    
-                    // Filtrer parmi TOUS les users (1000), retourner 5 résultats
-                    const searchLower = inputValue.toLowerCase();
-                    return options
-                      .filter(user => 
-                        user.first_name?.toLowerCase().includes(searchLower) ||
-                        user.last_name?.toLowerCase().includes(searchLower) ||
-                        user.email?.toLowerCase().includes(searchLower)
-                      )
-                      .slice(0, 5);  // Max 5 résultats affichés
-                  }}
-                />
-              ) : (
+                <AsyncUserSelect
+                    value={formValues.manager}
+                    onChange={(event, newValue) => {
+                      setFormValues(prev => ({ ...prev, manager: newValue }));
+                    }}
+                    placeholder="Search by name or email..."
+                  />
+                ) : (
                 <>
                   {team.manager ? (
                     <Stack spacing={0.5}>
@@ -291,9 +257,9 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
                 />
               ) : (
                 <>
-                  {team.parent ? (
+                  {team.parent_team ? (
                     <Typography variant="h6" color="text.primary">
-                      {typeof team.parent === 'object' ? team.parent.name : 'Has Parent'}
+                      {team.parent_team.name}
                     </Typography>
                   ) : (
                     <Typography variant="h6" color="text.disabled">
@@ -315,7 +281,7 @@ function TeamInfoPanel({ team, onEdit, onDelete }) {
                 sx={{ cursor: 'pointer' }}
               >
                 <Typography variant="h6" color="primary">
-                  {team.member_count || 0} member{team.member_count !== 1 ? 's' : ''}
+                  {team.members_count || 0} member{team.members_count !== 1 ? 's' : ''}
                 </Typography>
               </Link>
             </Stack>
@@ -392,7 +358,14 @@ TeamInfoPanel.propTypes = {
     children: PropTypes.array
   }),
   onEdit: PropTypes.func,
-  onDelete: PropTypes.func
+  onDelete: PropTypes.func,
+  allTeams: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string,
+      name: PropTypes.string
+    })
+  )
 };
+
 
 export default TeamInfoPanel;

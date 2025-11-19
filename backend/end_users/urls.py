@@ -101,7 +101,7 @@ urlpatterns = [
         'post': 'create'
     }), name='organization-list'),
     
-    path('organizations/<int:pk>/', OrganizationViewSet.as_view({
+    path('organizations/<uuid:pk>/', OrganizationViewSet.as_view({
         'get': 'retrieve',
         'put': 'update',
         'patch': 'partial_update',
@@ -123,7 +123,7 @@ urlpatterns = [
         'post': 'create'
     }), name='team-list'),
     
-    path('teams/<int:pk>/', TeamViewSet.as_view({
+    path('teams/<uuid:pk>/', TeamViewSet.as_view({
         'get': 'retrieve',
         'put': 'update',
         'patch': 'partial_update',
@@ -392,43 +392,3 @@ urlpatterns = [
     #      name='sales-plan-planning-analysis-deprecated'),
 ]
 
-# =========================================================================
-# ✅ RÉSUMÉ DES MODIFICATIONS URL
-# =========================================================================
-
-"""
-SALES PLANS - Actions réduites (7 → 3) :
-✅ GARDÉ :
-- dashboard() : Analyse complète
-- my_plans() : Plans utilisateur  
-- activate() : Gestion statuts
-
-❌ SUPPRIMÉ :
-- planning_analysis → dashboard() plus complet
-- quick_summary → Intégré dans retrieve()
-- team_plans → Complexité non MVP
-- pause → activate() gère tous statuts  
-- refresh_data → Signaux automatiques
-
-SALES MILESTONES - Actions réduites (7 → 2) :
-✅ GARDÉ :
-- update_progress() : Force recalcul
-- my_milestones() : Milestones utilisateur (NOUVEAU)
-
-❌ SUPPRIMÉ → Query params :
-- overdue → ?period=overdue
-- upcoming → ?period=upcoming&days=X
-- by_plan → ?sales_plan_id=X
-
-❌ SUPPRIMÉ → Update standard :
-- batch_update → Boucle API frontend
-- mark_achieved → PATCH standard
-- reset_progress → PATCH standard
-
-BÉNÉFICES :
-✅ URLs cohérentes avec ViewSets simplifiés
-✅ API plus prévisible et maintenable
-✅ Logique de filtrage via query params standard
-✅ Moins de complexité pour frontend
-✅ Architecture MVP cohérente
-"""
