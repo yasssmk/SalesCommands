@@ -4,7 +4,6 @@ import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
 
 // next
-import NextLink from 'next/link';
 import { usePathname } from 'next/navigation';
 
 // material-ui
@@ -13,6 +12,7 @@ import Divider from '@mui/material/Divider';
 import Grid from '@mui/material/Unstable_Grid2';
 import Typography from '@mui/material/Typography';
 import MuiBreadcrumbs from '@mui/material/Breadcrumbs';
+import Link from '@mui/material/Link';
 
 // third-party - i18n
 import { FormattedMessage } from 'react-intl';
@@ -230,13 +230,13 @@ const getCollapse = (menu) => {
         >
           <Grid >
             <MuiBreadcrumbs aria-label="breadcrumb" maxItems={maxItems || 8} separator={separatorIcon}>
-              <NextLink href="/" passHref legacyBehavior>
+              <Link href="/" >
                 <Typography color="text.secondary" variant="h6" sx={{ textDecoration: 'none', cursor: 'pointer' }}>
                   {icons && <HomeOutlined style={iconSX} />}
                   {icon && !icons && <HomeFilled style={{ ...iconSX, marginRight: 0 }} />}
                   {(!icon || icons) && 'Home'}
                 </Typography>
-              </NextLink>
+              </Link>
               {mainContent}
             </MuiBreadcrumbs>
           </Grid>
@@ -265,13 +265,13 @@ const getCollapse = (menu) => {
 
     let tempContent = (
       <MuiBreadcrumbs aria-label="breadcrumb" maxItems={maxItems || 8} separator={separatorIcon}>
-        <NextLink href="/" passHref legacyBehavior>
+        <Link href="/">
           <Typography color="text.secondary" variant="h6" sx={{ textDecoration: 'none', cursor: 'pointer' }}>
             {icons && <HomeOutlined style={iconSX} />}
             {icon && !icons && <HomeFilled style={{ ...iconSX, marginRight: 0 }} />}
             {(!icon || icons) && 'Home'}
           </Typography>
-        </NextLink>
+        </Link>
         {mainContent}
         {itemContent}
       </MuiBreadcrumbs>
@@ -296,9 +296,9 @@ const getCollapse = (menu) => {
             );
             if (link.to) {
               breadcrumbLink = (
-                <NextLink key={key} href={link.to} passHref legacyBehavior>
+                <Link key={key} href={link.to} >
                   {breadcrumbLink}
-                </NextLink>
+                </Link>
               );
             }
             return breadcrumbLink;

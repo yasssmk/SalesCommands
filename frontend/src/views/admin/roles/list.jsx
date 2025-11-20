@@ -14,6 +14,7 @@ import Button from '@mui/material/Button';
 import Collapse from '@mui/material/Collapse';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
+import Link from '@mui/material/Link';
 
 // icons
 import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
@@ -301,22 +302,53 @@ export default function RolesListPage() {
         }
       },
 
-      // Column 3: Users Count
       {
-        header: 'Users',
+        header: 'Total Users',
         accessorKey: 'users_count',
         enableSorting: true,
         meta: {
           className: 'cell-center'
         },
-        cell: ({ getValue }) => (
-          <Typography variant="h6" color="text.secondary">
-            {getValue() || 0}
-          </Typography>
-        )
+        cell: ({ row }) => {
+        const count = row.original.users_count || 0;
+        return (
+          <Link
+            href={`/admin/users?role=${row.original.id}`}
+            underline="hover"
+            sx={{ cursor: 'pointer' }}
+          >
+            <Typography variant="h6" color="primary">
+              {count}
+            </Typography>
+          </Link>
+        );
+      }
+    },
+
+
+      {
+        header: 'Active Users',
+        accessorKey: 'active_users_count',
+        meta: {
+          className: 'cell-center'
+        },
+        cell: ({ row }) => {
+          const count = row.original.active_users_count || 0;
+          return (
+            <Link
+              href={`/admin/users?role=${row.original.id}`}
+              underline="hover"
+              sx={{ cursor: 'pointer' }}
+            >
+              <Typography variant="h6" color="primary">
+                {count}
+              </Typography>
+            </Link>
+          );
+        }
       },
 
-      // Column 4: Created Date
+      //  Created Date
       {
         header: 'Last Update',
         accessorKey: 'updated_at',
@@ -328,7 +360,7 @@ export default function RolesListPage() {
         )
       },
 
-      // Column 5: Actions
+      //  Actions
       {
         header: 'Actions',
         meta: {

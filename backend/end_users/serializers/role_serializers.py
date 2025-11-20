@@ -725,6 +725,7 @@ class RoleListSerializer(serializers.ModelSerializer):
     
     # Compteurs optimisés
     users_count = serializers.IntegerField(read_only=True)
+    active_users_count = serializers.IntegerField(read_only=True)
     tier = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
@@ -734,7 +735,7 @@ class RoleListSerializer(serializers.ModelSerializer):
             'read', 'write', 'modify', 'can_delete',
             'tier', 'is_admin', 'is_manager', 'is_individual',
             'tier',
-            'users_count', 'created_at', 'updated_at'
+            'users_count','active_users_count', 'created_at', 'updated_at'
         ]
     
     def get_tier(self, obj):
