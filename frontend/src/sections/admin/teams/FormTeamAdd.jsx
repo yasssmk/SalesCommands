@@ -36,6 +36,7 @@ import AsyncUserSelect from 'components/AsyncSelection/AsyncUserSelect';
 // ============================================
 const buildInitialValues = () => ({
   name: '',
+  description: '',      // optional - max 500 chars
   parent_team: '',    // nullable - root teams have no parent
   manager: null         // REQUIRED per backend business rules
 });
@@ -45,6 +46,8 @@ const CreateSchema = Yup.object().shape({
     .required('Team name is required')
     .min(2, 'Team name must be at least 2 characters')
     .max(100, 'Team name must not exceed 100 characters'),
+  description: Yup.string()
+    .max(500, 'Description must not exceed 500 characters'),
   parent_team: Yup.string().nullable(),
   manager: Yup.object()
     .nullable()
@@ -87,6 +90,7 @@ function FormTeamAdd({ closeModal }) {
       try {
         const payload = {
           name: values.name.trim(),
+          description: values.description?.trim() || null,
           parent_team: values.parent_team || null,
           manager: values.manager?.id // Required, no null fallback
         };
@@ -137,6 +141,24 @@ function FormTeamAdd({ closeModal }) {
                   {...getFieldProps('name')}
                   error={Boolean(touched.name && errors.name)}
                   helperText={touched.name && errors.name}
+                />
+              </Stack>
+            </Grid>
+
+            {/* ==================== DESCRIPTION ==================== */}
+
+            <Grid item xs={12}>
+              <Stack spacing={1}>
+                <InputLabel htmlFor="team-description">Description</InputLabel>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={3}
+                  id="team-description"
+                  placeholder="Brief team description (optional)"
+                  {...getFieldProps('description')}
+                  error={Boolean(touched.description && errors.description)}
+                  helperText={touched.description && errors.description}
                 />
               </Stack>
             </Grid>

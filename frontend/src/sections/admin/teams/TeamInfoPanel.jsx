@@ -52,6 +52,54 @@ function TeamInfoPanel({ team, onEdit, onDelete, allTeams  }) {
     return allTeams.filter(t => t.id !== team.id);
   }, [allTeams, team]);
 
+
+
+  /**
+   * Get all descendant team IDs recursively
+   * Reconstructs hierarchy from parent_team relationships
+   */
+  const getAllDescendantIds = useMemo(() => {
+    if (!team || !allTeams || allTeams.length === 0) return [];
+
+    // Build parent_id -> children map from allTeams
+    const childrenMap = {};
+    allTeams.forEach(t => {
+      if (t.parent_team) {
+        const parentId = typeof t.parent_team === 'string' ? t.parent_team : t.parent_team.id;
+        if (!childrenMap[parentId]) {
+          childrenMap[parentId] = [];
+        }
+        childrenMap[parentId].push(t);
+      }
+    });
+
+    // Recursively collect IDs
+    const collectIds = (teamId) => {
+      const ids = [teamId];
+      
+      const children = childrenMap[teamId] || [];
+      
+      children.forEach(child => {
+        ids.push(...collectIds(child.id));
+      });
+      
+      return ids;
+    };
+
+    return collectIds(team.id);
+  }, [team, allTeams]);
+
+  /**
+   * Build users filter URL with hierarchical teams
+   * Returns URL with team IDs (current + all descendants)
+   */
+  const usersFilterUrl = useMemo(() => {
+    if (!team) return '/admin/users';
+
+    // Join all team IDs with commas
+    const teamIds = getAllDescendantIds.join(',');
+    return `/admin/users?team=${teamIds}`;
+  }, [team, getAllDescendantIds]);
   // ==================== HANDLERS ====================
 
   const handleEditClick = () => {
@@ -271,17 +319,33 @@ function TeamInfoPanel({ team, onEdit, onDelete, allTeams  }) {
             </Stack>
           </Grid>
 
-          {/* Member Count */}
-          <Grid item xs={12}>
+          {/* Active Members */}
+          <Grid item xs={12} md={6}>
             <Stack spacing={1}>
-              <Typography variant="subtitle1">Team Members</Typography>
+              <Typography variant="subtitle1">Active Members</Typography>
               <Link
-                href={`/admin/users?team=${team.id}`}
+                href={usersFilterUrl}
+                underline="hover"
+                sx={{ cursor: 'pointer' }}
+              >
+                <Typography variant="h6" color="success.main">
+                  {team.active_members_count || 0} member{team.active_members_count > 1 ? 's' : ''}
+                </Typography>
+              </Link>
+            </Stack>
+          </Grid>
+
+          {/* Total Members */}
+          <Grid item xs={12} md={6}>
+            <Stack spacing={1}>
+              <Typography variant="subtitle1">Total Members</Typography>
+              <Link
+                href={usersFilterUrl}
                 underline="hover"
                 sx={{ cursor: 'pointer' }}
               >
                 <Typography variant="h6" color="primary">
-                  {team.members_count || 0} member{team.members_count !== 1 ? 's' : ''}
+                  {team.members_count || 0} member{team.members_count > 1 ? 's' : ''}
                 </Typography>
               </Link>
             </Stack>

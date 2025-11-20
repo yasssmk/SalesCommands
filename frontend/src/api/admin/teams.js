@@ -234,6 +234,9 @@ export async function insertTeam(payload) {
   if (sanitized.parent_team === '' || sanitized.parent_team === undefined) {
     sanitized.parent_team = null;
   }
+  if (sanitized.description === '') {
+    sanitized.description = null;
+  }
 
   const result = await api.post(endpoints.teams, sanitized);
   
@@ -295,6 +298,7 @@ export async function updateTeam(teamId, payload) {
   // ✅ Convert empty strings to null for nullable fields
   if (sanitized.manager === '') sanitized.manager = null;
   if (sanitized.parent_team === '') sanitized.parent_team = null;
+  if (sanitized.description === '') sanitized.description = null;
   
   const result = await api.patch(endpoints.teamDetail(teamId), sanitized);
 

@@ -51,7 +51,7 @@ const debouncedRevalidate = debounce((paths) => {
  * @returns {string} URL avec query string
  */
 const buildUrlWithParams = (baseUrl, params = {}) => {
-  const { page, pageSize, search, ordering } = params;
+  const { page, pageSize, search, ordering, filters } = params;
   const queryParams = new URLSearchParams();
   
   // Ajouter les paramètres s'ils sont définis
@@ -70,6 +70,19 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   if (ordering !== undefined && ordering !== null && ordering !== '') {
     queryParams.append('ordering', ordering);
   }
+
+  // Add filters (team, role, is_active, etc.)
+  if (filters.team) {
+    queryParams.append('team', filters.team);
+  }
+  
+  if (filters.role) {
+    queryParams.append('role', filters.role);
+  }
+  
+  if (filters.is_active !== undefined && filters.is_active !== null) {
+    queryParams.append('is_active', filters.is_active);
+  }
   
   const queryString = queryParams.toString();
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;
@@ -83,10 +96,12 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
 /**
  * ✅ GET USERS LIST - Avec pagination serveur Django REST
  * 
- * @param {Object} options - Options de pagination
+ * @param {Object} options - Options de pagination et filtres
  * @param {number} options.page - Numéro de page (1-indexed, défaut: 1)
  * @param {number} options.pageSize - Taille de page (défaut: 10)
  * @param {string} options.search - Terme de recherche
+ * @param {string} options.ordering - Tri (ex: 'name', '-created_at')
+ * @param {Object} options.filters - Filtres {team, role, is_active}
  * 
  * @returns {Object} {users, usersCount, usersLoading, usersError, usersValidating, usersEmpty}
  * 
@@ -101,10 +116,19 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
  * @example
  * // Avec recherche
  * const { users, usersCount } = useGetUsers({ search: 'john', page: 1, pageSize: 10 });
+ * 
+ * @example
+ * // Avec filtres
+ * const { users, usersCount } = useGetUsers({ filters: { team: 'team-uuid', role: 'role-uuid' } });
  */
 export function useGetUsers(options = {}) {
   const { tenantId } = useAuth();
-  const { page = 1, pageSize = 10, search = '', ordering = '' } = options;
+  const { page = 1, pageSize = 10, search = '', ordering = '', filters = {} } = options;
+
+  // Extract filter values for stable dependencies
+  const teamFilter = filters.team || '';
+  const roleFilter = filters.role || '';
+  const isActiveFilter = filters.is_active !== undefined ? String(filters.is_active) : '';
   
 
   const urlWithParams = useMemo(() => {
@@ -112,10 +136,16 @@ export function useGetUsers(options = {}) {
       page, 
       pageSize, 
       search,
-      ordering 
+      ordering,
+      filters: {
+        ...(teamFilter && { team: teamFilter }),
+        ...(roleFilter && { role: roleFilter }),
+        ...(isActiveFilter !== '' && { is_active: isActiveFilter === 'true' })
+      }
     });
-  }, [page, pageSize, search, ordering]);
+  }, [page, pageSize, search,  ordering, teamFilter, roleFilter, isActiveFilter]);
 
+  
   // ✅ STANDARDISÉ: Utilise toujours tenantKey()
   const swrKey = tenantKey(urlWithParams, tenantId);
   // const { data, isLoading, error, isValidating } = useSWR(swrKey);

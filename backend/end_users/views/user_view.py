@@ -160,6 +160,21 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             'count': queryset.count(),
             'user_tier': getattr(self.request, '_user_tier', 'unknown')
         })
+
+        # ✅ HIERARCHICAL TEAM FILTERING
+        # Support multiple team IDs (comma-separated) for hierarchical filtering
+        # Example: ?team=uuid1,uuid2,uuid3
+        team_param = self.request.query_params.get('team')
+        if team_param:
+            # Check if multiple teams (comma-separated)
+            if ',' in team_param:
+                # Split and filter by UUIDs
+                team_ids = [t.strip() for t in team_param.split(',') if t.strip()]
+                queryset = queryset.filter(team_id__in=team_ids)
+                logger.debug("Applied hierarchical team filter", extra={
+                    'team_ids': team_ids,
+                    'count': len(team_ids)
+                })
         
         # Optimiser selon l'action
         if self.action == 'list':
@@ -209,6 +224,35 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             ).distinct()
         
         return queryset
+    
+    def filter_queryset(self, queryset):
+        """
+        Override filter_queryset to handle multiple team IDs before DjangoFilterBackend validation.
+        
+        Supports hierarchical team filtering: ?team=uuid1,uuid2,uuid3
+        """
+        # Extract team parameter before standard filtering
+        team_param = self.request.query_params.get('team')
+        
+        if team_param and ',' in team_param:
+            # Multiple teams (hierarchical filtering)
+            team_ids = [t.strip() for t in team_param.split(',') if t.strip()]
+            
+            # Apply filter manually
+            queryset = queryset.filter(team_id__in=team_ids)
+            
+            logger.debug("Applied hierarchical team filter", extra={
+                'team_ids': team_ids,
+                'count': len(team_ids)
+            })
+            
+            # Remove 'team' from query params to prevent DjangoFilterBackend from processing it
+            mutable_params = self.request.query_params.copy()
+            mutable_params.pop('team', None)
+            self.request._request.GET = mutable_params
+        
+        # Apply all other filters (including single team if not comma-separated)
+        return super().filter_queryset(queryset)
     
     # def retrieve(self, request, *args, **kwargs):
     #     """

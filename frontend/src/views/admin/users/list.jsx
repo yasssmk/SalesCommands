@@ -1,6 +1,7 @@
 'use client';
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useSWRConfig } from 'swr';
+import { useSearchParams } from 'next/navigation';
 
 // material-ui
 import Box from '@mui/material/Box'
@@ -64,11 +65,15 @@ export default function UserListPage() {
   const theme = useTheme();
   const { tenantId } = useAuth();
 
+  const searchParams = useSearchParams();
+
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const { mutate: globalMutate } = useSWRConfig();
 
   const MAX_PAGE_SIZE = 100;
+
+  // ==============================|| STATE MANAGEMENT ||============================== //
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useLocalStorage(
@@ -88,7 +93,6 @@ export default function UserListPage() {
   const [csvImportModal, setCsvImportModal] = useState(false);
 
 
-
   const swrKey = useMemo(() => {
     const params = new URLSearchParams();
     params.append('page', page);
@@ -98,6 +102,34 @@ export default function UserListPage() {
     const url = `/client/users/${params.toString() ? `?${params.toString()}` : ''}`;
     return tenantKey(url, tenantId);
   }, [page, validPageSize, search, tenantId, refreshNonce]);
+
+  // ==============================|| URL FILTERS ||============================== //
+
+/**
+ * Read filters from URL query params
+ * Supports: ?team=uuid&role=uuid&active=true
+ */
+const teamParam = searchParams.get('team');
+const roleParam = searchParams.get('role');
+const activeParam = searchParams.get('active');
+
+const filters = useMemo(() => {
+  const result = {};
+  
+  if (teamParam) {
+    result.team = teamParam;
+  }
+  
+  if (roleParam) {
+    result.role = roleParam;
+  }
+  
+  if (activeParam !== null) {
+    result.is_active = activeParam === 'true';
+  }
+  
+  return result;
+}, [teamParam, roleParam, activeParam]);
 
   const ordering = useMemo(() => {
       if (!sorting || sorting.length === 0) {
@@ -126,7 +158,8 @@ export default function UserListPage() {
       page, 
       pageSize: validPageSize, 
       search,
-      ordering  
+      ordering,
+      filters   
     }) || {};
 
   const {
