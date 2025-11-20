@@ -30,8 +30,9 @@ import * as Yup from 'yup';
 import { useFormik, Form, FormikProvider } from 'formik';
 
 // api hooks
-import { useGetOrganizations, useGetTeams, insertUser } from 'api/admin/users';
+import { insertUser } from 'api/admin/users';
 import { useGetUserRoles } from 'api/admin/roles';
+import { useGetTeams } from 'api/admin/teams';
 
 // project imports
 import Avatar from 'components/@extended/Avatar';
@@ -54,7 +55,6 @@ const buildInitialValues = () => ({
   is_active: true,
   is_superuser: false, 
   role: '',
-  organization: '',
   team: ''
 });
 
@@ -85,15 +85,6 @@ const CreateSchema = Yup.object().shape({
       return isValidUUID(value);
     }),
   
-  organization: Yup.string()
-    .nullable()
-    .test('is-valid-uuid', 'Invalid organization selection', function(value) {
-      // Allow empty/null (optional field)
-      if (!value || value === '') return true;
-      // Validate UUID format
-      return isValidUUID(value);
-    }),
-  
   team: Yup.string()
     .nullable()
     .test('is-valid-uuid', 'Invalid team selection', function(value) {
@@ -110,7 +101,7 @@ function sanitizePayload(values) {
     if (values[k] !== undefined && values[k] !== '') out[k] = values[k];
   });
   if (values.password) out.password = values.password;
-  ['role', 'organization', 'team'].forEach((k) => {
+  ['role', 'team'].forEach((k) => {
     const v = values[k];
     if (v !== undefined && v !== '' && v !== null) out[k] = v;
   });
@@ -159,26 +150,9 @@ function FormUserAdd({ closeModal }) {
 
   // --- Lists from backend (scoped by tenant via axiosClient/api) ---
   const { roles = [], rolesLoading } = useGetUserRoles();
-  const { organizations: orgs = [], organizationsLoading } = useGetOrganizations();
+  const { teams = [], teamsLoading } = useGetTeams();
 
-  // Fetch teams ONLY when an organization is selected
-  const teamsEnabled = Boolean(values?.organization);
-  const { teams = [], teamsLoading } = useGetTeams(
-    teamsEnabled ? { organization: values.organization } : undefined,
-    teamsEnabled
-  );
-
-  const filteredTeams = useMemo(() => Array.isArray(teams) ? teams : [], [teams]);
-
-  // Auto-fill organization when team selected (if organization is empty)
-  useEffect(() => {
-    if (!values.team || !(teams?.length)) return;
-    const t = (teams || []).find((x) => String(x.id) === String(values.team));
-    const orgId = t?.organization?.id ?? t?.organization;
-    if (orgId && !values.organization) setFieldValue('organization', String(orgId), false);
-  }, [values.team, teams]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const anyLoading = loading || rolesLoading || organizationsLoading || teamsLoading;
+  const anyLoading = loading || rolesLoading || teamsLoading;
 
   if (anyLoading)
     return (
@@ -189,8 +163,7 @@ function FormUserAdd({ closeModal }) {
       </Box>
     );
 
-  const noOrgOrTeam = (orgs?.length ?? 0) === 0 && (teams?.length ?? 0) === 0;
-  const noTeamsToShow = (filteredTeams?.length ?? 0) === 0;
+  const noTeamsAvailable = (teams?.length ?? 0) === 0;
 
   return (
     <>
@@ -345,50 +318,6 @@ function FormUserAdd({ closeModal }) {
 
                   <Grid item xs={12} sm={6}>
                     <Stack spacing={1}>
-                      <InputLabel htmlFor="user-organization">Organization</InputLabel>
-                      <FormControl fullWidth error={Boolean(touched.organization && errors.organization)}>
-                        <Select
-                          id="user-organization"
-                          displayEmpty
-                          value={values.organization}
-                          onChange={(e) => setFieldValue('organization', e.target.value)}
-                          input={<OutlinedInput id="select-user-org" placeholder="Select organization" />}
-                          renderValue={(selected) => {
-                            if ((orgs?.length ?? 0) === 0) {
-                              return (
-                                <Typography variant="subtitle1" color="text.secondary">
-                                  No organization available
-                                </Typography>
-                              );
-                            }
-                            if (!selected) return <Typography variant="subtitle1">Select organization</Typography>;
-                            const o = orgs?.find((x) => String(x.id) === String(selected));
-                            return <Typography variant="subtitle2">{o?.name || '—'}</Typography>;
-                          }}
-                        >
-                          {(orgs || []).length === 0 ? (
-                            <MenuItem disabled>
-                              <Typography color="text.secondary">No organization available</Typography>
-                            </MenuItem>
-                          ) : (
-                            (orgs || []).map((o) => (
-                              <MenuItem key={o.id} value={String(o.id)}>
-                                <ListItemText primary={o.name} />
-                              </MenuItem>
-                            ))
-                          )}
-                        </Select>
-                        {touched.organization && errors.organization && (
-                          <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                            {errors.organization}
-                          </Typography>
-                          )}
-                      </FormControl>
-                    </Stack>
-                  </Grid>
-
-                  <Grid item xs={12}>
-                    <Stack spacing={1}>
                       <InputLabel htmlFor="user-team">Team</InputLabel>
                       <FormControl fullWidth error={Boolean(touched.team && errors.team)}>
                         <Select
@@ -398,24 +327,24 @@ function FormUserAdd({ closeModal }) {
                           onChange={(e) => setFieldValue('team', e.target.value)}
                           input={<OutlinedInput id="select-user-team" placeholder="Select team" />}
                           renderValue={(selected) => {
-                            if (noOrgOrTeam || noTeamsToShow) {
+                            if (noTeamsAvailable) {
                               return (
                                 <Typography variant="subtitle1" color="text.secondary">
-                                  No team available
+                                  No teams available
                                 </Typography>
                               );
                             }
                             if (!selected) return <Typography variant="subtitle1">Select team</Typography>;
-                            const t = filteredTeams.find((x) => String(x.id) === String(selected));
+                            const t = teams?.find((x) => String(x.id) === String(selected));
                             return <Typography variant="subtitle2">{t?.name || '—'}</Typography>;
                           }}
                         >
-                          {noOrgOrTeam || noTeamsToShow ? (
+                          {noTeamsAvailable ? (
                             <MenuItem disabled>
-                              <Typography color="text.secondary">No team available</Typography>
+                              <Typography color="text.secondary">No teams available</Typography>
                             </MenuItem>
                           ) : (
-                            filteredTeams.map((t) => (
+                            (teams || []).map((t) => (
                               <MenuItem key={t.id} value={String(t.id)}>
                                 <ListItemText primary={t.name} />
                               </MenuItem>

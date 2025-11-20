@@ -17,6 +17,7 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     
     # Relations (objets pour compatibilité frontend)
+    role = serializers.SerializerMethodField(read_only=True)
     organization = serializers.SerializerMethodField(read_only=True)
     team = serializers.SerializerMethodField(read_only=True)
 
@@ -33,7 +34,7 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'full_name',  # Pour modal delete
             
             # ✅ Relations (objets complets pour frontend)
-            'role_name', 'role_tier', 'organization', 'team',
+            'role', 'role_name', 'role_tier', 'organization', 'team',
             
             # ✅ Status
             'is_active', 'is_superuser',
@@ -42,6 +43,18 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'last_login'
         ]
         read_only_fields = fields
+
+    def get_role(self, obj):
+        """
+        Retourner le rôle sous forme d'objet minimal
+        Compatible avec l'usage frontend: row.original.role?.name
+        """
+        if obj.role:
+            return {
+                'id': str(obj.role_id),
+                'name': obj.role_name
+            }
+        return None
     
     def get_organization(self, obj):
         """
@@ -287,12 +300,66 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         return value
 
     def validate_team(self, value):
-        """Ensure team belongs to the same client"""
-        if value:
-            client_id = self._get_client_id_from_context()
-            # ✅ Team is scoped through its organization
-            if str(value.organization.client_account_id) != str(client_id):
-                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+        """
+        Validate that team assignment is compatible with manager status.
+
+        Business Rule:
+        - If user is manager of team(s), user.team must be:
+            * null (no team assigned), OR
+            * one of the teams they manage
+
+        This prevents conflicts like:
+        - User manages Team A but is assigned to Team B as member
+
+        Args:
+            value: Team instance or None
+
+        Returns:
+            Team instance or None if valid
+
+        Raises:
+            StandardizedValidationError: If team assignment conflicts with managed teams
+        """
+        if not value:
+            # null team is always valid
+            return value
+
+        # Get the user instance (for updates) or user_id from context (for creates)
+        user_instance = self.instance
+        if not user_instance:
+            # For creates, we can't check managed teams yet (user doesn't exist)
+            # The signal will handle assignment after creation
+            return value
+
+        # Check if user is manager of any teams
+        from ..models import Team
+
+        managed_teams = Team.objects.filter(
+            manager=user_instance,
+            client_account=user_instance.client_account
+        ).values_list('id', flat=True)
+
+        if managed_teams.exists():
+            # User is a manager - validate team assignment
+            if value.id not in managed_teams:
+                # User is trying to assign to a team they don't manage
+                managed_team_names = Team.objects.filter(
+                    id__in=managed_teams
+                ).values_list('name', flat=True)
+
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_DATA.format(
+                        detail=f"User is manager of team(s): {', '.join(managed_team_names)}. "
+                                f"Cannot assign to team '{value.name}'. "
+                                f"Managers must be assigned to a team they manage, or have no team assignment."
+                    )
+                )
+
+        # Validate team belongs to same client (existing validation)
+        client_id = self._get_client_id_from_context()
+        if str(value.client_account_id) != str(client_id):
+            raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+
         return value
 
     def validate_organization(self, value):
@@ -402,17 +469,11 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
                         CoreErrorMessages.REQUIRED_FIELD.format(field='role')
                     )
                             
-            # Cohérence team/organization/client
+            # Cohérence team/client
             team = data.get('team') or (self.instance.team if self.instance else None)
             organization = data.get('organization') or (self.instance.organization if self.instance else None)
             
-            if team and organization:
-                if team.organization != organization:
-                    raise StandardizedValidationError(
-                        _("Team must belong to the selected organization.")
-                    )
-            
-            if team and str(team.organization.client_account_id) != str(client_account_id):
+            if team and str(team.client_account_id) != str(client_account_id):
                 raise StandardizedValidationError(
                     CoreErrorMessages.CLIENT_MISMATCH
                 )

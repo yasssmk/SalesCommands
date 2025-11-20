@@ -4,6 +4,7 @@ from .sales_plan_signals import (
 )
 from .user_signals import * 
 from .role_signals import * 
+from .team_signals import *
 
 __all__ = [
     'trigger_manual_update_for_user',

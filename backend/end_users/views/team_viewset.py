@@ -122,6 +122,9 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         """
         Serialize the queryset with metadata for list responses (cache friendly).
         
+        Calculates hierarchical member counts in-memory (2 SQL queries total)
+        and injects them into serializer context for performance.
+        
         Returns:
             dict: {
                 'success': True,
@@ -143,10 +146,17 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             'generated_at': timestamp,
         }
         
+        # Calculate hierarchical counts once for all teams (2 SQL queries)
+        hierarchical_counts = Team.get_hierarchical_member_counts(client_id) if client_id else {}
+        
+        # Inject counts into serializer context
+        context = self.get_serializer_context()
+        context['hierarchical_counts'] = hierarchical_counts
+        
         page = self.paginate_queryset(queryset)
         
         if page is not None:
-            serializer = self.get_serializer(page, many=True)
+            serializer = self.get_serializer(page, many=True, context=context)
             total_count = self.paginator.page.paginator.count
             metadata['total_count'] = total_count
             
@@ -161,7 +171,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 'metadata': metadata,
             }
         
-        serializer = self.get_serializer(queryset, many=True)
+        serializer = self.get_serializer(queryset, many=True, context=context)
         metadata['total_count'] = len(serializer.data)
         
         return {
@@ -172,7 +182,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             },
             'metadata': metadata,
         }
-    
+
     def get_serializer_class(self):
         """
         Select serializer based on action.
@@ -192,16 +202,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Applies client scoping and annotations for performance.
         """
         queryset = super().get_queryset().select_related('client_account')
-        
-        # Annotations to avoid N queries in serializers
-        queryset = queryset.annotate(
-            members_count=Count('members', distinct=True),
-            active_members_count=Count(
-                'members',
-                filter=Q(members__is_active=True),
-                distinct=True
-            ),
-        )
+
         
         # Action-specific optimizations
         if self.action == 'list':

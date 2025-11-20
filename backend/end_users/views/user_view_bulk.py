@@ -2064,13 +2064,10 @@ class UserBulkViewSet(UserViewSet):
                 
                 # Fetch team (1 SELECT for all users)
                 try:
-                    team = Team.objects.get(id=team_id)
-                    # Validate team belongs to client
-                    if str(team.organization.client_account_id) != str(client_id):
-                        raise StandardizedValidationError("Team does not belong to your organization")
+                    team = Team.objects.get(id=team_id, client_account_id=client_id)
                     validated_fks['team'] = team
                 except Team.DoesNotExist:
-                    raise StandardizedValidationError(f"Team with ID '{team_id}' not found")
+                    raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
         
         return validated_fks
     

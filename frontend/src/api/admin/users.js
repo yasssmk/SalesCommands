@@ -427,7 +427,8 @@ export const insertUser = async (userData) => {
     revalidateMultiple([
       endpoints.users,                    // Liste users
       '/client/client-accounts/',          // Stats seats
-      '/client/roles/' 
+      '/client/roles/' ,
+      '/client/teams/'
     ]);
 
     return { success: true, user: result.data };
@@ -488,7 +489,8 @@ export const updateUser = async (userId, userData) => {
       endpoints.users,                     // Liste users
       `${endpoints.users}${userId}/`,      // User spécifique
       '/client/client-accounts/',           // Stats seats
-      '/client/roles/' 
+      '/client/roles/',
+      '/client/teams/'
     ]);
 
     return { success: true, user: result.data };
@@ -586,7 +588,8 @@ export const deleteUser = async (userId) => {
     revalidateMultiple([
       endpoints.users,                    // Liste users
       '/client/client-accounts/',          // Stats seats (seats_used diminue)
-      '/client/roles/' 
+      '/client/roles/' ,
+      '/client/teams/'
     ]);
     
     return { success: true, status: result.status ?? 204 };
@@ -624,7 +627,7 @@ export const toggleUserStatus = async (userId) => {
     revalidateMultiple([
       endpoints.users,                     // Liste users
       `${endpoints.users}${userId}/`,      // User spécifique
-      '/client/client-accounts/'           // Stats seats (active/inactive impact)
+      '/client/client-accounts/'           // Stats seats (active/inactive impact),
     ]);
 
     return { success: true, user: result.data };
@@ -676,7 +679,7 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
       
       const finalResult = await handleBulkRevalidation(
         result,
-        [endpoints.users, '/client/client-accounts/', '/client/roles/'],
+        [endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/'],
         onSyncProgress,
         onSyncComplete
       );
@@ -729,7 +732,7 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
       });
 
       // Revalidation immédiate pour mode sync
-      revalidateMultiple([endpoints.users, '/client/client-accounts/', '/client/roles/']);
+      revalidateMultiple([endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/']);
       
       return result.data;
     }
@@ -849,7 +852,7 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
       
       const finalResult = await handleBulkRevalidation(
         result,
-        [endpoints.users, '/client/client-accounts/', '/client/roles/'],
+        [endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/'],
         onSyncProgress,
         onSyncComplete
       );
@@ -895,7 +898,7 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
         deleted: result.data?.summary?.deleted ?? 0
       });
 
-      revalidateMultiple([endpoints.users, '/client/client-accounts/', '/client/roles/']);
+      revalidateMultiple([endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/']);
       return result.data;
     }
 
@@ -1022,7 +1025,7 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
       
       const finalResult = await handleBulkRevalidation(
         result,
-        [endpoints.users, '/client/client-accounts/', '/client/roles/'],
+        [endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/'],
         onSyncProgress,
         onSyncComplete
       );
@@ -1067,7 +1070,7 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
         updated: result.data?.summary?.updated ?? 0
       });
 
-      revalidateMultiple([endpoints.users, '/client/client-accounts/', '/client/roles/']);
+      revalidateMultiple([endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/']);
       return result.data;
     }
 

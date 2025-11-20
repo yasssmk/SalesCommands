@@ -26,8 +26,10 @@ import * as Yup from 'yup';
 import { useFormik, Form, FormikProvider } from 'formik';
 
 // api
-import { useGetOrganizations, useGetTeams, bulkUpdateUsers } from 'api/admin/users';
+import { bulkUpdateUsers } from 'api/admin/users';
 import { useGetUserRoles } from 'api/admin/roles';
+import { useGetTeams } from 'api/admin/teams';
+
 import { displaySuccessSnackbar, displayWarningSnackbar } from 'utils/displayError';
 import { handleFormikError } from 'utils/formErrorHandler';
 
@@ -45,14 +47,12 @@ const buildInitialValues = () => ({
   apply_is_active: false,
   apply_is_superuser: false,
   apply_role: false,
-  apply_organization: false,
   apply_team: false,
   
   // Actual values
   is_active: true,
   is_superuser: false,
   role: '',
-  organization: '',
   team: ''
 });
 
@@ -67,17 +67,7 @@ const BulkEditSchema = Yup.object().shape({
         return isValidUUID(value);
       })
     }),
-  
-  organization: Yup.string()
-    .nullable()
-    .when('apply_organization', {
-      is: true,
-      then: (schema) => schema.test('is-valid-uuid', 'Invalid organization selection', function(value) {
-        if (!value || value === '') return false; // Required if applying
-        return isValidUUID(value);
-      })
-    }),
-  
+
   team: Yup.string()
     .nullable()
     .when('apply_team', {
@@ -102,10 +92,6 @@ function buildPatchPayload(values) {
   
   if (values.apply_role && values.role) {
     patch.role = values.role;
-  }
-  
-  if (values.apply_organization && values.organization) {
-    patch.organization = values.organization;
   }
   
   if (values.apply_team && values.team) {
@@ -211,31 +197,9 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
   const isProcessing = isSubmitting || processing || syncing;
 
   const { roles = [], rolesLoading } = useGetUserRoles();
-  const { organizations: orgs = [], organizationsLoading } = useGetOrganizations();
-  
-  const teamsEnabled = Boolean(values?.organization && values?.apply_organization);
-  const { teams = [], teamsLoading } = useGetTeams(
-    teamsEnabled ? { organization: values.organization } : undefined,
-    teamsEnabled
-  );
-  
-  const filteredTeams = useMemo(() => (Array.isArray(teams) ? teams : []), [teams]);
+  const { teams = [], teamsLoading } = useGetTeams();
 
-  // Auto-sync organization when team is selected
-  useEffect(() => {
-    if (!values.apply_team || !values.team || !(teams?.length)) return;
-    
-    const t = (teams || []).find((x) => String(x.id) === String(values.team));
-    const orgId = t?.organization?.id ?? t?.organization;
-    
-    if (orgId && !values.organization) {
-      setFieldValue('organization', String(orgId), false);
-      setFieldValue('apply_organization', true, false);
-    }
-  }, [values.apply_team, values.team, teams]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // const anyLoading = loading || rolesLoading || organizationsLoading || teamsLoading;
-  const anyLoading = rolesLoading || organizationsLoading || teamsLoading;
+  const anyLoading = rolesLoading || teamsLoading;
 
   if (anyLoading) {
     return (
@@ -247,15 +211,13 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
     );
   }
 
-  const noOrgOrTeam = (orgs?.length ?? 0) === 0 && (teams?.length ?? 0) === 0;
-  const noTeamsToShow = (filteredTeams?.length ?? 0) === 0;
+  const noTeamsAvailable = (teams?.length ?? 0) === 0;
 
   // Count how many fields are selected
   const selectedFieldsCount = [
     values.apply_is_active,
     values.apply_is_superuser,
     values.apply_role,
-    values.apply_organization,
     values.apply_team
   ].filter(Boolean).length;
 
@@ -363,68 +325,6 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
                   </Stack>
                 </Grid>
 
-                {/* ORGANIZATION */}
-                <Grid item xs={12}>
-                  <Stack spacing={1}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={values.apply_organization}
-                          onChange={(e) => setFieldValue('apply_organization', e.target.checked)}
-                        />
-                      }
-                      label={
-                        <Typography variant="subtitle1" fontWeight={values.apply_organization ? 600 : 400}>
-                          Update Organization
-                        </Typography>
-                      }
-                    />
-                    
-                    {values.apply_organization && (
-                      <FormControl fullWidth>
-                        <Select
-                          id="bulk-organization"
-                          displayEmpty
-                          value={values.organization}
-                          onChange={(e) => setFieldValue('organization', e.target.value)}
-                          input={<OutlinedInput placeholder="Select organization" />}
-                          disabled={!values.apply_organization}
-                          error={Boolean(touched.organization && errors.organization && values.apply_organization)}
-                          renderValue={(selected) => {
-                            if ((orgs?.length ?? 0) === 0) {
-                              return (
-                                <Typography variant="subtitle1" color="text.secondary">
-                                  No organizations available
-                                </Typography>
-                              );
-                            }
-                            if (!selected) return <Typography variant="subtitle1" color="text.secondary">Select organization</Typography>;
-                            const o = orgs?.find((x) => String(x.id) === String(selected));
-                            return <Typography variant="subtitle2">{o?.name || '—'}</Typography>;
-                          }}
-                        >
-                          {(orgs || []).length === 0 ? (
-                            <MenuItem disabled>
-                              <Typography color="text.secondary">No organizations available</Typography>
-                            </MenuItem>
-                          ) : (
-                            (orgs || []).map((o) => (
-                              <MenuItem key={o.id} value={String(o.id)}>
-                                <ListItemText primary={o.name} />
-                              </MenuItem>
-                            ))
-                          )}
-                        </Select>
-                        {touched.organization && errors.organization && values.apply_organization && (
-                          <Typography variant="caption" color="error" sx={{ mt: 0.5 }}>
-                            {errors.organization}
-                          </Typography>
-                        )}
-                      </FormControl>
-                    )}
-                  </Stack>
-                </Grid>
-
                 {/* TEAM */}
                 <Grid item xs={12}>
                   <Stack spacing={1}>
@@ -453,7 +353,7 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
                           disabled={!values.apply_team}
                           error={Boolean(touched.team && errors.team && values.apply_team)}
                           renderValue={(selected) => {
-                            if (noOrgOrTeam || noTeamsToShow) {
+                            if (noTeamsAvailable) {
                               return (
                                 <Typography variant="subtitle1" color="text.secondary">
                                   No teams available
@@ -461,16 +361,16 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
                               );
                             }
                             if (!selected) return <Typography variant="subtitle1" color="text.secondary">Select team</Typography>;
-                            const t = filteredTeams.find((x) => String(x.id) === String(selected));
+                            const t = teams?.find((x) => String(x.id) === String(selected));
                             return <Typography variant="subtitle2">{t?.name || '—'}</Typography>;
                           }}
                         >
-                          {noOrgOrTeam || noTeamsToShow ? (
+                          {noTeamsAvailable ? (
                             <MenuItem disabled>
                               <Typography color="text.secondary">No teams available</Typography>
                             </MenuItem>
                           ) : (
-                            filteredTeams.map((t) => (
+                            (teams || []).map((t) => (
                               <MenuItem key={t.id} value={String(t.id)}>
                                 <ListItemText primary={t.name} />
                               </MenuItem>
@@ -486,7 +386,7 @@ function FormUserBulkEdit({ closeModal, selectedUserIds = [], selectedCount = 0 
                     )}
                   </Stack>
                 </Grid>
-
+                
                 <Grid item xs={12}>
                   <Divider />
                 </Grid>

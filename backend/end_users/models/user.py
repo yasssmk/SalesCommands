@@ -143,12 +143,10 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         super().clean()
         
         # Vérifier la cohérence hiérarchique
-        if self.team and self.organization:
-            if self.team.organization != self.organization:
+        if self.team and self.client_account:
+            if self.team.client_account != self.client_account:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_DATA.format(
-                        detail="Team must belong to the selected organization"
-                    )
+                    CoreErrorMessages.CLIENT_MISMATCH
                 )
         
         # Vérifier la cohérence client
@@ -162,9 +160,6 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
         """
         Logique de sauvegarde avec cohérence automatique
         """
-        # Auto-assignment de l'organisation depuis l'équipe
-        if self.team and not self.organization:
-            self.organization = self.team.organization
             
         # Cache du nom de rôle pour performance
         if self.role and self.role.name != self.role_name:

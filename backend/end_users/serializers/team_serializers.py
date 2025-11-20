@@ -3,7 +3,7 @@ from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-from ..models import Organization, Team, User
+from ..models import Team, User
 
 class TeamListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
@@ -73,24 +73,40 @@ class TeamListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     
     def get_members_count(self, obj):
         """
-        Retrieve count from queryset annotation if available.
-        Fallback to .count() if no annotation (less performant).
+        Return total members count including all descendant teams.
+        
+        Uses pre-calculated hierarchical counts from context (in-memory calculation).
+        Fallback to direct count if context not available.
+        
+        Performance: 0 additional queries (counts pre-calculated for all teams).
         """
-        if hasattr(obj, 'members_count'):
-            return obj.members_count
-        if hasattr(obj, '_prefetched_members_count'):
-            return obj._prefetched_members_count
+        # Try to get from context (injected by ViewSet)
+        hierarchical_counts = self.context.get('hierarchical_counts', {})
+        team_id = str(obj.id)
+        
+        if team_id in hierarchical_counts:
+            return hierarchical_counts[team_id]['total']
+        
+        # Fallback: direct count only (no hierarchy)
         return obj.members.count()
 
     def get_active_members_count(self, obj):
         """
-        Retrieve active count from annotation if available.
-        Fallback to filtered count if no annotation.
+        Return total active members count including all descendant teams.
+        
+        Uses pre-calculated hierarchical counts from context (in-memory calculation).
+        Fallback to direct count if context not available.
+        
+        Performance: 0 additional queries (counts pre-calculated for all teams).
         """
-        if hasattr(obj, 'active_members_count'):
-            return obj.active_members_count
-        if hasattr(obj, 'prefetched_active_members'):
-            return len(obj.prefetched_active_members)
+        # Try to get from context (injected by ViewSet)
+        hierarchical_counts = self.context.get('hierarchical_counts', {})
+        team_id = str(obj.id)
+        
+        if team_id in hierarchical_counts:
+            return hierarchical_counts[team_id]['active']
+        
+        # Fallback: direct count only (no hierarchy)
         return obj.members.filter(is_active=True).count()
 
 
@@ -173,24 +189,36 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     
     def get_members_count(self, obj):
         """
-        Retrieve count from queryset annotation if available.
-        Fallback to .count() if no annotation (less performant).
+        Return total members count including all descendant teams.
+        
+        Uses pre-calculated hierarchical counts from context if available.
+        Fallback to direct count (no hierarchy).
         """
-        if hasattr(obj, 'members_count'):
-            return obj.members_count
-        if hasattr(obj, '_prefetched_members_count'):
-            return obj._prefetched_members_count
+        # Try to get from context (injected by ViewSet)
+        hierarchical_counts = self.context.get('hierarchical_counts', {})
+        team_id = str(obj.id)
+        
+        if team_id in hierarchical_counts:
+            return hierarchical_counts[team_id]['total']
+        
+        # Fallback: direct count only
         return obj.members.count()
 
     def get_active_members_count(self, obj):
         """
-        Retrieve active count from annotation if available.
-        Fallback to filtered count if no annotation.
+        Return total active members count including all descendant teams.
+        
+        Uses pre-calculated hierarchical counts from context if available.
+        Fallback to direct count (no hierarchy).
         """
-        if hasattr(obj, 'active_members_count'):
-            return obj.active_members_count
-        if hasattr(obj, 'prefetched_active_members'):
-            return len(obj.prefetched_active_members)
+        # Try to get from context (injected by ViewSet)
+        hierarchical_counts = self.context.get('hierarchical_counts', {})
+        team_id = str(obj.id)
+        
+        if team_id in hierarchical_counts:
+            return hierarchical_counts[team_id]['active']
+        
+        # Fallback: direct count only
         return obj.members.filter(is_active=True).count()
     
     def get_parent_team(self, obj):
