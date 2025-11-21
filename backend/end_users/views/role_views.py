@@ -91,7 +91,7 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['read', 'write', 'modify', 'can_delete']
     search_fields = ['name']
-    ordering_fields = ['name', 'tier', 'created_at', 'updated_at', 'users_count']
+    ordering_fields = ['name', 'tier', 'created_at', 'updated_at', 'users_count',  'active_users_count']
     ordering = ['name']
 
 
@@ -541,7 +541,7 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             return Response({
                 'success': True,
                 'message': f"Role '{instance.name}' updated successfully",
-                'data': serializer.data
+                'data':  RoleSerializer(instance, context=self.get_serializer_context()).data
             })
             
         except Exception as e:
@@ -619,7 +619,7 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             return Response({
                 'success': True,
                 'message': f"Role '{instance.name}' permissions updated successfully",
-                'data': serializer.data
+                'data':  RoleSerializer(instance, context=self.get_serializer_context()).data
             })
             
         except Exception as e:

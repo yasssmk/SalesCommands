@@ -166,6 +166,7 @@ export function useGetUsers(options = {}) {
       usersEmpty: !isLoading && (!data?.results?.length)
     }),
     [data, error, isLoading, isValidating]
+    
   );
 
   return memoizedValue;

@@ -20,6 +20,7 @@ from core.cache_utils import (
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
+from core.throttling import StandardRateThrottle
 from core.jwt_helpers import CustomJWTAuthentication
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
@@ -209,7 +210,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             # List: select_related only (performance)
             queryset = queryset.select_related('manager', 'parent_team')
             
-        elif self.action in ['retrieve', 'update', 'partial_update', 'destroy', 'duplicate']:
+        elif self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
             # Details: select_related + prefetch_related
             queryset = queryset.select_related('manager', 'parent_team')
             queryset = queryset.prefetch_related(
@@ -257,7 +258,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_response = cache_get_set(
             key=cache_key,
             producer=fetch_data,
-            ttl=120,
+            ttl=300,
             tag=(client_id, 'teams')
         )
         
@@ -274,7 +275,6 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             - Strict validation via serializer
         """
         try:
-            print(f"REQUEST DATA CREATE: {request.data}")
             serializer = self.get_serializer(
                 data=request.data,
                 context=self.get_serializer_context()
@@ -299,14 +299,6 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 outcome='success',
                 extra={'team_name': instance.name}
             )
-            
-            ctx = ctx_from_request(request)
-            ctx.update({
-                'event': 'team_created',
-                'team_id': str(instance.id),
-                'team_name': instance.name
-            })
-            logger.info('team_created', extra=ctx)
             
             return Response({
                 'success': True,
@@ -478,7 +470,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             return Response({
                 'success': True,
                 'message': f"Team '{instance.name}' updated successfully",
-                'data': serializer.data
+                'data': TeamSerializer(instance, context=self.get_serializer_context()).data
             })
             
         except Exception as e:
@@ -540,7 +532,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             return Response({
                 'success': True,
                 'message': f"Team '{instance.name}' updated successfully",
-                'data': serializer.data
+                'data': TeamSerializer(instance, context=self.get_serializer_context()).data
             })
             
         except Exception as e:
@@ -669,7 +661,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         except Exception as e:
             return self.handle_exception(e)
     
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], throttle_classes=[StandardRateThrottle])
     def summary(self, request):
         """
         Global summary of teams.
@@ -718,81 +710,3 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         except Exception as e:
             return self.handle_exception(e)
     
-    @action(detail=True, methods=['post'])
-    def duplicate(self, request, pk=None):
-        """
-        Duplicate an existing team with a new name.
-        
-        Permissions: Admin only (enforced via ScopedPermission + REGISTRY)
-        
-        Body:
-            {
-                "name": "New Team Name"
-            }
-        
-        Note: Children and members are NOT duplicated.
-        """
-        try:
-            client_id = self.get_client_id()
-            
-            with transaction.atomic():
-                source_team = Team.objects.select_for_update().filter(
-                    id=pk,
-                    client_account_id=client_id
-                ).first()
-                
-                if not source_team:
-                    return Response({
-                        'success': False,
-                        'error': CoreErrorMessages.OBJECT_NOT_FOUND
-                    }, status=status.HTTP_404_NOT_FOUND)
-                
-                new_name = request.data.get('name')
-                
-                if not new_name:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.REQUIRED_FIELD.format(field="name")
-                    )
-                
-                if Team.objects.filter(
-                    client_account_id=client_id,
-                    name__iexact=new_name
-                ).exists():
-                    raise StandardizedValidationError(
-                        f"Team with name '{new_name}' already exists"
-                    )
-                
-                new_team = Team.objects.create(
-                    client_account=source_team.client_account,
-                    name=new_name,
-                    description=source_team.description,
-                    manager=source_team.manager,
-                    parent_team=source_team.parent_team
-                )
-                
-                transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
-            
-            audit_log(
-                event='team_duplicate_success',
-                action='duplicate',
-                actor_id=str(request.user.id),
-                client_id=str(client_id),
-                target_type='team',
-                target_id=str(new_team.id),
-                outcome='success',
-                extra={
-                    'team_name': new_team.name,
-                    'source_team_id': str(source_team.id)
-                }
-            )
-            
-            serializer = TeamSerializer(new_team, context=self.get_serializer_context())
-            
-            return Response({
-                'success': True,
-                'message': f"Team '{new_team.name}' created as duplicate of '{source_team.name}'",
-                'data': serializer.data
-            }, status=status.HTTP_201_CREATED)
-            
-        except Exception as e:
-            return self.handle_exception(e)

@@ -184,12 +184,11 @@ function GenericTreeView({
         onSelectedItemsChange={handleSelectChange}
         expandedItems={autoExpandedIds}
         onExpandedItemsChange={handleExpandedItemsChange}
-        itemChildrenIndentation={24} // décalage visuel clair pour les sous-niveaux
+        itemChildrenIndentation={24}
         slots={{
           collapseIcon: DownOutlined,
           expandIcon: RightOutlined
         }}
-        // getItemLabel doit renvoyer une STRING → on renvoie item.label
         getItemLabel={(item) => item.label}
       />
     </Box>

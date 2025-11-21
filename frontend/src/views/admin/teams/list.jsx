@@ -85,21 +85,36 @@ export default function TeamsListPage() {
 
         displaySuccessSnackbar('Team updated successfully');
 
-        // ✅ Attendre que SWR revalide (court délai)
-        setTimeout(() => {
-          // Retrouver la team mise à jour dans la liste revalidée
-          const updatedTeam = teams?.find(t => t.id === id);
-          if (updatedTeam) {
-            setSelectedTeam(updatedTeam);
-          }
-        }, 300); // 300ms pour laisser SWR revalider
+        // 🔍 DEBUG: Afficher structure complète
+      console.log('🔍 result:', result);
+      console.log('🔍 result.data:', result.data);
+      console.log('🔍 result.data?.data:', result.data?.data);
+      console.log('🔍 result.data?.data?.id:', result.data?.data?.id);
+
+      displaySuccessSnackbar('Team updated successfully');
+      
+      const updatedTeam = result.data?.data;
+      
+      if (updatedTeam && updatedTeam.id) {
+        console.log('✅ Setting selectedTeam to:', updatedTeam);
+        setSelectedTeam(updatedTeam);
+      }
+
+        // // ✅ Attendre que SWR revalide (court délai)
+        // setTimeout(() => {
+        //   // Retrouver la team mise à jour dans la liste revalidée
+        //   const updatedTeam = teams?.find(t => t.id === id);
+        //   if (updatedTeam) {
+        //     setSelectedTeam(updatedTeam);
+        //   }
+        // }, 300); // 300ms pour laisser SWR revalider
 
       } catch (err) {
         console.error('Update team error:', err);
         displayErrorSnackbar('An unexpected error occurred while updating the team.');
       }
     },
-    [teams] // ✅ Dependency: teams
+    [] // ✅ Dependency: teams
   );
 
 

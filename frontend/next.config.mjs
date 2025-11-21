@@ -57,7 +57,7 @@ const nextConfig = {
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: https:",
       "connect-src 'self' http://localhost:8000",
-      "frame-ancestors 'none'",
+      // "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
       "report-uri /api/csp-report",

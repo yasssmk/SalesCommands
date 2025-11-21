@@ -122,8 +122,6 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         read_only=True
     )
 
-    manager_name = serializers.CharField(source='manager.get_full_name', read_only=True)
-
     # Hierarchy fields
     parent_id = serializers.UUIDField(
         source='parent_team_id',
@@ -132,6 +130,7 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         write_only=True,
         help_text=_("ID of the parent team in the hierarchy.")
     )
+    manager = serializers.SerializerMethodField(read_only=True)
     parent_team = serializers.SerializerMethodField(read_only=True)
     direct_child_teams = serializers.SerializerMethodField(read_only=True)
     
@@ -149,10 +148,11 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     #     }
     # )
     
-    manager = serializers.PrimaryKeyRelatedField(
+    manager_id = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
         required=False,
         allow_null=True,
+        write_only=True,
         error_messages={
             'does_not_exist': CoreErrorMessages.OBJECT_NOT_FOUND,
             'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Manager')
@@ -165,8 +165,8 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             # Identifiers
             'id', 'name', 'description',
             
-            # Relations
-            'manager', 'manager_name',
+            # Relations (objects for read, _id for write)
+            'manager', 'manager_id',
             'parent_id', 'parent_team', 'direct_child_teams',
             
             # Client scoping (STANDARDIZATION)
@@ -180,7 +180,7 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         ]
         read_only_fields = [
             'created_at', 'updated_at',
-            'members_count', 'active_members_count',
+            'manager', 'members_count', 'active_members_count',
             'parent_team', 'direct_child_teams'
         ]
 
@@ -220,6 +220,21 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         
         # Fallback: direct count only
         return obj.members.filter(is_active=True).count()
+    
+    def get_manager(self, obj):
+        """
+        Return manager as minimal object.
+        Consistent with UserSerializer pattern for relations.
+        """
+        if obj.manager:
+            return {
+                'id': str(obj.manager_id),
+                'first_name': obj.manager.first_name,
+                'last_name': obj.manager.last_name,
+                'email': obj.manager.email,
+                'name': obj.manager.get_full_name(),
+            }
+        return None
     
     def get_parent_team(self, obj):
         """
