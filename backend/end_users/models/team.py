@@ -88,6 +88,37 @@ class Team(BaseModel):
 
         return hierarchy
     
+    def get_effective_manager(self):
+        """
+        Return the effective manager for this team.
+        
+        Business Rule:
+            - If team has a direct manager, return it
+            - Otherwise, walk up the hierarchy to find the closest parent with a manager
+            - Returns tuple: (manager_user, inherited_from_team or None)
+        
+        Returns:
+            tuple: (User instance or None, Team instance or None)
+            - (manager, None) if direct manager
+            - (manager, parent_team) if inherited
+            - (None, None) if no manager in hierarchy
+        """
+        # Direct manager takes priority
+        if self.manager:
+            return (self.manager, None)
+        
+        # Walk up hierarchy to find inherited manager
+        current = self.parent_team
+        visited = {self.id}  # Prevent infinite loops
+        
+        while current and current.id not in visited:
+            visited.add(current.id)
+            if current.manager:
+                return (current.manager, current)
+            current = current.parent_team
+        
+        return (None, None)
+    
     @classmethod
     def get_hierarchical_member_counts(cls, client_id):
         """

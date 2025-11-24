@@ -18,8 +18,12 @@ class TeamListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Relations as simple objects (frontend-friendly)
     manager = serializers.SerializerMethodField(read_only=True)
     parent_team = serializers.SerializerMethodField(read_only=True)
+    
+    # Effective manager (inherited from parent if no direct manager)
+    effective_manager = serializers.SerializerMethodField(read_only=True)
+    manager_inherited = serializers.SerializerMethodField(read_only=True)
 
-     # Counters
+    # Counters
     members_count = serializers.SerializerMethodField(read_only=True)
     active_members_count = serializers.SerializerMethodField(read_only=True)
     
@@ -32,6 +36,9 @@ class TeamListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             # Relations (simple objects)
             'manager', 'parent_team',
             
+            # Effective manager (with inheritance)
+            'effective_manager', 'manager_inherited',
+            
             # Counts (from annotations)
             'members_count', 'active_members_count',
             
@@ -40,13 +47,36 @@ class TeamListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         ]
         read_only_fields = fields
     
+    def _get_effective_manager_data(self, obj):
+        """
+        Find the effective manager by walking up the hierarchy.
+        
+        Returns:
+            tuple: (manager_user, inherited_from_team_id or None)
+            - If team has direct manager: (manager, None)
+            - If inherited from parent: (manager, parent_team_id)
+            - If no manager found: (None, None)
+        """
+        # Direct manager takes priority
+        if obj.manager:
+            return (obj.manager, None)
+        
+        # Walk up hierarchy to find inherited manager
+        current = obj.parent_team
+        visited = {obj.id}  # Prevent infinite loops
+        
+        while current and current.id not in visited:
+            visited.add(current.id)
+            if current.manager:
+                return (current.manager, current.id)
+            current = current.parent_team
+        
+        return (None, None)
+    
     def get_manager(self, obj):
         """
-        Return manager as minimal object.
-        Compatible avec TeamInfoPanel qui attend :
-        - first_name
-        - last_name
-        - email
+        Return direct manager as minimal object.
+        Returns None if team has no direct manager (even if inherited).
         """
         if obj.manager:
             return {
@@ -58,6 +88,36 @@ class TeamListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 'role_name': getattr(obj.manager, 'role_name', None),
             }
         return None
+    
+    def get_effective_manager(self, obj):
+        """
+        Return effective manager (direct or inherited from parent hierarchy).
+        
+        Business Rule:
+            If team has no direct manager, inherit from closest parent with a manager.
+        """
+        manager, inherited_from = self._get_effective_manager_data(obj)
+        
+        if manager:
+            return {
+                'id': str(manager.id),
+                'first_name': manager.first_name,
+                'last_name': manager.last_name,
+                'email': manager.email,
+                'name': manager.get_full_name(),
+                'role_name': getattr(manager, 'role_name', None),
+            }
+        return None
+    
+    def get_manager_inherited(self, obj):
+        """
+        Return True if manager is inherited from a parent team.
+        """
+        if obj.manager:
+            return False
+        
+        manager, inherited_from = self._get_effective_manager_data(obj)
+        return inherited_from is not None
     
     def get_parent_team(self, obj):
         """
@@ -133,6 +193,10 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     manager = serializers.SerializerMethodField(read_only=True)
     parent_team = serializers.SerializerMethodField(read_only=True)
     direct_child_teams = serializers.SerializerMethodField(read_only=True)
+
+    # Effective manager (inherited from parent if no direct manager)
+    effective_manager = serializers.SerializerMethodField(read_only=True)
+    manager_inherited = serializers.SerializerMethodField(read_only=True)
     
     # Counters
     members_count = serializers.SerializerMethodField(read_only=True)
@@ -168,6 +232,9 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             # Relations (objects for read, _id for write)
             'manager', 'manager_id',
             'parent_id', 'parent_team', 'direct_child_teams',
+
+            # Effective manager (with inheritance)
+            'effective_manager', 'manager_inherited',
             
             # Client scoping (STANDARDIZATION)
             'client_id', 'client_account', 'client_account_name',
@@ -181,7 +248,8 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
         read_only_fields = [
             'created_at', 'updated_at',
             'manager', 'members_count', 'active_members_count',
-            'parent_team', 'direct_child_teams'
+            'parent_team', 'direct_child_teams',
+            'effective_manager', 'manager_inherited'
         ]
 
     
@@ -259,6 +327,61 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             for child in obj.direct_child_teams.all()
         ]
     
+    def _get_effective_manager_data(self, obj):
+        """
+        Find the effective manager by walking up the hierarchy.
+        
+        Returns:
+            tuple: (manager_user, inherited_from_team_id or None)
+            - If team has direct manager: (manager, None)
+            - If inherited from parent: (manager, parent_team_id)
+            - If no manager found: (None, None)
+        """
+        # Direct manager takes priority
+        if obj.manager:
+            return (obj.manager, None)
+        
+        # Walk up hierarchy to find inherited manager
+        current = obj.parent_team
+        visited = {obj.id}  # Prevent infinite loops
+        
+        while current and current.id not in visited:
+            visited.add(current.id)
+            if current.manager:
+                return (current.manager, current.id)
+            current = current.parent_team
+        
+        return (None, None)
+    
+    def get_effective_manager(self, obj):
+        """
+        Return effective manager (direct or inherited from parent hierarchy).
+        
+        Business Rule:
+            If team has no direct manager, inherit from closest parent with a manager.
+        """
+        manager, inherited_from = self._get_effective_manager_data(obj)
+        
+        if manager:
+            return {
+                'id': str(manager.id),
+                'first_name': manager.first_name,
+                'last_name': manager.last_name,
+                'email': manager.email,
+                'name': manager.get_full_name(),
+            }
+        return None
+    
+    def get_manager_inherited(self, obj):
+        """
+        Return True if manager is inherited from a parent team.
+        """
+        if obj.manager:
+            return False
+        
+        manager, inherited_from = self._get_effective_manager_data(obj)
+        return inherited_from is not None
+    
     # ==== Validation ====
     
     # def validate_organization(self, value):
@@ -275,7 +398,21 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             client_id = self._get_client_id_from_context()
             if str(value.client_id) != str(client_id):
                 raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+            
+            existing_team = Team.objects.filter(
+            manager=value,
+            client_account_id=client_id
+        ).first()
+        
+        if existing_team:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                    fields=f"manager (already manages team '{existing_team.name}')"
+                )
+            )
+    
         return value
+
     
     def validate(self, data):
         """
@@ -457,6 +594,19 @@ class TeamCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             client_id = self._get_client_id_from_context()
             if str(value.client_account_id) != str(client_id):
                 raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+            
+            existing_team = Team.objects.filter(
+            manager=value,
+            client_account_id=client_id
+        ).first()
+        
+        if existing_team:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                    fields=f"manager (already manages team '{existing_team.name}')"
+                )
+            )
+        
         return value
     
     def validate(self, attrs):
@@ -621,6 +771,25 @@ class TeamUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
             client_id = self._get_client_id_from_context()
             if str(value.client_account_id) != str(client_id):
                 raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+            
+            queryset = Team.objects.filter(
+            manager=value,
+            client_account_id=client_id
+        )
+        
+        # Exclude current instance (for updates)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        
+        existing_team = queryset.first()
+        
+        if existing_team:
+            raise StandardizedValidationError(
+                CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                    fields=f"manager (already manages team '{existing_team.name}')"
+                )
+            )
+        
         return value
     
     def validate(self, attrs):

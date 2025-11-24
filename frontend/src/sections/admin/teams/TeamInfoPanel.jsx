@@ -251,12 +251,31 @@ function TeamInfoPanel({ team, onEdit, onDelete, allTeams  }) {
                 ) : (
                 <>
                   {team.manager ? (
+                    // Direct manager
                     <Stack spacing={0.5}>
                       <Typography variant="h6">
                         {team.manager.first_name} {team.manager.last_name}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {team.manager.email}
+                      </Typography>
+                    </Stack>
+                  ) : team.effective_manager ? (
+                    // Inherited manager from parent hierarchy
+                    <Stack spacing={0.5}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography variant="h6" color="text.secondary">
+                          {team.effective_manager.first_name} {team.effective_manager.last_name}
+                        </Typography>
+                        <Chip
+                          label="Inherited"
+                          size="small"
+                          color="warning"
+                          variant="outlined"
+                        />
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary">
+                        {team.effective_manager.email}
                       </Typography>
                     </Stack>
                   ) : (
@@ -404,7 +423,6 @@ function TeamInfoPanel({ team, onEdit, onDelete, allTeams  }) {
     </MainCard>
   );
 }
-
 TeamInfoPanel.propTypes = {
   team: PropTypes.shape({
     id: PropTypes.string.isRequired,
@@ -416,19 +434,18 @@ TeamInfoPanel.propTypes = {
       last_name: PropTypes.string,
       email: PropTypes.string
     }),
+    effective_manager: PropTypes.shape({
+      id: PropTypes.string,
+      first_name: PropTypes.string,
+      last_name: PropTypes.string,
+      email: PropTypes.string
+    }),
+    manager_inherited: PropTypes.bool,
     parent: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
     member_count: PropTypes.number,
     created_at: PropTypes.string,
     children: PropTypes.array
   }),
-  onEdit: PropTypes.func,
-  onDelete: PropTypes.func,
-  allTeams: PropTypes.arrayOf(
-    PropTypes.shape({
-      id: PropTypes.string,
-      name: PropTypes.string
-    })
-  )
 };
 
 
