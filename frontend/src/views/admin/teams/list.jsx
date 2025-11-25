@@ -23,6 +23,7 @@ import { DebouncedInput } from 'components/third-party/react-table';
 
 // api hooks
 import { useGetTeams, updateTeam, deleteTeam } from 'api/admin/teams';
+import useLocalStorage from 'hooks/useLocalStorage';
 
 // utils
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
@@ -40,8 +41,8 @@ export default function TeamsListPage() {
 
   const [selectedTeamId, setSelectedTeamId] = useState(null);
   // const [selectedTeam, setSelectedTeam] = useState(null);
-  const [search, setSearch] = useState('');
-  const [ordering, setOrdering] = useState('name');
+  const [search, setSearch] = useLocalStorage('teamsFilters_search', '');
+  const [ordering, setOrdering] = useLocalStorage('teamsFilters_ordering', 'name');
   const [teamModal, setTeamModal] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
   const [teamToDelete, setTeamToDelete] = useState(null);

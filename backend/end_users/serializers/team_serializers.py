@@ -5,6 +5,76 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from ..models import Team, User
 
+# ============================================================================
+# HELPER: Manager Validation (shared across all Team serializers)
+# ============================================================================
+
+def validate_manager_tier_and_uniqueness(manager, client_id, current_instance=None):
+    """
+    Centralized manager validation logic for all Team serializers.
+    
+    Business Rules:
+        1. Client isolation: Manager must belong to same client
+        2. Tier requirement: Manager must have 'manager' or 'admin' tier (not 'individual')
+        3. Uniqueness: One manager per team (1:1 relationship)
+    
+    Args:
+        manager (User): Manager instance to validate
+        client_id (UUID): Client account ID for multi-tenant isolation
+        current_instance (Team, optional): Current team instance (for updates)
+    
+    Raises:
+        StandardizedValidationError: If validation fails
+    
+    Returns:
+        User: Validated manager instance
+    """
+    if not manager:
+        return manager
+    
+    # Rule 1: Client isolation
+    if str(manager.client_account_id) != str(client_id):
+        raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+    
+    # Rule 2: Tier validation
+    if manager.role:
+        tier = None
+        if hasattr(manager.role, 'is_admin') and manager.role.is_admin:
+            tier = 'admin'
+        elif hasattr(manager.role, 'is_manager') and manager.role.is_manager:
+            tier = 'manager'
+        elif hasattr(manager.role, 'is_individual') and manager.role.is_individual:
+            tier = 'individual'
+        
+        if tier == 'individual':
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_DATA.format(
+                    detail=f"Team managers must have 'manager' or 'admin' tier. "
+                           f"User '{manager.get_full_name()}' has 'individual' tier."
+                )
+            )
+    
+    # Rule 3: Uniqueness (one manager per team)
+    existing_team_query = Team.objects.filter(
+        manager=manager,
+        client_account_id=client_id
+    )
+    
+    # Exclude current instance in update scenarios
+    if current_instance:
+        existing_team_query = existing_team_query.exclude(id=current_instance.id)
+    
+    existing_team = existing_team_query.first()
+    
+    if existing_team:
+        raise StandardizedValidationError(
+            CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                fields=f"manager (already manages team '{existing_team.name}')"
+            )
+        )
+    
+    return manager
+
 class TeamListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Lightweight serializer for team lists (performance optimized).
@@ -393,25 +463,9 @@ class TeamSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     #     return value
     
     def validate_manager(self, value):
-        """Valider que le manager appartient au même client"""
-        if value:
-            client_id = self._get_client_id_from_context()
-            if str(value.client_id) != str(client_id):
-                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
-            
-            existing_team = Team.objects.filter(
-            manager=value,
-            client_account_id=client_id
-        ).first()
-        
-        if existing_team:
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                    fields=f"manager (already manages team '{existing_team.name}')"
-                )
-            )
-    
-        return value
+        """Validate manager using centralized helper."""
+        client_id = self._get_client_id_from_context()
+        return validate_manager_tier_and_uniqueness(value, client_id, self.instance)
 
     
     def validate(self, data):
@@ -587,27 +641,9 @@ class TeamCreateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         return value
     
     def validate_manager(self, value):
-        """
-        Validate manager belongs to same client.
-        """
-        if value:
-            client_id = self._get_client_id_from_context()
-            if str(value.client_account_id) != str(client_id):
-                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
-            
-            existing_team = Team.objects.filter(
-            manager=value,
-            client_account_id=client_id
-        ).first()
-        
-        if existing_team:
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                    fields=f"manager (already manages team '{existing_team.name}')"
-                )
-            )
-        
-        return value
+        """Validate manager using centralized helper."""
+        client_id = self._get_client_id_from_context()
+        return validate_manager_tier_and_uniqueness(value, client_id, getattr(self, 'instance', None))
     
     def validate(self, attrs):
         """
@@ -766,32 +802,10 @@ class TeamUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
         return value
     
     def validate_manager(self, value):
-        """Validate manager belongs to same client"""
-        if value:
-            client_id = self._get_client_id_from_context()
-            if str(value.client_account_id) != str(client_id):
-                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
-            
-            queryset = Team.objects.filter(
-            manager=value,
-            client_account_id=client_id
-        )
+        """Validate manager using centralized helper."""
+        client_id = self._get_client_id_from_context()
+        return validate_manager_tier_and_uniqueness(value, client_id, current_instance=None)
         
-        # Exclude current instance (for updates)
-        if self.instance:
-            queryset = queryset.exclude(id=self.instance.id)
-        
-        existing_team = queryset.first()
-        
-        if existing_team:
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                    fields=f"manager (already manages team '{existing_team.name}')"
-                )
-            )
-        
-        return value
-    
     def validate(self, attrs):
         """
         Global validation for updates.

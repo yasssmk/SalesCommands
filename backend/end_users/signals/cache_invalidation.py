@@ -61,8 +61,7 @@ def invalidate_users_cache_on_delete(sender, instance, **kwargs):
 def invalidate_users_cache_on_team_change(sender, instance, created, **kwargs):
     if are_signals_disabled():
         return
-    org = getattr(instance, "organization", None)
-    client_id = getattr(org, "client_account_id", None) if org else None
+    client_id = getattr(instance, "client_account_id", None)
     if not client_id:
         return
     _invalidate_users_after_commit(client_id)
@@ -72,8 +71,7 @@ def invalidate_users_cache_on_team_change(sender, instance, created, **kwargs):
 def invalidate_users_cache_on_team_delete(sender, instance, **kwargs):
     if are_signals_disabled():
         return
-    org = getattr(instance, "organization", None)
-    client_id = getattr(org, "client_account_id", None) if org else None
+    client_id = getattr(instance, "client_account_id", None)
     if not client_id:
         return
     _invalidate_users_after_commit(client_id)
