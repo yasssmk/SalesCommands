@@ -26,6 +26,7 @@ import { useGetTeams, updateTeam, deleteTeam } from 'api/admin/teams';
 
 // utils
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
+import { revalidateByPrefix } from 'api/_swr';
 
 // icons
 import { PlusOutlined } from '@ant-design/icons';
@@ -38,7 +39,7 @@ export default function TeamsListPage() {
   // ==================== STATE ====================
 
   const [selectedTeamId, setSelectedTeamId] = useState(null);
-  const [selectedTeam, setSelectedTeam] = useState(null);
+  // const [selectedTeam, setSelectedTeam] = useState(null);
   const [search, setSearch] = useState('');
   const [ordering, setOrdering] = useState('name');
   const [teamModal, setTeamModal] = useState(false);
@@ -51,6 +52,37 @@ export default function TeamsListPage() {
     search,
     ordering
   });
+
+  // ==================== DERIVED STATE ====================
+
+  /**
+   * Derive selectedTeam from teams (single source of truth)
+   * 
+   * Pattern: Store only ID, derive object from SWR cache
+   * Benefits:
+   * - Automatic sync when teams data refreshes
+   * - No manual state updates needed
+   * - No setTimeout workarounds
+   * - members_count always reflects latest data with sub-teams
+   */
+  const selectedTeam = useMemo(() => {
+    if (!selectedTeamId || !teams) return null;
+    
+    // Recursive search in tree structure
+    const findTeam = (teamsList) => {
+      for (const team of teamsList) {
+        if (team.id === selectedTeamId) return team;
+        if (team.children?.length > 0) {
+          const found = findTeam(team.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    
+    return findTeam(teams);
+  }, [selectedTeamId, teams]);
+
 
   // ==================== ERROR HANDLING ====================
 
@@ -65,7 +97,7 @@ export default function TeamsListPage() {
 
   const handleTeamSelect = useCallback((nodeId, node) => {
   setSelectedTeamId(nodeId);
-  setSelectedTeam(node);
+  // setSelectedTeam(node);
 }, []);
 
   const handleAddTeam = useCallback(() => {
@@ -103,7 +135,8 @@ export default function TeamsListPage() {
   const handleEditSuccess = useCallback((updatedTeam) => {
     // Update local state with the team returned from API
     if (updatedTeam && updatedTeam.id) {
-      setSelectedTeam(updatedTeam);
+      // setSelectedTeam(updatedTeam);
+      revalidateByPrefix('/client/teams/');
     }
   }, []);
 
@@ -113,7 +146,7 @@ export default function TeamsListPage() {
     setDeleteModal(true);
     if (team.id === selectedTeamId) {
       setSelectedTeamId(null);
-      setSelectedTeam(null);
+      // setSelectedTeam(null);
     }
   }, [selectedTeamId]);
 

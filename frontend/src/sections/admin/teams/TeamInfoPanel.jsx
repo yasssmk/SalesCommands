@@ -115,6 +115,20 @@ function TeamInfoPanel({ team, onEditSuccess, onDelete, allTeams }) {
     return `/admin/users?team=${teamIds}`;
   }, [team, getAllDescendantIds]);
 
+  // Active members URL with is_active filter
+  const activeUsersFilterUrl = useMemo(() => {
+    if (!team) return '/admin/users?active=true';
+    const teamIds = getAllDescendantIds.join(',');
+    return `/admin/users?team=${teamIds}&active=true`;
+  }, [team, getAllDescendantIds]);
+
+  // Total members URL without is_active filter
+  const totalUsersFilterUrl = useMemo(() => {
+    if (!team) return '/admin/users';
+    const teamIds = getAllDescendantIds.join(',');
+    return `/admin/users?team=${teamIds}`;
+  }, [team, getAllDescendantIds]);
+
   // ==============================|| FORMIK SETUP ||============================== //
 
   const formik = useFormik({
@@ -364,10 +378,10 @@ function TeamInfoPanel({ team, onEditSuccess, onDelete, allTeams }) {
               {/* Active Members */}
               <Grid item xs={12} md={6}>
                 <Stack spacing={1}>
-                  <Typography variant="subtitle1">Active Members</Typography>
-                  <Link href={usersFilterUrl} underline="hover" sx={{ cursor: 'pointer' }}>
-                    <Typography variant="h6" color="success.main">
-                      {team.active_members_count || 0} member{team.active_members_count > 1 ? 's' : ''}
+                  <Typography variant="subtitle1">Active Users</Typography>
+                  <Link href={activeUsersFilterUrl} underline="hover" sx={{ cursor: 'pointer' }}>
+                    <Typography variant="h6" >
+                      {team.active_members_count || 0} user{team.active_members_count > 1 ? 's' : ''}
                     </Typography>
                   </Link>
                 </Stack>
@@ -376,10 +390,10 @@ function TeamInfoPanel({ team, onEditSuccess, onDelete, allTeams }) {
               {/* Total Members */}
               <Grid item xs={12} md={6}>
                 <Stack spacing={1}>
-                  <Typography variant="subtitle1">Total Members</Typography>
-                  <Link href={usersFilterUrl} underline="hover" sx={{ cursor: 'pointer' }}>
-                    <Typography variant="h6" color="primary">
-                      {team.members_count || 0} member{team.members_count > 1 ? 's' : ''}
+                  <Typography variant="subtitle1">Total Users</Typography>
+                  <Link href={totalUsersFilterUrl} underline="hover" sx={{ cursor: 'pointer' }}>
+                    <Typography variant="h6" >
+                      {team.members_count || 0} user{team.members_count > 1 ? 's' : ''}
                     </Typography>
                   </Link>
                 </Stack>

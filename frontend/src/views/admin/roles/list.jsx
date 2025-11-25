@@ -317,7 +317,7 @@ export default function RolesListPage() {
             underline="hover"
             sx={{ cursor: 'pointer' }}
           >
-            <Typography variant="h6" color="primary">
+            <Typography variant="h6" color="text.primary">
               {count}
             </Typography>
           </Link>
@@ -336,11 +336,11 @@ export default function RolesListPage() {
           const count = row.original.active_users_count || 0;
           return (
             <Link
-              href={`/admin/users?role=${row.original.id}`}
+              href={`/admin/users?role=${row.original.id}&active=true`}
               underline="hover"
               sx={{ cursor: 'pointer' }}
             >
-              <Typography variant="h6" color="primary">
+              <Typography variant="h6" color="text.secondary">
                 {count}
               </Typography>
             </Link>
