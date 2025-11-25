@@ -3,6 +3,7 @@
 import PropTypes from 'prop-types';
 import React, { Fragment, useMemo, useState, useEffect, useCallback } from 'react';
 import { useSWRConfig } from 'swr';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 // material-ui
 import { alpha, useTheme } from '@mui/material/styles';
@@ -20,6 +21,8 @@ import TableRow from '@mui/material/TableRow';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Skeleton from '@mui/material/Skeleton';
+import Chip from '@mui/material/Chip';
+import CloseOutlined from '@ant-design/icons/CloseOutlined';
 
 // third-party
 import {
@@ -122,7 +125,8 @@ function ReusableTable({
   emptyDescription = 'Start by adding your first item to the system',
   expandedRowContent = null,
   enableExpanding = false,
-  enableImport = true
+  enableImport = true,
+  filterConfig = null 
 }) {
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
@@ -200,6 +204,140 @@ function ReusableTable({
   });
 
   const backColor = alpha(theme.palette.primary.lighter, 0.1);
+
+  // ==============================|| FILTER CHIPS COMPONENT ||============================== //
+
+/**
+ * FilterChips - Display active filters as removable chips
+ * 
+ * Reads URL params and displays them as Material-UI Chips
+ * Each chip can be removed to clear that filter from URL
+ */
+const FilterChips = ({ filterConfig, globalFilter, onSearchChange }) => {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Params to ignore (not display as chips)
+  const IGNORED_PARAMS = ['page', 'page_size', 'search', 'ordering', 'nonce'];
+
+  // Get active filters from URL
+  const activeFilters = useMemo(() => {
+    if (!filterConfig) return [];
+
+    const filters = [];
+    const params = Array.from(searchParams.entries());
+
+    params.forEach(([key, value]) => {
+      if (IGNORED_PARAMS.includes(key)) return;
+      
+      const config = filterConfig[key];
+      if (!config) return;
+
+      // Resolve display value
+      let displayValue = value;
+      if (config.resolve) {
+        try {
+          displayValue = config.resolve(value, data);
+        } catch (err) {
+          console.warn(`Failed to resolve filter ${key}:`, err);
+        }
+      }
+
+      filters.push({
+        key,
+        value,
+        label: config.label || key,
+        displayValue
+      });
+    });
+
+    return filters;
+  }, [searchParams, filterConfig, data]);
+
+  // Remove specific filter
+  const handleRemoveFilter = useCallback((filterKey) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete(filterKey);
+    
+    // Reset to page 1 when filter changes
+    params.set('page', '1');
+    
+    router.push(`?${params.toString()}`);
+  }, [searchParams, router]);
+
+  // Clear all filters + search
+  const handleClearAll = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    
+    // Remove all filter params (keep pagination/ordering if needed)
+    Array.from(params.keys()).forEach(key => {
+      if (!['page_size', 'ordering'].includes(key)) {
+        params.delete(key);
+      }
+    });
+    
+    // Reset page to 1
+    params.set('page', '1');
+    
+    router.push(`?${params.toString()}`);
+    
+    // Clear search input
+    if (onSearchChange) {
+      onSearchChange('');
+    }
+  }, [searchParams, router, onSearchChange]);
+
+  // Don't render if no active filters
+  if (activeFilters.length === 0 && !globalFilter) {
+    return null;
+  }
+
+  return (
+    <Box sx={{ px: 2, pb: 2 }}>
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        <Typography variant="body2" color="text.secondary">
+          Applied filters:
+        </Typography>
+        
+        {activeFilters.map((filter) => (
+          <Chip
+            key={filter.key}
+            label={`${filter.label}: ${filter.displayValue}`}
+            onDelete={() => handleRemoveFilter(filter.key)}
+            deleteIcon={<CloseOutlined />}
+            size="small"
+            color="primary"
+            variant="outlined"
+          />
+        ))}
+
+        {globalFilter && (
+          <Chip
+            label={`Search: "${globalFilter}"`}
+            onDelete={() => onSearchChange?.('')}
+            deleteIcon={<CloseOutlined />}
+            size="small"
+            color="default"
+            variant="outlined"
+          />
+        )}
+
+        {(activeFilters.length > 0 || globalFilter) && (
+          <Button
+            size="small"
+            onClick={handleClearAll}
+            sx={{ ml: 1 }}
+          >
+            Clear All
+          </Button>
+        )}
+      </Stack>
+    </Box>
+  );
+};
+
+
+// ==============================|| Handlers ||============================== //
 
   // ✅ Retry handler
   const handleRetry = async () => {
@@ -330,6 +468,13 @@ function ReusableTable({
           </Stack>
         </Stack>
       </Stack>
+
+      <FilterChips 
+      filterConfig={filterConfig}
+      globalFilter={globalFilter}
+      onSearchChange={(value) => setGlobalFilter(String(value))}
+      data={data}
+    />
 
       <ScrollX>
         <Stack>
@@ -479,7 +624,8 @@ ReusableTable.propTypes = {
   emptyDescription: PropTypes.string,
   expandedRowContent: PropTypes.func,
   enableExpanding: PropTypes.bool,
-  enableImport: PropTypes.bool
+  enableImport: PropTypes.bool,
+  filterConfig: PropTypes.object 
 };
 
 export default ReusableTable;

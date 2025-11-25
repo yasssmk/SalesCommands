@@ -24,6 +24,8 @@ import ReusableTable from 'components/table/Table';
 import SeatsSummary from 'sections/admin/users/SeatsSummary';
 
 import { useGetUsers } from 'api/admin/users';
+import { useGetTeams } from 'api/admin/teams';
+import { useGetRoles } from 'api/admin/roles';
 import { useAuth } from 'hooks/useAuth';
 import { tenantKey, revalidateMultiple } from 'api/_swr';
 import useLocalStorage from 'hooks/useLocalStorage';
@@ -130,6 +132,58 @@ const filters = useMemo(() => {
   
   return result;
 }, [teamParam, roleParam, activeParam]);
+
+  // ==============================|| LOAD REFERENCE DATA FOR FILTER CHIPS ||============================== //
+
+  /**
+   * Load teams and roles for filter chip display
+   * Used to resolve UUIDs to human-readable names
+   */
+  const { teams } = useGetTeams({});
+  const { roles } = useGetRoles({ page: 1, pageSize: 100 });
+
+  // ==============================|| FILTER CONFIG FOR CHIPS ||============================== //
+
+  /**
+   * Configuration for filter chips display
+   * Resolves UUID values to human-readable labels
+   */
+  const filterConfig = useMemo(() => ({
+    team: {
+      label: 'Team',
+      param: 'team',
+      resolve: (value, data) => {
+        // Handle comma-separated team IDs (from TeamInfoPanel)
+        if (value && value.includes(',')) {
+          const teamIds = value.split(',');
+          const teamNames = teamIds
+            .map(id => teams?.find(t => t.id === id)?.name)
+            .filter(Boolean);
+          
+          if (teamNames.length === 0) return value;
+          if (teamNames.length === 1) return teamNames[0];
+          return `${teamNames.length} teams`;
+        }
+        
+        // Single team ID
+        const team = teams?.find(t => t.id === value);
+        return team?.name || value;
+      }
+    },
+    role: {
+      label: 'Role',
+      param: 'role',
+      resolve: (value) => {
+        const role = roles?.find(r => r.id === value);
+        return role?.name || value;
+      }
+    },
+    active: {
+      label: 'Status',
+      param: 'active',
+      resolve: (value) => value === 'true' ? 'Active' : 'Inactive'
+    }
+  }), [teams, roles]);
 
   const ordering = useMemo(() => {
       if (!sorting || sorting.length === 0) {
@@ -577,7 +631,7 @@ const handleBulkDeleteComplete = useCallback(() => {
             setBulkDeleteAlert(true);
           }
         }}
-
+        filterConfig={filterConfig}
         // Customization (specific to Users)
         addButtonLabel="Add User"
         addButtonTooltip="Add User"
