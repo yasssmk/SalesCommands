@@ -83,6 +83,10 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   if (filters.is_active !== undefined && filters.is_active !== null) {
     queryParams.append('is_active', filters.is_active);
   }
+
+  if (filters.role_tier) {
+    queryParams.append('role_tier', filters.role_tier);
+  }
   
   const queryString = queryParams.toString();
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;
@@ -129,6 +133,7 @@ export function useGetUsers(options = {}) {
   const teamFilter = filters.team || '';
   const roleFilter = filters.role || '';
   const isActiveFilter = filters.is_active !== undefined ? String(filters.is_active) : '';
+  const roleTierFilter = filters.role_tier || '';
   
 
   const urlWithParams = useMemo(() => {
@@ -140,10 +145,11 @@ export function useGetUsers(options = {}) {
       filters: {
         ...(teamFilter && { team: teamFilter }),
         ...(roleFilter && { role: roleFilter }),
-        ...(isActiveFilter !== '' && { is_active: isActiveFilter === 'true' })
+        ...(isActiveFilter !== '' && { is_active: isActiveFilter === 'true' }),
+        ...(roleTierFilter && { role_tier: roleTierFilter }) 
       }
     });
-  }, [page, pageSize, search,  ordering, teamFilter, roleFilter, isActiveFilter]);
+  }, [page, pageSize, search,  ordering, teamFilter, roleFilter, isActiveFilter, roleTierFilter]);
 
   
   // ✅ STANDARDISÉ: Utilise toujours tenantKey()

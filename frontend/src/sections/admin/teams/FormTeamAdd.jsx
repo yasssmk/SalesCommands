@@ -194,7 +194,7 @@ function FormTeamAdd({ closeModal }) {
 
             {/* ==================== MANAGER ==================== */}
             
-            <Grid item xs={12} md={6}>
+             <Grid item xs={12} md={6}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="manager">Manager *</InputLabel>
                 <AsyncUserSelect
@@ -205,6 +205,8 @@ function FormTeamAdd({ closeModal }) {
                   placeholder="Search by name or email..."
                   error={Boolean(touched.manager && errors.manager)}
                   helperText={touched.manager && errors.manager}
+                  filters={{ role_tier: 'manager,admin' }}
+                  pageSize={5}
                 />
               </Stack>
             </Grid>

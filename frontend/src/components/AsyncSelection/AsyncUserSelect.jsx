@@ -42,6 +42,8 @@ function AsyncUserSelect({
   disabled = false,
   error = false,
   helperText,
+  filters = {},
+  pageSize = 20,
   ...props
 }) {
   
@@ -80,8 +82,9 @@ function AsyncUserSelect({
       disabled={disabled}
       error={error}
       helperText={helperText}
-      pageSize={20}
+      pageSize={pageSize}
       minSearchLength={0}
+      filters={filters}
       {...props}
     />
   );
@@ -94,7 +97,9 @@ AsyncUserSelect.propTypes = {
   placeholder: PropTypes.string,
   disabled: PropTypes.bool,
   error: PropTypes.bool,
-  helperText: PropTypes.string
+  helperText: PropTypes.string,
+  filters: PropTypes.object,
+  pageSize: PropTypes.number
 };
 
 export default AsyncUserSelect;

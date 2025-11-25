@@ -79,43 +79,33 @@ export default function TeamsListPage() {
         const result = await updateTeam(id, data);
 
         if (!result.success) {
-          displayErrorSnackbar(result.error || 'Failed to update team.');
+          // Pass full result object for proper error extraction
+          displayErrorSnackbar(result);
           return;
         }
 
         displaySuccessSnackbar('Team updated successfully');
-
-        // 🔍 DEBUG: Afficher structure complète
-      console.log('🔍 result:', result);
-      console.log('🔍 result.data:', result.data);
-      console.log('🔍 result.data?.data:', result.data?.data);
-      console.log('🔍 result.data?.data?.id:', result.data?.data?.id);
-
-      displaySuccessSnackbar('Team updated successfully');
       
-      const updatedTeam = result.data?.data;
+        const updatedTeam = result.data?.data;
       
-      if (updatedTeam && updatedTeam.id) {
-        console.log('✅ Setting selectedTeam to:', updatedTeam);
-        setSelectedTeam(updatedTeam);
-      }
-
-        // // ✅ Attendre que SWR revalide (court délai)
-        // setTimeout(() => {
-        //   // Retrouver la team mise à jour dans la liste revalidée
-        //   const updatedTeam = teams?.find(t => t.id === id);
-        //   if (updatedTeam) {
-        //     setSelectedTeam(updatedTeam);
-        //   }
-        // }, 300); // 300ms pour laisser SWR revalider
+        if (updatedTeam && updatedTeam.id) {
+          setSelectedTeam(updatedTeam);
+        }
 
       } catch (err) {
         console.error('Update team error:', err);
-        displayErrorSnackbar('An unexpected error occurred while updating the team.');
+        displayErrorSnackbar(err);
       }
     },
-    [] // ✅ Dependency: teams
+    []
   );
+
+  const handleEditSuccess = useCallback((updatedTeam) => {
+    // Update local state with the team returned from API
+    if (updatedTeam && updatedTeam.id) {
+      setSelectedTeam(updatedTeam);
+    }
+  }, []);
 
 
   const handleDelete = useCallback((team) => {
@@ -210,7 +200,7 @@ export default function TeamsListPage() {
             <Grid item xs={12} md={8} sx={{ display: 'flex' }}>
                 <TeamInfoPanel
                   team={selectedTeam}
-                  onEdit={handleEdit}
+                  onEditSuccess={handleEditSuccess}
                   onDelete={handleDelete}
                   allTeams={teams}
                 />

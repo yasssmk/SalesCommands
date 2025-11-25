@@ -484,7 +484,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Security: TOCTOU prevention with select_for_update()
         """
         try:
-            pk = kwargs.get('pk')
+            pk = kwargs.get('pk') 
             client_id = self.get_client_id()
             
             with transaction.atomic():

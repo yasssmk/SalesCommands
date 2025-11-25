@@ -223,6 +223,26 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 Q(managed_teams__isnull=False) | Q(managed_organizations__isnull=False)
             ).distinct()
         
+        role_tier = self.request.query_params.get('role_tier', None)
+        if role_tier:
+            tier_values = [t.strip().lower() for t in role_tier.split(',') if t.strip()]
+            tier_filter = Q()
+            
+            for tier in tier_values:
+                if tier == 'admin':
+                    tier_filter |= Q(role__is_admin=True)
+                elif tier == 'manager':
+                    tier_filter |= Q(role__is_manager=True)
+                elif tier == 'individual':
+                    tier_filter |= Q(role__is_individual=True)
+            
+            if tier_filter:
+                queryset = queryset.filter(tier_filter)
+                logger.debug("Applied role_tier filter", extra={
+                    'tiers': tier_values
+                })
+
+                
         return queryset
     
     def filter_queryset(self, queryset):

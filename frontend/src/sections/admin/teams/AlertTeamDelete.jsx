@@ -57,12 +57,12 @@ export default function AlertTeamDelete({ team, open, handleClose }) {
         // Parent will reset selection and close the dialog
         handleClose?.();
       } else {
-        displayErrorSnackbar(res?.error || 'Failed to delete team.');
+        displayErrorSnackbar(res || 'Failed to delete team.');
         // Do NOT close modal on error
       }
     } catch (err) {
       console.error('Delete team error:', err);
-      displayErrorSnackbar('An unexpected error occurred while deleting the team.');
+      displayErrorSnackbar(err);
     } finally {
       setDeleting(false);
     }
