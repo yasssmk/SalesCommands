@@ -237,20 +237,23 @@ MIDDLEWARE = [
     'core.logging.middlewares.RequestIdMiddleware',
     'core.logging.request_logging.RequestLoggingMiddleware',
 
-    # 2. ETag caching
+    # No-Cache headers for API endpoints (prevents browser caching + 304 on /client/*)
+    'core.middlewares.cache_headers_middleware.NoCacheHeadersMiddleware',
+
+    # ETag caching (static assets only - API endpoints excluded via Cache-Control)
     'core.http.etag.ETagMiddleware',
 
-     # 3. CORS (before SecurityMiddleware to handle preflight OPTIONS)
+    # CORS (before SecurityMiddleware to handle preflight OPTIONS)
     'corsheaders.middleware.CorsMiddleware',
 
-    # 4. Django security
+    # Django security
     'django.middleware.security.SecurityMiddleware',
 
-    # 5. WhiteNoise static files (MUST be after SecurityMiddleware)
+    # WhiteNoise static files (MUST be after SecurityMiddleware)
     # Serves static files efficiently in production without nginx/Apache
     'whitenoise.middleware.WhiteNoiseMiddleware',
 
-    # 6. Django core middleware
+    # Django core middleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

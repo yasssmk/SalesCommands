@@ -109,13 +109,13 @@ const swrGlobalConfig = {
   fetcher: swrFetcher,
   
   // === OPTIONS DE CACHE ===
-  dedupingInterval: 5000,        // Évite les requêtes dupliquées pendant 2s
+  dedupingInterval: 2000,        // Évite les requêtes dupliquées pendant 2s
   keepPreviousData: true,         // Garde les données précédentes pendant le rechargement
   
   // === OPTIONS DE REVALIDATION ===
-  revalidateIfStale: false,       // Pas de revalidation automatique si données périmées
-  revalidateOnFocus: false,       // Pas de revalidation au focus de la fenêtre
-  revalidateOnReconnect: false,    // pas Revalidation à la reconnexion réseau
+  revalidateIfStale: true,        // ✅ Revalide automatiquement si données périmées
+  revalidateOnFocus: true,        // ✅ Revalide quand l'utilisateur revient sur l'onglet
+  revalidateOnReconnect: true,    // ✅ Revalide après perte de connexion réseau
 
   // Fige TOUTES les revalidations (auto + manuelles) pendant un cooldown 429
   isPaused: isPausedNow,

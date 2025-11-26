@@ -264,7 +264,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_response = cache_get_set(
             key=cache_key,
             producer=fetch_data,
-            ttl=300,
+            ttl=60,
             tag=(client_id, 'teams')
         )
         
@@ -407,7 +407,7 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=300,
+            ttl=60,
             tag=(client_id, 'teams')
         )
         

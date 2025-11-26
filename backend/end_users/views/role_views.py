@@ -271,7 +271,7 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=120,
+            ttl=60,
             tag=(client_id, 'roles'),
         )
 
@@ -442,7 +442,7 @@ class UserRoleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=300,  # 5 minutes
+            ttl=60,  # 1 minutes
             tag=(client_id, 'roles')
         )
         

@@ -406,7 +406,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=300,  # 5 minutes
+            ttl=60,  # 5 minutes
             tag=(client_id, 'users')
         )
         
@@ -500,7 +500,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=300,
+            ttl=60,
             tag=(client_id, 'users')
         )
         
@@ -1353,7 +1353,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=300,  # 5 minutes
+            ttl=60,  # 5 minutes
             tag=(client_id, 'users')
         )
         
@@ -1532,7 +1532,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         cached_data = cache_get_set(
             key=cache_key,
             producer=producer,
-            ttl=300,  # 5 minutes
+            ttl=60,  # 1 minutes
             tag=(client_id, 'users')
         )
         
