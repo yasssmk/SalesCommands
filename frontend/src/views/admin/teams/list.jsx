@@ -119,11 +119,11 @@ export default function TeamsListPage() {
 
         displaySuccessSnackbar('Team updated successfully');
       
-        const updatedTeam = result.data?.data;
+        // const updatedTeam = result.data?.data;
       
-        if (updatedTeam && updatedTeam.id) {
-          setSelectedTeam(updatedTeam);
-        }
+        // if (updatedTeam && updatedTeam.id) {
+        //   setSelectedTeam(updatedTeam);
+        // }
 
       } catch (err) {
         console.error('Update team error:', err);
@@ -261,7 +261,6 @@ export default function TeamsListPage() {
           setDeleteModal(false);
           setTeamToDelete(null);
           setSelectedTeamId(null);
-          setSelectedTeam(null);
         }}
       />
     )}

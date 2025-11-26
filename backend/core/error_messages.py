@@ -14,6 +14,8 @@ class AuthErrorMessages:
 class UsersErrorMessages:
     USER_NOT_FOUND = _("User does not exist")
 
+class TeamErrorMessages:
+    MANAGER_HAS_TEAM = _("This user already manage team: {fields}")
 
 class CoreErrorMessages:
     """Base error messages used across all apps"""

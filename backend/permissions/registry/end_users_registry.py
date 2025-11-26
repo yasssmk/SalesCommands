@@ -94,13 +94,13 @@ END_USERS_REGISTRY: Dict[str, ModulePermissions] = {
     'teams': {
         'create': {
             'admin': 'client',      # Admin can create any team
-            'manager': 'mine',       # Manager can create sub-teams
+            'manager': 'none',       # Manager can create sub-teams
             'individual': 'none',    # Individuals cannot create teams
         },
         'read': {
             'admin': 'client',      # Admin sees all teams
             'manager': 'client',     # Managers see all teams
-            'individual': 'team',    # Individuals see their team(s)
+            'individual': 'mine',    # Individuals see their team(s)
         },
         'update': {
             'admin': 'client',      # Admin can update any team

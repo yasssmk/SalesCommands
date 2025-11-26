@@ -242,11 +242,17 @@ class TeamViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             return Response(response)
         
         # Build cache key with query params
+        query_string = request.META.get('QUERY_STRING', '')
+        perm_version = get_permissions_version()
+        user_id = getattr(request.user, 'id', None)
+
         cache_key = build_drf_cache_key(
-            view_name=self.__class__.__name__,
-            action='list',
+            namespace='teams_list',
             client_id=client_id,
-            query_params=request.query_params
+            user_id=user_id,
+            perm_version=perm_version,
+            query_string=query_string,
+            tag_namespace='teams',
         )
         
         # Cache producer function

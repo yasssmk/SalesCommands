@@ -41,7 +41,7 @@ export const MODULES = [
   'pipelines',
   'templates',
   'users',
-  'products'
+  'products',
 ];
 
 export const ACTIONS = ['create', 'read', 'update', 'delete'];

@@ -18,7 +18,7 @@ def create_default_roles(sender, instance, created, **kwargs):
                 "read": True,
                 "write": True,
                 "modify": True,
-                "delete": True,
+                "can_delete": True,
                 # Tier explicite: Admin
                 "is_admin": True,
                 "is_manager": False,
@@ -30,7 +30,7 @@ def create_default_roles(sender, instance, created, **kwargs):
                 "read": True,
                 "write": False,
                 "modify": True,
-                "delete": False,
+                "can_delete": False,
                 # Tier explicite: Manager (direction = management)
                 "is_admin": False,
                 "is_manager": True,
@@ -41,7 +41,7 @@ def create_default_roles(sender, instance, created, **kwargs):
                 "read": True,
                 "write": True,
                 "modify": True,
-                "delete": False,
+                "can_delete": False,
                 # Tier explicite: Manager
                 "is_admin": False,
                 "is_manager": True,
@@ -52,7 +52,7 @@ def create_default_roles(sender, instance, created, **kwargs):
                 "read": True,
                 "write": True,
                 "modify": False,
-                "delete": False,
+                "can_delete": False,
                 # Tier explicite: Individual
                 "is_admin": False,
                 "is_manager": False,
@@ -63,7 +63,7 @@ def create_default_roles(sender, instance, created, **kwargs):
                 "read": True,
                 "write": True,
                 "modify": False,
-                "delete": False,
+                "can_delete": False,
                 # Tier explicite: Individual
                 "is_admin": False,
                 "is_manager": False,
@@ -80,7 +80,7 @@ def create_default_roles(sender, instance, created, **kwargs):
                         "read": role_data["read"],
                         "write": role_data["write"],
                         "modify": role_data["modify"],
-                        "delete": role_data["delete"],
+                        "can_delete": role_data["can_delete"],
                         "is_admin": role_data["is_admin"],
                         "is_manager": role_data["is_manager"],
                         "is_individual": role_data["is_individual"]

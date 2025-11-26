@@ -40,6 +40,7 @@ DEFAULT_CONFIG = {
         'templates': False,
         'users': True,
         'roles': True,
+        'teams': True,
         'products': False,
     },
     'AUDIT_LOGGER': 'permissions.audit',  # Logger name for audit logs

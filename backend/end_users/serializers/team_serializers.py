@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, TeamErrorMessages
 from ..models import Team, User
 
 # ============================================================================
@@ -68,10 +68,11 @@ def validate_manager_tier_and_uniqueness(manager, client_id, current_instance=No
     
     if existing_team:
         raise StandardizedValidationError(
-            CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                fields=f"manager (already manages team '{existing_team.name}')"
+            TeamErrorMessages.MANAGER_HAS_TEAM.format(
+                fields=existing_team.name
             )
         )
+
     
     return manager
 
@@ -804,7 +805,7 @@ class TeamUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.Model
     def validate_manager(self, value):
         """Validate manager using centralized helper."""
         client_id = self._get_client_id_from_context()
-        return validate_manager_tier_and_uniqueness(value, client_id, current_instance=None)
+        return validate_manager_tier_and_uniqueness(value, client_id, current_instance=self.instance)
         
     def validate(self, attrs):
         """
