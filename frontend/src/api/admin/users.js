@@ -164,15 +164,23 @@ export function useGetUsers(options = {}) {
 
   const memoizedValue = useMemo(
   () => ({
-    users: data?.data?.results || [],
-    usersCount: data?.data?.count || 0,
+    users: data?.data?.results || data?.results || [],
+    usersCount: data?.data?.count || data?.count || 0,
+    usersEmpty: !isLoading && (!(data?.data?.results?.length || data?.results?.length)),
     usersLoading: isLoading,
     usersError: error,
     usersValidating: isValidating,
-    usersEmpty: !isLoading && (!data?.data?.results?.length)
   }),
   [data, error, isLoading, isValidating]
 );
+
+if (process.env.NODE_ENV === 'development') {
+  console.log('🔍 [useGetUsers]', {
+    rawData: data,
+    users: data?.data?.results || data?.results || [],
+    count: data?.data?.count || data?.count || 0
+  });
+}
 
   return memoizedValue;
 }
@@ -214,7 +222,7 @@ export function useGetUser(userId) {
 
   const memoizedValue = useMemo(
     () => ({
-      user: data,
+      user: data?.data || data,
       userLoading: isLoading,
       userError: error,
       userValidating: isValidating
@@ -222,78 +230,17 @@ export function useGetUser(userId) {
     [data, error, isLoading, isValidating]
   );
 
-  return memoizedValue;
-}
-
-/**
- * ✅ GET ORGANIZATIONS - Clé tenant standardisée
- */
-export function useGetOrganizations() {
-  const { tenantId } = useAuth(); 
-  
-  // ✅ STANDARDISÉ: tenantKey()
-  const swrKey = tenantKey(endpoints.organizations, tenantId);
-  
-  // const { data, isLoading, error } = useSWR(
-  //   swrKey, 
-  //   fetcher,
-  //   {
-  //     revalidateIfStale: false,
-  //     revalidateOnFocus: false,
-  //     revalidateOnReconnect: false
-  //   }
-  // );
-
-  const { data, isLoading, error } = useSWR(swrKey);
-
-  const memoizedValue = useMemo(
-    () => ({
-      organizations: data?.results || [],
-      organizationsLoading: isLoading,
-      organizationsError: error
-    }),
-    [data, isLoading, error]
-  );
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔍 [useGetUser]', {
+      rawData: data,
+      user: data?.data || data
+    });
+  }
 
   return memoizedValue;
 }
 
-/**
- * ✅ GET TEAMS - Clé tenant standardisée avec filtres
- * @param {Object} filters - ex: { organization: 'uuid' }
- * @param {boolean} enabled - if false, skip fetch
- */
-export function useGetTeams(filters = {}, enabled = true) {
-  const { tenantId } = useAuth(); 
-  
-  const qs = new URLSearchParams(filters || {}).toString();
-  const url = `${endpoints.teams}${qs ? `?${qs}` : ''}`;
-  
-  // ✅ STANDARDISÉ: tenantKey avec URL complète incluant filtres
-  const swrKey = enabled ? tenantKey(url, tenantId) : null;
 
-  // const { data, isLoading, error } = useSWR(
-  //   swrKey, 
-  //   fetcher,
-  //   {
-  //     revalidateIfStale: false,
-  //     revalidateOnFocus: false,
-  //     revalidateOnReconnect: false
-  //   }
-  // );
-  const { data, isLoading, error } = useSWR(swrKey);
-
-  const memoizedValue = useMemo(
-    () => ({
-      teams: data?.results || [],
-      teamsLoading: isLoading,
-      teamsError: error
-    }),
-    [data, isLoading, error]
-  );
-
-  return memoizedValue;
-}
 
 /**
  * ✅ GET CLIENT SEATS STATS - Clé tenant standardisée
@@ -340,89 +287,6 @@ export function useGetClientSeats(clientId) {
   return memoizedValue;
 }
 
-// ==============================|| HOOKS POUR RESOURCE GUARD LAYOUT ||============================== //
-
-/**
- * ✅ GET SINGLE TEAM - Pour ResourceGuardLayout
- * 
- * SÉCURITÉ MULTI-TENANT :
- * - Clé avec tenantId pour isolation
- * - Compatible avec RequireResourceAccess
- * - Naming cohérent : team + teamLoading + teamError
- */
-export function useGetTeam(teamId) {
-  const { tenantId } = useAuth();
-
-  // ✅ STANDARDISÉ: tenantKey pour single team
-  const swrKey = teamId && tenantId 
-    ? tenantKey(`${endpoints.teams}${teamId}/`, tenantId) 
-    : null;
-  
-  // const { data, isLoading, error, isValidating } = useSWR(
-  //   swrKey,
-  //   fetcher,
-  //   {
-  //     revalidateIfStale: false,
-  //     revalidateOnFocus: false,
-  //     revalidateOnReconnect: false
-  //   }
-  // );
-
-  const { data, isLoading, error, isValidating } = useSWR(swrKey);
-
-  const memoizedValue = useMemo(
-    () => ({
-      team: data,
-      teamLoading: isLoading,
-      teamError: error,
-      teamValidating: isValidating
-    }),
-    [data, error, isLoading, isValidating]
-  );
-
-  return memoizedValue;
-}
-
-/**
- * ✅ GET SINGLE ORGANIZATION - Pour ResourceGuardLayout
- * 
- * SÉCURITÉ MULTI-TENANT :
- * - Clé avec tenantId pour isolation
- * - Compatible avec RequireResourceAccess
- * - Naming cohérent : organization + organizationLoading + organizationError
- */
-export function useGetOrganization(orgId) {
-  const { tenantId } = useAuth();
-
-  // ✅ STANDARDISÉ: tenantKey pour single organization
-  const swrKey = orgId && tenantId 
-    ? tenantKey(`${endpoints.organizations}${orgId}/`, tenantId) 
-    : null;
-  
-  // const { data, isLoading, error, isValidating } = useSWR(
-  //   swrKey,
-  //   fetcher,
-  //   {
-  //     revalidateIfStale: false,
-  //     revalidateOnFocus: false,
-  //     revalidateOnReconnect: false
-  //   }
-  // );
-
-  const { data, isLoading, error, isValidating } = useSWR(swrKey);
-
-  const memoizedValue = useMemo(
-    () => ({
-      organization: data,
-      organizationLoading: isLoading,
-      organizationError: error,
-      organizationValidating: isValidating
-    }),
-    [data, error, isLoading, isValidating]
-  );
-
-  return memoizedValue;
-}
 
 // ==============================|| CRUD FUNCTIONS AVEC REVALIDATIONS STANDARDISÉES ||============================== //
 
