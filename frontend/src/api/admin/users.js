@@ -163,17 +163,16 @@ export function useGetUsers(options = {}) {
   });
 
   const memoizedValue = useMemo(
-    () => ({
-      users: data?.results || [],
-      usersCount: data?.count || 0,
-      usersLoading: isLoading,
-      usersError: error,
-      usersValidating: isValidating,
-      usersEmpty: !isLoading && (!data?.results?.length)
-    }),
-    [data, error, isLoading, isValidating]
-    
-  );
+  () => ({
+    users: data?.data?.results || [],
+    usersCount: data?.data?.count || 0,
+    usersLoading: isLoading,
+    usersError: error,
+    usersValidating: isValidating,
+    usersEmpty: !isLoading && (!data?.data?.results?.length)
+  }),
+  [data, error, isLoading, isValidating]
+);
 
   return memoizedValue;
 }
