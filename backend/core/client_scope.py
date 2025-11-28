@@ -198,13 +198,33 @@ class ClientScopeManager:
             """Apply client_id filtering with additional validation"""
             client_id = self.get_client_id()
             model = queryset.model
-            if hasattr(model, 'client_account_id'):
+            
+            # Check for actual database fields (not properties)
+            # Use _meta.get_field() to detect real DB fields vs Python properties
+            def has_db_field(model, field_name):
+                try:
+                    field = model._meta.get_field(field_name)
+                    return True
+                except Exception:
+                    return False
+            
+            if has_db_field(model, 'client_account_id') or has_db_field(model, 'client_account'):
                 # end_users models use client_account ForeignKey
                 filtered_queryset = queryset.filter(client_account_id=client_id)
-            elif hasattr(model, 'client_id'):
-                # app models use direct client_id
+            elif has_db_field(model, 'client_id'):
+                # app_modules models use direct client_id UUID field
                 filtered_queryset = queryset.filter(client_id=client_id)
-            
+            else:
+                # Fallback: no client scoping field found
+                logger.warning(
+                    "no_client_scope_field",
+                    extra={
+                        'model': model.__name__,
+                        'event': 'client_scope_filter'
+                    }
+                )
+                filtered_queryset = queryset
+                
             # Add debugging for development
             if settings.DEBUG:
                 logger.debug(

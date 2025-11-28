@@ -210,7 +210,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'core',
     'apps.core_apps',
-    'apps.accounts',
+    'apps.accounts', #OBSOLETE
+    'app_modules.accounts',  # New UUID-based accounts module
     'apps.signals',
     'apps.campaign',
     'apps.opportunities',

@@ -1,0 +1,676 @@
+# app_modules/accounts/views/views.py
+"""
+ViewSet for CompanyAccount (Administration module).
+
+Follows UserViewSet patterns with AccountAPIView business logic.
+"""
+
+from rest_framework import viewsets, status, filters
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
+from django_filters.rest_framework import DjangoFilterBackend
+from django.db import transaction
+from django.http import Http404
+
+from core.client_scope import ClientScopeManager
+from core.exceptions import StandardizedValidationError
+from core.error_messages import CoreErrorMessages, AccountErrorMessages
+from core.jwt_helpers import CustomJWTAuthentication
+from core.apps_shared_methods import BaseAPIView
+from core.cache_utils import (
+    build_drf_cache_key, 
+    cache_get_set, 
+    get_permissions_version, 
+    invalidate_tag,
+    _is_redis_backend
+)
+from core.logging import get_logger, ctx_from_request
+from core.logging.audit import audit_log
+
+from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
+
+from apps.core_apps.models import StandardDepartment
+
+from ..models import CompanyAccount, AccountType, AccountClassification
+from ..serializers import (
+    CompanyAccountSerializer,
+    CompanyAccountListSerializer,
+    CompanyAccountCreateSerializer,
+    CompanyAccountUpdateSerializer,
+)
+
+logger = get_logger(__name__)
+
+
+class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
+    """
+    API endpoints for managing company accounts with client scoping.
+    
+    Follows UserViewSet patterns for consistency.
+    """
+    
+    queryset = CompanyAccount.objects.all()
+    serializer_class = CompanyAccountSerializer
+    entity_name = 'company_account'
+    
+    # Filtering
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['type', 'classification', 'country', 'account_owner', 'team_owner']
+    search_fields = ['company_name', 'industry', 'city', 'country']
+    ordering_fields = [
+        'company_name',
+        'industry',
+        'type',
+        'classification',
+        'country',
+        'created_at',
+        'updated_at',
+    ]
+    ordering = ['-created_at']
+    
+    # Security
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated, ScopedPermission]
+    module = 'accounts'
+    
+    # Allowed fields for mass update
+    mass_update_allowed_fields = {'type', 'classification', 'account_owner_id', 'team_owner_id'}
+    
+    # Action policies
+    action_policies = {
+        'qualification': {
+            'crud': 'read',
+            'scope': 'client'
+        },
+        'tech_stacks': {
+            'crud': 'read',
+            'scope': 'client'
+        },
+        'hierarchy': {
+            'crud': 'read',
+            'scope': 'client'
+        },
+        'bulk_create': {
+            'crud': 'create',
+            'tier': 'admin',
+            'scope': 'client'
+        },
+        'bulk_update': {
+            'crud': 'update',
+            'tier': 'admin',
+            'scope': 'client'
+        },
+        'bulk_delete': {
+            'crud': 'delete',
+            'tier': 'admin',
+            'scope': 'client'
+        },
+    }
+    
+    def get_serializer_class(self):
+        """Choose serializer based on action."""
+        if self.action == 'list':
+            return CompanyAccountListSerializer
+        elif self.action == 'create':
+            return CompanyAccountCreateSerializer
+        elif self.action in ['update', 'partial_update']:
+            return CompanyAccountUpdateSerializer
+        return CompanyAccountSerializer
+    
+    def get_queryset(self):
+        """Get accounts with optimized queries and filtering."""
+        logger.debug("get_queryset_called", extra={
+            'action': self.action,
+            'view': 'CompanyAccountViewSet'
+        })
+        
+        queryset = super().get_queryset()
+        
+        # Optimize based on action
+        if self.action == 'list':
+            queryset = queryset.select_related(
+                'account_owner',
+                'team_owner',
+                'parent_company'
+            )
+        elif self.action == 'retrieve':
+            queryset = queryset.select_related(
+                'account_owner',
+                'team_owner',
+                'parent_company'
+            ).prefetch_related(
+                'direct_child_companies',
+                'partners'
+            )
+        else:
+            queryset = queryset.select_related(
+                'account_owner',
+                'team_owner',
+                'parent_company'
+            )
+        
+        # Advanced filtering from query params
+        queryset = self._apply_advanced_filters(queryset)
+        
+        return queryset
+    
+    def _apply_advanced_filters(self, queryset):
+        """Apply advanced filtering from query params."""
+        try:
+            # Filter by parent IDs
+            parent_ids = self.request.query_params.get('parent_ids')
+            if parent_ids:
+                parent_list = [v.strip() for v in parent_ids.split(',')]
+                queryset = queryset.filter(parent_company_id__in=parent_list)
+            
+            # Filter by types
+            types = self.request.query_params.get('types')
+            if types:
+                type_list = [v.strip() for v in types.split(',')]
+                queryset = queryset.filter(type__in=type_list)
+            
+            # Filter by classifications
+            classifications = self.request.query_params.get('classifications')
+            if classifications:
+                classification_list = [v.strip() for v in classifications.split(',')]
+                queryset = queryset.filter(classification__in=classification_list)
+            
+            # Filter by company_size
+            company_size = self.request.query_params.get('company_size')
+            if company_size:
+                queryset = queryset.filter(company_size=company_size)
+            
+            # Filter by annual_revenue
+            annual_revenue = self.request.query_params.get('annual_revenue')
+            if annual_revenue:
+                queryset = queryset.filter(annual_revenue=annual_revenue)
+            
+            # Filter by has_buying_decision
+            has_buying_decision = self.request.query_params.get('has_buying_decision')
+            if has_buying_decision is not None:
+                if has_buying_decision.lower() in ['true', '1']:
+                    queryset = queryset.filter(has_buying_decision=True)
+                elif has_buying_decision.lower() in ['false', '0']:
+                    queryset = queryset.filter(has_buying_decision=False)
+                    
+        except ValueError:
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FILTER)
+        
+        return queryset
+    
+    def get_serializer_context(self):
+        """Add filter parameters to serializer context."""
+        context = super().get_serializer_context()
+        
+        # Department filter
+        department_id = self.request.query_params.get('department_id')
+        if department_id:
+            try:
+                department = StandardDepartment.objects.get(id=department_id)
+                context['department'] = department
+            except StandardDepartment.DoesNotExist:
+                pass
+        
+        # Source contact filter
+        source_contact_id = self.request.query_params.get('source_contact_id')
+        if source_contact_id:
+            from apps.accounts.models import Contact
+            try:
+                contact = Contact.objects.get(id=source_contact_id)
+                context['source_contact'] = contact
+            except Contact.DoesNotExist:
+                pass
+        
+        # Min confirmations filter
+        min_confirmations = self.request.query_params.get('min_confirmations')
+        if min_confirmations and min_confirmations.isdigit():
+            context['min_confirmations'] = int(min_confirmations)
+        
+        context['many'] = self.action == 'list'
+        
+        return context
+    
+    # ==========================================================================
+    # CACHE HELPERS
+    # ==========================================================================
+    
+    def _invalidate_account_caches(self, client_id):
+        """Invalidate all account-related caches."""
+        invalidate_tag(client_id, 'accounts')
+        invalidate_tag(client_id, 'contacts')
+    
+    # ==========================================================================
+    # LIST / RETRIEVE
+    # ==========================================================================
+    
+    def list(self, request, *args, **kwargs):
+        """
+        List company accounts with caching.
+        GET /client/accounts/
+        """
+        if not _is_redis_backend():
+            response = super().list(request, *args, **kwargs)
+            return Response({
+                'success': True,
+                'data': response.data
+            })
+        
+        client_id = self.get_client_id()
+        user_id = request.user.id
+        perm_version = get_permissions_version()
+        query_string = request.META.get('QUERY_STRING', '')
+        
+        cache_key = build_drf_cache_key(
+            namespace='accounts_list',
+            client_id=client_id,
+            user_id=user_id,
+            perm_version=perm_version,
+            query_string=query_string,
+            tag_namespace='accounts',
+        )
+        
+        def producer():
+            queryset = self.filter_queryset(self.get_queryset())
+            page = self.paginate_queryset(queryset)
+            
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return {
+                    'success': True,
+                    'data': {
+                        'results': serializer.data,
+                        'count': self.paginator.page.paginator.count,
+                        'next': self.paginator.get_next_link(),
+                        'previous': self.paginator.get_previous_link(),
+                    }
+                }
+            
+            serializer = self.get_serializer(queryset, many=True)
+            return {
+                'success': True,
+                'data': serializer.data
+            }
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=producer,
+            ttl=60,
+            tag=(client_id, 'accounts')
+        )
+        
+        ctx = ctx_from_request(request)
+        ctx.update({
+            "event": "account_list",
+            "result_count": cached_data.get('data', {}).get('count', '-') if isinstance(cached_data.get('data'), dict) else '-',
+        })
+        logger.info("account_list", extra=ctx)
+        
+        return Response(cached_data)
+    
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Retrieve a company account.
+        GET /client/accounts/{id}/
+        """
+        pk = kwargs.get('pk')
+        
+        if not _is_redis_backend():
+            try:
+                account = self.get_object()
+                serializer = CompanyAccountSerializer(account, context=self.get_serializer_context())
+                return Response({"success": True, "data": serializer.data})
+            except (CompanyAccount.DoesNotExist, Http404):
+                return Response(
+                    {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        
+        client_id = self.get_client_id()
+        user_id = request.user.id
+        perm_version = get_permissions_version()
+        
+        cache_key = build_drf_cache_key(
+            namespace='account_detail',
+            client_id=client_id,
+            user_id=user_id,
+            perm_version=perm_version,
+            extra=str(pk),
+            tag_namespace='accounts',
+        )
+        
+        def producer():
+            try:
+                account = self.get_object()
+                
+                ctx = ctx_from_request(request)
+                ctx.update({
+                    "target_account_id": str(account.id),
+                    "event": "account_retrieve",
+                })
+                logger.info("account_retrieve", extra=ctx)
+                
+                serializer = CompanyAccountSerializer(account, context=self.get_serializer_context())
+                return {"success": True, "data": serializer.data}
+                
+            except (CompanyAccount.DoesNotExist, Http404):
+                return {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND, "status": 404}
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=producer,
+            ttl=60,
+            tag=(client_id, 'accounts')
+        )
+        
+        if not cached_data.get('success'):
+            return Response(
+                {"success": False, "error": cached_data.get('error')},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        
+        return Response(cached_data)
+    
+    # ==========================================================================
+    # CREATE / UPDATE / DELETE
+    # ==========================================================================
+    
+    def create(self, request, *args, **kwargs):
+        """
+        Create a new company account.
+        POST /client/accounts/
+        """
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            account = serializer.save()
+            
+            # Invalidate caches
+            self._invalidate_account_caches(str(account.client_id))
+            
+            audit_log(
+                event='account_create_success',
+                action='create',
+                actor_id=str(request.user.id),
+                client_id=str(account.client_id),
+                target_type='company_account',
+                target_id=str(account.id),
+                outcome='success',
+            )
+            
+            return Response(
+                {
+                    "success": True,
+                    "message": f'Account "{account.company_name}" created successfully',
+                    "data": CompanyAccountSerializer(account, context=self.get_serializer_context()).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+    
+    def partial_update(self, request, *args, **kwargs):
+        """
+        Partial update of a company account (PATCH).
+        PATCH /client/accounts/{id}/
+        """
+        try:
+            with transaction.atomic():
+                account = self.get_object()
+                serializer = self.get_serializer(account, data=request.data, partial=True)
+                serializer.is_valid(raise_exception=True)
+                updated_account = serializer.save()
+                
+                # Invalidate caches
+                self._invalidate_account_caches(str(updated_account.client_id))
+                
+                changed_fields = sorted([k for k in serializer.validated_data.keys()])
+                
+                audit_log(
+                    event='account_update_success',
+                    action='partial_update',
+                    actor_id=str(request.user.id),
+                    client_id=str(updated_account.client_id),
+                    target_type='company_account',
+                    target_id=str(account.id),
+                    fields_changed=changed_fields,
+                    outcome='success',
+                )
+                
+                return Response({
+                    "success": True,
+                    "message": f'Account "{updated_account.company_name}" updated successfully',
+                    "data": CompanyAccountSerializer(updated_account, context=self.get_serializer_context()).data,
+                })
+                
+        except (CompanyAccount.DoesNotExist, Http404):
+            return Response(
+                {"success": False, "error": CoreErrorMessages.OBJECT_NOT_FOUND},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete a company account.
+        DELETE /client/accounts/{id}/
+        """
+        try:
+            with transaction.atomic():
+                client_id = self.get_client_id()
+                account_id = kwargs.get('pk')
+                
+                account = CompanyAccount.objects.select_for_update().filter(
+                    id=account_id,
+                    client_id=client_id
+                ).first()
+                
+                if not account:
+                    audit_log(
+                        event='account_delete_not_found',
+                        action='delete',
+                        actor_id=str(request.user.id),
+                        client_id=str(client_id),
+                        target_type='company_account',
+                        target_id=str(account_id or '-'),
+                        outcome='not_found',
+                    )
+                    
+                    return Response({
+                        'success': False,
+                        'error': CoreErrorMessages.OBJECT_NOT_FOUND
+                    }, status=status.HTTP_404_NOT_FOUND)
+                
+                # Validate client scoping
+                self.validate_client_id(account)
+                
+                # Check for child accounts
+                if account.direct_child_companies.exists():
+                    raise StandardizedValidationError(
+                        "Cannot delete account with child companies. Remove or reassign children first."
+                    )
+                
+                account_name = account.company_name
+                account.delete()
+                
+                # Invalidate caches
+                self._invalidate_account_caches(str(client_id))
+                
+                audit_log(
+                    event='account_delete_success',
+                    action='delete',
+                    actor_id=str(request.user.id),
+                    client_id=str(client_id),
+                    target_type='company_account',
+                    target_id=str(account_id),
+                    outcome='success',
+                )
+                
+                return Response({
+                    'success': True,
+                    'message': f'Account "{account_name}" deleted successfully'
+                }, status=status.HTTP_200_OK)
+                
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    # ==========================================================================
+    # CUSTOM ACTIONS
+    # ==========================================================================
+    
+    @action(detail=True, methods=['get'])
+    def qualification(self, request, pk=None):
+        """
+        Get qualification data for an account with filtering options.
+        GET /client/accounts/{id}/qualification/
+        """
+        try:
+            account = self.get_object()
+            
+            # Parse filter parameters
+            filters = {}
+            
+            department_id = request.query_params.get('department_id')
+            if department_id:
+                try:
+                    department = StandardDepartment.objects.get(id=department_id)
+                    filters['department'] = department
+                except StandardDepartment.DoesNotExist:
+                    pass
+            
+            field_name = request.query_params.get('field_name')
+            if field_name:
+                if ',' in field_name:
+                    filters['field_names'] = [name.strip() for name in field_name.split(',')]
+                else:
+                    filters['field_names'] = [field_name]
+            
+            min_confirmations = request.query_params.get('min_confirmations')
+            if min_confirmations and min_confirmations.isdigit():
+                filters['min_confirmations'] = int(min_confirmations)
+            
+            source_contact_id = request.query_params.get('source_contact_id')
+            if source_contact_id:
+                from apps.accounts.models import Contact
+                try:
+                    contact = Contact.objects.get(id=source_contact_id)
+                    filters['source_contact'] = contact
+                except Contact.DoesNotExist:
+                    pass
+            
+            qualification_data = account.get_qualification_data(**filters)
+            
+            return Response({
+                'success': True,
+                'data': qualification_data
+            })
+            
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    @action(detail=True, methods=['get'])
+    def tech_stacks(self, request, pk=None):
+        """
+        Get tech stack data for an account with filtering options.
+        GET /client/accounts/{id}/tech_stacks/
+        """
+        try:
+            account = self.get_object()
+            
+            # Parse filter parameters
+            filters = {}
+            
+            department_id = request.query_params.get('department_id')
+            if department_id:
+                try:
+                    department = StandardDepartment.objects.get(id=department_id)
+                    filters['department'] = department
+                except StandardDepartment.DoesNotExist:
+                    pass
+            
+            min_confirmations = request.query_params.get('min_confirmations')
+            if min_confirmations and min_confirmations.isdigit():
+                filters['min_confirmations'] = int(min_confirmations)
+            
+            source_contact_id = request.query_params.get('source_contact_id')
+            if source_contact_id:
+                from apps.accounts.models import Contact
+                try:
+                    contact = Contact.objects.get(id=source_contact_id)
+                    filters['source_contact'] = contact
+                except Contact.DoesNotExist:
+                    pass
+            
+            tech_stacks_data = account.get_tech_stacks_data(**filters)
+            
+            return Response({
+                'success': True,
+                'data': tech_stacks_data
+            })
+            
+        except Exception as e:
+            return self.handle_exception(e)
+    
+    @action(detail=True, methods=['get'])
+    def hierarchy(self, request, pk=None):
+        """
+        Get the full hierarchy (parents and children) of an account.
+        GET /client/accounts/{id}/hierarchy/
+        """
+        try:
+            account = self.get_object()
+            hierarchy = account.get_full_hierarchy()
+            
+            # Serialize parents and children
+            parents_data = [
+                {
+                    'id': str(parent.id),
+                    'company_name': parent.company_name,
+                    'type': parent.type,
+                    'classification': parent.classification,
+                }
+                for parent in hierarchy['parents']
+            ]
+            
+            children_data = [
+                {
+                    'id': str(child.id),
+                    'company_name': child.company_name,
+                    'type': child.type,
+                    'classification': child.classification,
+                }
+                for child in hierarchy['children']
+            ]
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'account': {
+                        'id': str(account.id),
+                        'company_name': account.company_name,
+                    },
+                    'parents': parents_data,
+                    'children': children_data,
+                }
+            })
+            
+        except Exception as e:
+            return self.handle_exception(e)
+
+
+class CompanyAccountChoicesView(ScopedQuerysetMixin, APIView):
+    """
+    API endpoint for retrieving account type and classification choices.
+    No client scoping needed as these are global choices.
+    """
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        return Response({
+            'success': True,
+            'data': {
+                'types': CompanyAccount.get_account_types(),
+                'classifications': CompanyAccount.get_account_classifications()
+            }
+        })

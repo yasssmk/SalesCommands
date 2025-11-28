@@ -315,14 +315,20 @@ class ScopedQuerysetMixin:
             })
         elif ctx.client_id:
             # Try alternate client field names
+            # Note: 'client_id' is used by new UUID-based ModuleBaseModel
             client_fields = ['client_account', 'client_id', 'client']
             for field in client_fields:
                 if hasattr(queryset.model, field):
-                    filter_kwargs = {f'{field}_id': ctx.client_id}
+                    # For 'client_id' field, filter directly (not client_id_id)
+                    if field == 'client_id':
+                        filter_kwargs = {'client_id': ctx.client_id}
+                    else:
+                        filter_kwargs = {f'{field}_id': ctx.client_id}
                     queryset = queryset.filter(**filter_kwargs)
-                    logger.debug("client_filter_applied", extra={
+                    logger.debug("client_filter_applied_alt", extra={
                         'correlation_id': get_correlation_id(),
                         'client_id': ctx.client_id,
+                        'field_used': field,
                         'count_after': queryset.count(),
                         'event': 'queryset_filter'
                     })
@@ -581,13 +587,20 @@ class ScopedQuerysetMixin:
         try:
             if client_id:
                 # Verify object exists in this tenant
-                obj = model.objects.get(
-                    pk=pk,
-                    client_account_id=client_id
-                )
-            else:
-                # Fallback if no client scoping (rare case)
-                obj = model.objects.get(pk=pk)
+                # Support both client_account_id (legacy) and client_id (new UUID models)
+                def has_db_field(model, field_name):
+                    try:
+                        model._meta.get_field(field_name)
+                        return True
+                    except Exception:
+                        return False
+                
+                if has_db_field(model, 'client_account_id') or has_db_field(model, 'client_account'):
+                    obj = model.objects.get(pk=pk, client_account_id=client_id)
+                elif has_db_field(model, 'client_id'):
+                    obj = model.objects.get(pk=pk, client_id=client_id)
+                else:
+                    obj = model.objects.get(pk=pk)
         except model.DoesNotExist:
             # Object truly doesn't exist in tenant → 404
             raise Http404(f"No {model.__name__} matches the given query.")
