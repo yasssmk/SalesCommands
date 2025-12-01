@@ -28,3 +28,92 @@ CURRENCY = [
     ('EUR', _('EURO')),
     ('GBP', _('GREAT BRITAIN POUND'))
 ]
+
+INDUSTRIES = [
+    ('AGRICULTURE', _('Agriculture')),
+    ('FISHING', _('Fishing & Aquaculture')),
+    ('FORESTRY', _('Forestry & Logging')),
+    ('MINING', _('Mining & Quarrying')),
+    ('OIL_GAS', _('Oil & Gas')),
+    ('UTILITIES', _('Utilities (Water, Electricity, Gas)')),
+
+    ('CONSTRUCTION', _('Construction')),
+    ('REAL_ESTATE', _('Real Estate & Property Management')),
+    ('ARCHITECTURE', _('Architecture & Planning')),
+    ('ENGINEERING', _('Engineering & Design Services')),
+
+    ('MANUFACTURING', _('Manufacturing')),
+    ('AUTOMOTIVE', _('Automotive Manufacturing')),
+    ('AEROSPACE', _('Aerospace & Defense')),
+    ('CHEMICALS', _('Chemicals')),
+    ('PHARMACEUTICALS', _('Pharmaceuticals')),
+    ('BIOTECHNOLOGY', _('Biotechnology')),
+    ('FOOD_BEVERAGE', _('Food & Beverage Manufacturing')),
+    ('TEXTILES', _('Textiles & Apparel')),
+    ('ELECTRONICS', _('Electronics & Semiconductors')),
+
+    ('WHOLESALE', _('Wholesale Trade')),
+    ('RETAIL', _('Retail')),
+    ('ECOMMERCE', _('E-commerce')),
+
+    ('TRANSPORTATION', _('Transportation & Logistics')),
+    ('WAREHOUSING', _('Warehousing')),
+    ('SHIPPING', _('Shipping & Maritime')),
+    ('AVIATION', _('Aviation')),
+
+    ('INFORMATION_TECHNOLOGY', _('Information Technology')),
+    ('SOFTWARE', _('Software Development')),
+    ('SAAS', _('Software as a Service')),
+    ('HARDWARE', _('Hardware & Devices')),
+    ('CYBERSECURITY', _('Cybersecurity')),
+    ('IT_SERVICES', _('IT Services & Consulting')),
+
+    ('TELECOMMUNICATIONS', _('Telecommunications')),
+    ('MEDIA', _('Media & Broadcasting')),
+    ('ENTERTAINMENT', _('Entertainment')),
+    ('GAMING', _('Gaming')),
+
+    ('FINANCIAL_SERVICES', _('Financial Services')),
+    ('BANKING', _('Banking')),
+    ('INSURANCE', _('Insurance')),
+    ('INVESTMENT', _('Investment Management')),
+    ('FINTECH', _('Fintech')),
+
+    ('HEALTHCARE', _('Healthcare Services')),
+    ('HOSPITALS', _('Hospitals')),
+    ('MEDICAL_DEVICES', _('Medical Devices')),
+    ('WELLNESS', _('Wellness & Fitness')),
+
+    ('EDUCATION', _('Education')),
+    ('EDTECH', _('EdTech')),
+    ('RESEARCH', _('Research & Development')),
+
+    ('PUBLIC_SECTOR', _('Public Sector')),
+    ('GOVERNMENT', _('Government')),
+    ('DEFENSE', _('Defense & Security')),
+
+    ('NONPROFIT', _('Nonprofit & NGOs')),
+    ('RELIGIOUS', _('Religious Organizations')),
+
+    ('HOSPITALITY', _('Hospitality')),
+    ('TRAVEL_TOURISM', _('Travel & Tourism')),
+    ('RESTAURANTS', _('Restaurants & Food Services')),
+
+    ('ARTS_CULTURE', _('Arts & Culture')),
+    ('SPORTS', _('Sports & Recreation')),
+    ('EVENTS', _('Events & Exhibitions')),
+
+    ('PROFESSIONAL_SERVICES', _('Professional Services')),
+    ('LEGAL', _('Legal Services')),
+    ('ACCOUNTING', _('Accounting')),
+    ('CONSULTING', _('Consulting')),
+    ('MARKETING', _('Marketing & Advertising')),
+    ('HR', _('Human Resources')),
+    ('RECRUITING', _('Recruiting & Staffing')),
+
+    ('ENVIRONMENT', _('Environmental Services')),
+    ('WASTE_MANAGEMENT', _('Waste Management')),
+    ('RENEWABLE_ENERGY', _('Renewable Energy')),
+
+    ('OTHER', _('Other')),
+]

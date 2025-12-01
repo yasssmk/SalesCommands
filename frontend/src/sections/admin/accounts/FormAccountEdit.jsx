@@ -25,35 +25,13 @@ import { useFormik, Form, FormikProvider } from 'formik';
 
 // project imports
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
+import AsyncUserSelect from 'components/AsyncSelection/AsyncUserSelect';
+import AsyncAccountSelect from 'components/AsyncSelection/AsyncAccountSelect';
 import { displaySuccessSnackbar } from 'utils/displayError';
 import { handleFormikError } from 'utils/formErrorHandler';
 
 // api
-import { updateAccount, useGetAccount } from 'api/admin/accounts';
-
-// ==============================|| CONSTANTS ||============================== //
-
-const ACCOUNT_TYPES = [
-  { value: 'CLIENT', label: 'Client' },
-  { value: 'PROSPECT', label: 'Prospect' },
-  { value: 'PARTNER', label: 'Partner' },
-  { value: 'VENDOR', label: 'Vendor' },
-  { value: 'OTHER', label: 'Other' }
-];
-
-const ACCOUNT_CLASSIFICATIONS = [
-  { value: 'SMB', label: 'Small and Medium Business' },
-  { value: 'MIDMARKET', label: 'Mid-Market' },
-  { value: 'ENTERPRISE', label: 'Enterprise' },
-  { value: 'STARTUP', label: 'Startup' },
-  { value: 'NONPROFIT', label: 'Non-Profit' }
-];
-
-const ACCOUNT_TIERS = [
-  { value: 'A', label: 'Tier A - High Priority' },
-  { value: 'B', label: 'Tier B - Medium Priority' },
-  { value: 'C', label: 'Tier C - Low Priority' }
-];
+import { updateAccount, useGetAccount, useGetAccountChoices } from 'api/admin/accounts';
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
@@ -74,22 +52,11 @@ const EditSchema = Yup.object().shape({
     .required('Country is required')
     .max(100, 'Country must be less than 100 characters'),
   
-  industry: Yup.string()
-    .trim()
-    .max(100, 'Industry must be less than 100 characters')
-    .nullable(),
+  industry: Yup.string().nullable(),
   
-  type: Yup.string()
-    .oneOf(['CLIENT', 'PROSPECT', 'PARTNER', 'VENDOR', 'OTHER', ''], 'Invalid type')
-    .nullable(),
+  type: Yup.string().nullable(),
   
-  classification: Yup.string()
-    .oneOf(['SMB', 'MIDMARKET', 'ENTERPRISE', 'STARTUP', 'NONPROFIT', ''], 'Invalid classification')
-    .nullable(),
-  
-  tier: Yup.string()
-    .oneOf(['A', 'B', 'C'], 'Invalid tier')
-    .required('Tier is required'),
+  classification: Yup.string().nullable(),
   
   website: Yup.string()
     .url('Must be a valid URL')
@@ -113,13 +80,14 @@ const buildInitialValues = (account) => ({
   industry: account?.industry || '',
   type: account?.type || '',
   classification: account?.classification || '',
-  tier: account?.tier || 'C',
   website: account?.website || '',
   email: account?.email || '',
   phone_number: account?.phone_number || '',
   address: account?.address || '',
   post_code: account?.post_code || '',
-  state: account?.state || ''
+  state: account?.state || '',
+  account_owner: account?.account_owner || null,
+  parent: account?.parent_company || null
 });
 
 // ==============================|| SANITIZE PAYLOAD ||============================== //
@@ -131,18 +99,22 @@ function sanitizePayload(values) {
   payload.company_name = values.company_name.trim();
   payload.city = values.city.trim();
   payload.country = values.country.trim();
-  payload.tier = values.tier;
   
-  // Optional string fields - include empty strings to allow clearing
-  const optionalFields = ['industry', 'website', 'email', 'phone_number', 'address', 'post_code', 'state'];
+  // Optional string fields - include empty to allow clearing
+  const optionalFields = ['website', 'email', 'phone_number', 'address', 'post_code', 'state'];
   optionalFields.forEach((field) => {
     const value = values[field];
     payload[field] = value ? value.trim() : '';
   });
   
-  // Optional choice fields - include empty to allow clearing
+  // Optional choice fields - include empty/null to allow clearing
   payload.type = values.type || null;
   payload.classification = values.classification || null;
+  payload.industry = values.industry || null;
+  
+  // FK fields (async selects) - include null to allow clearing
+  payload.account_owner_id = values.account_owner?.id || null;
+  payload.parent_id = values.parent?.id || null;
   
   return payload;
 }
@@ -155,6 +127,9 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
   // Fetch account data if not provided
   const { account: fetchedAccount, accountLoading } = useGetAccount(accountId);
   const accountData = initialAccount || fetchedAccount;
+
+  // Fetch choices from backend
+  const { types, classifications, industries, countries, choicesLoading } = useGetAccountChoices();
 
   const formik = useFormik({
     initialValues: buildInitialValues(accountData),
@@ -184,7 +159,7 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
   const { errors, touched, handleSubmit, isSubmitting, getFieldProps, setFieldValue, values } = formik;
 
   // Show loading state
-  if (accountLoading || !accountData) {
+  if (accountLoading || choicesLoading || !accountData) {
     return (
       <Box sx={{ p: 5 }}>
         <Stack direction="row" justifyContent="center">
@@ -232,7 +207,7 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
                     <MenuItem value="">
                       <em>Select type</em>
                     </MenuItem>
-                    {ACCOUNT_TYPES.map((option) => (
+                    {types.map((option) => (
                       <MenuItem key={option.value} value={option.value}>
                         {option.label}
                       </MenuItem>
@@ -258,7 +233,7 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
                     <MenuItem value="">
                       <em>Select classification</em>
                     </MenuItem>
-                    {ACCOUNT_CLASSIFICATIONS.map((option) => (
+                    {classifications.map((option) => (
                       <MenuItem key={option.value} value={option.value}>
                         {option.label}
                       </MenuItem>
@@ -271,39 +246,56 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
               </Stack>
             </Grid>
 
-            {/* Tier & Industry */}
+            {/* Industry */}
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="tier">Tier *</InputLabel>
-                <FormControl fullWidth error={Boolean(touched.tier && errors.tier)}>
+                <InputLabel htmlFor="industry">Industry</InputLabel>
+                <FormControl fullWidth error={Boolean(touched.industry && errors.industry)}>
                   <Select
-                    id="tier"
-                    value={values.tier}
-                    onChange={(e) => setFieldValue('tier', e.target.value)}
+                    id="industry"
+                    displayEmpty
+                    value={values.industry}
+                    onChange={(e) => setFieldValue('industry', e.target.value)}
                   >
-                    {ACCOUNT_TIERS.map((option) => (
+                    <MenuItem value="">
+                      <em>Select industry</em>
+                    </MenuItem>
+                    {industries.map((option) => (
                       <MenuItem key={option.value} value={option.value}>
                         {option.label}
                       </MenuItem>
                     ))}
                   </Select>
-                  {touched.tier && errors.tier && (
-                    <FormHelperText>{errors.tier}</FormHelperText>
+                  {touched.industry && errors.industry && (
+                    <FormHelperText>{errors.industry}</FormHelperText>
                   )}
                 </FormControl>
               </Stack>
             </Grid>
 
+            {/* Account Owner (Async Select) */}
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="industry">Industry</InputLabel>
-                <TextField
-                  fullWidth
-                  id="industry"
-                  placeholder="e.g. Technology, Healthcare"
-                  {...getFieldProps('industry')}
-                  error={Boolean(touched.industry && errors.industry)}
-                  helperText={touched.industry && errors.industry}
+                <InputLabel>Account Owner</InputLabel>
+                <AsyncUserSelect
+                  value={values.account_owner}
+                  onChange={(event, newValue) => setFieldValue('account_owner', newValue)}
+                  label=""
+                  placeholder="Search by name or email..."
+                />
+              </Stack>
+            </Grid>
+
+            {/* Parent Company (Async Select) */}
+            <Grid item xs={12} sm={6}>
+              <Stack spacing={1}>
+                <InputLabel>Parent Company</InputLabel>
+                <AsyncAccountSelect
+                  value={values.parent}
+                  onChange={(event, newValue) => setFieldValue('parent', newValue)}
+                  label=""
+                  placeholder="Search by company name..."
+                  excludeIds={[accountData.id]}
                 />
               </Stack>
             </Grid>
@@ -326,14 +318,26 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="country">Country *</InputLabel>
-                <TextField
-                  fullWidth
-                  id="country"
-                  placeholder="Enter country"
-                  {...getFieldProps('country')}
-                  error={Boolean(touched.country && errors.country)}
-                  helperText={touched.country && errors.country}
-                />
+                <FormControl fullWidth error={Boolean(touched.country && errors.country)}>
+                  <Select
+                    id="country"
+                    displayEmpty
+                    value={values.country}
+                    onChange={(e) => setFieldValue('country', e.target.value)}
+                  >
+                    <MenuItem value="">
+                      <em>Select country</em>
+                    </MenuItem>
+                    {countries.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  {touched.country && errors.country && (
+                    <FormHelperText>{errors.country}</FormHelperText>
+                  )}
+                </FormControl>
               </Stack>
             </Grid>
 
@@ -353,11 +357,11 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
 
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="post_code">Postal Code</InputLabel>
+                <InputLabel htmlFor="post_code">Post Code</InputLabel>
                 <TextField
                   fullWidth
                   id="post_code"
-                  placeholder="Enter postal code"
+                  placeholder="Enter post code"
                   {...getFieldProps('post_code')}
                   error={Boolean(touched.post_code && errors.post_code)}
                   helperText={touched.post_code && errors.post_code}
@@ -365,14 +369,13 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
               </Stack>
             </Grid>
 
-            {/* Address */}
             <Grid item xs={12}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="address">Address</InputLabel>
                 <TextField
                   fullWidth
                   id="address"
-                  placeholder="Enter street address"
+                  placeholder="Enter address"
                   {...getFieldProps('address')}
                   error={Boolean(touched.address && errors.address)}
                   helperText={touched.address && errors.address}
@@ -380,14 +383,14 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
               </Stack>
             </Grid>
 
-            {/* Contact: Website, Email, Phone */}
+            {/* Contact Info */}
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="website">Website</InputLabel>
                 <TextField
                   fullWidth
                   id="website"
-                  placeholder="https://example.com"
+                  placeholder="https://company.com"
                   {...getFieldProps('website')}
                   error={Boolean(touched.website && errors.website)}
                   helperText={touched.website && errors.website}
@@ -440,7 +443,7 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
                   variant="contained" 
                   disabled={isSubmitting}
                 >
-                  {isSubmitting ? 'Saving...' : 'Save Changes'}
+                  {isSubmitting ? 'Updating...' : 'Update'}
                 </Button>
               </Stack>
             </Grid>

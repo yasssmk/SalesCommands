@@ -13,7 +13,6 @@ from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.http import Http404
-
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
@@ -57,7 +56,7 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
     
     # Filtering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['type', 'classification', 'country', 'account_owner', 'team_owner']
+    filterset_fields = ['type', 'classification', 'country', 'account_owner']
     search_fields = ['company_name', 'industry', 'city', 'country']
     ordering_fields = [
         'company_name',
@@ -76,7 +75,7 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
     module = 'accounts'
     
     # Allowed fields for mass update
-    mass_update_allowed_fields = {'type', 'classification', 'account_owner_id', 'team_owner_id'}
+    mass_update_allowed_fields = {'type', 'classification', 'account_owner_id'}
     
     # Action policies
     action_policies = {
@@ -132,13 +131,13 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
         if self.action == 'list':
             queryset = queryset.select_related(
                 'account_owner',
-                'team_owner',
+                'account_owner__team',
                 'parent_company'
             )
         elif self.action == 'retrieve':
             queryset = queryset.select_related(
                 'account_owner',
-                'team_owner',
+                'account_owner__team',
                 'parent_company'
             ).prefetch_related(
                 'direct_child_companies',
@@ -147,7 +146,7 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
         else:
             queryset = queryset.select_related(
                 'account_owner',
-                'team_owner',
+                'account_owner__team',
                 'parent_company'
             )
         
@@ -671,6 +670,8 @@ class CompanyAccountChoicesView(ScopedQuerysetMixin, APIView):
             'success': True,
             'data': {
                 'types': CompanyAccount.get_account_types(),
-                'classifications': CompanyAccount.get_account_classifications()
+                'classifications': CompanyAccount.get_account_classifications(),
+                'industries': CompanyAccount.get_industries(),
+                'countries': CompanyAccount.get_countries()
             }
         })

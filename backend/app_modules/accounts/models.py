@@ -14,6 +14,7 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import AccountErrorMessages, CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from end_users.models import User
+from core.constants import INDUSTRIES, COUNTRIES
 from apps.signals.services import SignalDataService # A MODIFIER UNE FOIS CREER AVEC SIGNALS DANS APP_MODULE
 
 
@@ -61,6 +62,7 @@ class CompanyAccount(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDeta
     
     industry = models.CharField(
         max_length=100,
+        choices=INDUSTRIES,
         blank=True,
         null=True,
         verbose_name=_('Industry')
@@ -393,4 +395,20 @@ class CompanyAccount(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDeta
         return [
             {'value': choice[0], 'label': choice[1]}
             for choice in AccountClassification.choices
+        ]
+    
+    @staticmethod
+    def get_industries():
+        """Return industry choices for frontend."""
+        return [
+            {'value': choice[0], 'label': str(choice[1])}
+            for choice in INDUSTRIES
+        ]
+    
+    @staticmethod
+    def get_countries():
+        """Return country choices for frontend."""
+        return [
+            {'value': choice[0], 'label': f"{choice[1]} ({choice[0]})"}
+            for choice in COUNTRIES
         ]

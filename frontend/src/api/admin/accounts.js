@@ -57,10 +57,6 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   if (filters.classification) {
     queryParams.append('classification', filters.classification);
   }
-  
-  if (filters.tier) {
-    queryParams.append('tier', filters.tier);
-  }
 
   if (filters.account_owner) {
     queryParams.append('account_owner', filters.account_owner);
@@ -142,8 +138,9 @@ export function useGetAccount(accountId) {
   return memoizedValue;
 }
 
+
 /**
- * GET ACCOUNT CHOICES - For dropdowns (type, classification, tier)
+ * GET ACCOUNT CHOICES - Types, Classifications, Industries
  * 
  * @returns {Object} {choices, choicesLoading, choicesError}
  */
@@ -160,7 +157,11 @@ export function useGetAccountChoices() {
 
   const memoizedValue = useMemo(
     () => ({
-      choices: data?.data || data || {},
+      choices: data?.data || {},
+      types: data?.data?.types || [],
+      classifications: data?.data?.classifications || [],
+      industries: data?.data?.industries || [],
+      countries: data?.data?.countries || [],
       choicesLoading: isLoading,
       choicesError: error
     }),

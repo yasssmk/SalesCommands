@@ -13,6 +13,7 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.exceptions import StandardizedValidationError, StandardizedPermissionDenied
 from end_users.models import User
+from core.constants import INDUSTRIES
 from app_modules.accounts.models import CompanyAccount, AccountType, AccountClassification
 
 
@@ -308,19 +309,30 @@ class CompanyAccountSerializer(ContactDetailsSerializer, ClientScopeManager.Seri
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Classification"))
         return value
     
+    def validate_industry(self, value):
+        """Validate industry field against allowed choices."""
+        if value is None or value == '':
+            return value
+        valid_industries = [choice[0] for choice in INDUSTRIES]
+        if value not in valid_industries:
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Industry"))
+        return value
+    
     def validate(self, data):
         """Complete validation of CompanyAccount data."""
         try:
             if self.partial:
                 fields_to_validate = set(self.initial_data.keys())
                 
-                for field in ['type', 'classification']:
+                for field in ['type', 'classification', 'industry']:
                     if field in fields_to_validate:
                         value = data.get(field)
                         if field == 'type':
                             self.validate_type(value)
-                        else:
+                        elif field == 'classification':
                             self.validate_classification(value)
+                        elif field == 'industry':
+                            self.validate_industry(value)
                 
                 contact_fields = {'address', 'city', 'post_code', 'state', 'country', 
                                 'phone_number', 'email', 'website', 'linkedin'}
@@ -567,6 +579,15 @@ class CompanyAccountCreateSerializer(ClientScopeManager.SerializerMixin, Contact
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Classification"))
         return value
     
+    def validate_industry(self, value):
+        """Validate industry field against allowed choices."""
+        if value is None or value == '':
+            return value
+        valid_industries = [choice[0] for choice in INDUSTRIES]
+        if value not in valid_industries:
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Industry"))
+        return value
+    
     def validate(self, attrs):
         """Global validation for account creation."""
         try:
@@ -719,6 +740,15 @@ class CompanyAccountUpdateSerializer(ClientScopeManager.SerializerMixin, Contact
         valid_classifications = [choice[0] for choice in AccountClassification.choices]
         if value not in valid_classifications:
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Classification"))
+        return value
+    
+    def validate_industry(self, value):
+        """Validate industry field against allowed choices."""
+        if value is None or value == '':
+            return value
+        valid_industries = [choice[0] for choice in INDUSTRIES]
+        if value not in valid_industries:
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_FIELD.format(field="Industry"))
         return value
     
     def validate(self, attrs):
