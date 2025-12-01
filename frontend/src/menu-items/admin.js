@@ -3,7 +3,8 @@ import UserOutlined from '@ant-design/icons/UserOutlined';
 import TeamOutlined from '@ant-design/icons/TeamOutlined';
 import SettingOutlined from '@ant-design/icons/SettingOutlined';
 import IdcardOutlined from '@ant-design/icons/IdcardOutlined';
-import SafetyOutlined from '@ant-design/icons/SafetyOutlined'
+import SafetyOutlined from '@ant-design/icons/SafetyOutlined';
+import BankOutlined from '@ant-design/icons/BankOutlined';
 
 import { isFeatureEnabled } from '../config/features';
 
@@ -13,7 +14,8 @@ const icons = {
   TeamOutlined, 
   SettingOutlined, 
   IdcardOutlined,
-  SafetyOutlined
+  SafetyOutlined,
+  BankOutlined
 };
 
 // ==============================|| FEATURE FLAGS ||============================== //
@@ -27,7 +29,8 @@ const FEATURE_FLAGS = {
   SHOW_WIP_ITEMS: process.env.NODE_ENV === 'development', // Auto-hide in production
   ENABLE_TEAMS: false, // Team management not ready
   ENABLE_ORGANIZATIONS: false, // Organizations not ready
-  ENABLE_ROLES: false, // Roles & permissions not ready
+  ENABLE_ROLES: false, // Roles & permissions not ready,
+  ACCOUNT_MANAGEMENT: true,
 };
 
 
@@ -87,6 +90,18 @@ const admin = {
           breadcrumbs: true,
           disabled: !isFeatureEnabled('ROLES_PERMISSIONS'),
           tooltip: !isFeatureEnabled('ROLES_PERMISSIONS') ? 'Soon' : null,
+        },
+        {
+          id: 'account-management',
+          title: 'account-management',
+          type: 'item',
+          url: isFeatureEnabled('ACCOUNT_MANAGEMENT') 
+            ? '/admin/accounts' 
+            : '#',
+          icon: icons.BankOutlined,
+          breadcrumbs: true,
+          disabled: !isFeatureEnabled('ACCOUNT_MANAGEMENT'),
+          tooltip: !isFeatureEnabled('ACCOUNT_MANAGEMENT') ? 'Soon' : null,
         }
       ]
     }
