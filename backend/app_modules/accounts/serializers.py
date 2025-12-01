@@ -12,20 +12,13 @@ from core.serializers import ContactDetailsSerializer
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from core.exceptions import StandardizedValidationError, StandardizedPermissionDenied
-from end_users.models import User, Team
+from end_users.models import User
 from app_modules.accounts.models import CompanyAccount, AccountType, AccountClassification
 
 
 # ============================================================================
 # HELPER SERIALIZERS
 # ============================================================================
-
-class AssignedTeamSerializer(serializers.ModelSerializer):
-    """Serializer for the assigned team summary."""
-    class Meta:
-        model = Team
-        fields = ['id', 'name']
-        read_only_fields = fields
 
 
 class AccountManagerSerializer(serializers.ModelSerializer):
@@ -52,7 +45,7 @@ class CompanyAccountListSerializer(ClientScopeManager.SerializerMixin, serialize
     
     # Relations as simple objects (frontend-friendly)
     account_owner = serializers.SerializerMethodField(read_only=True)
-    team_owner = serializers.SerializerMethodField(read_only=True)
+    team = serializers.SerializerMethodField(read_only=True)
     parent_company = serializers.SerializerMethodField(read_only=True)
     
     # Display fields
@@ -73,7 +66,7 @@ class CompanyAccountListSerializer(ClientScopeManager.SerializerMixin, serialize
             'city', 'country',
             
             # Relations (simple objects)
-            'account_owner', 'team_owner', 'parent_company',
+            'account_owner', 'team', 'parent_company',
             
             # Timestamps
             'created_at', 'updated_at'
@@ -90,12 +83,12 @@ class CompanyAccountListSerializer(ClientScopeManager.SerializerMixin, serialize
             }
         return None
     
-    def get_team_owner(self, obj):
-        """Return team owner as minimal object."""
-        if obj.team_owner:
+    def get_team(self, obj):
+        """Return team derived from account_owner."""
+        if obj.account_owner and obj.account_owner.team:
             return {
-                'id': str(obj.team_owner_id),
-                'name': obj.team_owner.name,
+                'id': str(obj.account_owner.team_id),
+                'name': obj.account_owner.team.name,
             }
         return None
     
@@ -147,12 +140,6 @@ class CompanyAccountSerializer(ContactDetailsSerializer, ClientScopeManager.Seri
         write_only=True
     )
 
-    team_owner_id = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-        write_only=True
-    )
-
     company_size = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -198,7 +185,7 @@ class CompanyAccountSerializer(ContactDetailsSerializer, ClientScopeManager.Seri
     parent_company = serializers.SerializerMethodField(read_only=True)
     direct_child_companies = serializers.SerializerMethodField(read_only=True)
     account_owner = AccountManagerSerializer(read_only=True)
-    team_owner = AssignedTeamSerializer(read_only=True)
+    team = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = CompanyAccount
@@ -209,7 +196,7 @@ class CompanyAccountSerializer(ContactDetailsSerializer, ClientScopeManager.Seri
             'company_size', 'annual_revenue', 'classification',
             'parent_company', 'parent_id', 'direct_child_companies',
             'email', 'linkedin', 'account_owner', 'account_owner_id', 
-            'team_owner', 'team_owner_id', 'client_id',
+            'team', 'client_id',
             'profile_data', 'qualification_data', 'qualification_by_department',
             'has_buying_decision',
             'partners', 'partner_ids',
@@ -242,6 +229,15 @@ class CompanyAccountSerializer(ContactDetailsSerializer, ClientScopeManager.Seri
             'type': child.type,
             'classification': child.classification
         } for child in obj.direct_child_companies.all()]
+    
+    def get_team(self, obj):
+        """Return team derived from account_owner."""
+        if obj.account_owner and obj.account_owner.team:
+            return {
+                'id': str(obj.account_owner.team_id),
+                'name': obj.account_owner.team.name,
+            }
+        return None
     
     def get_partners(self, obj):
         """Get partner accounts for this account."""
@@ -357,8 +353,8 @@ class CompanyAccountSerializer(ContactDetailsSerializer, ClientScopeManager.Seri
                 if parent_id is not None:
                     self._validate_parent_company(parent_id, client_id, instance)
 
-            if {'account_owner_id', 'team_owner_id'}.intersection(data.keys()):
-                self._validate_account_owner_and_team(data, client_id)
+            if {'account_owner_id'}.intersection(data.keys()):
+                self._validate_account_owner(data, client_id)
             
             if 'partner_ids' in data:
                 self._validate_partners(data['partner_ids'], client_id)
@@ -389,31 +385,19 @@ class CompanyAccountSerializer(ContactDetailsSerializer, ClientScopeManager.Seri
         except CompanyAccount.DoesNotExist:
             raise StandardizedValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
 
-    def _validate_account_owner_and_team(self, data, client_id):
-        """Validate account owner and team owner relationships."""
+    def _validate_account_owner(self, data, client_id):
+        """Validate account owner."""
         account_owner_id = data.get('account_owner_id')
-        team_owner_id = data.get('team_owner_id')
 
         if account_owner_id is not None:
             try:
                 account_owner = User.objects.get(id=account_owner_id)
                 if not account_owner.is_active:
                     raise StandardizedValidationError(AccountErrorMessages.USER_INACTIVE)
-
-                if team_owner_id:
-                    team = Team.objects.get(id=team_owner_id)
-                    if account_owner.team_id != team.id:
-                        raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
+                if str(account_owner.client_account_id) != str(client_id):
+                    raise StandardizedValidationError(AccountErrorMessages.INVALID_USER)
             except User.DoesNotExist:
                 raise StandardizedValidationError(AccountErrorMessages.INVALID_USER)
-
-        if team_owner_id is not None:
-            try:
-                team = Team.objects.get(id=team_owner_id)
-                if str(team.client_account_id) != str(client_id):
-                    raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
-            except Team.DoesNotExist:
-                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
     def _validate_partners(self, partner_ids, client_id):
         """Validate that partners exist and have the correct type."""
@@ -533,12 +517,6 @@ class CompanyAccountCreateSerializer(ClientScopeManager.SerializerMixin, Contact
         write_only=True
     )
     
-    team_owner_id = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-        write_only=True
-    )
-    
     class Meta:
         model = CompanyAccount
         fields = [
@@ -546,7 +524,7 @@ class CompanyAccountCreateSerializer(ClientScopeManager.SerializerMixin, Contact
             'company_size', 'annual_revenue', 'has_buying_decision',
             'address', 'city', 'post_code', 'state', 'country',
             'phone_number', 'email', 'website', 'linkedin',
-            'parent_id', 'account_owner_id', 'team_owner_id'
+            'parent_id', 'account_owner_id'
         ]
         extra_kwargs = {
             'company_name': {
@@ -610,8 +588,8 @@ class CompanyAccountCreateSerializer(ClientScopeManager.SerializerMixin, Contact
                 self._validate_parent_company(attrs['parent_company_id'], client_id)
             
             # Validate owner/team
-            if 'account_owner_id' in attrs or 'team_owner_id' in attrs:
-                self._validate_account_owner_and_team(attrs, client_id)
+            if 'account_owner_id' in attrs:
+                self._validate_account_owner(attrs, client_id)
             
             return attrs
             
@@ -631,30 +609,23 @@ class CompanyAccountCreateSerializer(ClientScopeManager.SerializerMixin, Contact
         except CompanyAccount.DoesNotExist:
             raise StandardizedValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
     
-    def _validate_account_owner_and_team(self, data, client_id):
-        """Validate account owner and team owner relationships."""
+    def _validate_account_owner(self, data, client_id):
+        """Validate account owner."""
         account_owner_id = data.get('account_owner_id')
-        team_owner_id = data.get('team_owner_id')
+        
+        if account_owner_id is None:
+            return
 
-        if account_owner_id:
-            try:
-                account_owner = User.objects.get(id=account_owner_id)
-                if not account_owner.is_active:
-                    raise StandardizedValidationError(AccountErrorMessages.USER_INACTIVE)
-                if team_owner_id:
-                    team = Team.objects.get(id=team_owner_id)
-                    if account_owner.team_id != team.id:
-                        raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
-            except User.DoesNotExist:
+        try:
+            account_owner = User.objects.get(id=account_owner_id)
+            if not account_owner.is_active:
+                raise StandardizedValidationError(AccountErrorMessages.USER_INACTIVE)
+            if str(account_owner.client_account_id) != str(client_id):
                 raise StandardizedValidationError(AccountErrorMessages.INVALID_USER)
+        except User.DoesNotExist:
+            raise StandardizedValidationError(AccountErrorMessages.INVALID_USER)
 
-        if team_owner_id:
-            try:
-                team = Team.objects.get(id=team_owner_id)
-                if str(team.client_account_id) != str(client_id):
-                    raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
-            except Team.DoesNotExist:
-                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
 
 
 # ============================================================================
@@ -684,11 +655,6 @@ class CompanyAccountUpdateSerializer(ClientScopeManager.SerializerMixin, Contact
         write_only=True
     )
     
-    team_owner_id = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-        write_only=True
-    )
     
     partner_ids = serializers.ListField(
         child=serializers.UUIDField(),
@@ -703,7 +669,7 @@ class CompanyAccountUpdateSerializer(ClientScopeManager.SerializerMixin, Contact
             'company_size', 'annual_revenue', 'has_buying_decision',
             'address', 'city', 'post_code', 'state', 'country',
             'phone_number', 'email', 'website', 'linkedin',
-            'parent_id', 'account_owner_id', 'team_owner_id', 'partner_ids'
+            'parent_id', 'account_owner_id', 'partner_ids'
         ]
         extra_kwargs = {
             'company_name': {'required': False},
@@ -763,8 +729,8 @@ class CompanyAccountUpdateSerializer(ClientScopeManager.SerializerMixin, Contact
             if 'parent_company_id' in attrs and attrs['parent_company_id']:
                 self._validate_parent_company(attrs['parent_company_id'], client_id, self.instance)
             
-            if 'account_owner_id' in attrs or 'team_owner_id' in attrs:
-                self._validate_account_owner_and_team(attrs, client_id)
+            if 'account_owner_id' in attrs:
+                self._validate_account_owner(attrs, client_id)
             
             if 'partner_ids' in attrs:
                 self._validate_partners(attrs['partner_ids'], client_id)
@@ -799,31 +765,22 @@ class CompanyAccountUpdateSerializer(ClientScopeManager.SerializerMixin, Contact
         except CompanyAccount.DoesNotExist:
             raise StandardizedValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
     
-    def _validate_account_owner_and_team(self, data, client_id):
-        """Validate account owner and team owner relationships."""
+    def _validate_account_owner(self, data, client_id):
+        """Validate account owner."""
         account_owner_id = data.get('account_owner_id')
-        team_owner_id = data.get('team_owner_id')
+        
+        if account_owner_id is None:
+            return
 
-        if account_owner_id:
-            try:
-                account_owner = User.objects.get(id=account_owner_id)
-                if not account_owner.is_active:
-                    raise StandardizedValidationError(AccountErrorMessages.USER_INACTIVE)
-                if team_owner_id:
-                    team = Team.objects.get(id=team_owner_id)
-                    if account_owner.team_id != team.id:
-                        raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
-            except User.DoesNotExist:
+        try:
+            account_owner = User.objects.get(id=account_owner_id)
+            if not account_owner.is_active:
+                raise StandardizedValidationError(AccountErrorMessages.USER_INACTIVE)
+            if str(account_owner.client_account_id) != str(client_id):
                 raise StandardizedValidationError(AccountErrorMessages.INVALID_USER)
+        except User.DoesNotExist:
+            raise StandardizedValidationError(AccountErrorMessages.INVALID_USER)
 
-        if team_owner_id:
-            try:
-                team = Team.objects.get(id=team_owner_id)
-                if str(team.client_account_id) != str(client_id):
-                    raise StandardizedValidationError(AccountErrorMessages.TEAM_MISMATCH)
-            except Team.DoesNotExist:
-                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-    
     def _validate_partners(self, partner_ids, client_id):
         """Validate partners."""
         if not partner_ids:

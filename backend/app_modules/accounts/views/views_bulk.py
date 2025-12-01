@@ -26,7 +26,7 @@ from core.cache_utils import disable_signals_with_invalidation
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
 
-from end_users.models import User, Team
+from end_users.models import User
 
 from ..models import CompanyAccount, AccountType, AccountClassification
 from .views import CompanyAccountViewSet
@@ -193,7 +193,7 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
             
             # ===== VALIDATE ALLOWED FIELDS =====
             ALLOWED_FIELDS = {
-                'type', 'classification', 'account_owner_id', 'team_owner_id',
+                'type', 'classification', 'account_owner_id',
                 'industry', 'company_size', 'annual_revenue', 'has_buying_decision'
             }
             invalid_fields = set(patch.keys()) - ALLOWED_FIELDS
@@ -209,7 +209,7 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
             accounts_qs = CompanyAccount.objects.filter(
                 id__in=ids,
                 client_id=client_id
-            ).select_related('account_owner', 'team_owner', 'parent_company')
+            ).select_related('account_owner', 'account_owner__team', 'parent_company')
             accounts_dict = {str(a.id): a for a in accounts_qs}
             
             # ===== CHECK FOR INVALID IDS =====
@@ -236,7 +236,7 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
             
             # Validate FK fields
             validated_fks = {}
-            fk_fields = {'account_owner_id', 'team_owner_id'}
+            fk_fields = {'account_owner_id'}
             fk_updates = {k: v for k, v in patch.items() if k in fk_fields}
             
             if fk_updates:
@@ -281,8 +281,7 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                             # FK fields
                             if 'account_owner_id' in validated_fks:
                                 update_fields['account_owner'] = validated_fks['account_owner_id']
-                            if 'team_owner_id' in validated_fks:
-                                update_fields['team_owner'] = validated_fks['team_owner_id']
+
                             
                             # Apply set-based update
                             if update_fields and valid_account_ids:
@@ -327,8 +326,6 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                     # FK fields
                     if 'account_owner_id' in validated_fks:
                         update_fields['account_owner'] = validated_fks['account_owner_id']
-                    if 'team_owner_id' in validated_fks:
-                        update_fields['team_owner'] = validated_fks['team_owner_id']
                     
                     # Apply update
                     if update_fields and valid_account_ids:
@@ -866,7 +863,6 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
             # ===== PRELOAD FKs =====
             fk_preload = self._preload_bulk_create_fks(accounts_data, client_id)
             owners_map = fk_preload['owners_map']
-            teams_map = fk_preload['teams_map']
             parents_map = fk_preload['parents_map']
             
             # ===== CREATE ACCOUNTS =====
@@ -1025,41 +1021,17 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                 except User.DoesNotExist:
                     raise StandardizedValidationError(f"User with ID '{owner_id}' not found or inactive")
         
-        # Team owner validation
-        if 'team_owner_id' in patch:
-            team_id = patch['team_owner_id']
-            
-            if team_id is None or team_id == '':
-                validated_fks['team_owner_id'] = None
-            else:
-                try:
-                    import uuid
-                    uuid.UUID(str(team_id))
-                except ValueError:
-                    raise StandardizedValidationError(f"Invalid team_owner_id format: {team_id}")
-                
-                try:
-                    team = Team.objects.get(id=team_id, organization__client_account_id=client_id)
-                    validated_fks['team_owner_id'] = team
-                except Team.DoesNotExist:
-                    raise StandardizedValidationError(f"Team with ID '{team_id}' not found")
-        
         return validated_fks
     
     def _preload_bulk_create_fks(self, accounts_data, client_id):
         """Preload FKs for bulk create (1 query per FK type)."""
         owner_ids = set()
-        team_ids = set()
         parent_ids = set()
         
         for account_data in accounts_data:
             owner_id = account_data.get('account_owner_id')
             if owner_id:
                 owner_ids.add(str(owner_id))
-            
-            team_id = account_data.get('team_owner_id')
-            if team_id:
-                team_ids.add(str(team_id))
             
             parent_id = account_data.get('parent_id')
             if parent_id:
@@ -1075,15 +1047,6 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
             )
             owners_map = {str(u.id): u for u in owners}
         
-        # Preload teams
-        teams_map = {}
-        if team_ids:
-            teams = Team.objects.filter(
-                id__in=team_ids,
-                organization__client_account_id=client_id
-            )
-            teams_map = {str(t.id): t for t in teams}
-        
         # Preload parents
         parents_map = {}
         if parent_ids:
@@ -1095,14 +1058,11 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
         
         return {
             'owners_map': owners_map,
-            'teams_map': teams_map,
             'parents_map': parents_map,
             'stats': {
                 'unique_owners': len(owner_ids),
-                'unique_teams': len(team_ids),
                 'unique_parents': len(parent_ids),
                 'preloaded_owners': len(owners_map),
-                'preloaded_teams': len(teams_map),
                 'preloaded_parents': len(parents_map),
             }
         }

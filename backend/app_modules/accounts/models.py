@@ -13,7 +13,7 @@ from core.models import ContactDetailsMixin
 from core.client_scope import ClientScopeManager
 from core.error_messages import AccountErrorMessages, CoreErrorMessages
 from core.exceptions import StandardizedValidationError
-from end_users.models import User, Team
+from end_users.models import User
 from apps.signals.services import SignalDataService # A MODIFIER UNE FOIS CREER AVEC SIGNALS DANS APP_MODULE
 
 
@@ -136,15 +136,6 @@ class CompanyAccount(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDeta
         verbose_name=_('Account Owner')
     )
     
-    team_owner = models.ForeignKey(
-        Team,
-        on_delete=models.SET_NULL,
-        blank=True,
-        null=True,
-        related_name='owned_company_accounts',
-        verbose_name=_('Team Owner')
-    )
-    
     # ==========================================================================
     # META
     # ==========================================================================
@@ -159,13 +150,26 @@ class CompanyAccount(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDeta
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['account_owner'], name='mod_acc_owner_idx'),
-            models.Index(fields=['team_owner'], name='mod_acc_team_idx'),
             models.Index(fields=['type'], name='mod_acc_type_idx'),
         ]
     
     def __str__(self):
         type_display = self.get_type_display() if self.type else 'Unknown'
         return f"{self.company_name} ({type_display})"
+    
+     # ==========================================================================
+    # PROPERTIES
+    # ==========================================================================
+    
+    @property
+    def team(self):
+        """Get team from account_owner. Team is derived, not stored."""
+        return self.account_owner.team if self.account_owner else None
+    
+    @property
+    def team_id(self):
+        """Get team_id from account_owner for filtering compatibility."""
+        return self.account_owner.team_id if self.account_owner else None
     
     # ==========================================================================
     # VALIDATION
@@ -175,24 +179,9 @@ class CompanyAccount(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDeta
         """Validate the model."""
         super().clean()
         
-        # Ensure account_owner belongs to team_owner if both are set
-        if self.account_owner and self.team_owner:
-            if self.account_owner.team_id != self.team_owner_id:
-                raise StandardizedValidationError(
-                    AccountErrorMessages.TEAM_MISMATCH,
-                    field_name="account_owner"
-                )
     
     def save(self, *args, **kwargs):
-        """
-        Override save to:
-        - Auto-set team_owner from account_owner if not provided
-        - Handle audit fields via parent class
-        """
-        # Auto-set team_owner from account_owner
-        if self.account_owner and not self.team_owner:
-            self.team_owner = self.account_owner.team
-        
+        """Override save to handle audit fields."""
         super().save(*args, **kwargs)
     
     # ==========================================================================
