@@ -657,7 +657,7 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
             return self.handle_exception(e)
 
 
-class CompanyAccountChoicesView(ScopedQuerysetMixin, APIView):
+class CompanyAccountChoicesView(BaseAPIView):
     """
     API endpoint for retrieving account type and classification choices.
     No client scoping needed as these are global choices.

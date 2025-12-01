@@ -74,17 +74,24 @@ class ModuleBaseModel(models.Model):
         
         Usage:
             instance.save(user=request.user, client_id=client_id)
+        
+        Note:
+            Uses self._state.adding instead of self.pk to detect new instances
+            because UUID primary keys are auto-generated before save().
         """
         user = kwargs.pop('user', None)
         client_id = kwargs.pop('client_id', None)
         
+        # Check if this is a new instance (not yet in database)
+        is_new = self._state.adding
+        
         # Handle client_id
-        if not self.pk and client_id:
+        if is_new and client_id:
             self.client_id = client_id
         
         # Handle audit fields
         if user and not user.is_anonymous:
-            if not self.pk:
+            if is_new:
                 self.created_by = user
             self.updated_by = user
         

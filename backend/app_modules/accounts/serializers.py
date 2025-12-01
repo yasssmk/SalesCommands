@@ -446,10 +446,16 @@ class CompanyAccountSerializer(ContactDetailsSerializer, ClientScopeManager.Seri
         """Handle creation with partners."""
         partner_ids = validated_data.pop('partner_ids', None)
         
-        instance = super().create(validated_data)
+        # Get user from context
+        user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Create instance without saving
+        instance = CompanyAccount(**validated_data)
+        
+        # Save with user to set created_by and updated_by
+        instance.save(user=user)
         
         if partner_ids:
-            user = self.context.get('request').user if self.context.get('request') else None
             self._add_partners(instance, partner_ids, user)
             
         return instance
@@ -645,7 +651,18 @@ class CompanyAccountCreateSerializer(ClientScopeManager.SerializerMixin, Contact
                 raise StandardizedValidationError(AccountErrorMessages.INVALID_USER)
         except User.DoesNotExist:
             raise StandardizedValidationError(AccountErrorMessages.INVALID_USER)
-
+    
+    def create(self, validated_data):
+        """Create account with proper audit fields."""
+        user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Create instance without saving
+        instance = CompanyAccount(**validated_data)
+        
+        # Save with user to set created_by and updated_by
+        instance.save(user=user)
+        
+        return instance
 
 
 
