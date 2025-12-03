@@ -30,7 +30,7 @@ DEFAULT_CONFIG = {
     'AUDIT_ENABLED': False,  # Enable audit logging
     'CACHE_TIMEOUT': 300,  # Cache timeout in seconds (5 minutes)
     'MODULES': {
-        'accounts': False,
+        'accounts': True,
         'contacts': False,
         'activities': False,
         'leads': False,

@@ -304,35 +304,37 @@ class ScopedQuerysetMixin:
         
         # CRITICAL: Ensure client filtering is applied
         # This should already be done by BaseAPIView, but double-check
-        if ctx.client_id and hasattr(queryset.model, 'client_account_id'):
-            # Apply client filter FIRST (tenant isolation)
-            queryset = queryset.filter(client_account_id=ctx.client_id)
-            logger.debug("client_filter_applied", extra={
-                'correlation_id': get_correlation_id(),
-                'client_id': ctx.client_id,
-                'count_after': queryset.count(),
-                'event': 'queryset_filter'
-            })
-        elif ctx.client_id:
-            # Try alternate client field names
-            # Note: 'client_id' is used by new UUID-based ModuleBaseModel
-            client_fields = ['client_account', 'client_id', 'client']
-            for field in client_fields:
-                if hasattr(queryset.model, field):
-                    # For 'client_id' field, filter directly (not client_id_id)
-                    if field == 'client_id':
-                        filter_kwargs = {'client_id': ctx.client_id}
-                    else:
-                        filter_kwargs = {f'{field}_id': ctx.client_id}
-                    queryset = queryset.filter(**filter_kwargs)
-                    logger.debug("client_filter_applied_alt", extra={
+        if ctx.client_id:
+            # Detect which client field the model uses (order matters: new pattern first)
+            client_field_map = [
+                ('client_id', 'client_id'),           # New UUID pattern (ModuleBaseModel)
+                ('client_account_id', 'client_account_id'),  # Old FK pattern (client_account)
+                ('client_account', 'client_account_id'),     # Old FK pattern (descriptor)
+                ('client', 'client_id'),              # Generic pattern
+            ]
+            
+            applied = False
+            model_fields = {f.name for f in queryset.model._meta.get_fields()}
+            
+            for attr_check, filter_field in client_field_map:
+                if attr_check in model_fields:
+                    queryset = queryset.filter(**{filter_field: ctx.client_id})
+                    logger.debug("client_filter_applied", extra={
                         'correlation_id': get_correlation_id(),
                         'client_id': ctx.client_id,
-                        'field_used': field,
-                        'count_after': queryset.count(),
+                        'field_used': filter_field,
                         'event': 'queryset_filter'
                     })
+                    applied = True
                     break
+            
+            if not applied:
+                logger.warning("no_client_field_found", extra={
+                    'correlation_id': get_correlation_id(),
+                    'model': queryset.model.__name__,
+                    'available_fields': list(model_fields)[:10],
+                    'event': 'queryset_filter'
+                })
         
         # Get user and check authentication
         user = self.request.user if hasattr(self, 'request') else None

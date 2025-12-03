@@ -682,7 +682,7 @@ PERMISSIONS_CONFIG = {
     # Module-by-module feature flags
     # Enable modules one by one for gradual rollout
     'MODULES': {
-        'accounts': False,      # Account management
+        'accounts': True,      # Account management
         'contacts': False,      # Contact management  
         'activities': False,    # Activity tracking
         'leads': False,         # Lead management
