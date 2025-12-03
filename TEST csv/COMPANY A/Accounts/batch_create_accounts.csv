@@ -1,6 +1,6 @@
 company_name,industry,city,country,type,classification,company_size,annual_revenue
 Test Account A1, Technology, Test city,FR,PROSPECT, MIDMARKET, 1200,170000000
 Test Account A2, Technology, Test city,BE,PROSPECT, MIDMARKET, 800,80000000
-Test Account A3, Technology, Test city,ES,PROSPECT, SMB, 460,15000000
-Test Account A4, Technology, Test city,DE,PROSPECT, SMB, 500,21000000
-Test Account A5, Technology, Test city,DE,PROSPECT, SMB, 420,12000000
+VEGETA PLANET,, Vegeta,AE,PROSPECT, SMB, 460,15000000
+Test Account A4,, Test city,DE,PROSPECT, SMB, 500,21000000
+Test Account A5,, Test city,DE,PROSPECT, SMB, 420,12000000

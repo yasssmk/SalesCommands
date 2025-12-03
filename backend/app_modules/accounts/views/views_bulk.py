@@ -975,9 +975,9 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                 target_count=len(accounts_data),
                 outcome='success',
                 extra={
-                    'created': success_count,
-                    'failed': failed_count,
-                    'skipped': skipped_count
+                    'success_count': success_count,
+                    'failed_count': failed_count,
+                    'skipped_count': skipped_count
                 }
             )
             
@@ -1069,12 +1069,21 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
     
     def _format_bulk_error_message(self, error):
         """Format exception into user-friendly error message."""
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        
+        # Handle StandardizedValidationError
         if isinstance(error, StandardizedValidationError):
             if hasattr(error, 'detail'):
                 if isinstance(error.detail, dict):
                     return error.detail.get('error', str(error))
                 elif isinstance(error.detail, list):
                     return '; '.join(str(e) for e in error.detail)
+            return str(error)
+        
+        # Handle DRF ValidationError (from serializer.is_valid(raise_exception=True))
+        if isinstance(error, DRFValidationError):
+            if hasattr(error, 'detail'):
+                return self._format_validation_detail(error.detail)
             return str(error)
         
         error_type = type(error).__name__
@@ -1084,9 +1093,54 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                 return "Duplicate entry detected"
             return "Database integrity error"
         elif "ValidationError" in error_type:
+            # Fallback for other ValidationError types
+            if hasattr(error, 'detail'):
+                return self._format_validation_detail(error.detail)
             return str(error)
         
         return "Processing failed. Please check your data and try again."
+
+    def _format_validation_detail(self, detail):
+        """
+        Format serializer validation errors into user-friendly message.
+        
+        Handles:
+        - {'field': [ErrorDetail('message')]} -> "field: message"
+        - {'field': ['message']} -> "field: message"
+        - [ErrorDetail('message')] -> "message"
+        - 'message' -> "message"
+        """
+        if isinstance(detail, str):
+            return detail
+        
+        if isinstance(detail, list):
+            # List of errors - take first one
+            if detail:
+                first_error = detail[0]
+                return str(first_error) if first_error else "Validation error"
+            return "Validation error"
+        
+        if isinstance(detail, dict):
+            # Dict of field -> errors
+            messages = []
+            for field, errors in detail.items():
+                if field == 'non_field_errors':
+                    # Non-field errors - just show the message
+                    if isinstance(errors, list) and errors:
+                        messages.append(str(errors[0]))
+                    else:
+                        messages.append(str(errors))
+                else:
+                    # Field-specific error
+                    if isinstance(errors, list) and errors:
+                        error_msg = str(errors[0])
+                    else:
+                        error_msg = str(errors)
+                    messages.append(f"{field}: {error_msg}")
+            
+            return '; '.join(messages) if messages else "Validation error"
+        
+        return str(detail) if detail else "Validation error"
     
     def _build_bulk_error_response(self, results, total, error_message):
         """Build standardized error response for bulk operations."""
@@ -1112,11 +1166,28 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
         if success_count == 0 and failed_count > 0:
             status_code = status.HTTP_400_BAD_REQUEST
             success_status = False
-            message = f"Bulk {operation} failed: all {failed_count} item(s) failed"
+            
+            # Extract detailed error message from first failed item
+            failed_items = results.get('failed', [])
+            extracted_message = None
+            
+            if failed_items:
+                first_failed = failed_items[0]
+                if isinstance(first_failed, dict) and 'errors' in first_failed:
+                    errors_list = first_failed['errors']
+                    if errors_list and len(errors_list) > 0:
+                        extracted_message = str(errors_list[0])
+            
+            # Use extracted message if available, otherwise fallback to generic
+            if extracted_message:
+                message = extracted_message
+            else:
+                message = f"Bulk {operation} failed: all {failed_count} item(s) failed"
+                
         elif failed_count > 0 or skipped_count > 0:
-            status_code = status.HTTP_207_MULTI_STATUS
-            success_status = 'partial'
-            message = f"Bulk {operation}: {success_count} succeeded, {failed_count} failed, {skipped_count} skipped"
+                status_code = status.HTTP_207_MULTI_STATUS
+                success_status = 'partial'
+                message = f"Bulk {operation}: {success_count} succeeded, {failed_count} failed, {skipped_count} skipped"
         else:
             status_code = status.HTTP_201_CREATED if operation == 'create' else status.HTTP_200_OK
             success_status = True

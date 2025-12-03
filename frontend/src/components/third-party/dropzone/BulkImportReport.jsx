@@ -69,6 +69,7 @@ export default function BulkImportReport({
   showSuccessDetails = false,
   onRetry,
   additionalColumns = [],
+  identifierField = { key: 'email', label: 'Email/ID' },
   sx = {}
 }) {
   const theme = useTheme();
@@ -107,7 +108,7 @@ export default function BulkImportReport({
       csvData.push({
         status: 'Failed',
         row: item.row || '-',
-        email: item.email || item.identifier || '-',
+        identifier: item[identifierField.key] || item.email || item.identifier || '-',
         errors: Array.isArray(item.errors) ? item.errors.join('; ') : item.error || '-',
         ...Object.fromEntries(additionalColumns.map(col => [col.key, item[col.key] || '-']))
       });
@@ -118,7 +119,7 @@ export default function BulkImportReport({
       csvData.push({
         status: 'Skipped',
         row: item.row || '-',
-        email: item.email || item.identifier || '-',
+        identifier: item[identifierField.key] || item.email || item.identifier || '-',
         errors: item.error || item.reason || '-',
         ...Object.fromEntries(additionalColumns.map(col => [col.key, item[col.key] || '-']))
       });
@@ -131,7 +132,7 @@ export default function BulkImportReport({
   const errorCSVHeaders = [
     { label: 'Status', key: 'status' },
     { label: 'Row', key: 'row' },
-    { label: 'Email/ID', key: 'email' },
+    { label: identifierField.label, key: 'identifier' },
     { label: 'Errors', key: 'errors' },
     ...additionalColumns.map(col => ({ label: col.label, key: col.key }))
   ];
@@ -182,7 +183,7 @@ export default function BulkImportReport({
         <TableHead>
           <TableRow>
             <TableCell>Row</TableCell>
-            <TableCell>Email/ID</TableCell>
+            <TableCell>{identifierField.label}</TableCell>
             <TableCell>Errors</TableCell>
             {additionalColumns.map(col => (
               <TableCell key={col.key}>{col.label}</TableCell>
@@ -193,7 +194,7 @@ export default function BulkImportReport({
           {items.map((item, index) => (
             <TableRow key={`${type}-${index}`} hover>
               <TableCell>{item.row || '-'}</TableCell>
-              <TableCell>{item.email || item.identifier || '-'}</TableCell>
+              <TableCell>{item[identifierField.key] || item.email || item.identifier || '-'}</TableCell>
               <TableCell>
                 {Array.isArray(item.errors) ? (
                   <Stack spacing={0.5}>
@@ -228,7 +229,7 @@ export default function BulkImportReport({
         <TableHead>
           <TableRow>
             <TableCell>Row</TableCell>
-            <TableCell>Email/ID</TableCell>
+            <TableCell>{identifierField.label}</TableCell>
             <TableCell>Name</TableCell>
             <TableCell>ID</TableCell>
           </TableRow>
@@ -237,7 +238,7 @@ export default function BulkImportReport({
           {successItems.map((item, index) => (
             <TableRow key={`success-${index}`} hover>
               <TableCell>{item.row || '-'}</TableCell>
-              <TableCell>{item.email || item.identifier || '-'}</TableCell>
+              <TableCell>{item[identifierField.key] || item.email || item.identifier || '-'}</TableCell>
               <TableCell>{item.name || '-'}</TableCell>
               <TableCell>
                 <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
@@ -409,5 +410,9 @@ BulkImportReport.propTypes = {
     key: PropTypes.string.isRequired,
     label: PropTypes.string.isRequired
   })),
+  identifierField: PropTypes.shape({
+    key: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired
+  }),
   sx: PropTypes.object
 };

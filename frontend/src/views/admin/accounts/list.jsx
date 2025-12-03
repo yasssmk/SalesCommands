@@ -17,6 +17,8 @@ import ReusableTable from 'components/table/Table';
 import AccountModal from 'sections/admin/accounts/AccountModal';
 import AlertAccountDelete from 'sections/admin/accounts/AlertAccountDelete';
 import AlertAccountBulkDelete from 'sections/admin/accounts/AlertAccountBulkDelete';
+import AccountBulkEditModal from 'sections/admin/accounts/AccountBulkEditModal';
+import AccountCSVImportModal from 'sections/admin/accounts/AccountCSVImportModal';
 
 // hooks
 import useLocalStorage from 'hooks/useLocalStorage';
@@ -112,6 +114,8 @@ export default function AccountsListPage() {
   const [deleteModal, setDeleteModal] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState(null);
   const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
+  const [bulkEditModal, setBulkEditModal] = useState(false);
+  const [csvImportModal, setCsvImportModal] = useState(false);
 
   // ==============================|| COMPUTE ORDERING STRING ||============================== //
 
@@ -247,6 +251,26 @@ export default function AccountsListPage() {
 
   const handleBulkDeleteComplete = useCallback(() => {
     setSelectedRows(new Set());
+  }, []);
+
+  const handleBulkEditComplete = useCallback(() => {
+    setSelectedRows(new Set());
+    setBulkEditModal(false);
+  }, []);
+
+  const handleImportCSV = useCallback((result) => {
+    console.log('[AccountsList] CSV Import result:', result);
+    
+    // Only close modal on complete success (no failures)
+    // If there are failures, keep modal open so user can see results and retry
+    if (result?.success === true && result?.summary?.failed === 0) {
+      setCsvImportModal(false);
+    }
+    // Modal stays open if there are errors - user can see report and retry
+  }, []);
+
+  const handleOpenCSVImport = useCallback(() => {
+    setCsvImportModal(true);
   }, []);
 
   // ==============================|| COLUMNS DEFINITION ||============================== //
@@ -434,8 +458,11 @@ export default function AccountsListPage() {
             if (account) {
               handleEditAccount(account);
             }
+          } else if (selectedRows.size > 1) {
+            setBulkEditModal(true);
           }
         }}
+        onImport={handleOpenCSVImport}
         onDelete={() => {
           if (selectedRows.size === 1) {
             const accountId = Array.from(selectedRows)[0];
@@ -476,6 +503,21 @@ export default function AccountsListPage() {
         open={bulkDeleteModal}
         handleClose={() => setBulkDeleteModal(false)}
         onDeleteComplete={handleBulkDeleteComplete}
+      />
+
+      {/* Bulk Edit Modal */}
+      <AccountBulkEditModal
+        open={bulkEditModal}
+        modalToggler={setBulkEditModal}
+        selectedAccountIds={Array.from(selectedRows)}
+        selectedCount={selectedRows.size}
+      />
+
+      {/* CSV Import Modal */}
+      <AccountCSVImportModal
+        open={csvImportModal}
+        onClose={() => setCsvImportModal(false)}
+        onImport={handleImportCSV}
       />
     </>
   );

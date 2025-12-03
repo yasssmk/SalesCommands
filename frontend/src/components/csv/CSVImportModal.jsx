@@ -315,6 +315,7 @@ export default function CSVImportModal({ config, open, onClose, onImport }) {
                 entityName={config.entityPlural}
                 showSuccessDetails={showSuccessDetails}
                 onRetry={enableRetry ? handleRetryWithCallback : undefined}
+                identifierField={config.identifierField}
                 sx={{ mt: 1 }}
               />
             </Grid>

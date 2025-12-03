@@ -280,167 +280,501 @@ export async function deleteAccount(accountId) {
 // ==============================|| BULK OPERATIONS ||============================== //
 
 /**
- * BULK DELETE ACCOUNTS - Delete multiple accounts
+ * ✅ BULK DELETE ACCOUNTS
  * 
- * @param {string[]} ids - Array of account UUIDs
- * @param {string} mode - 'strict' (all-or-nothing) or 'partial' (best-effort)
- * @param {Function} onSyncProgress - Optional callback for sync progress
- * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ * Delete multiple accounts in a single request
+ * Uses 'bulk' profile (60s timeout)
+ * 
+ * @param {Array<string>} accountIds - Array of account IDs to delete
+ * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+ * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
+ * @param {Function} onSyncComplete - Optional callback: () => void (called when sync is done)
+ * @returns {Promise<Object>} {success: boolean, isTimeout?: boolean, summary: Object, results: Object}
  */
-export async function bulkDeleteAccounts(ids, mode = 'partial', onSyncProgress = null) {
-  // Validate IDs
-  if (!Array.isArray(ids) || ids.length === 0) {
-    return {
-      success: false,
-      error: 'No account IDs provided',
-      status: 400
-    };
-  }
-  
-  // Validate all UUIDs
-  const invalidIds = ids.filter(id => !isValidUUID(id));
-  if (invalidIds.length > 0) {
-    return {
-      success: false,
-      error: `Invalid account ID format: ${invalidIds.join(', ')}`,
-      status: 400
-    };
-  }
-  
+export const bulkDeleteAccounts = async (accountIds, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
   let result = null;
-  
+
   try {
+    console.log('[bulkDeleteAccounts] start', { count: accountIds?.length ?? 0, mode });
+
+    if (!Array.isArray(accountIds) || accountIds.length === 0) {
+      return {
+        success: false,
+        message: 'No account IDs provided',
+        summary: { requested: 0, deleted: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    const invalidIds = accountIds.filter(id => !isValidUUID(id));
+    if (invalidIds.length > 0) {
+      console.error('[bulkDeleteAccounts] invalid UUIDs', { count: invalidIds.length });
+      return {
+        success: false,
+        message: `${invalidIds.length} invalid account ID(s) detected`,
+        summary: { requested: accountIds.length, deleted: 0, failed: accountIds.length },
+        results: {
+          success: [],
+          failed: invalidIds.map(id => ({ id, errors: ['Invalid UUID format'] }))
+        }
+      };
+    }
+
     result = await api.delete(endpoints.bulkDelete, {
-      data: { ids, mode }
+      data: { ids: accountIds, mode },
+      profile: 'bulk'
     });
-    
+
+    console.log('[bulkDeleteAccounts] API response received:', {
+      success: result.success,
+      status: result.status,
+      hasData: !!result.data,
+      is202: result?.data?.__is202
+    });
+
+    // ✅ CAS 202 : Attendre le polling
+    if (result?.data?.__is202) {
+      console.log('[bulkDeleteAccounts] 🔄 202 detected, starting polling...');
+      
+      const finalResult = await handleBulkRevalidation(
+        result,
+        [endpoints.accounts, '/activities/', '/opportunities/', '/contacts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+
+      console.log('[bulkDeleteAccounts] 📥 Polling complete:', {
+        hasFinalResult: !!finalResult,
+        hasData: finalResult?.data !== undefined
+      });
+
+      if (finalResult?.data) {
+        console.log('[bulkDeleteAccounts] ✅ Returning polling result');
+        if (finalResult.data?.status === 'pending') {
+          console.log('[bulkDeleteAccounts] ⏳ Polling reached max attempts, marking operation as pending');
+          return {
+            ...finalResult.data,
+            success: false,
+            status: finalResult.data.status || 'pending',
+            isPending: true
+          };
+        }
+
+        return finalResult.data;
+      }
+
+      if (finalResult && (finalResult.summary || finalResult.results)) {
+        console.log('[bulkDeleteAccounts] ✅ Returning finalResult directly');
+        return finalResult;
+      }
+
+      console.error('[bulkDeleteAccounts] ❌ finalResult missing data');
+      return {
+        success: false,
+        message: 'Polling completed but no result data',
+        summary: { requested: accountIds.length, deleted: 0, failed: accountIds.length },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    // ✅ CAS SYNC
     if (result.success) {
-      return { success: true, data: result.data };
+      console.log('[bulkDeleteAccounts] ✅ Sync success', { 
+        status: result.status ?? 200,
+        deleted: result.data?.summary?.deleted ?? 0
+      });
+
+      revalidateMultiple([endpoints.accounts, '/activities/', '/opportunities/', '/contacts/']);
+      return result.data;
+    }
+
+    // ❌ Gestion erreur
+    const status = result.status || 0;
+    const message = result.error || 'Bulk delete failed';
+    console.error('[bulkDeleteAccounts] api.delete error', { status, message });
+
+    if (result.data && typeof result.data === 'object') {
+      if (result.data.results || result.data.summary) {
+        console.log('[bulkDeleteAccounts] returning structured error from backend');
+        return {
+          ...result.data,
+          success: false,
+          status: result.status,
+          isTimeout: result.isTimeout || false  
+        };
+      }
+    }
+
+    return {
+      success: false,
+      isTimeout: result.isTimeout || false,
+      message: message,
+      error: { status, message, response: result.response || null },
+      summary: { requested: accountIds.length, deleted: 0, failed: accountIds.length },
+      results: {
+        success: [],
+        failed: accountIds.map(id => ({ id, errors: [message] }))
+      }
+    };
+
+  } catch (err) {
+    console.error('[bulkDeleteAccounts] thrown', err);
+    
+    const isTimeout = 
+      err?.code === 'ECONNABORTED' || 
+      err?.message?.toLowerCase()?.includes('timeout') ||
+      err?.response?.status === 408 ||
+      err?.response?.status === 504;
+    
+    if (isTimeout) {
+      console.log('[bulkDeleteAccounts] Timeout detected, sync will be triggered');
     }
     
     return {
       success: false,
-      error: result.error,
-      status: result.status || 0,
-      response: result.response || null
+      isTimeout: isTimeout,
+      message: err?.message || 'Unknown error',
+      error: { message: err?.message || String(err) },
+      summary: { requested: accountIds?.length ?? 0, deleted: 0, failed: accountIds?.length ?? 0 },
+      results: {
+        success: [],
+        failed: (accountIds || []).map(id => ({ id, errors: [err?.message || 'Unknown error'] }))
+      }
     };
-  } finally {
-    // Handle revalidation (immediate or progressive based on result)
-    await handleBulkRevalidation(
-      result,
-      [endpoints.accounts, '/activities/', '/opportunities/'],
-      onSyncProgress
-    );
   }
-}
+};
 
 /**
- * BULK UPDATE ACCOUNTS - Update multiple accounts
+ * ✅ BULK UPDATE ACCOUNTS
  * 
- * @param {string[]} ids - Array of account UUIDs
- * @param {Object} patch - Fields to update
- * @param {string} mode - 'strict' (all-or-nothing) or 'partial' (best-effort)
- * @param {Function} onSyncProgress - Optional callback for sync progress
- * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ * Update multiple accounts in a single request
+ * Uses 'bulk' profile (60s timeout)
+ * 
+ * @param {Array<string>} accountIds - Array of account IDs to update
+ * @param {Object} patchData - Data to apply to all selected accounts
+ * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+ * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
+ * @param {Function} onSyncComplete - Optional callback: () => void (called when sync is done)
+ * @returns {Promise<Object>} {success: boolean, isTimeout?: boolean, summary: Object, results: Object}
  */
-export async function bulkUpdateAccounts(ids, patch, mode = 'partial', onSyncProgress = null) {
-  // Validate IDs
-  if (!Array.isArray(ids) || ids.length === 0) {
-    return {
-      success: false,
-      error: 'No account IDs provided',
-      status: 400
-    };
-  }
-  
-  // Validate all UUIDs
-  const invalidIds = ids.filter(id => !isValidUUID(id));
-  if (invalidIds.length > 0) {
-    return {
-      success: false,
-      error: `Invalid account ID format: ${invalidIds.join(', ')}`,
-      status: 400
-    };
-  }
-  
-  // Validate patch object
-  if (!patch || typeof patch !== 'object' || Object.keys(patch).length === 0) {
-    return {
-      success: false,
-      error: 'No fields to update provided',
-      status: 400
-    };
-  }
-  
+export const bulkUpdateAccounts = async (accountIds, patchData, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
   let result = null;
-  
+
   try {
-    result = await api.patch(endpoints.bulkUpdate, {
-      ids,
-      patch,
-      mode
+    console.log('[bulkUpdateAccounts] start', { 
+      count: accountIds?.length ?? 0, 
+      mode,
+      fields: Object.keys(patchData || {})
     });
-    
+
+    if (!Array.isArray(accountIds) || accountIds.length === 0) {
+      return {
+        success: false,
+        message: 'No account IDs provided',
+        summary: { requested: 0, updated: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    const invalidIds = accountIds.filter(id => !isValidUUID(id));
+    if (invalidIds.length > 0) {
+      console.error('[bulkUpdateAccounts] invalid UUIDs', { count: invalidIds.length });
+      return {
+        success: false,
+        message: `${invalidIds.length} invalid account ID(s) detected`,
+        summary: { requested: accountIds.length, updated: 0, failed: accountIds.length },
+        results: {
+          success: [],
+          failed: invalidIds.map(id => ({ id, errors: ['Invalid UUID format'] }))
+        }
+      };
+    }
+
+    if (!patchData || typeof patchData !== 'object' || Object.keys(patchData).length === 0) {
+      return {
+        success: false,
+        message: 'No fields to update provided',
+        summary: { requested: accountIds.length, updated: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    result = await api.patch(endpoints.bulkUpdate, {
+      ids: accountIds,
+      patch: patchData,
+      mode
+    }, {
+      profile: 'bulk'
+    });
+
+    console.log('[bulkUpdateAccounts] API response received:', {
+      success: result.success,
+      status: result.status,
+      hasData: !!result.data,
+      is202: result?.data?.__is202
+    });
+
+    // ✅ CAS 202 : Attendre le polling
+    if (result?.data?.__is202) {
+      console.log('[bulkUpdateAccounts] 🔄 202 detected, starting polling...');
+      
+      const finalResult = await handleBulkRevalidation(
+        result,
+        [endpoints.accounts, '/activities/', '/opportunities/', '/contacts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+
+      console.log('[bulkUpdateAccounts] 📥 Polling complete:', {
+        hasFinalResult: !!finalResult,
+        hasData: finalResult?.data !== undefined
+      });
+
+      if (finalResult?.data) {
+        console.log('[bulkUpdateAccounts] ✅ Returning polling result');
+        if (finalResult.data?.status === 'pending') {
+          console.log('[bulkUpdateAccounts] ⏳ Polling reached max attempts, marking operation as pending');
+          return {
+            ...finalResult.data,
+            success: false,
+            status: finalResult.data.status || 'pending',
+            isPending: true
+          };
+        }
+        return finalResult.data;
+      }
+
+      if (finalResult && (finalResult.summary || finalResult.results)) {
+        console.log('[bulkUpdateAccounts] ✅ Returning finalResult directly');
+        return finalResult;
+      }
+
+      console.error('[bulkUpdateAccounts] ❌ finalResult missing data');
+      return {
+        success: false,
+        message: 'Polling completed but no result data',
+        summary: { requested: accountIds.length, updated: 0, failed: accountIds.length },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    // ✅ CAS SYNC
     if (result.success) {
-      return { success: true, data: result.data };
+      console.log('[bulkUpdateAccounts] ✅ Sync success', { 
+        status: result.status ?? 200,
+        updated: result.data?.summary?.updated ?? 0
+      });
+
+      revalidateMultiple([endpoints.accounts, '/activities/', '/opportunities/', '/contacts/']);
+      return result.data;
+    }
+
+    // ❌ Gestion erreur
+    const status = result.status || 0;
+    const message = result.error || 'Bulk update failed';
+    console.error('[bulkUpdateAccounts] api.patch error', { status, message });
+
+    if (result.data && typeof result.data === 'object') {
+      if (result.data.results || result.data.summary) {
+        console.log('[bulkUpdateAccounts] returning structured error from backend');
+        return {
+          ...result.data,
+          success: false,
+          status: result.status,
+          isTimeout: result.isTimeout || false
+        };
+      }
+    }
+
+    return {
+      success: false,
+      isTimeout: result.isTimeout || false,
+      message: message,
+      error: { status, message, response: result.response || null },
+      summary: { requested: accountIds.length, updated: 0, failed: accountIds.length },
+      results: {
+        success: [],
+        failed: accountIds.map(id => ({ id, errors: [message] }))
+      }
+    };
+
+  } catch (err) {
+    console.error('[bulkUpdateAccounts] thrown', err);
+    
+    const isTimeout = 
+      err?.code === 'ECONNABORTED' || 
+      err?.message?.toLowerCase()?.includes('timeout') ||
+      err?.response?.status === 408 ||
+      err?.response?.status === 504;
+    
+    if (isTimeout) {
+      console.log('[bulkUpdateAccounts] Timeout detected, sync will be triggered');
     }
     
     return {
       success: false,
-      error: result.error,
-      status: result.status || 0,
-      response: result.response || null
+      isTimeout: isTimeout,
+      message: err?.message || 'Unknown error',
+      error: { message: err?.message || String(err) },
+      summary: { requested: accountIds?.length ?? 0, updated: 0, failed: accountIds?.length ?? 0 },
+      results: {
+        success: [],
+        failed: (accountIds || []).map(id => ({ id, errors: [err?.message || 'Unknown error'] }))
+      }
     };
-  } finally {
-    // Handle revalidation (immediate or progressive based on result)
-    await handleBulkRevalidation(
-      result,
-      [endpoints.accounts, '/activities/', '/opportunities/'],
-      onSyncProgress
-    );
   }
-}
+};
 
 /**
- * BULK CREATE ACCOUNTS - Create multiple accounts
+ * ✅ BULK CREATE ACCOUNTS (CSV Import)
  * 
- * @param {Object[]} accounts - Array of account data objects
- * @param {string} mode - 'strict' (all-or-nothing) or 'partial' (best-effort)
- * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ * Create multiple accounts in a single request
+ * Uses 'bulk' profile (60s timeout)
+ * 
+ * @param {Array} accounts - Array of account objects
+ * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+ * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
+ * @param {Function} onSyncComplete - Optional callback: () => void (called when sync is done)
+ * @returns {Promise<Object>} {success: boolean, summary: Object, results: Object}
  */
-export async function bulkCreateAccounts(accounts, mode = 'partial') {
-  // Validate input
-  if (!Array.isArray(accounts) || accounts.length === 0) {
+export const bulkCreateAccounts = async (accounts, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
+  let result = null;
+
+  try {
+    console.log('[bulkCreateAccounts] start', { count: accounts?.length ?? 0, mode });
+
+    if (!Array.isArray(accounts) || accounts.length === 0) {
+      return {
+        success: false,
+        message: 'No accounts provided',
+        summary: { total: 0, success: 0, failed: 0, skipped: 0 },
+        results: { success: [], failed: [], skipped: [] }
+      };
+    }
+
+    // Sanitize each account
+    const sanitizedAccounts = accounts.map(account => 
+      sanitizeObject(account, ['company_name', 'description', 'website', 'industry'])
+    );
+
+    result = await api.post(endpoints.bulkCreate, 
+      { accounts: sanitizedAccounts, mode }, 
+      { profile: 'bulk' }
+    );
+
+    console.log('[bulkCreateAccounts] API response received:', {
+      success: result.success,
+      status: result.status,
+      hasData: !!result.data,
+      is202: result?.data?.__is202
+    });
+
+    // ✅ CAS 202 : Attendre le polling AVANT de retourner
+    if (result?.data?.__is202) {
+      console.log('[bulkCreateAccounts] 🔄 202 detected, starting polling...');
+      
+      const finalResult = await handleBulkRevalidation(
+        result,
+        [endpoints.accounts, '/activities/', '/opportunities/', '/contacts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+
+      console.log('[bulkCreateAccounts] 📥 Polling complete:', {
+        hasFinalResult: !!finalResult,
+        hasData: finalResult?.data !== undefined
+      });
+
+      if (finalResult?.data) {
+        console.log('[bulkCreateAccounts] ✅ Returning polling result');
+        if (finalResult.data?.status === 'pending') {
+          console.log('[bulkCreateAccounts] ⏳ Polling reached max attempts, marking operation as pending');
+          return {
+            ...finalResult.data,
+            success: false,
+            status: finalResult.data.status || 'pending',
+            isPending: true
+          };
+        }
+
+        return finalResult.data;
+      }
+
+      if (finalResult && (finalResult.summary || finalResult.results)) {
+        console.log('[bulkCreateAccounts] ✅ Returning finalResult directly (no nesting)');
+        return finalResult;
+      }
+
+      console.error('[bulkCreateAccounts] ❌ finalResult missing data structure');
+      return {
+        success: false,
+        message: 'Polling completed but no result data',
+        summary: { total: accounts?.length ?? 0, success: 0, failed: accounts?.length ?? 0, skipped: 0 },
+        results: { success: [], failed: [], skipped: [] }
+      };
+    }
+
+    // ✅ CAS SYNC : Retourner immédiatement
+    if (result.success) {
+      console.log('[bulkCreateAccounts] ✅ Sync success', { 
+        status: result.status ?? 200,
+        created: result.data?.summary?.success ?? result.data?.summary?.created ?? 0
+      });
+
+      revalidateMultiple([endpoints.accounts, '/activities/', '/opportunities/', '/contacts/']);
+      
+      return result.data;
+    }
+
+    // ❌ Gestion d'erreur
+    const status = result.status || 0;
+    const message = result.error || 'Bulk create failed';
+    console.error('[bulkCreateAccounts] api.post error', { status, message });
+
+    if (result.data && typeof result.data === 'object') {
+      if (result.data.results || result.data.summary) {
+        console.log('[bulkCreateAccounts] returning structured error from backend');
+        return {
+          ...result.data,
+          success: false,
+          isTimeout: result.isTimeout || false
+        };
+      }
+    }
+
     return {
       success: false,
-      error: 'No accounts provided',
-      status: 400
+      isTimeout: result.isTimeout || false, 
+      message: message,
+      error: { status, message, response: result.response || null },
+      summary: { total: accounts?.length ?? 0, success: 0, failed: accounts?.length ?? 0, skipped: 0 },
+      results: {
+        success: [],
+        failed: (accounts || []).map((a, i) => ({
+          row: i + 1,
+          company_name: a?.company_name || '(unknown)',
+          errors: [message]
+        })),
+        skipped: []
+      }
+    };
+
+  } catch (err) {
+    console.error('[bulkCreateAccounts] thrown', err);
+    return {
+      success: false,
+      message: err?.message || 'Unknown error',
+      error: { message: err?.message || String(err) },
+      summary: { total: accounts?.length ?? 0, success: 0, failed: accounts?.length ?? 0, skipped: 0 },
+      results: {
+        success: [],
+        failed: (accounts || []).map((a, i) => ({
+          row: i + 1,
+          company_name: a?.company_name || '(unknown)',
+          errors: [err?.message || 'Unknown error']
+        })),
+        skipped: []
+      }
     };
   }
-  
-  // Sanitize each account
-  const sanitizedAccounts = accounts.map(account => 
-    sanitizeObject(account, ['company_name', 'description', 'website', 'industry'])
-  );
-  
-  const result = await api.post(endpoints.bulkCreate, {
-    accounts: sanitizedAccounts,
-    mode
-  });
-  
-  if (result.success) {
-    revalidateMultiple([
-      endpoints.accounts,
-      '/activities/',
-      '/opportunities/'
-    ]);
-    return { success: true, data: result.data };
-  }
-  
-  return {
-    success: false,
-    error: result.error,
-    status: result.status || 0,
-    response: result.response || null
-  };
-}
+};

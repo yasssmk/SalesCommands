@@ -1785,9 +1785,9 @@ class UserBulkViewSet(UserViewSet):
                 target_count=len(users_data),
                 outcome='success',
                 extra={
-                    'created': success_count,
-                    'failed': failed_count,
-                    'skipped': skipped_count
+                    'success_count': success_count,
+                    'failed_count': failed_count,
+                    'skipped_count': skipped_count
                 }
             )
 

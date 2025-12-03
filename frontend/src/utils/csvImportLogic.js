@@ -254,7 +254,7 @@ const handleImport = useCallback(async () => {
           // Mark entire batch as failed
           const failedBatch = batch.map((item, idx) => ({
             row: i + idx + 1,
-            email: item?.email || '(unknown)',
+            // email: item?.email || '(unknown)',
             errors: [msg || 'Request failed']
           }));
 
@@ -271,7 +271,7 @@ const handleImport = useCallback(async () => {
           console.warn('[useCSVImport] Unexpected response format:', batchResponse);
           const skippedBatch = batch.map((item, idx) => ({
             row: i + idx + 1,
-            email: item?.email || '(unknown)',
+            // email: item?.email || '(unknown)',
             reason: 'No detailed results returned by server'
           }));
           cumulativeResults.skipped.push(...skippedBatch);
@@ -300,7 +300,7 @@ const handleImport = useCallback(async () => {
 
         const failedBatch = batch.map((item, idx) => ({
           row: i + idx + 1,
-          email: item?.email || '(unknown)',
+          // email: item?.email || '(unknown)',
           errors: [msg || 'Batch import failed']
         }));
         cumulativeResults.failed.push(...failedBatch);
@@ -403,8 +403,8 @@ const handleImport = useCallback(async () => {
       results: {
         success: [],
         failed: apiData.map((item, idx) => ({
+          ...item,
           row: idx + 1,
-          email: item?.email || '(unknown)',
           errors: [msg || 'Import failed']
         })),
         skipped: []
@@ -512,8 +512,8 @@ const handleImport = useCallback(async () => {
           batch.forEach((item, idx) => {
             const match = rowsToRetry[i + idx];
             newRetryFailed.push({
+              ...item,
               row: match?._rowIndex ?? i + idx + 1,
-              email: item.email,
               errors: ['Batch import failed: ' + (batchError.message || 'Unknown error')]
             });
           });

@@ -24,38 +24,26 @@ import DeleteFilled from '@ant-design/icons/DeleteFilled';
 
 // ==============================|| ACCOUNT - BULK DELETE ||============================== //
 
-/**
- * AlertAccountBulkDelete Component
- * 
- * Confirmation dialog for bulk account deletion with sync support.
- * 
- * @param {Array} selectedIds - Array of account UUIDs to delete
- * @param {boolean} open - Dialog open state
- * @param {Function} handleClose - Function to close dialog
- * @param {Function} onDeleteComplete - Callback after successful deletion
- */
 export default function AlertAccountBulkDelete({ selectedIds, open, handleClose, onDeleteComplete }) {
   const [deleting, setDeleting] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [hadTimeout, setHadTimeout] = useState(false);
-
+  
   const accountCount = selectedIds?.length || 0;
 
-  // Sync completion handler
   const handleSyncComplete = useCallback(() => {
     if (hadTimeout) {
       displaySuccessSnackbar(
         `${accountCount} account${accountCount > 1 ? 's' : ''} deleted successfully`
       );
     }
-
+    
     setProcessing(false);
     handleClose?.();
     onDeleteComplete?.();
     setHadTimeout(false);
   }, [hadTimeout, accountCount, handleClose, onDeleteComplete]);
 
-  // Bulk operation sync hook
   const { syncing, syncAttempt, onSyncProgress, onSyncComplete } = useBulkOperationSync({
     onComplete: handleSyncComplete,
     closeDelay: 300
@@ -63,45 +51,44 @@ export default function AlertAccountBulkDelete({ selectedIds, open, handleClose,
 
   const isProcessing = deleting || processing || syncing;
 
-  // Delete handler
   const deleteHandler = async () => {
     let apiError = null;
-
+    
     try {
       setDeleting(true);
-
-      const result = await bulkDeleteAccounts(
+      
+      const res = await bulkDeleteAccounts(
         selectedIds,
         'partial',
         onSyncProgress,
         onSyncComplete
       );
 
-      // Handle 202 Accepted (async processing)
-      if (result?.data?.__is202) {
+      if (res?.data?.__is202) {
         console.log('[AlertAccountBulkDelete] 202 Accepted → entering processing state');
         setProcessing(true);
         return;
       }
-
-      // Store error if not success
-      if (result && !result.success && !result.isTimeout) {
-        apiError = result;
+      
+      // Store the error if res is not success
+      if (res && !res.success && !res.isTimeout) {
+        apiError = res;
       }
-
-      if (result?.success === true) {
-        // Immediate success (no timeout)
+      
+      if (res?.success === true) {
+        // Succès immédiat (pas de timeout)
         displaySuccessSnackbar(
           `${accountCount} account${accountCount > 1 ? 's' : ''} deleted successfully`
         );
-
+        
+        // Fermer immédiatement si pas de sync
         if (!isProcessing) {
           handleClose?.();
           onDeleteComplete?.();
         }
-      } else if (result?.isPending) {
+      } else if (res?.isPending) {
         const pendingMessage =
-          result.message ||
+          res.message ||
           'Operation still in progress. It will complete in the background.';
 
         displayWarningSnackbar(pendingMessage);
@@ -110,13 +97,14 @@ export default function AlertAccountBulkDelete({ selectedIds, open, handleClose,
           handleClose?.();
           onDeleteComplete?.();
         }
-      } else if (result?.isTimeout) {
+        
+      } else if (res?.isTimeout) {
         console.log('[AlertAccountBulkDelete] Timeout detected, sync will start');
         setHadTimeout(true);
         setProcessing(true);
       } else {
-        // All errors handled by handleBulkError
-        handleBulkError(result, apiError, {
+        // All errors (partial 1-99% or total 0%) handled by handleBulkError
+        handleBulkError(res, apiError, {
           onComplete: () => {
             handleClose?.();
             onDeleteComplete?.();
@@ -125,9 +113,14 @@ export default function AlertAccountBulkDelete({ selectedIds, open, handleClose,
       }
     } catch (err) {
       console.error('[AlertAccountBulkDelete] Exception:', err);
+      
+      // For unexpected exceptions
       displayErrorSnackbar(err);
+      
+      // Close modal
       handleClose?.();
       onDeleteComplete?.();
+
     } finally {
       setDeleting(false);
     }
@@ -145,37 +138,37 @@ export default function AlertAccountBulkDelete({ selectedIds, open, handleClose,
     >
       <DialogContent sx={{ mt: 2, my: 1 }}>
         {isProcessing ? (
-          <BulkOperationSyncDialog
+          <BulkOperationSyncDialog 
             attempt={syncAttempt}
             operation="delete"
           />
         ) : (
           <Stack alignItems="center" spacing={3.5}>
-            <Avatar
-              color="error"
+            <Avatar 
+              color="error" 
               sx={{ width: 72, height: 72, fontSize: '1.75rem' }}
             >
               <DeleteFilled />
             </Avatar>
-
+            
             <Stack spacing={2} sx={{ width: 1 }}>
               <Typography variant="h4" align="center">
                 Are you sure you want to delete?
               </Typography>
-
+              
               <Typography align="center">
                 By deleting
                 <Typography variant="subtitle1" component="span">
                   {' '}
                   {accountCount} account{accountCount > 1 ? 's' : ''}{' '}
                 </Typography>
-                all associated data including contacts, opportunities, and activities will also be affected.
+                all associated data including contacts, opportunities, and activities will also be deleted.
               </Typography>
-
+              
               {accountCount > 10 && (
-                <Typography
-                  variant="body2"
-                  color="warning.main"
+                <Typography 
+                  variant="body2" 
+                  color="warning.main" 
                   align="center"
                   sx={{ mt: 2, fontStyle: 'italic' }}
                 >
@@ -185,24 +178,24 @@ export default function AlertAccountBulkDelete({ selectedIds, open, handleClose,
             </Stack>
 
             <Stack direction="row" spacing={2} sx={{ width: 1 }}>
-              <Button
-                fullWidth
-                onClick={handleClose}
-                color="secondary"
-                variant="outlined"
+              <Button 
+                fullWidth 
+                onClick={handleClose} 
+                color="secondary" 
+                variant="outlined" 
                 disabled={isProcessing}
               >
                 Cancel
               </Button>
-              <Button
-                fullWidth
-                color="error"
-                variant="contained"
-                onClick={deleteHandler}
-                autoFocus
+              <Button 
+                fullWidth 
+                color="error" 
+                variant="contained" 
+                onClick={deleteHandler} 
+                autoFocus 
                 disabled={isProcessing}
               >
-                {isProcessing ? 'Processing...' : 'Delete'}
+                {isProcessing ? 'Processing...' : 'Delete'} 
               </Button>
             </Stack>
           </Stack>

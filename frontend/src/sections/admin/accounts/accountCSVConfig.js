@@ -1,59 +1,41 @@
-// frontend/src/sections/admin/users/userCSVConfig.js
+// frontend/src/sections/admin/accounts/accountCSVConfig.js
 
 /**
- * CSV Import Configuration for Users
+ * CSV Import Configuration for Accounts
  * 
- * Centralizes all user-specific CSV import settings:
+ * Centralizes all account-specific CSV import settings:
  * - Column definitions
  * - Validation rules
  * - Guidelines for users
  * - API endpoints
  * - Data preparation logic
- * 
- * This configuration is consumed by the generic CSV import system
- * and can be duplicated for other entities (Account, Contact, Lead, etc.)
  */
 
 // Validation & Preparation
 import {
-  getUserCSVColumns,
-  getUserCSVGuidelines,
-  validateUserCSVData,
-  prepareUserDataForAPI,
+  getAccountCSVColumns,
+  getAccountCSVGuidelines,
+  validateAccountCSVData,
+  prepareAccountDataForAPI,
   generateSampleCSV
-} from './userCSVValidation';
+} from './AccountCSVValidation';
 
 // Resolvers (entity-specific)
 import { buildLookups } from './resolvers';
 
 // API
-import { createBulkUsers } from 'api/admin/users';
+import { bulkCreateAccounts } from 'api/admin/accounts';
 
-// ==============================|| USER CSV IMPORT CONFIGURATION ||============================== //
+// ==============================|| ACCOUNT CSV IMPORT CONFIGURATION ||============================== //
 
-/**
- * Complete configuration object for User CSV import
- * 
- * @property {string} entity - Entity name (singular, lowercase)
- * @property {string} entityPlural - Entity name (plural, lowercase)
- * @property {string} entityDisplay - Entity name for display (capitalized)
- * @property {Function} getColumns - Returns column definitions
- * @property {Function} getGuidelines - Returns import guidelines
- * @property {Function} validateData - Validates parsed CSV data
- * @property {Function} prepareForAPI - Prepares validated data for API
- * @property {Function} generateSample - Generates sample CSV content
- * @property {Function} buildLookups - Builds lookup tables for name resolution
- * @property {Function} bulkCreate - API function for bulk creation
- * @property {Object} options - Additional options
- */
-export const userCSVConfig = {
+export const accountCSVConfig = {
   // ==============================|| ENTITY INFO ||============================== //
   
-  entity: 'user',
-  entityPlural: 'users',
-  entityDisplay: 'User',
-  entityDisplayPlural: 'Users',
-  identifierField: { key: 'email', label: 'Email' },
+  entity: 'account',
+  entityPlural: 'accounts',
+  entityDisplay: 'Account',
+  entityDisplayPlural: 'Accounts',
+  identifierField: { key: 'company_name', label: 'Company Name' },
   
   // ==============================|| COLUMN & GUIDELINES ||============================== //
   
@@ -61,13 +43,13 @@ export const userCSVConfig = {
    * Get CSV column definitions
    * @returns {Array<{key: string, label: string, required: boolean}>}
    */
-  getColumns: getUserCSVColumns,
+  getColumns: getAccountCSVColumns,
   
   /**
-   * Get import guidelines for users
+   * Get import guidelines for accounts
    * @returns {Array<string>}
    */
-  getGuidelines: getUserCSVGuidelines,
+  getGuidelines: getAccountCSVGuidelines,
   
   // ==============================|| VALIDATION & PREPARATION ||============================== //
   
@@ -77,14 +59,14 @@ export const userCSVConfig = {
    * @param {Object} lookups - Lookup tables for name resolution
    * @returns {Object} { validRows, invalidRows, stats, allErrors }
    */
-  validateData: validateUserCSVData,
+  validateData: validateAccountCSVData,
   
   /**
    * Prepare validated rows for API submission
    * @param {Array} validatedRows - Rows that passed validation
    * @returns {Array} API-ready payload
    */
-  prepareForAPI: prepareUserDataForAPI,
+  prepareForAPI: prepareAccountDataForAPI,
   
   /**
    * Generate sample CSV content
@@ -97,8 +79,8 @@ export const userCSVConfig = {
   
   /**
    * Build lookup tables for name resolution
-   * Fetches roles, organizations, teams from API
-   * @returns {Promise<Object>} { roles, organizations, teams }
+   * Fetches types, classifications, users from API
+   * @returns {Promise<Object>} { types, classifications, users }
    */
   buildLookups: buildLookups,
   
@@ -106,32 +88,29 @@ export const userCSVConfig = {
   
   /**
    * Bulk create API function
-   * @param {Array} data - Array of user objects
-   * @param {string} mode - 'partial' or 'all_or_nothing'
+   * @param {Array} data - Array of account objects
+   * @param {string} mode - 'partial' or 'strict'
    * @returns {Promise<Object>} { success, results: { success, failed, skipped } }
    */
-  bulkCreate: createBulkUsers,
+  bulkCreate: bulkCreateAccounts,
   
   // ==============================|| OPTIONS ||============================== //
   
   options: {
     /**
      * Batch size for bulk operations
-     * Larger batches = faster but more memory
-     * Smaller batches = slower but safer
      */
     batchSize: 50,
     
     /**
      * Delay between batches (ms)
-     * Prevents overwhelming the API
      */
     batchDelay: 50,
     
     /**
      * Sample CSV filename
      */
-    sampleFilename: 'users_import_sample.csv',
+    sampleFilename: 'accounts_import_sample.csv',
     
     /**
      * Enable retry functionality for failed imports
@@ -157,4 +136,4 @@ export const userCSVConfig = {
 
 // ==============================|| DEFAULT EXPORT ||============================== //
 
-export default userCSVConfig;
+export default accountCSVConfig;
