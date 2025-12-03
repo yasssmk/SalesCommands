@@ -379,9 +379,30 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
         """
         Create a new company account.
         POST /client/accounts/
+        
+        For 'mine' scope: Auto-assigns account_owner to current user
+        to ensure creator can see the account after creation.
         """
+        from permissions import check_permission
+        
         with transaction.atomic():
-            serializer = self.get_serializer(data=request.data)
+            # Get mutable copy of request data
+            data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+            
+            # Check user's permission scope for create
+            scope = check_permission(request, self.module, 'create')
+            
+            # For 'mine' scope: force ownership to current user if not specified
+            if scope == 'mine':
+                if not data.get('account_owner_id'):
+                    data['account_owner_id'] = str(request.user.id)
+                    logger.debug("auto_assign_owner_mine_scope", extra={
+                        'user_id': str(request.user.id),
+                        'scope': scope,
+                        'event': 'account_create'
+                    })
+            
+            serializer = self.get_serializer(data=data)
             serializer.is_valid(raise_exception=True)
             account = serializer.save()
             
@@ -396,6 +417,7 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
                 target_type='company_account',
                 target_id=str(account.id),
                 outcome='success',
+                extra={'scope': scope, 'auto_owner': scope == 'mine'}
             )
             
             return Response(
@@ -406,6 +428,8 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
                 },
                 status=status.HTTP_201_CREATED,
             )
+
+
     
     def partial_update(self, request, *args, **kwargs):
         """

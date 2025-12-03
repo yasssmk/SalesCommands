@@ -109,17 +109,15 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     
     'accounts': {
         'client_account_fk': 'client_id',           # Account.client_id
-        'owner_user': 'owner_id',                   # Account.owner
-        'owner_team': 'team_id',                    # Account.team
-        'created_by': 'created_by_id',              # BaseModelApp.created_by
+        'owner_user': 'account_owner_id',                   # Account.owner   
+        'created_by': '-',              # BaseModelApp.created_by
         'assigned_to_user': '-',                    # Use owner
-        'account_fk': '-',                           # Self reference
+        'account_fk': '-',                          # Self reference
     },
     
     'contacts': {
         'client_account_fk': 'account.client_id',   # Via account
         'owner_user': 'account.owner_id',           # Inherits from account
-        'owner_team': 'account.team_id',            # Inherits from account
         'created_by': 'created_by_id',              # BaseModelApp.created_by
         'assigned_to_user': '-',                    # Use account owner
         'account_fk': 'account_id',                 # Related account

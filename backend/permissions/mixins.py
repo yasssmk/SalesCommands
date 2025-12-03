@@ -25,6 +25,7 @@ from .policies import (
     ScopeProfiles
 )
 from .constants import normalize_action
+from .ownership import resolve_field
 import logging
 
 # Import robuste de get_correlation_id
@@ -239,27 +240,30 @@ class ScopedQuerysetMixin:
         """
         Filter queryset based on user's permission scope.
         
-        CRITICAL: Apply client filter FIRST, then scope filter.
+        CRITICAL: Uses OWNERSHIP_MAP for field resolution.
+        Supports both old pattern (client_account_id) and new pattern (client_id).
         
         Returns:
             Filtered queryset
         """
+        # Get module name
+        module = getattr(self, 'module', None)
+        
         logger.debug("scoped_queryset_start", extra={
             'correlation_id': get_correlation_id(),
             'view': self.__class__.__name__,
             'action': getattr(self, 'action', 'unknown'),
-            'biz_module': getattr(self, 'module', 'unknown'),
+            'biz_module': module or 'unknown',
             'user_id': str(self.request.user.id) if hasattr(self.request, 'user') and hasattr(self.request.user, 'id') else '-',
             'event': 'queryset_filter'
         })
         
         # CRITICAL: Call super() to get the base queryset
-        # This ensures BaseAPIView applies client filtering first
+        # This ensures BaseAPIView applies initial filtering first
         queryset = super().get_queryset()
         
         logger.debug("queryset_after_super", extra={
             'correlation_id': get_correlation_id(),
-            'count': queryset.count(),
             'event': 'queryset_filter'
         })
         
@@ -271,8 +275,7 @@ class ScopedQuerysetMixin:
             })
             return queryset
         
-        # Get module
-        module = getattr(self, 'module', None)
+        # Check module
         if not module:
             logger.warning("no_module_in_queryset", extra={
                 'correlation_id': get_correlation_id(),
@@ -302,22 +305,25 @@ class ScopedQuerysetMixin:
             'event': 'queryset_filter'
         })
         
-        # CRITICAL: Ensure client filtering is applied
-        # This should already be done by BaseAPIView, but double-check
+        # =========================================================================
+        # CLIENT FILTERING (TENANT ISOLATION) - Uses OWNERSHIP_MAP
+        # =========================================================================
         if ctx.client_id:
-            # Detect which client field the model uses (order matters: new pattern first)
-            client_field_map = [
-                ('client_id', 'client_id'),           # New UUID pattern (ModuleBaseModel)
-                ('client_account_id', 'client_account_id'),  # Old FK pattern (client_account)
-                ('client_account', 'client_account_id'),     # Old FK pattern (descriptor)
-                ('client', 'client_id'),              # Generic pattern
-            ]
+            client_field = resolve_field(module, 'client_account_fk')
             
-            applied = False
-            model_fields = {f.name for f in queryset.model._meta.get_fields()}
-            
-            for attr_check, filter_field in client_field_map:
-                if attr_check in model_fields:
+            if client_field:
+                # Handle nested fields (e.g., 'organization.client_account_id')
+                if '.' in client_field:
+                    # Nested field - use Django's __ lookup
+                    filter_field = client_field.replace('.', '__')
+                else:
+                    filter_field = client_field
+                
+                # Check if field exists on model
+                model_fields = {f.name for f in queryset.model._meta.get_fields()}
+                base_field = client_field.split('.')[0]
+                
+                if base_field in model_fields:
                     queryset = queryset.filter(**{filter_field: ctx.client_id})
                     logger.debug("client_filter_applied", extra={
                         'correlation_id': get_correlation_id(),
@@ -325,18 +331,24 @@ class ScopedQuerysetMixin:
                         'field_used': filter_field,
                         'event': 'queryset_filter'
                     })
-                    applied = True
-                    break
-            
-            if not applied:
-                logger.warning("no_client_field_found", extra={
+                else:
+                    logger.warning("client_field_not_found", extra={
+                        'correlation_id': get_correlation_id(),
+                        'biz_module': module,
+                        'expected_field': client_field,
+                        'available_fields': list(model_fields)[:10],
+                        'event': 'queryset_filter'
+                    })
+            else:
+                logger.warning("no_client_field_in_ownership_map", extra={
                     'correlation_id': get_correlation_id(),
-                    'model': queryset.model.__name__,
-                    'available_fields': list(model_fields)[:10],
+                    'biz_module': module,
                     'event': 'queryset_filter'
                 })
         
-        # Get user and check authentication
+        # =========================================================================
+        # USER AUTHENTICATION CHECK
+        # =========================================================================
         user = self.request.user if hasattr(self, 'request') else None
         if not user or not user.is_authenticated:
             logger.warning("unauthenticated_queryset", extra={
@@ -345,60 +357,36 @@ class ScopedQuerysetMixin:
             })
             return queryset.none()
         
-        # Get the action
-        action = self._get_action()
+        # =========================================================================
+        # PERMISSION SCOPE RESOLUTION
+        # =========================================================================
+        action = getattr(self, 'action', 'list')
         
-        # Normalize PATCH to UPDATE
-        if action == 'patch':
-            action = 'update'
-            logger.debug("normalized_patch_to_update", extra={
-                'correlation_id': get_correlation_id(),
-                'event': 'queryset_filter'
-            })
-        
-        # Check action_policies FIRST for custom actions
+        # Check for action-specific policy first
         action_policies = getattr(self, 'action_policies', {})
         if action in action_policies:
-            logger.debug("action_policy_found", extra={
-                'correlation_id': get_correlation_id(),
-                'action': action,
-                'biz_module': module,
-                'event': 'queryset_filter'
-            })
             policy = action_policies[action]
-            
-            # Check if policy has a scope defined
-            if 'scope' in policy:
-                scope = policy['scope']
-                logger.debug("action_policy_scope", extra={
-                    'correlation_id': get_correlation_id(),
-                    'action': action,
-                    'scope': scope,
-                    'event': 'queryset_filter'
-                })
-            else:
-                # If no scope in policy, use CRUD mapping
-                crud_action = policy.get('crud', 'read')
-                scope = check_permission(self.request, module, crud_action)
-                logger.debug("action_policy_crud_mapping", extra={
-                    'correlation_id': get_correlation_id(),
-                    'action': action,
-                    'crud_action': crud_action,
-                    'scope': scope,
-                    'event': 'queryset_filter'
-                })
-        else:
-            # Standard registry lookup for CRUD actions
-            scope = check_permission(self.request, module, action)
-            logger.debug("permission_scope_resolved", extra={
+            scope = policy.get('scope', 'none')
+            logger.debug("using_action_policy_scope", extra={
                 'correlation_id': get_correlation_id(),
-                'biz_module': module,
                 'action': action,
                 'scope': scope,
                 'event': 'queryset_filter'
             })
+        else:
+            # Use standard permission check
+            scope = check_permission(self.request, module, action)
         
-        if not scope or scope == 'none':
+        logger.debug("permission_scope_resolved", extra={
+            'correlation_id': get_correlation_id(),
+            'biz_module': module,
+            'action': action,
+            'scope': scope,
+            'event': 'queryset_filter'
+        })
+        
+        # Handle 'none' scope - no access
+        if scope is None or scope == 'none':
             logger.info("no_permission_empty_queryset", extra={
                 'correlation_id': get_correlation_id(),
                 'biz_module': module,
@@ -414,7 +402,10 @@ class ScopedQuerysetMixin:
             'event': 'queryset_filter'
         })
         
-        # Apply scope filtering
+        # =========================================================================
+        # SCOPE FILTERING - Uses OWNERSHIP_MAP
+        # =========================================================================
+        
         if scope == 'client':
             # Client scope - already filtered by client above
             logger.debug("scope_client", extra={
@@ -424,7 +415,7 @@ class ScopedQuerysetMixin:
             })
             
         elif scope == 'team':
-            # Team scope - filter by team ownership
+            # Team scope - filter by team ownership + user ownership
             logger.debug("scope_team", extra={
                 'correlation_id': get_correlation_id(),
                 'scope': 'team',
@@ -432,39 +423,49 @@ class ScopedQuerysetMixin:
                 'event': 'queryset_filter'
             })
             
-            # Build Q filter for team scope
             q_filter = Q()
+            model_fields = {f.name for f in queryset.model._meta.get_fields()}
             
-            # Check ownership map for team fields
-            if hasattr(queryset.model, 'owner_team_id') and ctx.teams:
-                q_filter |= Q(owner_team_id__in=ctx.teams)
+            # Check owner_team from OWNERSHIP_MAP
+            team_field = resolve_field(module, 'owner_team')
+            if team_field and team_field in model_fields and ctx.teams:
+                q_filter |= Q(**{f'{team_field}__in': ctx.teams})
                 logger.debug("added_owner_team_filter", extra={
                     'correlation_id': get_correlation_id(),
+                    'field': team_field,
                     'teams': ctx.teams,
                     'event': 'queryset_filter'
                 })
             
-            # Also include user's own items
-            if hasattr(queryset.model, 'owner_user_id'):
-                q_filter |= Q(owner_user_id=ctx.user_id)
-                logger.debug("added_owner_user_filter", extra={
+            # Also include user's own items (owner_user)
+            owner_field = resolve_field(module, 'owner_user')
+            if owner_field and owner_field in model_fields:
+                q_filter |= Q(**{owner_field: ctx.user_id})
+                logger.debug("added_owner_user_filter_team", extra={
                     'correlation_id': get_correlation_id(),
+                    'field': owner_field,
                     'user_id': ctx.user_id,
                     'event': 'queryset_filter'
                 })
             
-            if hasattr(queryset.model, 'created_by_id'):
-                q_filter |= Q(created_by_id=ctx.user_id)
-                logger.debug("added_created_by_filter", extra={
+            # Also include created_by
+            created_field = resolve_field(module, 'created_by')
+            if created_field and created_field in model_fields:
+                q_filter |= Q(**{created_field: ctx.user_id})
+                logger.debug("added_created_by_filter_team", extra={
                     'correlation_id': get_correlation_id(),
+                    'field': created_field,
                     'user_id': ctx.user_id,
                     'event': 'queryset_filter'
                 })
             
-            if hasattr(queryset.model, 'assigned_to_user_id'):
-                q_filter |= Q(assigned_to_user_id=ctx.user_id)
-                logger.debug("added_assigned_to_filter", extra={
+            # Also include assigned_to_user
+            assigned_field = resolve_field(module, 'assigned_to_user')
+            if assigned_field and assigned_field in model_fields:
+                q_filter |= Q(**{assigned_field: ctx.user_id})
+                logger.debug("added_assigned_to_filter_team", extra={
                     'correlation_id': get_correlation_id(),
+                    'field': assigned_field,
                     'user_id': ctx.user_id,
                     'event': 'queryset_filter'
                 })
@@ -478,11 +479,12 @@ class ScopedQuerysetMixin:
             else:
                 logger.debug("no_team_ownership_fields", extra={
                     'correlation_id': get_correlation_id(),
+                    'biz_module': module,
                     'event': 'queryset_filter'
                 })
-            
+                
         elif scope == 'mine':
-            # Mine scope - filter by user ownership
+            # Mine scope - filter by user ownership only
             logger.debug("scope_mine", extra={
                 'correlation_id': get_correlation_id(),
                 'scope': 'mine',
@@ -490,39 +492,38 @@ class ScopedQuerysetMixin:
                 'event': 'queryset_filter'
             })
             
-            # Build Q filter for mine scope
             q_filter = Q()
+            model_fields = {f.name for f in queryset.model._meta.get_fields()}
             
-            # Check ownership map for user fields
-            if hasattr(queryset.model, 'owner_user_id'):
-                q_filter |= Q(owner_user_id=ctx.user_id)
+            # Check owner_user from OWNERSHIP_MAP
+            owner_field = resolve_field(module, 'owner_user')
+            if owner_field and owner_field in model_fields:
+                q_filter |= Q(**{owner_field: ctx.user_id})
                 logger.debug("added_owner_user_filter_mine", extra={
                     'correlation_id': get_correlation_id(),
+                    'field': owner_field,
                     'user_id': ctx.user_id,
                     'event': 'queryset_filter'
                 })
             
-            if hasattr(queryset.model, 'created_by_id'):
-                q_filter |= Q(created_by_id=ctx.user_id)
+            # Check created_by from OWNERSHIP_MAP
+            created_field = resolve_field(module, 'created_by')
+            if created_field and created_field in model_fields:
+                q_filter |= Q(**{created_field: ctx.user_id})
                 logger.debug("added_created_by_filter_mine", extra={
                     'correlation_id': get_correlation_id(),
+                    'field': created_field,
                     'user_id': ctx.user_id,
                     'event': 'queryset_filter'
                 })
             
-            if hasattr(queryset.model, 'assigned_to_user_id'):
-                q_filter |= Q(assigned_to_user_id=ctx.user_id)
+            # Check assigned_to_user from OWNERSHIP_MAP
+            assigned_field = resolve_field(module, 'assigned_to_user')
+            if assigned_field and assigned_field in model_fields:
+                q_filter |= Q(**{assigned_field: ctx.user_id})
                 logger.debug("added_assigned_to_filter_mine", extra={
                     'correlation_id': get_correlation_id(),
-                    'user_id': ctx.user_id,
-                    'event': 'queryset_filter'
-                })
-            
-            # Special case for User model - can only see themselves
-            if queryset.model.__name__ == 'User':
-                q_filter = Q(id=ctx.user_id)
-                logger.debug("user_model_self_only", extra={
-                    'correlation_id': get_correlation_id(),
+                    'field': assigned_field,
                     'user_id': ctx.user_id,
                     'event': 'queryset_filter'
                 })
@@ -534,24 +535,27 @@ class ScopedQuerysetMixin:
                     'event': 'queryset_filter'
                 })
             else:
-                # No ownership fields - fallback to empty for safety
-                logger.debug("no_ownership_fields_mine_scope", extra={
+                # No ownership fields configured = no access for mine scope
+                logger.warning("no_mine_ownership_fields_deny", extra={
                     'correlation_id': get_correlation_id(),
+                    'biz_module': module,
                     'event': 'queryset_filter'
                 })
                 return queryset.none()
         
+        # =========================================================================
+        # FINAL QUERYSET
+        # =========================================================================
         logger.debug("queryset_final", extra={
             'correlation_id': get_correlation_id(),
             'biz_module': module,
             'action': action,
-            'scope': scope if 'scope' in locals() else '-',
-            'final_count': queryset.count(),
+            'scope': scope,
             'event': 'queryset_filter'
         })
         
         return queryset
-    
+
     def get_object(self):
         """
         Get single object with explicit 403 for permission denials.
