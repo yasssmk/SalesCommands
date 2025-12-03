@@ -715,31 +715,13 @@ class CompanyAccountUpdateSerializer(ClientScopeManager.SerializerMixin, Contact
         }
     
     def validate_company_name(self, value):
-        """Validate and normalize company name (exclude current instance)."""
+        """Normalize company name. Uniqueness validated in validate() with city+country."""
         if not value or not value.strip():
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(field='Company Name')
             )
         
-        value = value.strip().upper()
-        client_id = self._get_client_id_from_context()
-        
-        queryset = CompanyAccount.objects.filter(
-            client_id=client_id,
-            company_name__iexact=value
-        )
-        
-        if self.instance:
-            queryset = queryset.exclude(id=self.instance.id)
-        
-        if queryset.exists():
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNIQUE_CONSTRAINT.format(
-                    fields=f"company name '{value}'"
-                )
-            )
-        
-        return value
+        return value.strip().upper()
     
     def validate_type(self, value):
         """Validate type field."""
@@ -772,6 +754,25 @@ class CompanyAccountUpdateSerializer(ClientScopeManager.SerializerMixin, Contact
         """Global validation for updates."""
         try:
             client_id = self._get_client_id_from_context()
+            
+            # Merge attrs with instance values for uniqueness check (name + city + country)
+            check_uniqueness = any(field in attrs for field in ['company_name', 'city', 'country'])
+            
+            if check_uniqueness and self.instance:
+                uniqueness_data = {
+                    'company_name': attrs.get('company_name', self.instance.company_name),
+                    'city': attrs.get('city', self.instance.city),
+                    'country': attrs.get('country', self.instance.country),
+                }
+                
+                self.validate_client_scoped_uniqueness(
+                    data=uniqueness_data,
+                    unique_fields=['company_name', 'city', 'country'],
+                    model_class=CompanyAccount,
+                    error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                        fields='company name, city, and country'
+                    )
+                )
             
             if 'parent_company_id' in attrs and attrs['parent_company_id']:
                 self._validate_parent_company(attrs['parent_company_id'], client_id, self.instance)

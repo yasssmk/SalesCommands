@@ -538,33 +538,15 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                     f"Strict mode: {len(invalid_ids)} invalid ID(s) found"
                 )
             
-            # ===== PRE-VALIDATION: CHECK FOR ACCOUNTS WITH CHILDREN =====
-            protected_accounts = []
-            for account_id, account in accounts_dict.items():
-                if account.direct_child_companies.exists():
-                    protected_accounts.append({
-                        'id': account_id,
-                        'company_name': account.company_name,
-                        'reason': 'Account has child companies. Remove or reassign children first.'
-                    })
-            
-            if mode == 'strict' and protected_accounts:
-                for protected in protected_accounts:
-                    results['failed'].append({
-                        'id': protected['id'],
-                        'company_name': protected['company_name'],
-                        'errors': [protected['reason']]
-                    })
-                
-                return self._build_bulk_error_response(
-                    results,
-                    len(ids),
-                    f"Strict mode: {len(protected_accounts)} account(s) have children"
-                )
-            
             # ===== CALCULATE VALID IDS FOR SET-BASED DELETE =====
-            protected_ids = {p['id'] for p in protected_accounts}
-            valid_ids = set(ids) - invalid_ids - protected_ids
+            valid_ids = set(ids) - invalid_ids
+            
+            # ===== COUNT ORPHANED CHILDREN FOR AUDIT =====
+            total_orphaned = sum(
+                account.direct_child_companies.count()
+                for account in accounts_dict.values()
+                if str(account.id) in valid_ids
+            )
             
             # ===== DELETE OPERATIONS =====
             with disable_signals_with_invalidation(client_id, ['accounts', 'contacts']):
@@ -591,6 +573,7 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                                     extra={
                                         **ctx,
                                         'deleted_count': deleted_count,
+                                        'orphaned_children': total_orphaned,
                                         'cascade': deleted_by_model
                                     }
                                 )
@@ -602,14 +585,6 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                                         'id': account_id,
                                         'company_name': info['company_name']
                                     })
-                            
-                            # Add protected to failed
-                            for protected in protected_accounts:
-                                results['failed'].append({
-                                    'id': protected['id'],
-                                    'company_name': protected['company_name'],
-                                    'errors': [protected['reason']]
-                                })
                         
                         except Exception as e:
                             error_msg = self._format_bulk_error_message(e)
@@ -626,14 +601,6 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                         accounts_info[account_id] = {
                             'company_name': account.company_name
                         }
-                    
-                    # Add protected to failed
-                    for protected in protected_accounts:
-                        results['failed'].append({
-                            'id': protected['id'],
-                            'company_name': protected['company_name'],
-                            'errors': [protected['reason']]
-                        })
                     
                     # SET-BASED DELETE
                     try:
@@ -1069,21 +1036,12 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
     
     def _format_bulk_error_message(self, error):
         """Format exception into user-friendly error message."""
-        from rest_framework.exceptions import ValidationError as DRFValidationError
-        
-        # Handle StandardizedValidationError
         if isinstance(error, StandardizedValidationError):
             if hasattr(error, 'detail'):
                 if isinstance(error.detail, dict):
                     return error.detail.get('error', str(error))
                 elif isinstance(error.detail, list):
                     return '; '.join(str(e) for e in error.detail)
-            return str(error)
-        
-        # Handle DRF ValidationError (from serializer.is_valid(raise_exception=True))
-        if isinstance(error, DRFValidationError):
-            if hasattr(error, 'detail'):
-                return self._format_validation_detail(error.detail)
             return str(error)
         
         error_type = type(error).__name__
@@ -1093,54 +1051,9 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                 return "Duplicate entry detected"
             return "Database integrity error"
         elif "ValidationError" in error_type:
-            # Fallback for other ValidationError types
-            if hasattr(error, 'detail'):
-                return self._format_validation_detail(error.detail)
             return str(error)
         
         return "Processing failed. Please check your data and try again."
-
-    def _format_validation_detail(self, detail):
-        """
-        Format serializer validation errors into user-friendly message.
-        
-        Handles:
-        - {'field': [ErrorDetail('message')]} -> "field: message"
-        - {'field': ['message']} -> "field: message"
-        - [ErrorDetail('message')] -> "message"
-        - 'message' -> "message"
-        """
-        if isinstance(detail, str):
-            return detail
-        
-        if isinstance(detail, list):
-            # List of errors - take first one
-            if detail:
-                first_error = detail[0]
-                return str(first_error) if first_error else "Validation error"
-            return "Validation error"
-        
-        if isinstance(detail, dict):
-            # Dict of field -> errors
-            messages = []
-            for field, errors in detail.items():
-                if field == 'non_field_errors':
-                    # Non-field errors - just show the message
-                    if isinstance(errors, list) and errors:
-                        messages.append(str(errors[0]))
-                    else:
-                        messages.append(str(errors))
-                else:
-                    # Field-specific error
-                    if isinstance(errors, list) and errors:
-                        error_msg = str(errors[0])
-                    else:
-                        error_msg = str(errors)
-                    messages.append(f"{field}: {error_msg}")
-            
-            return '; '.join(messages) if messages else "Validation error"
-        
-        return str(detail) if detail else "Validation error"
     
     def _build_bulk_error_response(self, results, total, error_message):
         """Build standardized error response for bulk operations."""

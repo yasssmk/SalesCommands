@@ -18,6 +18,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 
 // third-party
 import * as Yup from 'yup';
@@ -32,6 +33,20 @@ import { handleFormikError } from 'utils/formErrorHandler';
 
 // api
 import { updateAccount, useGetAccount, useGetAccountChoices } from 'api/admin/accounts';
+
+// ==============================|| SECTION TITLE ||============================== //
+
+const SectionTitle = ({ children }) => (
+  <Grid item xs={12}>
+    <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1, mb: -1 }}>
+      {children}
+    </Typography>
+  </Grid>
+);
+
+SectionTitle.propTypes = {
+  children: PropTypes.node
+};
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
@@ -49,16 +64,17 @@ const EditSchema = Yup.object().shape({
   
   country: Yup.string()
     .trim()
-    .required('Country is required')
-    .max(100, 'Country must be less than 100 characters'),
+    .required('Country is required'),
   
   industry: Yup.string().nullable(),
-  
   type: Yup.string().nullable(),
-  
   classification: Yup.string().nullable(),
   
   website: Yup.string()
+    .url('Must be a valid URL')
+    .nullable(),
+  
+  linkedin: Yup.string()
     .url('Must be a valid URL')
     .nullable(),
   
@@ -74,20 +90,32 @@ const EditSchema = Yup.object().shape({
 // ==============================|| INITIAL VALUES ||============================== //
 
 const buildInitialValues = (account) => ({
+  // Identity
   company_name: account?.company_name || '',
-  city: account?.city || '',
-  country: account?.country || '',
-  industry: account?.industry || '',
+  
+  // Classification
   type: account?.type || '',
   classification: account?.classification || '',
-  website: account?.website || '',
+  industry: account?.industry || '',
+  
+  // Ownership
+  account_owner: account?.account_owner || null,
+  parent: account?.parent_company || null,
+  
+  // Contact
   email: account?.email || '',
   phone_number: account?.phone_number || '',
+  
+  // Address
   address: account?.address || '',
+  city: account?.city || '',
   post_code: account?.post_code || '',
   state: account?.state || '',
-  account_owner: account?.account_owner || null,
-  parent: account?.parent_company || null
+  country: account?.country || '',
+  
+  // Online
+  website: account?.website || '',
+  linkedin: account?.linkedin || ''
 });
 
 // ==============================|| SANITIZE PAYLOAD ||============================== //
@@ -101,13 +129,13 @@ function sanitizePayload(values) {
   payload.country = values.country.trim();
   
   // Optional string fields - include empty to allow clearing
-  const optionalFields = ['website', 'email', 'phone_number', 'address', 'post_code', 'state'];
+  const optionalFields = ['website', 'linkedin', 'email', 'phone_number', 'address', 'post_code', 'state'];
   optionalFields.forEach((field) => {
     const value = values[field];
     payload[field] = value ? value.trim() : '';
   });
   
-  // Optional choice fields - include empty/null to allow clearing
+  // Optional choice fields - include null to allow clearing
   payload.type = values.type || null;
   payload.classification = values.classification || null;
   payload.industry = values.industry || null;
@@ -176,9 +204,9 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
         <Divider />
         
         <DialogContent sx={{ p: 2.5 }}>
-          <Grid container spacing={3}>
+          <Grid container spacing={2.5}>
             
-            {/* Company Name */}
+            {/* ==================== IDENTITY ==================== */}
             <Grid item xs={12}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="company_name">Company Name *</InputLabel>
@@ -193,8 +221,10 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
               </Stack>
             </Grid>
 
-            {/* Type & Classification */}
-            <Grid item xs={12} sm={6}>
+            {/* ==================== CLASSIFICATION ==================== */}
+            <SectionTitle>Classification</SectionTitle>
+            
+            <Grid item xs={12} sm={4}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="type">Type</InputLabel>
                 <FormControl fullWidth error={Boolean(touched.type && errors.type)}>
@@ -220,7 +250,7 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
               </Stack>
             </Grid>
 
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} sm={4}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="classification">Classification</InputLabel>
                 <FormControl fullWidth error={Boolean(touched.classification && errors.classification)}>
@@ -246,8 +276,7 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
               </Stack>
             </Grid>
 
-            {/* Industry */}
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} sm={4}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="industry">Industry</InputLabel>
                 <FormControl fullWidth error={Boolean(touched.industry && errors.industry)}>
@@ -273,7 +302,9 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
               </Stack>
             </Grid>
 
-            {/* Account Owner (Async Select) */}
+            {/* ==================== OWNERSHIP ==================== */}
+            <SectionTitle>Ownership</SectionTitle>
+
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
                 <InputLabel>Account Owner</InputLabel>
@@ -286,7 +317,6 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
               </Stack>
             </Grid>
 
-            {/* Parent Company (Async Select) */}
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
                 <InputLabel>Parent Company</InputLabel>
@@ -295,12 +325,59 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
                   onChange={(event, newValue) => setFieldValue('parent', newValue)}
                   label=""
                   placeholder="Search by company name..."
-                  excludeIds={[accountData.id]}
+                  excludeIds={[accountData?.id]}
                 />
               </Stack>
             </Grid>
 
-            {/* Location: City, Country, State */}
+            {/* ==================== CONTACT ==================== */}
+            <SectionTitle>Contact</SectionTitle>
+
+            <Grid item xs={12} sm={6}>
+              <Stack spacing={1}>
+                <InputLabel htmlFor="email">Email</InputLabel>
+                <TextField
+                  fullWidth
+                  id="email"
+                  placeholder="contact@company.com"
+                  {...getFieldProps('email')}
+                  error={Boolean(touched.email && errors.email)}
+                  helperText={touched.email && errors.email}
+                />
+              </Stack>
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <Stack spacing={1}>
+                <InputLabel htmlFor="phone_number">Phone Number</InputLabel>
+                <TextField
+                  fullWidth
+                  id="phone_number"
+                  placeholder="+1 234 567 8900"
+                  {...getFieldProps('phone_number')}
+                  error={Boolean(touched.phone_number && errors.phone_number)}
+                  helperText={touched.phone_number && errors.phone_number}
+                />
+              </Stack>
+            </Grid>
+
+            {/* ==================== ADDRESS ==================== */}
+            <SectionTitle>Address</SectionTitle>
+
+            <Grid item xs={12}>
+              <Stack spacing={1}>
+                <InputLabel htmlFor="address">Street Address</InputLabel>
+                <TextField
+                  fullWidth
+                  id="address"
+                  placeholder="123 Business Street"
+                  {...getFieldProps('address')}
+                  error={Boolean(touched.address && errors.address)}
+                  helperText={touched.address && errors.address}
+                />
+              </Stack>
+            </Grid>
+
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="city">City *</InputLabel>
@@ -311,6 +388,34 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
                   {...getFieldProps('city')}
                   error={Boolean(touched.city && errors.city)}
                   helperText={touched.city && errors.city}
+                />
+              </Stack>
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <Stack spacing={1}>
+                <InputLabel htmlFor="post_code">Post Code</InputLabel>
+                <TextField
+                  fullWidth
+                  id="post_code"
+                  placeholder="Enter post code"
+                  {...getFieldProps('post_code')}
+                  error={Boolean(touched.post_code && errors.post_code)}
+                  helperText={touched.post_code && errors.post_code}
+                />
+              </Stack>
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <Stack spacing={1}>
+                <InputLabel htmlFor="state">State / Province</InputLabel>
+                <TextField
+                  fullWidth
+                  id="state"
+                  placeholder="Enter state or province"
+                  {...getFieldProps('state')}
+                  error={Boolean(touched.state && errors.state)}
+                  helperText={touched.state && errors.state}
                 />
               </Stack>
             </Grid>
@@ -341,49 +446,9 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
               </Stack>
             </Grid>
 
-            <Grid item xs={12} sm={6}>
-              <Stack spacing={1}>
-                <InputLabel htmlFor="state">State/Province</InputLabel>
-                <TextField
-                  fullWidth
-                  id="state"
-                  placeholder="Enter state or province"
-                  {...getFieldProps('state')}
-                  error={Boolean(touched.state && errors.state)}
-                  helperText={touched.state && errors.state}
-                />
-              </Stack>
-            </Grid>
+            {/* ==================== ONLINE ==================== */}
+            <SectionTitle>Online Presence</SectionTitle>
 
-            <Grid item xs={12} sm={6}>
-              <Stack spacing={1}>
-                <InputLabel htmlFor="post_code">Post Code</InputLabel>
-                <TextField
-                  fullWidth
-                  id="post_code"
-                  placeholder="Enter post code"
-                  {...getFieldProps('post_code')}
-                  error={Boolean(touched.post_code && errors.post_code)}
-                  helperText={touched.post_code && errors.post_code}
-                />
-              </Stack>
-            </Grid>
-
-            <Grid item xs={12}>
-              <Stack spacing={1}>
-                <InputLabel htmlFor="address">Address</InputLabel>
-                <TextField
-                  fullWidth
-                  id="address"
-                  placeholder="Enter address"
-                  {...getFieldProps('address')}
-                  error={Boolean(touched.address && errors.address)}
-                  helperText={touched.address && errors.address}
-                />
-              </Stack>
-            </Grid>
-
-            {/* Contact Info */}
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
                 <InputLabel htmlFor="website">Website</InputLabel>
@@ -400,28 +465,14 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
 
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="email">Email</InputLabel>
+                <InputLabel htmlFor="linkedin">LinkedIn</InputLabel>
                 <TextField
                   fullWidth
-                  id="email"
-                  placeholder="contact@company.com"
-                  {...getFieldProps('email')}
-                  error={Boolean(touched.email && errors.email)}
-                  helperText={touched.email && errors.email}
-                />
-              </Stack>
-            </Grid>
-
-            <Grid item xs={12} sm={6}>
-              <Stack spacing={1}>
-                <InputLabel htmlFor="phone_number">Phone Number</InputLabel>
-                <TextField
-                  fullWidth
-                  id="phone_number"
-                  placeholder="+1 234 567 8900"
-                  {...getFieldProps('phone_number')}
-                  error={Boolean(touched.phone_number && errors.phone_number)}
-                  helperText={touched.phone_number && errors.phone_number}
+                  id="linkedin"
+                  placeholder="https://linkedin.com/company/..."
+                  {...getFieldProps('linkedin')}
+                  error={Boolean(touched.linkedin && errors.linkedin)}
+                  helperText={touched.linkedin && errors.linkedin}
                 />
               </Stack>
             </Grid>
@@ -441,9 +492,9 @@ function FormAccountEdit({ closeModal, accountId, account: initialAccount }) {
                 <Button 
                   type="submit" 
                   variant="contained" 
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || loading}
                 >
-                  {isSubmitting ? 'Updating...' : 'Update'}
+                  {isSubmitting || loading ? 'Updating...' : 'Update'}
                 </Button>
               </Stack>
             </Grid>

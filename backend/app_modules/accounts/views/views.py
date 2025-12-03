@@ -451,8 +451,10 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
     
     def destroy(self, request, *args, **kwargs):
         """
-        Delete a company account.
+        Delete a single account.
         DELETE /client/accounts/{id}/
+        
+        Child accounts become orphans (parent_company set to NULL by Django).
         """
         try:
             with transaction.atomic():
@@ -483,11 +485,8 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
                 # Validate client scoping
                 self.validate_client_id(account)
                 
-                # Check for child accounts
-                if account.direct_child_companies.exists():
-                    raise StandardizedValidationError(
-                        "Cannot delete account with child companies. Remove or reassign children first."
-                    )
+                # Count children for audit (will become orphans)
+                orphaned_count = account.direct_child_companies.count()
                 
                 account_name = account.company_name
                 account.delete()
@@ -503,6 +502,7 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
                     target_type='company_account',
                     target_id=str(account_id),
                     outcome='success',
+                    extra={'orphaned_children': orphaned_count}
                 )
                 
                 return Response({
