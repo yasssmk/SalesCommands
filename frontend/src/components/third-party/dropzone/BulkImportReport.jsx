@@ -63,6 +63,50 @@ function getTopErrors(failedItems, limit = 3) {
     .slice(0, limit);
 }
 
+/**
+ * Extract identifier from item with extended fallback chain
+ */
+function getItemIdentifier(item, identifierField) {
+  if (!item) return null;
+  
+  if (identifierField?.key && item[identifierField.key]) {
+    return item[identifierField.key];
+  }
+  
+  return item.email 
+    || item.company_name 
+    || item.name 
+    || item.identifier 
+    || null;
+}
+
+/**
+ * Detect if errors are global (no identifiers, same error message)
+ * Global errors = auth failures, network errors, etc.
+ */
+function isGlobalError(items, identifierField) {
+  if (!items || items.length === 0) return false;
+  
+  // Check if ANY item has a valid identifier
+  const hasAnyIdentifier = items.some(item => getItemIdentifier(item, identifierField) !== null);
+  
+  if (hasAnyIdentifier) return false;
+  
+  // Check if all errors are the same
+  const firstError = Array.isArray(items[0]?.errors) 
+    ? items[0].errors[0] 
+    : (items[0]?.error || items[0]?.reason);
+    
+  if (!firstError) return false;
+  
+  return items.every(item => {
+    const error = Array.isArray(item.errors) 
+      ? item.errors[0] 
+      : (item.error || item.reason);
+    return error === firstError;
+  });
+}
+
 export default function BulkImportReport({
   results,
   entityName = 'items',
@@ -175,11 +219,45 @@ export default function BulkImportReport({
       </IconButton>
     </Stack>
   );
+
+  // Render global error (simplified view for auth/network errors)
+const renderGlobalError = (items, type) => {
+  const count = items.length;
+  const firstError = Array.isArray(items[0]?.errors) 
+    ? items[0].errors[0] 
+    : (items[0]?.error || items[0]?.reason || 'Unknown error');
+  
+  return (
+    <Stack 
+      direction="row" 
+      spacing={2} 
+      alignItems="center" 
+      sx={{ 
+        p: 2, 
+        bgcolor: type === 'failed' ? 'error.lighter' : 'warning.lighter',
+        borderRadius: 1 
+      }}
+    >
+      <CloseCircleOutlined style={{ 
+        color: theme.palette.error.main, 
+        fontSize: 24 
+      }} />
+      <Stack spacing={0.5}>
+        <Typography variant="subtitle1" color="error.main">
+          {count} row{count > 1 ? 's' : ''} failed
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {firstError}
+        </Typography>
+      </Stack>
+    </Stack>
+  );
+};
   
   // Render error list
   const renderErrorList = (items, type) => (
     <TableContainer sx={{ maxHeight: 400 }}>
-      <Table size="small" stickyHeader>
+      <Table size="small">
         <TableHead>
           <TableRow>
             <TableCell>Row</TableCell>
@@ -368,7 +446,10 @@ export default function BulkImportReport({
             <Collapse in={expandedSections.failed}>
               <Divider />
               <Box sx={{ p: 2 }}>
-                {renderErrorList(failedItems, 'failed')}
+                {isGlobalError(failedItems, identifierField) 
+                  ? renderGlobalError(failedItems, 'failed')
+                  : renderErrorList(failedItems, 'failed')
+                }
               </Box>
             </Collapse>
           </Card>
@@ -387,7 +468,10 @@ export default function BulkImportReport({
             <Collapse in={expandedSections.skipped}>
               <Divider />
               <Box sx={{ p: 2 }}>
-                {renderErrorList(skippedItems, 'skipped')}
+                {isGlobalError(skippedItems, identifierField) 
+                  ? renderGlobalError(skippedItems, 'skipped')
+                  : renderErrorList(skippedItems, 'skipped')
+                }
               </Box>
             </Collapse>
           </Card>

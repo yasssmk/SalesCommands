@@ -1,5 +1,5 @@
-email,password,first_name,last_name,role,active,
-qwertyzizidd121@companya.com,+33145678902,San,Goku,Admin
-qwertyzizi2dd21@companya.com,password123,John,Doe,Admin
-qwertyzizi3dd21@companya.com,password123,Jane,Smith,Admin
+email,password,first_name,last_name,role,active
+qwertyzizidd121@companya.com,https://dragonradar.tech,San,Goku,account executive,true
+qwertyzizi2dd21@companya.com,password123,John,Doe,Direction,true
+qwertyzizi321@companya.com,password123,Jane,Smith,Team Manager,true
 

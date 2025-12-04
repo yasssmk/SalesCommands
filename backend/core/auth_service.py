@@ -70,7 +70,7 @@ class AuthService:
             )
             
 
-            raise AuthenticationFailed("Invalid email or password")
+            raise AuthenticationFailed("Authentication failed")
 
         if not check_password(password, user.password):
             logger.warning("login_failed_invalid_password", extra=log_context)

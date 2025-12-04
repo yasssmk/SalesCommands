@@ -220,48 +220,47 @@ const handleImport = useCallback(async () => {
         }
 
 
-        // Check if this is an error response (success: false)
-        if (batchResponse?.success === false) {
-          console.debug('[useCSVImport] Error response path - batchResponse structure:', {
-            success: batchResponse.success,
-            hasError: !!batchResponse?.error,
-            errorType: typeof batchResponse?.error,
-            errorKeys: batchResponse?.error ? Object.keys(batchResponse.error) : [],
-            batchResponseKeys: Object.keys(batchResponse)
-          });
+      // Check if this is an error response (success: false)
+      if (batchResponse?.success === false) {
+        console.debug('[useCSVImport] Error response path - batchResponse structure:', {
+          success: batchResponse.success,
+          hasError: !!batchResponse?.error,
+          hasResults: !!batchResponse?.results,
+          batchResponseKeys: Object.keys(batchResponse)
+        });
 
-          // Extract error object
-          const errorObj = batchResponse?.error;
-          
-          // Extract status (error object is plain { status, message, response })
-          const st = errorObj?.status ||
-                    errorObj?.response?.status ||
-                    batchResponse?.httpStatus ||
-                    batchResponse?.status ||
-                    0;
-          
-          // Extract message
-          const msg = errorObj?.message ||
-                     batchResponse?.message ||
-                     'Bulk import request failed';
+        // Extract error info for top-level message
+        const errorObj = batchResponse?.error;
+        const st = errorObj?.status ||
+                  errorObj?.response?.status ||
+                  batchResponse?.httpStatus ||
+                  batchResponse?.status ||
+                  0;
+        const msg = errorObj?.message ||
+                  batchResponse?.message ||
+                  'Bulk import request failed';
 
-          // Store for finalResponse
-          if (st) topLevelHttpStatus = st;
-          if (msg) topLevelErrorMessage = msg;
+        if (st) topLevelHttpStatus = st;
+        if (msg) topLevelErrorMessage = msg;
 
-          console.warn('[useCSVImport] Batch error (success: false):', { status: st, msg, errorObj });
+        console.warn('[useCSVImport] Batch error (success: false):', { status: st, msg });
 
-          // Mark entire batch as failed
+        // ✅ FIX: Use backend results if available (they contain identifiers)
+        if (batchResponse?.results) {
+          cumulativeResults.success.push(...(batchResponse.results.success || []));
+          cumulativeResults.failed.push(...(batchResponse.results.failed || []));
+          cumulativeResults.skipped.push(...(batchResponse.results.skipped || []));
+        } else {
+          // Fallback: create failed items without identifiers (global error case)
           const failedBatch = batch.map((item, idx) => ({
             row: i + idx + 1,
-            // email: item?.email || '(unknown)',
             errors: [msg || 'Request failed']
           }));
-
           cumulativeResults.failed.push(...failedBatch);
         }
-        // Results returned with data
-        else if (batchResponse?.results) {
+      }
+      // Results returned with data (success: true or partial)
+      else if (batchResponse?.results) {
           cumulativeResults.success.push(...(batchResponse.results.success || []));
           cumulativeResults.failed.push(...(batchResponse.results.failed || []));
           cumulativeResults.skipped.push(...(batchResponse.results.skipped || []));

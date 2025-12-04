@@ -4,7 +4,7 @@
  * Resolvers for CSV Import - Convert names to UUIDs
  * 
  * Purpose:
- * - Convert Role, Organization, Team names to UUIDs
+ * - Convert Role, Team names to UUIDs
  * - Support both UUID and name inputs
  * - Case-insensitive name matching
  * - Clear error messages for resolution failures
@@ -19,31 +19,38 @@ import { api } from 'utils/axiosClient';
 
 /**
  * Fetch all roles for the current tenant
+ * Handles multiple response formats from backend
  */
 const fetchRoles = async () => {
   const response = await api.get('/client/roles/');
-  return response.data?.results || [];
-};
-
-/**
- * Fetch all organizations for the current tenant
- */
-const fetchOrganizations = async () => {
-  const response = await api.get('/client/organizations/');
-  return response.data?.results || [];
+  const data = response.data;
+  
+  // Handle various response formats
+  if (Array.isArray(data)) return data;
+  if (data?.results && Array.isArray(data.results)) return data.results;
+  if (data?.data && Array.isArray(data.data)) return data.data;
+  if (data?.data?.results && Array.isArray(data.data.results)) return data.data.results;
+  
+  console.warn('[resolvers] Unexpected roles response format:', data);
+  return [];
 };
 
 /**
  * Fetch all teams for the current tenant
- * @param {string} organizationId - Optional filter by organization
+ * Handles multiple response formats from backend
  */
-const fetchTeams = async (organizationId = null) => {
-  let url = '/client/teams/';
-  if (organizationId) {
-    url += `?organization=${organizationId}`;
-  }
-  const response = await api.get(url);
-  return response.data?.results || [];
+const fetchTeams = async () => {
+  const response = await api.get('/client/teams/');
+  const data = response.data;
+  
+  // Handle various response formats
+  if (Array.isArray(data)) return data;
+  if (data?.results && Array.isArray(data.results)) return data.results;
+  if (data?.data && Array.isArray(data.data)) return data.data;
+  if (data?.data?.results && Array.isArray(data.data.results)) return data.data.results;
+  
+  console.warn('[resolvers] Unexpected teams response format:', data);
+  return [];
 };
 
 // ==============================|| LOOKUP BUILDER ||============================== //
@@ -57,13 +64,14 @@ const fetchTeams = async (organizationId = null) => {
  * const lookups = await buildLookups();
  * // lookups.roles.byId['uuid'] = roleObject
  * // lookups.roles.byName['admin'] = roleObject
+ * // lookups.teams.byId['uuid'] = teamObject
+ * // lookups.teams.byName['sales team'] = teamObject
  */
 export const buildLookups = async () => {
   try {
     // Fetch all data in parallel
-    const [roles, organizations, teams] = await Promise.all([
+    const [roles, teams] = await Promise.all([
       fetchRoles(),
-      fetchOrganizations(),
       fetchTeams()
     ]);
 
@@ -77,31 +85,14 @@ export const buildLookups = async () => {
       rolesByName.set(role.name.toLowerCase().trim(), role);
     });
 
-    // Build organization lookups
-    const orgsById = new Map();
-    const orgsByName = new Map();
-    
-    organizations.forEach(org => {
-      orgsById.set(org.id, org);
-      orgsByName.set(org.name.toLowerCase().trim(), org);
-    });
-
-    // Build team lookups (grouped by organization)
+    // Build team lookups
     const teamsById = new Map();
-    const teamsByOrgAndName = new Map(); // Map<orgId, Map<teamName, team>>
+    const teamsByName = new Map();
     
     teams.forEach(team => {
       teamsById.set(team.id, team);
-      
-      // Group by organization
-      const orgId = team.organization;
-      if (orgId) {
-        if (!teamsByOrgAndName.has(orgId)) {
-          teamsByOrgAndName.set(orgId, new Map());
-        }
-        const orgTeams = teamsByOrgAndName.get(orgId);
-        orgTeams.set(team.name.toLowerCase().trim(), team);
-      }
+      // Store by lowercase name for case-insensitive lookup
+      teamsByName.set(team.name.toLowerCase().trim(), team);
     });
 
     return {
@@ -110,14 +101,9 @@ export const buildLookups = async () => {
         byName: rolesByName,
         all: roles
       },
-      organizations: {
-        byId: orgsById,
-        byName: orgsByName,
-        all: organizations
-      },
       teams: {
         byId: teamsById,
-        byOrgAndName: teamsByOrgAndName,
+        byName: teamsByName,
         all: teams
       }
     };
@@ -175,64 +161,17 @@ export const resolveRole = (input, lookups) => {
 };
 
 /**
- * Resolve organization input (name or UUID) to organization ID
- * 
- * @param {string} input - Organization name or UUID
- * @param {Object} lookups - Lookup tables from buildLookups()
- * @returns {Object} { id: string|null, issue?: string }
- * 
- * @example
- * resolveOrganization('Sales EMEA', lookups) // { id: 'uuid-456' }
- * resolveOrganization('invalid-org', lookups) // { id: null, issue: 'Unknown organization "invalid-org"' }
- */
-export const resolveOrganization = (input, lookups) => {
-  if (!input || !lookups?.organizations) {
-    return { id: null };
-  }
-
-  const trimmedInput = String(input).trim();
-  
-  // Check if it's already a valid UUID
-  if (isValidUUID(trimmedInput)) {
-    // Verify it exists
-    if (lookups.organizations.byId.has(trimmedInput)) {
-      return { id: trimmedInput };
-    }
-    return { 
-      id: null, 
-      issue: `Organization ID "${trimmedInput}" not found` 
-    };
-  }
-
-  // Try to resolve by name (case-insensitive)
-  const lowerInput = trimmedInput.toLowerCase();
-  const org = lookups.organizations.byName.get(lowerInput);
-  
-  if (org) {
-    return { id: org.id };
-  }
-
-  // Not found
-  return { 
-    id: null, 
-    issue: `Unknown organization "${trimmedInput}"` 
-  };
-};
-
-/**
  * Resolve team input (name or UUID) to team ID
- * Requires organization ID when resolving by name
  * 
  * @param {string} input - Team name or UUID
- * @param {string} orgId - Organization ID (required for name resolution)
  * @param {Object} lookups - Lookup tables from buildLookups()
  * @returns {Object} { id: string|null, issue?: string }
  * 
  * @example
- * resolveTeam('Sales Team', 'org-uuid', lookups) // { id: 'uuid-789' }
- * resolveTeam('Sales Team', null, lookups) // { id: null, issue: 'Team name requires organization' }
+ * resolveTeam('Sales Team', lookups) // { id: 'uuid-789' }
+ * resolveTeam('invalid-team', lookups) // { id: null, issue: 'Unknown team "invalid-team"' }
  */
-export const resolveTeam = (input, orgId, lookups) => {
+export const resolveTeam = (input, lookups) => {
   if (!input || !lookups?.teams) {
     return { id: null };
   }
@@ -251,35 +190,18 @@ export const resolveTeam = (input, orgId, lookups) => {
     };
   }
 
-  // For name resolution, we need an organization
-  if (!orgId) {
-    return { 
-      id: null, 
-      issue: 'Team name requires organization to be specified' 
-    };
-  }
-
-  // Get teams for this organization
-  const orgTeams = lookups.teams.byOrgAndName.get(orgId);
-  if (!orgTeams) {
-    return { 
-      id: null, 
-      issue: `No teams found in the specified organization` 
-    };
-  }
-
   // Try to resolve by name (case-insensitive)
   const lowerInput = trimmedInput.toLowerCase();
-  const team = orgTeams.get(lowerInput);
+  const team = lookups.teams.byName.get(lowerInput);
   
   if (team) {
     return { id: team.id };
   }
 
-  // Not found in this organization
+  // Not found
   return { 
     id: null, 
-    issue: `Unknown team "${trimmedInput}" in the specified organization` 
+    issue: `Unknown team "${trimmedInput}"` 
   };
 };
 
@@ -295,18 +217,13 @@ export const getAvailableValues = (lookups) => {
   if (!lookups) {
     return {
       roles: [],
-      organizations: [],
       teams: []
     };
   }
 
   return {
     roles: lookups.roles?.all?.map(r => r.name).sort() || [],
-    organizations: lookups.organizations?.all?.map(o => o.name).sort() || [],
-    teams: lookups.teams?.all?.map(t => ({
-      name: t.name,
-      organization: lookups.organizations?.byId?.get(t.organization)?.name || 'Unknown'
-    })).sort((a, b) => a.name.localeCompare(b.name)) || []
+    teams: lookups.teams?.all?.map(t => t.name).sort() || []
   };
 };
 
@@ -335,26 +252,10 @@ export const resolveUserRelations = (userRow, lookups) => {
     }
   }
 
-  // Resolve organization
-  let orgId = null;
-  if (userRow.organization) {
-    resolved._originalOrganization = userRow.organization;
-    const orgResult = resolveOrganization(userRow.organization, lookups);
-    if (orgResult.id) {
-      resolved.organization = orgResult.id;
-      orgId = orgResult.id;
-    } else {
-      resolved.organization = null;
-      if (orgResult.issue) {
-        issues.push(orgResult.issue);
-      }
-    }
-  }
-
-  // Resolve team (needs organization if provided by name)
+  // Resolve team
   if (userRow.team) {
     resolved._originalTeam = userRow.team;
-    const teamResult = resolveTeam(userRow.team, orgId, lookups);
+    const teamResult = resolveTeam(userRow.team, lookups);
     if (teamResult.id) {
       resolved.team = teamResult.id;
     } else {
@@ -373,7 +274,6 @@ export const resolveUserRelations = (userRow, lookups) => {
 export default {
   buildLookups,
   resolveRole,
-  resolveOrganization,
   resolveTeam,
   resolveUserRelations,
   getAvailableValues

@@ -717,6 +717,10 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
             mode: str - 'partial' (default) or 'strict'
         """
         idempotency_key = request.headers.get('Idempotency-Key')
+
+        # from rest_framework.exceptions import ValidationError, PermissionDenied, AuthenticationFailed
+
+        # raise AuthenticationFailed
         
         if not idempotency_key:
             return self._bulk_create_impl(request)

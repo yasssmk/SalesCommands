@@ -1811,33 +1811,40 @@ class UserBulkViewSet(UserViewSet):
     
     def _format_bulk_error_message(self, error):
         """
-        Format exception into user-friendly error message.
+        Format exception into user-friendly error message for bulk operations.
         
-        Converts technical exceptions into readable messages while preserving
-        important details for debugging.
+        In bulk context, errors are caught individually per item to allow
+        partial success. This method extracts user-friendly messages.
         """
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        
         if isinstance(error, StandardizedValidationError):
             if hasattr(error, 'detail'):
                 if isinstance(error.detail, dict):
-                    return error.detail.get('error', str(error))
+                    raw_error = error.detail.get('error', str(error))
+                    return str(raw_error)
                 elif isinstance(error.detail, list):
                     return '; '.join(str(e) for e in error.detail)
             return str(error)
         
-        error_type = type(error).__name__
-        
-        if "IntegrityError" in error_type:
-            if "unique constraint" in str(error).lower():
-                return "Duplicate entry detected"
-            return "Database integrity error"
-        elif "ValidationError" in error_type:
+        # Handle DRF ValidationError (from serializer.is_valid(raise_exception=True))
+        if isinstance(error, DRFValidationError):
+            if hasattr(error, 'detail'):
+                detail = error.detail
+                if isinstance(detail, dict):
+                    messages = []
+                    for field, errors in detail.items():
+                        if isinstance(errors, list) and errors:
+                            messages.append(f"{field}: {str(errors[0])}")
+                        else:
+                            messages.append(f"{field}: {str(errors)}")
+                    return '; '.join(messages) if messages else str(error)
+                elif isinstance(detail, list) and detail:
+                    return str(detail[0])
             return str(error)
-        elif "PermissionDenied" in error_type or "PermissionError" in error_type:
-            return "Permission denied"
-        elif "DoesNotExist" in error_type:
-            return "Referenced resource not found"
         
-        return "Processing failed. Please check your data and try again."
+        # Fallback for unexpected exceptions (defensive)
+        return str(error) if error else "Processing failed"
 
     def _build_bulk_error_response(self, results, total, error_message):
         """
