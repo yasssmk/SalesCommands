@@ -21,7 +21,7 @@ from core.idempotency import (
     compute_payload_hash
 )
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages, AccountErrorMessages
+from core.error_messages import CoreErrorMessages, AccountErrorMessages, UsersErrorMessages
 from core.cache_utils import disable_signals_with_invalidation
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
@@ -193,7 +193,7 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
             
             # ===== VALIDATE ALLOWED FIELDS =====
             ALLOWED_FIELDS = {
-                'type', 'classification', 'account_owner_id',
+                'type', 'classification', 'account_owner_id', 'parent_id',
                 'industry', 'company_size', 'annual_revenue', 'has_buying_decision'
             }
             invalid_fields = set(patch.keys()) - ALLOWED_FIELDS
@@ -236,21 +236,25 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
             
             # Validate FK fields
             validated_fks = {}
-            fk_fields = {'account_owner_id'}
+            fk_fields = {'account_owner_id', 'parent_id'}
             fk_updates = {k: v for k, v in patch.items() if k in fk_fields}
-            
+            fk_validation_error = None
+
             if fk_updates:
                 try:
-                    validated_fks = self._prevalidate_account_fks(fk_updates, client_id)
+                     validated_fks = self._prevalidate_account_fks(fk_updates, client_id, valid_account_ids)
                 except StandardizedValidationError as e:
+                    error_msg = self._format_bulk_error_message(e)
                     if mode == 'strict':
                         return self._build_bulk_error_response(
                             results,
                             len(ids),
-                            f"Strict mode failed: {str(e)}"
-                        )
-                    # In partial mode, skip FK updates
+                            f"Strict mode failed: {error_msg}"
+                )
+                    # In partial mode, store error for warning but continue with other fields
+                    fk_validation_error = error_msg
                     fk_updates = {}
+                    validated_fks = {}
             
             # ===== APPLY UPDATES =====
             with disable_signals_with_invalidation(client_id, ['accounts']):
@@ -280,9 +284,19 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                             
                             # FK fields
                             if 'account_owner_id' in validated_fks:
-                                update_fields['account_owner'] = validated_fks['account_owner_id']
-
+                                owner = validated_fks['account_owner_id']
+                                if owner is None:
+                                    update_fields['account_owner'] = None
+                                else:
+                                    update_fields['account_owner_id'] = owner.id
                             
+                            if 'parent_id' in validated_fks:
+                                parent = validated_fks['parent_id']
+                                if parent is None:
+                                    update_fields['parent_company'] = None
+                                else:
+                                    update_fields['parent_company_id'] = parent.id
+
                             # Apply set-based update
                             if update_fields and valid_account_ids:
                                 CompanyAccount.objects.filter(
@@ -325,7 +339,27 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                     
                     # FK fields
                     if 'account_owner_id' in validated_fks:
-                        update_fields['account_owner'] = validated_fks['account_owner_id']
+                        owner = validated_fks['account_owner_id']
+                        if owner is None:
+                            update_fields['account_owner'] = None
+                        else:
+                            update_fields['account_owner_id'] = owner.id
+
+                    if 'parent_id' in validated_fks:
+                        parent = validated_fks['parent_id']
+                        if parent is None:
+                            update_fields['parent_company'] = None
+                        else:
+                            update_fields['parent_company_id'] = parent.id
+                    
+                    # Check if ALL requested fields failed validation
+                    if not update_fields and fk_validation_error:
+                        # All fields were FK fields and all failed - return error
+                        return self._build_bulk_error_response(
+                            results,
+                            len(ids),
+                            fk_validation_error
+                        )
                     
                     # Apply update
                     if update_fields and valid_account_ids:
@@ -362,12 +396,19 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                 }
             )
             
+            # Add warning if FK validation failed in partial mode
+            if fk_validation_error:
+                response = self._build_bulk_success_response(results, len(ids), operation='update', detailed=detailed)
+                response.data['warning'] = f"Some fields were skipped: {fk_validation_error}"
+                return response
+
             return self._build_bulk_success_response(results, len(ids), operation='update', detailed=detailed)
         
         except StandardizedValidationError as e:
             error_msg = str(e)
             if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                error_msg = e.detail.get('error', str(e))
+                raw_error = e.detail.get('error', str(e))
+                error_msg = str(raw_error)
             
             return self._build_bulk_error_response(
                 results={'success': [], 'failed': []},
@@ -650,7 +691,8 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
         except StandardizedValidationError as e:
             error_msg = str(e)
             if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                error_msg = e.detail.get('error', str(e))
+                raw_error = e.detail.get('error', str(e))
+                error_msg = str(raw_error)
             
             return self._build_bulk_error_response(
                 results={'success': [], 'failed': []},
@@ -953,7 +995,8 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
         except StandardizedValidationError as e:
             error_msg = str(e)
             if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                error_msg = e.detail.get('error', str(e))
+                raw_error = e.detail.get('error', str(e))
+                error_msg = str(raw_error)
             
             return self._build_bulk_error_response(
                 results={'success': [], 'failed': [], 'skipped': []},
@@ -965,9 +1008,17 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
     # HELPER METHODS
     # =========================================================================
     
-    def _prevalidate_account_fks(self, patch, client_id):
-        """Pre-validate FK fields for bulk update."""
+    def _prevalidate_account_fks(self, patch, client_id, account_ids=None):
+        """Pre-validate FK fields for bulk update.
+        
+        Args:
+            patch: Dict of fields to update
+            client_id: Client UUID for tenant isolation
+            account_ids: List of account IDs being updated (for hierarchy validation)
+        """
         validated_fks = {}
+        account_ids = account_ids or []
+        account_ids_set = set(str(aid) for aid in account_ids)
         
         # Account owner validation
         if 'account_owner_id' in patch:
@@ -980,15 +1031,63 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                     import uuid
                     uuid.UUID(str(owner_id))
                 except ValueError:
-                    raise StandardizedValidationError(f"Invalid account_owner_id format: {owner_id}")
+                    raise StandardizedValidationError(AccountErrorMessages.INVALID_USER)
                 
                 try:
-                    owner = User.objects.get(id=owner_id, client_account_id=client_id, is_active=True)
+                    owner = User.objects.get(id=owner_id)
+                    if not owner.is_active:
+                        raise StandardizedValidationError(AccountErrorMessages.USER_INACTIVE)
                     validated_fks['account_owner_id'] = owner
                 except User.DoesNotExist:
-                    raise StandardizedValidationError(f"User with ID '{owner_id}' not found or inactive")
+                    raise StandardizedValidationError(UsersErrorMessages.USER_NOT_FOUND)
+        
+        # Parent company validation
+        if 'parent_id' in patch:
+            parent_id = patch['parent_id']
+            
+            if parent_id is None or parent_id == '':
+                validated_fks['parent_id'] = None
+            else:
+                try:
+                    import uuid
+                    uuid.UUID(str(parent_id))
+                except ValueError:
+                    raise StandardizedValidationError(AccountErrorMessages.INVALID_PARENT)
+                
+                # Check self-reference: parent cannot be one of the accounts being updated
+                if str(parent_id) in account_ids_set:
+                    raise StandardizedValidationError(AccountErrorMessages.SELF_PARENT)
+                
+                try:
+                    parent = CompanyAccount.objects.get(id=parent_id, client_id=client_id)
+                    
+                    # Check circular hierarchy: parent cannot be a child of any account being updated
+                    # Get all children of accounts being updated
+                    children_of_selected = set()
+                    for account_id in account_ids_set:
+                        self._get_all_descendant_ids(account_id, client_id, children_of_selected)
+                    
+                    if str(parent_id) in children_of_selected:
+                        raise StandardizedValidationError(AccountErrorMessages.CIRCULAR_HIERARCHY)
+                    
+                    validated_fks['parent_id'] = parent
+                except CompanyAccount.DoesNotExist:
+                    raise StandardizedValidationError(AccountErrorMessages.PARENT_NOT_FOUND)
         
         return validated_fks
+
+    def _get_all_descendant_ids(self, account_id, client_id, descendants_set):
+        """Recursively get all descendant IDs of an account."""
+        children = CompanyAccount.objects.filter(
+            parent_company_id=account_id,
+            client_id=client_id
+        ).values_list('id', flat=True)
+        
+        for child_id in children:
+            child_id_str = str(child_id)
+            if child_id_str not in descendants_set:
+                descendants_set.add(child_id_str)
+                self._get_all_descendant_ids(child_id, client_id, descendants_set)
     
     def _preload_bulk_create_fks(self, accounts_data, client_id):
         """Preload FKs for bulk create (1 query per FK type)."""
@@ -1035,28 +1134,30 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
         }
     
     def _format_bulk_error_message(self, error):
-        """Format exception into user-friendly error message."""
+        """
+        Format exception into user-friendly error message for bulk operations.
+        
+        In bulk context, errors are caught individually per item to allow
+        partial success. This method extracts user-friendly messages.
+        """
         if isinstance(error, StandardizedValidationError):
             if hasattr(error, 'detail'):
                 if isinstance(error.detail, dict):
-                    return error.detail.get('error', str(error))
+                    raw_error = error.detail.get('error', str(error))
+                    return str(raw_error)
                 elif isinstance(error.detail, list):
                     return '; '.join(str(e) for e in error.detail)
             return str(error)
         
-        error_type = type(error).__name__
-        
-        if "IntegrityError" in error_type:
-            if "unique constraint" in str(error).lower():
-                return "Duplicate entry detected"
-            return "Database integrity error"
-        elif "ValidationError" in error_type:
-            return str(error)
-        
-        return "Processing failed. Please check your data and try again."
+        # Fallback for unexpected exceptions (defensive)
+        return str(error) if error else "Processing failed"
     
     def _build_bulk_error_response(self, results, total, error_message):
         """Build standardized error response for bulk operations."""
+        # ✅ Ensure error_message is always a plain string
+        if error_message and not isinstance(error_message, str):
+            error_message = str(error_message)
+        
         return Response({
             'success': False,
             'message': error_message,
@@ -1089,7 +1190,9 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                 if isinstance(first_failed, dict) and 'errors' in first_failed:
                     errors_list = first_failed['errors']
                     if errors_list and len(errors_list) > 0:
-                        extracted_message = str(errors_list[0])
+                        # ✅ Force string conversion for ErrorDetail
+                        raw_error = errors_list[0]
+                        extracted_message = str(raw_error) if raw_error else None
             
             # Use extracted message if available, otherwise fallback to generic
             if extracted_message:
