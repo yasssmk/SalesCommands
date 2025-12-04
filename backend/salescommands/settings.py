@@ -263,7 +263,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
     # 7. Custom security & logging
-    'core.middlewares.security_middleware.InputSanitizationMiddleware',
+    # 'core.middlewares.security_middleware.InputSanitizationMiddleware',
+    'core.middlewares.input_sanitization.InputSanitizationMiddleware',
     'core.middlewares.middleware.LogRequestHeadersMiddleware',
 
     # 8. Debug toolbar (development only)
@@ -1005,6 +1006,24 @@ LOGGING = {
         'level': 'DEBUG' if DEBUG else 'INFO',
     }
 }
+
+# ========================================
+# INPUT SANITIZATION CONFIG
+# ========================================
+
+# "log" pour observer ce qui serait bloqué sans retourner 403
+# "block" pour activer le blocage réel
+INPUT_SANITIZATION_MODE = "log" if DEBUG else "block"
+
+# Préfixes d'URL à exclure (ancien comportement sur /insights/)
+INPUT_SANITIZATION_EXCLUDED_PREFIXES = [
+    '/insights/',
+]
+
+# Si True : un JSON invalide est traité comme suspect et peut être bloqué
+# Si False : on laisse la view/DRF gérer l'erreur de JSON
+INPUT_SANITIZATION_BLOCK_INVALID_JSON = False
+
 
 # ==========
 # HANDLERS

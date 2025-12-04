@@ -1140,6 +1140,8 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
         In bulk context, errors are caught individually per item to allow
         partial success. This method extracts user-friendly messages.
         """
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        
         if isinstance(error, StandardizedValidationError):
             if hasattr(error, 'detail'):
                 if isinstance(error.detail, dict):
@@ -1147,6 +1149,23 @@ class CompanyAccountBulkViewSet(CompanyAccountViewSet):
                     return str(raw_error)
                 elif isinstance(error.detail, list):
                     return '; '.join(str(e) for e in error.detail)
+            return str(error)
+        
+        # Handle DRF ValidationError (from serializer.is_valid(raise_exception=True))
+        if isinstance(error, DRFValidationError):
+            if hasattr(error, 'detail'):
+                detail = error.detail
+                if isinstance(detail, dict):
+                    # Format: {'field': [ErrorDetail('msg')]} -> "field: msg"
+                    messages = []
+                    for field, errors in detail.items():
+                        if isinstance(errors, list) and errors:
+                            messages.append(f"{field}: {str(errors[0])}")
+                        else:
+                            messages.append(f"{field}: {str(errors)}")
+                    return '; '.join(messages) if messages else str(error)
+                elif isinstance(detail, list) and detail:
+                    return str(detail[0])
             return str(error)
         
         # Fallback for unexpected exceptions (defensive)
