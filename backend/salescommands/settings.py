@@ -1013,7 +1013,7 @@ LOGGING = {
 
 # "log" pour observer ce qui serait bloqué sans retourner 403
 # "block" pour activer le blocage réel
-INPUT_SANITIZATION_MODE = "log" if DEBUG else "block"
+INPUT_SANITIZATION_MODE = "block"
 
 # Préfixes d'URL à exclure (ancien comportement sur /insights/)
 INPUT_SANITIZATION_EXCLUDED_PREFIXES = [

@@ -57,6 +57,9 @@ urlpatterns = [
     # Healthcheck (MUST be at top for performance)
     path('healthz/', healthz, name='healthz'),
 
+    # Core infrastructure endpoints (operation polling, etc.)
+    path('core/', include('core.urls')),
+
      # Ops test endpoints (AJOUTER CETTE LIGNE)
     path('ops/', include('ops.urls')),
 

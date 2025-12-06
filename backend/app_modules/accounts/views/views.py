@@ -43,6 +43,46 @@ from ..serializers import (
 logger = get_logger(__name__)
 
 
+
+# ========== IMPORT FOR ERROR TESTING =========
+
+from rest_framework.exceptions import (
+    ValidationError,
+    AuthenticationFailed,
+    NotAuthenticated,
+    PermissionDenied,
+    NotFound,
+    MethodNotAllowed,
+    Throttled,
+    APIException
+)
+
+# 500 - Internal Server Error
+class InternalServerError(APIException):
+    status_code = 500
+    default_detail = "Internal server error."
+    default_code = "server_error"
+
+# 502 - Bad Gateway
+class BadGateway(APIException):
+    status_code = 502
+    default_detail = "Bad gateway."
+    default_code = "bad_gateway"
+
+# 503 - Service Unavailable
+class ServiceUnavailable(APIException):
+    status_code = 503
+    default_detail = "Service temporarily unavailable."
+    default_code = "service_unavailable"
+
+# 504 - Gateway Timeout
+class GatewayTimeout(APIException):
+    status_code = 504
+    default_detail = "Gateway timeout."
+    default_code = "gateway_timeout"
+# =============================================
+
+
 class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing company accounts with client scoping.
@@ -260,6 +300,7 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
         user_id = request.user.id
         perm_version = get_permissions_version()
         query_string = request.META.get('QUERY_STRING', '')
+
         
         cache_key = build_drf_cache_key(
             namespace='accounts_list',
@@ -428,7 +469,6 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
                 },
                 status=status.HTTP_201_CREATED,
             )
-
 
     
     def partial_update(self, request, *args, **kwargs):

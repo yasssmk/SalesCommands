@@ -445,6 +445,8 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         
         # Skip cache si pas Redis (FileBasedCache trop lent)
         # ⚠️ DEV ONLY: Format non-standard (DRF brut) - Production utilise Redis
+
+        
         if not _is_redis_backend():
             response = super().list(request, *args, **kwargs)
             ctx = ctx_from_request(request)

@@ -92,6 +92,90 @@ export const revalidateMultiple = (prefixes, options = {}) => {
   });
 };
 
+
+// ==============================|| HANDLE BULK TIMEOUT ||============================== //
+
+/**
+ * ✅ HANDLE BULK OPERATION TIMEOUT
+ * 
+ * Gère le cas où une opération bulk timeout côté client mais continue
+ * à s'exécuter côté backend. Utilise l'idempotency key pour faire
+ * du polling et récupérer le résultat final.
+ * 
+ * @param {Error} err - Erreur Axios avec potentiellement idempotencyKey
+ * @param {string[]} prefixes - Liste des prefixes à revalider
+ * @param {Function} onSyncProgress - Callback: (attempt, maxAttempts) => void
+ * @param {Function} onSyncComplete - Callback: (result) => void
+ * @returns {Promise<Object|null>} Résultat du polling ou null si pas de clé
+ */
+export const handleBulkTimeout = async (err, prefixes, onSyncProgress = null, onSyncComplete = null) => {
+  // Extraire l'idempotency key depuis l'erreur ou sa config
+  const idempotencyKey = 
+    err?.idempotencyKey || 
+    err?.config?.headers?.['Idempotency-Key'] ||
+    err?.config?.metadata?.idempotencyKey;
+  
+  if (!idempotencyKey) {
+    console.warn('[handleBulkTimeout] No idempotency key available, cannot poll');
+    
+    // Revalidation immédiate comme fallback
+    revalidateMultiple(prefixes);
+    
+    if (onSyncComplete && typeof onSyncComplete === 'function') {
+      try {
+        onSyncComplete({ status: 'unknown', error: 'No idempotency key available' });
+      } catch (callbackErr) {
+        console.error('[handleBulkTimeout] onSyncComplete callback error:', callbackErr);
+      }
+    }
+    
+    return null;
+  }
+  
+  console.log(`[handleBulkTimeout] Starting polling with key: ${idempotencyKey.slice(0, 8)}...`);
+  
+  // Import dynamique pour éviter circular dependency
+  const { default: pollOperationStatus } = await import('utils/pollOperationStatus');
+  
+  try {
+    const pollResult = await pollOperationStatus(idempotencyKey, {
+      onProgress: onSyncProgress,
+    });
+    
+    console.log('[handleBulkTimeout] Polling complete:', pollResult);
+    
+    // Revalidate regardless of result
+    revalidateMultiple(prefixes);
+    
+    // Call completion callback
+    if (onSyncComplete && typeof onSyncComplete === 'function') {
+      try {
+        onSyncComplete(pollResult);
+      } catch (callbackErr) {
+        console.error('[handleBulkTimeout] onSyncComplete callback error:', callbackErr);
+      }
+    }
+    
+    return pollResult;
+    
+  } catch (pollErr) {
+    console.error('[handleBulkTimeout] Polling failed:', pollErr);
+    
+    // Revalidate anyway
+    revalidateMultiple(prefixes);
+    
+    if (onSyncComplete && typeof onSyncComplete === 'function') {
+      try {
+        onSyncComplete({ status: 'failed', error: pollErr?.message || 'Polling failed' });
+      } catch (callbackErr) {
+        console.error('[handleBulkTimeout] onSyncComplete callback error:', callbackErr);
+      }
+    }
+    
+    return { status: 'failed', error: pollErr?.message || 'Polling failed' };
+  }
+};
+
 // ==============================|| POLLING PROGRESSIF APRÈS BULK TIMEOUT ||============================== //
 
 /**

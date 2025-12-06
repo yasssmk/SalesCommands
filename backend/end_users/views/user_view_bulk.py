@@ -689,6 +689,9 @@ class UserBulkViewSet(UserViewSet):
 
         detailed = request.query_params.get('detailed', 'false').lower() == 'true'
 
+        import time
+        time.sleep(30) 
+
         try:
             # ===== INPUT VALIDATION =====
             if not isinstance(request.data, dict):

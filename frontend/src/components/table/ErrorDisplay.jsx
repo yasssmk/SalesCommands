@@ -125,12 +125,12 @@ function ErrorDisplay({
   
   // ✅ Trigger snackbar once on mount for temporary errors
   useEffect(() => {
-  const shouldShowSnackbar = isServer || isTimeout || status === 403;
+  const shouldShowSnackbar = isNetwork || isServer || isTimeout || status === 403;
   
   if (shouldShowSnackbar) {
     displayErrorSnackbar(error);
   }
-}, [error, isServer, isTimeout, status]);
+}, [error, isNetwork, isServer, isTimeout, status]);
 
   // ==============================|| CASE 1: SERVER ERRORS / TIMEOUT / NETWORK ||============================== //
   
@@ -146,7 +146,7 @@ function ErrorDisplay({
         if (process.env.NODE_ENV === 'development') {
             console.log('[ErrorDisplay] Showing cached data during temporary error');
       }
-        return cachedData; // Table will render normally with cached data
+        return null; // Return null so table renders cached data normally
     }
 
     // ✅ No cache available - show empty table with retry button

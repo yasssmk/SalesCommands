@@ -202,7 +202,7 @@ export async function pollOperationStatus(idempotencyKey, options = {}) {
     // Poll operation status
     try {
       
-      const result = await api.get(`/ops/${idempotencyKey}`);
+      const result = await api.get(`/core/operations/${idempotencyKey}/status/`);
       
       if (!result.success) {
         // API call failed (network error, 500, etc.)
@@ -327,11 +327,17 @@ export function extractKeyFromPollUrl(pollUrl) {
     return null;
   }
   
-  // Match /ops/{key} pattern (handles both relative and absolute URLs)
-  const match = pollUrl.match(/\/ops\/([^/?#]+)/);
+  // Match /core/operations/{key}/status/ pattern
+  // Also supports legacy /ops/{key} for backward compatibility
+  const coreMatch = pollUrl.match(/\/core\/operations\/([^/?#]+)\/status/);
+  if (coreMatch && coreMatch[1]) {
+    return coreMatch[1];
+  }
   
-  if (match && match[1]) {
-    return match[1];
+  // Legacy fallback: /ops/{key} or /ops/status/{key}
+  const opsMatch = pollUrl.match(/\/ops\/(?:status\/)?([^/?#]+)/);
+  if (opsMatch && opsMatch[1]) {
+    return opsMatch[1];
   }
   
   return null;

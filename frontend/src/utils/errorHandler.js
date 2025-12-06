@@ -220,6 +220,34 @@ export const handleApiError = (axiosError) => {
   }
 
   // ==============================
+  // 2.5 STATUS 0 = NETWORK ERROR (created by swrFetcher)
+  // ==============================
+  // When swrFetcher creates errors via createApiError(), it sets
+  // error.response = {status: 0, data: null} for network errors.
+  // We must detect this case and return the appropriate message.
+  if (status === 0) {
+    // Check if the error message already contains a good network error message
+    if (axiosError.message && typeof axiosError.message === 'string') {
+      const msg = axiosError.message.toLowerCase();
+      // If message already contains network-related info, use it
+      if (msg.includes('connect') || msg.includes('network') || msg.includes('server')) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🌐 Status 0 with network message detected');
+          console.groupEnd();
+        }
+        return axiosError.message;
+      }
+    }
+    
+    // Default network error message
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🌐 Status 0 detected (network error)');
+      console.groupEnd();
+    }
+    return 'Unable to connect to the server. Please check your internet connection.';
+  }
+
+  // ==============================
   // 3. 5XX SERVER ERRORS (Generic fallbacks)
   // ==============================
   if (status >= 500) {

@@ -11,7 +11,8 @@ import {
   tenantKey, 
   revalidateByPrefix, 
   revalidateMultiple,
-  handleBulkRevalidation        
+  handleBulkRevalidation,
+  handleBulkTimeout         
 } from 'api/_swr';
 import { isValidUUID, sanitizeObject } from 'utils/validators';
 
@@ -637,6 +638,34 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
       return result.data;
     }
 
+     // CAS TIMEOUT - Trigger polling (apiRequest returns, doesn't throw)
+    if (result.isTimeout) {
+      console.log('[createBulkUsers] ⏱️ Timeout detected in result, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        { idempotencyKey: result.idempotencyKey },
+        [endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        return {
+          success: true,
+          ...(pollResult.result || {})
+        };
+      }
+      
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { total: users?.length ?? 0, success: 0, failed: 0, skipped: 0 },
+        results: { success: [], failed: [], skipped: [] }
+      };
+    }
+
     // ❌ Gestion d'erreur
     const status = result.status || 0;
     const message = result.error || 'Bulk create failed';
@@ -672,8 +701,45 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
 
   } catch (err) {
     console.error('[createBulkUsers] thrown', err);
+    
+    const isTimeout = 
+      err?.code === 'ECONNABORTED' || 
+      err?.message?.toLowerCase()?.includes('timeout') ||
+      err?.response?.status === 408 ||
+      err?.response?.status === 504;
+    
+    if (isTimeout) {
+      console.log('[createBulkUsers] ⏱️ Timeout detected, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        err,
+        [endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        return {
+          success: true,
+          ...(pollResult.result || {})
+        };
+      }
+      
+      // Polling terminé mais pas de succès confirmé
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { total: users?.length ?? 0, success: 0, failed: 0, skipped: 0 },
+        results: { success: [], failed: [], skipped: [] }
+      };
+    }
+    
+    // Autres erreurs (non-timeout)
     return {
       success: false,
+      isTimeout: false,
       message: err?.message || 'Unknown error',
       error: { message: err?.message || String(err) },
       summary: { total: users?.length ?? 0, success: 0, failed: users?.length ?? 0, skipped: 0 },
@@ -688,7 +754,7 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
       }
     };
   }
-};
+}
 // ==============================|| MODIFICATION 2: bulkDeleteUsers ||============================== //
 
 /**
@@ -802,6 +868,34 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
       return result.data;
     }
 
+    // CAS TIMEOUT - Trigger polling (apiRequest returns, doesn't throw)
+    if (result.isTimeout) {
+      console.log('[bulkDeleteUsers] ⏱️ Timeout detected in result, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        { idempotencyKey: result.idempotencyKey },
+        [endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        return {
+          success: true,
+          ...(pollResult.result || {})
+        };
+      }
+      
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { requested: userIds?.length ?? 0, deleted: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
     // ❌ Gestion erreur
     const status = result.status || 0;
     const message = result.error || 'Bulk delete failed';
@@ -841,12 +935,37 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
       err?.response?.status === 504;
     
     if (isTimeout) {
-      console.log('[bulkDeleteUsers] Timeout detected, sync will be triggered');
+      console.log('[bulkDeleteUsers] ⏱️ Timeout detected, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        err,
+        [endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        return {
+          success: true,
+          ...(pollResult.result || {})
+        };
+      }
+      
+      // Polling terminé mais pas de succès confirmé
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { requested: userIds?.length ?? 0, deleted: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
     }
     
+    // Autres erreurs (non-timeout)
     return {
       success: false,
-      isTimeout: isTimeout,
+      isTimeout: false,
       message: err?.message || 'Unknown error',
       error: { message: err?.message || String(err) },
       summary: { requested: userIds?.length ?? 0, deleted: 0, failed: userIds?.length ?? 0 },
@@ -856,8 +975,7 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
       }
     };
   }
-};
-
+}
 // ==============================|| MODIFICATION 3: bulkUpdateUsers ||============================== //
 
 /**
@@ -974,6 +1092,35 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
       return result.data;
     }
 
+    // CAS TIMEOUT - Trigger polling (apiRequest returns, doesn't throw)
+    if (result.isTimeout) {
+      console.log('[bulkUpdateUsers] ⏱️ Timeout detected in result, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        { idempotencyKey: result.idempotencyKey },
+        [endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        return {
+          success: true,
+          ...(pollResult.result || {})
+        };
+      }
+      
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { requested: userIds?.length ?? 0, updated: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
+
     // ❌ Gestion erreur
     const status = result.status || 0;
     const message = result.error || 'Bulk update failed';
@@ -1013,12 +1160,37 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
       err?.response?.status === 504;
     
     if (isTimeout) {
-      console.log('[bulkUpdateUsers] Timeout detected');
+      console.log('[bulkUpdateUsers] ⏱️ Timeout detected, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        err,
+        [endpoints.users, '/client/client-accounts/', '/client/roles/', '/client/teams/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        return {
+          success: true,
+          ...(pollResult.result || {})
+        };
+      }
+      
+      // Polling terminé mais pas de succès confirmé
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { requested: userIds?.length ?? 0, updated: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
     }
     
+    // Autres erreurs (non-timeout)
     return {
       success: false,
-      isTimeout: isTimeout,
+      isTimeout: false,
       message: err?.message || 'Unknown error',
       error: { message: err?.message || String(err) },
       summary: { requested: userIds?.length ?? 0, updated: 0, failed: userIds?.length ?? 0 },
@@ -1028,8 +1200,7 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
       }
     };
   }
-};
-
+}
 
 // ==============================|| HELPER FUNCTIONS ||============================== //
 

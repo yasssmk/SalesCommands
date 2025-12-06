@@ -4,7 +4,7 @@ import useSWR from 'swr';
 import { useMemo } from 'react';
 import { useAuth } from 'hooks/useAuth';
 import { api } from 'utils/axiosClient';
-import { tenantKey, revalidateMultiple, handleBulkRevalidation } from 'api/_swr';
+import { tenantKey, revalidateMultiple, handleBulkRevalidation, handleBulkTimeout } from 'api/_swr';
 import { isValidUUID, sanitizeObject } from 'utils/validators';
 
 // ==============================|| ENDPOINTS ||============================== //
@@ -388,6 +388,34 @@ export const bulkDeleteAccounts = async (accountIds, mode = 'partial', onSyncPro
       return result.data;
     }
 
+    // CAS TIMEOUT - Trigger polling (apiRequest returns, doesn't throw)
+    if (result.isTimeout) {
+      console.log('[bulkDeleteAccounts] ⏱️ Timeout detected in result, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        { idempotencyKey: result.idempotencyKey },
+        [endpoints.accounts, '/activities/', '/opportunities/', '/contacts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        return {
+          success: true,
+          ...(pollResult.result || {})
+        };
+      }
+      
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { requested: accountIds?.length ?? 0, deleted: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
     // ❌ Gestion erreur
     const status = result.status || 0;
     const message = result.error || 'Bulk delete failed';
@@ -569,6 +597,34 @@ export const bulkUpdateAccounts = async (accountIds, patchData, mode = 'partial'
       return result.data;
     }
 
+    // CAS TIMEOUT - Trigger polling (apiRequest returns, doesn't throw)
+    if (result.isTimeout) {
+      console.log('[bulkUpdateAccounts] ⏱️ Timeout detected in result, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        { idempotencyKey: result.idempotencyKey },
+        [endpoints.accounts, '/activities/', '/opportunities/', '/contacts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        return {
+          success: true,
+          ...(pollResult.result || {})
+        };
+      }
+      
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { requested: accountIds?.length ?? 0, updated: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
     // ❌ Gestion erreur
     const status = result.status || 0;
     const message = result.error || 'Bulk update failed';
@@ -724,6 +780,34 @@ export const bulkCreateAccounts = async (accounts, mode = 'partial', onSyncProgr
       revalidateMultiple([endpoints.accounts, '/activities/', '/opportunities/', '/contacts/']);
       
       return result.data;
+    }
+
+    // CAS TIMEOUT - Trigger polling (apiRequest returns, doesn't throw)
+    if (result.isTimeout) {
+      console.log('[bulkCreateAccounts] ⏱️ Timeout detected in result, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        { idempotencyKey: result.idempotencyKey },
+        [endpoints.accounts, '/activities/', '/opportunities/', '/contacts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        return {
+          success: true,
+          ...(pollResult.result || {})
+        };
+      }
+      
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { total: accounts?.length ?? 0, success: 0, failed: 0, skipped: 0 },
+        results: { success: [], failed: [], skipped: [] }
+      };
     }
 
     // ❌ Gestion d'erreur

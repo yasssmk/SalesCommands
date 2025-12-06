@@ -373,6 +373,11 @@ function addInterceptorsToClient(client, profile) {
       if (isTimeout) {
         error.isTimeout = true;
 
+        const idempotencyKey = error?.config?.headers?.['Idempotency-Key'];
+        if (idempotencyKey) {
+          error.idempotencyKey = idempotencyKey;
+        }
+
         if (!error.response) {
           error.response = {
             status: 408,
@@ -510,7 +515,11 @@ export const apiRequest = async (requestFn) => {
       result.isTimeout = true;
     }
     
-    // ✅ STEP 3.1: Propagate isRateLimited flag to result object
+    // Propagate idempotency key for timeout polling
+    if (error.idempotencyKey) {
+      result.idempotencyKey = error.idempotencyKey;
+    }
+    //  Propagate isRateLimited flag to result object
     if (error.isRateLimited) {
       result.isRateLimited = true;
     }
