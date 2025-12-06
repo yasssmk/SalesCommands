@@ -650,9 +650,12 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
       );
       
       if (pollResult?.status === 'succeeded') {
+        // Backend stores: { data: {...}, http_status: 200 }
+        // We need to unwrap .data to get the actual result
+        const actualResult = pollResult.result?.data || pollResult.result || {};
         return {
           success: true,
-          ...(pollResult.result || {})
+          ...actualResult
         };
       }
       
@@ -719,9 +722,12 @@ export const createBulkUsers = async (users, mode = 'partial', onSyncProgress = 
       );
       
       if (pollResult?.status === 'succeeded') {
+        // Backend stores: { data: {...}, http_status: 200 }
+        // We need to unwrap .data to get the actual result
+        const actualResult = pollResult.result?.data || pollResult.result || {};
         return {
           success: true,
-          ...(pollResult.result || {})
+          ...actualResult
         };
       }
       
@@ -880,9 +886,12 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
       );
       
       if (pollResult?.status === 'succeeded') {
+        // Backend stores: { data: {...}, http_status: 200 }
+        // We need to unwrap .data to get the actual result
+        const actualResult = pollResult.result?.data || pollResult.result || {};
         return {
           success: true,
-          ...(pollResult.result || {})
+          ...actualResult
         };
       }
       
@@ -945,9 +954,12 @@ export const bulkDeleteUsers = async (userIds, mode = 'partial', onSyncProgress 
       );
       
       if (pollResult?.status === 'succeeded') {
+        // Backend stores: { data: {...}, http_status: 200 }
+        // We need to unwrap .data to get the actual result
+        const actualResult = pollResult.result?.data || pollResult.result || {};
         return {
           success: true,
-          ...(pollResult.result || {})
+          ...actualResult
         };
       }
       
@@ -1104,9 +1116,12 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
       );
       
       if (pollResult?.status === 'succeeded') {
+        // Backend stores: { data: {...}, http_status: 200 }
+        // We need to unwrap .data to get the actual result
+        const actualResult = pollResult.result?.data || pollResult.result || {};
         return {
           success: true,
-          ...(pollResult.result || {})
+          ...actualResult
         };
       }
       
@@ -1170,9 +1185,12 @@ export const bulkUpdateUsers = async (userIds, patchData, mode = 'partial', onSy
       );
       
       if (pollResult?.status === 'succeeded') {
+        // Backend stores: { data: {...}, http_status: 200 }
+        // We need to unwrap .data to get the actual result
+        const actualResult = pollResult.result?.data || pollResult.result || {};
         return {
           success: true,
-          ...(pollResult.result || {})
+          ...actualResult
         };
       }
       

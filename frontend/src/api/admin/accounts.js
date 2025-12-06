@@ -400,9 +400,12 @@ export const bulkDeleteAccounts = async (accountIds, mode = 'partial', onSyncPro
       );
       
       if (pollResult?.status === 'succeeded') {
+        // Backend stores: { data: {...}, http_status: 200 }
+        // We need to unwrap .data to get the actual result
+        const actualResult = pollResult.result?.data || pollResult.result || {};
         return {
           success: true,
-          ...(pollResult.result || {})
+          ...actualResult
         };
       }
       
@@ -455,12 +458,36 @@ export const bulkDeleteAccounts = async (accountIds, mode = 'partial', onSyncPro
       err?.response?.status === 504;
     
     if (isTimeout) {
-      console.log('[bulkDeleteAccounts] Timeout detected, sync will be triggered');
+      console.log('[bulkDeleteAccounts] ⏱️ Timeout detected, starting polling...');
+    
+      const pollResult = await handleBulkTimeout(
+        err,
+        [endpoints.accounts, '/activities/', '/opportunities/', '/contacts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        const actualResult = pollResult.result?.data || pollResult.result || {};
+        return {
+          success: true,
+          ...actualResult
+        };
+      }
+      
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { requested: accountIds?.length ?? 0, deleted: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
     }
     
     return {
       success: false,
-      isTimeout: isTimeout,
+      isTimeout: false,
       message: err?.message || 'Unknown error',
       error: { message: err?.message || String(err) },
       summary: { requested: accountIds?.length ?? 0, deleted: 0, failed: accountIds?.length ?? 0 },
@@ -609,9 +636,12 @@ export const bulkUpdateAccounts = async (accountIds, patchData, mode = 'partial'
       );
       
       if (pollResult?.status === 'succeeded') {
+        // Backend stores: { data: {...}, http_status: 200 }
+        // We need to unwrap .data to get the actual result
+        const actualResult = pollResult.result?.data || pollResult.result || {};
         return {
           success: true,
-          ...(pollResult.result || {})
+          ...actualResult
         };
       }
       
@@ -664,12 +694,36 @@ export const bulkUpdateAccounts = async (accountIds, patchData, mode = 'partial'
       err?.response?.status === 504;
     
     if (isTimeout) {
-      console.log('[bulkUpdateAccounts] Timeout detected, sync will be triggered');
+      console.log('[bulkUpdateAccounts] ⏱️ Timeout detected, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        err,
+        [endpoints.accounts, '/activities/', '/opportunities/', '/contacts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        const actualResult = pollResult.result?.data || pollResult.result || {};
+        return {
+          success: true,
+          ...actualResult
+        };
+      }
+      
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { requested: accountIds?.length ?? 0, updated: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
     }
     
     return {
       success: false,
-      isTimeout: isTimeout,
+      isTimeout: false,
       message: err?.message || 'Unknown error',
       error: { message: err?.message || String(err) },
       summary: { requested: accountIds?.length ?? 0, updated: 0, failed: accountIds?.length ?? 0 },
@@ -794,9 +848,12 @@ export const bulkCreateAccounts = async (accounts, mode = 'partial', onSyncProgr
       );
       
       if (pollResult?.status === 'succeeded') {
+        // Backend stores: { data: {...}, http_status: 200 }
+        // We need to unwrap .data to get the actual result
+        const actualResult = pollResult.result?.data || pollResult.result || {};
         return {
           success: true,
-          ...(pollResult.result || {})
+          ...actualResult
         };
       }
       
@@ -845,8 +902,44 @@ export const bulkCreateAccounts = async (accounts, mode = 'partial', onSyncProgr
 
   } catch (err) {
     console.error('[bulkCreateAccounts] thrown', err);
+    
+    const isTimeout = 
+      err?.code === 'ECONNABORTED' || 
+      err?.message?.toLowerCase()?.includes('timeout') ||
+      err?.response?.status === 408 ||
+      err?.response?.status === 504;
+    
+    if (isTimeout) {
+      console.log('[bulkCreateAccounts] ⏱️ Timeout detected, starting polling...');
+      
+      const pollResult = await handleBulkTimeout(
+        err,
+        [endpoints.accounts, '/activities/', '/opportunities/', '/contacts/'],
+        onSyncProgress,
+        onSyncComplete
+      );
+      
+      if (pollResult?.status === 'succeeded') {
+        const actualResult = pollResult.result?.data || pollResult.result || {};
+        return {
+          success: true,
+          ...actualResult
+        };
+      }
+      
+      return {
+        success: false,
+        isTimeout: true,
+        isPending: pollResult?.status === 'still_running',
+        message: pollResult?.error || 'Operation may have completed in background',
+        summary: { total: accounts?.length ?? 0, success: 0, failed: 0, skipped: 0 },
+        results: { success: [], failed: [], skipped: [] }
+      };
+    }
+    
     return {
       success: false,
+      isTimeout: false,
       message: err?.message || 'Unknown error',
       error: { message: err?.message || String(err) },
       summary: { total: accounts?.length ?? 0, success: 0, failed: accounts?.length ?? 0, skipped: 0 },
