@@ -404,7 +404,7 @@ export default function AccountsListPage() {
           <Stack direction="row" alignItems="center" justifyContent="center" spacing={0}>
             <Tooltip title="Edit">
               <IconButton
-                color="primary"
+                color="secondary"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleEditAccount(row.original);
@@ -415,7 +415,7 @@ export default function AccountsListPage() {
             </Tooltip>
             <Tooltip title="Delete">
               <IconButton
-                color="error"
+                color="secondary"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDeleteAccount(row.original);

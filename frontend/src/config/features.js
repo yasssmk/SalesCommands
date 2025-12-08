@@ -32,31 +32,41 @@ export const FEATURES = {
   // Global WIP visibility control
   SHOW_WIP_ITEMS: isDevelopment || showWipOverride,
   
-  // Administration features
-  USER_MANAGEMENT: true, // Ready for production
-  TEAM_MANAGEMENT: true, // In development
-  ORGANIZATION_MANAGEMENT: false, // In development  
-  ROLES_PERMISSIONS: true,
-  ACCOUNT_MANAGEMENT: true, 
+  // ============================================
+  // DASHBOARD
+  // ============================================
+  DASHBOARD: false, // Main dashboard - Coming soon
   
-  // CRM features (future)
-  LEADS_MANAGEMENT: false,
-  OPPORTUNITIES: false,
-  ACCOUNTS: false,
-  CONTACTS: false,
+  // ============================================
+  // GO-TO-MARKET FEATURES
+  // ============================================
+  ACTION_CENTER: false,    // Workboard/Action center - Coming soon
+  TERRITORIES: true,       // Territory management - Active
+  CAMPAIGNS: false,        // Campaign management - Coming soon
+  SALES_PLAN: false,       // Sales planning - Coming soon
   
-  // Analytics features (future)
-  DASHBOARDS: false,
-  REPORTS: false,
-  METRICS: false,
+  // ============================================
+  // BUSINESS DATA FEATURES
+  // ============================================
+  ACCOUNT_MANAGEMENT: true,   // Account CRUD - Active
+  CONTACTS_MANAGEMENT: false, // Contact management - Coming soon
+  PRODUCTS_MANAGEMENT: false, // Product catalog - Coming soon
   
-  // System features
+  // ============================================
+  // ADMINISTRATION FEATURES
+  // ============================================
+  USER_MANAGEMENT: true,         // User CRUD - Active
+  TEAM_MANAGEMENT: true,         // Team management - Active
+  ROLES_PERMISSIONS: true,       // Roles & permissions - Active
+  
+  // ============================================
+  // SYSTEM FEATURES (future)
+  // ============================================
   AUDIT_LOGS: false,
   API_KEYS: false,
   INTEGRATIONS: false,
   WEBHOOKS: false,
 };
-
 // ==============================|| HELPER FUNCTIONS ||============================== //
 
 /**

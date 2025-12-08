@@ -159,5 +159,13 @@
   "wip-coming-soon": "Coming Soon",
   "back-to-dashboard": "Back to Dashboard",
   "back-to-home": "Back to Home",
-  "more-items": "More Items"
+  "more-items": "More Items",
+  "action-center": "Action Center",
+  "business-data": "Business Data",
+  "campaigns": "Campaigns",
+  "contacts-management": "Contacts",
+  "go-to-market": "Go-To-Market",
+  "products-management": "Products",
+  "sales-plan": "Sales Plan",
+  "territories": "Territories"
 }
