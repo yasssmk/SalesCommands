@@ -1,6 +1,6 @@
 // frontend/src/app/(protected)/admin/accounts/page.jsx
 
-import AccountsListPage from 'views/admin/accounts/list';
+import AccountsListPage from 'views/businessData/accounts/list';
 
 // ==============================|| ACCOUNTS PAGE ||============================== //
 
@@ -8,7 +8,7 @@ import AccountsListPage from 'views/admin/accounts/list';
  * Next.js App Router page component for Account Management
  * 
  * Protected by AuthGuard (via layout)
- * Imports the actual component from views/admin/accounts/list.jsx
+ * Imports the actual component from views/businessData/accounts/list.jsx
  */
 export default function AdminAccountsPage() {
   return <AccountsListPage />;

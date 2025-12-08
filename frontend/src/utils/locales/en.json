@@ -167,5 +167,14 @@
   "go-to-market": "Go-To-Market",
   "products-management": "Products",
   "sales-plan": "Sales Plan",
-  "territories": "Territories"
+  "territories": "Territories",
+  "territory-all-accounts": "All Accounts",
+  "territory-all-contacts": "All Contacts",
+  "territory-current": "Current Territory",
+  "territory-accounts-count": "Accounts",
+  "territory-contacts-count": "Contacts",
+  "territory-coming-soon": "Contacts module coming soon",
+  "territory-coming-soon-desc": "Contact-based territories will be available once the Contacts API is implemented.",
+  "territory-no-accounts": "No accounts found",
+  "territory-search-placeholder": "Search accounts..."
 }

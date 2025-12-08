@@ -1,4 +1,4 @@
-// frontend/src/views/admin/accounts/list.jsx
+// frontend/src/views/businessData/accounts/list.jsx
 
 'use client';
 import { useMemo, useState, useCallback } from 'react';
