@@ -36,7 +36,7 @@ import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
 
 // filters
-import TerritoryFilterPanel from 'sections/territories/TerritoryFilterPanel';
+import TerritoryFilterPanel from 'sections/admin/accounts/TerritoryFilterPanel';
 import useTerritoryFilters from 'hooks/useTerritoryFilters';
 
 // ==============================|| SORT FIELD MAPPING ||============================== //

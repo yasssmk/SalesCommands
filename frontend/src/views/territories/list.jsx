@@ -2,349 +2,205 @@
 
 'use client';
 
-import { useMemo, useState, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 
 // material-ui
+import useMediaQuery from '@mui/material/useMediaQuery';
 import Box from '@mui/material/Box';
-import Chip from '@mui/material/Chip';
+import Button from '@mui/material/Button';
+import Grid from '@mui/material/Grid';
+import Pagination from '@mui/material/Pagination';
+import Slide from '@mui/material/Slide';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import Badge from '@mui/material/Badge';
-import Button from '@mui/material/Button';
-
-// icons
-import FilterOutlined from '@ant-design/icons/FilterOutlined';
 
 // project imports
 import MainCard from 'components/MainCard';
-import ReusableTable from 'components/table/Table';
-import TerritorySelector from 'sections/territories/TerritorySelector';
-import TerritoryFilterPanel from 'sections/territories/TerritoryFilterPanel';
-
-// hooks
-import { useAuth } from 'hooks/useAuth';
-import useTerritoryFilters from 'hooks/useTerritoryFilters';
+import { DebouncedInput } from 'components/third-party/react-table';
+import TerritoryCard from 'sections/territories/TerritoryCard';
 
 // api
+import { TERRITORIES } from 'api/territories';
 import { useGetAccounts } from 'api/admin/accounts';
-import { TERRITORIES, DEFAULT_TERRITORY_ID } from 'api/territories';
+
+// assets
+import PlusOutlined from '@ant-design/icons/PlusOutlined';
 
 // ==============================|| TERRITORIES LIST PAGE ||============================== //
 
 /**
  * Territories Page - Sales-facing workspace
  * 
- * NOT an admin CRUD page. This is a read-only exploration interface
- * for sales reps to view and filter account segments.
+ * Displays territories as cards for easy navigation.
+ * Each card shows count and allows exploring accounts.
  * 
  * Phase 1: Hardcoded territories (All Accounts, All Contacts)
  * Future: Backend API for territory CRUD
  */
 export default function TerritoriesListPage() {
-  const { tenantId } = useAuth();
+  const matchDownSM = useMediaQuery((theme) => theme.breakpoints.down('sm'));
 
   // ==============================|| STATE ||============================== //
 
-  const [selectedTerritoryId, setSelectedTerritoryId] = useState(DEFAULT_TERRITORY_ID);
+  const [globalFilter, setGlobalFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [search, setSearch] = useState('');
-  const [sorting, setSorting] = useState([]);
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
 
-  // Filters hook
-  const {
-    filters,
-    pendingFilters,
-    activeFiltersCount,
-    hasPendingChanges,
-    apiFilters,
-    updatePendingFilter,
-    applyFilters,
-    clearFilters,
-    resetPendingFilters
-  } = useTerritoryFilters();
+  // ==============================|| PAGINATION CONFIG ||============================== //
 
-  // Get selected territory data
-  const selectedTerritory = useMemo(() => {
-    return TERRITORIES.find(t => t.id === selectedTerritoryId) || TERRITORIES[0];
-  }, [selectedTerritoryId]);
+  const PER_PAGE = 6;
 
+  // ==============================|| API DATA - ACCOUNTS COUNT ||============================== //
 
-  // ==============================|| API DATA ||============================== //
+  // Fetch total accounts count for "All Accounts" territory
+  const { accountsCount = 0, accountsLoading } = useGetAccounts({ 
+    page: 1, 
+    pageSize: 1 
+  }) || {};
 
-  // Only fetch accounts if territory type is 'account'
-  const shouldFetchAccounts = selectedTerritory?.type === 'account';
+  // ==============================|| FILTERED TERRITORIES ||============================== //
 
-  const {
-    accounts = [],
-    accountsCount = 0,
-    accountsLoading = false,
-    accountsError = null
-  } = useGetAccounts(shouldFetchAccounts ? { page, pageSize, search, filters: apiFilters } : null) || {};
+  const filteredTerritories = useMemo(() => {
+    if (!globalFilter) {
+      return TERRITORIES;
+    }
 
-  // For contacts territory - placeholder until Contacts API exists
-  const isContactsTerritory = selectedTerritory?.type === 'contact';
+    const searchLower = globalFilter.toLowerCase();
+    return TERRITORIES.filter((territory) => {
+      return (
+        territory.name.toLowerCase().includes(searchLower) ||
+        territory.description?.toLowerCase().includes(searchLower)
+      );
+    });
+  }, [globalFilter]);
+
+  // ==============================|| PAGINATION ||============================== //
+
+  const totalPages = Math.ceil(filteredTerritories.length / PER_PAGE);
+
+  const paginatedTerritories = useMemo(() => {
+    const startIndex = (page - 1) * PER_PAGE;
+    const endIndex = startIndex + PER_PAGE;
+    return filteredTerritories.slice(startIndex, endIndex);
+  }, [filteredTerritories, page]);
 
   // ==============================|| HANDLERS ||============================== //
 
-  const handleTerritoryChange = useCallback((territoryId) => {
-    setSelectedTerritoryId(territoryId);
-    setPage(1);
-    setSearch('');
-  }, []);
-
-  const handlePaginationChange = useCallback(({ page: newPage, pageSize: newPageSize }) => {
+  const handlePageChange = (event, newPage) => {
     setPage(newPage);
-    if (newPageSize !== pageSize) {
-      setPageSize(newPageSize);
+  };
+
+  const handleSearchChange = (value) => {
+    setGlobalFilter(String(value));
+    setPage(1); // Reset to first page on search
+  };
+
+  const handleNewTerritory = () => {
+    // Future: open create territory modal
+    console.log('New territory - coming soon');
+  };
+
+  // ==============================|| GET TERRITORY COUNT ||============================== //
+
+  /**
+   * Get the record count for a territory
+   * Phase 1: Only "All Accounts" has real count
+   */
+  const getTerritoryCount = (territory) => {
+    if (territory.id === 'all-accounts') {
+      return accountsCount;
     }
-  }, [pageSize]);
-
-  const handleSearchChange = useCallback((searchTerm) => {
-    setSearch(searchTerm);
-    setPage(1);
-  }, []);
-
-  const handleSortingChange = useCallback((updaterOrValue) => {
-    setSorting((prev) => 
-      typeof updaterOrValue === 'function' ? updaterOrValue(prev) : updaterOrValue
-    );
-  }, []);
-
-  const handleOpenFilterPanel = useCallback(() => {
-    setFilterPanelOpen(true);
-  }, []);
-
-  const handleCloseFilterPanel = useCallback(() => {
-    resetPendingFilters();
-    setFilterPanelOpen(false);
-  }, [resetPendingFilters]);
-
-  const handleApplyFilters = useCallback(() => {
-    applyFilters();
-    setPage(1);
-  }, [applyFilters]);
-
-  // ==============================|| COLUMNS ||============================== //
-
-  const columns = useMemo(() => [
-    {
-      header: 'Company',
-      accessorKey: 'company_name',
-      cell: ({ row }) => {
-        const { company_name, industry, city, country, website } = row.original;
-        
-        // Generate favicon URL from website domain
-        let faviconUrl = null;
-        if (website) {
-          try {
-            const domain = new URL(website.startsWith('http') ? website : `https://${website}`).hostname;
-            faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
-          } catch (e) {
-            // Invalid URL, no favicon
-          }
-        }
-        
-        const location = [city, country].filter(Boolean).join(', ');
-        
-        return (
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            {/* Logo */}
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: 1,
-                bgcolor: 'grey.100',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                overflow: 'hidden'
-              }}
-            >
-              {faviconUrl ? (
-                <Box
-                  component="img"
-                  src={faviconUrl}
-                  alt=""
-                  sx={{ width: 24, height: 24 }}
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                  }}
-                />
-              ) : (
-                <Typography variant="caption" color="text.secondary">
-                  {company_name?.charAt(0)?.toUpperCase() || '?'}
-                </Typography>
-              )}
-            </Box>
-            
-            {/* Company info */}
-            <Stack spacing={0}>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
-                  {company_name || '—'}
-                </Typography>
-                {location && (
-                  <Typography variant="body2" color="text.secondary">
-                    {location}
-                  </Typography>
-                )}
-              </Stack>
-              {industry && (
-                <Typography variant="caption" color="text.secondary">
-                  {industry}
-                </Typography>
-              )}
-            </Stack>
-          </Stack>
-        );
-      }
-    },
-    {
-      header: 'Type',
-      accessorKey: 'type',
-      cell: ({ getValue }) => {
-        const value = getValue();
-        if (!value) return '—';
-        
-        const colorMap = {
-          CLIENT: 'success',
-          PROSPECT: 'warning',
-          PARTNER: 'info',
-          VENDOR: 'secondary',
-          OTHER: 'default'
-        };
-        
-        return (
-          <Chip
-            label={value}
-            color={colorMap[value] || 'default'}
-            size="small"
-            variant="light"
-          />
-        );
-      }
-    },
-    {
-      header: 'Classification',
-      accessorKey: 'classification',
-      cell: ({ getValue }) => {
-        const value = getValue();
-        return (
-          <Typography variant="body2" color="text.secondary">
-            {value || '—'}
-          </Typography>
-        );
-      }
-    },
-    {
-      header: 'Owner',
-      accessorKey: 'account_owner',
-      cell: ({ row }) => {
-        const owner = row.original.account_owner;
-        if (!owner) return <Typography color="text.secondary">—</Typography>;
-        
-        const name = `${owner.first_name || ''} ${owner.last_name || ''}`.trim();
-        return (
-          <Typography variant="body2">
-            {name || owner.email || '—'}
-          </Typography>
-        );
-      }
+    if (territory.id === 'all-contacts') {
+      return 0; // Future: contacts count
     }
-  ], []);
+    // Future: dynamic count based on filters
+    return 0;
+  };
 
   // ==============================|| RENDER ||============================== //
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <>
+      {/* ==================== HEADER ==================== */}
+      <Box sx={{ position: 'relative', marginBottom: 3 }}>
+        <Stack direction="row" alignItems="center">
+          <Stack
+            direction={matchDownSM ? 'column' : 'row'}
+            sx={{ width: '100%' }}
+            spacing={1}
+            justifyContent="space-between"
+            alignItems="center"
+          >
+            {/* Search */}
+            <DebouncedInput
+              value={globalFilter ?? ''}
+              onFilterChange={handleSearchChange}
+              placeholder={`Search ${TERRITORIES.length} territories...`}
+            />
 
-      {/* ==================== TERRITORY SELECTOR ==================== */}
-      <MainCard sx={{ p: 2 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center">
-          <TerritorySelector
-            territories={TERRITORIES}
-            selectedId={selectedTerritoryId}
-            onChange={handleTerritoryChange}
-          />
-          
-          {/* Filters button - only for account territories */}
-          {shouldFetchAccounts && (
-            <Badge badgeContent={activeFiltersCount} color="primary">
-              <Button
-                variant="outlined"
-                startIcon={<FilterOutlined />}
-                onClick={handleOpenFilterPanel}
+            {/* Actions */}
+            <Stack direction={matchDownSM ? 'column' : 'row'} alignItems="center" spacing={1}>
+              <Button 
+                variant="contained" 
+                startIcon={<PlusOutlined />} 
+                onClick={handleNewTerritory}
+                disabled
               >
-                Filters
+                New Territory
               </Button>
-            </Badge>
-          )}
+            </Stack>
+          </Stack>
         </Stack>
-      </MainCard>
+      </Box>
 
-      {/* ==================== FILTER PANEL ==================== */}
-      <TerritoryFilterPanel
-        open={filterPanelOpen}
-        onClose={handleCloseFilterPanel}
-        pendingFilters={pendingFilters}
-        onFilterChange={updatePendingFilter}
-        onApply={handleApplyFilters}
-        onClear={clearFilters}
-        hasPendingChanges={hasPendingChanges}
-        matchingCount={accountsCount}
-        loading={accountsLoading}
-      />
+      {/* ==================== TERRITORIES GRID ==================== */}
+      <Grid container spacing={3}>
+        {paginatedTerritories.length > 0 ? (
+          paginatedTerritories.map((territory, index) => (
+            <Slide key={territory.id} direction="up" in={true} timeout={50 + index * 50}>
+              <Grid item xs={12} sm={6} lg={4}>
+                <TerritoryCard
+                  territory={territory}
+                  accountsCount={getTerritoryCount(territory)}
+                  loading={accountsLoading && territory.id === 'all-accounts'}
+                />
+              </Grid>
+            </Slide>
+          ))
+        ) : (
+          <Grid item xs={12}>
+            <MainCard>
+              <Box sx={{ p: 4, textAlign: 'center' }}>
+                <Typography variant="h5" color="text.secondary">
+                  No territories found
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  {globalFilter 
+                    ? `No territories match "${globalFilter}"`
+                    : 'Create your first territory to get started'
+                  }
+                </Typography>
+              </Box>
+            </MainCard>
+          </Grid>
+        )}
+      </Grid>
 
-      {/* ==================== SUMMARY PLACEHOLDER ==================== */}
-      <MainCard sx={{ p: 2 }}>
-        <Stack direction="row" spacing={4}>
-          <Box>
-            <Typography variant="h3">
-              {shouldFetchAccounts ? accountsCount : 0}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {selectedTerritory?.type === 'account' ? 'Accounts' : 'Contacts'}
-            </Typography>
-          </Box>
-        </Stack>
-      </MainCard>
-
-      {/* ==================== DATA LIST ==================== */}
-      {isContactsTerritory ? (
-        <MainCard>
-          <Box sx={{ p: 4, textAlign: 'center' }}>
-            <Typography variant="h5" color="text.secondary">
-              Contacts module coming soon
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Contact-based territories will be available once the Contacts API is implemented.
-            </Typography>
-          </Box>
-        </MainCard>
-      ) : (
-        <MainCard content={false}>
-          <ReusableTable
-            columns={columns}
-            data={accounts}
-            totalRows={accountsCount}
-            loading={accountsLoading}
-            error={accountsError}
+      {/* ==================== PAGINATION ==================== */}
+      {totalPages > 1 && (
+        <Stack spacing={2} sx={{ p: 2.5 }} alignItems="flex-end">
+          <Pagination
+            sx={{ '& .MuiPaginationItem-root': { my: 0.5 } }}
+            count={totalPages}
+            size="medium"
             page={page}
-            pageSize={pageSize}
-            onPaginationChange={handlePaginationChange}
-            search={search}
-            onSearchChange={handleSearchChange}
-            sorting={sorting}
-            onSortingChange={handleSortingChange}
-            emptyMessage="No accounts found"
-            searchPlaceholder="Search accounts..."
+            showFirstButton
+            showLastButton
+            variant="combined"
+            color="primary"
+            onChange={handlePageChange}
           />
-        </MainCard>
+        </Stack>
       )}
-    </Box>
+    </>
   );
 }
