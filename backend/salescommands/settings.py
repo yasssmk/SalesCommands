@@ -212,6 +212,7 @@ INSTALLED_APPS = [
     'apps.core_apps',
     'apps.accounts', #OBSOLETE
     'app_modules.accounts',  # New UUID-based accounts module
+    'app_modules.territories',  # Territories module for sales segmentation
     'apps.signals',
     'apps.campaign',
     'apps.opportunities',

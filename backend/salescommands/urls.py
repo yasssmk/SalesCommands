@@ -64,7 +64,10 @@ urlpatterns = [
     path('ops/', include('ops.urls')),
 
     path('admin/', admin.site.urls),
+
+    #APP MODULE
     path('company-accounts/', include('app_modules.accounts.urls')),
+    path('territories/', include('app_modules.territories.urls')),
 
     # Path to validate 
     path(app_key+'accounts/', include('apps.accounts.urls')),

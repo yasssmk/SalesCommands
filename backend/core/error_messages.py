@@ -63,6 +63,7 @@ class CoreErrorMessages:
     UNEXPECTED_ERROR = _("An unexpected error occurred: {detail}")
     INVALID_REQUEST = _("Invalid request format: {reason}")
     OBJECT_IN_USE = _("Cannot delete {fields} as it is in use")
+    CANNOT_DELETE = _("Cannot delete {fields}")
 
     # AI Service Related
     INVALID_CONFIG = _("AI service configuration is invalid")

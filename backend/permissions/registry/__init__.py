@@ -20,6 +20,7 @@ from .leads_registry import LEADS_REGISTRY
 from .opportunities_registry import OPPORTUNITIES_REGISTRY
 from .products_registry import PRODUCTS_REGISTRY
 from .campaigns_registry import CAMPAIGNS_REGISTRY
+from .territories_registry import TERRITORIES_REGISTRY
 
 from ..constants import normalize_action
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ def build_registry() -> Dict:
     registry.update(ACTIVITIES_REGISTRY)
     registry.update(LEADS_REGISTRY)
     registry.update(OPPORTUNITIES_REGISTRY)
+    registry.update(TERRITORIES_REGISTRY)
     
     logger.debug(f"Built registry with {len(registry)} modules")
     for module in registry.keys():
