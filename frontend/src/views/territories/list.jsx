@@ -9,14 +9,21 @@ import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import Badge from '@mui/material/Badge';
+import Button from '@mui/material/Button';
+
+// icons
+import FilterOutlined from '@ant-design/icons/FilterOutlined';
 
 // project imports
 import MainCard from 'components/MainCard';
 import ReusableTable from 'components/table/Table';
 import TerritorySelector from 'sections/territories/TerritorySelector';
+import TerritoryFilterPanel from 'sections/territories/TerritoryFilterPanel';
 
 // hooks
 import { useAuth } from 'hooks/useAuth';
+import useTerritoryFilters from 'hooks/useTerritoryFilters';
 
 // api
 import { useGetAccounts } from 'api/admin/accounts';
@@ -43,6 +50,20 @@ export default function TerritoriesListPage() {
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const [sorting, setSorting] = useState([]);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+
+  // Filters hook
+  const {
+    filters,
+    pendingFilters,
+    activeFiltersCount,
+    hasPendingChanges,
+    apiFilters,
+    updatePendingFilter,
+    applyFilters,
+    clearFilters,
+    resetPendingFilters
+  } = useTerritoryFilters();
 
   // Get selected territory data
   const selectedTerritory = useMemo(() => {
@@ -60,7 +81,7 @@ export default function TerritoriesListPage() {
     accountsCount = 0,
     accountsLoading = false,
     accountsError = null
-  } = useGetAccounts(shouldFetchAccounts ? { page, pageSize, search } : null) || {};
+  } = useGetAccounts(shouldFetchAccounts ? { page, pageSize, search, filters: apiFilters } : null) || {};
 
   // For contacts territory - placeholder until Contacts API exists
   const isContactsTerritory = selectedTerritory?.type === 'contact';
@@ -90,6 +111,20 @@ export default function TerritoriesListPage() {
       typeof updaterOrValue === 'function' ? updaterOrValue(prev) : updaterOrValue
     );
   }, []);
+
+  const handleOpenFilterPanel = useCallback(() => {
+    setFilterPanelOpen(true);
+  }, []);
+
+  const handleCloseFilterPanel = useCallback(() => {
+    resetPendingFilters();
+    setFilterPanelOpen(false);
+  }, [resetPendingFilters]);
+
+  const handleApplyFilters = useCallback(() => {
+    applyFilters();
+    setPage(1);
+  }, [applyFilters]);
 
   // ==============================|| COLUMNS ||============================== //
 
@@ -226,21 +261,43 @@ export default function TerritoriesListPage() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      
-      {/* ==================== HEADER ==================== */}
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography variant="h4">Territories</Typography>
-      </Stack>
-
 
       {/* ==================== TERRITORY SELECTOR ==================== */}
       <MainCard sx={{ p: 2 }}>
-        <TerritorySelector
-          territories={TERRITORIES}
-          selectedId={selectedTerritoryId}
-          onChange={handleTerritoryChange}
-        />
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <TerritorySelector
+            territories={TERRITORIES}
+            selectedId={selectedTerritoryId}
+            onChange={handleTerritoryChange}
+          />
+          
+          {/* Filters button - only for account territories */}
+          {shouldFetchAccounts && (
+            <Badge badgeContent={activeFiltersCount} color="primary">
+              <Button
+                variant="outlined"
+                startIcon={<FilterOutlined />}
+                onClick={handleOpenFilterPanel}
+              >
+                Filters
+              </Button>
+            </Badge>
+          )}
+        </Stack>
       </MainCard>
+
+      {/* ==================== FILTER PANEL ==================== */}
+      <TerritoryFilterPanel
+        open={filterPanelOpen}
+        onClose={handleCloseFilterPanel}
+        pendingFilters={pendingFilters}
+        onFilterChange={updatePendingFilter}
+        onApply={handleApplyFilters}
+        onClear={clearFilters}
+        hasPendingChanges={hasPendingChanges}
+        matchingCount={accountsCount}
+        loading={accountsLoading}
+      />
 
       {/* ==================== SUMMARY PLACEHOLDER ==================== */}
       <MainCard sx={{ p: 2 }}>

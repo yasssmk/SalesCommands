@@ -22,7 +22,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Skeleton from '@mui/material/Skeleton';
 import Chip from '@mui/material/Chip';
-import CloseOutlined from '@ant-design/icons/CloseOutlined';
+import Badge from '@mui/material/Badge';
 
 // third-party
 import {
@@ -53,6 +53,10 @@ import {
 
 // assets
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import CloseOutlined from '@ant-design/icons/CloseOutlined';
+import FilterOutlined from '@ant-design/icons/FilterOutlined';
+
+
 
 // ==============================|| REUSABLE TABLE COMPONENT ||============================== //
 
@@ -126,7 +130,15 @@ function ReusableTable({
   expandedRowContent = null,
   enableExpanding = false,
   enableImport = true,
-  filterConfig = null 
+  filterConfig = null,
+
+  // Advanced Filter Panel props
+  advancedFilterPanel = null,
+  advancedFilters = [],
+  advancedFilterCount = 0,
+  onAdvancedFilterOpen,
+  onAdvancedFilterRemove,
+  onAdvancedFilterClear
 }) {
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
@@ -213,7 +225,15 @@ function ReusableTable({
  * Reads URL params and displays them as Material-UI Chips
  * Each chip can be removed to clear that filter from URL
  */
-const FilterChips = ({ filterConfig, globalFilter, onSearchChange }) => {
+const FilterChips = ({ 
+  filterConfig, 
+  globalFilter, 
+  onSearchChange,
+  // New props for external (state-based) filters
+  externalFilters = [],
+  onExternalFilterRemove,
+  onExternalFilterClear
+}) => {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -221,7 +241,7 @@ const FilterChips = ({ filterConfig, globalFilter, onSearchChange }) => {
   const IGNORED_PARAMS = ['page', 'page_size', 'search', 'ordering', 'nonce'];
 
   // Get active filters from URL
-  const activeFilters = useMemo(() => {
+  const urlFilters = useMemo(() => {
     if (!filterConfig) return [];
 
     const filters = [];
@@ -247,48 +267,66 @@ const FilterChips = ({ filterConfig, globalFilter, onSearchChange }) => {
         key,
         value,
         label: config.label || key,
-        displayValue
+        displayValue,
+        source: 'url'
       });
     });
 
     return filters;
   }, [searchParams, filterConfig, data]);
 
-  // Remove specific filter
-  const handleRemoveFilter = useCallback((filterKey) => {
+  // Combine URL filters and external filters
+  const allFilters = useMemo(() => {
+    const external = externalFilters.map(f => ({
+      ...f,
+      displayValue: f.value,
+      source: 'external'
+    }));
+    return [...urlFilters, ...external];
+  }, [urlFilters, externalFilters]);
+
+  // Remove specific filter (URL-based)
+  const handleRemoveUrlFilter = useCallback((filterKey) => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete(filterKey);
-    
-    // Reset to page 1 when filter changes
     params.set('page', '1');
-    
     router.push(`?${params.toString()}`);
   }, [searchParams, router]);
 
+  // Remove filter handler (dispatches to correct handler based on source)
+  const handleRemoveFilter = useCallback((filter) => {
+    if (filter.source === 'url') {
+      handleRemoveUrlFilter(filter.key);
+    } else if (onExternalFilterRemove) {
+      onExternalFilterRemove(filter.key);
+    }
+  }, [handleRemoveUrlFilter, onExternalFilterRemove]);
+
   // Clear all filters + search
   const handleClearAll = useCallback(() => {
+    // Clear URL filters
     const params = new URLSearchParams(searchParams.toString());
-    
-    // Remove all filter params (keep pagination/ordering if needed)
     Array.from(params.keys()).forEach(key => {
       if (!['page_size', 'ordering'].includes(key)) {
         params.delete(key);
       }
     });
-    
-    // Reset page to 1
     params.set('page', '1');
-    
     router.push(`?${params.toString()}`);
     
     // Clear search input
     if (onSearchChange) {
       onSearchChange('');
     }
-  }, [searchParams, router, onSearchChange]);
+
+    // Clear external filters
+    if (onExternalFilterClear) {
+      onExternalFilterClear();
+    }
+  }, [searchParams, router, onSearchChange, onExternalFilterClear]);
 
   // Don't render if no active filters
-  if (activeFilters.length === 0 && !globalFilter) {
+  if (allFilters.length === 0 && !globalFilter) {
     return null;
   }
 
@@ -299,14 +337,13 @@ const FilterChips = ({ filterConfig, globalFilter, onSearchChange }) => {
           Applied filters:
         </Typography>
         
-        {activeFilters.map((filter) => (
+        {allFilters.map((filter) => (
           <Chip
-            key={filter.key}
+            key={`${filter.source}-${filter.key}`}
             label={`${filter.label}: ${filter.displayValue}`}
-            onDelete={() => handleRemoveFilter(filter.key)}
+            onDelete={() => handleRemoveFilter(filter)}
             deleteIcon={<CloseOutlined />}
             size="small"
-            color="primary"
             variant="outlined"
           />
         ))}
@@ -317,12 +354,11 @@ const FilterChips = ({ filterConfig, globalFilter, onSearchChange }) => {
             onDelete={() => onSearchChange?.('')}
             deleteIcon={<CloseOutlined />}
             size="small"
-            color="default"
             variant="outlined"
           />
         )}
 
-        {(activeFilters.length > 0 || globalFilter) && (
+        {(allFilters.length > 0 || globalFilter) && (
           <Button
             size="small"
             onClick={handleClearAll}
@@ -455,6 +491,22 @@ const FilterChips = ({ filterConfig, globalFilter, onSearchChange }) => {
                 {addButtonLabel}
               </Button>
             )}
+            {/* Advanced Filter Button - only if panel provided */}
+            {advancedFilterPanel && (
+              <Badge 
+                badgeContent={advancedFilterCount} 
+                color="primary"
+                invisible={advancedFilterCount === 0 || selectedCount > 0}
+              >
+                <IconButton
+                  color="secondary"
+                  onClick={onAdvancedFilterOpen}
+                  disabled={loading || !!error}
+                >
+                  <FilterOutlined />
+                </IconButton>
+              </Badge>
+            )}
             <TableHeaderActions 
               selectedRowCount={selectedCount || 0}    
               onEdit={() => { if (onEdit) onEdit(); }} 
@@ -470,11 +522,18 @@ const FilterChips = ({ filterConfig, globalFilter, onSearchChange }) => {
       </Stack>
 
       <FilterChips 
-      filterConfig={filterConfig}
-      globalFilter={globalFilter}
-      onSearchChange={(value) => setGlobalFilter(String(value))}
-      data={data}
-    />
+        filterConfig={filterConfig}
+        globalFilter={globalFilter}
+        onSearchChange={(value) => setGlobalFilter(String(value))}
+        data={data}
+        // External (state-based) filters
+        externalFilters={advancedFilters}
+        onExternalFilterRemove={onAdvancedFilterRemove}
+        onExternalFilterClear={onAdvancedFilterClear}
+      />
+
+      {/* Render the filter panel (drawer) */}
+      {advancedFilterPanel}
 
       <ScrollX>
         <Stack>
@@ -625,7 +684,18 @@ ReusableTable.propTypes = {
   expandedRowContent: PropTypes.func,
   enableExpanding: PropTypes.bool,
   enableImport: PropTypes.bool,
-  filterConfig: PropTypes.object 
+  filterConfig: PropTypes.object,
+  // Advanced Filter Panel
+  advancedFilterPanel: PropTypes.node,
+  advancedFilters: PropTypes.arrayOf(PropTypes.shape({
+    key: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired,
+    value: PropTypes.string.isRequired
+  })),
+  advancedFilterCount: PropTypes.number,
+  onAdvancedFilterOpen: PropTypes.func,
+  onAdvancedFilterRemove: PropTypes.func,
+  onAdvancedFilterClear: PropTypes.func
 };
 
 export default ReusableTable;

@@ -35,6 +35,10 @@ import { formatDateTime } from 'config/formatters';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
 
+// filters
+import TerritoryFilterPanel from 'sections/territories/TerritoryFilterPanel';
+import useTerritoryFilters from 'hooks/useTerritoryFilters';
+
 // ==============================|| SORT FIELD MAPPING ||============================== //
 
 /**
@@ -116,6 +120,21 @@ export default function AccountsListPage() {
   const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
   const [bulkEditModal, setBulkEditModal] = useState(false);
   const [csvImportModal, setCsvImportModal] = useState(false);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false); 
+
+  // Advanced filters hook
+  const {
+    filters,
+    pendingFilters,
+    activeFiltersCount,
+    hasActiveFilters,
+    hasPendingChanges,
+    apiFilters,
+    updatePendingFilter,
+    applyFilters,
+    clearFilters,
+    resetPendingFilters
+  } = useTerritoryFilters();
 
   // ==============================|| COMPUTE ORDERING STRING ||============================== //
 
@@ -142,7 +161,8 @@ export default function AccountsListPage() {
     page,
     pageSize: validPageSize,
     search,
-    ordering
+    ordering,
+    filters: apiFilters
   }) || {};
 
   const {
@@ -272,6 +292,68 @@ export default function AccountsListPage() {
   const handleOpenCSVImport = useCallback(() => {
     setCsvImportModal(true);
   }, []);
+
+  // ==============================|| FILTER HANDLERS ||============================== //
+
+  const handleOpenFilterPanel = useCallback(() => {
+    setFilterPanelOpen(true);
+  }, []);
+
+  const handleCloseFilterPanel = useCallback(() => {
+    setFilterPanelOpen(false);
+  }, [resetPendingFilters]);
+
+  const handleApplyFilters = useCallback(() => {
+    applyFilters();
+    setPage(1);
+    setFilterPanelOpen(false);
+  }, [applyFilters]);
+
+  const handleClearFilters = useCallback(() => {
+    clearFilters();
+    setPage(1);
+  }, [clearFilters]);
+
+  const handleRemoveFilter = useCallback((filterKey) => {
+    updatePendingFilter(filterKey, '');
+    // Apply immediately after removing
+    setTimeout(() => {
+      applyFilters();
+      setPage(1);
+    }, 0);
+  }, [updatePendingFilter, applyFilters]);
+
+  // ==============================|| ADVANCED FILTERS FOR CHIPS ||============================== //
+
+  const advancedFiltersChips = useMemo(() => {
+    const chips = [];
+    
+    if (filters.type) {
+      chips.push({
+        key: 'type',
+        label: 'Type',
+        value: filters.type
+      });
+    }
+    
+    if (filters.classification) {
+      chips.push({
+        key: 'classification',
+        label: 'Classification',
+        value: filters.classification
+      });
+    }
+    
+    if (filters.account_owner) {
+      chips.push({
+        key: 'account_owner',
+        label: 'Owner',
+        value: 'Filtered'
+      });
+    }
+    
+    return chips;
+  }, [filters]);
 
   // ==============================|| COLUMNS DEFINITION ||============================== //
 
@@ -481,6 +563,26 @@ export default function AccountsListPage() {
         exportFilename="accounts-list.csv"
         emptyMessage="No accounts found"
         emptyDescription="Start by adding your first company account"
+
+        // Advanced Filter Panel
+        advancedFilterPanel={
+          <TerritoryFilterPanel
+            open={filterPanelOpen}
+            onClose={handleCloseFilterPanel}
+            pendingFilters={pendingFilters}
+            onFilterChange={updatePendingFilter}
+            onApply={handleApplyFilters}
+            onClear={handleClearFilters}
+            hasPendingChanges={hasPendingChanges}
+            matchingCount={accountsCount}
+            loading={accountsLoading}
+          />
+        }
+        advancedFilters={advancedFiltersChips}
+        advancedFilterCount={activeFiltersCount}
+        onAdvancedFilterOpen={handleOpenFilterPanel}
+        onAdvancedFilterRemove={handleRemoveFilter}
+        onAdvancedFilterClear={handleClearFilters}
       />
 
       {/* Account Modal (Add/Edit) */}
