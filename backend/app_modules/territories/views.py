@@ -63,7 +63,14 @@ class TerritoryViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     
     # Filtering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['type', 'is_system', 'is_default', 'owner']
+    filterset_fields = {
+        'type': ['exact'],
+        'classification': ['exact'],
+        'country': ['exact'],
+        'industry': ['exact'],
+        'account_owner': ['exact'],
+        'account_owner__id': ['exact'],
+    }
     search_fields = ['name', 'description']
     ordering_fields = [
         'name',

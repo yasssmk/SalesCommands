@@ -25,7 +25,7 @@ import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import ArrowRightOutlined from '@ant-design/icons/ArrowRightOutlined';
 
 // api
-import { TERRITORY_TYPES } from 'api/territories';
+import { TERRITORY_TYPES } from 'api/territories/territories';
 
 // ==============================|| TERRITORY CARD ||============================== //
 
@@ -42,7 +42,9 @@ import { TERRITORY_TYPES } from 'api/territories';
 export default function TerritoryCard({ 
   territory, 
   accountsCount = 0,
-  loading = false 
+  loading = false,
+  onEdit,
+  onDelete
 }) {
   const router = useRouter();
 
@@ -57,9 +59,9 @@ export default function TerritoryCard({
   const handleExploreAccounts = () => {
     const params = new URLSearchParams();
     
-    // Apply territory filters to URL params
-    if (territory.filters) {
-      Object.entries(territory.filters).forEach(([key, value]) => {
+    // Apply territory filter_definition to URL params
+    if (territory.filter_definition) {
+      Object.entries(territory.filter_definition).forEach(([key, value]) => {
         if (value) {
           params.set(key, value);
         }
@@ -83,8 +85,9 @@ export default function TerritoryCard({
   };
 
   const handleEdit = () => {
-    // Future: open edit modal
-    console.log('Edit territory:', territory.id);
+    if (onEdit) {
+      onEdit(territory);
+    }
   };
 
   const handleDuplicate = () => {
@@ -92,26 +95,27 @@ export default function TerritoryCard({
     console.log('Duplicate territory:', territory.id);
   };
 
-  const handleDelete = () => {
-    // Future: delete territory
-    console.log('Delete territory:', territory.id);
+   const handleDelete = () => {
+    if (onDelete) {
+      onDelete(territory);
+    }
   };
 
   // ==============================|| FILTER SUMMARY ||============================== //
 
   const filterSummary = () => {
-    if (!territory.filters || Object.keys(territory.filters).length === 0) {
+    if (!territory.filter_definition || Object.keys(territory.filter_definition).length === 0) {
       return 'No filters applied';
     }
 
     const parts = [];
-    if (territory.filters.type) {
-      parts.push(`Type: ${territory.filters.type}`);
+    if (territory.filter_definition.type) {
+      parts.push(`Type: ${territory.filter_definition.type}`);
     }
-    if (territory.filters.classification) {
-      parts.push(`Classification: ${territory.filters.classification}`);
+    if (territory.filter_definition.classification) {
+      parts.push(`Classification: ${territory.filter_definition.classification}`);
     }
-    if (territory.filters.account_owner) {
+    if (territory.filter_definition.account_owner) {
       parts.push('Owner: Filtered');
     }
 
@@ -174,9 +178,9 @@ export default function TerritoryCard({
           </Stack>
 
           {/* Built-in badge */}
-          {territory.isBuiltIn && (
+          {territory.is_system && (
             <Chip 
-              label="Built-in" 
+              label="System" 
               size="small" 
               variant="light"
               color="default"
@@ -224,12 +228,11 @@ export default function TerritoryCard({
 
         {/* Action icons */}
         <Stack direction="row" spacing={0}>
-          <Tooltip title="Edit">
+          <Tooltip title={territory.is_system ? "Edit (limited)" : "Edit"}>
             <span>
               <IconButton 
                 size="small" 
                 onClick={handleEdit}
-                disabled={territory.isBuiltIn}
               >
                 <EditOutlined style={{ fontSize: 16 }} />
               </IconButton>
@@ -240,12 +243,12 @@ export default function TerritoryCard({
               <CopyOutlined style={{ fontSize: 16 }} />
             </IconButton>
           </Tooltip>
-          <Tooltip title="Delete">
+          <Tooltip title={territory.is_system ? "Cannot delete system territory" : "Delete"}>
             <span>
               <IconButton 
                 size="small" 
                 onClick={handleDelete}
-                disabled={territory.isBuiltIn}
+                disabled={territory.is_system}
               >
                 <DeleteOutlined style={{ fontSize: 16 }} />
               </IconButton>
@@ -263,11 +266,13 @@ TerritoryCard.propTypes = {
   territory: PropTypes.shape({
     id: PropTypes.string.isRequired,
     name: PropTypes.string.isRequired,
-    type: PropTypes.oneOf(['account', 'contact']).isRequired,
+    type: PropTypes.oneOf(['ACCOUNT', 'CONTACT']).isRequired,
     description: PropTypes.string,
-    isBuiltIn: PropTypes.bool,
-    filters: PropTypes.object
+    is_system: PropTypes.bool,
+    filter_definition: PropTypes.object
   }).isRequired,
   accountsCount: PropTypes.number,
-  loading: PropTypes.bool
+  loading: PropTypes.bool,
+  onEdit: PropTypes.func,
+  onDelete: PropTypes.func
 };

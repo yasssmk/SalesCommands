@@ -13,14 +13,18 @@ import Pagination from '@mui/material/Pagination';
 import Slide from '@mui/material/Slide';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import Dialog from '@mui/material/Dialog';
 
 // project imports
 import MainCard from 'components/MainCard';
 import { DebouncedInput } from 'components/third-party/react-table';
 import TerritoryCard from 'sections/territories/TerritoryCard';
+import FormTerritoryAdd from 'sections/territories/FormTerritoryAdd';
+import FormTerritoryEdit from 'sections/territories/FormTerritoryEdit';
+import AlertTerritoryDelete from 'sections/territories/AlertTerritoryDelete';
 
 // api
-import { TERRITORIES } from 'api/territories';
+import { useGetTerritories, TERRITORY_TYPES } from 'api/territories/territories';
 import { useGetAccounts } from 'api/admin/accounts';
 
 // assets
@@ -45,6 +49,12 @@ export default function TerritoriesListPage() {
   const [globalFilter, setGlobalFilter] = useState('');
   const [page, setPage] = useState(1);
 
+  // Modal states
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [selectedTerritory, setSelectedTerritory] = useState(null);
+
   // ==============================|| PAGINATION CONFIG ||============================== //
 
   const PER_PAGE = 6;
@@ -57,25 +67,28 @@ export default function TerritoriesListPage() {
     pageSize: 1 
   }) || {};
 
+  // ==============================|| API DATA - TERRITORIES ||============================== //
+
+  const { 
+    territories = [], 
+    territoriesCount = 0, 
+    territoriesLoading,
+    territoriesError 
+  } = useGetTerritories({
+    page: 1,
+    pageSize: 100,
+    search: globalFilter
+  });
+
   // ==============================|| FILTERED TERRITORIES ||============================== //
 
   const filteredTerritories = useMemo(() => {
-    if (!globalFilter) {
-      return TERRITORIES;
-    }
-
-    const searchLower = globalFilter.toLowerCase();
-    return TERRITORIES.filter((territory) => {
-      return (
-        territory.name.toLowerCase().includes(searchLower) ||
-        territory.description?.toLowerCase().includes(searchLower)
-      );
-    });
-  }, [globalFilter]);
+    return territories;
+  }, [territories]);
 
   // ==============================|| PAGINATION ||============================== //
 
-  const totalPages = Math.ceil(filteredTerritories.length / PER_PAGE);
+  const totalPages = Math.ceil(territoriesCount / PER_PAGE);
 
   const paginatedTerritories = useMemo(() => {
     const startIndex = (page - 1) * PER_PAGE;
@@ -94,25 +107,47 @@ export default function TerritoriesListPage() {
     setPage(1); // Reset to first page on search
   };
 
-  const handleNewTerritory = () => {
-    // Future: open create territory modal
-    console.log('New territory - coming soon');
+   // ==============================|| MODAL HANDLERS ||============================== //
+
+  const handleOpenAddModal = () => {
+    setAddModalOpen(true);
+  };
+
+  const handleCloseAddModal = () => {
+    setAddModalOpen(false);
+  };
+
+  const handleOpenEditModal = (territory) => {
+    setSelectedTerritory(territory);
+    setEditModalOpen(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setSelectedTerritory(null);
+    setEditModalOpen(false);
+  };
+
+  const handleOpenDeleteModal = (territory) => {
+    setSelectedTerritory(territory);
+    setDeleteModalOpen(true);
+  };
+
+  const handleCloseDeleteModal = () => {
+    setSelectedTerritory(null);
+    setDeleteModalOpen(false);
   };
 
   // ==============================|| GET TERRITORY COUNT ||============================== //
 
-  /**
-   * Get the record count for a territory
-   * Phase 1: Only "All Accounts" has real count
-   */
   const getTerritoryCount = (territory) => {
-    if (territory.id === 'all-accounts') {
+    // For now, return accountsCount for all account-type territories
+    // Future: API will return counts per territory
+    if (territory.type === TERRITORY_TYPES.ACCOUNT) {
       return accountsCount;
     }
-    if (territory.id === 'all-contacts') {
+    if (territory.type === TERRITORY_TYPES.CONTACT) {
       return 0; // Future: contacts count
     }
-    // Future: dynamic count based on filters
     return 0;
   };
 
@@ -134,7 +169,7 @@ export default function TerritoriesListPage() {
             <DebouncedInput
               value={globalFilter ?? ''}
               onFilterChange={handleSearchChange}
-              placeholder={`Search ${TERRITORIES.length} territories...`}
+              placeholder={`Search ${territoriesCount} territories...`}
             />
 
             {/* Actions */}
@@ -142,8 +177,7 @@ export default function TerritoriesListPage() {
               <Button 
                 variant="contained" 
                 startIcon={<PlusOutlined />} 
-                onClick={handleNewTerritory}
-                disabled
+                onClick={handleOpenAddModal}
               >
                 New Territory
               </Button>
@@ -161,7 +195,9 @@ export default function TerritoriesListPage() {
                 <TerritoryCard
                   territory={territory}
                   accountsCount={getTerritoryCount(territory)}
-                  loading={accountsLoading && territory.id === 'all-accounts'}
+                  loading={accountsLoading}
+                  onEdit={handleOpenEditModal}
+                  onDelete={handleOpenDeleteModal}
                 />
               </Grid>
             </Slide>
@@ -201,6 +237,40 @@ export default function TerritoriesListPage() {
           />
         </Stack>
       )}
+
+      {/* ==================== MODALS ==================== */}
+
+      {/* Add Territory Modal */}
+      <Dialog 
+        open={addModalOpen} 
+        onClose={handleCloseAddModal}
+        maxWidth="sm"
+        fullWidth
+      >
+        <FormTerritoryAdd closeModal={handleCloseAddModal} />
+      </Dialog>
+
+      {/* Edit Territory Modal */}
+      {selectedTerritory && (
+        <Dialog 
+          open={editModalOpen} 
+          onClose={handleCloseEditModal}
+          maxWidth="sm"
+          fullWidth
+        >
+          <FormTerritoryEdit 
+            territory={selectedTerritory} 
+            closeModal={handleCloseEditModal} 
+          />
+        </Dialog>
+      )}
+
+      {/* Delete Territory Modal */}
+      <AlertTerritoryDelete
+        territory={selectedTerritory}
+        open={deleteModalOpen}
+        closeModal={handleCloseDeleteModal}
+      />
     </>
   );
 }

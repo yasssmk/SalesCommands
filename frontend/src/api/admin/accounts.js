@@ -50,6 +50,7 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   }
 
   // Advanced filters for CompanyAccounts
+  // Advanced filters for CompanyAccounts
   if (filters.type) {
     queryParams.append('type', filters.type);
   }
@@ -60,6 +61,26 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
 
   if (filters.account_owner) {
     queryParams.append('account_owner', filters.account_owner);
+  }
+
+  if (filters.industry) {
+    queryParams.append('industry', filters.industry);
+  }
+
+  if (filters.country) {
+    queryParams.append('country', filters.country);
+  }
+
+  if (filters.company_size) {
+    queryParams.append('company_size', filters.company_size);
+  }
+
+  if (filters.annual_revenue) {
+    queryParams.append('annual_revenue', filters.annual_revenue);
+  }
+
+  if (filters.has_buying_decision !== undefined && filters.has_buying_decision !== null) {
+    queryParams.append('has_buying_decision', filters.has_buying_decision);
   }
   
   const queryString = queryParams.toString();
@@ -189,7 +210,8 @@ export async function createAccount(payload) {
     revalidateMultiple([
       endpoints.accounts,
       '/activities/',
-      '/opportunities/'
+      '/opportunities/',
+      '/territories/'
     ]);
     return { success: true, data: result.data };
   }
@@ -229,7 +251,8 @@ export async function updateAccount(accountId, payload) {
       endpoints.accounts,
       endpoints.accountDetail(accountId),
       '/activities/',
-      '/opportunities/'
+      '/opportunities/',
+      '/territories/'
     ]);
     return { success: true, data: result.data };
   }
@@ -264,7 +287,8 @@ export async function deleteAccount(accountId) {
     revalidateMultiple([
       endpoints.accounts,
       '/activities/',
-      '/opportunities/'
+      '/opportunities/',
+      '/territories/'
     ]);
     return { success: true, status: result.status ?? 204 };
   }
@@ -384,7 +408,7 @@ export const bulkDeleteAccounts = async (accountIds, mode = 'partial', onSyncPro
         deleted: result.data?.summary?.deleted ?? 0
       });
 
-      revalidateMultiple([endpoints.accounts, '/activities/', '/opportunities/', '/contacts/']);
+      revalidateMultiple([endpoints.accounts, '/activities/', '/opportunities/', '/contacts/', '/territories/']);
       return result.data;
     }
 
@@ -620,7 +644,7 @@ export const bulkUpdateAccounts = async (accountIds, patchData, mode = 'partial'
         updated: result.data?.summary?.updated ?? 0
       });
 
-      revalidateMultiple([endpoints.accounts, '/activities/', '/opportunities/', '/contacts/']);
+      revalidateMultiple([endpoints.accounts, '/activities/', '/opportunities/', '/contacts/', '/territories/']);
       return result.data;
     }
 
@@ -831,7 +855,7 @@ export const bulkCreateAccounts = async (accounts, mode = 'partial', onSyncProgr
         created: result.data?.summary?.success ?? result.data?.summary?.created ?? 0
       });
 
-      revalidateMultiple([endpoints.accounts, '/activities/', '/opportunities/', '/contacts/']);
+      revalidateMultiple([endpoints.accounts, '/activities/', '/opportunities/', '/contacts/', '/territories/']);
       
       return result.data;
     }

@@ -96,14 +96,15 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
     
     # Filtering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['type', 'classification', 'country', 'account_owner']
-    search_fields = ['company_name', 'industry', 'city', 'country']
+    filterset_fields = ['type', 'classification', 'country', 'industry', 'account_owner']
+    search_fields = ['company_name', 'industry', 'city', 'country', 'account_owner']
     ordering_fields = [
         'company_name',
         'industry',
         'type',
         'classification',
         'country',
+        'account_owner',
         'created_at',
         'updated_at',
     ]
