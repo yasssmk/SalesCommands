@@ -93,24 +93,40 @@ export default function TerritoryCard({
 
   // ==============================|| FILTER SUMMARY ||============================== //
 
-  const filterSummary = () => {
-    if (!territory.filter_definition || Object.keys(territory.filter_definition).length === 0) {
-      return 'No filters applied';
-    }
+    const filterSummary = () => {
+      if (!territory.filter_definition || Object.keys(territory.filter_definition).length === 0) {
+        return 'No filters applied';
+      }
 
-    const parts = [];
-    if (territory.filter_definition.type) {
-      parts.push(`Type: ${territory.filter_definition.type}`);
-    }
-    if (territory.filter_definition.classification) {
-      parts.push(`Classification: ${territory.filter_definition.classification}`);
-    }
-    if (territory.filter_definition.account_owner) {
-      parts.push('Owner: Filtered');
-    }
+      const parts = [];
+      
+      if (territory.filter_definition.type) {
+        parts.push(`Type: ${territory.filter_definition.type}`);
+      }
+      if (territory.filter_definition.classification) {
+        parts.push(`Classification: ${territory.filter_definition.classification}`);
+      }
+      if (territory.filter_definition.industry) {
+        parts.push(`Industry: ${territory.filter_definition.industry}`);
+      }
+      if (territory.filter_definition.country) {
+        parts.push(`Country: ${territory.filter_definition.country}`);
+      }
+      
+      // Owner scope (mine/team) - mutually exclusive with account_owner
+      if (territory.filter_definition.account_scope) {
+        const scopeLabels = {
+          'mine': 'Owner: Mine',
+          'team': 'Owner: My Team'
+        };
+        parts.push(scopeLabels[territory.filter_definition.account_scope] || `Owner: ${territory.filter_definition.account_scope}`);
+      } else if (territory.filter_definition.account_owner) {
+        // Specific user selected
+        parts.push('Owner: Specific user');
+      }
 
-    return parts.length > 0 ? parts.join(' · ') : 'No filters applied';
-  };
+      return parts.length > 0 ? parts.join(' · ') : 'No filters applied';
+    };
 
   // ==============================|| RENDER ||============================== //
 

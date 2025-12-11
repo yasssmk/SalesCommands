@@ -214,7 +214,8 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
                     queryset = AccountFilterService.apply_territory_filters(
                         queryset,
                         territory_id,
-                        client_id
+                        client_id,
+                        user=self.request.user
                     )
                     logger.debug("territory_filter_applied", extra={
                         'territory_id': territory_id,

@@ -11,10 +11,13 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import FormHelperText from '@mui/material/FormHelperText';
 import Grid from '@mui/material/Grid';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
+import Radio from '@mui/material/Radio';
+import RadioGroup from '@mui/material/RadioGroup';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
@@ -28,6 +31,7 @@ import { useFormik, Form, FormikProvider } from 'formik';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 import { displaySuccessSnackbar } from 'utils/displayError';
 import { handleFormikError } from 'utils/formErrorHandler';
+import AsyncUserSelect from 'components/AsyncSelection/AsyncUserSelect';
 
 // api
 import { createTerritory, TERRITORY_TYPES } from 'api/territories/territories';
@@ -76,7 +80,10 @@ const buildInitialValues = (initialFilters = {}) => ({
   filter_type: initialFilters.type || '',
   filter_classification: initialFilters.classification || '',
   filter_industry: initialFilters.industry || '',
-  filter_country: initialFilters.country || ''
+  filter_country: initialFilters.country || '',
+  // Owner scope fields
+  filter_account_scope: initialFilters.account_scope || '',
+  filter_account_owner: initialFilters.account_owner || null
 });
 
 // ==============================|| FORM TERRITORY ADD ||============================== //
@@ -94,22 +101,30 @@ function FormTerritoryAdd({ closeModal, initialFilters = {} }) {
     validationSchema: CreateSchema,
     enableReinitialize: false,
     onSubmit: async (values) => {
-      setIsSubmitting(true);
+    setIsSubmitting(true);
+    
+    try {
+      // Build filter_definition from filter fields
+      const filter_definition = {};
+      if (values.filter_type) filter_definition.type = values.filter_type;
+      if (values.filter_classification) filter_definition.classification = values.filter_classification;
+      if (values.filter_industry) filter_definition.industry = values.filter_industry;
+      if (values.filter_country) filter_definition.country = values.filter_country;
       
-      try {
-        // Build filter_definition from filter fields
-        const filter_definition = {};
-        if (values.filter_type) filter_definition.type = values.filter_type;
-        if (values.filter_classification) filter_definition.classification = values.filter_classification;
-        if (values.filter_industry) filter_definition.industry = values.filter_industry;
-        if (values.filter_country) filter_definition.country = values.filter_country;
+      // Owner scope - only one of account_scope or account_owner should be set
+      if (values.filter_account_scope && values.filter_account_scope !== 'other') {
+        filter_definition.account_scope = values.filter_account_scope;
+      }
+      if (values.filter_account_owner?.id) {
+        filter_definition.account_owner = values.filter_account_owner.id;
+      }
 
-        const payload = {
-          name: values.name.trim(),
-          description: values.description?.trim() || null,
-          type: values.type,
-          filter_definition
-        };
+      const payload = {
+        name: values.name.trim(),
+        description: values.description?.trim() || null,
+        type: values.type,
+        filter_definition
+      };
         
         const result = await createTerritory(payload);
         
@@ -298,6 +313,59 @@ function FormTerritoryAdd({ closeModal, initialFilters = {} }) {
                   </Select>
                 </FormControl>
               </Stack>
+            </Grid>
+
+            {/* ==================== OWNER SCOPE ==================== */}
+            <SectionTitle>Account Owner</SectionTitle>
+            
+            <Grid item xs={12}>
+              <FormControl component="fieldset" fullWidth>
+                <RadioGroup
+                  row
+                  value={values.filter_account_scope || (values.filter_account_owner?.id ? 'other' : '')}
+                  onChange={(e) => {
+                    const newScope = e.target.value;
+                    setFieldValue('filter_account_scope', newScope);
+                    // Clear account_owner when switching away from 'other'
+                    if (newScope !== 'other') {
+                      setFieldValue('filter_account_owner', null);
+                    }
+                  }}
+                  sx={{ gap: 2 }}
+                >
+                  <FormControlLabel 
+                    value="" 
+                    control={<Radio size="small" />} 
+                    label="All" 
+                  />
+                  <FormControlLabel 
+                    value="mine" 
+                    control={<Radio size="small" />} 
+                    label="Mine" 
+                  />
+                  <FormControlLabel 
+                    value="team" 
+                    control={<Radio size="small" />} 
+                    label="My Team" 
+                  />
+                  <FormControlLabel 
+                    value="other" 
+                    control={<Radio size="small" />} 
+                    label="Specific user" 
+                  />
+                </RadioGroup>
+              </FormControl>
+            </Grid>
+            
+            {/* User Select - only enabled when 'other' is selected */}
+            <Grid item xs={12} sm={6}>
+              <AsyncUserSelect
+                value={values.filter_account_owner || null}
+                onChange={(event, user) => setFieldValue('filter_account_owner', user || null)}
+                label="Select User"
+                placeholder="Search user..."
+                disabled={values.filter_account_scope !== 'other' && !values.filter_account_owner?.id}
+              />
             </Grid>
 
             {/* ==================== FUTURE FILTERS PLACEHOLDER ==================== */}

@@ -19,6 +19,9 @@ import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Radio from '@mui/material/Radio';
+import RadioGroup from '@mui/material/RadioGroup';
 
 // third-party
 import * as Yup from 'yup';
@@ -28,6 +31,7 @@ import { useFormik, Form, FormikProvider } from 'formik';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 import { displaySuccessSnackbar } from 'utils/displayError';
 import { handleFormikError } from 'utils/formErrorHandler';
+import AsyncUserSelect from 'components/AsyncSelection/AsyncUserSelect';
 
 // api
 import { updateTerritory, TERRITORY_TYPES } from 'api/territories/territories';
@@ -76,7 +80,10 @@ const buildInitialValues = (territory) => ({
   filter_type: territory?.filter_definition?.type || '',
   filter_classification: territory?.filter_definition?.classification || '',
   filter_industry: territory?.filter_definition?.industry || '',
-  filter_country: territory?.filter_definition?.country || ''
+  filter_country: territory?.filter_definition?.country || '',
+  // Owner scope fields
+  filter_account_scope: territory?.filter_definition?.account_scope || '',
+  filter_account_owner: territory?.filter_definition?.account_owner || null
 });
 
 // ==============================|| FORM TERRITORY EDIT ||============================== //
@@ -115,6 +122,14 @@ function FormTerritoryEdit({ territory, closeModal }) {
         if (values.filter_classification) filter_definition.classification = values.filter_classification;
         if (values.filter_industry) filter_definition.industry = values.filter_industry;
         if (values.filter_country) filter_definition.country = values.filter_country;
+
+        // Owner scope - only one of account_scope or account_owner should be set
+        if (values.filter_account_scope && values.filter_account_scope !== 'other') {
+          filter_definition.account_scope = values.filter_account_scope;
+        }
+        if (values.filter_account_owner?.id) {
+          filter_definition.account_owner = values.filter_account_owner.id;
+}
 
         const payload = {
           name: values.name.trim(),
@@ -324,6 +339,113 @@ function FormTerritoryEdit({ territory, closeModal }) {
                 </FormControl>
               </Stack>
             </Grid>
+
+            {/* ==================== OWNER SCOPE ==================== */}
+            <SectionTitle>Account Owner</SectionTitle>
+            
+            <Grid item xs={12}>
+              <FormControl component="fieldset" fullWidth disabled={territory?.is_system}>
+                <RadioGroup
+                  row
+                  value={values.filter_account_scope || (values.filter_account_owner?.id ? 'other' : '')}
+                  onChange={(e) => {
+                    const newScope = e.target.value;
+                    setFieldValue('filter_account_scope', newScope);
+                    // Clear account_owner when switching away from 'other'
+                    if (newScope !== 'other') {
+                      setFieldValue('filter_account_owner', null);
+                    }
+                  }}
+                  sx={{ gap: 2 }}
+                >
+                  <FormControlLabel 
+                    value="" 
+                    control={<Radio size="small" />} 
+                    label="All" 
+                  />
+                  <FormControlLabel 
+                    value="mine" 
+                    control={<Radio size="small" />} 
+                    label="Mine" 
+                  />
+                  <FormControlLabel 
+                    value="team" 
+                    control={<Radio size="small" />} 
+                    label="My Team" 
+                  />
+                  <FormControlLabel 
+                    value="other" 
+                    control={<Radio size="small" />} 
+                    label="Specific user" 
+                  />
+                </RadioGroup>
+              </FormControl>
+            </Grid>
+            
+            {/* User Select - only enabled when 'other' is selected */}
+            <Grid item xs={12} sm={6}>
+              <AsyncUserSelect
+                value={values.filter_account_owner}
+                onChange={(event, user) => setFieldValue('filter_account_owner', user)}
+                label="Select User"
+                placeholder="Search user..."
+                disabled={territory?.is_system || (values.filter_account_scope !== 'other' && !values.filter_account_owner?.id)}
+              />
+            </Grid>
+
+            {/* ==================== OWNER SCOPE ==================== */}
+            <SectionTitle>Account Owner</SectionTitle>
+            
+            <Grid item xs={12}>
+              <FormControl component="fieldset" fullWidth disabled={territory?.is_system}>
+                <RadioGroup
+                  row
+                  value={values.filter_account_scope || (values.filter_account_owner?.id ? 'other' : '')}
+                  onChange={(e) => {
+                    const newScope = e.target.value;
+                    setFieldValue('filter_account_scope', newScope);
+                    // Clear account_owner when switching away from 'other'
+                    if (newScope !== 'other') {
+                      setFieldValue('filter_account_owner', null);
+                    }
+                  }}
+                  sx={{ gap: 2 }}
+                >
+                  <FormControlLabel 
+                    value="" 
+                    control={<Radio size="small" />} 
+                    label="All" 
+                  />
+                  <FormControlLabel 
+                    value="mine" 
+                    control={<Radio size="small" />} 
+                    label="Mine" 
+                  />
+                  <FormControlLabel 
+                    value="team" 
+                    control={<Radio size="small" />} 
+                    label="My Team" 
+                  />
+                  <FormControlLabel 
+                    value="other" 
+                    control={<Radio size="small" />} 
+                    label="Specific user" 
+                  />
+                </RadioGroup>
+              </FormControl>
+            </Grid>
+            
+            {/* User Select - only enabled when 'other' is selected */}
+            <Grid item xs={12} sm={6}>
+              <AsyncUserSelect
+                value={values.filter_account_owner || null}
+                onChange={(event, user) => setFieldValue('filter_account_owner', user || null)}
+                label="Select User"
+                placeholder="Search user..."
+                disabled={territory?.is_system || (values.filter_account_scope !== 'other' && !values.filter_account_owner?.id)}
+              />
+            </Grid>
+
 
             {/* ==================== FUTURE FILTERS PLACEHOLDER ==================== */}
             <SectionTitle>Advanced Filters</SectionTitle>

@@ -108,6 +108,10 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   if (filters.signals_since_days) {
     queryParams.append('signals_since_days', filters.signals_since_days);
   }
+
+  if (filters.owner_scope) {
+    queryParams.append('owner_scope', filters.owner_scope);
+  }
   
   const queryString = queryParams.toString();
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;

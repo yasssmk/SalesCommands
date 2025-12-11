@@ -9,7 +9,8 @@ import { useState, useCallback, useMemo } from 'react';
 const DEFAULT_FILTERS = {
   type: '',
   classification: '',
-  account_owner: null
+  account_scope: '',      // 'mine' | 'team' | '' (all)
+  account_owner: null     // User object or null (only used if account_scope is empty)
 };
 
 /**
@@ -38,15 +39,29 @@ export default function useTerritoryFilters(initialFilters = {}) {
 
   // ==============================|| COMPUTED ||============================== //
 
-  /**
-   * Count of active (non-empty) filters
-   */
-  const activeFiltersCount = useMemo(() => {
-    return Object.values(filters).filter(value => {
-      if (Array.isArray(value)) return value.length > 0;
-      return value !== '' && value !== null && value !== undefined;
-    }).length;
-  }, [filters]);
+ /**
+ * Count of active (non-empty) filters
+ * Note: account_scope and account_owner are mutually exclusive (count as 1 max)
+ */
+const activeFiltersCount = useMemo(() => {
+  let count = 0;
+  const hasAccountScope = filters.account_scope && filters.account_scope !== '';
+  
+  Object.entries(filters).forEach(([key, value]) => {
+    // Skip account_owner if account_scope is active (they're mutually exclusive)
+    if (key === 'account_owner' && hasAccountScope) {
+      return;
+    }
+    
+    if (Array.isArray(value) && value.length > 0) {
+      count++;
+    } else if (value !== '' && value !== null && value !== undefined) {
+      count++;
+    }
+  });
+  
+  return count;
+}, [filters]);
 
   /**
    * Check if any filter is active
@@ -57,18 +72,53 @@ export default function useTerritoryFilters(initialFilters = {}) {
 
   /**
    * Check if pending filters differ from applied filters
+   * Compares by value, handling objects (like account_owner) by their ID
    */
   const hasPendingChanges = useMemo(() => {
-    return JSON.stringify(filters) !== JSON.stringify(pendingFilters);
+    const normalizeForComparison = (obj) => {
+      const result = {};
+      Object.entries(obj).forEach(([key, value]) => {
+        if (value && typeof value === 'object' && value.id) {
+          // For objects with ID (like user), compare by ID
+          result[key] = value.id;
+        } else {
+          result[key] = value;
+        }
+      });
+      return result;
+    };
+    
+    return JSON.stringify(normalizeForComparison(filters)) !== 
+          JSON.stringify(normalizeForComparison(pendingFilters));
   }, [filters, pendingFilters]);
 
   /**
-   * Get filters formatted for API call
-   * Removes empty values
-   */
-  const apiFilters = useMemo(() => {
+ * Get filters formatted for API call
+ * Removes empty values
+ * 
+ * Priority rules:
+ * - If account_scope is set (mine/team), account_owner is ignored
+ * - If account_scope is empty, account_owner is used
+ */
+const apiFilters = useMemo(() => {
   const result = {};
+  const hasAccountScope = filters.account_scope && filters.account_scope !== '';
+  
   Object.entries(filters).forEach(([key, value]) => {
+    // Skip account_owner if account_scope is active (scope takes priority)
+    if (key === 'account_owner' && hasAccountScope) {
+      return;
+    }
+    
+    // Map account_scope to owner_scope for backend compatibility
+    // Backend uses OwnerScopeMixin which expects 'owner_scope' query param
+    if (key === 'account_scope') {
+      if (value && value !== '') {
+        result['owner_scope'] = value;
+      }
+      return;
+    }
+    
     if (Array.isArray(value) && value.length > 0) {
       result[key] = value;
     } else if (value !== '' && value !== null && value !== undefined) {

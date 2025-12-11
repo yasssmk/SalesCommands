@@ -38,7 +38,7 @@ class AccountFilterService:
     # ==========================================================================
     
     @classmethod
-    def apply_filters(cls, queryset, filter_definition, client_id=None):
+    def apply_filters(cls, queryset, filter_definition, client_id=None, user=None):
         """
         Apply all filters from filter_definition dict.
         
@@ -46,6 +46,7 @@ class AccountFilterService:
             queryset: CompanyAccount QuerySet
             filter_definition: dict with filter keys/values
             client_id: UUID for client scoping (optional)
+            user: User instance for account_scope filtering (optional)
             
         Returns:
             Filtered QuerySet
@@ -53,8 +54,8 @@ class AccountFilterService:
         if not filter_definition:
             return queryset
         
-        # Direct field filters
-        queryset = cls._apply_direct_filters(queryset, filter_definition)
+        # Direct field filters (including account_scope)
+        queryset = cls._apply_direct_filters(queryset, filter_definition, user, client_id)
         
         # FK filters (tech_stack, buying_process, signals)
         queryset = cls._apply_fk_filters(queryset, filter_definition, client_id)
@@ -62,7 +63,7 @@ class AccountFilterService:
         return queryset
     
     @classmethod
-    def apply_territory_filters(cls, queryset, territory_id, client_id):
+    def apply_territory_filters(cls, queryset, territory_id, client_id, user=None):
         """
         Load territory and apply its filter_definition.
         
@@ -70,6 +71,7 @@ class AccountFilterService:
             queryset: CompanyAccount QuerySet
             territory_id: UUID of territory
             client_id: UUID for client scoping
+            user: User instance for account_scope filtering (optional)
             
         Returns:
             Filtered QuerySet
@@ -84,14 +86,14 @@ class AccountFilterService:
             client_id=client_id
         )
         
-        return cls.apply_filters(queryset, territory.filter_definition, client_id)
+        return cls.apply_filters(queryset, territory.filter_definition, client_id, user)
     
     # ==========================================================================
     # DIRECT FIELD FILTERS
     # ==========================================================================
     
     @classmethod
-    def _apply_direct_filters(cls, queryset, filter_definition):
+    def _apply_direct_filters(cls, queryset, filter_definition, user=None, client_id=None):
         """Apply filters on direct CompanyAccount fields."""
         
         # Type filter
@@ -103,11 +105,14 @@ class AccountFilterService:
             queryset = queryset.filter(classification=filter_definition['classification'])
         
         # Account owner filter (support both UUID and object with id)
-        account_owner = filter_definition.get('account_owner')
-        if account_owner:
-            owner_id = account_owner.get('id') if isinstance(account_owner, dict) else account_owner
-            if owner_id:
-                queryset = queryset.filter(account_owner_id=owner_id)
+        # NOTE: Only apply if account_scope is not set (scope takes priority)
+        account_scope = filter_definition.get('account_scope')
+        if not account_scope or account_scope == 'all':
+            account_owner = filter_definition.get('account_owner')
+            if account_owner:
+                owner_id = account_owner.get('id') if isinstance(account_owner, dict) else account_owner
+                if owner_id:
+                    queryset = queryset.filter(account_owner_id=owner_id)
         
         # Industry filter
         if filter_definition.get('industry'):
@@ -126,6 +131,79 @@ class AccountFilterService:
             queryset = queryset.filter(
                 has_buying_decision=filter_definition['has_buying_decision']
             )
+        
+        # Account scope filter (mine/team/all)
+        queryset = cls._apply_account_scope_filter(
+            queryset, filter_definition, user, client_id
+        )
+        
+        return queryset
+
+    @classmethod
+    def _apply_account_scope_filter(cls, queryset, filter_definition, user=None, client_id=None):
+        """
+        Apply account_scope filter (mine/team/all).
+        
+        Priority rules:
+        - If account_scope is 'mine' or 'team': applies scope filter, ignores account_owner
+        - If account_scope is empty/all: account_owner filter applies (handled in _apply_direct_filters)
+        
+        Args:
+            queryset: CompanyAccount QuerySet
+            filter_definition: dict with filter keys/values
+            user: User instance (required for mine/team scope)
+            client_id: UUID for client scoping
+            
+        Returns:
+            Filtered QuerySet
+        """
+        account_scope = filter_definition.get('account_scope')
+        
+        # No scope filter if empty, 'all', or no user provided
+        if not account_scope or account_scope == 'all' or not user:
+            return queryset
+        
+        user_id = str(user.id)
+        
+        if account_scope == 'mine':
+            # Filter by current user only - OVERRIDES account_owner
+            queryset = queryset.filter(account_owner_id=user_id)
+            logger.debug("account_scope_mine_applied", extra={
+                'user_id': user_id
+            })
+            
+        elif account_scope == 'team':
+            # Filter by all users in user's teams + sub-teams - OVERRIDES account_owner
+            from permissions.owner_scope import get_all_descendant_team_ids, get_team_member_ids
+            
+            # Get user's direct team
+            user_team_ids = set()
+            if hasattr(user, 'team_id') and user.team_id:
+                user_team_ids.add(str(user.team_id))
+            
+            if not user_team_ids:
+                # User has no team, fallback to 'mine'
+                logger.debug("account_scope_team_fallback_to_mine", extra={
+                    'user_id': user_id,
+                    'reason': 'no_team'
+                })
+                return queryset.filter(account_owner_id=user_id)
+            
+            # Get all descendant teams
+            all_team_ids = get_all_descendant_team_ids(user_team_ids, client_id)
+            
+            # Get all members of those teams
+            member_ids = get_team_member_ids(all_team_ids, client_id)
+            
+            # Include the current user
+            member_ids.add(user_id)
+            
+            queryset = queryset.filter(account_owner_id__in=member_ids)
+            logger.debug("account_scope_team_applied", extra={
+                'user_id': user_id,
+                'team_count': len(all_team_ids),
+                'member_count': len(member_ids)
+            })
         
         return queryset
     

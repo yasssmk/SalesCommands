@@ -29,8 +29,6 @@ import { useAuth } from 'hooks/useAuth';
 import { useGetAccounts } from 'api/admin/accounts';
 import { tenantKey } from 'api/_swr';
 
-// components
-import OwnerScopeTabs from 'components/filters/OwnerScopeTabs';
 
 // utils
 import { formatDateTime } from 'config/formatters';
@@ -143,20 +141,12 @@ const {
   hasPendingChanges,
   apiFilters,
   updatePendingFilter,
+  updatePendingFilters,
   applyFilters,
   clearFilters,
   resetPendingFilters
 } = useTerritoryFilters();
 
-// Owner scope filter
-const {
-  scope: ownerScope,
-  setScope: setOwnerScope,
-  visibleOptions: ownerScopeOptions,
-  apiParams: ownerScopeParams,
-  chipLabel: ownerScopeChipLabel,
-  isFiltered: isOwnerFiltered
-} = useOwnerScope({ storageKey: 'accounts' });
 
   // ==============================|| COMPUTE ORDERING STRING ||============================== //
 
@@ -181,9 +171,8 @@ const {
 
   // Merge apiFilters with ownerScopeParams
   const mergedFilters = useMemo(() => ({
-    ...apiFilters,
-    ...ownerScopeParams
-  }), [apiFilters, ownerScopeParams]);
+    ...apiFilters
+  }), [apiFilters]);
 
   const _accountsHook = useGetAccounts({
     page,
@@ -343,33 +332,27 @@ const {
   }, [clearFilters]);
 
   const handleRemoveFilter = useCallback((filterKey) => {
-    // Handle owner scope separately (not part of territory filters)
-    if (filterKey === 'owner_scope') {
-      setOwnerScope('all');
-      return;
+    // Handle account_scope and account_owner together (mutually exclusive)
+    if (filterKey === 'account_scope' || filterKey === 'account_owner') {
+      updatePendingFilters({
+        account_scope: '',
+        account_owner: null
+      });
+    } else {
+      updatePendingFilter(filterKey, '');
     }
     
-    updatePendingFilter(filterKey, '');
     // Apply immediately after removing
     setTimeout(() => {
       applyFilters();
       setPage(1);
     }, 0);
-  }, [updatePendingFilter, applyFilters, setOwnerScope]);
+  }, [updatePendingFilter, updatePendingFilters, applyFilters]);
 
   // ==============================|| ADVANCED FILTERS FOR CHIPS ||============================== //
 
   const advancedFiltersChips = useMemo(() => {
     const chips = [];
-
-    // Owner scope chip
-    if (isOwnerFiltered) {
-      chips.push({
-        key: 'owner_scope',
-        label: 'Owner',
-        value: ownerScope === 'mine' ? 'Mine' : ownerScope === 'team' ? 'My Team' : ownerScope
-      });
-    }
 
     // Territory filter chip
     if (territoryIdFromUrl) {
@@ -403,9 +386,34 @@ const {
         value: 'Filtered'
       });
     }
+
+    // Account scope chip (mine/team)
+    if (filters.account_scope) {
+      const scopeLabels = {
+        'mine': 'Mine',
+        'team': 'My Team'
+      };
+      chips.push({
+        key: 'account_scope',
+        label: 'Owner',
+        value: scopeLabels[filters.account_scope] || filters.account_scope
+      });
+    }
+    
+    // Specific account owner (only if no scope)
+    if (!filters.account_scope && filters.account_owner) {
+      const ownerName = filters.account_owner.first_name 
+        ? `${filters.account_owner.first_name} ${filters.account_owner.last_name || ''}`.trim()
+        : 'Selected';
+      chips.push({
+        key: 'account_owner',
+        label: 'Owner',
+        value: ownerName
+      });
+    }
     
     return chips;
-  }, [filters, isOwnerFiltered, ownerScope, territoryIdFromUrl]);
+  }, [filters, territoryIdFromUrl]);
 
   // ==============================|| COLUMNS DEFINITION ||============================== //
 
@@ -569,12 +577,6 @@ const {
 
   return (
     <>
-      {/* ==================== OWNER SCOPE TABS ==================== */}
-      <OwnerScopeTabs
-        value={ownerScope}
-        onChange={setOwnerScope}
-        visibleOptions={ownerScopeOptions}
-      />
 
       <ReusableTable
         data={accounts}
@@ -630,6 +632,7 @@ const {
             onClose={handleCloseFilterPanel}
             pendingFilters={pendingFilters}
             onFilterChange={updatePendingFilter}
+            onFiltersChange={updatePendingFilters}
             onApply={handleApplyFilters}
             onClear={handleClearFilters}
             hasPendingChanges={hasPendingChanges}

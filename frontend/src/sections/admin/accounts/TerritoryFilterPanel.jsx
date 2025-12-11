@@ -12,9 +12,12 @@ import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import Drawer from '@mui/material/Drawer';
 import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
+import Radio from '@mui/material/Radio';
+import RadioGroup from '@mui/material/RadioGroup';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -84,6 +87,7 @@ export default function TerritoryFilterPanel({
   onClose,
   pendingFilters,
   onFilterChange,
+  onFiltersChange,
   onApply,
   onClear,
   hasPendingChanges,
@@ -106,8 +110,35 @@ export default function TerritoryFilterPanel({
     onFilterChange('classification', event.target.value);
   };
 
-  const handleOwnerChange = (event, user) => {
+  /**
+  * Handle owner scope radio change
+  */
+  const handleOwnerScopeChange = (event) => {
+    const newScope = event.target.value;
+    onFilterChange('account_scope', newScope);
+    
+    // Clear account_owner when switching away from 'other'
+    if (newScope !== 'other') {
+      onFilterChange('account_owner', null);
+    }
+  };
+
+  /**
+   * Handle specific user selection (when scope is 'other')
+   */
+  const handleOwnerUserChange = (event, user) => {
     onFilterChange('account_owner', user || null);
+  };
+
+  /**
+   * Get current scope value for radio buttons
+   * Returns 'other' if a specific user is selected
+   */
+  const getCurrentScope = () => {
+    if (pendingFilters?.account_owner?.id) {
+      return 'other';
+    }
+    return pendingFilters?.account_scope || '';
   };
 
   const handleApply = () => {
@@ -120,26 +151,29 @@ export default function TerritoryFilterPanel({
   };
 
   const handleSaveAsTerritory = () => {
-  // Build query params from pending filters
-  const params = new URLSearchParams();
-  params.set('action', 'create');
-  
-  if (pendingFilters?.type) {
-    params.set('filter_type', pendingFilters.type);
-  }
-  if (pendingFilters?.classification) {
-    params.set('filter_classification', pendingFilters.classification);
-  }
-  // Note: account_owner is an object, extract id
-  if (pendingFilters?.account_owner?.id) {
-    params.set('filter_owner', pendingFilters.account_owner.id);
-  }
-  
-  // Close drawer and navigate
-  onClose?.();
-  router.push(`/territories?${params.toString()}`);
-};
-
+    // Build query params from pending filters
+    const params = new URLSearchParams();
+    params.set('action', 'create');
+    
+    if (pendingFilters?.type) {
+      params.set('filter_type', pendingFilters.type);
+    }
+    if (pendingFilters?.classification) {
+      params.set('filter_classification', pendingFilters.classification);
+    }
+    // Account scope (mine/team)
+    if (pendingFilters?.account_scope) {
+      params.set('filter_account_scope', pendingFilters.account_scope);
+    }
+    // Account owner (specific user) - only if no scope set
+    if (!pendingFilters?.account_scope && pendingFilters?.account_owner?.id) {
+      params.set('filter_owner', pendingFilters.account_owner.id);
+    }
+    
+    // Close drawer and navigate
+    onClose?.();
+    router.push(`/territories?${params.toString()}`);
+  };
 
   // ==============================|| RENDER ||============================== //
 
@@ -223,17 +257,54 @@ export default function TerritoryFilterPanel({
               </Select>
             </FormControl>
 
-            {/* Owner Filter */}
+            {/* Owner Scope Filter */}
             <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
                 Account Owner
               </Typography>
-              <AsyncUserSelect
-                value={pendingFilters?.account_owner || null}
-                onChange={handleOwnerChange}
-                placeholder="All owners"
-                size="small"
-              />
+              <FormControl component="fieldset" fullWidth>
+                <RadioGroup
+                  value={getCurrentScope()}
+                  onChange={handleOwnerScopeChange}
+                  sx={{ gap: 0.5 }}
+                >
+                  <FormControlLabel 
+                    value="" 
+                    control={<Radio size="small" />} 
+                    label="All" 
+                    sx={{ '& .MuiFormControlLabel-label': { fontSize: '0.875rem' } }}
+                  />
+                  <FormControlLabel 
+                    value="mine" 
+                    control={<Radio size="small" />} 
+                    label="Mine" 
+                    sx={{ '& .MuiFormControlLabel-label': { fontSize: '0.875rem' } }}
+                  />
+                  <FormControlLabel 
+                    value="team" 
+                    control={<Radio size="small" />} 
+                    label="My Team" 
+                    sx={{ '& .MuiFormControlLabel-label': { fontSize: '0.875rem' } }}
+                  />
+                  <FormControlLabel 
+                    value="other" 
+                    control={<Radio size="small" />} 
+                    label="Specific user" 
+                    sx={{ '& .MuiFormControlLabel-label': { fontSize: '0.875rem' } }}
+                  />
+                </RadioGroup>
+              </FormControl>
+              
+              {/* User Select - only enabled when 'other' is selected */}
+              <Box sx={{ mt: 1.5, pl: 3.5 }}>
+                <AsyncUserSelect
+                  value={pendingFilters?.account_owner || null}
+                  onChange={handleOwnerUserChange}
+                  placeholder="Select user..."
+                  size="small"
+                  disabled={getCurrentScope() !== 'other'}
+                />
+              </Box>
             </Box>
 
           </Stack>
@@ -334,9 +405,11 @@ TerritoryFilterPanel.propTypes = {
   pendingFilters: PropTypes.shape({
     type: PropTypes.string,
     classification: PropTypes.string,
-    account_owner: PropTypes.string
+    account_scope: PropTypes.string,
+    account_owner: PropTypes.oneOfType([PropTypes.object, PropTypes.string])
   }),
   onFilterChange: PropTypes.func.isRequired,
+  onFiltersChange: PropTypes.func,  // NEW
   onApply: PropTypes.func.isRequired,
   onClear: PropTypes.func.isRequired,
   hasPendingChanges: PropTypes.bool,
