@@ -29,6 +29,7 @@ from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
 
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
+from permissions.owner_scope import OwnerScopeMixin
 
 from apps.core_apps.models import StandardDepartment
 
@@ -39,6 +40,7 @@ from ..serializers import (
     CompanyAccountCreateSerializer,
     CompanyAccountUpdateSerializer,
 )
+from ..services.filter_service import AccountFilterService
 
 logger = get_logger(__name__)
 
@@ -83,7 +85,7 @@ class GatewayTimeout(APIException):
 # =============================================
 
 
-class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
+class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing company accounts with client scoping.
     
@@ -191,6 +193,9 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
                 'parent_company'
             )
         
+        # Apply owner scope filter (mine/team/all)
+        queryset = self.apply_owner_scope_filter(queryset)
+
         # Advanced filtering from query params
         queryset = self._apply_advanced_filters(queryset)
         
@@ -199,6 +204,34 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
     def _apply_advanced_filters(self, queryset):
         """Apply advanced filtering from query params."""
         try:
+            # =================================================================
+            # TERRITORY FILTER (applies filter_definition from territory)
+            # =================================================================
+            territory_id = self.request.query_params.get('territory_id')
+            if territory_id:
+                try:
+                    client_id = self.get_client_id()
+                    queryset = AccountFilterService.apply_territory_filters(
+                        queryset,
+                        territory_id,
+                        client_id
+                    )
+                    logger.debug("territory_filter_applied", extra={
+                        'territory_id': territory_id,
+                        'client_id': str(client_id)
+                    })
+                except Exception as e:
+                    logger.warning("territory_filter_failed", extra={
+                        'territory_id': territory_id,
+                        'error': str(e)
+                    })
+                    # Territory not found or invalid - continue without territory filter
+                    pass
+            
+            # =================================================================
+            # DIRECT QUERY PARAM FILTERS (existing logic)
+            # =================================================================
+            
             # Filter by parent IDs
             parent_ids = self.request.query_params.get('parent_ids')
             if parent_ids:
@@ -234,6 +267,41 @@ class CompanyAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelView
                     queryset = queryset.filter(has_buying_decision=True)
                 elif has_buying_decision.lower() in ['false', '0']:
                     queryset = queryset.filter(has_buying_decision=False)
+            
+            # =================================================================
+            # FK FILTERS (Phase 2 - direct query params)
+            # =================================================================
+            
+            # Tech stack filter (comma-separated tech names)
+            has_tech_stack = self.request.query_params.get('has_tech_stack')
+            if has_tech_stack:
+                tech_names = [t.strip() for t in has_tech_stack.split(',')]
+                queryset = AccountFilterService._filter_by_tech_stack(
+                    queryset, tech_names, self.get_client_id()
+                )
+            
+            # Buying process stage filter
+            buying_process_stage = self.request.query_params.get('buying_process_stage')
+            if buying_process_stage:
+                stages = [s.strip() for s in buying_process_stage.split(',')]
+                queryset = AccountFilterService._filter_by_buying_process(
+                    queryset, stages, self.get_client_id()
+                )
+            
+            # Has qualification filter
+            has_qualification = self.request.query_params.get('has_qualification')
+            if has_qualification is not None:
+                has_qual_bool = has_qualification.lower() in ['true', '1']
+                queryset = AccountFilterService._filter_by_qualification(
+                    queryset, has_qual_bool, self.get_client_id()
+                )
+            
+            # Signals freshness filter
+            signals_since_days = self.request.query_params.get('signals_since_days')
+            if signals_since_days and signals_since_days.isdigit():
+                queryset = AccountFilterService._filter_by_signals_freshness(
+                    queryset, int(signals_since_days), self.get_client_id()
+                )
                     
         except ValueError:
             raise StandardizedValidationError(CoreErrorMessages.INVALID_FILTER)

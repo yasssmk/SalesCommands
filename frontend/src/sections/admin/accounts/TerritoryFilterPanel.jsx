@@ -19,6 +19,9 @@ import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
+// next
+import { useRouter } from 'next/navigation';
+
 // icons
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
 import DownOutlined from '@ant-design/icons/DownOutlined';
@@ -88,6 +91,8 @@ export default function TerritoryFilterPanel({
   loading = false
 }) {
   
+  const router = useRouter();
+  
   // Fetch choices from backend
   const { types = [], classifications = [], choicesLoading } = useGetAccountChoices();
 
@@ -101,8 +106,8 @@ export default function TerritoryFilterPanel({
     onFilterChange('classification', event.target.value);
   };
 
-  const handleOwnerChange = (user) => {
-    onFilterChange('account_owner', user?.id || '');
+  const handleOwnerChange = (event, user) => {
+    onFilterChange('account_owner', user || null);
   };
 
   const handleApply = () => {
@@ -113,6 +118,28 @@ export default function TerritoryFilterPanel({
   const handleClear = () => {
     onClear?.();
   };
+
+  const handleSaveAsTerritory = () => {
+  // Build query params from pending filters
+  const params = new URLSearchParams();
+  params.set('action', 'create');
+  
+  if (pendingFilters?.type) {
+    params.set('filter_type', pendingFilters.type);
+  }
+  if (pendingFilters?.classification) {
+    params.set('filter_classification', pendingFilters.classification);
+  }
+  // Note: account_owner is an object, extract id
+  if (pendingFilters?.account_owner?.id) {
+    params.set('filter_owner', pendingFilters.account_owner.id);
+  }
+  
+  // Close drawer and navigate
+  onClose?.();
+  router.push(`/territories?${params.toString()}`);
+};
+
 
   // ==============================|| RENDER ||============================== //
 
@@ -202,7 +229,7 @@ export default function TerritoryFilterPanel({
                 Account Owner
               </Typography>
               <AsyncUserSelect
-                value={pendingFilters?.account_owner ? { id: pendingFilters.account_owner } : null}
+                value={pendingFilters?.account_owner || null}
                 onChange={handleOwnerChange}
                 placeholder="All owners"
                 size="small"
@@ -284,18 +311,15 @@ export default function TerritoryFilterPanel({
             <Typography variant="caption" color="text.secondary">or</Typography>
           </Divider>
 
-          {/* Save as Territory - disabled for Phase 1 */}
+          {/* Save as Territory */}
           <Button
             fullWidth
             variant="outlined"
             startIcon={<SaveOutlined />}
-            disabled
+            onClick={handleSaveAsTerritory}
           >
             Save as Territory
           </Button>
-          <Typography variant="caption" color="text.secondary" textAlign="center">
-            Territory creation coming soon
-          </Typography>
         </Stack>
       </Box>
     </Drawer>

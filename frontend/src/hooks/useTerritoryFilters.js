@@ -9,7 +9,7 @@ import { useState, useCallback, useMemo } from 'react';
 const DEFAULT_FILTERS = {
   type: '',
   classification: '',
-  account_owner: ''
+  account_owner: null
 };
 
 /**
@@ -67,16 +67,21 @@ export default function useTerritoryFilters(initialFilters = {}) {
    * Removes empty values
    */
   const apiFilters = useMemo(() => {
-    const result = {};
-    Object.entries(filters).forEach(([key, value]) => {
-      if (Array.isArray(value) && value.length > 0) {
-        result[key] = value;
-      } else if (value !== '' && value !== null && value !== undefined) {
+  const result = {};
+  Object.entries(filters).forEach(([key, value]) => {
+    if (Array.isArray(value) && value.length > 0) {
+      result[key] = value;
+    } else if (value !== '' && value !== null && value !== undefined) {
+      // Extract ID for object values (e.g., account_owner user object)
+      if (typeof value === 'object' && value.id) {
+        result[key] = value.id;
+      } else {
         result[key] = value;
       }
-    });
-    return result;
-  }, [filters]);
+    }
+  });
+  return result;
+}, [filters]);
 
   // ==============================|| HANDLERS ||============================== //
 

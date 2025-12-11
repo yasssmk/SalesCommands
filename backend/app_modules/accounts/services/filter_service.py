@@ -1,0 +1,315 @@
+# backend/app_modules/accounts/services/filter_service.py
+"""
+Service for applying advanced filters to CompanyAccount querysets.
+
+Supports:
+- Direct field filters (type, classification, account_owner, etc.)
+- FK filters via Subquery/Exists (tech_stack, buying_process, signals)
+- Territory filter_definition application
+"""
+
+from django.db.models import Q, Exists, OuterRef
+from django.utils import timezone
+from datetime import timedelta
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class AccountFilterService:
+    """
+    Applies filters to CompanyAccount queryset.
+    
+    Usage:
+        # Direct filters
+        queryset = AccountFilterService.apply_filters(queryset, {
+            'type': 'CLIENT',
+            'classification': 'ENTERPRISE'
+        })
+        
+        # From territory
+        queryset = AccountFilterService.apply_territory_filters(
+            queryset, territory_id, client_id
+        )
+    """
+    
+    # ==========================================================================
+    # MAIN ENTRY POINTS
+    # ==========================================================================
+    
+    @classmethod
+    def apply_filters(cls, queryset, filter_definition, client_id=None):
+        """
+        Apply all filters from filter_definition dict.
+        
+        Args:
+            queryset: CompanyAccount QuerySet
+            filter_definition: dict with filter keys/values
+            client_id: UUID for client scoping (optional)
+            
+        Returns:
+            Filtered QuerySet
+        """
+        if not filter_definition:
+            return queryset
+        
+        # Direct field filters
+        queryset = cls._apply_direct_filters(queryset, filter_definition)
+        
+        # FK filters (tech_stack, buying_process, signals)
+        queryset = cls._apply_fk_filters(queryset, filter_definition, client_id)
+        
+        return queryset
+    
+    @classmethod
+    def apply_territory_filters(cls, queryset, territory_id, client_id):
+        """
+        Load territory and apply its filter_definition.
+        
+        Args:
+            queryset: CompanyAccount QuerySet
+            territory_id: UUID of territory
+            client_id: UUID for client scoping
+            
+        Returns:
+            Filtered QuerySet
+            
+        Raises:
+            Territory.DoesNotExist if not found
+        """
+        from app_modules.territories.models import Territory
+        
+        territory = Territory.objects.get(
+            id=territory_id,
+            client_id=client_id
+        )
+        
+        return cls.apply_filters(queryset, territory.filter_definition, client_id)
+    
+    # ==========================================================================
+    # DIRECT FIELD FILTERS
+    # ==========================================================================
+    
+    @classmethod
+    def _apply_direct_filters(cls, queryset, filter_definition):
+        """Apply filters on direct CompanyAccount fields."""
+        
+        # Type filter
+        if filter_definition.get('type'):
+            queryset = queryset.filter(type=filter_definition['type'])
+        
+        # Classification filter
+        if filter_definition.get('classification'):
+            queryset = queryset.filter(classification=filter_definition['classification'])
+        
+        # Account owner filter (support both UUID and object with id)
+        account_owner = filter_definition.get('account_owner')
+        if account_owner:
+            owner_id = account_owner.get('id') if isinstance(account_owner, dict) else account_owner
+            if owner_id:
+                queryset = queryset.filter(account_owner_id=owner_id)
+        
+        # Industry filter
+        if filter_definition.get('industry'):
+            queryset = queryset.filter(industry=filter_definition['industry'])
+        
+        # Country filter
+        if filter_definition.get('country'):
+            queryset = queryset.filter(country=filter_definition['country'])
+        
+        # Company size filter
+        if filter_definition.get('company_size'):
+            queryset = queryset.filter(company_size=filter_definition['company_size'])
+        
+        # Has buying decision filter
+        if filter_definition.get('has_buying_decision') is not None:
+            queryset = queryset.filter(
+                has_buying_decision=filter_definition['has_buying_decision']
+            )
+        
+        return queryset
+    
+    # ==========================================================================
+    # FK FILTERS (Phase 2 - Future)
+    # ==========================================================================
+    
+    @classmethod
+    def _apply_fk_filters(cls, queryset, filter_definition, client_id=None):
+        """Apply filters requiring JOINs to related models."""
+        
+        # Tech Stack filter
+        if filter_definition.get('has_tech_stack'):
+            queryset = cls._filter_by_tech_stack(
+                queryset, 
+                filter_definition['has_tech_stack'],
+                client_id
+            )
+        
+        # Buying Process Stage filter
+        if filter_definition.get('buying_process_stage'):
+            queryset = cls._filter_by_buying_process(
+                queryset,
+                filter_definition['buying_process_stage'],
+                client_id
+            )
+        
+        # Has Qualification filter
+        if filter_definition.get('has_qualification') is not None:
+            queryset = cls._filter_by_qualification(
+                queryset,
+                filter_definition['has_qualification'],
+                client_id
+            )
+        
+        # Signals freshness filter
+        if filter_definition.get('signals_since_days'):
+            queryset = cls._filter_by_signals_freshness(
+                queryset,
+                filter_definition['signals_since_days'],
+                client_id
+            )
+        
+        return queryset
+    
+    # ==========================================================================
+    # TECH STACK FILTER
+    # ==========================================================================
+    
+    @classmethod
+    def _filter_by_tech_stack(cls, queryset, tech_names, client_id=None):
+        """Filter accounts that have specific tech stacks."""
+        if not tech_names:
+            return queryset
+        
+        from apps.accounts.models import TechStack
+        
+        if isinstance(tech_names, str):
+            tech_names = [tech_names]
+        
+        tech_stack_exists = TechStack.objects.filter(
+            account_id=OuterRef('pk'),
+            tech_name__in=tech_names
+        )
+        
+        if client_id:
+            tech_stack_exists = tech_stack_exists.filter(client_id=client_id)
+        
+        return queryset.filter(Exists(tech_stack_exists))
+    
+    # ==========================================================================
+    # BUYING PROCESS FILTER
+    # ==========================================================================
+    
+    @classmethod
+    def _filter_by_buying_process(cls, queryset, stages, client_id=None):
+        """Filter accounts by buying process stage."""
+        if not stages:
+            return queryset
+        
+        from apps.accounts.models import BuyingProcess
+        
+        if isinstance(stages, str):
+            stages = [stages]
+        
+        buying_process_exists = BuyingProcess.objects.filter(
+            account_id=OuterRef('pk'),
+            current_stage__in=stages
+        )
+        
+        if client_id:
+            buying_process_exists = buying_process_exists.filter(client_id=client_id)
+        
+        return queryset.filter(Exists(buying_process_exists))
+    
+    # ==========================================================================
+    # QUALIFICATION FILTER
+    # ==========================================================================
+    
+    @classmethod
+    def _filter_by_qualification(cls, queryset, has_qualification, client_id=None):
+        """Filter accounts by qualification status."""
+        from apps.signals.models import QualificationSignal
+        
+        qualification_exists = QualificationSignal.objects.filter(
+            account_id=OuterRef('pk'),
+            status='APPROVED'
+        )
+        
+        if client_id:
+            qualification_exists = qualification_exists.filter(client_id=client_id)
+        
+        if has_qualification:
+            return queryset.filter(Exists(qualification_exists))
+        else:
+            return queryset.exclude(Exists(qualification_exists))
+    
+    # ==========================================================================
+    # SIGNALS FRESHNESS FILTER
+    # ==========================================================================
+    
+    @classmethod
+    def _filter_by_signals_freshness(cls, queryset, days, client_id=None):
+        """Filter accounts with recent signals."""
+        if not days or days <= 0:
+            return queryset
+        
+        from apps.signals.models import QualificationSignal, TechStackSignal, ProfileSignal
+        
+        cutoff_date = timezone.now() - timedelta(days=int(days))
+        
+        qual_exists = QualificationSignal.objects.filter(
+            account_id=OuterRef('pk'),
+            created_at__gte=cutoff_date
+        )
+        tech_exists = TechStackSignal.objects.filter(
+            account_id=OuterRef('pk'),
+            created_at__gte=cutoff_date
+        )
+        profile_exists = ProfileSignal.objects.filter(
+            account_id=OuterRef('pk'),
+            created_at__gte=cutoff_date
+        )
+        
+        if client_id:
+            qual_exists = qual_exists.filter(client_id=client_id)
+            tech_exists = tech_exists.filter(client_id=client_id)
+            profile_exists = profile_exists.filter(client_id=client_id)
+        
+        return queryset.filter(
+            Exists(qual_exists) | Exists(tech_exists) | Exists(profile_exists)
+        )
+    
+    # ==========================================================================
+    # UTILITY
+    # ==========================================================================
+    
+    @classmethod
+    def get_filter_summary(cls, filter_definition):
+        """Generate human-readable summary of active filters."""
+        if not filter_definition:
+            return []
+        
+        summary = []
+        
+        if filter_definition.get('type'):
+            summary.append(f"Type: {filter_definition['type']}")
+        if filter_definition.get('classification'):
+            summary.append(f"Classification: {filter_definition['classification']}")
+        if filter_definition.get('account_owner'):
+            summary.append("Owner: Filtered")
+        if filter_definition.get('industry'):
+            summary.append(f"Industry: {filter_definition['industry']}")
+        if filter_definition.get('country'):
+            summary.append(f"Country: {filter_definition['country']}")
+        if filter_definition.get('has_tech_stack'):
+            techs = filter_definition['has_tech_stack']
+            summary.append(f"Tech Stack: {', '.join(techs) if isinstance(techs, list) else techs}")
+        if filter_definition.get('buying_process_stage'):
+            stages = filter_definition['buying_process_stage']
+            summary.append(f"Buying Stage: {', '.join(stages) if isinstance(stages, list) else stages}")
+        if filter_definition.get('has_qualification'):
+            summary.append("Has Qualification")
+        if filter_definition.get('signals_since_days'):
+            summary.append(f"Signals: Last {filter_definition['signals_since_days']} days")
+        
+        return summary

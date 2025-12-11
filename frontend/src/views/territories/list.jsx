@@ -2,12 +2,14 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 // material-ui
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import Grid from '@mui/material/Grid';
 import Pagination from '@mui/material/Pagination';
 import Slide from '@mui/material/Slide';
@@ -19,9 +21,12 @@ import Dialog from '@mui/material/Dialog';
 import MainCard from 'components/MainCard';
 import { DebouncedInput } from 'components/third-party/react-table';
 import TerritoryCard from 'sections/territories/TerritoryCard';
-import FormTerritoryAdd from 'sections/territories/FormTerritoryAdd';
-import FormTerritoryEdit from 'sections/territories/FormTerritoryEdit';
+import TerritoryModal from 'sections/territories/TerritoryModal';
 import AlertTerritoryDelete from 'sections/territories/AlertTerritoryDelete';
+import OwnerScopeTabs from 'components/filters/OwnerScopeTabs';
+
+// hooks
+import useOwnerScope from 'hooks/useOwnerScope';
 
 // api
 import { useGetTerritories, TERRITORY_TYPES } from 'api/territories/territories';
@@ -49,11 +54,49 @@ export default function TerritoriesListPage() {
   const [globalFilter, setGlobalFilter] = useState('');
   const [page, setPage] = useState(1);
 
-  // Modal states
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [selectedTerritory, setSelectedTerritory] = useState(null);
+  // URL params for pre-filled filters
+const searchParams = useSearchParams();
+
+// Modal states
+const [addModalOpen, setAddModalOpen] = useState(false);
+const [editModalOpen, setEditModalOpen] = useState(false);
+const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+const [selectedTerritory, setSelectedTerritory] = useState(null);
+
+// Initial filters from URL (for "Save as Territory" from filter panel)
+const [initialFilters, setInitialFilters] = useState({});
+
+// Owner scope filter
+const {
+  scope: ownerScope,
+  setScope: setOwnerScope,
+  visibleOptions: ownerScopeOptions,
+  apiParams: ownerScopeParams,
+  chipLabel: ownerScopeChipLabel,
+  isFiltered: isOwnerFiltered
+} = useOwnerScope({ storageKey: 'territories' });
+
+// Auto-open Add modal if action=create in URL
+useEffect(() => {
+  const action = searchParams.get('action');
+  if (action === 'create') {
+    // Extract filter params
+    const filters = {};
+    const filterType = searchParams.get('filter_type');
+    const filterClassification = searchParams.get('filter_classification');
+    const filterOwner = searchParams.get('filter_owner');
+    
+    if (filterType) filters.type = filterType;
+    if (filterClassification) filters.classification = filterClassification;
+    if (filterOwner) filters.account_owner = filterOwner;
+    
+    setInitialFilters(filters);
+    setAddModalOpen(true);
+    
+    // Clean URL without reload
+    window.history.replaceState({}, '', '/territories');
+  }
+}, [searchParams]);
 
   // ==============================|| PAGINATION CONFIG ||============================== //
 
@@ -70,15 +113,16 @@ export default function TerritoriesListPage() {
   // ==============================|| API DATA - TERRITORIES ||============================== //
 
   const { 
-    territories = [], 
-    territoriesCount = 0, 
-    territoriesLoading,
-    territoriesError 
-  } = useGetTerritories({
-    page: 1,
-    pageSize: 100,
-    search: globalFilter
-  });
+  territories = [], 
+  territoriesCount = 0, 
+  territoriesLoading,
+  territoriesError 
+} = useGetTerritories({
+  page: 1,
+  pageSize: 100,
+  search: globalFilter,
+  filters: ownerScopeParams
+});
 
   // ==============================|| FILTERED TERRITORIES ||============================== //
 
@@ -115,6 +159,7 @@ export default function TerritoriesListPage() {
 
   const handleCloseAddModal = () => {
     setAddModalOpen(false);
+    setInitialFilters({});
   };
 
   const handleOpenEditModal = (territory) => {
@@ -155,6 +200,13 @@ export default function TerritoriesListPage() {
 
   return (
     <>
+    {/* ==================== OWNER SCOPE TABS ==================== */}
+    <OwnerScopeTabs
+      value={ownerScope}
+      onChange={setOwnerScope}
+      visibleOptions={ownerScopeOptions}
+    />
+
       {/* ==================== HEADER ==================== */}
       <Box sx={{ position: 'relative', marginBottom: 3 }}>
         <Stack direction="row" alignItems="center">
@@ -240,30 +292,16 @@ export default function TerritoriesListPage() {
 
       {/* ==================== MODALS ==================== */}
 
-      {/* Add Territory Modal */}
-      <Dialog 
-        open={addModalOpen} 
-        onClose={handleCloseAddModal}
-        maxWidth="sm"
-        fullWidth
-      >
-        <FormTerritoryAdd closeModal={handleCloseAddModal} />
-      </Dialog>
-
-      {/* Edit Territory Modal */}
-      {selectedTerritory && (
-        <Dialog 
-          open={editModalOpen} 
-          onClose={handleCloseEditModal}
-          maxWidth="sm"
-          fullWidth
-        >
-          <FormTerritoryEdit 
-            territory={selectedTerritory} 
-            closeModal={handleCloseEditModal} 
-          />
-        </Dialog>
-      )}
+      {/* Add/Edit Territory Modal */}
+       <TerritoryModal
+          open={addModalOpen || editModalOpen}
+          closeModal={() => {
+            if (addModalOpen) handleCloseAddModal();
+            if (editModalOpen) handleCloseEditModal();
+          }}
+          territory={selectedTerritory}
+          initialFilters={initialFilters}
+        />
 
       {/* Delete Territory Modal */}
       <AlertTerritoryDelete

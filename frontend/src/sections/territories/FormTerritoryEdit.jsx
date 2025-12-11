@@ -25,14 +25,32 @@ import * as Yup from 'yup';
 import { useFormik, Form, FormikProvider } from 'formik';
 
 // project imports
+import CircularWithPath from 'components/@extended/progress/CircularWithPath';
 import { displaySuccessSnackbar } from 'utils/displayError';
 import { handleFormikError } from 'utils/formErrorHandler';
 
 // api
 import { updateTerritory, TERRITORY_TYPES } from 'api/territories/territories';
+import { useGetAccountChoices } from 'api/admin/accounts';
 
-// utils
-import { formatDateTime } from 'config/formatters';
+// ==============================|| SECTION TITLE ||============================== //
+
+const SectionTitle = ({ children }) => (
+  <Grid item xs={12}>
+    <Typography variant="subtitle2" color="text.secondary" sx={{ 
+      mt: 2, 
+      mb: 1, 
+      textTransform: 'uppercase', 
+      fontSize: '0.75rem',
+      fontWeight: 600,
+      letterSpacing: '0.5px'
+    }}>
+      {children}
+    </Typography>
+  </Grid>
+);
+
+SectionTitle.propTypes = { children: PropTypes.node };
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
@@ -54,25 +72,32 @@ const buildInitialValues = (territory) => ({
   name: territory?.name || '',
   description: territory?.description || '',
   type: territory?.type || TERRITORY_TYPES.ACCOUNT,
-  filter_definition: territory?.filter_definition || {}
+  // Filter definition fields from existing territory
+  filter_type: territory?.filter_definition?.type || '',
+  filter_classification: territory?.filter_definition?.classification || '',
+  filter_industry: territory?.filter_definition?.industry || '',
+  filter_country: territory?.filter_definition?.country || ''
 });
 
 // ==============================|| FORM TERRITORY EDIT ||============================== //
 
 /**
- * FormTerritoryEdit - Edit existing territory modal form
+ * Form for editing an existing territory
  * 
  * Features:
  * - Pre-filled values from territory
  * - Name and description editing
  * - Type selection (read-only for system territories)
- * - Filter definition display
+ * - Filter definition editing
  * 
  * @param {Object} territory - Territory object to edit
  * @param {Function} closeModal - Function to close the modal
  */
 function FormTerritoryEdit({ territory, closeModal }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch choices from accounts
+  const { types, classifications, industries, countries, choicesLoading } = useGetAccountChoices();
 
   // ==============================|| FORMIK SETUP ||============================== //
 
@@ -84,11 +109,18 @@ function FormTerritoryEdit({ territory, closeModal }) {
       setIsSubmitting(true);
       
       try {
+        // Build filter_definition from filter fields
+        const filter_definition = {};
+        if (values.filter_type) filter_definition.type = values.filter_type;
+        if (values.filter_classification) filter_definition.classification = values.filter_classification;
+        if (values.filter_industry) filter_definition.industry = values.filter_industry;
+        if (values.filter_country) filter_definition.country = values.filter_country;
+
         const payload = {
           name: values.name.trim(),
           description: values.description?.trim() || null,
           type: values.type,
-          filter_definition: values.filter_definition || {}
+          filter_definition
         };
         
         const result = await updateTerritory(territory.id, payload);
@@ -109,28 +141,25 @@ function FormTerritoryEdit({ territory, closeModal }) {
 
   const { errors, touched, handleSubmit, getFieldProps, values, setFieldValue } = formik;
 
-  // ==============================|| FILTER SUMMARY ||============================== //
-
-  const getFilterSummary = () => {
-    if (!values.filter_definition || Object.keys(values.filter_definition).length === 0) {
-      return 'No filters applied';
-    }
-    
-    const count = Object.values(values.filter_definition).filter(v => v).length;
-    return `${count} filter${count > 1 ? 's' : ''} applied`;
-  };
+  // Show loading while fetching choices
+  if (choicesLoading) {
+    return (
+      <Box sx={{ p: 5 }}>
+        <Stack direction="row" justifyContent="center">
+          <CircularWithPath />
+        </Stack>
+      </Box>
+    );
+  }
 
   // ==============================|| RENDER ||============================== //
 
   return (
     <FormikProvider value={formik}>
       <Form autoComplete="off" noValidate onSubmit={handleSubmit}>
-        
-        {/* ==================== DIALOG TITLE ==================== */}
-        
         <DialogTitle>
           Edit Territory
-          {territory.is_system && (
+          {territory?.is_system && (
             <Typography variant="caption" color="warning.main" sx={{ ml: 1 }}>
               (System territory - limited editing)
             </Typography>
@@ -138,39 +167,34 @@ function FormTerritoryEdit({ territory, closeModal }) {
         </DialogTitle>
         <Divider />
         
-        {/* ==================== DIALOG CONTENT ==================== */}
-        
         <DialogContent sx={{ p: 2.5 }}>
-          <Grid container spacing={3}>
+          <Grid container spacing={2.5}>
             
-            {/* ==================== TERRITORY NAME ==================== */}
-            
+            {/* ==================== IDENTITY ==================== */}
             <Grid item xs={12}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="territory-name">Territory Name *</InputLabel>
+                <InputLabel htmlFor="name">Territory Name *</InputLabel>
                 <TextField
                   fullWidth
-                  id="territory-name"
+                  id="name"
                   placeholder="Enter territory name"
                   {...getFieldProps('name')}
                   error={Boolean(touched.name && errors.name)}
                   helperText={touched.name && errors.name}
-                  disabled={territory.is_system}
+                  disabled={territory?.is_system}
                 />
               </Stack>
             </Grid>
 
-            {/* ==================== DESCRIPTION ==================== */}
-
             <Grid item xs={12}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="territory-description">Description</InputLabel>
+                <InputLabel htmlFor="description">Description</InputLabel>
                 <TextField
                   fullWidth
-                  id="territory-description"
+                  id="description"
                   placeholder="Enter description"
                   multiline
-                  rows={3}
+                  rows={2}
                   {...getFieldProps('description')}
                   error={Boolean(touched.description && errors.description)}
                   helperText={touched.description && errors.description}
@@ -179,17 +203,16 @@ function FormTerritoryEdit({ territory, closeModal }) {
             </Grid>
 
             {/* ==================== TYPE ==================== */}
-
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="territory-type">Type *</InputLabel>
+                <InputLabel htmlFor="type">Territory Type *</InputLabel>
                 <FormControl fullWidth error={Boolean(touched.type && errors.type)}>
                   <Select
-                    id="territory-type"
+                    id="type"
+                    displayEmpty
                     value={values.type}
                     onChange={(e) => setFieldValue('type', e.target.value)}
-                    displayEmpty
-                    disabled={territory.is_system}
+                    disabled={territory?.is_system}
                   >
                     <MenuItem value={TERRITORY_TYPES.ACCOUNT}>Account-based</MenuItem>
                     <MenuItem value={TERRITORY_TYPES.CONTACT} disabled>
@@ -203,48 +226,129 @@ function FormTerritoryEdit({ territory, closeModal }) {
               </Stack>
             </Grid>
 
-            {/* ==================== FILTERS SUMMARY ==================== */}
+            {/* ==================== ACCOUNT FILTERS ==================== */}
+            <SectionTitle>Account Filters</SectionTitle>
 
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel>Filters</InputLabel>
-                <Box
-                  sx={{
-                    p: 1.5,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    borderRadius: 1,
-                    bgcolor: 'grey.50'
-                  }}
-                >
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <span>{getFilterSummary()}</span>
-                    {/* Future: Button to open filter builder */}
-                  </Stack>
-                </Box>
+                <InputLabel htmlFor="filter_type">Account Type</InputLabel>
+                <FormControl fullWidth>
+                  <Select
+                    id="filter_type"
+                    displayEmpty
+                    value={values.filter_type}
+                    onChange={(e) => setFieldValue('filter_type', e.target.value)}
+                    disabled={territory?.is_system}
+                  >
+                    <MenuItem value="">
+                      <em>All types</em>
+                    </MenuItem>
+                    {types.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               </Stack>
             </Grid>
 
-            {/* ==================== METADATA ==================== */}
-
-            <Grid item xs={12}>
-              <Divider sx={{ my: 1 }} />
-              <Stack direction="row" spacing={4}>
-                <Typography variant="caption" color="text.secondary">
-                  Created: {formatDateTime(territory.created_at)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Updated: {formatDateTime(territory.updated_at)}
-                </Typography>
+            <Grid item xs={12} sm={6}>
+              <Stack spacing={1}>
+                <InputLabel htmlFor="filter_classification">Classification</InputLabel>
+                <FormControl fullWidth>
+                  <Select
+                    id="filter_classification"
+                    displayEmpty
+                    value={values.filter_classification}
+                    onChange={(e) => setFieldValue('filter_classification', e.target.value)}
+                    disabled={territory?.is_system}
+                  >
+                    <MenuItem value="">
+                      <em>All classifications</em>
+                    </MenuItem>
+                    {classifications.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               </Stack>
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <Stack spacing={1}>
+                <InputLabel htmlFor="filter_industry">Industry</InputLabel>
+                <FormControl fullWidth>
+                  <Select
+                    id="filter_industry"
+                    displayEmpty
+                    value={values.filter_industry}
+                    onChange={(e) => setFieldValue('filter_industry', e.target.value)}
+                    disabled={territory?.is_system}
+                  >
+                    <MenuItem value="">
+                      <em>All industries</em>
+                    </MenuItem>
+                    {industries.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <Stack spacing={1}>
+                <InputLabel htmlFor="filter_country">Country</InputLabel>
+                <FormControl fullWidth>
+                  <Select
+                    id="filter_country"
+                    displayEmpty
+                    value={values.filter_country}
+                    onChange={(e) => setFieldValue('filter_country', e.target.value)}
+                    disabled={territory?.is_system}
+                  >
+                    <MenuItem value="">
+                      <em>All countries</em>
+                    </MenuItem>
+                    {countries.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+            </Grid>
+
+            {/* ==================== FUTURE FILTERS PLACEHOLDER ==================== */}
+            <SectionTitle>Advanced Filters</SectionTitle>
+            
+            <Grid item xs={12}>
+              <Box 
+                sx={{ 
+                  p: 2, 
+                  bgcolor: 'grey.100', 
+                  borderRadius: 1,
+                  border: '1px dashed',
+                  borderColor: 'grey.300'
+                }}
+              >
+                <Typography variant="body2" color="text.secondary" align="center">
+                  More filters coming soon: Tech Stack, Buying Process, Signals, Owner...
+                </Typography>
+              </Box>
             </Grid>
 
           </Grid>
         </DialogContent>
-
-        {/* ==================== DIALOG ACTIONS ==================== */}
-
+        
         <Divider />
+        
         <DialogActions sx={{ p: 2.5 }}>
           <Grid container justifyContent="flex-end" alignItems="center">
             <Grid item>
@@ -255,15 +359,14 @@ function FormTerritoryEdit({ territory, closeModal }) {
                 <Button 
                   type="submit" 
                   variant="contained" 
-                  disabled={!formik.isValid || isSubmitting || !formik.dirty}
+                  disabled={isSubmitting}
                 >
-                  Save Changes
+                  {isSubmitting ? 'Saving...' : 'Save Changes'}
                 </Button>
               </Stack>
             </Grid>
           </Grid>
         </DialogActions>
-
       </Form>
     </FormikProvider>
   );

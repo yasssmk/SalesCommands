@@ -56,22 +56,17 @@ export default function TerritoryCard({
   /**
    * Navigate to Accounts page with filters from territory
    */
+  /**
+ * Navigate to Accounts page with territory filter
+ */
   const handleExploreAccounts = () => {
     const params = new URLSearchParams();
     
-    // Apply territory filter_definition to URL params
-    if (territory.filter_definition) {
-      Object.entries(territory.filter_definition).forEach(([key, value]) => {
-        if (value) {
-          params.set(key, value);
-        }
-      });
-    }
-    
+    // Pass territory_id - backend will apply filter_definition
+    params.set('territory_id', territory.id);
     params.set('page', '1');
     
-    const queryString = params.toString();
-    const url = queryString ? `/admin/accounts?${queryString}` : '/admin/accounts';
+    const url = `/businessData/accounts?${params.toString()}`;
     
     router.push(url);
   };
@@ -88,11 +83,6 @@ export default function TerritoryCard({
     if (onEdit) {
       onEdit(territory);
     }
-  };
-
-  const handleDuplicate = () => {
-    // Future: duplicate territory
-    console.log('Duplicate territory:', territory.id);
   };
 
    const handleDelete = () => {
@@ -237,11 +227,6 @@ export default function TerritoryCard({
                 <EditOutlined style={{ fontSize: 16 }} />
               </IconButton>
             </span>
-          </Tooltip>
-          <Tooltip title="Duplicate">
-            <IconButton size="small" onClick={handleDuplicate} disabled>
-              <CopyOutlined style={{ fontSize: 16 }} />
-            </IconButton>
           </Tooltip>
           <Tooltip title={territory.is_system ? "Cannot delete system territory" : "Delete"}>
             <span>

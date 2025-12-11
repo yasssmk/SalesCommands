@@ -357,7 +357,6 @@ class TerritoryUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.
                     unique_fields=['name'],
                     model_class=Territory,
                     error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(fields='name'),
-                    instance=self.instance
                 )
             
             # Validate owner if provided

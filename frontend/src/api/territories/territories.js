@@ -69,6 +69,11 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
     queryParams.append('ordering', ordering);
   }
 
+  // Owner scope filter (mine/team/all)
+  if (filters.owner_scope) {
+    queryParams.append('owner_scope', filters.owner_scope);
+  }
+
   // Filters
   if (filters.type) {
     queryParams.append('type', filters.type);

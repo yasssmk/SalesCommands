@@ -19,6 +19,7 @@ import AlertAccountDelete from 'sections/admin/accounts/AlertAccountDelete';
 import AlertAccountBulkDelete from 'sections/admin/accounts/AlertAccountBulkDelete';
 import AccountBulkEditModal from 'sections/admin/accounts/AccountBulkEditModal';
 import AccountCSVImportModal from 'sections/admin/accounts/AccountCSVImportModal';
+import useOwnerScope from 'hooks/useOwnerScope';
 
 // hooks
 import useLocalStorage from 'hooks/useLocalStorage';
@@ -28,12 +29,18 @@ import { useAuth } from 'hooks/useAuth';
 import { useGetAccounts } from 'api/admin/accounts';
 import { tenantKey } from 'api/_swr';
 
+// components
+import OwnerScopeTabs from 'components/filters/OwnerScopeTabs';
+
 // utils
 import { formatDateTime } from 'config/formatters';
 
 // assets
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
+
+// next
+import { useSearchParams } from 'next/navigation';
 
 // filters
 import TerritoryFilterPanel from 'sections/admin/accounts/TerritoryFilterPanel';
@@ -91,6 +98,11 @@ export default function AccountsListPage() {
 
   const MAX_PAGE_SIZE = 100;
 
+  // ==============================|| URL PARAMS ||============================== //
+  
+  const searchParams = useSearchParams();
+  const territoryIdFromUrl = searchParams.get('territory_id');
+
   // ==============================|| STATE MANAGEMENT ||============================== //
 
   // Pagination state with localStorage persistence
@@ -123,18 +135,28 @@ export default function AccountsListPage() {
   const [filterPanelOpen, setFilterPanelOpen] = useState(false); 
 
   // Advanced filters hook
-  const {
-    filters,
-    pendingFilters,
-    activeFiltersCount,
-    hasActiveFilters,
-    hasPendingChanges,
-    apiFilters,
-    updatePendingFilter,
-    applyFilters,
-    clearFilters,
-    resetPendingFilters
-  } = useTerritoryFilters();
+const {
+  filters,
+  pendingFilters,
+  activeFiltersCount,
+  hasActiveFilters,
+  hasPendingChanges,
+  apiFilters,
+  updatePendingFilter,
+  applyFilters,
+  clearFilters,
+  resetPendingFilters
+} = useTerritoryFilters();
+
+// Owner scope filter
+const {
+  scope: ownerScope,
+  setScope: setOwnerScope,
+  visibleOptions: ownerScopeOptions,
+  apiParams: ownerScopeParams,
+  chipLabel: ownerScopeChipLabel,
+  isFiltered: isOwnerFiltered
+} = useOwnerScope({ storageKey: 'accounts' });
 
   // ==============================|| COMPUTE ORDERING STRING ||============================== //
 
@@ -157,12 +179,18 @@ export default function AccountsListPage() {
 
   // ==============================|| API DATA FETCHING ||============================== //
 
+  // Merge apiFilters with ownerScopeParams
+  const mergedFilters = useMemo(() => ({
+    ...apiFilters,
+    ...ownerScopeParams
+  }), [apiFilters, ownerScopeParams]);
+
   const _accountsHook = useGetAccounts({
     page,
     pageSize: validPageSize,
     search,
     ordering,
-    filters: apiFilters
+    filters: mergedFilters
   }) || {};
 
   const {
@@ -315,18 +343,42 @@ export default function AccountsListPage() {
   }, [clearFilters]);
 
   const handleRemoveFilter = useCallback((filterKey) => {
+    // Handle owner scope separately (not part of territory filters)
+    if (filterKey === 'owner_scope') {
+      setOwnerScope('all');
+      return;
+    }
+    
     updatePendingFilter(filterKey, '');
     // Apply immediately after removing
     setTimeout(() => {
       applyFilters();
       setPage(1);
     }, 0);
-  }, [updatePendingFilter, applyFilters]);
+  }, [updatePendingFilter, applyFilters, setOwnerScope]);
 
   // ==============================|| ADVANCED FILTERS FOR CHIPS ||============================== //
 
   const advancedFiltersChips = useMemo(() => {
     const chips = [];
+
+    // Owner scope chip
+    if (isOwnerFiltered) {
+      chips.push({
+        key: 'owner_scope',
+        label: 'Owner',
+        value: ownerScope === 'mine' ? 'Mine' : ownerScope === 'team' ? 'My Team' : ownerScope
+      });
+    }
+
+    // Territory filter chip
+    if (territoryIdFromUrl) {
+      chips.push({
+        key: 'territory_id',
+        label: 'Territory',
+        value: 'Active'
+      });
+    }
     
     if (filters.type) {
       chips.push({
@@ -353,7 +405,7 @@ export default function AccountsListPage() {
     }
     
     return chips;
-  }, [filters]);
+  }, [filters, isOwnerFiltered, ownerScope, territoryIdFromUrl]);
 
   // ==============================|| COLUMNS DEFINITION ||============================== //
 
@@ -517,6 +569,13 @@ export default function AccountsListPage() {
 
   return (
     <>
+      {/* ==================== OWNER SCOPE TABS ==================== */}
+      <OwnerScopeTabs
+        value={ownerScope}
+        onChange={setOwnerScope}
+        visibleOptions={ownerScopeOptions}
+      />
+
       <ReusableTable
         data={accounts}
         columns={columns}

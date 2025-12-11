@@ -114,6 +114,15 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
         'assigned_to_user': '-',                    # Use owner
         'account_fk': '-',                          # Self reference
     },
+
+    'territories': {
+        'client_account_fk': 'client_id',           # Territory.client_id
+        'owner_user': 'owner_id',                   # Territory.owner
+        'owner_team': '-',                          # No team ownership
+        'created_by': 'created_by_id',              # BaseModel.created_by
+        'assigned_to_user': '-',                    # Not applicable
+        'account_fk': '-',                          # Not applicable
+    },
     
     'contacts': {
         'client_account_fk': 'account.client_id',   # Via account
@@ -197,6 +206,7 @@ OWNERSHIP_TYPES = {
     'sales_plans': 'user',        # User owns their plans
     'sales_milestones': 'user',   # User owns their milestones
     'accounts': 'user',           # owner_user, owner_team, created_by
+    'territories': 'user',
     'contacts': 'account',        # Inherits from account
     'activities': 'user',         # owner_user, assigned_to_user
     'leads': 'user',             # assigned_to_user, created_by

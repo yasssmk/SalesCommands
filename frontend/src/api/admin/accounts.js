@@ -49,8 +49,12 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
     queryParams.append('ordering', ordering);
   }
 
-  // Advanced filters for CompanyAccounts
-  // Advanced filters for CompanyAccounts
+  // Owner scope filter (mine/team/all)
+  if (filters.owner_scope) {
+    queryParams.append('owner_scope', filters.owner_scope);
+  }
+
+// Advanced filters for CompanyAccounts
   if (filters.type) {
     queryParams.append('type', filters.type);
   }
@@ -81,6 +85,28 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
 
   if (filters.has_buying_decision !== undefined && filters.has_buying_decision !== null) {
     queryParams.append('has_buying_decision', filters.has_buying_decision);
+  }
+
+  // Territory filter (backend applies filter_definition)
+  if (filters.territory_id) {
+    queryParams.append('territory_id', filters.territory_id);
+  }
+
+  // FK filters (Phase 2)
+  if (filters.has_tech_stack) {
+    queryParams.append('has_tech_stack', filters.has_tech_stack);
+  }
+
+  if (filters.buying_process_stage) {
+    queryParams.append('buying_process_stage', filters.buying_process_stage);
+  }
+
+  if (filters.has_qualification !== undefined && filters.has_qualification !== null) {
+    queryParams.append('has_qualification', filters.has_qualification);
+  }
+
+  if (filters.signals_since_days) {
+    queryParams.append('signals_since_days', filters.signals_since_days);
   }
   
   const queryString = queryParams.toString();

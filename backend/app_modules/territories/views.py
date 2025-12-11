@@ -22,6 +22,7 @@ from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
 
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
+from permissions.owner_scope import OwnerScopeMixin
 
 from .models import Territory, TerritoryType
 from .serializers import (
@@ -34,7 +35,7 @@ from .serializers import (
 logger = get_logger(__name__)
 
 
-class TerritoryViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
+class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing territories with client scoping.
     
@@ -65,11 +66,9 @@ class TerritoryViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = {
         'type': ['exact'],
-        'classification': ['exact'],
-        'country': ['exact'],
-        'industry': ['exact'],
-        'account_owner': ['exact'],
-        'account_owner__id': ['exact'],
+        'is_system': ['exact'],
+        'is_default': ['exact'],
+        'owner': ['exact'],
     }
     search_fields = ['name', 'description']
     ordering_fields = [
@@ -125,6 +124,9 @@ class TerritoryViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             )
         else:
             queryset = queryset.select_related('owner')
+
+        # Apply owner scope filter (mine/team/all)
+        queryset = self.apply_owner_scope_filter(queryset)
         
         return queryset
     
@@ -200,13 +202,16 @@ class TerritoryViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             
             # Audit log
             audit_log(
-                action='territory.create',
-                actor=request.user,
-                target=instance,
-                details={'name': instance.name, 'type': instance.type},
-                request=request
-            )
-        
+            event='territory_create_success',
+            action='create',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='territory',
+            target_id=str(instance.id),
+            outcome='success',
+            extra={'territory_name': instance.name}
+        )
+                
         logger.info("territory_create_success", extra={
             **ctx,
             'territory_id': str(instance.id),
@@ -260,11 +265,14 @@ class TerritoryViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             
             # Audit log
             audit_log(
-                action='territory.update',
-                actor=request.user,
-                target=instance,
-                details={'updated_fields': list(request.data.keys())},
-                request=request
+                event='territory_update_success',
+                action='partial_update',
+                actor_id=str(request.user.id),
+                client_id=str(self.get_client_id()),
+                target_type='territory',
+                target_id=str(instance.id),
+                outcome='success',
+                extra={'territory_name': instance.name}
             )
         
         logger.info("territory_update_success", extra={
@@ -305,11 +313,14 @@ class TerritoryViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         with transaction.atomic():
             # Audit log before deletion
             audit_log(
-                action='territory.delete',
-                actor=request.user,
-                target=instance,
-                details={'name': territory_name},
-                request=request
+                event='territory_delete_success',
+                action='delete',
+                actor_id=str(request.user.id),
+                client_id=str(self.get_client_id()),
+                target_type='territory',
+                target_id=str(instance.id),
+                outcome='success',
+                extra={'territory_name': instance.name}
             )
             
             instance.delete()
