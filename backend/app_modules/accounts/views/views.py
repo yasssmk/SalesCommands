@@ -203,12 +203,25 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
     
     def _apply_advanced_filters(self, queryset):
         """Apply advanced filtering from query params."""
+        from app_modules.territories.models import Territory
+        from uuid import UUID
+
+        
         try:
             # =================================================================
             # TERRITORY FILTER (applies filter_definition from territory)
             # =================================================================
             territory_id = self.request.query_params.get('territory_id')
             if territory_id:
+                # Validate UUID format
+                try:
+                    UUID(territory_id)
+                except (ValueError, TypeError):
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(field='territory_id (invalid UUID format)')
+                    )
+                
+                # Apply territory filters
                 try:
                     client_id = self.get_client_id()
                     queryset = AccountFilterService.apply_territory_filters(
@@ -221,13 +234,19 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
                         'territory_id': territory_id,
                         'client_id': str(client_id)
                     })
+                except Territory.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.NOT_FOUND.format(resource=f'Territory with ID {territory_id}')
+                    )
                 except Exception as e:
-                    logger.warning("territory_filter_failed", extra={
+                    logger.error("territory_filter_unexpected_error", extra={
                         'territory_id': territory_id,
-                        'error': str(e)
+                        'error': str(e),
+                        'error_type': type(e).__name__
                     })
-                    # Territory not found or invalid - continue without territory filter
-                    pass
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FILTER
+                    )
             
             # =================================================================
             # DIRECT QUERY PARAM FILTERS (existing logic)

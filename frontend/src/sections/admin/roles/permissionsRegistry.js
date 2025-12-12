@@ -42,6 +42,7 @@ export const MODULES = [
   'templates',
   'users',
   'products',
+  'territories',
 ];
 
 export const ACTIONS = ['create', 'read', 'update', 'delete'];
@@ -325,7 +326,36 @@ export const PERMISSIONS_REGISTRY = {
       manager: 'none',
       individual: 'none'
     }
-  }
+  },
+
+  // ========================================================================
+  // TERRITORIES MODULE
+  // Ownership: user-based (owner)
+  // Note: Read access for all (client scope)
+  // Create/Update/Delete: scoped by ownership (admin=client, manager=team, individual=mine)
+  // ========================================================================
+  territories: {
+    create: {
+      admin: 'client',
+      manager: 'mine',
+      individual: 'mine'
+    },
+    read: {
+      admin: 'client',
+      manager: 'client',
+      individual: 'client'
+    },
+    update: {
+      admin: 'client',
+      manager: 'team',
+      individual: 'mine'
+    },
+    delete: {
+      admin: 'client',
+      manager: 'team',
+      individual: 'mine'
+    }
+  },
 };
 
 // ==============================|| HELPER FUNCTIONS ||============================== //

@@ -93,11 +93,12 @@ class Territory(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     owner = models.ForeignKey(
         User,
-        on_delete=models.CASCADE, 
-        blank=True,
-        null=True,
+        on_delete=models.CASCADE,
+        blank=False,
+        null=False,
         related_name='owned_territories',
-        verbose_name=_('Owner')
+        verbose_name=_('Owner'),
+        help_text=_('User who owns this territory')
     )
     
     # ==========================================================================

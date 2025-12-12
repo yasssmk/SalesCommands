@@ -20,6 +20,7 @@ from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
+from core.cache_utils import invalidate_tag
 
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from permissions.owner_scope import OwnerScopeMixin
@@ -130,6 +131,24 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
         
         return queryset
     
+    def _invalidate_all_related_caches(self, client_id):
+        """
+        Invalidate all caches related to territories.
+        
+        Args:
+            client_id: Client UUID
+        """
+        if not client_id:
+            return
+        
+        invalidate_tag(client_id, 'territories')
+        
+        logger.info('cache_invalidation_territories', extra={
+            'event': 'cache_invalidation',
+            'client_id': str(client_id),
+            'tags': ['territories']
+        })
+    
     # ==========================================================================
     # CRUD OVERRIDES
     # ==========================================================================
@@ -211,6 +230,10 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
             outcome='success',
             extra={'territory_name': instance.name}
         )
+            
+            # Invalidate cache after commit
+            client_id = self.get_client_id()
+            transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
                 
         logger.info("territory_create_success", extra={
             **ctx,
@@ -274,6 +297,10 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
                 outcome='success',
                 extra={'territory_name': instance.name}
             )
+
+            # Invalidate cache after commit
+            client_id = self.get_client_id()
+            transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
         
         logger.info("territory_update_success", extra={
             **ctx,
@@ -309,21 +336,27 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
         
         territory_id = str(instance.id)
         territory_name = instance.name
+        client_id = self.get_client_id()
         
         with transaction.atomic():
-            # Audit log before deletion
+            instance.delete()
+
+            # Audit log 
             audit_log(
                 event='territory_delete_success',
                 action='delete',
                 actor_id=str(request.user.id),
                 client_id=str(self.get_client_id()),
-                target_type='territory',
-                target_id=str(instance.id),
+                target_id=territory_id, 
+                extra={'territory_name': territory_name},  
                 outcome='success',
                 extra={'territory_name': instance.name}
-            )
+                )
             
-            instance.delete()
+            
+            # Invalidate cache after commit
+            transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
+    
         
         logger.info("territory_delete_success", extra={
             **ctx,

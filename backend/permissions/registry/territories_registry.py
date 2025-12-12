@@ -21,7 +21,8 @@ TERRITORIES_REGISTRY: Dict[str, ModulePermissions] = {
     # ========================================================================
     # TERRITORIES MODULE
     # Ownership: user-based (owner)
-    # Note: Read access for all, write/delete admin only
+    # Note: Read access for all (client scope)
+    # Create/Update/Delete: scoped by ownership (admin=client, manager=team, individual=mine)
     # ========================================================================
     'territories': {
         'create': {

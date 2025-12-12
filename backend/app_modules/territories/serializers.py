@@ -13,6 +13,99 @@ from core.exceptions import StandardizedValidationError
 from end_users.models import User
 from .models import Territory, TerritoryType
 
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+
+ALLOWED_FILTER_KEYS = {
+    'type',
+    'classification', 
+    'industry',
+    'country',
+    'company_size',
+    'account_owner',
+    'account_scope',
+    'has_buying_decision',
+}
+
+# ============================================================================
+# BASE MIXIN FOR VALIDATION
+# ============================================================================
+
+class TerritoryValidationMixin:
+    """
+    Shared validation methods for Territory serializers.
+    
+    Provides common validation logic for:
+    - Owner validation (cross-tenant check)
+    - Filter definition account_owner validation
+    """
+    
+    def _validate_owner(self, owner_id, client_id):
+        """Validate owner exists and belongs to same client."""
+        try:
+            owner = User.objects.get(id=owner_id)
+            if not owner.is_active:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(field='Owner (inactive user)')
+                )
+            if str(owner.client_account_id) != str(client_id):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(field='Owner (different client)')
+                )
+        except User.DoesNotExist:
+            raise StandardizedValidationError(
+                CoreErrorMessages.NOT_FOUND.format(resource='Owner')
+            )
+    
+    def _validate_filter_account_owner(self, owner_id):
+        """Validate account_owner in filter_definition belongs to same client."""
+        try:
+            client_id = self._get_client_id_from_context()
+            owner = User.objects.get(id=owner_id)
+            if str(owner.client_account_id) != str(client_id):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field='Filter Definition account_owner (different client)'
+                    )
+                )
+        except User.DoesNotExist:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(
+                    field='Filter Definition account_owner (user not found)'
+                )
+            )
+    
+    def validate_filter_definition(self, value):
+        """
+        Validate filter_definition structure and content.
+        
+        - Must be a dict
+        - Only allowed keys accepted
+        - account_owner validated for cross-tenant
+        """
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field='Filter Definition')
+            )
+        
+        # Whitelist validation
+        unknown_keys = set(value.keys()) - ALLOWED_FILTER_KEYS
+        if unknown_keys:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(
+                    field=f"Filter Definition (unknown keys: {', '.join(sorted(unknown_keys))})"
+                )
+            )
+        
+        # Validate account_owner if present
+        if value.get('account_owner'):
+            self._validate_filter_account_owner(value['account_owner'])
+        
+        return value
+
 
 # ============================================================================
 # HELPER SERIALIZERS
@@ -153,7 +246,7 @@ class TerritorySerializer(ClientScopeManager.SerializerMixin, serializers.ModelS
 # CREATE SERIALIZER
 # ============================================================================
 
-class TerritoryCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class TerritoryCreateSerializer( TerritoryValidationMixin, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Serializer for territory creation.
     
@@ -165,7 +258,7 @@ class TerritoryCreateSerializer(ClientScopeManager.SerializerMixin, serializers.
     
     owner_id = serializers.UUIDField(
         required=False,
-        allow_null=True,
+        allow_null=False,
         write_only=True
     )
     
@@ -209,16 +302,6 @@ class TerritoryCreateSerializer(ClientScopeManager.SerializerMixin, serializers.
             )
         return value
     
-    def validate_filter_definition(self, value):
-        """Validate filter_definition is a dict."""
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field='Filter Definition')
-            )
-        return value
-    
     def validate(self, attrs):
         """Global validation for territory creation."""
         try:
@@ -248,23 +331,6 @@ class TerritoryCreateSerializer(ClientScopeManager.SerializerMixin, serializers.
                 CoreErrorMessages.INVALID_DATA.format(detail=str(e))
             )
     
-    def _validate_owner(self, owner_id, client_id):
-        """Validate owner exists and belongs to same client."""
-        try:
-            owner = User.objects.get(id=owner_id)
-            if not owner.is_active:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field='Owner (inactive user)')
-                )
-            if str(owner.client_account_id) != str(client_id):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field='Owner (different client)')
-                )
-        except User.DoesNotExist:
-            raise StandardizedValidationError(
-                CoreErrorMessages.NOT_FOUND.format(resource='Owner')
-            )
-    
     def create(self, validated_data):
         """Create territory with proper audit fields."""
         user = self.context.get('request').user if self.context.get('request') else None
@@ -276,6 +342,11 @@ class TerritoryCreateSerializer(ClientScopeManager.SerializerMixin, serializers.
         elif user:
             # Default owner to current user
             validated_data['owner'] = user
+        else:
+            # Should never happen with authenticated requests
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='owner')
+            )
         
         # Create instance
         instance = Territory(**validated_data)
@@ -288,7 +359,7 @@ class TerritoryCreateSerializer(ClientScopeManager.SerializerMixin, serializers.
 # UPDATE SERIALIZER
 # ============================================================================
 
-class TerritoryUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class TerritoryUpdateSerializer(TerritoryValidationMixin, ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Serializer for territory modifications (PATCH).
     
@@ -300,7 +371,7 @@ class TerritoryUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.
     
     owner_id = serializers.UUIDField(
         required=False,
-        allow_null=True,
+        allow_null=False,
         write_only=True
     )
     
@@ -335,16 +406,7 @@ class TerritoryUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.
             )
         return value
     
-    def validate_filter_definition(self, value):
-        """Validate filter_definition is a dict."""
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field='Filter Definition')
-            )
-        return value
-    
+
     def validate(self, attrs):
         """Global validation for updates."""
         try:
@@ -372,23 +434,6 @@ class TerritoryUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.
                 CoreErrorMessages.INVALID_DATA.format(detail=str(e))
             )
     
-    def _validate_owner(self, owner_id, client_id):
-        """Validate owner exists and belongs to same client."""
-        try:
-            owner = User.objects.get(id=owner_id)
-            if not owner.is_active:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field='Owner (inactive user)')
-                )
-            if str(owner.client_account_id) != str(client_id):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field='Owner (different client)')
-                )
-        except User.DoesNotExist:
-            raise StandardizedValidationError(
-                CoreErrorMessages.NOT_FOUND.format(resource='Owner')
-            )
-    
     def update(self, instance, validated_data):
         """Update territory with audit fields."""
         user = self.context.get('request').user if self.context.get('request') else None
@@ -396,10 +441,7 @@ class TerritoryUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.
         # Handle owner_id
         owner_id = validated_data.pop('owner_id', None)
         if owner_id is not None:
-            if owner_id:
-                instance.owner_id = owner_id
-            else:
-                instance.owner = None
+            instance.owner_id = owner_id
         
         # Update other fields
         for attr, value in validated_data.items():
