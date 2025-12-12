@@ -169,10 +169,11 @@ const {
 
   // ==============================|| API DATA FETCHING ||============================== //
 
-  // Merge apiFilters with ownerScopeParams
+  // Merge apiFilters with territory_id from URL
   const mergedFilters = useMemo(() => ({
-    ...apiFilters
-  }), [apiFilters]);
+    ...apiFilters,
+    ...(territoryIdFromUrl && { territory_id: territoryIdFromUrl })
+  }), [apiFilters, territoryIdFromUrl]);
 
   const _accountsHook = useGetAccounts({
     page,

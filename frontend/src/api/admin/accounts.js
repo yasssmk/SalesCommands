@@ -112,6 +112,11 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   if (filters.owner_scope) {
     queryParams.append('owner_scope', filters.owner_scope);
   }
+
+  // Territory filter - applies territory's filter_definition on backend
+  if (filters.territory_id) {
+    queryParams.append('territory_id', filters.territory_id);
+  }
   
   const queryString = queryParams.toString();
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;
