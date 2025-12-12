@@ -117,7 +117,7 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
 
     'territories': {
         'client_account_fk': 'client_id',           # Territory.client_id
-        'owner_user': 'owner_id',                   # Territory.owner
+        'owner_user': 'owner',                   # Territory.owner
         'owner_team': '-',                          # No team ownership
         'created_by': 'created_by_id',              # BaseModel.created_by
         'assigned_to_user': '-',                    # Not applicable

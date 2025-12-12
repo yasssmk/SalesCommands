@@ -31,6 +31,7 @@ DEFAULT_CONFIG = {
     'CACHE_TIMEOUT': 300,  # Cache timeout in seconds (5 minutes)
     'MODULES': {
         'accounts': True,
+        'territories': True,
         'contacts': False,
         'activities': False,
         'leads': False,
