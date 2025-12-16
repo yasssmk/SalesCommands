@@ -21,6 +21,7 @@ import RadioGroup from '@mui/material/RadioGroup';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import MultiSelectFilter from 'components/filters/MultiSelectFilter';
 
 // next
 import { useRouter } from 'next/navigation';
@@ -102,12 +103,12 @@ export default function TerritoryFilterPanel({
 
   // ==============================|| HANDLERS ||============================== //
 
-  const handleTypeChange = (event) => {
-    onFilterChange('type', event.target.value);
+  const handleTypeChange = (newValues) => {
+    onFilterChange('type', newValues);
   };
 
-  const handleClassificationChange = (event) => {
-    onFilterChange('classification', event.target.value);
+  const handleClassificationChange = (newValues) => {
+    onFilterChange('classification', newValues);
   };
 
   /**
@@ -155,11 +156,12 @@ export default function TerritoryFilterPanel({
     const params = new URLSearchParams();
     params.set('action', 'create');
     
-    if (pendingFilters?.type) {
-      params.set('filter_type', pendingFilters.type);
+    // Handle array filters (join with comma for URL)
+    if (pendingFilters?.type?.length > 0) {
+      params.set('filter_type', pendingFilters.type.join(','));
     }
-    if (pendingFilters?.classification) {
-      params.set('filter_classification', pendingFilters.classification);
+    if (pendingFilters?.classification?.length > 0) {
+      params.set('filter_classification', pendingFilters.classification.join(','));
     }
     // Account scope (mine/team)
     if (pendingFilters?.account_scope) {
@@ -214,48 +216,26 @@ export default function TerritoryFilterPanel({
           <Stack spacing={2.5}>
             
             {/* Type Filter */}
-            <FormControl fullWidth size="small">
-              <InputLabel id="filter-type-label">Type</InputLabel>
-              <Select
-                labelId="filter-type-label"
-                id="filter-type"
-                value={pendingFilters?.type || ''}
-                label="Type"
-                onChange={handleTypeChange}
-                disabled={choicesLoading}
-              >
-                <MenuItem value="">
-                  <em>All types</em>
-                </MenuItem>
-                {types.map((type) => (
-                  <MenuItem key={type.value} value={type.value}>
-                    {type.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <MultiSelectFilter
+              label="Type"
+              options={types}
+              value={pendingFilters?.type || []}
+              onChange={handleTypeChange}
+              placeholder="All types"
+              loading={choicesLoading}
+              size="small"
+            />
 
             {/* Classification Filter */}
-            <FormControl fullWidth size="small">
-              <InputLabel id="filter-classification-label">Classification</InputLabel>
-              <Select
-                labelId="filter-classification-label"
-                id="filter-classification"
-                value={pendingFilters?.classification || ''}
-                label="Classification"
-                onChange={handleClassificationChange}
-                disabled={choicesLoading}
-              >
-                <MenuItem value="">
-                  <em>All classifications</em>
-                </MenuItem>
-                {classifications.map((classification) => (
-                  <MenuItem key={classification.value} value={classification.value}>
-                    {classification.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <MultiSelectFilter
+              label="Classification"
+              options={classifications}
+              value={pendingFilters?.classification || []}
+              onChange={handleClassificationChange}
+              placeholder="All classifications"
+              loading={choicesLoading}
+              size="small"
+            />
 
             {/* Owner Scope Filter */}
             <Box>
@@ -403,13 +383,13 @@ TerritoryFilterPanel.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   pendingFilters: PropTypes.shape({
-    type: PropTypes.string,
-    classification: PropTypes.string,
+    type: PropTypes.arrayOf(PropTypes.string),
+    classification: PropTypes.arrayOf(PropTypes.string),
     account_scope: PropTypes.string,
     account_owner: PropTypes.oneOfType([PropTypes.object, PropTypes.string])
   }),
   onFilterChange: PropTypes.func.isRequired,
-  onFiltersChange: PropTypes.func,  // NEW
+  onFiltersChange: PropTypes.func,
   onApply: PropTypes.func.isRequired,
   onClear: PropTypes.func.isRequired,
   hasPendingChanges: PropTypes.bool,

@@ -22,6 +22,7 @@ import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import MultiSelectFilter from 'components/filters/MultiSelectFilter';
 
 // third-party
 import * as Yup from 'yup';
@@ -72,19 +73,28 @@ const CreateSchema = Yup.object().shape({
 
 // ==============================|| INITIAL VALUES ||============================== //
 
-const buildInitialValues = (initialFilters = {}) => ({
-  name: '',
-  description: '',
-  type: TERRITORY_TYPES.ACCOUNT,
-  // Filter definition fields
-  filter_type: initialFilters.type || '',
-  filter_classification: initialFilters.classification || '',
-  filter_industry: initialFilters.industry || '',
-  filter_country: initialFilters.country || '',
-  // Owner scope fields
-  filter_account_scope: initialFilters.account_scope || '',
-  filter_account_owner: initialFilters.account_owner || null
-});
+const buildInitialValues = (initialFilters = {}) => {
+  // Helper to normalize filter value to array
+  const toArray = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    return [val]; // Convert single value to array
+  };
+
+  return {
+    name: '',
+    description: '',
+    type: TERRITORY_TYPES.ACCOUNT,
+    // Filter definition fields (arrays for multi-select)
+    filter_type: toArray(initialFilters.type),
+    filter_classification: toArray(initialFilters.classification),
+    filter_industry: toArray(initialFilters.industry),
+    filter_country: toArray(initialFilters.country),
+    // Owner scope fields
+    filter_account_scope: initialFilters.account_scope || '',
+    filter_account_owner: initialFilters.account_owner || null
+  };
+};
 
 // ==============================|| FORM TERRITORY ADD ||============================== //
 
@@ -106,10 +116,19 @@ function FormTerritoryAdd({ closeModal, initialFilters = {} }) {
     try {
       // Build filter_definition from filter fields
       const filter_definition = {};
-      if (values.filter_type) filter_definition.type = values.filter_type;
-      if (values.filter_classification) filter_definition.classification = values.filter_classification;
-      if (values.filter_industry) filter_definition.industry = values.filter_industry;
-      if (values.filter_country) filter_definition.country = values.filter_country;
+      // Only include non-empty arrays
+      if (values.filter_type?.length > 0) {
+        filter_definition.type = values.filter_type;
+      }
+      if (values.filter_classification?.length > 0) {
+        filter_definition.classification = values.filter_classification;
+      }
+      if (values.filter_industry?.length > 0) {
+        filter_definition.industry = values.filter_industry;
+      }
+      if (values.filter_country?.length > 0) {
+        filter_definition.country = values.filter_country;
+      }
       
       // Owner scope - only one of account_scope or account_owner should be set
       if (values.filter_account_scope && values.filter_account_scope !== 'other') {
@@ -225,93 +244,57 @@ function FormTerritoryAdd({ closeModal, initialFilters = {} }) {
 
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="filter_type">Account Type</InputLabel>
-                <FormControl fullWidth>
-                  <Select
-                    id="filter_type"
-                    displayEmpty
-                    value={values.filter_type}
-                    onChange={(e) => setFieldValue('filter_type', e.target.value)}
-                  >
-                    <MenuItem value="">
-                      <em>All types</em>
-                    </MenuItem>
-                    {types.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <MultiSelectFilter
+                  label="Account Type"
+                  options={types}
+                  value={values.filter_type}
+                  onChange={(newValues) => setFieldValue('filter_type', newValues)}
+                  placeholder="All types"
+                  loading={choicesLoading}
+                  size="medium"
+                />
               </Stack>
             </Grid>
 
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="filter_classification">Classification</InputLabel>
-                <FormControl fullWidth>
-                  <Select
-                    id="filter_classification"
-                    displayEmpty
-                    value={values.filter_classification}
-                    onChange={(e) => setFieldValue('filter_classification', e.target.value)}
-                  >
-                    <MenuItem value="">
-                      <em>All classifications</em>
-                    </MenuItem>
-                    {classifications.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <MultiSelectFilter
+                  label="Classification"
+                  options={classifications}
+                  value={values.filter_classification}
+                  onChange={(newValues) => setFieldValue('filter_classification', newValues)}
+                  placeholder="All classifications"
+                  loading={choicesLoading}
+                  size="medium"
+                />
               </Stack>
             </Grid>
 
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="filter_industry">Industry</InputLabel>
-                <FormControl fullWidth>
-                  <Select
-                    id="filter_industry"
-                    displayEmpty
-                    value={values.filter_industry}
-                    onChange={(e) => setFieldValue('filter_industry', e.target.value)}
-                  >
-                    <MenuItem value="">
-                      <em>All industries</em>
-                    </MenuItem>
-                    {industries.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <MultiSelectFilter
+                  label="Industry"
+                  options={industries}
+                  value={values.filter_industry}
+                  onChange={(newValues) => setFieldValue('filter_industry', newValues)}
+                  placeholder="All industries"
+                  loading={choicesLoading}
+                  size="medium"
+                />
               </Stack>
             </Grid>
 
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="filter_country">Country</InputLabel>
-                <FormControl fullWidth>
-                  <Select
-                    id="filter_country"
-                    displayEmpty
-                    value={values.filter_country}
-                    onChange={(e) => setFieldValue('filter_country', e.target.value)}
-                  >
-                    <MenuItem value="">
-                      <em>All countries</em>
-                    </MenuItem>
-                    {countries.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <MultiSelectFilter
+                  label="Country"
+                  options={countries}
+                  value={values.filter_country}
+                  onChange={(newValues) => setFieldValue('filter_country', newValues)}
+                  placeholder="All countries"
+                  loading={choicesLoading}
+                  size="medium"
+                />
               </Stack>
             </Grid>
 

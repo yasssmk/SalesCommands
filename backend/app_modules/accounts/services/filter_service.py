@@ -94,39 +94,79 @@ class AccountFilterService:
     
     @classmethod
     def _apply_direct_filters(cls, queryset, filter_definition, user=None, client_id=None):
-        """Apply filters on direct CompanyAccount fields."""
+        """
+        Apply filters on direct CompanyAccount fields.
         
-        # Type filter
-        if filter_definition.get('type'):
-            queryset = queryset.filter(type=filter_definition['type'])
+        Supports both single values and arrays for multi-select filtering.
+        - Single value: filter(field=value)
+        - Array: filter(field__in=values)
         
-        # Classification filter
-        if filter_definition.get('classification'):
-            queryset = queryset.filter(classification=filter_definition['classification'])
+        Args:
+            queryset: CompanyAccount QuerySet
+            filter_definition: dict with filter keys/values
+            user: User instance (for scope filtering)
+            client_id: UUID for client scoping
+            
+        Returns:
+            Filtered QuerySet
+        """
         
-        # Account owner filter (support both UUID and object with id)
+        # Helper function to apply filter with single value or array support
+        def apply_filter(qs, field_name, value):
+            """Apply filter supporting both single value and array."""
+            if value is None:
+                return qs
+            
+            if isinstance(value, list):
+                # Filter out empty strings and None values
+                cleaned = [v for v in value if v is not None and v != '']
+                if len(cleaned) > 0:
+                    return qs.filter(**{f'{field_name}__in': cleaned})
+            elif isinstance(value, str) and value:
+                return qs.filter(**{field_name: value})
+            
+            return qs
+        
+        # Type filter (supports single value or array)
+        queryset = apply_filter(queryset, 'type', filter_definition.get('type'))
+        
+        # Classification filter (supports single value or array)
+        queryset = apply_filter(queryset, 'classification', filter_definition.get('classification'))
+        
+        # Industry filter (supports single value or array)
+        queryset = apply_filter(queryset, 'industry', filter_definition.get('industry'))
+        
+        # Country filter (supports single value or array)
+        queryset = apply_filter(queryset, 'country', filter_definition.get('country'))
+        
+        # Company size filter (supports single value or array)
+        queryset = apply_filter(queryset, 'company_size', filter_definition.get('company_size'))
+        
+        # Account owner filter (supports single UUID, object with id, or array)
         # NOTE: Only apply if account_scope is not set (scope takes priority)
         account_scope = filter_definition.get('account_scope')
         if not account_scope or account_scope == 'all':
             account_owner = filter_definition.get('account_owner')
             if account_owner:
-                owner_id = account_owner.get('id') if isinstance(account_owner, dict) else account_owner
-                if owner_id:
-                    queryset = queryset.filter(account_owner_id=owner_id)
+                # Handle different formats: UUID string, object with id, or array
+                if isinstance(account_owner, list):
+                    # Array of owners (UUIDs or objects)
+                    owner_ids = []
+                    for owner in account_owner:
+                        if isinstance(owner, dict) and owner.get('id'):
+                            owner_ids.append(owner['id'])
+                        elif isinstance(owner, str) and owner:
+                            owner_ids.append(owner)
+                    if owner_ids:
+                        queryset = queryset.filter(account_owner_id__in=owner_ids)
+                elif isinstance(account_owner, dict) and account_owner.get('id'):
+                    # Single object with id
+                    queryset = queryset.filter(account_owner_id=account_owner['id'])
+                elif isinstance(account_owner, str) and account_owner:
+                    # Single UUID string
+                    queryset = queryset.filter(account_owner_id=account_owner)
         
-        # Industry filter
-        if filter_definition.get('industry'):
-            queryset = queryset.filter(industry=filter_definition['industry'])
-        
-        # Country filter
-        if filter_definition.get('country'):
-            queryset = queryset.filter(country=filter_definition['country'])
-        
-        # Company size filter
-        if filter_definition.get('company_size'):
-            queryset = queryset.filter(company_size=filter_definition['company_size'])
-        
-        # Has buying decision filter
+        # Has buying decision filter (boolean - no multi-select)
         if filter_definition.get('has_buying_decision') is not None:
             queryset = queryset.filter(
                 has_buying_decision=filter_definition['has_buying_decision']

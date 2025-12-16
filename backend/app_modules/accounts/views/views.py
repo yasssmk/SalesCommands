@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
+from ..filters import CompanyAccountFilter
 from django.db import transaction
 from django.http import Http404
 from core.client_scope import ClientScopeManager
@@ -98,7 +99,7 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
     
     # Filtering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['type', 'classification', 'country', 'industry', 'account_owner']
+    filterset_class = CompanyAccountFilter
     search_fields = ['company_name', 'industry', 'city', 'country', 'account_owner']
     ordering_fields = [
         'company_name',

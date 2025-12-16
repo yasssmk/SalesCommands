@@ -100,18 +100,28 @@ export default function TerritoryCard({
 
       const parts = [];
       
-      if (territory.filter_definition.type) {
-        parts.push(`Type: ${territory.filter_definition.type}`);
-      }
-      if (territory.filter_definition.classification) {
-        parts.push(`Classification: ${territory.filter_definition.classification}`);
-      }
-      if (territory.filter_definition.industry) {
-        parts.push(`Industry: ${territory.filter_definition.industry}`);
-      }
-      if (territory.filter_definition.country) {
-        parts.push(`Country: ${territory.filter_definition.country}`);
-      }
+      // Helper to format filter value (handles both string and array)
+      const formatFilterValue = (label, value) => {
+        if (!value) return null;
+        if (Array.isArray(value)) {
+          if (value.length === 0) return null;
+          if (value.length === 1) return `${label}: ${value[0]}`;
+          return `${label}: ${value.length} selected`;
+        }
+        return `${label}: ${value}`;
+      };
+      
+      const typeFilter = formatFilterValue('Type', territory.filter_definition.type);
+      if (typeFilter) parts.push(typeFilter);
+      
+      const classificationFilter = formatFilterValue('Classification', territory.filter_definition.classification);
+      if (classificationFilter) parts.push(classificationFilter);
+      
+      const industryFilter = formatFilterValue('Industry', territory.filter_definition.industry);
+      if (industryFilter) parts.push(industryFilter);
+      
+      const countryFilter = formatFilterValue('Country', territory.filter_definition.country);
+      if (countryFilter) parts.push(countryFilter);
       
       // Owner scope (mine/team) - mutually exclusive with account_owner
       if (territory.filter_definition.account_scope) {

@@ -43,6 +43,7 @@ import { useSearchParams } from 'next/navigation';
 // filters
 import TerritoryFilterPanel from 'sections/admin/accounts/TerritoryFilterPanel';
 import useTerritoryFilters from 'hooks/useTerritoryFilters';
+import { useGetTerritory } from 'api/territories/territories';
 
 // ==============================|| SORT FIELD MAPPING ||============================== //
 
@@ -100,6 +101,9 @@ export default function AccountsListPage() {
   
   const searchParams = useSearchParams();
   const territoryIdFromUrl = searchParams.get('territory_id');
+
+  // Fetch territory details for chip display
+  const { territory: currentTerritory, territoryLoading } = useGetTerritory(territoryIdFromUrl);
 
   // ==============================|| STATE MANAGEMENT ||============================== //
 
@@ -355,36 +359,52 @@ const {
   const advancedFiltersChips = useMemo(() => {
     const chips = [];
 
-    // Territory filter chip
+    // Helper to format array filter value for chip display
+    const formatArrayValue = (value) => {
+      if (!value) return null;
+      if (Array.isArray(value)) {
+        if (value.length === 0) return null;
+        if (value.length === 1) return value[0];
+        return `${value.length} selected`;
+      }
+      return value;
+    };
+
+    // Territory filter chip (with territory name)
     if (territoryIdFromUrl) {
+      let territoryDisplayName;
+      if (territoryLoading) {
+        territoryDisplayName = '...';
+      } else if (currentTerritory?.name) {
+        territoryDisplayName = currentTerritory.name;
+      } else {
+        territoryDisplayName = 'Unknown';
+      }
+      
       chips.push({
         key: 'territory_id',
         label: 'Territory',
-        value: 'Active'
+        value: territoryDisplayName
       });
     }
     
-    if (filters.type) {
+    // Type filter (array)
+    const typeValue = formatArrayValue(filters.type);
+    if (typeValue) {
       chips.push({
         key: 'type',
         label: 'Type',
-        value: filters.type
+        value: typeValue
       });
     }
     
-    if (filters.classification) {
+    // Classification filter (array)
+    const classificationValue = formatArrayValue(filters.classification);
+    if (classificationValue) {
       chips.push({
         key: 'classification',
         label: 'Classification',
-        value: filters.classification
-      });
-    }
-    
-    if (filters.account_owner) {
-      chips.push({
-        key: 'account_owner',
-        label: 'Owner',
-        value: 'Filtered'
+        value: classificationValue
       });
     }
 
@@ -405,7 +425,7 @@ const {
     if (!filters.account_scope && filters.account_owner) {
       const ownerName = filters.account_owner.first_name 
         ? `${filters.account_owner.first_name} ${filters.account_owner.last_name || ''}`.trim()
-        : 'Selected';
+        : 'Specific user';
       chips.push({
         key: 'account_owner',
         label: 'Owner',
@@ -414,7 +434,7 @@ const {
     }
     
     return chips;
-  }, [filters, territoryIdFromUrl]);
+  },[filters, territoryIdFromUrl, currentTerritory, territoryLoading]);
 
   // ==============================|| COLUMNS DEFINITION ||============================== //
 
