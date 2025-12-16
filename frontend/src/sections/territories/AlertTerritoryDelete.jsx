@@ -54,7 +54,7 @@ function AlertTerritoryDelete({ territory, open, closeModal }) {
         displaySuccessSnackbar('Territory deleted successfully');
         closeModal?.();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to delete territory');
+        displayErrorSnackbar(result);
       }
     } catch (err) {
       displayErrorSnackbar('An unexpected error occurred');

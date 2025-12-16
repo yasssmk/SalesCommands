@@ -350,7 +350,6 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
                 target_id=territory_id, 
                 extra={'territory_name': territory_name},  
                 outcome='success',
-                extra={'territory_name': instance.name}
                 )
             
             

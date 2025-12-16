@@ -416,57 +416,95 @@ class ScopedQuerysetMixin:
             
         elif scope == 'team':
             # Team scope - filter by team ownership + user ownership
+            # For managers: includes items from all team members they manage
+            
+            # Get managed teams (teams where user is manager) + sub-teams
+            from permissions.owner_scope import get_all_descendant_team_ids, get_team_member_ids
+            
+            managed_team_ids = set()
+            user = self.request.user
+            
+            # Get teams where user is manager
+            if hasattr(user, 'id') and ctx.client_id:
+                from end_users.models import Team
+                manager_teams = Team.objects.filter(
+                    client_account_id=ctx.client_id,
+                    manager_id=user.id
+                ).values_list('id', flat=True)
+                managed_team_ids = set(str(tid) for tid in manager_teams)
+            
+            # Include user's own team
+            if ctx.team_id:
+                managed_team_ids.add(str(ctx.team_id))
+            
+            # Get all descendant teams (sub-teams)
+            all_team_ids = get_all_descendant_team_ids(managed_team_ids, ctx.client_id) if managed_team_ids else set()
+            
+            # Get all members of those teams
+            team_member_ids = get_team_member_ids(all_team_ids, ctx.client_id) if all_team_ids else set()
+            team_member_ids.add(ctx.user_id)  # Always include self
+            
             logger.debug("scope_team", extra={
                 'correlation_id': get_correlation_id(),
                 'scope': 'team',
-                'teams': ctx.teams,
+                'managed_teams': list(managed_team_ids),
+                'all_teams': list(all_team_ids),
+                'team_members_count': len(team_member_ids),
                 'event': 'queryset_filter'
             })
             
             q_filter = Q()
             model_fields = {f.name for f in queryset.model._meta.get_fields()}
             
+            # Helper to check if field is valid (direct or traversed)
+            def is_valid_field(field_name):
+                if not field_name:
+                    return False
+                # Traversed fields (with __) are always valid for Q filters
+                if '__' in field_name:
+                    return True
+                # Direct fields must exist in model
+                return field_name in model_fields
+            
             # Check owner_team from OWNERSHIP_MAP
             team_field = resolve_field(module, 'owner_team')
-            if team_field and team_field in model_fields and ctx.teams:
-                q_filter |= Q(**{f'{team_field}__in': ctx.teams})
+            if team_field and is_valid_field(team_field) and all_team_ids:
+                q_filter |= Q(**{f'{team_field}__in': all_team_ids})
                 logger.debug("added_owner_team_filter", extra={
                     'correlation_id': get_correlation_id(),
                     'field': team_field,
-                    'teams': ctx.teams,
+                    'teams_count': len(all_team_ids),
                     'event': 'queryset_filter'
                 })
             
-            # Also include user's own items (owner_user)
+            # Also filter by owner_user IN team_member_ids (for traversed team fields)
             owner_field = resolve_field(module, 'owner_user')
-            if owner_field and owner_field in model_fields:
-                q_filter |= Q(**{owner_field: ctx.user_id})
+            if owner_field and is_valid_field(owner_field) and team_member_ids:
+                q_filter |= Q(**{f'{owner_field}__in': team_member_ids})
                 logger.debug("added_owner_user_filter_team", extra={
                     'correlation_id': get_correlation_id(),
                     'field': owner_field,
-                    'user_id': ctx.user_id,
+                    'members_count': len(team_member_ids),
                     'event': 'queryset_filter'
                 })
             
             # Also include created_by
             created_field = resolve_field(module, 'created_by')
-            if created_field and created_field in model_fields:
-                q_filter |= Q(**{created_field: ctx.user_id})
+            if created_field and is_valid_field(created_field):
+                q_filter |= Q(**{f'{created_field}__in': team_member_ids})
                 logger.debug("added_created_by_filter_team", extra={
                     'correlation_id': get_correlation_id(),
                     'field': created_field,
-                    'user_id': ctx.user_id,
                     'event': 'queryset_filter'
                 })
             
             # Also include assigned_to_user
             assigned_field = resolve_field(module, 'assigned_to_user')
-            if assigned_field and assigned_field in model_fields:
-                q_filter |= Q(**{assigned_field: ctx.user_id})
+            if assigned_field and is_valid_field(assigned_field):
+                q_filter |= Q(**{f'{assigned_field}__in': team_member_ids})
                 logger.debug("added_assigned_to_filter_team", extra={
                     'correlation_id': get_correlation_id(),
                     'field': assigned_field,
-                    'user_id': ctx.user_id,
                     'event': 'queryset_filter'
                 })
             
