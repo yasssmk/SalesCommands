@@ -9,11 +9,13 @@ import { useSearchParams } from 'next/navigation';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
 import Grid from '@mui/material/Grid';
 import Pagination from '@mui/material/Pagination';
 import Slide from '@mui/material/Slide';
 import Stack from '@mui/material/Stack';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Dialog from '@mui/material/Dialog';
 
@@ -23,6 +25,7 @@ import { DebouncedInput } from 'components/third-party/react-table';
 import TerritoryCard from 'sections/territories/TerritoryCard';
 import TerritoryModal from 'sections/territories/TerritoryModal';
 import AlertTerritoryDelete from 'sections/territories/AlertTerritoryDelete';
+import AlertTerritoryBulkDelete from 'sections/territories/AlertTerritoryBulkDelete';
 import OwnerScopeTabs from 'components/filters/OwnerScopeTabs';
 
 // hooks
@@ -34,6 +37,9 @@ import { useGetAccounts } from 'api/admin/accounts';
 
 // assets
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
+import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
+import CloseOutlined from '@ant-design/icons/CloseOutlined';
 
 // ==============================|| TERRITORIES LIST PAGE ||============================== //
 
@@ -61,7 +67,12 @@ const searchParams = useSearchParams();
 const [addModalOpen, setAddModalOpen] = useState(false);
 const [editModalOpen, setEditModalOpen] = useState(false);
 const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
 const [selectedTerritory, setSelectedTerritory] = useState(null);
+
+// Selection states
+const [selectedRows, setSelectedRows] = useState(new Set());
+const [selectionMode, setSelectionMode] = useState(false);
 
 // Initial filters from URL (for "Save as Territory" from filter panel)
 const [initialFilters, setInitialFilters] = useState({});
@@ -182,6 +193,68 @@ useEffect(() => {
     setDeleteModalOpen(false);
   };
 
+   // ==============================|| SELECTION HANDLERS ||============================== //
+
+  const handleToggleSelectionMode = () => {
+    setSelectionMode(prev => !prev);
+    if (selectionMode) {
+      // Exiting selection mode - clear selection
+      setSelectedRows(new Set());
+    }
+  };
+
+  const handleSelectRow = (territoryId) => {
+    setSelectedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(territoryId)) {
+        newSet.delete(territoryId);
+      } else {
+        newSet.add(territoryId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    // Select all non-system territories on current page
+    const selectableIds = paginatedTerritories
+      .filter(t => !t.is_system)
+      .map(t => t.id);
+    
+    if (selectedRows.size === selectableIds.length) {
+      // All selected -> deselect all
+      setSelectedRows(new Set());
+    } else {
+      // Select all
+      setSelectedRows(new Set(selectableIds));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedRows(new Set());
+  };
+
+  const handleOpenBulkDeleteModal = () => {
+    if (selectedRows.size > 0) {
+      setBulkDeleteModalOpen(true);
+    }
+  };
+
+  const handleCloseBulkDeleteModal = () => {
+    setBulkDeleteModalOpen(false);
+  };
+
+  const handleBulkDeleteComplete = () => {
+    setSelectedRows(new Set());
+    setSelectionMode(false);
+  };
+
+  // Computed selection values
+  const selectableCount = paginatedTerritories.filter(t => !t.is_system).length;
+  const allSelected = selectableCount > 0 && selectedRows.size === selectableCount;
+  const someSelected = selectedRows.size > 0 && selectedRows.size < selectableCount;
+
+
   // ==============================|| GET TERRITORY COUNT ||============================== //
 
   const getTerritoryCount = (territory) => {
@@ -226,6 +299,16 @@ useEffect(() => {
 
             {/* Actions */}
             <Stack direction={matchDownSM ? 'column' : 'row'} alignItems="center" spacing={1}>
+              <Tooltip title={selectionMode ? 'Exit selection mode' : 'Select territories'}>
+                <Button
+                  variant={selectionMode ? 'contained' : 'outlined'}
+                  color={selectionMode ? 'primary' : 'secondary'}
+                  startIcon={selectionMode ? <CloseOutlined /> : <CheckSquareOutlined />}
+                  onClick={handleToggleSelectionMode}
+                >
+                  {selectionMode ? 'Cancel' : 'Select'}
+                </Button>
+              </Tooltip>
               <Button 
                 variant="contained" 
                 startIcon={<PlusOutlined />} 
@@ -237,6 +320,60 @@ useEffect(() => {
           </Stack>
         </Stack>
       </Box>
+
+      {/* ==================== BULK ACTION BAR ==================== */}
+      {selectionMode && (
+        <Box 
+          sx={{ 
+            mb: 2, 
+            p: 1.5, 
+            bgcolor: 'primary.lighter', 
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'primary.light'
+          }}
+        >
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Stack direction="row" alignItems="center" spacing={2}>
+              <Checkbox
+                checked={allSelected}
+                indeterminate={someSelected}
+                onChange={handleSelectAll}
+                size="small"
+              />
+              <Typography variant="body2">
+                {selectedRows.size > 0 
+                  ? `${selectedRows.size} territory${selectedRows.size > 1 ? 'ies' : 'y'} selected`
+                  : `Select territories (${selectableCount} available)`
+                }
+              </Typography>
+            </Stack>
+            <Stack direction="row" spacing={1}>
+              {selectedRows.size > 0 && (
+                <>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="secondary"
+                    onClick={handleClearSelection}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="error"
+                    startIcon={<DeleteOutlined />}
+                    onClick={handleOpenBulkDeleteModal}
+                  >
+                    Delete ({selectedRows.size})
+                  </Button>
+                </>
+              )}
+            </Stack>
+          </Stack>
+        </Box>
+      )}
 
       {/* ==================== TERRITORIES GRID ==================== */}
       <Grid container spacing={3}>
@@ -250,6 +387,9 @@ useEffect(() => {
                   loading={accountsLoading}
                   onEdit={handleOpenEditModal}
                   onDelete={handleOpenDeleteModal}
+                  selected={selectedRows.has(territory.id)}
+                  onSelect={handleSelectRow}
+                  selectionMode={selectionMode}
                 />
               </Grid>
             </Slide>
@@ -307,7 +447,15 @@ useEffect(() => {
       <AlertTerritoryDelete
         territory={selectedTerritory}
         open={deleteModalOpen}
-        closeModal={handleCloseDeleteModal}
+        handleClose={handleCloseDeleteModal}
+      />
+
+      {/* Bulk Delete Modal */}
+      <AlertTerritoryBulkDelete
+        selectedIds={Array.from(selectedRows)}
+        open={bulkDeleteModalOpen}
+        handleClose={handleCloseBulkDeleteModal}
+        onDeleteComplete={handleBulkDeleteComplete}
       />
     </>
   );

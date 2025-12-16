@@ -5,15 +5,52 @@ URL configuration for Territory module.
 Follows the same patterns as app_modules/accounts/urls.py
 """
 
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import TerritoryViewSet
+from django.urls import path
 
 app_name = 'territories'
 
-router = DefaultRouter()
-router.register(r'', TerritoryViewSet, basename='territory')
 
-urlpatterns = [
-    path('', include(router.urls)),
-]
+# Lazy imports to avoid circular import
+def get_urlpatterns():
+    from .views import TerritoryViewSet, TerritoryBulkViewSet
+    
+    return [
+        # =========================================================================
+        # CHOICES - Must be before CRUD to avoid conflict with {id}
+        # =========================================================================
+        path('choices/', TerritoryViewSet.as_view({
+            'get': 'choices'
+        }), name='choices'),
+        
+        # =========================================================================
+        # BULK OPERATIONS
+        # =========================================================================
+        path('bulk-delete/', TerritoryBulkViewSet.as_view({
+            'delete': 'bulk_delete'
+        }), name='bulk-delete'),
+        
+        # =========================================================================
+        # CRUD OPERATIONS
+        # =========================================================================
+        path('', TerritoryViewSet.as_view({
+            'get': 'list',
+            'post': 'create'
+        }), name='list'),
+        
+        path('<uuid:pk>/', TerritoryViewSet.as_view({
+            'get': 'retrieve',
+            'put': 'update',
+            'patch': 'partial_update',
+            'delete': 'destroy'
+        }), name='detail'),
+        
+        # =========================================================================
+        # CUSTOM ACTIONS
+        # =========================================================================
+        path('<uuid:pk>/accounts-count/', TerritoryViewSet.as_view({
+            'get': 'accounts_count'
+        }), name='accounts-count'),
+    ]
+
+
+urlpatterns = get_urlpatterns()

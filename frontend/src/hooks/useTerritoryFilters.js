@@ -7,10 +7,10 @@ import { useState, useCallback, useMemo } from 'react';
  * Structure matches backend API query params
  */
 const DEFAULT_FILTERS = {
-  type: '',
-  classification: '',
-  account_scope: '',      // 'mine' | 'team' | '' (all)
-  account_owner: null     // User object or null (only used if account_scope is empty)
+  type: [],
+  classification: [],
+  account_scope: '',
+  account_owner: null
 };
 
 /**

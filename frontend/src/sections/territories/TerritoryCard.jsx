@@ -9,6 +9,7 @@ import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardActions from '@mui/material/CardActions';
 import CardContent from '@mui/material/CardContent';
+import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
@@ -44,7 +45,11 @@ export default function TerritoryCard({
   accountsCount = 0,
   loading = false,
   onEdit,
-  onDelete
+  onDelete,
+  // Selection props
+  selected = false,
+  onSelect,
+  selectionMode = false
 }) {
   const router = useRouter();
 
@@ -88,6 +93,13 @@ export default function TerritoryCard({
    const handleDelete = () => {
     if (onDelete) {
       onDelete(territory);
+    }
+  };
+
+  const handleSelect = (event) => {
+    event.stopPropagation();
+    if (onSelect) {
+      onSelect(territory.id);
     }
   };
 
@@ -144,18 +156,38 @@ export default function TerritoryCard({
     <Card 
       elevation={0}
       sx={{ 
+        position: 'relative',
         border: '1px solid',
-        borderColor: 'divider',
+        borderColor: selected ? 'primary.main' : 'divider',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        transition: 'box-shadow 0.2s ease-in-out',
+        transition: 'all 0.2s ease-in-out',
+        bgcolor: selected ? 'primary.lighter' : 'background.paper',
         '&:hover': {
           boxShadow: 2
         }
       }}
     >
       <CardContent sx={{ flexGrow: 1 }}>
+        {/* Selection Checkbox */}
+        {selectionMode && (
+          <Box sx={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}>
+            <Checkbox
+              checked={selected}
+              onChange={handleSelect}
+              onClick={(e) => e.stopPropagation()}
+              disabled={territory.is_system}
+              size="small"
+              sx={{
+                bgcolor: 'background.paper',
+                borderRadius: 1,
+                '&:hover': { bgcolor: 'background.paper' }
+              }}
+            />
+          </Box>
+        )}
+
         {/* Header */}
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={2}>
           <Stack direction="row" spacing={1.5} alignItems="center">
@@ -285,5 +317,9 @@ TerritoryCard.propTypes = {
   accountsCount: PropTypes.number,
   loading: PropTypes.bool,
   onEdit: PropTypes.func,
-  onDelete: PropTypes.func
+  onDelete: PropTypes.func,
+  // Selection props
+  selected: PropTypes.bool,
+  onSelect: PropTypes.func,
+  selectionMode: PropTypes.bool
 };

@@ -1,4 +1,4 @@
-# backend/app_modules/territories/viewsets.py
+# backend/app_modules/territories/views/viewsets.py
 """
 ViewSet for Territory module.
 
@@ -25,8 +25,8 @@ from core.cache_utils import invalidate_tag
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from permissions.owner_scope import OwnerScopeMixin
 
-from .models import Territory, TerritoryType
-from .serializers import (
+from ..models import Territory, TerritoryType
+from ..serializers import (
     TerritorySerializer,
     TerritoryListSerializer,
     TerritoryCreateSerializer,

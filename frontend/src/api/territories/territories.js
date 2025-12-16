@@ -35,7 +35,8 @@ const endpoints = {
   territories: '/territories/',
   territoryDetail: (id) => `/territories/${id}/`,
   choices: '/territories/choices/',
-  accountsCount: (id) => `/territories/${id}/accounts-count/`
+  accountsCount: (id) => `/territories/${id}/accounts-count/`,
+  bulkDelete: '/territories/bulk-delete/'
 };
 
 // ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
@@ -294,6 +295,109 @@ export async function deleteTerritory(territoryId) {
     response: result.response || null
   };
 }
+
+// ==============================|| BULK OPERATIONS ||============================== //
+
+/**
+ * BULK DELETE TERRITORIES
+ * 
+ * Delete multiple territories in a single request.
+ * Follows bulkDeleteAccounts pattern for consistency.
+ * 
+ * @param {Array<string>} territoryIds - Array of territory UUIDs to delete
+ * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+ * @param {Function} onSyncProgress - Optional callback: (attempt, maxAttempts) => void
+ * @param {Function} onSyncComplete - Optional callback: () => void
+ * @returns {Promise<Object>} {success: boolean, summary: Object, results: Object}
+ */
+export const bulkDeleteTerritories = async (territoryIds, mode = 'partial', onSyncProgress = null, onSyncComplete = null) => {
+  try {
+    console.log('[bulkDeleteTerritories] start', { count: territoryIds?.length ?? 0, mode });
+
+    if (!Array.isArray(territoryIds) || territoryIds.length === 0) {
+      return {
+        success: false,
+        message: 'No territory IDs provided',
+        summary: { total_requested: 0, successful: 0, failed: 0 },
+        results: { success: [], failed: [] }
+      };
+    }
+
+    const invalidIds = territoryIds.filter(id => !isValidUUID(id));
+    if (invalidIds.length > 0) {
+      console.error('[bulkDeleteTerritories] invalid UUIDs', { count: invalidIds.length });
+      return {
+        success: false,
+        message: `${invalidIds.length} invalid territory ID(s) detected`,
+        summary: { total_requested: territoryIds.length, successful: 0, failed: territoryIds.length },
+        results: {
+          success: [],
+          failed: invalidIds.map(id => ({ id, errors: ['Invalid UUID format'] }))
+        }
+      };
+    }
+
+    const result = await api.delete(endpoints.bulkDelete, {
+      data: { ids: territoryIds, mode },
+      profile: 'bulk'
+    });
+
+    console.log('[bulkDeleteTerritories] API response:', {
+      success: result.success,
+      status: result.status
+    });
+
+    if (result.success) {
+      console.log('[bulkDeleteTerritories] success', {
+        deleted: result.data?.summary?.successful ?? 0
+      });
+
+      revalidateMultiple([
+        endpoints.territories,
+        '/company-accounts/'
+      ]);
+      
+      return result.data;
+    }
+
+    // Error handling
+    const status = result.status || 0;
+    const message = result.error || 'Bulk delete failed';
+    console.error('[bulkDeleteTerritories] error', { status, message });
+
+    if (result.data && typeof result.data === 'object') {
+      if (result.data.results || result.data.summary) {
+        return {
+          ...result.data,
+          success: false,
+          status: result.status
+        };
+      }
+    }
+
+    return {
+      success: false,
+      message: message,
+      error: { status, message, response: result.response || null },
+      summary: { total_requested: territoryIds.length, successful: 0, failed: territoryIds.length },
+      results: {
+        success: [],
+        failed: territoryIds.map(id => ({ id, errors: [message] }))
+      }
+    };
+
+  } catch (err) {
+    console.error('[bulkDeleteTerritories] thrown', err);
+    
+    return {
+      success: false,
+      message: err?.message || 'Unknown error',
+      error: { message: err?.message || String(err) },
+      summary: { total_requested: territoryIds?.length ?? 0, successful: 0, failed: territoryIds?.length ?? 0 },
+      results: { success: [], failed: [] }
+    };
+  }
+};
 
 // ==============================|| HELPER FUNCTIONS ||============================== //
 

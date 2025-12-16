@@ -6,131 +6,133 @@ import { useState } from 'react';
 // material-ui
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogTitle from '@mui/material/DialogTitle';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import Alert from '@mui/material/Alert';
 
 // project imports
-import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
-
-// api
+import Avatar from 'components/@extended/Avatar';
+import { PopupTransition } from 'components/@extended/Transitions';
 import { deleteTerritory } from 'api/territories/territories';
+import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
-// ==============================|| ALERT TERRITORY DELETE ||============================== //
+// assets
+import DeleteFilled from '@ant-design/icons/DeleteFilled';
+
+// ==============================|| TERRITORY - DELETE ||============================== //
 
 /**
- * AlertTerritoryDelete - Confirmation dialog for territory deletion
+ * AlertTerritoryDelete Component
  * 
- * Features:
- * - Prevents deletion of system territories
- * - Shows territory name for confirmation
- * - Loading state during deletion
+ * Confirmation dialog for single territory deletion.
+ * Follows AlertAccountDelete pattern for consistency.
  * 
- * @param {Object} territory - Territory to delete
+ * @param {Object} territory - Territory object to delete
  * @param {boolean} open - Dialog open state
- * @param {Function} closeModal - Function to close the modal
+ * @param {Function} handleClose - Function to close dialog
  */
-function AlertTerritoryDelete({ territory, open, closeModal }) {
-  const [isDeleting, setIsDeleting] = useState(false);
+export default function AlertTerritoryDelete({ territory, open, handleClose }) {
+  const [deleting, setDeleting] = useState(false);
 
-  // ==============================|| HANDLERS ||============================== //
+  // Check if territory is system (cannot be deleted)
+  const isSystem = territory?.is_system === true;
 
-  const handleDelete = async () => {
-    if (!territory?.id) {
-      displayErrorSnackbar('Invalid territory');
-      return;
-    }
+  const deleteHandler = async () => {
+    if (!territory?.id || isSystem) return;
 
-    setIsDeleting(true);
-    
     try {
+      setDeleting(true);
       const result = await deleteTerritory(territory.id);
-      
-      if (result.success) {
+
+      if (result?.success) {
         displaySuccessSnackbar('Territory deleted successfully');
-        closeModal?.();
+        handleClose?.();
       } else {
         displayErrorSnackbar(result);
+        // Do NOT close modal on error
       }
     } catch (err) {
-      displayErrorSnackbar('An unexpected error occurred');
-      console.error('Delete territory error:', err);
+      displayErrorSnackbar(err);
     } finally {
-      setIsDeleting(false);
+      setDeleting(false);
     }
   };
 
-  // ==============================|| RENDER ||============================== //
-
-  // System territories cannot be deleted
-  if (territory?.is_system) {
-    return (
-      <Dialog open={open} onClose={closeModal} maxWidth="sm" fullWidth>
-        <DialogTitle>Cannot Delete Territory</DialogTitle>
-        <DialogContent>
-          <Alert severity="warning" sx={{ mt: 1 }}>
-            System territories cannot be deleted. The territory "{territory.name}" is a built-in system territory.
-          </Alert>
-        </DialogContent>
-        <DialogActions sx={{ p: 2.5 }}>
-          <Button onClick={closeModal} variant="contained">
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
-    );
-  }
-
   return (
-    <Dialog open={open} onClose={closeModal} maxWidth="sm" fullWidth>
-      <DialogTitle>Delete Territory</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ mt: 1 }}>
-          <DialogContentText>
-            Are you sure you want to delete this territory?
-          </DialogContentText>
-          
-          <Alert severity="error" variant="outlined">
-            <Typography variant="subtitle1" fontWeight={600}>
-              {territory?.name}
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      keepMounted
+      TransitionComponent={PopupTransition}
+      maxWidth="xs"
+      aria-labelledby="territory-delete-title"
+      aria-describedby="territory-delete-description"
+    >
+      <DialogContent sx={{ mt: 2, my: 1 }}>
+        <Stack alignItems="center" spacing={3.5}>
+          <Avatar color="error" sx={{ width: 72, height: 72, fontSize: '1.75rem' }}>
+            <DeleteFilled />
+          </Avatar>
+
+          <Stack spacing={2}>
+            <Typography variant="h4" align="center">
+              {isSystem ? 'Cannot Delete Territory' : 'Are you sure you want to delete?'}
             </Typography>
-            {territory?.description && (
-              <Typography variant="body2" color="text.secondary">
-                {territory.description}
+            
+            {isSystem ? (
+              <Typography align="center" color="text.secondary">
+                System territories cannot be deleted. The territory
+                <Typography variant="subtitle1" component="span">
+                  {' '}&quot;{territory?.name}&quot;{' '}
+                </Typography>
+                is a built-in system territory.
+              </Typography>
+            ) : (
+              <Typography align="center">
+                By deleting
+                <Typography variant="subtitle1" component="span">
+                  {' '}&quot;{territory?.name}&quot;{' '}
+                </Typography>
+                territory, this action cannot be undone.
               </Typography>
             )}
-          </Alert>
-          
-          <Typography variant="body2" color="text.secondary">
-            This action cannot be undone. The territory will be permanently removed.
-          </Typography>
+          </Stack>
+
+          <Stack direction="row" spacing={2} sx={{ width: 1 }}>
+            <Button 
+              fullWidth 
+              onClick={handleClose} 
+              color="secondary" 
+              variant="outlined"
+              disabled={deleting}
+            >
+              {isSystem ? 'Close' : 'Cancel'}
+            </Button>
+            {!isSystem && (
+              <Button 
+                fullWidth 
+                color="error" 
+                variant="contained" 
+                onClick={deleteHandler} 
+                autoFocus 
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            )}
+          </Stack>
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ p: 2.5 }}>
-        <Button onClick={closeModal} color="inherit" disabled={isDeleting}>
-          Cancel
-        </Button>
-        <Button 
-          onClick={handleDelete} 
-          color="error" 
-          variant="contained"
-          disabled={isDeleting}
-        >
-          {isDeleting ? 'Deleting...' : 'Delete'}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }
 
 AlertTerritoryDelete.propTypes = {
-  territory: PropTypes.object,
-  open: PropTypes.bool.isRequired,
-  closeModal: PropTypes.func.isRequired
+  territory: PropTypes.shape({
+    id: PropTypes.string,
+    name: PropTypes.string,
+    is_system: PropTypes.bool
+  }),
+  open: PropTypes.bool,
+  handleClose: PropTypes.func
 };
-
-export default AlertTerritoryDelete;
