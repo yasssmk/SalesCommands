@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from django.db import transaction
 from django.db.models import Q
 from core.apps_shared_methods import BaseAPIView
-from apps.core_apps.models import StandardDepartment
+from app_modules.core_modules.models import StandardDepartment
 from ..models import Contact
 from ..serializers import ContactSerializer
 from django.utils.translation import gettext_lazy as _

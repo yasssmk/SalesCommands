@@ -68,6 +68,7 @@ urlpatterns = [
     #APP MODULE
     path('company-accounts/', include('app_modules.accounts.urls')),
     path('territories/', include('app_modules.territories.urls')),
+     path('contacts/', include('app_modules.contacts.urls')),
 
     # Path to validate 
     path(app_key+'accounts/', include('apps.accounts.urls')),

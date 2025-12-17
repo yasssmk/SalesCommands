@@ -39,6 +39,7 @@ class StandardDepartment(models.Model):
     )
 
     class Meta:
+        app_label = 'core_modules' 
         db_table = "standard_departments"
         verbose_name = _("Standard Department")
         verbose_name_plural = _("Standard Departments")

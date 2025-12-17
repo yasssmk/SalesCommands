@@ -9,7 +9,7 @@ from ..serializers import AccountSerializer
 from django.utils.translation import gettext_lazy as _
 from core.error_messages import CoreErrorMessages, AccountErrorMessages
 from datetime import datetime
-from apps.core_apps.models import StandardDepartment
+from app_modules.core_modules.models import StandardDepartment
 from rest_framework.decorators import action
 
 class AccountAPIView(BaseAPIView):

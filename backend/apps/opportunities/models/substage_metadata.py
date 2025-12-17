@@ -3,7 +3,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
-from apps.core_apps.models import BaseModelApp, StandardDepartment
+from apps.core_apps.models import BaseModelApp
 
 
 class SubStageMetadata(BaseModelApp, ClientScopeManager.ModelMixin):
@@ -32,7 +32,7 @@ class SubStageMetadata(BaseModelApp, ClientScopeManager.ModelMixin):
     
     # Département responsable
     department = models.ForeignKey(
-        StandardDepartment,
+        'core_modules.StandardDepartment',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -217,17 +217,17 @@ class SubStageMetadata(BaseModelApp, ClientScopeManager.ModelMixin):
             return self.department.get_name_display()
         return None
 
-    def set_department_by_name(self, department_name):
-        """
-        Définit le département par nom
-        """
-        try:
-            department = StandardDepartment.objects.get(name=department_name)
-            self.department = department
-            self.save(update_fields=['department'])
-        except StandardDepartment.DoesNotExist:
-            from core.exceptions import StandardizedValidationError
-            raise StandardizedValidationError(f"Department '{department_name}' not found")
+    # def set_department_by_name(self, department_name):
+    #     """
+    #     Définit le département par nom
+    #     """
+    #     try:
+    #         department = StandardDepartment.objects.get(name=department_name)
+    #         self.department = department
+    #         self.save(update_fields=['department'])
+    #     except StandardDepartment.DoesNotExist:
+    #         from core.exceptions import StandardizedValidationError
+    #         raise StandardizedValidationError(f"Department '{department_name}' not found")
 
     def add_stakeholder(self, contact):
         """

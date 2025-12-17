@@ -5,8 +5,8 @@ from django.utils.translation import gettext_lazy as _
 from apps.core_apps.models import BaseModelApp, AccountLinkedModel, HistoricalTrackingModel
 from core.client_scope import ClientScopeManager
 from apps.accounts.models.contacts import Contact
-from apps.core_apps.models import StandardDepartment
 from django.db.models import Sum
+
 
 class BuyingProcess(BaseModelApp, AccountLinkedModel, HistoricalTrackingModel, ClientScopeManager.ModelMixin):
     """
@@ -97,7 +97,7 @@ class BuyingProcessStep(BaseModelApp, ClientScopeManager.ModelMixin):
     )
     
     standard_department = models.ForeignKey(
-        StandardDepartment,
+        'core_modules.StandardDepartment',
         on_delete=models.SET_NULL,
         blank=True,
         null=True,

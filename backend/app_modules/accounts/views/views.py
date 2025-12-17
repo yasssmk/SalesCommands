@@ -32,7 +32,7 @@ from core.logging.audit import audit_log
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from permissions.owner_scope import OwnerScopeMixin
 
-from apps.core_apps.models import StandardDepartment
+from ...core_modules.models import StandardDepartment
 
 from ..models import CompanyAccount, AccountType, AccountClassification
 from ..serializers import (

@@ -8,7 +8,7 @@ def populate_standard_departments(sender, **kwargs):
     Fetches values directly from DepartmentChoices.
     """
 
-    from apps.core_apps.models import StandardDepartment  # Import inside function to avoid circular imports
+    from app_modules.core_modules.models import StandardDepartment 
 
     # Check if the table exists before inserting data
     with connection.cursor() as cursor:

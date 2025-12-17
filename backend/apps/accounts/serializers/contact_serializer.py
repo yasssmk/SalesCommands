@@ -6,8 +6,9 @@ from core.serializers import ContactDetailsSerializer
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
-from apps.core_apps.models import StandardDepartment
-from apps.core_apps.serializers import AccountLinkedSerializerMixin, StandardDepartmentSerializer
+from app_modules.core_modules.models import StandardDepartment
+from apps.core_apps.serializers import AccountLinkedSerializerMixin
+from app_modules.core_modules.serializers.standar_dpt_serializer import StandardDepartmentSerializer
 
 from ..models import Contact, InfluenceLevel
 

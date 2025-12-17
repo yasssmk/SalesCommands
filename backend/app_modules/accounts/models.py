@@ -8,7 +8,7 @@ Follows the exact same patterns as the legacy model.
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from app_modules.core_modules.models import ModuleBaseModel
+from ..core_modules.models import ModuleBaseModel
 from core.models import ContactDetailsMixin
 from core.client_scope import ClientScopeManager
 from core.error_messages import AccountErrorMessages, CoreErrorMessages

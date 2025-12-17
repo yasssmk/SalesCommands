@@ -8,7 +8,7 @@ that sales reps use to organize and prioritize their work.
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from app_modules.core_modules.models import ModuleBaseModel
+from ..core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from end_users.models import User

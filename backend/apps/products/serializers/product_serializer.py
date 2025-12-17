@@ -2,8 +2,8 @@ from rest_framework import serializers
 from core.error_messages import CoreErrorMessages
 from core.client_scope import ClientScopeManager
 from ..models import Product
-from apps.core_apps.serializers import StandardDepartmentSerializer
-from apps.core_apps.models import StandardDepartment
+from app_modules.core_modules.models import StandardDepartment
+from app_modules.core_modules.serializers.standar_dpt_serializer import StandardDepartmentSerializer
 from core.exceptions import StandardizedValidationError
 from .pricing_serializer import PricingSerializer
 

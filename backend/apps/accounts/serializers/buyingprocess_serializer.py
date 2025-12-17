@@ -9,7 +9,7 @@ from apps.core_apps.serializers import AccountLinkedSerializerMixin, HistoricalT
 from apps.accounts.serializers.contact_serializer import ContactSerializer
 from apps.accounts.models.buyingProcess import BuyingProcess, BuyingProcessStep, BuyingProcessStepContact
 from apps.accounts.models.contacts import Contact
-from apps.core_apps.models import StandardDepartment
+from app_modules.core_modules.models import StandardDepartment
 
 class BuyingProcessStepContactSerializer(serializers.ModelSerializer):
     """Serializer for junction table between BuyingProcessStep and Contact"""

@@ -52,7 +52,7 @@ class Contact(BaseModelApp, AccountLinkedModel, ContactDetailsMixin,
     )
 
     standard_department = models.ForeignKey(
-        'core_apps.StandardDepartment',
+        'core_modules.StandardDepartment',
         on_delete=models.SET_NULL,
         blank=True,
         null=True,

@@ -6,7 +6,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, OpportunityErrorMessages
 from apps.opportunities.models import SubStageMetadata, PipelineSubStage
 from apps.accounts.models import Contact
-from apps.core_apps.models import StandardDepartment
+from app_modules.core_modules.models import StandardDepartment
 
 
 class SubStageMetadataSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):

@@ -2,7 +2,7 @@ from django.db import models
 from apps.core_apps.models import BaseModelApp
 from core.client_scope import ClientScopeManager
 from django.utils.translation import gettext_lazy as _
-from apps.core_apps.models import StandardDepartment
+# from apps.core_apps.models import StandardDepartment
 
 
 class Product(BaseModelApp, ClientScopeManager.ModelMixin):
@@ -21,7 +21,7 @@ class Product(BaseModelApp, ClientScopeManager.ModelMixin):
     )
 
     target_categories = models.ManyToManyField(
-        StandardDepartment,
+        'core_modules.StandardDepartment',
         blank=True,
         related_name="products_for_category",
         verbose_name=_("Standard Department Categories")

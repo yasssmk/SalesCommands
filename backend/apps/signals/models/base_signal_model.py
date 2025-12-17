@@ -50,7 +50,7 @@ class BaseSignal(BaseModelApp, AccountLinkedModel, ClientScopeManager.ModelMixin
     )
     
     source_department = models.ForeignKey(
-        'core_apps.StandardDepartment',
+        'core_modules.StandardDepartment',
         on_delete=models.SET_NULL,
         related_name='%(class)s_department',
         null=True,
