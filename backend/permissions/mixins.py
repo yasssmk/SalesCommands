@@ -661,6 +661,87 @@ class ScopedQuerysetMixin:
         # STEP 3: Object exists and user has permission → return it
         return obj
     
+    def get_objects_for_bulk(self, ids: list) -> dict:
+        """
+        Get multiple objects with explicit 403 for permission denials.
+        
+        This is the bulk equivalent of get_object().
+        Same pattern: existence check THEN permission check.
+        
+        Distinguishes between:
+        - Object not found (404): Resource doesn't exist in tenant
+        - Permission denied (403): Resource exists but user lacks permission
+        
+        Args:
+            ids: List of primary keys (UUIDs or strings)
+            
+        Returns:
+            dict with keys:
+                - 'objects': dict mapping id -> object (only accessible ones)
+                - 'not_found_ids': set of IDs that don't exist in tenant
+                
+        Raises:
+            StandardizedPermissionDenied: If ANY object exists but is out of scope
+            
+        Usage in bulk operations:
+            result = self.get_objects_for_bulk(ids)
+            objects_dict = result['objects']
+            not_found_ids = result['not_found_ids']
+        """
+        from core.exceptions import StandardizedPermissionDenied
+        from core.error_messages import CoreErrorMessages
+        
+        requested_ids = set(str(i) for i in ids)
+        
+        # =========================================================================
+        # STEP 1: Check existence in tenant (without permission filtering)
+        # =========================================================================
+        
+        # Get the base queryset with only client filtering (no scope filtering)
+        # We need to bypass get_queryset() which applies scope filtering
+        base_qs = super().get_queryset()
+        
+        # Filter by requested IDs
+        tenant_qs = base_qs.filter(pk__in=ids)
+        tenant_dict = {str(obj.pk): obj for obj in tenant_qs}
+        existing_ids = set(tenant_dict.keys())
+        
+        # IDs that don't exist at all in tenant
+        not_found_ids = requested_ids - existing_ids
+        
+        # =========================================================================
+        # STEP 2: Check permission scope (same as get_object)
+        # =========================================================================
+        
+        if existing_ids:
+            # Get scoped queryset (applies permission filtering)
+            scoped_qs = self.get_queryset().filter(pk__in=existing_ids)
+            scoped_dict = {str(obj.pk): obj for obj in scoped_qs}
+            scoped_ids = set(scoped_dict.keys())
+            
+            # IDs that exist but are out of user's permission scope
+            out_of_scope_ids = existing_ids - scoped_ids
+            
+            if out_of_scope_ids:
+                # 403 - Same behavior as get_object()
+                logger.warning("bulk_permission_denied", extra={
+                    'correlation_id': get_correlation_id(),
+                    'out_of_scope_count': len(out_of_scope_ids),
+                    'event': 'permission_denied'
+                })
+                raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
+            
+            return {
+                'objects': scoped_dict,
+                'not_found_ids': not_found_ids
+            }
+        
+        # No existing IDs found
+        return {
+            'objects': {},
+            'not_found_ids': not_found_ids
+        }
+        
     def _get_action(self) -> str:
         """
         Get the current action being performed.

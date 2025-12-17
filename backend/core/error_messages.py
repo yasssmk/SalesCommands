@@ -95,14 +95,14 @@ class CoreErrorMessages:
     
     # Bulk Update specific  
     BULK_UPDATE_NO_ID = _("ID is required for bulk update")
-    BULK_UPDATE_INVALID_ID = _("User with ID '{id}' not found")
+    BULK_UPDATE_INVALID_ID = _("Object not found")
     BULK_UPDATE_NO_FIELDS = _("No valid fields provided for update")
     BULK_UPDATE_RESTRICTED_FIELD = _("Field '{field}' cannot be updated in bulk operations")
     BULK_UPDATE_SELF_MODIFY = _("Cannot modify your own account in bulk operations")
     
     # Bulk Delete specific
     BULK_DELETE_NO_IDS = _("No IDs provided for bulk delete")
-    BULK_DELETE_INVALID_ID = _("User with ID '{id}' not found or already deleted")
+    BULK_DELETE_INVALID_ID = _("Object not found or already deleted")
     BULK_DELETE_SELF = _("Cannot delete your own account")
     BULK_DELETE_LAST_ADMIN = _("Cannot delete user: last admin in organization")
     BULK_DELETE_PROTECTED = _("Cannot delete protected user")

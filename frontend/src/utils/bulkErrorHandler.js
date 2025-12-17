@@ -203,7 +203,7 @@ export function handleBulkError(responseData, originalError = null, options = {}
     console.log('[RESPONSE FORMAT]', {responseData})
     // ✅ EXTRACT MESSAGE DIRECTLY FROM RESPONSE DATA
     const errorMessage = responseData.errorMessage || responseData.message ||
-                    'Operation failed XXX';
+                    'Operation failed';
 
     const status = responseData.httpStatus || 
                   responseData.status || responseData.error?.status ||

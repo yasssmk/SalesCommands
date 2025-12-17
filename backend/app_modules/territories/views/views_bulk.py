@@ -14,6 +14,11 @@ Why simplified vs Users/Accounts:
 This keeps the code simple and the frontend doesn't need to handle async polling.
 Idempotency can be added later if territories get heavy relations.
 
+Key differences from Accounts:
+- No idempotency wrapper (synchronous only)
+- No admin-only restriction (individuals can delete their own territories)
+- System territory protection (is_system=True cannot be deleted)
+
 Response format is fully compatible with:
 - handleBulkError() frontend utility
 - Standard snackbar notifications
@@ -53,103 +58,13 @@ class TerritoryBulkViewSet(TerritoryViewSet):
     throttle_classes = [BulkOperationThrottle]
     
     # =========================================================================
-    # RESPONSE BUILDERS - Standard format compatible with handleBulkError()
-    # =========================================================================
-    
-    def _build_bulk_success_response(self, results, total, operation='delete', detailed=False):
-        """
-        Build standardized success response for bulk operations.
-        
-        Response format compatible with frontend handleBulkError():
-        {
-            "success": true,
-            "summary": {
-                "total_requested": 5,
-                "successful": 4,
-                "failed": 1
-            },
-            "results": {
-                "success": [{"id": "...", "name": "..."}],
-                "failed": [{"id": "...", "name": "...", "errors": ["..."]}]
-            }
-        }
-        """
-        success_count = len(results.get('success', []))
-        failed_count = len(results.get('failed', []))
-        
-        # Determine HTTP status code
-        if success_count == 0 and failed_count > 0:
-            # Total failure
-            http_status = status.HTTP_400_BAD_REQUEST
-            success_flag = False
-        elif failed_count > 0:
-            # Partial success
-            http_status = status.HTTP_207_MULTI_STATUS
-            success_flag = 'partial'
-        else:
-            # Full success
-            http_status = status.HTTP_200_OK
-            success_flag = True
-        
-        response_data = {
-            'success': success_flag,
-            'summary': {
-                'total_requested': total,
-                'successful': success_count,
-                'failed': failed_count
-            }
-        }
-        
-        # Include results if detailed mode or if there are failures
-        if detailed or failed_count > 0:
-            response_data['results'] = results
-        
-        return Response(response_data, status=http_status)
-    
-    def _build_bulk_error_response(self, results, total, error_message):
-        """
-        Build standardized error response for bulk operations.
-        
-        Response format compatible with frontend handleBulkError():
-        {
-            "success": false,
-            "error": "Error message",
-            "summary": {...},
-            "results": {...}
-        }
-        """
-        return Response({
-            'success': False,
-            'error': error_message,
-            'summary': {
-                'total_requested': total,
-                'successful': len(results.get('success', [])),
-                'failed': len(results.get('failed', []))
-            },
-            'results': results
-        }, status=status.HTTP_400_BAD_REQUEST)
-    
-    def _format_bulk_error_message(self, exception):
-        """Extract error message from exception."""
-        if hasattr(exception, 'detail'):
-            if isinstance(exception.detail, dict):
-                return str(exception.detail.get('error', str(exception)))
-            return str(exception.detail)
-        return str(exception)
-    
-    # =========================================================================
-    # BULK DELETE - Synchronous implementation
+    # BULK DELETE
     # =========================================================================
     
     @action(detail=False, methods=['delete'], url_path='bulk-delete')
     def bulk_delete(self, request):
         """
         Bulk delete territories.
-        
-        Synchronous implementation (no 202/polling) because:
-        - Territory deletion is fast (minimal cascade)
-        - Typical volume < 50 items
-        - No timeout risk
         
         Request Body:
             ids: List[UUID] - Territory IDs to delete
@@ -160,6 +75,7 @@ class TerritoryBulkViewSet(TerritoryViewSet):
             
         Business Rules:
             - Cannot delete system territories (is_system=True)
+            - Permission scoped via get_objects_for_bulk() (403 if out of scope)
             - Strict mode: Fails entirely if any territory can't be deleted
             - Partial mode: Deletes what it can, reports failures
             
@@ -167,17 +83,16 @@ class TerritoryBulkViewSet(TerritoryViewSet):
             200 OK - All succeeded
             207 Multi-Status - Partial success
             400 Bad Request - All failed or validation error
+            403 Forbidden - Attempting to delete territories outside permission scope
         """
         ctx = ctx_from_request(request)
-        client_id = self.get_client_id()
-        
         ctx.update({
             'event': 'bulk_delete_territories',
-            'client_id': str(client_id)
+            'client_id': str(self.get_client_id())
         })
         
         detailed = request.query_params.get('detailed', 'false').lower() == 'true'
-        results = {'success': [], 'failed': []}
+        results = {'success': [], 'failed': [], 'skipped': []}
         
         try:
             # =================================================================
@@ -185,12 +100,11 @@ class TerritoryBulkViewSet(TerritoryViewSet):
             # =================================================================
             
             if not isinstance(request.data, dict):
-                raise StandardizedValidationError("Request body must be a JSON object")
+                raise StandardizedValidationError("Request must be a JSON object")
             
             ids = request.data.get('ids', [])
             mode = request.data.get('mode', 'partial')
             
-            # Validate ids format
             if not isinstance(ids, list):
                 raise StandardizedValidationError(
                     CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="territory IDs")
@@ -207,160 +121,157 @@ class TerritoryBulkViewSet(TerritoryViewSet):
             if mode not in ['partial', 'strict']:
                 raise StandardizedValidationError(CoreErrorMessages.BULK_MODE_INVALID)
             
-            # Audit: operation started
             audit_log(
-                event='bulk_delete_territories_started',
+                event='bulk_delete_territories',
                 action='bulk_delete',
                 actor_id=str(request.user.id),
-                client_id=str(client_id),
+                client_id=str(self.get_client_id()),
                 target_type='territory',
                 target_count=len(ids),
                 outcome='started',
                 extra={'mode': mode}
             )
             
-            logger.info("bulk_delete_territories_started", extra={
-                **ctx,
-                'ids_count': len(ids),
-                'mode': mode
-            })
+            # =================================================================
+            # FETCH TERRITORIES WITH PERMISSION CHECK
+            # =================================================================
+            # Uses get_objects_for_bulk() from ScopedQuerysetMixin
+            # - Raises 403 if any object is out of permission scope
+            # - Returns not_found_ids for objects that don't exist
+            
+            client_id = self.get_client_id()
+            result = self.get_objects_for_bulk(ids)
+            territories_dict = result['objects']
+            not_found_ids = result['not_found_ids']
             
             # =================================================================
-            # FETCH TERRITORIES (with tenant scoping)
+            # HANDLE NOT FOUND IDs
             # =================================================================
             
-            territories_qs = Territory.objects.filter(
-                id__in=ids,
-                client_id=client_id
-            )
-            territories_dict = {str(t.id): t for t in territories_qs}
+            for nf_id in not_found_ids:
+                results['failed'].append({
+                    'id': nf_id,
+                    'name': 'Unknown',
+                    'errors': [str(CoreErrorMessages.OBJECT_NOT_FOUND)]
+                })
             
-            # =================================================================
-            # CHECK FOR NOT FOUND IDs
-            # =================================================================
-            
-            requested_ids = set(str(id) for id in ids)
-            found_ids = set(territories_dict.keys())
-            not_found_ids = requested_ids - found_ids
-            
-            if not_found_ids:
-                for nf_id in not_found_ids:
-                    results['failed'].append({
-                        'id': nf_id,
-                        'name': None,
-                        'errors': ['Territory not found or access denied']
-                    })
-                
-                # Strict mode: fail immediately if any ID not found
-                if mode == 'strict':
-                    logger.warning("bulk_delete_territories_strict_not_found", extra={
-                        **ctx,
-                        'not_found_count': len(not_found_ids)
-                    })
-                    return self._build_bulk_error_response(
-                        results,
-                        len(ids),
-                        f"Strict mode: {len(not_found_ids)} territory(ies) not found"
-                    )
+            if mode == 'strict' and not_found_ids:
+                return self._build_bulk_error_response(
+                    results,
+                    len(ids),
+                    f"Strict mode: {len(not_found_ids)} territory(ies) not found"
+                )
             
             # =================================================================
             # CHECK FOR PROTECTED (is_system=True) TERRITORIES
             # =================================================================
             
-            protected = []
+            protected_ids = []
             deletable_ids = []
             
             for territory_id, territory in territories_dict.items():
                 if territory.is_system:
-                    protected.append({
+                    protected_ids.append(territory_id)
+                    results['failed'].append({
                         'id': territory_id,
                         'name': territory.name,
-                        'errors': ['Cannot delete system territory']
+                        'errors': [str(CoreErrorMessages.CANNOT_DELETE.format(fields='system territory'))]
                     })
                 else:
                     deletable_ids.append(territory_id)
             
-            # Strict mode: fail if any protected
-            if mode == 'strict' and protected:
-                for p in protected:
-                    results['failed'].append(p)
-                
-                logger.warning("bulk_delete_territories_strict_protected", extra={
-                    **ctx,
-                    'protected_count': len(protected)
-                })
+            if mode == 'strict' and protected_ids:
                 return self._build_bulk_error_response(
                     results,
                     len(ids),
-                    f"Strict mode: {len(protected)} system territory(ies) cannot be deleted"
+                    f"Strict mode: {len(protected_ids)} system territory(ies) cannot be deleted"
                 )
             
-            # Partial mode: add protected to failed
-            if protected:
-                results['failed'].extend(protected)
-            
             # =================================================================
-            # PERFORM DELETION
+            # DELETE OPERATIONS
             # =================================================================
             
-            if deletable_ids:
-                # Store info before deletion
-                territories_info = {
-                    tid: {'name': territories_dict[tid].name}
-                    for tid in deletable_ids
-                }
-                
-                with transaction.atomic():
+            with disable_signals_with_invalidation(client_id, ['territories']):
+                if mode == 'strict':
+                    with transaction.atomic():
+                        try:
+                            # Store territory info before deletion
+                            territories_info = {}
+                            for territory_id in deletable_ids:
+                                territory = territories_dict[territory_id]
+                                territories_info[territory_id] = {
+                                    'name': territory.name
+                                }
+                            
+                            # SET-BASED DELETE
+                            if deletable_ids:
+                                deleted_count, deleted_by_model = Territory.objects.filter(
+                                    id__in=deletable_ids,
+                                    client_id=client_id
+                                ).delete()
+                                
+                                logger.info(
+                                    f"Bulk delete territories: {len(deletable_ids)} deleted",
+                                    extra={
+                                        **ctx,
+                                        'deleted_count': deleted_count,
+                                        'cascade': deleted_by_model
+                                    }
+                                )
+                                
+                                # Build success results
+                                for territory_id in deletable_ids:
+                                    info = territories_info[territory_id]
+                                    results['success'].append({
+                                        'id': territory_id,
+                                        'name': info['name']
+                                    })
+                        
+                        except Exception as e:
+                            error_msg = self._format_bulk_error_message(e)
+                            logger.error("Bulk delete strict mode failed", extra={
+                                **ctx,
+                                'error': error_msg
+                            }, exc_info=True)
+                            
+                            return self._build_bulk_error_response(
+                                {'success': [], 'failed': results['failed'], 'skipped': []},
+                                len(ids),
+                                f"Strict mode failed: {error_msg}"
+                            )
+                else:
+                    # Partial mode
+                    territories_info = {}
+                    for territory_id in deletable_ids:
+                        territory = territories_dict[territory_id]
+                        territories_info[territory_id] = {
+                            'name': territory.name
+                        }
+                    
+                    # SET-BASED DELETE
                     try:
-                        # Disable signals and invalidate cache after deletion
-                        with disable_signals_with_invalidation(client_id, ['territories']):
+                        if deletable_ids:
                             deleted_count, deleted_by_model = Territory.objects.filter(
                                 id__in=deletable_ids,
                                 client_id=client_id
                             ).delete()
-                        
-                        # Build success results
-                        for tid in deletable_ids:
-                            results['success'].append({
-                                'id': tid,
-                                'name': territories_info[tid]['name']
-                            })
-                        
-                        # Log cascade info
-                        cascade_summary = ', '.join([
-                            f"{model.split('.')[-1]}={count}"
-                            for model, count in deleted_by_model.items()
-                            if 'Territory' not in model
-                        ]) or 'none'
-                        
-                        logger.info("bulk_delete_territories_executed", extra={
-                            **ctx,
-                            'deleted_count': deleted_count,
-                            'cascade': cascade_summary
-                        })
+                            
+                            for territory_id in deletable_ids:
+                                info = territories_info[territory_id]
+                                results['success'].append({
+                                    'id': territory_id,
+                                    'name': info['name']
+                                })
                     
                     except Exception as e:
                         error_msg = self._format_bulk_error_message(e)
-                        logger.error("bulk_delete_territories_db_error", extra={
-                            **ctx,
-                            'error': error_msg
-                        })
-                        
-                        if mode == 'strict':
-                            # Strict: rollback everything
-                            return self._build_bulk_error_response(
-                                {'success': [], 'failed': results['failed']},
-                                len(ids),
-                                f"Strict mode failed: {error_msg}"
-                            )
-                        else:
-                            # Partial: report all as failed
-                            for tid in deletable_ids:
-                                results['failed'].append({
-                                    'id': tid,
-                                    'name': territories_info.get(tid, {}).get('name'),
-                                    'errors': [error_msg]
-                                })
+                        for territory_id in deletable_ids:
+                            info = territories_info.get(territory_id, {'name': 'Unknown'})
+                            results['failed'].append({
+                                'id': territory_id,
+                                'name': info['name'],
+                                'errors': [error_msg]
+                            })
             
             # =================================================================
             # BUILD RESPONSE
@@ -369,7 +280,6 @@ class TerritoryBulkViewSet(TerritoryViewSet):
             success_count = len(results['success'])
             failed_count = len(results['failed'])
             
-            # Audit: operation completed
             audit_log(
                 event='bulk_delete_territories_completed',
                 action='bulk_delete',
@@ -384,44 +294,156 @@ class TerritoryBulkViewSet(TerritoryViewSet):
                 }
             )
             
-            logger.info("bulk_delete_territories_completed", extra={
-                **ctx,
-                'success_count': success_count,
-                'failed_count': failed_count
-            })
-            
             return self._build_bulk_success_response(
-                results, 
-                len(ids), 
-                operation='delete', 
+                results,
+                len(ids),
+                operation='delete',
                 detailed=detailed
             )
         
         except StandardizedValidationError as e:
             error_msg = str(e)
             if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                error_msg = str(e.detail.get('error', str(e)))
-            
-            logger.warning("bulk_delete_territories_validation_error", extra={
-                **ctx,
-                'error': error_msg
-            })
+                raw_error = e.detail.get('error', str(e))
+                error_msg = str(raw_error)
             
             return self._build_bulk_error_response(
-                results={'success': [], 'failed': []},
+                results={'success': [], 'failed': [], 'skipped': []},
                 total=len(request.data.get('ids', [])) if isinstance(request.data, dict) else 0,
                 error_message=error_msg
-            )
+        )
+    
+    # =========================================================================
+    # HELPER METHODS (copied from accounts/views_bulk.py)
+    # =========================================================================
+    
+    def _format_bulk_error_message(self, error):
+        """
+        Format exception into user-friendly error message for bulk operations.
         
-        except Exception as e:
-            error_msg = self._format_bulk_error_message(e)
-            logger.error("bulk_delete_territories_unexpected_error", extra={
-                **ctx,
-                'error': error_msg
-            }, exc_info=True)
+        In bulk context, errors are caught individually per item to allow
+        partial success. This method extracts user-friendly messages.
+        """
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        
+        if isinstance(error, StandardizedValidationError):
+            if hasattr(error, 'detail'):
+                if isinstance(error.detail, dict):
+                    raw_error = error.detail.get('error', str(error))
+                    return str(raw_error)
+                elif isinstance(error.detail, list):
+                    return '; '.join(str(e) for e in error.detail)
+            return str(error)
+        
+        if isinstance(error, DRFValidationError):
+            if hasattr(error, 'detail'):
+                detail = error.detail
+                if isinstance(detail, dict):
+                    messages = []
+                    for field, errors in detail.items():
+                        if isinstance(errors, list) and errors:
+                            messages.append(f"{field}: {str(errors[0])}")
+                        else:
+                            messages.append(f"{field}: {str(errors)}")
+                    return '; '.join(messages) if messages else str(error)
+                elif isinstance(detail, list) and detail:
+                    return str(detail[0])
+            return str(error)
+        
+        return str(error) if error else "Processing failed"
+    
+    def _build_bulk_error_response(self, results, total, error_message):
+        """Build standardized error response for bulk operations."""
+        if error_message and not isinstance(error_message, str):
+            error_message = str(error_message)
+        
+        if 'skipped' not in results:
+            results['skipped'] = []
+        
+        return Response({
+            'success': False,
+            'message': error_message,
+            'summary': {
+                'total': total,
+                'success': len(results.get('success', [])),
+                'failed': len(results.get('failed', [])),
+                'skipped': len(results.get('skipped', []))
+            },
+            'results': results
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def _build_bulk_success_response(self, results, total, operation='delete', detailed=False):
+        """Build standardized success response for bulk operations."""
+        success_count = len(results.get('success', []))
+        failed_count = len(results.get('failed', []))
+        skipped_count = len(results.get('skipped', []))
+        
+        if success_count == 0 and failed_count > 0:
+            status_code = status.HTTP_400_BAD_REQUEST
+            success_status = False
             
-            return self._build_bulk_error_response(
-                results={'success': [], 'failed': []},
-                total=len(request.data.get('ids', [])) if isinstance(request.data, dict) else 0,
-                error_message=f"Unexpected error: {error_msg}"
-            )
+            failed_items = results.get('failed', [])
+            extracted_message = None
+            
+            if failed_items:
+                first_failed = failed_items[0]
+                if isinstance(first_failed, dict) and 'errors' in first_failed:
+                    errors_list = first_failed['errors']
+                    if errors_list and len(errors_list) > 0:
+                        raw_error = errors_list[0]
+                        extracted_message = str(raw_error) if raw_error else None
+            
+            if extracted_message:
+                message = extracted_message
+            else:
+                message = f"Bulk {operation} failed: all {failed_count} item(s) failed"
+                
+        elif failed_count > 0 or skipped_count > 0:
+            status_code = status.HTTP_207_MULTI_STATUS
+            success_status = 'partial'
+            message = f"Bulk {operation}: {success_count} succeeded, {failed_count} failed, {skipped_count} skipped"
+        else:
+            status_code = status.HTTP_200_OK
+            success_status = True
+            message = f"Bulk {operation}: {success_count} item(s) processed successfully"
+        
+        if not detailed:
+            clean_results = {
+                'success': [
+                    item.get('id') if isinstance(item, dict) else str(item)
+                    for item in results.get('success', [])
+                ],
+                'failed': [
+                    item.get('id') if isinstance(item, dict) else str(item)
+                    for item in results.get('failed', [])
+                ],
+                'skipped': [
+                    item.get('id') if isinstance(item, dict) else str(item)
+                    for item in results.get('skipped', [])
+                ]
+            }
+        else:
+            clean_results = {
+                'success': results.get('success', []),
+                'failed': results.get('failed', []),
+                'skipped': results.get('skipped', [])
+            }
+        
+        operation_key_map = {
+            'create': 'created',
+            'update': 'updated',
+            'delete': 'deleted',
+        }
+        operation_key = operation_key_map.get(operation, 'processed')
+        
+        return Response({
+            'success': success_status,
+            'message': message,
+            'summary': {
+                'requested': total,
+                operation_key: success_count,
+                'failed': failed_count,
+                'skipped': skipped_count,
+            },
+            'results': clean_results
+        }, status=status_code)
