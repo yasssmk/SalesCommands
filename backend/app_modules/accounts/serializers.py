@@ -879,3 +879,66 @@ class CompanyAccountUpdateSerializer(ClientScopeManager.SerializerMixin, Contact
                 instance.add_partner(partner, user)
             except CompanyAccount.DoesNotExist:
                 pass
+
+# ============================================================================
+# WORKSPACE SERIALIZER (Account Workspace header)
+# ============================================================================
+
+class AccountWorkspaceSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+    """
+    Serializer for Account Workspace header data.
+    
+    Returns essential account info and owner/team details
+    for the workspace header display.
+    """
+    
+    account_owner = serializers.SerializerMethodField()
+    team = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = CompanyAccount
+        fields = [
+            'id',
+            'company_name',
+            'industry',
+            'type',
+            'classification',
+            'website',
+            'city',
+            'country',
+            'account_owner',
+            'team',
+        ]
+        read_only_fields = fields
+    
+    def get_account_owner(self, obj):
+        """Return account owner as minimal object."""
+        if obj.account_owner:
+            return {
+                'id': str(obj.account_owner.id),
+                'full_name': obj.account_owner.get_full_name(),
+                'email': obj.account_owner.email,
+            }
+        return None
+    
+    def get_team(self, obj):
+        """Return team derived from account_owner."""
+        if obj.account_owner and obj.account_owner.team:
+            return {
+                'id': str(obj.account_owner.team_id),
+                'name': obj.account_owner.team.name,
+            }
+        return None
+
+
+class WorkspaceStatsSerializer(serializers.Serializer):
+    """
+    Stats placeholder for workspace.
+    
+    Will be connected to legacy models later.
+    Returns 0 for all counts initially.
+    """
+    contacts_count = serializers.IntegerField(default=0)
+    activities_count = serializers.IntegerField(default=0)
+    opportunities_count = serializers.IntegerField(default=0)
+    signals_count = serializers.IntegerField(default=0)

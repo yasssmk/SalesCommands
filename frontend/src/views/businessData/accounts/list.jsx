@@ -38,7 +38,7 @@ import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
 
 // next
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 // filters
 import TerritoryFilterPanel from 'sections/admin/accounts/TerritoryFilterPanel';
@@ -94,7 +94,7 @@ const CLASSIFICATION_COLORS = {
  */
 export default function AccountsListPage() {
   const { tenantId } = useAuth();
-
+  const router = useRouter();
   const MAX_PAGE_SIZE = 100;
 
   // ==============================|| URL PARAMS ||============================== //
@@ -474,8 +474,21 @@ const {
       {
         header: 'Company Name',
         accessorKey: 'company_name',
-        cell: ({ getValue }) => (
-          <Typography variant="subtitle1">
+        cell: ({ row, getValue }) => (
+          <Typography
+            variant="subtitle1"
+            sx={{
+              cursor: 'pointer',
+              '&:hover': {
+                color: 'primary.main',
+                textDecoration: 'underline'
+              }
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(`/accounts/${row.original.id}`);
+            }}
+          >
             {getValue() || 'N/A'}
           </Typography>
         )

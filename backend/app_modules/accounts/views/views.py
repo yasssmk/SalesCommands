@@ -40,6 +40,8 @@ from ..serializers import (
     CompanyAccountListSerializer,
     CompanyAccountCreateSerializer,
     CompanyAccountUpdateSerializer,
+    WorkspaceStatsSerializer,
+    AccountWorkspaceSerializer,
 )
 from ..services.filter_service import AccountFilterService
 
@@ -123,6 +125,10 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
     
     # Action policies
     action_policies = {
+        'workspace': {
+            'crud': 'read',
+            'scope': 'client'
+        },
         'qualification': {
             'crud': 'read',
             'scope': 'client'
@@ -671,6 +677,40 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
     # CUSTOM ACTIONS
     # ==========================================================================
     
+    @action(detail=True, methods=['get'])
+    def workspace(self, request, pk=None):
+        """
+        Get account workspace data for header display.
+        
+        Returns account details and basic stats.
+        
+        GET /company-accounts/{uuid}/workspace/
+        """
+        try:
+            account = self.get_object()
+            
+            # Serialize account data
+            account_data = AccountWorkspaceSerializer(account).data
+            
+            # Stats placeholder (will connect to legacy later)
+            stats_data = {
+                'contacts_count': 0,
+                'activities_count': 0,
+                'opportunities_count': 0,
+                'signals_count': 0,
+            }
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'account': account_data,
+                    'stats': stats_data,
+                }
+            })
+            
+        except Exception as e:
+            return self.handle_exception(e)
+        
     @action(detail=True, methods=['get'])
     def qualification(self, request, pk=None):
         """

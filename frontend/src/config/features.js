@@ -49,7 +49,7 @@ export const FEATURES = {
   // BUSINESS DATA FEATURES
   // ============================================
   ACCOUNT_MANAGEMENT: true,   // Account CRUD - Active
-  CONTACTS_MANAGEMENT: true, // Contact management - Coming soon
+  CONTACTS_MANAGEMENT: true, // Contact management 
   PRODUCTS_MANAGEMENT: false, // Product catalog - Coming soon
   
   // ============================================

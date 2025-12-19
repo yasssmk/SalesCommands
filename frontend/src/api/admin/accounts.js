@@ -12,6 +12,7 @@ import { isValidUUID, sanitizeObject } from 'utils/validators';
 const endpoints = {
   accounts: '/company-accounts/',
   accountDetail: (id) => `/company-accounts/${id}/`,
+  accountWorkspace: (id) => `/company-accounts/${id}/workspace/`, 
   choices: '/company-accounts/choices/',
   bulkCreate: '/company-accounts/bulk-create/',
   bulkUpdate: '/company-accounts/bulk-update/',
@@ -194,6 +195,41 @@ export function useGetAccount(accountId) {
   return memoizedValue;
 }
 
+/**
+ * GET ACCOUNT WORKSPACE - Account workspace header data
+ * 
+ * @param {string} accountId - UUID of the account
+ * @returns {Object} {workspace, workspaceLoading, workspaceError, workspaceValidating}
+ */
+export function useGetAccountWorkspace(accountId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!accountId || !isValidUUID(accountId)) return null;
+    return tenantKey(endpoints.accountWorkspace(accountId), tenantId);
+  }, [accountId, tenantId]);
+
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  const memoizedValue = useMemo(
+    () => ({
+      workspace: data?.data || null,
+      account: data?.data?.account || null,
+      stats: data?.data?.stats || null,
+      workspaceLoading: isLoading,
+      workspaceError: error,
+      workspaceValidating: isValidating,
+      mutateWorkspace: mutate
+    }),
+    [data, isLoading, error, isValidating, mutate]
+  );
+
+  return memoizedValue;
+}
 
 /**
  * GET ACCOUNT CHOICES - Types, Classifications, Industries

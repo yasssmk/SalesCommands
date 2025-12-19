@@ -56,6 +56,10 @@ def get_urlpatterns():
         # =========================================================================
         # CUSTOM ACTIONS
         # =========================================================================
+        path('<uuid:pk>/workspace/', CompanyAccountViewSet.as_view({
+            'get': 'workspace'
+        }), name='workspace'),
+            
         path('<uuid:pk>/qualification/', CompanyAccountViewSet.as_view({
             'get': 'qualification'
         }), name='qualification'),
