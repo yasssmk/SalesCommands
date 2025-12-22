@@ -32,7 +32,7 @@ DEFAULT_CONFIG = {
     'MODULES': {
         'accounts': True,
         'territories': True,
-        'contacts': False,
+        'contacts': True,
         'activities': False,
         'leads': False,
         'opportunities': False,

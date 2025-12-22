@@ -687,7 +687,7 @@ PERMISSIONS_CONFIG = {
     # Enable modules one by one for gradual rollout
     'MODULES': {
         'accounts': True,      # Account management
-        'contacts': False,      # Contact management  
+        'contacts': True,      # Contact management  
         'activities': False,    # Activity tracking
         'leads': False,         # Lead management
         'opportunities': False, # Opportunity/deals
