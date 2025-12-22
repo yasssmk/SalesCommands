@@ -136,6 +136,12 @@ class Contact(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDetailsMixi
         verbose_name = _('Contact')
         verbose_name_plural = _('Contacts')
         ordering = ['last_name', 'first_name']
+        indexes = [
+            models.Index(fields=['client_id'], name='module_cont_client_idx'),
+            models.Index(fields=['account_id'], name='module_cont_account_idx'),
+            models.Index(fields=['account_id', 'client_id'], name='module_cont_acc_client_idx'),
+            models.Index(fields=['email', 'client_id'], name='module_cont_email_client_idx'),
+        ]
     
     def __str__(self):
         return f"{self.first_name} {self.last_name}"

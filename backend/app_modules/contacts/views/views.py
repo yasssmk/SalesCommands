@@ -166,6 +166,7 @@ class ContactViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets
         
         # Invalidate cache
         invalidate_tag(str(client_id), 'contacts')
+        invalidate_tag(str(client_id), 'accounts') 
         
         logger.info("contact_created", extra={
             **ctx_from_request(self.request),
@@ -198,6 +199,7 @@ class ContactViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets
         
         # Invalidate cache
         invalidate_tag(str(client_id), 'contacts')
+        invalidate_tag(str(client_id), 'accounts') 
         
         logger.info("contact_updated", extra={
             **ctx_from_request(self.request),
@@ -227,6 +229,7 @@ class ContactViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets
         
         # Invalidate cache
         invalidate_tag(str(client_id), 'contacts')
+        invalidate_tag(str(client_id), 'accounts') 
         
         logger.info("contact_deleted", extra={
             **ctx_from_request(self.request),

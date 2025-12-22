@@ -53,9 +53,24 @@ const activeFiltersCount = useMemo(() => {
       return;
     }
     
-    if (Array.isArray(value) && value.length > 0) {
-      count++;
-    } else if (value !== '' && value !== null && value !== undefined) {
+    // Check if value is "active" (non-empty)
+    if (Array.isArray(value)) {
+      // Array: count only if has elements
+      if (value.length > 0) {
+        count++;
+      }
+    } else if (typeof value === 'object' && value !== null) {
+      // Object (like user): count if has id
+      if (value.id) {
+        count++;
+      }
+    } else if (typeof value === 'string') {
+      // String: count only if non-empty
+      if (value !== '') {
+        count++;
+      }
+    } else if (value !== null && value !== undefined) {
+      // Other truthy values (numbers, booleans)
       count++;
     }
   });

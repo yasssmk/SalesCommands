@@ -190,7 +190,7 @@ class ContactBulkViewSet(ContactViewSet):
             valid_ids = list(found_ids)
             
             if valid_ids:
-                with disable_signals_with_invalidation(client_id, ['contacts']):
+                with disable_signals_with_invalidation(client_id, ['contacts', 'accounts']):
                     with transaction.atomic():
                         # Set-based update
                         updated_count = Contact.objects.filter(
@@ -365,7 +365,7 @@ class ContactBulkViewSet(ContactViewSet):
             valid_ids = list(found_ids)
             
             if valid_ids:
-                with disable_signals_with_invalidation(client_id, ['contacts']):
+                with disable_signals_with_invalidation(client_id, ['contacts', 'accounts']):
                     with transaction.atomic():
                         # Set-based delete
                         deleted_count, _ = Contact.objects.filter(
@@ -508,7 +508,7 @@ class ContactBulkViewSet(ContactViewSet):
         user = request.user
         
         try:
-            with disable_signals_with_invalidation(client_id, ['contacts']):
+            with disable_signals_with_invalidation(client_id, ['contacts', 'accounts']):
                 with transaction.atomic():
                     for idx, contact_data in enumerate(contacts_data):
                         try:

@@ -109,7 +109,8 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
         'type',
         'classification',
         'country',
-        'account_owner',
+        'account_owner__last_name',
+        'account_owner__first_name',
         'created_at',
         'updated_at',
     ]

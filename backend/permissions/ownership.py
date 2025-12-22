@@ -125,10 +125,11 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     },
     
     'contacts': {
-        'client_account_fk': 'account.client_id',   # Via account
-        'owner_user': 'account.owner_id',           # Inherits from account
-        'created_by': 'created_by_id',              # BaseModelApp.created_by
-        'assigned_to_user': '-',                    # Use account owner
+        'client_account_fk': 'client_id',           # Direct field from ClientScopeManager.ModelMixin
+        'owner_user': 'account__account_owner_id',  # Inherits from account (Django ORM lookup)
+        'owner_team': 'account__team_owner_id',     # Inherits from account team
+        'created_by': 'created_by_id',              # ModuleBaseModel.created_by
+        'assigned_to_user': '-',                    # Not applicable
         'account_fk': 'account_id',                 # Related account
     },
     
