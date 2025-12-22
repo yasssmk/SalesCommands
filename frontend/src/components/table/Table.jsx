@@ -36,7 +36,6 @@ import {
 } from '@tanstack/react-table';
 
 // project-import
-import ExpandingUserDetail from 'sections/admin/users/ExpandingUserDetail';
 import MainCard from 'components/MainCard';
 import ScrollX from 'components/ScrollX';
 import IconButton from 'components/@extended/IconButton';
@@ -307,7 +306,7 @@ const FilterChips = ({
     // Clear URL filters
     const params = new URLSearchParams(searchParams.toString());
     Array.from(params.keys()).forEach(key => {
-      if (!['page_size', 'ordering'].includes(key)) {
+      if (!['page_size', 'ordering', 'tab'].includes(key)) {
         params.delete(key);
       }
     });
@@ -413,26 +412,6 @@ const FilterChips = ({
 
   // Export Cached Data
 
-  const cachedData = useMemo(() => (
-    tableInstance.getRowModel().rows.map((row) => (
-        <Fragment key={row.id}>
-        <TableRow>
-            {row.getVisibleCells().map((cell) => (
-            <TableCell key={cell.id} {...cell.column.columnDef.meta}>
-                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-            </TableCell>
-            ))}
-        </TableRow>
-        {enableExpanding && row.getIsExpanded() && expandedRowContent && (
-            <TableRow sx={{ bgcolor: backColor, '&:hover': { bgcolor: `${backColor} !important` } }}>
-            <TableCell colSpan={row.getVisibleCells().length}>
-                {expandedRowContent(row.original)}
-            </TableCell>
-            </TableRow>
-        )}
-        </Fragment>
-    ))
-    ), [tableInstance, enableExpanding, expandedRowContent, backColor]);
 
   return (
     <MainCard content={false}>
@@ -591,7 +570,6 @@ const FilterChips = ({
                       columns={columns}
                       globalFilter={globalFilter}
                       data={data}
-                      cachedData={cachedData}  
                       emptyMessage={emptyMessage}
                       emptyDescription={emptyDescription}
                     />
@@ -621,10 +599,10 @@ const FilterChips = ({
                             </TableCell>
                           ))}
                         </TableRow>
-                        {row.getIsExpanded() && (
+                        {enableExpanding && row.getIsExpanded() && expandedRowContent && (
                           <TableRow sx={{ bgcolor: backColor, '&:hover': { bgcolor: `${backColor} !important` } }}>
                             <TableCell colSpan={row.getVisibleCells().length}>
-                              <ExpandingUserDetail data={row.original} />
+                              {expandedRowContent(row)}
                             </TableCell>
                           </TableRow>
                         )}

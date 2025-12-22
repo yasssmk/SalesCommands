@@ -1,4 +1,4 @@
-// frontend/src/sections/businessData/contacts/FormContactEdit.jsx
+// frontend/src/sections/businessData/contacts/FormContactAdd.jsx
 
 import PropTypes from 'prop-types';
 import React, { useState } from 'react';
@@ -33,7 +33,7 @@ import { handleFormikError } from 'utils/formErrorHandler';
 import AsyncAccountSelect from 'components/AsyncSelection/AsyncAccountSelect';
 
 // api
-import { updateContact, useGetContact, useGetContactChoices } from 'api/businessData/contacts';
+import { createContact, useGetContactChoices } from 'api/businessData/contacts';
 
 // ==============================|| SECTION TITLE ||============================== //
 
@@ -51,7 +51,7 @@ SectionTitle.propTypes = {
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
-const EditSchema = Yup.object().shape({
+const CreateSchema = Yup.object().shape({
   first_name: Yup.string()
     .required('First name is required')
     .min(1, 'First name must be at least 1 character')
@@ -77,25 +77,21 @@ const EditSchema = Yup.object().shape({
     .max(2000, 'Notes must not exceed 2000 characters')
 });
 
-// ==============================|| BUILD INITIAL VALUES ||============================== //
+// ==============================|| INITIAL VALUES ||============================== //
 
-const buildInitialValues = (contact) => {
-  if (!contact) return {};
-  
-  return {
-    first_name: contact.first_name || '',
-    last_name: contact.last_name || '',
-    email: contact.email || '',
-    phone_number: contact.phone_number || '',
-    job_title: contact.job_title || '',
-    linkedin: contact.linkedin || '',
-    account: contact.account || null,
-    standard_department_id: contact.standard_department?.id || contact.standard_department_id || '',
-    influence_level: contact.influence_level || '',
-    has_buying_authority: contact.has_buying_authority || false,
-    notes: contact.notes || ''
-  };
-};
+const buildInitialValues = (prefilledAccount = null) => ({
+  first_name: '',
+  last_name: '',
+  email: '',
+  phone_number: '',
+  job_title: '',
+  linkedin: '',
+  account: prefilledAccount || null,
+  standard_department_id: '',
+  influence_level: '',
+  has_buying_authority: false,
+  notes: ''
+});
 
 // ==============================|| SANITIZE PAYLOAD ||============================== //
 
@@ -111,47 +107,50 @@ function sanitizePayload(values) {
     payload.account_id = values.account.id;
   }
   
-  // Optional string fields - send empty string to clear
+  // Optional string fields
   const optionalFields = ['email', 'phone_number', 'job_title', 'linkedin', 'notes'];
   optionalFields.forEach((field) => {
     const value = values[field];
-    payload[field] = value ? value.trim() : '';
+    if (value && value.trim()) {
+      payload[field] = value.trim();
+    }
   });
   
-  // Optional choice fields - send null to clear
-  payload.standard_department_id = values.standard_department_id || null;
-  payload.influence_level = values.influence_level || '';
+  // Optional choice fields
+  if (values.standard_department_id) {
+    payload.standard_department_id = values.standard_department_id;
+  }
+  if (values.influence_level) {
+    payload.influence_level = values.influence_level;
+  }
   
   // Boolean field
-  payload.has_buying_authority = values.has_buying_authority || false;
+  if (values.has_buying_authority !== undefined) {
+    payload.has_buying_authority = values.has_buying_authority;
+  }
   
   return payload;
 }
 
-// ==============================|| FORM CONTACT EDIT ||============================== //
+// ==============================|| FORM CONTACT ADD ||============================== //
 
-function FormContactEdit({ contact, contactId, closeModal }) {
+function FormContactAdd({ closeModal, prefilledAccount = null }) {
   const [loading, setLoading] = useState(false);
 
-  // Fetch fresh contact data
-  const { contact: contactData, contactLoading } = useGetContact(contactId);
   const { influenceLevels, standardDepartments, choicesLoading } = useGetContactChoices();
 
-  // Use fresh data if available, fallback to prop
-  const currentContact = contactData || contact;
-
   const formik = useFormik({
-    initialValues: buildInitialValues(currentContact),
-    validationSchema: EditSchema,
-    enableReinitialize: true,
+    initialValues: buildInitialValues(prefilledAccount),
+    validationSchema: CreateSchema,
+    enableReinitialize: false,
     onSubmit: async (values, { setSubmitting }) => {
       try {
         setLoading(true);
         const payload = sanitizePayload(values);
-        const result = await updateContact(contactId, payload);
+        const result = await createContact(payload);
 
         if (result.success) {
-          displaySuccessSnackbar('Contact updated successfully');
+          displaySuccessSnackbar('Contact created successfully');
           closeModal?.();
         } else {
           handleFormikError(result, formik);
@@ -167,8 +166,8 @@ function FormContactEdit({ contact, contactId, closeModal }) {
 
   const { errors, touched, handleSubmit, isSubmitting, getFieldProps, setFieldValue, values } = formik;
 
-  // Show loading state
-  if (contactLoading || choicesLoading || !currentContact) {
+  // Show loading while choices load
+  if (choicesLoading) {
     return (
       <Box sx={{ p: 5 }}>
         <Stack direction="row" justifyContent="center">
@@ -181,30 +180,46 @@ function FormContactEdit({ contact, contactId, closeModal }) {
   return (
     <FormikProvider value={formik}>
       <Form autoComplete="off" noValidate onSubmit={handleSubmit}>
-        <DialogTitle>Edit Contact</DialogTitle>
+        <DialogTitle>Add Contact</DialogTitle>
         <Divider />
         
         <DialogContent sx={{ p: 2.5 }}>
           <Grid container spacing={2.5}>
             
             {/* ==================== ACCOUNT ==================== */}
-            <Grid item xs={12}>
-              <Stack spacing={1}>
-                <InputLabel htmlFor="account">Account *</InputLabel>
-                <AsyncAccountSelect
-                  value={values.account}
-                  onChange={(newAccount) => setFieldValue('account', newAccount)}
-                  label=""
-                  placeholder="Search for an account..."
-                  error={Boolean(touched.account && errors.account)}
-                  helperText={touched.account && errors.account}
-                />
-                {touched.account && errors.account && (
-                  <FormHelperText error>{errors.account}</FormHelperText>
-                )}
-              </Stack>
-            </Grid>
-
+            {prefilledAccount ? (
+              <Grid item xs={12}>
+                <Stack spacing={1}>
+                  <InputLabel>Account</InputLabel>
+                  <TextField
+                    fullWidth
+                    value={prefilledAccount.company_name || ''}
+                    disabled
+                    InputProps={{
+                      readOnly: true,
+                      sx: { bgcolor: 'action.hover' }
+                    }}
+                  />
+                </Stack>
+              </Grid>
+            ) : (
+              <Grid item xs={12}>
+                <Stack spacing={1}>
+                  <InputLabel htmlFor="account">Account *</InputLabel>
+                  <AsyncAccountSelect
+                    value={values.account}
+                    onChange={(newAccount) => setFieldValue('account', newAccount)}
+                    label=""
+                    placeholder="Search for an account..."
+                    error={Boolean(touched.account && errors.account)}
+                    helperText={touched.account && errors.account}
+                  />
+                  {touched.account && errors.account && (
+                    <FormHelperText error>{errors.account}</FormHelperText>
+                  )}
+                </Stack>
+              </Grid>
+            )}
             {/* ==================== IDENTITY ==================== */}
             <SectionTitle>Identity</SectionTitle>
 
@@ -403,7 +418,7 @@ function FormContactEdit({ contact, contactId, closeModal }) {
                   variant="contained" 
                   disabled={isSubmitting || loading}
                 >
-                  {isSubmitting || loading ? 'Saving...' : 'Save Changes'}
+                  {isSubmitting || loading ? 'Creating...' : 'Create'}
                 </Button>
               </Stack>
             </Grid>
@@ -414,10 +429,9 @@ function FormContactEdit({ contact, contactId, closeModal }) {
   );
 }
 
-FormContactEdit.propTypes = {
-  contact: PropTypes.object,
-  contactId: PropTypes.string.isRequired,
-  closeModal: PropTypes.func
+FormContactAdd.propTypes = {
+  closeModal: PropTypes.func,
+  prefilledAccount: PropTypes.object
 };
 
-export default React.memo(FormContactEdit);
+export default React.memo(FormContactAdd);

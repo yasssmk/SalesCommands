@@ -52,7 +52,7 @@ class ContactViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets
     # Filtering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = ContactFilter
-    search_fields = ['first_name', 'last_name', 'email', 'job_title']
+    search_fields = ['first_name', 'last_name', 'email', 'job_title', 'account__company_name']
     ordering_fields = [
         'first_name',
         'last_name',

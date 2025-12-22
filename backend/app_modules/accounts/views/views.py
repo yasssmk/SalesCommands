@@ -102,7 +102,7 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
     # Filtering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = CompanyAccountFilter
-    search_fields = ['company_name', 'industry', 'city', 'country', 'account_owner']
+    search_fields = ['company_name', 'industry', 'city', 'country', 'account_owner__first_name', 'account_owner__last_name', 'account_owner__email']
     ordering_fields = [
         'company_name',
         'industry',
@@ -691,10 +691,18 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
             
             # Serialize account data
             account_data = AccountWorkspaceSerializer(account).data
+
+            # Compute real stats
+            from app_modules.contacts.models import Contact
             
+            contacts_count = Contact.objects.filter(
+                account_id=account.id,
+                client_id=account.client_id
+            ).count()
+                
             # Stats placeholder (will connect to legacy later)
             stats_data = {
-                'contacts_count': 0,
+                'contacts_count': contacts_count,
                 'activities_count': 0,
                 'opportunities_count': 0,
                 'signals_count': 0,

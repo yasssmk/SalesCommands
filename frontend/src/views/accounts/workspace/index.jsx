@@ -17,6 +17,7 @@ import MainCard from 'components/MainCard';
 import AccountHeader from 'sections/accounts/workspace/AccountHeader';
 import AccountTabs, { DEFAULT_TAB } from 'sections/accounts/workspace/AccountTabs';
 import { useGetAccountWorkspace, useGetAccountChoices, updateAccount } from 'api/admin/accounts';
+import AccountContactsTab from 'sections/accounts/workspace/contacts/AccountContactsTab';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
 
 // assets
@@ -163,7 +164,7 @@ export default function AccountWorkspacePage() {
 
       {/* Tab Content */}
       <MainCard>
-        <TabContent tab={currentTab} accountId={accountId} />
+        <TabContent tab={currentTab} accountId={accountId} account={account} />
       </MainCard>
     </Box>
   );
@@ -176,7 +177,7 @@ export default function AccountWorkspacePage() {
  * 
  * Placeholder components for now, will be replaced with actual implementations.
  */
-function TabContent({ tab, accountId }) {
+function TabContent({ tab, accountId, account }) {
   const content = useMemo(() => {
     switch (tab) {
       case 'summary':
@@ -188,13 +189,13 @@ function TabContent({ tab, accountId }) {
       case 'activities':
         return <TabPlaceholder title="Activities" description="Account activities and history will be displayed here." />;
       case 'contacts':
-        return <TabPlaceholder title="Contacts" description="Account contacts will be displayed here." />;
+        return <AccountContactsTab accountId={accountId} account={account} />;
       case 'signals':
         return <TabPlaceholder title="Signals" description="Account signals and alerts will be displayed here." />;
       default:
         return <TabPlaceholder title="Summary" description="Account summary and key information will be displayed here." />;
     }
-  }, [tab]);
+  }, [tab, accountId, account]);
 
   return content;
 }

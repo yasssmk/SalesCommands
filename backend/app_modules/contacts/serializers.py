@@ -60,13 +60,16 @@ class ContactListSerializer(ClientScopeManager.SerializerMixin, serializers.Mode
             'id', 'first_name', 'last_name', 'full_name',
             
             # Contact info
-            'email', 'phone_number', 'job_title',
+            'email', 'phone_number', 'job_title', 'linkedin',
+            
+            # Location
+            'city',
             
             # Department
             'department_name',
             
             # Qualification
-            'influence_level', 'influence_level_display',
+            'influence_level', 'influence_level_display', 'has_buying_authority',
             
             # Account relation
             'account',
@@ -261,6 +264,10 @@ class ContactSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
         
         # Create instance
         instance = Contact(**validated_data)
+        
+        # Set client_id from account (multi-tenant isolation)
+        instance.client_id = account.client_id
+        
         instance.save(user=user)
         
         return instance
