@@ -93,8 +93,12 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
             'crud': 'read',
             'scope': 'client'
         },
-    }
-    
+        'workspace': {
+        'crud': 'read',
+        'scope': 'client'
+    },
+}
+
     def get_serializer_class(self):
         """Choose serializer based on action."""
         if self.action == 'list':
@@ -401,6 +405,159 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
                 'filter_definition': instance.filter_definition
             }
         })
+    
+    @action(detail=True, methods=['get'], url_path='workspace')
+    def workspace(self, request, pk=None):
+        """
+        Get territory workspace data.
+        
+        Returns territory details + stats for the workspace page.
+        Handles both ACCOUNT and CONTACT territory types.
+        """
+        ctx = ctx_from_request(request)
+        instance = self.get_object()
+        
+        logger.info("territory_workspace_requested", extra={
+            **ctx,
+            'territory_id': str(instance.id),
+            'territory_type': instance.type
+        })
+        
+        # Get territory data
+        serializer = TerritorySerializer(instance)
+        
+        # Calculate stats based on territory type
+        accounts_count = 0
+        contacts_count = 0
+        
+        if instance.type == TerritoryType.ACCOUNT:
+            # Account territory - count accounts
+            accounts_count = self._count_accounts_for_territory(instance, request)
+        else:
+            # Contact territory - count contacts
+            contacts_count = self._count_contacts_for_territory(instance, request)
+        
+        stats = {
+            'accounts_count': accounts_count,
+            'contacts_count': contacts_count,
+            'activities_count': 0,  # TODO: Connect to activities module
+        }
+        
+        logger.info("territory_workspace_success", extra={
+            **ctx,
+            'territory_id': str(instance.id),
+            'territory_type': instance.type,
+            'accounts_count': accounts_count,
+            'contacts_count': contacts_count
+        })
+        
+        return Response({
+            'success': True,
+            'data': {
+                'territory': serializer.data,
+                'stats': stats
+            }
+        })
+
+    def _count_accounts_for_territory(self, territory, request):
+        """Count accounts matching territory filters."""
+        from app_modules.accounts.models import CompanyAccount
+        
+        queryset = CompanyAccount.objects.filter(client_id=self.get_client_id())
+        
+        if not territory.filter_definition:
+            return queryset.count()
+        
+        filters = territory.filter_definition
+        
+        # Type filter
+        if filters.get('type'):
+            type_val = filters['type']
+            if isinstance(type_val, list):
+                queryset = queryset.filter(type__in=type_val)
+            else:
+                queryset = queryset.filter(type=type_val)
+        
+        # Classification filter
+        if filters.get('classification'):
+            class_val = filters['classification']
+            if isinstance(class_val, list):
+                queryset = queryset.filter(classification__in=class_val)
+            else:
+                queryset = queryset.filter(classification=class_val)
+        
+        # Industry filter
+        if filters.get('industry'):
+            industry_val = filters['industry']
+            if isinstance(industry_val, list):
+                queryset = queryset.filter(industry__in=industry_val)
+            else:
+                queryset = queryset.filter(industry=industry_val)
+        
+        # Country filter
+        if filters.get('country'):
+            country_val = filters['country']
+            if isinstance(country_val, list):
+                queryset = queryset.filter(country__in=country_val)
+            else:
+                queryset = queryset.filter(country=country_val)
+        
+        # Account owner filter
+        if filters.get('account_owner'):
+            queryset = queryset.filter(account_owner_id=filters['account_owner'])
+        
+        # Account scope filter (mine/team)
+        if filters.get('account_scope'):
+            scope = filters['account_scope']
+            if scope == 'mine':
+                queryset = queryset.filter(account_owner=request.user)
+            elif scope == 'team':
+                if request.user.team_id:
+                    queryset = queryset.filter(account_owner__team_id=request.user.team_id)
+        
+        return queryset.count()
+
+    def _count_contacts_for_territory(self, territory, request):
+        """Count contacts matching territory filters."""
+        from app_modules.contacts.models import Contact
+        
+        queryset = Contact.objects.filter(client_id=self.get_client_id())
+        
+        if not territory.filter_definition:
+            return queryset.count()
+        
+        filters = territory.filter_definition
+        
+        # Influence level filter
+        if filters.get('influence_level'):
+            level_val = filters['influence_level']
+            if isinstance(level_val, list):
+                queryset = queryset.filter(influence_level__in=level_val)
+            else:
+                queryset = queryset.filter(influence_level=level_val)
+        
+        # Standard department filter
+        if filters.get('standard_department'):
+            dept_val = filters['standard_department']
+            if isinstance(dept_val, list):
+                queryset = queryset.filter(standard_department_id__in=dept_val)
+            else:
+                queryset = queryset.filter(standard_department_id=dept_val)
+        
+        # Has buying authority filter
+        if filters.get('has_buying_authority') is not None:
+            queryset = queryset.filter(has_buying_authority=filters['has_buying_authority'])
+        
+        # Contact scope filter (mine/team) - filter by account owner
+        if filters.get('contact_scope'):
+            scope = filters['contact_scope']
+            if scope == 'mine':
+                queryset = queryset.filter(account__account_owner=request.user)
+            elif scope == 'team':
+                if request.user.team_id:
+                    queryset = queryset.filter(account__account_owner__team_id=request.user.team_id)
+        
+        return queryset.count()
     
     @action(detail=False, methods=['get'], url_path='choices')
     def choices(self, request):

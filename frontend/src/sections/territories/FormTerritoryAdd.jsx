@@ -37,6 +37,7 @@ import AsyncUserSelect from 'components/AsyncSelection/AsyncUserSelect';
 // api
 import { createTerritory, TERRITORY_TYPES } from 'api/territories/territories';
 import { useGetAccountChoices } from 'api/admin/accounts';
+import { useGetContactChoices } from 'api/businessData/contacts';
 
 // ==============================|| SECTION TITLE ||============================== //
 
@@ -85,14 +86,20 @@ const buildInitialValues = (initialFilters = {}) => {
     name: '',
     description: '',
     type: TERRITORY_TYPES.ACCOUNT,
-    // Filter definition fields (arrays for multi-select)
+    // Account filter definition fields
     filter_type: toArray(initialFilters.type),
     filter_classification: toArray(initialFilters.classification),
     filter_industry: toArray(initialFilters.industry),
     filter_country: toArray(initialFilters.country),
-    // Owner scope fields
+    // Account owner scope fields
     filter_account_scope: initialFilters.account_scope || '',
-    filter_account_owner: initialFilters.account_owner || null
+    filter_account_owner: initialFilters.account_owner || null,
+    // Contact filter definition fields
+    filter_influence_level: toArray(initialFilters.influence_level),
+    filter_standard_department: toArray(initialFilters.standard_department),
+    filter_has_buying_authority: initialFilters.has_buying_authority ?? '',
+    // Contact owner scope fields
+    filter_contact_scope: initialFilters.contact_scope || '',
   };
 };
 
@@ -102,7 +109,12 @@ function FormTerritoryAdd({ closeModal, initialFilters = {} }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch choices from accounts
-  const { types, classifications, industries, countries, choicesLoading } = useGetAccountChoices();
+  const { types, classifications, industries, countries, choicesLoading: accountChoicesLoading } = useGetAccountChoices();
+
+  // Fetch choices from contacts
+  const { influenceLevels, standardDepartments, choicesLoading: contactChoicesLoading } = useGetContactChoices();
+
+  const choicesLoading = accountChoicesLoading || contactChoicesLoading;
 
   // ==============================|| FORMIK SETUP ||============================== //
 
@@ -111,42 +123,58 @@ function FormTerritoryAdd({ closeModal, initialFilters = {} }) {
     validationSchema: CreateSchema,
     enableReinitialize: false,
     onSubmit: async (values) => {
-    setIsSubmitting(true);
-    
-    try {
-      // Build filter_definition from filter fields
-      const filter_definition = {};
-      // Only include non-empty arrays
-      if (values.filter_type?.length > 0) {
-        filter_definition.type = values.filter_type;
-      }
-      if (values.filter_classification?.length > 0) {
-        filter_definition.classification = values.filter_classification;
-      }
-      if (values.filter_industry?.length > 0) {
-        filter_definition.industry = values.filter_industry;
-      }
-      if (values.filter_country?.length > 0) {
-        filter_definition.country = values.filter_country;
-      }
-      
-      // Owner scope - only one of account_scope or account_owner should be set
-      if (values.filter_account_scope && values.filter_account_scope !== 'other') {
-        filter_definition.account_scope = values.filter_account_scope;
-      }
-      if (values.filter_account_owner?.id) {
-        filter_definition.account_owner = values.filter_account_owner.id;
-      }
+      setIsSubmitting(true);
+      try {
+        // Build filter_definition based on territory type
+        const filter_definition = {};
 
-      const payload = {
-        name: values.name.trim(),
-        description: values.description?.trim() || null,
-        type: values.type,
-        filter_definition
-      };
-        
+        if (values.type === TERRITORY_TYPES.ACCOUNT) {
+          // Account filters
+          if (values.filter_type?.length > 0) {
+            filter_definition.type = values.filter_type;
+          }
+          if (values.filter_classification?.length > 0) {
+            filter_definition.classification = values.filter_classification;
+          }
+          if (values.filter_industry?.length > 0) {
+            filter_definition.industry = values.filter_industry;
+          }
+          if (values.filter_country?.length > 0) {
+            filter_definition.country = values.filter_country;
+          }
+          // Account owner scope
+          if (values.filter_account_scope && values.filter_account_scope !== 'other') {
+            filter_definition.account_scope = values.filter_account_scope;
+          }
+          if (values.filter_account_owner?.id) {
+            filter_definition.account_owner = values.filter_account_owner.id;
+          }
+        } else {
+          // Contact filters
+          if (values.filter_influence_level?.length > 0) {
+            filter_definition.influence_level = values.filter_influence_level;
+          }
+          if (values.filter_standard_department?.length > 0) {
+            filter_definition.standard_department = values.filter_standard_department;
+          }
+          if (values.filter_has_buying_authority !== '') {
+            filter_definition.has_buying_authority = values.filter_has_buying_authority === 'true';
+          }
+          // Contact owner scope
+          if (values.filter_contact_scope && values.filter_contact_scope !== 'other') {
+            filter_definition.contact_scope = values.filter_contact_scope;
+          }
+        }
+
+        const payload = {
+          name: values.name.trim(),
+          description: values.description?.trim() || null,
+          type: values.type,
+          filter_definition
+        };
+
         const result = await createTerritory(payload);
-        
+
         if (result.success) {
           displaySuccessSnackbar('Territory created successfully');
           closeModal?.();
@@ -228,9 +256,7 @@ function FormTerritoryAdd({ closeModal, initialFilters = {} }) {
                     onChange={(e) => setFieldValue('type', e.target.value)}
                   >
                     <MenuItem value={TERRITORY_TYPES.ACCOUNT}>Account-based</MenuItem>
-                    <MenuItem value={TERRITORY_TYPES.CONTACT} disabled>
-                      Contact-based (coming soon)
-                    </MenuItem>
+                    <MenuItem value={TERRITORY_TYPES.CONTACT}>Contact-based</MenuItem>
                   </Select>
                   {touched.type && errors.type && (
                     <FormHelperText>{errors.type}</FormHelperText>
@@ -239,67 +265,129 @@ function FormTerritoryAdd({ closeModal, initialFilters = {} }) {
               </Stack>
             </Grid>
 
-            {/* ==================== ACCOUNT FILTERS ==================== */}
-            <SectionTitle>Account Filters</SectionTitle>
+            {/* ==================== FILTERS (Dynamic based on type) ==================== */}
+            <SectionTitle>
+              {values.type === TERRITORY_TYPES.CONTACT ? 'Contact Filters' : 'Account Filters'}
+            </SectionTitle>
 
-            <Grid item xs={12} sm={6}>
-              <Stack spacing={1}>
-                <MultiSelectFilter
-                  label="Account Type"
-                  options={types}
-                  value={values.filter_type}
-                  onChange={(newValues) => setFieldValue('filter_type', newValues)}
-                  placeholder="All types"
-                  loading={choicesLoading}
-                  size="medium"
-                />
-              </Stack>
-            </Grid>
+            {values.type === TERRITORY_TYPES.ACCOUNT ? (
+              <>
+                {/* Account Type Filter */}
+                <Grid item xs={12} sm={6}>
+                  <Stack spacing={1}>
+                    <MultiSelectFilter
+                      label="Account Type"
+                      options={types}
+                      value={values.filter_type}
+                      onChange={(newValues) => setFieldValue('filter_type', newValues)}
+                      placeholder="All types"
+                      loading={choicesLoading}
+                      size="medium"
+                    />
+                  </Stack>
+                </Grid>
 
-            <Grid item xs={12} sm={6}>
-              <Stack spacing={1}>
-                <MultiSelectFilter
-                  label="Classification"
-                  options={classifications}
-                  value={values.filter_classification}
-                  onChange={(newValues) => setFieldValue('filter_classification', newValues)}
-                  placeholder="All classifications"
-                  loading={choicesLoading}
-                  size="medium"
-                />
-              </Stack>
-            </Grid>
+                {/* Classification Filter */}
+                <Grid item xs={12} sm={6}>
+                  <Stack spacing={1}>
+                    <MultiSelectFilter
+                      label="Classification"
+                      options={classifications}
+                      value={values.filter_classification}
+                      onChange={(newValues) => setFieldValue('filter_classification', newValues)}
+                      placeholder="All classifications"
+                      loading={choicesLoading}
+                      size="medium"
+                    />
+                  </Stack>
+                </Grid>
 
-            <Grid item xs={12} sm={6}>
-              <Stack spacing={1}>
-                <MultiSelectFilter
-                  label="Industry"
-                  options={industries}
-                  value={values.filter_industry}
-                  onChange={(newValues) => setFieldValue('filter_industry', newValues)}
-                  placeholder="All industries"
-                  loading={choicesLoading}
-                  size="medium"
-                />
-              </Stack>
-            </Grid>
+                {/* Industry Filter */}
+                <Grid item xs={12} sm={6}>
+                  <Stack spacing={1}>
+                    <MultiSelectFilter
+                      label="Industry"
+                      options={industries}
+                      value={values.filter_industry}
+                      onChange={(newValues) => setFieldValue('filter_industry', newValues)}
+                      placeholder="All industries"
+                      loading={choicesLoading}
+                      size="medium"
+                    />
+                  </Stack>
+                </Grid>
 
-            <Grid item xs={12} sm={6}>
-              <Stack spacing={1}>
-                <MultiSelectFilter
-                  label="Country"
-                  options={countries}
-                  value={values.filter_country}
-                  onChange={(newValues) => setFieldValue('filter_country', newValues)}
-                  placeholder="All countries"
-                  loading={choicesLoading}
-                  size="medium"
-                />
-              </Stack>
-            </Grid>
+                {/* Country Filter */}
+                <Grid item xs={12} sm={6}>
+                  <Stack spacing={1}>
+                    <MultiSelectFilter
+                      label="Country"
+                      options={countries}
+                      value={values.filter_country}
+                      onChange={(newValues) => setFieldValue('filter_country', newValues)}
+                      placeholder="All countries"
+                      loading={choicesLoading}
+                      size="medium"
+                    />
+                  </Stack>
+                </Grid>
+              </>
+            ) : (
+              <>
+                {/* Influence Level Filter */}
+                <Grid item xs={12} sm={6}>
+                  <Stack spacing={1}>
+                    <MultiSelectFilter
+                      label="Influence Level"
+                      options={influenceLevels}
+                      value={values.filter_influence_level}
+                      onChange={(newValues) => setFieldValue('filter_influence_level', newValues)}
+                      placeholder="All levels"
+                      loading={choicesLoading}
+                      size="medium"
+                    />
+                  </Stack>
+                </Grid>
+
+                {/* Department Filter */}
+                <Grid item xs={12} sm={6}>
+                  <Stack spacing={1}>
+                    <MultiSelectFilter
+                      label="Department"
+                      options={standardDepartments}
+                      value={values.filter_standard_department}
+                      onChange={(newValues) => setFieldValue('filter_standard_department', newValues)}
+                      placeholder="All departments"
+                      loading={choicesLoading}
+                      size="medium"
+                    />
+                  </Stack>
+                </Grid>
+
+                {/* Has Buying Authority Filter */}
+                <Grid item xs={12} sm={6}>
+                  <Stack spacing={1}>
+                    <InputLabel>Has Buying Authority</InputLabel>
+                    <FormControl fullWidth size="medium">
+                      <Select
+                        value={values.filter_has_buying_authority}
+                        onChange={(e) => setFieldValue('filter_has_buying_authority', e.target.value)}
+                        displayEmpty
+                      >
+                        <MenuItem value="">All</MenuItem>
+                        <MenuItem value="true">Yes</MenuItem>
+                        <MenuItem value="false">No</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Stack>
+                </Grid>
+              </>
+            )}
 
             {/* ==================== OWNER SCOPE ==================== */}
-            <SectionTitle>Account Owner</SectionTitle>
+            <SectionTitle>
+              {values.type === TERRITORY_TYPES.CONTACT ? 'Contact Owner' : 'Account Owner'}
+            </SectionTitle>
             
             <Grid item xs={12}>
               <FormControl component="fieldset" fullWidth>

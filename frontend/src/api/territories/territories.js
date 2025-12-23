@@ -34,6 +34,7 @@ export const DEFAULT_TERRITORY_ID = 'all-accounts';
 const endpoints = {
   territories: '/territories/',
   territoryDetail: (id) => `/territories/${id}/`,
+  territoryWorkspace: (id) => `/territories/${id}/workspace/`,
   choices: '/territories/choices/',
   accountsCount: (id) => `/territories/${id}/accounts-count/`,
   bulkDelete: '/territories/bulk-delete/'
@@ -159,6 +160,45 @@ export function useGetTerritory(territoryId) {
       territoryValidating: isValidating
     }),
     [data, isLoading, error, isValidating]
+  );
+
+  return memoizedValue;
+}
+
+/**
+ * GET TERRITORY WORKSPACE - Territory details + stats for workspace page
+ * 
+ * @param {string} territoryId - UUID of the territory
+ * @returns {Object} {territory, stats, loading, error, mutate}
+ */
+export function useGetTerritoryWorkspace(territoryId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!territoryId || !isValidUUID(territoryId)) return null;
+    return tenantKey(endpoints.territoryWorkspace(territoryId), tenantId);
+  }, [territoryId, tenantId]);
+
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  const memoizedValue = useMemo(
+    () => ({
+      territory: data?.data?.territory || data?.territory || null,
+      stats: data?.data?.stats || data?.stats || {
+        accounts_count: 0,
+        contacts_count: 0,
+        activities_count: 0
+      },
+      loading: isLoading,
+      error: error,
+      validating: isValidating,
+      mutate
+    }),
+    [data, isLoading, error, isValidating, mutate]
   );
 
   return memoizedValue;

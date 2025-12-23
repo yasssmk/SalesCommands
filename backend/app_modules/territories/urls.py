@@ -50,6 +50,11 @@ def get_urlpatterns():
         path('<uuid:pk>/accounts-count/', TerritoryViewSet.as_view({
             'get': 'accounts_count'
         }), name='accounts-count'),
+
+        path('<uuid:pk>/workspace/', TerritoryViewSet.as_view({
+            'get': 'workspace'
+        }), name='workspace'),
+
     ]
 
 

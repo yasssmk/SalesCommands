@@ -18,6 +18,7 @@ from .models import Territory, TerritoryType
 # ============================================================================
 
 ALLOWED_FILTER_KEYS = {
+    # Account filters
     'type',
     'classification', 
     'industry',
@@ -26,6 +27,12 @@ ALLOWED_FILTER_KEYS = {
     'account_owner',
     'account_scope',
     'has_buying_decision',
+    # Contact filters
+    'influence_level',
+    'standard_department',
+    'has_buying_authority',
+    'opted_out',
+    'contact_scope',
 }
 
 # ============================================================================

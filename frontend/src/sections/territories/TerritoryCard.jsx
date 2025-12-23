@@ -84,6 +84,18 @@ export default function TerritoryCard({
     console.log('Contacts page coming soon');
   };
 
+  /**
+   * Navigate to Territory Workspace
+   */
+  const handleCardClick = () => {
+    // Don't navigate if in selection mode
+    if (selectionMode) return;
+    
+    // Navigate to territory workspace (both Account and Contact types)
+    router.push(`/territories/${territory.id}`);
+  };
+
+
   const handleEdit = () => {
     if (onEdit) {
       onEdit(territory);
@@ -106,55 +118,70 @@ export default function TerritoryCard({
   // ==============================|| FILTER SUMMARY ||============================== //
 
     const filterSummary = () => {
-      if (!territory.filter_definition || Object.keys(territory.filter_definition).length === 0) {
-        return 'No filters applied';
-      }
+    if (!territory.filter_definition || Object.keys(territory.filter_definition).length === 0) {
+      return 'No filters applied';
+    }
 
-      const parts = [];
-      
-      // Helper to format filter value (handles both string and array)
-      const formatFilterValue = (label, value) => {
-        if (!value) return null;
-        if (Array.isArray(value)) {
-          if (value.length === 0) return null;
-          if (value.length === 1) return `${label}: ${value[0]}`;
-          return `${label}: ${value.length} selected`;
-        }
-        return `${label}: ${value}`;
-      };
-      
-      const typeFilter = formatFilterValue('Type', territory.filter_definition.type);
-      if (typeFilter) parts.push(typeFilter);
-      
-      const classificationFilter = formatFilterValue('Classification', territory.filter_definition.classification);
-      if (classificationFilter) parts.push(classificationFilter);
-      
-      const industryFilter = formatFilterValue('Industry', territory.filter_definition.industry);
-      if (industryFilter) parts.push(industryFilter);
-      
-      const countryFilter = formatFilterValue('Country', territory.filter_definition.country);
-      if (countryFilter) parts.push(countryFilter);
-      
-      // Owner scope (mine/team) - mutually exclusive with account_owner
-      if (territory.filter_definition.account_scope) {
-        const scopeLabels = {
-          'mine': 'Owner: Mine',
-          'team': 'Owner: My Team'
-        };
-        parts.push(scopeLabels[territory.filter_definition.account_scope] || `Owner: ${territory.filter_definition.account_scope}`);
-      } else if (territory.filter_definition.account_owner) {
-        // Specific user selected
-        parts.push('Owner: Specific user');
+    const parts = [];
+    
+    const formatFilterValue = (label, value) => {
+      if (!value) return null;
+      if (Array.isArray(value)) {
+        if (value.length === 0) return null;
+        if (value.length === 1) return `${label}: ${value[0]}`;
+        return `${label}: ${value.length} selected`;
       }
-
-      return parts.length > 0 ? parts.join(' · ') : 'No filters applied';
+      return `${label}: ${value}`;
     };
+    
+    // Account filters
+    const typeFilter = formatFilterValue('Type', territory.filter_definition.type);
+    if (typeFilter) parts.push(typeFilter);
+    
+    const classificationFilter = formatFilterValue('Classification', territory.filter_definition.classification);
+    if (classificationFilter) parts.push(classificationFilter);
+    
+    const industryFilter = formatFilterValue('Industry', territory.filter_definition.industry);
+    if (industryFilter) parts.push(industryFilter);
+    
+    const countryFilter = formatFilterValue('Country', territory.filter_definition.country);
+    if (countryFilter) parts.push(countryFilter);
+    
+    // Contact filters
+    const influenceFilter = formatFilterValue('Influence', territory.filter_definition.influence_level);
+    if (influenceFilter) parts.push(influenceFilter);
+    
+    const departmentFilter = formatFilterValue('Department', territory.filter_definition.standard_department);
+    if (departmentFilter) parts.push(departmentFilter);
+    
+    if (territory.filter_definition.has_buying_authority !== undefined) {
+      parts.push(`Buying Authority: ${territory.filter_definition.has_buying_authority ? 'Yes' : 'No'}`);
+    }
+    
+    // Owner scope (account or contact)
+    const accountScope = territory.filter_definition.account_scope;
+    const contactScope = territory.filter_definition.contact_scope;
+    const scope = accountScope || contactScope;
+    
+    if (scope) {
+      const scopeLabels = {
+        'mine': 'Owner: Mine',
+        'team': 'Owner: My Team'
+      };
+      parts.push(scopeLabels[scope] || `Owner: ${scope}`);
+    } else if (territory.filter_definition.account_owner) {
+      parts.push('Owner: Specific user');
+    }
+
+    return parts.length > 0 ? parts.join(' · ') : 'No filters applied';
+  };
 
   // ==============================|| RENDER ||============================== //
 
   return (
     <Card 
       elevation={0}
+      onClick={handleCardClick}
       sx={{ 
         position: 'relative',
         border: '1px solid',
@@ -163,9 +190,14 @@ export default function TerritoryCard({
         display: 'flex',
         flexDirection: 'column',
         transition: 'all 0.2s ease-in-out',
+        cursor: selectionMode ? 'default' : 'pointer',
         bgcolor: selected ? 'primary.lighter' : 'background.paper',
         '&:hover': {
-          boxShadow: 2
+          borderColor: selectionMode ? 'divider' : 'primary.main',
+          boxShadow: selectionMode ? 'none' : '0 4px 12px rgba(0,0,0,0.08)'
+        },
+        '&:active': {
+          transform: selectionMode ? 'none' : 'scale(0.99)'
         }
       }}
     >
@@ -262,43 +294,32 @@ export default function TerritoryCard({
       <Divider />
 
       {/* Actions */}
-      <CardActions sx={{ justifyContent: 'space-between', px: 2, py: 1.5 }}>
-        {/* Explore button */}
-        <Button
-          variant="contained"
-          size="small"
-          endIcon={<ArrowRightOutlined />}
-          onClick={isAccountType ? handleExploreAccounts : handleExploreContacts}
-          disabled={isContactType}
-        >
-          {isContactType ? 'Coming soon' : 'Explore Accounts'}
-        </Button>
-
-        {/* Action icons */}
-        <Stack direction="row" spacing={0}>
-          <Tooltip title={territory.is_system ? "Edit (limited)" : "Edit"}>
-            <span>
-              <IconButton 
-                size="small" 
-                onClick={handleEdit}
-              >
-                <EditOutlined style={{ fontSize: 16 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title={territory.is_system ? "Cannot delete system territory" : "Delete"}>
-            <span>
-              <IconButton 
-                size="small" 
-                onClick={handleDelete}
-                disabled={territory.is_system}
-              >
-                <DeleteOutlined style={{ fontSize: 16 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
-        </Stack>
-      </CardActions>
+      <CardActions sx={{ justifyContent: 'flex-end', px: 2, py: 1.5 }}>
+      {/* Action icons */}
+      <Stack direction="row" spacing={0}>
+        <Tooltip title={territory.is_system ? "Edit (limited)" : "Edit"}>
+          <span>
+            <IconButton 
+              size="small" 
+              onClick={handleEdit}
+            >
+              <EditOutlined style={{ fontSize: 16 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title={territory.is_system ? "Cannot delete system territory" : "Delete"}>
+          <span>
+            <IconButton 
+              size="small" 
+              onClick={handleDelete}
+              disabled={territory.is_system}
+            >
+              <DeleteOutlined style={{ fontSize: 16 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Stack>
+    </CardActions>
     </Card>
   );
 }
