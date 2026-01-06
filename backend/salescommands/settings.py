@@ -214,6 +214,7 @@ INSTALLED_APPS = [
     'app_modules.accounts',  # New UUID-based accounts module
     'app_modules.territories',  # Territories module for sales segmentation
     'app_modules.contacts',
+    'app_modules.decision_cycles',  # Decision Cycle module for sales execution
     'app_modules.core_modules',
     'apps.signals',
     'apps.campaign',
@@ -687,7 +688,8 @@ PERMISSIONS_CONFIG = {
     # Enable modules one by one for gradual rollout
     'MODULES': {
         'accounts': True,      # Account management
-        'contacts': True,      # Contact management  
+        'contacts': True,      # Contact management 
+        'decision_cycles': True, # Decision Cycle module
         'activities': False,    # Activity tracking
         'leads': False,         # Lead management
         'opportunities': False, # Opportunity/deals
