@@ -15,7 +15,7 @@ import Skeleton from '@mui/material/Skeleton';
 export const WORKSPACE_TABS = [
   { id: 'summary', label: 'Summary' },
   { id: 'qualification', label: 'Qualification' },
-  { id: 'buying-process', label: 'Buying Process' },
+  { id: 'decision-cycle', label: 'Decision Cycle' },
   { id: 'activities', label: 'Activities' },
   { id: 'contacts', label: 'Contacts' },
   { id: 'signals', label: 'Signals' }

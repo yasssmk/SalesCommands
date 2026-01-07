@@ -1,4 +1,4 @@
-// src/sections/accounts/workspace/contacts/ExpandingContactDetail.jsx
+// src/sections/accounts/contacts/ExpandingContactDetail.jsx
 
 'use client';
 

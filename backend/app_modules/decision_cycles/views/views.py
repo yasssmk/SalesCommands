@@ -173,19 +173,17 @@ class DecisionCycleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewS
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        instance = serializer.save(
-            user=request.user,
-            client_id=self.get_client_id()
-        )
+        instance = serializer.save()
         
         # Audit log
         audit_log(
-            event_type='decision_cycle.created',
-            actor=request.user,
-            resource_type='DecisionCycle',
-            resource_id=str(instance.id),
-            details={'name': instance.name, 'account_id': str(instance.account_id)},
-            request=request
+            event='decision_cycle_create_success',
+            action='create',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='decision_cycle',
+            target_id=str(instance.id),
+            outcome='success'
         )
         
         logger.info("decision_cycle_created", extra={
@@ -215,16 +213,18 @@ class DecisionCycleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewS
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         
-        instance = serializer.save(user=request.user)
+        instance = serializer.save()
         
         # Audit log
         audit_log(
-            event_type='decision_cycle.updated',
-            actor=request.user,
-            resource_type='DecisionCycle',
-            resource_id=str(instance.id),
-            details={'updated_fields': list(request.data.keys())},
-            request=request
+            event='decision_cycle_update_success',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='decision_cycle',
+            target_id=str(instance.id),
+            fields_changed=list(serializer.validated_data.keys()),
+            outcome='success'
         )
         
         logger.info("decision_cycle_updated", extra={
@@ -255,12 +255,13 @@ class DecisionCycleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewS
         
         # Audit log
         audit_log(
-            event_type='decision_cycle.deleted',
-            actor=request.user,
-            resource_type='DecisionCycle',
-            resource_id=cycle_id,
-            details={'name': cycle_name},
-            request=request
+            event='decision_cycle_delete_success',
+            action='delete',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='decision_cycle',
+            target_id=cycle_id,
+            outcome='success'
         )
         
         logger.info("decision_cycle_deleted", extra={
@@ -439,23 +440,17 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        instance = serializer.save(
-            user=request.user,
-            client_id=self.get_client_id()
-        )
+        instance = serializer.save()
         
         # Audit log
         audit_log(
-            event_type='decision_step.created',
-            actor=request.user,
-            resource_type='DecisionStep',
-            resource_id=str(instance.id),
-            details={
-                'name': instance.name,
-                'stage': instance.stage,
-                'cycle_id': str(instance.cycle_id)
-            },
-            request=request
+            event='decision_step_create_success',
+            action='create',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='decision_step',
+            target_id=str(instance.id),
+            outcome='success'
         )
         
         logger.info("decision_step_created", extra={
@@ -484,16 +479,18 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         
-        instance = serializer.save(user=request.user)
+        instance = serializer.save()
         
         # Audit log
         audit_log(
-            event_type='decision_step.updated',
-            actor=request.user,
-            resource_type='DecisionStep',
-            resource_id=str(instance.id),
-            details={'updated_fields': list(request.data.keys())},
-            request=request
+            event='decision_step_update_success',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='decision_step',
+            target_id=str(instance.id),
+            fields_changed=list(serializer.validated_data.keys()),
+            outcome='success'
         )
         
         logger.info("decision_step_updated", extra={
@@ -533,12 +530,13 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
         
         # Audit log
         audit_log(
-            event_type='decision_step.deleted',
-            actor=request.user,
-            resource_type='DecisionStep',
-            resource_id=step_id,
-            details={'name': step_name},
-            request=request
+            event='decision_step_delete_success',
+            action='delete',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='decision_step',
+            target_id=step_id,
+            outcome='success'
         )
         
         logger.info("decision_step_deleted", extra={
@@ -584,15 +582,14 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
         
         # Audit log
         audit_log(
-            event_type='decision_step.status_updated',
-            actor=request.user,
-            resource_type='DecisionStep',
-            resource_id=str(instance.id),
-            details={
-                'old_status': old_status,
-                'new_status': new_status
-            },
-            request=request
+            event='decision_step_status_update_success',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='decision_step',
+            target_id=str(instance.id),
+            fields_changed=['status'],
+            outcome='success'
         )
         
         logger.info("decision_step_status_updated", extra={

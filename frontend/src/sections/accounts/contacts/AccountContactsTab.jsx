@@ -1,4 +1,4 @@
-// src/sections/accounts/workspace/contacts/AccountContactsTab.jsx
+// src/sections/accounts/contacts/AccountContactsTab.jsx
 
 'use client';
 
@@ -15,8 +15,8 @@ import Typography from '@mui/material/Typography';
 // project imports
 import IconButton from 'components/@extended/IconButton';
 import ReusableTable from 'components/table/Table';
-import ContactModal from 'sections/accounts/workspace/contacts/ContactModal';
-import AlertContactDelete from 'sections/accounts/workspace/contacts/AlertContactDelete';
+import ContactModal from 'sections/accounts/contacts/ContactModal';
+import AlertContactDelete from 'sections/accounts/contacts/AlertContactDelete';
 import ExpandingContactDetail from './ExpandingContactDetail';
 
 // hooks

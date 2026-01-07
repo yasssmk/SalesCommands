@@ -288,11 +288,20 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         return value
     
     def validate(self, attrs):
-        # Validate cycle exists
+        """Global validation for decision step creation."""
+        # Inject client_id from context
+        client_id = self._get_client_id_from_context()
+        attrs['client_id'] = client_id
+        
+        # Validate cycle exists and belongs to same client
         cycle_id = attrs.get('cycle_id')
         if cycle_id:
             try:
                 cycle = DecisionCycle.objects.get(id=cycle_id)
+                if str(cycle.client_id) != str(client_id):
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.CLIENT_MISMATCH
+                    )
                 attrs['cycle'] = cycle
             except DecisionCycle.DoesNotExist:
                 raise StandardizedValidationError(
@@ -319,12 +328,21 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         return attrs
     
     def create(self, validated_data):
+        """Create decision step with proper audit fields."""
+        # Get user from context (standard pattern)
+        user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Extract fields that are not model fields
         contact_ids = validated_data.pop('contact_ids', [])
-        validated_data.pop('cycle_id', None)
+        validated_data.pop('cycle_id', None)  # Already converted to 'cycle' in validate()
         
-        instance = super().create(validated_data)
+        # Create instance without saving
+        instance = DecisionStep(**validated_data)
         
-        # Add contacts
+        # Save with user to set created_by and updated_by
+        instance.save(user=user)
+        
+        # Add contacts M2M via junction table
         if contact_ids:
             from app_modules.contacts.models import Contact
             contacts = Contact.objects.filter(id__in=contact_ids)
@@ -393,25 +411,21 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
         return attrs
     
     def update(self, instance, validated_data):
-        contact_ids = validated_data.pop('contact_ids', None)
+        """Update decision step with proper audit fields."""
+        user = self.context.get('request').user if self.context.get('request') else None
         
-        instance = super().update(instance, validated_data)
+        # Extract M2M field if present
+        contacts = validated_data.pop('contacts', None)
         
-        # Update contacts if provided
-        if contact_ids is not None:
-            from app_modules.contacts.models import Contact
-            
-            # Clear existing
-            instance.step_contacts.all().delete()
-            
-            # Add new
-            contacts = Contact.objects.filter(id__in=contact_ids)
-            for contact in contacts:
-                DecisionStepContact.objects.create(
-                    step=instance,
-                    contact=contact,
-                    client_id=instance.client_id
-                )
+        # Update fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save(user=user)
+        
+        # Update contacts M2M if provided
+        if contacts is not None:
+            instance.contacts.set(contacts)
         
         return instance
 
@@ -503,21 +517,40 @@ class DecisionCycleCreateSerializer(ClientScopeManager.SerializerMixin, serializ
         return value.strip()
     
     def validate(self, attrs):
-        account_id = attrs.get('account_id')
-        if account_id:
-            from app_modules.accounts.models import CompanyAccount
-            try:
-                account = CompanyAccount.objects.get(id=account_id)
-                attrs['account'] = account
-            except CompanyAccount.DoesNotExist:
+        """Global validation for decision cycle creation."""
+        try:
+            # Inject client_id from context
+            client_id = self._get_client_id_from_context()
+            attrs['client_id'] = client_id
+            
+            # Validate account belongs to same client
+            account = attrs.get('account')
+            if account and str(account.client_id) != str(client_id):
                 raise StandardizedValidationError(
-                    CoreErrorMessages.NOT_FOUND.format(resource='Account')
+                    CoreErrorMessages.CLIENT_MISMATCH
                 )
-        return attrs
+            
+            return attrs
+            
+        except StandardizedValidationError:
+            raise
+        except Exception as e:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_DATA.format(detail=str(e))
+            )
     
     def create(self, validated_data):
-        validated_data.pop('account_id', None)
-        return super().create(validated_data)
+        """Create decision cycle with proper audit fields."""
+        # Get user from context (standard pattern)
+        user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Create instance without saving
+        instance = DecisionCycle(**validated_data)
+        
+        # Save with user to set created_by and updated_by
+        instance.save(user=user)
+        
+        return instance
 
 
 class DecisionCycleUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -528,3 +561,14 @@ class DecisionCycleUpdateSerializer(ClientScopeManager.SerializerMixin, serializ
     class Meta:
         model = DecisionCycle
         fields = ['name', 'description', 'is_active']
+    
+    def update(self, instance, validated_data):
+        """Update decision cycle with proper audit fields."""
+        user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Update fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save(user=user)
+        return instance

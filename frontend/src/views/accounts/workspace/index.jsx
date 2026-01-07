@@ -17,7 +17,8 @@ import MainCard from 'components/MainCard';
 import AccountHeader from 'sections/accounts/workspace/AccountHeader';
 import AccountTabs, { DEFAULT_TAB } from 'sections/accounts/workspace/AccountTabs';
 import { useGetAccountWorkspace, useGetAccountChoices, updateAccount } from 'api/admin/accounts';
-import AccountContactsTab from 'sections/accounts/workspace/contacts/AccountContactsTab';
+import AccountContactsTab from 'sections/accounts/contacts/AccountContactsTab';
+import DecisionCycleTab from 'sections/accounts/workspace/DecisionCycleTab';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
 
 // assets
@@ -184,8 +185,8 @@ function TabContent({ tab, accountId, account }) {
         return <TabPlaceholder title="Summary" description="Account summary and key information will be displayed here." />;
       case 'qualification':
         return <TabPlaceholder title="Qualification" description="Account qualification data and signals will be displayed here." />;
-      case 'buying-process':
-        return <TabPlaceholder title="Buying Process" description="Buying process steps and stakeholders will be displayed here." />;
+      case 'decision-cycle':
+        return <DecisionCycleTab accountId={accountId} accountName={account?.company_name} />;
       case 'activities':
         return <TabPlaceholder title="Activities" description="Account activities and history will be displayed here." />;
       case 'contacts':
