@@ -11,7 +11,7 @@ from django.utils.translation import gettext_lazy as _
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
-from .constants import DecisionStage, DecisionStepStatus
+from .constants import DecisionStage, DecisionStepStatus, DecisionStepType
 
 
 class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -191,6 +191,47 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Previous Step'),
         help_text=_('The step that must be completed before this one')
     )
+
+    # ==========================================================================
+    # STEP TYPE & SCHEDULING
+    # ==========================================================================
+    
+    step_type = models.CharField(
+        max_length=30,
+        choices=DecisionStepType.choices,
+        default=DecisionStepType.OTHER,
+        verbose_name=_('Step Type'),
+        help_text=_('Type of step: meeting, call, task, etc.')
+    )
+    
+    scheduled_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_('Scheduled Date'),
+        help_text=_('Specific date if known (e.g., meeting date)')
+    )
+    
+    scheduled_time = models.TimeField(
+        blank=True,
+        null=True,
+        verbose_name=_('Scheduled Time'),
+        help_text=_('Specific time if applicable')
+    )
+    
+    started_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name=_('Started At'),
+        help_text=_('When this step actually started')
+    )
+    
+    completed_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name=_('Completed At'),
+        help_text=_('When this step was validated or rejected')
+    )
+    
     
     # ==========================================================================
     # LEGACY FIELDS (from BuyingProcessStep)
@@ -254,6 +295,18 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Expected Days'),
         help_text=_('Expected duration before moving to next step')
     )
+
+    # ==========================================================================
+    # DEPARTMENTS RELATIONSHIP (M2M)
+    # ==========================================================================
+    
+    departments = models.ManyToManyField(
+        'core_modules.StandardDepartment',
+        through='DecisionStepDepartment',
+        related_name='decision_steps',
+        verbose_name=_('Departments'),
+        blank=True
+    )
     
     # ==========================================================================
     # CONTACTS RELATIONSHIP
@@ -283,6 +336,8 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
             models.Index(fields=['stage'], name='ds_stage_idx'),
             models.Index(fields=['status'], name='ds_status_idx'),
             models.Index(fields=['previous_step'], name='ds_prev_step_idx'),
+            models.Index(fields=['step_type'], name='ds_step_type_idx'),
+            models.Index(fields=['scheduled_date'], name='ds_scheduled_idx'),
         ]
     
     def __str__(self):
@@ -354,3 +409,33 @@ class DecisionStepContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     def __str__(self):
         return f"{self.step.name} - {self.contact}"
+
+class DecisionStepDepartment(ModuleBaseModel, ClientScopeManager.ModelMixin):
+    """
+    Junction table linking Decision Steps to Departments.
+    
+    Allows multiple departments per step (e.g., IT + Finance in same meeting).
+    """
+    
+    step = models.ForeignKey(
+        DecisionStep,
+        on_delete=models.CASCADE,
+        related_name='step_departments',
+        verbose_name=_('Step')
+    )
+    
+    department = models.ForeignKey(
+        'core_modules.StandardDepartment',
+        on_delete=models.CASCADE,
+        related_name='department_decision_steps',
+        verbose_name=_('Department')
+    )
+    
+    class Meta:
+        db_table = 'decision_step_departments'
+        verbose_name = _('Decision Step Department')
+        verbose_name_plural = _('Decision Step Departments')
+        unique_together = ('step', 'department')
+    
+    def __str__(self):
+        return f"{self.step.name} - {self.department.get_name_display()}"

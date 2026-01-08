@@ -13,7 +13,6 @@ import { tenantKey, revalidateMultiple } from 'api/_swr';
 import { isValidUUID, sanitizeObject } from 'utils/validators';
 
 // ==============================|| CONSTANTS ||============================== //
-
 /**
  * Decision stages (matching backend DecisionStage choices)
  */
@@ -35,6 +34,45 @@ export const DECISION_STEP_STATUSES = {
   IN_CHASING: 'IN_CHASING',
   VALIDATED: 'VALIDATED',
   REJECTED: 'REJECTED'
+};
+
+/**
+ * Decision step types (matching backend DecisionStepType choices)
+ */
+export const DECISION_STEP_TYPES = {
+  MEETING: 'MEETING',
+  CALL: 'CALL',
+  EMAIL: 'EMAIL',
+  TASK_SELLER: 'TASK_SELLER',
+  TASK_BUYER: 'TASK_BUYER',
+  INTERNAL_VALIDATION: 'INTERNAL_VALIDATION',
+  OTHER: 'OTHER'
+};
+
+/**
+ * Step type labels for UI display
+ */
+export const STEP_TYPE_LABELS = {
+  MEETING: 'Meeting',
+  CALL: 'Call',
+  EMAIL: 'Email',
+  TASK_SELLER: 'Task (Seller)',
+  TASK_BUYER: 'Task (Buyer)',
+  INTERNAL_VALIDATION: 'Internal Validation',
+  OTHER: 'Other'
+};
+
+/**
+ * Step type icons mapping (icon component names from ant-design)
+ */
+export const STEP_TYPE_ICONS = {
+  MEETING: 'TeamOutlined',
+  CALL: 'PhoneOutlined',
+  EMAIL: 'MailOutlined',
+  TASK_SELLER: 'CheckSquareOutlined',
+  TASK_BUYER: 'AuditOutlined',
+  INTERNAL_VALIDATION: 'SafetyOutlined',
+  OTHER: 'QuestionCircleOutlined'
 };
 
 /**
@@ -254,6 +292,7 @@ export function useGetDecisionCycleChoices() {
       choices: data?.data || {},
       stages: data?.data?.stages || [],
       statuses: data?.data?.statuses || [],
+      stepTypes: data?.data?.step_types || [],
       choicesLoading: isLoading,
       choicesError: error
     }),
@@ -355,9 +394,11 @@ export async function createDecisionCycle(payload) {
       endpoints.cyclesByAccount(payload.account_id),
       '/company-accounts/'
     ]);
-    return { success: true, data: result.data };
+    // Extract nested data from backend response { success, data }
+    const cycleData = result.data?.data || result.data;
+    return { success: true, data: cycleData };
   }
-  
+    
   return { 
     success: false, 
     error: result.error,
@@ -392,7 +433,9 @@ export async function updateDecisionCycle(cycleId, payload) {
       endpoints.cycleDetail(cycleId),
       '/company-accounts/'
     ]);
-    return { success: true, data: result.data };
+    // Extract nested data from backend response { success, data }
+    const cycleData = result.data?.data || result.data;
+    return { success: true, data: cycleData };
   }
   
   return { 
@@ -455,7 +498,9 @@ export async function createDecisionStep(payload) {
       endpoints.cycles,
       endpoints.cycleDetail(payload.cycle_id)
     ]);
-    return { success: true, data: result.data };
+    // Extract nested data from backend response { success, data }
+    const stepData = result.data?.data || result.data;
+    return { success: true, data: stepData };
   }
   
   return { 
@@ -498,7 +543,9 @@ export async function updateDecisionStep(stepId, payload, cycleId = null) {
     }
     
     revalidateMultiple(revalidatePaths);
-    return { success: true, data: result.data };
+    // Extract nested data from backend response { success, data }
+    const stepData = result.data?.data || result.data;
+    return { success: true, data: stepData };
   }
   
   return { 
@@ -541,7 +588,9 @@ export async function updateDecisionStepStatus(stepId, status, cycleId = null) {
     }
     
     revalidateMultiple(revalidatePaths);
-    return { success: true, data: result.data };
+    // Extract nested data from backend response { success, data }
+    const stepData = result.data?.data || result.data;
+    return { success: true, data: stepData };
   }
   
   return { 

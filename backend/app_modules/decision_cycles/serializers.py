@@ -11,8 +11,8 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from app_modules.core_modules.models import StandardDepartment
-from .models import DecisionCycle, DecisionStep, DecisionStepContact
-from .constants import DecisionStage, DecisionStepStatus
+from .models import DecisionCycle, DecisionStep, DecisionStepContact, DecisionStepDepartment
+from .constants import DecisionStage, DecisionStepStatus, DecisionStepType
 
 
 # ============================================================================
@@ -42,7 +42,21 @@ class DecisionStepContactSerializer(serializers.ModelSerializer):
     def get_contact_job_title(self, obj):
         return obj.contact.job_title if obj.contact else None
 
-
+class DecisionStepDepartmentSerializer(serializers.ModelSerializer):
+    """Serializer for junction table between DecisionStep and Department."""
+    
+    department_name = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = DecisionStepDepartment
+        fields = ['id', 'department', 'department_name', 'created_at']
+        read_only_fields = ['id', 'created_at']
+    
+    def get_department_name(self, obj):
+        if obj.department:
+            return obj.department.get_name_display()
+        return None
+    
 class StepMinimalSerializer(serializers.ModelSerializer):
     """Minimal serializer for step references (previous/next)."""
     
@@ -63,7 +77,8 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     
     stage_display = serializers.SerializerMethodField(read_only=True)
     status_display = serializers.SerializerMethodField(read_only=True)
-    department_name = serializers.SerializerMethodField(read_only=True)
+    step_type_display = serializers.SerializerMethodField(read_only=True)
+    departments_list = serializers.SerializerMethodField(read_only=True)
     previous_step_info = serializers.SerializerMethodField(read_only=True)
     next_step_info = serializers.SerializerMethodField(read_only=True)
     is_current = serializers.BooleanField(read_only=True)
@@ -76,9 +91,15 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             # Identity
             'id', 'name',
             
-            # Stage & Status
+            # Type, Stage & Status
+            'step_type', 'step_type_display',
             'stage', 'stage_display',
             'status', 'status_display',
+            
+            # Scheduling
+            'scheduled_date', 'scheduled_time',
+            'expected_days',
+            'started_at', 'completed_at',
             
             # Linked list
             'previous_step', 'previous_step_info',
@@ -88,8 +109,8 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             'is_current', 'has_parallel_steps',
             
             # Summary fields
-            'stakeholder', 'department_name',
-            'expected_days', 'contacts_count',
+            'stakeholder', 'departments_list',
+            'contacts_count',
             
             # Timestamps
             'created_at', 'updated_at'
@@ -102,10 +123,18 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     def get_status_display(self, obj):
         return obj.get_status_display() if obj.status else None
     
-    def get_department_name(self, obj):
-        if obj.standard_department:
-            return obj.standard_department.get_name_display()
-        return None
+    def get_step_type_display(self, obj):
+        return obj.get_step_type_display() if obj.step_type else None
+    
+    def get_departments_list(self, obj):
+        """Return list of department names."""
+        return [
+            {
+                'id': str(sd.department.id),
+                'name': sd.department.get_name_display()
+            }
+            for sd in obj.step_departments.select_related('department').all()
+        ]
     
     def get_previous_step_info(self, obj):
         if obj.previous_step:
@@ -135,12 +164,14 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     
     stage_display = serializers.SerializerMethodField(read_only=True)
     status_display = serializers.SerializerMethodField(read_only=True)
-    department_name = serializers.SerializerMethodField(read_only=True)
+    step_type_display = serializers.SerializerMethodField(read_only=True)
+    departments_list = serializers.SerializerMethodField(read_only=True)
     previous_step_info = serializers.SerializerMethodField(read_only=True)
     next_step_info = serializers.SerializerMethodField(read_only=True)
     is_current = serializers.BooleanField(read_only=True)
     has_parallel_steps = serializers.BooleanField(read_only=True)
     step_contacts = DecisionStepContactSerializer(many=True, read_only=True)
+    step_departments = DecisionStepDepartmentSerializer(many=True, read_only=True)
     
     class Meta:
         model = DecisionStep
@@ -148,9 +179,15 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             # Identity
             'id', 'name', 'cycle',
             
-            # Stage & Status
+            # Type, Stage & Status
+            'step_type', 'step_type_display',
             'stage', 'stage_display',
             'status', 'status_display',
+            
+            # Scheduling
+            'scheduled_date', 'scheduled_time',
+            'expected_days',
+            'started_at', 'completed_at',
             
             # Linked list
             'previous_step', 'previous_step_info',
@@ -161,13 +198,13 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             
             # Details
             'stakeholder',
-            'standard_department', 'department_name',
             'description', 'goal',
             'influence_score',
             'criterias', 'metrics',
-            'expected_days',
             
-            # Contacts
+            # Departments & Contacts
+            'departments_list',
+            'step_departments',
             'step_contacts',
             
             # Audit
@@ -175,9 +212,10 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'stage_display', 'status_display', 'department_name',
-            'previous_step_info', 'next_step_info', 'is_current',
-            'has_parallel_steps', 'step_contacts',
+            'id', 'stage_display', 'status_display', 'step_type_display',
+            'departments_list', 'previous_step_info', 'next_step_info', 
+            'is_current', 'has_parallel_steps', 
+            'step_contacts', 'step_departments',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
     
@@ -187,10 +225,18 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     def get_status_display(self, obj):
         return obj.get_status_display() if obj.status else None
     
-    def get_department_name(self, obj):
-        if obj.standard_department:
-            return obj.standard_department.get_name_display()
-        return None
+    def get_step_type_display(self, obj):
+        return obj.get_step_type_display() if obj.step_type else None
+    
+    def get_departments_list(self, obj):
+        """Return list of department names for quick display."""
+        return [
+            {
+                'id': str(sd.department.id),
+                'name': sd.department.get_name_display()
+            }
+            for sd in obj.step_departments.select_related('department').all()
+        ]
     
     def get_previous_step_info(self, obj):
         if obj.previous_step:
@@ -209,7 +255,6 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             }
         return None
 
-
 class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Serializer for step creation.
@@ -217,14 +262,12 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
     
     cycle_id = serializers.UUIDField(write_only=True)
     previous_step_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
-    standard_department_id = serializers.PrimaryKeyRelatedField(
-        source='standard_department',
-        queryset=StandardDepartment.objects.all(),
+    contact_ids = serializers.ListField(
+        child=serializers.UUIDField(),
         required=False,
-        allow_null=True,
         write_only=True
     )
-    contact_ids = serializers.ListField(
+    department_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
         write_only=True
@@ -235,12 +278,15 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         fields = [
             'cycle_id',
             'name', 'stage', 'status',
+            'step_type',
+            'scheduled_date', 'scheduled_time',
+            'expected_days',
             'previous_step_id',
-            'stakeholder', 'standard_department_id',
+            'stakeholder',
             'description', 'goal',
             'influence_score', 'criterias', 'metrics',
-            'expected_days',
-            'contact_ids'
+            'contact_ids',
+            'department_ids'
         ]
         extra_kwargs = {
             'name': {
@@ -258,6 +304,10 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
             'status': {
                 'required': False,
                 'default': DecisionStepStatus.NOT_STARTED
+            },
+            'step_type': {
+                'required': False,
+                'default': DecisionStepType.OTHER
             }
         }
     
@@ -284,6 +334,17 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         if value not in valid_statuses:
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_FIELD.format(field='Status')
+            )
+        return value
+    
+    def validate_step_type(self, value):
+        if not value:
+            return DecisionStepType.OTHER
+        
+        valid_types = [choice[0] for choice in DecisionStepType.choices]
+        if value not in valid_types:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field='Step Type')
             )
         return value
     
@@ -332,8 +393,9 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         # Get user from context (standard pattern)
         user = self.context.get('request').user if self.context.get('request') else None
         
-        # Extract fields that are not model fields
+        # Extract M2M fields
         contact_ids = validated_data.pop('contact_ids', [])
+        department_ids = validated_data.pop('department_ids', [])
         validated_data.pop('cycle_id', None)  # Already converted to 'cycle' in validate()
         
         # Create instance without saving
@@ -353,6 +415,16 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
                     client_id=instance.client_id
                 )
         
+        # Add departments M2M via junction table
+        if department_ids:
+            departments = StandardDepartment.objects.filter(id__in=department_ids)
+            for department in departments:
+                DecisionStepDepartment.objects.create(
+                    step=instance,
+                    department=department,
+                    client_id=instance.client_id
+                )
+        
         return instance
 
 
@@ -362,14 +434,12 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
     """
     
     previous_step_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
-    standard_department_id = serializers.PrimaryKeyRelatedField(
-        source='standard_department',
-        queryset=StandardDepartment.objects.all(),
+    contact_ids = serializers.ListField(
+        child=serializers.UUIDField(),
         required=False,
-        allow_null=True,
         write_only=True
     )
-    contact_ids = serializers.ListField(
+    department_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
         write_only=True
@@ -379,12 +449,15 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
         model = DecisionStep
         fields = [
             'name', 'stage', 'status',
+            'step_type',
+            'scheduled_date', 'scheduled_time',
+            'expected_days',
             'previous_step_id',
-            'stakeholder', 'standard_department_id',
+            'stakeholder',
             'description', 'goal',
             'influence_score', 'criterias', 'metrics',
-            'expected_days',
-            'contact_ids'
+            'contact_ids',
+            'department_ids'
         ]
     
     def validate(self, attrs):
@@ -411,11 +484,30 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
         return attrs
     
     def update(self, instance, validated_data):
-        """Update decision step with proper audit fields."""
+        """Update decision step with proper audit fields and auto-set completed_at."""
+        from django.utils import timezone
+        
         user = self.context.get('request').user if self.context.get('request') else None
         
-        # Extract M2M field if present
-        contacts = validated_data.pop('contacts', None)
+        # Extract M2M fields
+        contact_ids = validated_data.pop('contact_ids', None)
+        department_ids = validated_data.pop('department_ids', None)
+        
+        # Check for status change to auto-set completed_at
+        new_status = validated_data.get('status')
+        if new_status and new_status != instance.status:
+            if new_status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
+                # Auto-set completed_at if not already set
+                if not instance.completed_at:
+                    validated_data['completed_at'] = timezone.now()
+            elif instance.status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
+                # If reverting from VALIDATED/REJECTED, clear completed_at
+                validated_data['completed_at'] = None
+        
+        # Check for status change to auto-set started_at
+        if new_status and new_status != instance.status:
+            if new_status == DecisionStepStatus.IN_PROGRESS and not instance.started_at:
+                validated_data['started_at'] = timezone.now()
         
         # Update fields
         for attr, value in validated_data.items():
@@ -424,8 +516,31 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
         instance.save(user=user)
         
         # Update contacts M2M if provided
-        if contacts is not None:
-            instance.contacts.set(contacts)
+        if contact_ids is not None:
+            # Clear existing and add new
+            instance.step_contacts.all().delete()
+            if contact_ids:
+                from app_modules.contacts.models import Contact
+                contacts = Contact.objects.filter(id__in=contact_ids)
+                for contact in contacts:
+                    DecisionStepContact.objects.create(
+                        step=instance,
+                        contact=contact,
+                        client_id=instance.client_id
+                    )
+        
+        # Update departments M2M if provided
+        if department_ids is not None:
+            # Clear existing and add new
+            instance.step_departments.all().delete()
+            if department_ids:
+                departments = StandardDepartment.objects.filter(id__in=department_ids)
+                for department in departments:
+                    DecisionStepDepartment.objects.create(
+                        step=instance,
+                        department=department,
+                        client_id=instance.client_id
+                    )
         
         return instance
 

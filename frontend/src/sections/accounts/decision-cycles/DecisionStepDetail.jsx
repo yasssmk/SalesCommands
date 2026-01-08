@@ -8,9 +8,11 @@
  * Features:
  * - Read-only view by default
  * - Click-to-edit on each field
- * - Status quick change
+ * - Status and Step Type quick change
+ * - Editable departments and contacts (M2M)
+ * - Editable scheduled date/time
+ * - Auto-tracked timestamps (started_at, completed_at)
  * - Stakeholder, description, goal, criterias, metrics
- * - Expected days and contacts
  */
 
 'use client';
@@ -34,26 +36,32 @@ import Tooltip from '@mui/material/Tooltip';
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
-import CloseCircleFilled from '@ant-design/icons/CloseCircleFilled';
 import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined';
 import UserOutlined from '@ant-design/icons/UserOutlined';
 import AimOutlined from '@ant-design/icons/AimOutlined';
 import FileTextOutlined from '@ant-design/icons/FileTextOutlined';
 import UnorderedListOutlined from '@ant-design/icons/UnorderedListOutlined';
+import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
+import HistoryOutlined from '@ant-design/icons/HistoryOutlined';
+import AppstoreOutlined from '@ant-design/icons/AppstoreOutlined';
+import TeamOutlined from '@ant-design/icons/TeamOutlined';
+import ContactsOutlined from '@ant-design/icons/ContactsOutlined';
 
 // project imports
 import EditableField from './EditableField';
 import EditableTextArea from './EditableTextArea';
 import EditableChipList from './EditableChipList';
+import EditableMultiSelect from './EditableMultiSelect';
+import EditableDateTime from './EditableDateTime';
 import { 
   updateDecisionStep,
   updateDecisionStepStatus,
-  DECISION_STAGES,
-  DECISION_STEP_STATUSES 
+  DECISION_STEP_STATUSES
 } from 'api/accounts/decisionCycles';
+import { useGetContactChoices, useGetContacts } from 'api/businessData/contacts';
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
-// ==============================|| STATUS CONFIG ||============================== //
+// ==============================|| CONFIGURATION ||============================== //
 
 const STATUS_CONFIG = {
   NOT_STARTED: { color: 'default', label: 'Not Started' },
@@ -62,6 +70,16 @@ const STATUS_CONFIG = {
   IN_CHASING: { color: 'secondary', label: 'In Chasing' },
   VALIDATED: { color: 'success', label: 'Validated' },
   REJECTED: { color: 'error', label: 'Rejected' }
+};
+
+const STEP_TYPE_CONFIG = {
+  MEETING: { color: 'primary', label: 'Meeting' },
+  CALL: { color: 'info', label: 'Call' },
+  EMAIL: { color: 'default', label: 'Email' },
+  TASK_SELLER: { color: 'warning', label: 'Task (Seller)' },
+  TASK_BUYER: { color: 'secondary', label: 'Task (Buyer)' },
+  INTERNAL_VALIDATION: { color: 'success', label: 'Internal Validation' },
+  OTHER: { color: 'default', label: 'Other' }
 };
 
 const STAGE_LABELS = {
@@ -99,14 +117,41 @@ SectionTitle.propTypes = {
  * @param {Function} closeModal - Close modal callback
  * @param {Function} onUpdate - Callback after successful update
  * @param {Function} onDelete - Callback when delete is requested
+ * @param {string} accountId - Account UUID for fetching contacts
  */
-export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelete }) {
+export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelete, accountId }) {
   const theme = useTheme();
   
   const [saving, setSaving] = useState(false);
   
-  // ==============================|| SAVE HANDLER ||============================== //
+  // ==============================|| DATA FETCHING ||============================== //
   
+  // Fetch departments for editing
+  const { standardDepartments = [], choicesLoading: deptLoading } = useGetContactChoices();
+  
+  // Fetch contacts for this account
+  const { contacts = [], contactsLoading } = useGetContacts({ 
+    pageSize: 100,
+    filters: { account: accountId }
+  });
+
+  // Transform departments for EditableMultiSelect
+  const departmentOptions = standardDepartments.map(d => ({
+    id: d.value || d.id,
+    name: d.label || d.name || d.display_name
+  }));
+
+  // Transform contacts for EditableMultiSelect  
+  const contactOptions = contacts.map(c => ({
+    id: c.id,
+    name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || 'Unknown'
+  }));
+  
+  // ==============================|| HANDLERS ||============================== //
+  
+  /**
+   * Save a single field
+   */
   const handleSaveField = useCallback(async (fieldKey, newValue) => {
     setSaving(true);
     
@@ -115,7 +160,7 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
       const result = await updateDecisionStep(step.id, payload, step.cycle);
       
       if (result.success) {
-        displaySuccessSnackbar('Step updated successfully');
+        displaySuccessSnackbar('Step updated');
         onUpdate?.(result.data);
         return true;
       } else {
@@ -129,9 +174,65 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
       setSaving(false);
     }
   }, [step.id, step.cycle, onUpdate]);
+
+  /**
+   * Save multi-select fields (departments, contacts)
+   */
+  const handleSaveMultiSelect = useCallback(async (fieldKey, newIds) => {
+    setSaving(true);
+    
+    try {
+      const payload = { [fieldKey]: newIds };
+      const result = await updateDecisionStep(step.id, payload, step.cycle);
+      
+      if (result.success) {
+        displaySuccessSnackbar('Step updated');
+        onUpdate?.(result.data);
+        return true;
+      } else {
+        displayErrorSnackbar(result.error || 'Failed to update step');
+        return false;
+      }
+    } catch (error) {
+      displayErrorSnackbar(error.message || 'An error occurred');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [step.id, step.cycle, onUpdate]);
+
+  /**
+   * Save date and time together
+   */
+  const handleSaveDateTime = useCallback(async (newDate, newTime) => {
+    setSaving(true);
+    
+    try {
+      const payload = { 
+        scheduled_date: newDate,
+        scheduled_time: newTime
+      };
+      const result = await updateDecisionStep(step.id, payload, step.cycle);
+      
+      if (result.success) {
+        displaySuccessSnackbar('Schedule updated');
+        onUpdate?.(result.data);
+        return true;
+      } else {
+        displayErrorSnackbar(result.error || 'Failed to update schedule');
+        return false;
+      }
+    } catch (error) {
+      displayErrorSnackbar(error.message || 'An error occurred');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [step.id, step.cycle, onUpdate]);
   
-  // ==============================|| STATUS CHANGE HANDLER ||============================== //
-  
+  /**
+   * Quick status change
+   */
   const handleStatusChange = useCallback(async (newStatus) => {
     setSaving(true);
     
@@ -139,7 +240,7 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
       const result = await updateDecisionStepStatus(step.id, newStatus, step.cycle);
       
       if (result.success) {
-        displaySuccessSnackbar('Status updated successfully');
+        displaySuccessSnackbar('Status updated');
         onUpdate?.(result.data);
         return true;
       } else {
@@ -154,8 +255,9 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
     }
   }, [step.id, step.cycle, onUpdate]);
   
-  // ==============================|| DELETE HANDLER ||============================== //
-  
+  /**
+   * Delete step request
+   */
   const handleDeleteClick = () => {
     onDelete?.(step);
   };
@@ -163,10 +265,11 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
   // ==============================|| RENDER ||============================== //
 
   const statusConfig = STATUS_CONFIG[step.status] || STATUS_CONFIG.NOT_STARTED;
+  const stepTypeConfig = STEP_TYPE_CONFIG[step.step_type] || STEP_TYPE_CONFIG.OTHER;
 
   return (
     <Box>
-      {/* Header */}
+      {/* ==================== HEADER ==================== */}
       <Box sx={{ p: 2.5, pb: 2 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
           <Stack spacing={1} sx={{ flex: 1, mr: 2 }}>
@@ -205,14 +308,14 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
       
       <Divider />
       
-      {/* Content */}
+      {/* ==================== CONTENT ==================== */}
       <Box sx={{ p: 2.5 }}>
         <Grid container spacing={3}>
           
-          {/* Status Section */}
+          {/* -------------------- STATUS -------------------- */}
           <Grid item xs={12}>
             <SectionTitle icon={CheckCircleFilled} title="Status" />
-            <Stack direction="row" spacing={1} flexWrap="wrap">
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               {Object.entries(STATUS_CONFIG).map(([statusKey, config]) => (
                 <Chip
                   key={statusKey}
@@ -220,6 +323,7 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
                   color={config.color}
                   variant={step.status === statusKey ? 'filled' : 'outlined'}
                   onClick={() => handleStatusChange(statusKey)}
+                  disabled={saving}
                   sx={{ 
                     cursor: 'pointer',
                     transition: 'all 0.2s',
@@ -231,8 +335,101 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
               ))}
             </Stack>
           </Grid>
+
+          {/* -------------------- STEP TYPE -------------------- */}
+          <Grid item xs={12}>
+            <SectionTitle icon={AppstoreOutlined} title="Step Type" />
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              {Object.entries(STEP_TYPE_CONFIG).map(([typeKey, config]) => (
+                <Chip
+                  key={typeKey}
+                  label={config.label}
+                  color={config.color}
+                  size="small"
+                  variant={step.step_type === typeKey ? 'filled' : 'outlined'}
+                  onClick={() => handleSaveField('step_type', typeKey)}
+                  disabled={saving}
+                  sx={{ 
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      transform: 'scale(1.05)'
+                    }
+                  }}
+                />
+              ))}
+            </Stack>
+          </Grid>
+
+          {/* -------------------- DEPARTMENTS -------------------- */}
+          <Grid item xs={12} sm={6}>
+            <SectionTitle icon={TeamOutlined} title="Departments" />
+            <EditableMultiSelect
+              value={step.departments_list || []}
+              options={departmentOptions}
+              fieldKey="department_ids"
+              onSave={handleSaveMultiSelect}
+              getOptionLabel={(opt) => opt?.name || ''}
+              placeholder="Select departments..."
+              emptyText="No departments"
+              loading={deptLoading}
+              chipColor="default"
+            />
+          </Grid>
+
+          {/* -------------------- CONTACTS -------------------- */}
+          <Grid item xs={12} sm={6}>
+            <SectionTitle icon={ContactsOutlined} title="Contacts" />
+            <EditableMultiSelect
+              value={(step.step_contacts || []).map(sc => ({
+                id: sc.contact_id || sc.contact?.id,
+                name: sc.contact_name || sc.contact?.full_name || sc.contact_email || 'Unknown'
+              }))}
+              options={contactOptions}
+              fieldKey="contact_ids"
+              onSave={handleSaveMultiSelect}
+              getOptionLabel={(opt) => opt?.name || ''}
+              placeholder="Select contacts..."
+              emptyText="No contacts"
+              loading={contactsLoading}
+              chipColor="primary"
+            />
+          </Grid>
+
+          {/* -------------------- SCHEDULED DATE & TIME -------------------- */}
+          <Grid item xs={12} sm={6}>
+            <SectionTitle icon={CalendarOutlined} title="Scheduled Date & Time" />
+            <EditableDateTime
+              dateValue={step.scheduled_date}
+              timeValue={step.scheduled_time}
+              onSave={handleSaveDateTime}
+              emptyText="Click to schedule..."
+              showTime={true}
+            />
+          </Grid>
+
+          {/* -------------------- TIMESTAMPS (Read-only) -------------------- */}
+          <Grid item xs={12} sm={6}>
+            <SectionTitle icon={HistoryOutlined} title="Activity Timestamps" />
+            <Stack spacing={0.5}>
+              {step.started_at ? (
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Started:</strong> {new Date(step.started_at).toLocaleString()}
+                </Typography>
+              ) : (
+                <Typography variant="body2" color="text.disabled" fontStyle="italic">
+                  Not started yet
+                </Typography>
+              )}
+              {step.completed_at && (
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Completed:</strong> {new Date(step.completed_at).toLocaleString()}
+                </Typography>
+              )}
+            </Stack>
+          </Grid>
           
-          {/* Stakeholder & Expected Days */}
+          {/* -------------------- STAKEHOLDER -------------------- */}
           <Grid item xs={12} sm={6}>
             <SectionTitle icon={UserOutlined} title="Stakeholder" />
             <EditableField
@@ -244,6 +441,7 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
             />
           </Grid>
           
+          {/* -------------------- EXPECTED DAYS -------------------- */}
           <Grid item xs={12} sm={6}>
             <SectionTitle icon={ClockCircleOutlined} title="Expected Days" />
             <EditableField
@@ -257,7 +455,7 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
             />
           </Grid>
           
-          {/* Description */}
+          {/* -------------------- DESCRIPTION -------------------- */}
           <Grid item xs={12}>
             <SectionTitle icon={FileTextOutlined} title="Description" />
             <EditableTextArea
@@ -270,7 +468,7 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
             />
           </Grid>
           
-          {/* Goal */}
+          {/* -------------------- GOAL -------------------- */}
           <Grid item xs={12}>
             <SectionTitle icon={AimOutlined} title="Goal" />
             <EditableTextArea
@@ -283,7 +481,7 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
             />
           </Grid>
           
-          {/* Criterias */}
+          {/* -------------------- CRITERIAS -------------------- */}
           <Grid item xs={12} sm={6}>
             <SectionTitle icon={UnorderedListOutlined} title="Criterias" />
             <EditableChipList
@@ -295,7 +493,7 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
             />
           </Grid>
           
-          {/* Metrics */}
+          {/* -------------------- METRICS -------------------- */}
           <Grid item xs={12} sm={6}>
             <SectionTitle icon={UnorderedListOutlined} title="Metrics" />
             <EditableChipList
@@ -307,39 +505,12 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
             />
           </Grid>
           
-          {/* Department */}
-          {step.department_name && (
-            <Grid item xs={12} sm={6}>
-              <SectionTitle title="Department" />
-              <Typography variant="body2" color="text.secondary">
-                {step.department_name}
-              </Typography>
-            </Grid>
-          )}
-          
-          {/* Contacts */}
-          {step.step_contacts && step.step_contacts.length > 0 && (
-            <Grid item xs={12}>
-              <SectionTitle icon={UserOutlined} title="Contacts" />
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                {step.step_contacts.map((contact) => (
-                  <Chip
-                    key={contact.id}
-                    label={contact.contact_name || contact.contact_email}
-                    size="small"
-                    variant="outlined"
-                  />
-                ))}
-              </Stack>
-            </Grid>
-          )}
-          
         </Grid>
       </Box>
       
       <Divider />
       
-      {/* Footer */}
+      {/* ==================== FOOTER ==================== */}
       <Box sx={{ p: 2.5 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography variant="caption" color="text.secondary">
@@ -361,12 +532,17 @@ DecisionStepDetail.propTypes = {
     name: PropTypes.string.isRequired,
     stage: PropTypes.string.isRequired,
     status: PropTypes.string.isRequired,
+    step_type: PropTypes.string,
     cycle: PropTypes.string,
     stakeholder: PropTypes.string,
     description: PropTypes.string,
     goal: PropTypes.string,
     expected_days: PropTypes.number,
-    department_name: PropTypes.string,
+    scheduled_date: PropTypes.string,
+    scheduled_time: PropTypes.string,
+    started_at: PropTypes.string,
+    completed_at: PropTypes.string,
+    departments_list: PropTypes.array,
     criterias: PropTypes.array,
     metrics: PropTypes.array,
     step_contacts: PropTypes.array,
@@ -375,5 +551,6 @@ DecisionStepDetail.propTypes = {
   }).isRequired,
   closeModal: PropTypes.func.isRequired,
   onUpdate: PropTypes.func,
-  onDelete: PropTypes.func
+  onDelete: PropTypes.func,
+  accountId: PropTypes.string
 };

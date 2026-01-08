@@ -3,13 +3,14 @@
  * Decision Step Node Component
  * 
  * Individual step card displayed in the timeline.
- * Shows step name, status indicator, and key info.
+ * Shows step name, status indicator, step type icon, and key info.
  * 
  * Features:
  * - Color-coded status indicator
+ * - Step type icon
+ * - Scheduled date display
  * - Hover effect for preview trigger
  * - Click for edit modal
- * - Shows stakeholder and expected days
  */
 
 'use client';
@@ -27,6 +28,36 @@ import Chip from '@mui/material/Chip';
 import UserOutlined from '@ant-design/icons/UserOutlined';
 import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined';
 import LinkOutlined from '@ant-design/icons/LinkOutlined';
+import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
+import TeamOutlined from '@ant-design/icons/TeamOutlined';
+import PhoneOutlined from '@ant-design/icons/PhoneOutlined';
+import MailOutlined from '@ant-design/icons/MailOutlined';
+import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
+import AuditOutlined from '@ant-design/icons/AuditOutlined';
+import SafetyOutlined from '@ant-design/icons/SafetyOutlined';
+import QuestionCircleOutlined from '@ant-design/icons/QuestionCircleOutlined';
+
+// ==============================|| STEP TYPE ICONS ||============================== //
+
+const STEP_TYPE_ICONS = {
+  MEETING: TeamOutlined,
+  CALL: PhoneOutlined,
+  EMAIL: MailOutlined,
+  TASK_SELLER: CheckSquareOutlined,
+  TASK_BUYER: AuditOutlined,
+  INTERNAL_VALIDATION: SafetyOutlined,
+  OTHER: QuestionCircleOutlined
+};
+
+const STEP_TYPE_COLORS = {
+  MEETING: 'primary',
+  CALL: 'info',
+  EMAIL: 'default',
+  TASK_SELLER: 'warning',
+  TASK_BUYER: 'secondary',
+  INTERNAL_VALIDATION: 'success',
+  OTHER: 'default'
+};
 
 // ==============================|| DECISION STEP NODE ||============================== //
 
@@ -52,6 +83,9 @@ export default function DecisionStepNode({
   const theme = useTheme();
   
   const StatusIcon = statusConfig?.icon;
+  const showStepTypeIcon = step.step_type && step.step_type !== 'OTHER';
+  const StepTypeIcon = showStepTypeIcon ? STEP_TYPE_ICONS[step.step_type] : null;
+  const stepTypeColor = STEP_TYPE_COLORS[step.step_type] || 'default';
   
   // Determine border color based on status
   const getBorderColor = () => {
@@ -78,6 +112,37 @@ export default function DecisionStepNode({
     if (step.is_current) return alpha(theme.palette.primary.main, 0.04);
     return theme.palette.background.paper;
   };
+
+  // Format scheduled date
+  const formatScheduledDate = () => {
+    if (!step.scheduled_date) return null;
+    const date = new Date(step.scheduled_date);
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    // Check if date is today or tomorrow
+    if (date.toDateString() === today.toDateString()) {
+      return step.scheduled_time 
+        ? `Today ${step.scheduled_time.substring(0, 5)}`
+        : 'Today';
+    }
+    if (date.toDateString() === tomorrow.toDateString()) {
+      return step.scheduled_time
+        ? `Tomorrow ${step.scheduled_time.substring(0, 5)}`
+        : 'Tomorrow';
+    }
+    
+    // Format as short date
+    const options = { month: 'short', day: 'numeric' };
+    const formatted = date.toLocaleDateString(undefined, options);
+    return step.scheduled_time
+      ? `${formatted} ${step.scheduled_time.substring(0, 5)}`
+      : formatted;
+  };
+
+  const scheduledDisplay = formatScheduledDate();
+  const isPastDue = step.scheduled_date && new Date(step.scheduled_date) < new Date() && step.status !== 'VALIDATED' && step.status !== 'REJECTED';
   
   return (
     <Box
@@ -101,22 +166,47 @@ export default function DecisionStepNode({
       }}
     >
       <Stack spacing={1}>
-        {/* Header: Name + Status */}
+        {/* Header: Step Type Icon + Name + Status Icon */}
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-          <Typography 
-            variant="subtitle2" 
-            fontWeight={600}
-            sx={{
-              flex: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical'
-            }}
-          >
-            {step.name}
-          </Typography>
+          <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ flex: 1, minWidth: 0 }}>
+            {/* Step Type Icon (only if type is set and not OTHER) */}
+            {StepTypeIcon && (
+              <Box
+                sx={{
+                  p: 0.5,
+                  borderRadius: 0.5,
+                  bgcolor: (stepTypeColor === 'default' || !theme.palette[stepTypeColor])
+                    ? alpha(theme.palette.grey[500], 0.1)
+                    : alpha(theme.palette[stepTypeColor].main, 0.1),
+                  color: (stepTypeColor === 'default' || !theme.palette[stepTypeColor])
+                    ? 'text.secondary'
+                    : `${stepTypeColor}.main`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <StepTypeIcon style={{ fontSize: 14 }} />
+              </Box>
+            )}
+            
+            {/* Name */}
+            <Typography 
+              variant="subtitle2" 
+              fontWeight={600}
+              sx={{
+                flex: 1,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical'
+              }}
+            >
+              {step.name}
+            </Typography>
+          </Stack>
           
           {StatusIcon && (
             <Box
@@ -143,6 +233,37 @@ export default function DecisionStepNode({
             alignSelf: 'flex-start'
           }}
         />
+        
+        {/* Scheduled Date (prominent if set) */}
+        {scheduledDisplay && (
+          <Stack 
+            direction="row" 
+            spacing={0.5} 
+            alignItems="center"
+            sx={{
+              px: 1,
+              py: 0.5,
+              bgcolor: isPastDue 
+                ? alpha(theme.palette.error.main, 0.1)
+                : alpha(theme.palette.primary.main, 0.08),
+              borderRadius: 0.5
+            }}
+          >
+            <CalendarOutlined 
+              style={{ 
+                fontSize: 12, 
+                color: isPastDue ? theme.palette.error.main : theme.palette.primary.main 
+              }} 
+            />
+            <Typography 
+              variant="caption" 
+              fontWeight={600}
+              color={isPastDue ? 'error.main' : 'primary.main'}
+            >
+              {scheduledDisplay}
+            </Typography>
+          </Stack>
+        )}
         
         {/* Meta Info */}
         <Stack direction="row" spacing={1.5} flexWrap="wrap" sx={{ mt: 0.5 }}>
@@ -205,9 +326,12 @@ DecisionStepNode.propTypes = {
     name: PropTypes.string.isRequired,
     status: PropTypes.string.isRequired,
     stage: PropTypes.string.isRequired,
+    step_type: PropTypes.string,
     stakeholder: PropTypes.string,
     expected_days: PropTypes.number,
     contacts_count: PropTypes.number,
+    scheduled_date: PropTypes.string,
+    scheduled_time: PropTypes.string,
     is_current: PropTypes.bool
   }).isRequired,
   statusConfig: PropTypes.shape({

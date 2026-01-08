@@ -22,6 +22,8 @@ export { default as FormStepAdd } from './FormStepAdd';
 export { default as EditableField } from './EditableField';
 export { default as EditableTextArea } from './EditableTextArea';
 export { default as EditableChipList } from './EditableChipList';
+export { default as EditableMultiSelect } from './EditableMultiSelect';
+export { default as EditableDateTime } from './EditableDateTime';
 
 // Alert components
 export { default as AlertStepDelete } from './AlertStepDelete';

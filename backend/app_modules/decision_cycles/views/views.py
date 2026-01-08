@@ -36,7 +36,7 @@ from ..serializers import (
     DecisionStepCreateSerializer,
     DecisionStepUpdateSerializer,
 )
-from ..constants import DecisionStage, DecisionStepStatus
+from ..constants import DecisionStage, DecisionStepStatus, DecisionStepType
 
 logger = get_logger(__name__)
 
@@ -106,13 +106,17 @@ class DecisionCycleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewS
         queryset = super().get_queryset()
         
         if self.action == 'list':
-            queryset = queryset.select_related('account').prefetch_related('steps')
+            queryset = queryset.select_related('account').prefetch_related(
+                'steps',
+                'steps__step_departments__department'
+            )
         elif self.action == 'retrieve':
             queryset = queryset.select_related('account').prefetch_related(
                 'steps',
-                'steps__standard_department',
                 'steps__previous_step',
-                'steps__contacts'
+                'steps__contacts',
+                'steps__step_departments__department',
+                'steps__step_contacts__contact'
             )
         else:
             queryset = queryset.select_related('account')
@@ -375,9 +379,13 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
         queryset = queryset.select_related(
             'cycle',
             'cycle__account',
-            'standard_department',
             'previous_step'
-        ).prefetch_related('contacts', 'next_steps')
+        ).prefetch_related(
+            'contacts',
+            'next_steps',
+            'step_departments__department',
+            'step_contacts__contact'
+        )
         
         # Filter by cycle if provided
         cycle_id = self.request.query_params.get('cycle_id')
@@ -560,7 +568,13 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
         
         PATCH /decision-steps/{id}/status/
         Body: { "status": "VALIDATED" }
+        
+        Auto-sets:
+            - started_at when status changes to IN_PROGRESS
+            - completed_at when status changes to VALIDATED or REJECTED
         """
+        from django.utils import timezone
+        
         ctx = ctx_from_request(request)
         instance = self.get_object()
         
@@ -578,7 +592,30 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
         
         old_status = instance.status
         instance.status = new_status
-        instance.save(user=request.user, update_fields=['status', 'updated_at', 'updated_by'])
+        
+        # Track which fields changed
+        update_fields = ['status', 'updated_at', 'updated_by']
+        fields_changed = ['status']
+        
+        # Auto-set started_at when moving to IN_PROGRESS
+        if new_status == DecisionStepStatus.IN_PROGRESS and not instance.started_at:
+            instance.started_at = timezone.now()
+            update_fields.append('started_at')
+            fields_changed.append('started_at')
+        
+        # Auto-set completed_at when VALIDATED or REJECTED
+        if new_status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
+            if not instance.completed_at:
+                instance.completed_at = timezone.now()
+                update_fields.append('completed_at')
+                fields_changed.append('completed_at')
+        elif old_status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
+            # If reverting from terminal status, clear completed_at
+            instance.completed_at = None
+            update_fields.append('completed_at')
+            fields_changed.append('completed_at')
+        
+        instance.save(user=request.user, update_fields=update_fields)
         
         # Audit log
         audit_log(
@@ -588,7 +625,7 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
             client_id=str(self.get_client_id()),
             target_type='decision_step',
             target_id=str(instance.id),
-            fields_changed=['status'],
+            fields_changed=fields_changed,
             outcome='success'
         )
         
@@ -605,7 +642,6 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
             'data': serializer.data
         })
 
-
 # ============================================================================
 # CHOICES VIEW
 # ============================================================================
@@ -621,7 +657,7 @@ class DecisionCycleChoicesView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        """Return available choices for stages and statuses."""
+        """Return available choices for stages, statuses, and step types."""
         ctx = ctx_from_request(request)
         logger.info("decision_cycle_choices_requested", extra=ctx)
         
@@ -635,6 +671,10 @@ class DecisionCycleChoicesView(APIView):
                 'statuses': [
                     {'value': choice[0], 'label': choice[1]}
                     for choice in DecisionStepStatus.choices
+                ],
+                'step_types': [
+                    {'value': choice[0], 'label': choice[1]}
+                    for choice in DecisionStepType.choices
                 ]
             }
         })

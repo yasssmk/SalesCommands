@@ -37,3 +37,17 @@ class DecisionStepStatus(models.TextChoices):
     IN_CHASING = 'IN_CHASING', _('In Chasing')
     VALIDATED = 'VALIDATED', _('Validated')
     REJECTED = 'REJECTED', _('Rejected')
+
+class DecisionStepType(models.TextChoices):
+    """
+    Type choices for Decision Steps.
+    
+    Differentiates between seller-side tasks and buyer-side validations.
+    """
+    MEETING = 'MEETING', _('Meeting')
+    CALL = 'CALL', _('Call')
+    EMAIL = 'EMAIL', _('Email')
+    TASK_SELLER = 'TASK_SELLER', _('Task (Seller)')
+    TASK_BUYER = 'TASK_BUYER', _('Task (Buyer)')
+    INTERNAL_VALIDATION = 'INTERNAL_VALIDATION', _('Internal Validation')
+    OTHER = 'OTHER', _('Other')
