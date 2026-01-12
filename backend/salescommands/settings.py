@@ -215,6 +215,7 @@ INSTALLED_APPS = [
     'app_modules.territories',  # Territories module for sales segmentation
     'app_modules.contacts',
     'app_modules.decision_cycles',  # Decision Cycle module for sales execution
+    'app_modules.activities',  # Activity module for sales execution
     'app_modules.core_modules',
     'apps.signals',
     'apps.campaign',
@@ -690,7 +691,7 @@ PERMISSIONS_CONFIG = {
         'accounts': True,      # Account management
         'contacts': True,      # Contact management 
         'decision_cycles': True, # Decision Cycle module
-        'activities': False,    # Activity tracking
+        'activities': True,    # Activity tracking
         'leads': False,         # Lead management
         'opportunities': False, # Opportunity/deals
         'campaign': False,      # Campaign management
