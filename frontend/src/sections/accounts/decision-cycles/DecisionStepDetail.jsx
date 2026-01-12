@@ -46,6 +46,7 @@ import HistoryOutlined from '@ant-design/icons/HistoryOutlined';
 import AppstoreOutlined from '@ant-design/icons/AppstoreOutlined';
 import TeamOutlined from '@ant-design/icons/TeamOutlined';
 import ContactsOutlined from '@ant-design/icons/ContactsOutlined';
+import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined';
 
 // project imports
 import EditableField from './EditableField';
@@ -53,6 +54,7 @@ import EditableTextArea from './EditableTextArea';
 import EditableChipList from './EditableChipList';
 import EditableMultiSelect from './EditableMultiSelect';
 import EditableDateTime from './EditableDateTime';
+import DecisionStepActivities from './DecisionStepActivities';
 import { 
   updateDecisionStep,
   updateDecisionStepStatus,
@@ -509,6 +511,16 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
       </Box>
       
       <Divider />
+
+      {/* ==================== ACTIVITIES SECTION ==================== */}
+      <Box sx={{ p: 2.5 }}>
+        <SectionTitle icon={ThunderboltOutlined} title="Activities" />
+        <DecisionStepActivities 
+          stepId={step.id} 
+          accountId={accountId}
+          cycleId={step.cycle}
+        />
+      </Box>
       
       {/* ==================== FOOTER ==================== */}
       <Box sx={{ p: 2.5 }}>

@@ -34,7 +34,7 @@ DEFAULT_CONFIG = {
         'territories': True,
         'decision_cycles': True,
         'contacts': True,
-        'activities': False,
+        'activities': True,
         'leads': False,
         'opportunities': False,
         'campaign': False,

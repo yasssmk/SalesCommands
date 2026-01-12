@@ -31,8 +31,8 @@ ACTIVITIES_REGISTRY: Dict[str, ModulePermissions] = {
         },
         'delete': {
             'admin': 'client',      # Admin can delete any activity
-            'manager': 'mine',      # Manager deletes own activities
-            'individual': 'mine',   # Individual can delete own activities
+            'manager': 'none',      # Manager deletes own activities
+            'individual': 'none',   # Individual can delete own activities
         },
     }
 

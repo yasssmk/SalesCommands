@@ -18,6 +18,7 @@ import TerritoryHeader from 'sections/territories/workspace/TerritoryHeader';
 import TerritoryTabs, { DEFAULT_TAB } from 'sections/territories/workspace/TerritoryTabs';
 import TerritoryAccountsTab from 'sections/territories/workspace/TerritoryAccountsTab';
 import TerritoryContactsTab from 'sections/territories/workspace/TerritoryContactsTab';
+import TerritoryActivitiesTab from 'sections/territories/workspace/TerritoryActivitiesTab';
 import { TERRITORY_TYPES } from 'api/territories/territories';
 import { useGetTerritoryWorkspace } from 'api/territories/territories';
 
@@ -168,9 +169,9 @@ function TabContent({ tab, territoryId, territory }) {
         );
       case 'activities':
         return (
-          <TabPlaceholder 
-            title="Activities" 
-            description="Territory activity history will be displayed here." 
+          <TerritoryActivitiesTab 
+            territoryId={territoryId} 
+            territory={territory} 
           />
         );
       default:

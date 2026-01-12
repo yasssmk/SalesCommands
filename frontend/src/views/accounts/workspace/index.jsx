@@ -19,6 +19,7 @@ import AccountTabs, { DEFAULT_TAB } from 'sections/accounts/workspace/AccountTab
 import { useGetAccountWorkspace, useGetAccountChoices, updateAccount } from 'api/admin/accounts';
 import AccountContactsTab from 'sections/accounts/contacts/AccountContactsTab';
 import DecisionCycleTab from 'sections/accounts/workspace/DecisionCycleTab';
+import AccountActivitiesTab from 'sections/accounts/activities/AccountActivitiesTab';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
 
 // assets
@@ -188,7 +189,7 @@ function TabContent({ tab, accountId, account }) {
       case 'decision-cycle':
         return <DecisionCycleTab accountId={accountId} accountName={account?.company_name} />;
       case 'activities':
-        return <TabPlaceholder title="Activities" description="Account activities and history will be displayed here." />;
+        return <AccountActivitiesTab accountId={accountId} account={account} />;
       case 'contacts':
         return <AccountContactsTab accountId={accountId} account={account} />;
       case 'signals':
