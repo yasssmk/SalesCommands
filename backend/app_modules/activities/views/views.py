@@ -106,6 +106,17 @@ class ActivityViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         
         return queryset
     
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Retrieve a single activity.
+        GET /activities/{id}/
+        
+        Returns response in standard format: {"success": True, "data": {...}}
+        """
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response({"success": True, "data": serializer.data})
+    
     # ==========================================================================
     # CRUD OVERRIDES
     # ==========================================================================

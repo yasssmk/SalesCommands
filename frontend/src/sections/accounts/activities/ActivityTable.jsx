@@ -10,6 +10,7 @@
 
 import PropTypes from 'prop-types';
 import { useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -116,6 +117,8 @@ export default function ActivityTable({
   emptyDescription = 'Create your first activity to start tracking your sales actions'
 }) {
   
+  const router = useRouter();
+
   // ==============================|| HANDLERS ||============================== //
   
   const handleEdit = useCallback((activity) => {
@@ -164,8 +167,20 @@ export default function ActivityTable({
                   <TypeIcon style={{ fontSize: 16 }} />
                 </Box>
               </Tooltip>
-              <Box>
-                <Typography variant="subtitle2" noWrap sx={{ maxWidth: 200 }}>
+               <Box>
+                <Typography 
+                  variant="subtitle2" 
+                  noWrap 
+                  sx={{ 
+                    maxWidth: 200,
+                    cursor: 'pointer',
+                    '&:hover': {
+                      color: 'primary.main',
+                      textDecoration: 'underline'
+                    }
+                  }}
+                  onClick={() => router.push(`/activities/${row.original.id}`)}
+                >
                   {row.original.title}
                 </Typography>
                 {row.original.call_to_action && (
