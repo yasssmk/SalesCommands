@@ -441,14 +441,21 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
     
     @transaction.atomic
     def create(self, request, *args, **kwargs):
-        """Create a new decision step."""
+        """Create a new decision step with optional auto-activity creation."""
         ctx = ctx_from_request(request)
         logger.info("decision_step_create_requested", extra=ctx)
         
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
+        # Extract create_activity flag before save
+        create_activity = serializer.validated_data.pop('create_activity', True)
+        
         instance = serializer.save()
+        
+        # Auto-create linked activity for applicable step types
+        if create_activity and instance.step_type in self.ACTIVITY_STEP_TYPES:
+            self._create_linked_activity(instance, request.user)
         
         # Audit log
         audit_log(
@@ -471,6 +478,7 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
             'success': True,
             'data': output_serializer.data
         }, status=status.HTTP_201_CREATED)
+
     
     @transaction.atomic
     def update(self, request, *args, **kwargs):
@@ -556,6 +564,68 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
             'success': True,
             'message': 'Decision step deleted successfully'
         }, status=status.HTTP_204_NO_CONTENT)
+    
+    # ==========================================================================
+    # HELPER METHODS
+    # ==========================================================================
+
+    # Step types that support auto-activity creation
+    ACTIVITY_STEP_TYPES = [
+        DecisionStepType.MEETING,
+        DecisionStepType.CALL,
+        DecisionStepType.EMAIL
+    ]
+
+    def _create_linked_activity(self, step, user):
+        """
+        Create an Activity linked to the Decision Step.
+
+        Maps step_type to activity_type and copies relevant scheduling info.
+        Only creates for MEETING, CALL, EMAIL step types.
+        """
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityType, ActivityStatus
+
+        # Map step_type to activity_type
+        step_type_to_activity_type = {
+            DecisionStepType.MEETING: ActivityType.MEETING,
+            DecisionStepType.CALL: ActivityType.CALL,
+            DecisionStepType.EMAIL: ActivityType.EMAIL,
+        }
+
+        activity_type = step_type_to_activity_type.get(step.step_type)
+        if not activity_type:
+            return None
+
+        # Create the activity
+        activity = Activity(
+            title=step.name,
+            activity_type=activity_type,
+            description=step.description,
+            status=ActivityStatus.PLANNED,
+            scheduled_date=step.scheduled_date,
+            scheduled_time=step.scheduled_time,
+            due_date=step.expected_date,
+            account=step.cycle.account,
+            owner=user,
+            decision_cycle=step.cycle,
+            decision_step=step,
+            client_id=step.client_id
+        )
+        activity.save(user=user)
+
+        # Link contacts from step
+        step_contacts = step.contacts.all()
+        if step_contacts.exists():
+            activity.contacts.set(step_contacts)
+
+        logger.info("linked_activity_created", extra={
+            'step_id': str(step.id),
+            'activity_id': str(activity.id),
+            'activity_type': activity_type
+        })
+
+        return activity
     
     # ==========================================================================
     # CUSTOM ACTIONS

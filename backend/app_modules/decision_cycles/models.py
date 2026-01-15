@@ -87,19 +87,27 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
     @property
     def estimated_timeline_days(self):
         """
-        Calculate total estimated timeline by summing expected_days of all steps.
-        Returns None if any step has missing expected_days.
+        Calculate estimated timeline in days based on expected_date of steps.
+        Returns the number of days from today to the furthest expected_date.
+        Returns None if no steps have expected_date set.
         """
+        from django.utils import timezone
+        
         steps = self.steps.all()
         
         if not steps.exists():
             return 0
         
-        if steps.filter(expected_days__isnull=True).exists():
+        # Get the furthest expected_date
+        furthest = steps.filter(expected_date__isnull=False).order_by('-expected_date').first()
+        
+        if not furthest or not furthest.expected_date:
             return None
         
-        total = steps.aggregate(total=models.Sum('expected_days'))['total']
-        return total or 0
+        # Calculate days from today
+        today = timezone.now().date()
+        delta = (furthest.expected_date - today).days
+        return max(0, delta)
     
     @property
     def steps_count(self):
@@ -288,12 +296,23 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Metrics'),
         help_text=_('KPIs to measure success')
     )
-    
-    expected_days = models.PositiveIntegerField(
+
+    expected_date = models.DateField(
         blank=True,
         null=True,
-        verbose_name=_('Expected Days'),
-        help_text=_('Expected duration before moving to next step')
+        verbose_name=_('Expected Date'),
+        help_text=_('Expected date for step validation/completion')
+    )
+
+    # ==========================================================================
+    # MANAGER FIELDS
+    # ==========================================================================
+    
+    manager_notes = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_('Manager Notes'),
+        help_text=_('Internal notes visible only to managers')
     )
 
     # ==========================================================================

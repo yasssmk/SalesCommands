@@ -84,6 +84,7 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     is_current = serializers.BooleanField(read_only=True)
     has_parallel_steps = serializers.BooleanField(read_only=True)
     contacts_count = serializers.SerializerMethodField(read_only=True)
+    completeness_score = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionStep
@@ -98,7 +99,7 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             
             # Scheduling
             'scheduled_date', 'scheduled_time',
-            'expected_days',
+            'expected_date',
             'started_at', 'completed_at',
             
             # Linked list
@@ -110,7 +111,7 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             
             # Summary fields
             'stakeholder', 'departments_list',
-            'contacts_count',
+            'contacts_count', 'completeness_score',
             
             # Timestamps
             'created_at', 'updated_at'
@@ -156,6 +157,13 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     def get_contacts_count(self, obj):
         return obj.contacts.count()
 
+    def get_completeness_score(self, obj):
+        """Calculate completeness score for the step."""
+        from .services import CompletenessScoreService
+        service = CompletenessScoreService()
+        return service.calculate(obj)
+
+
 
 class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
@@ -172,6 +180,8 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     has_parallel_steps = serializers.BooleanField(read_only=True)
     step_contacts = DecisionStepContactSerializer(many=True, read_only=True)
     step_departments = DecisionStepDepartmentSerializer(many=True, read_only=True)
+    completeness_score = serializers.SerializerMethodField(read_only=True)
+    completeness_details = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionStep
@@ -186,7 +196,7 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             
             # Scheduling
             'scheduled_date', 'scheduled_time',
-            'expected_days',
+            'expected_date'
             'started_at', 'completed_at',
             
             # Linked list
@@ -201,6 +211,13 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'description', 'goal',
             'influence_score',
             'criterias', 'metrics',
+
+            # Manager
+            'manager_notes',
+
+            # Completeness Score
+            'completeness_score',
+            'completeness_details',
             
             # Departments & Contacts
             'departments_list',
@@ -216,6 +233,7 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'departments_list', 'previous_step_info', 'next_step_info', 
             'is_current', 'has_parallel_steps', 
             'step_contacts', 'step_departments',
+            'completeness_score', 'completeness_details',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
     
@@ -254,6 +272,18 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
                 'name': next_step.name
             }
         return None
+    
+    def get_completeness_score(self, obj):
+        """Calculate completeness score for the step."""
+        from .services import CompletenessScoreService
+        service = CompletenessScoreService()
+        return service.calculate(obj)
+
+    def get_completeness_details(self, obj):
+        """Get detailed completeness breakdown."""
+        from .services import CompletenessScoreService
+        service = CompletenessScoreService()
+        return service.get_details(obj)
 
 class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
@@ -272,6 +302,12 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         required=False,
         write_only=True
     )
+    create_activity = serializers.BooleanField(
+        required=False,
+        default=True,
+        write_only=True,
+        help_text='Auto-create an activity for this step (default: True for MEETING/CALL/EMAIL)'
+    )
     
     class Meta:
         model = DecisionStep
@@ -280,13 +316,14 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
             'name', 'stage', 'status',
             'step_type',
             'scheduled_date', 'scheduled_time',
-            'expected_days',
+            'expected_date',
             'previous_step_id',
             'stakeholder',
             'description', 'goal',
             'influence_score', 'criterias', 'metrics',
             'contact_ids',
-            'department_ids'
+            'department_ids',
+            'create_activity'
         ]
         extra_kwargs = {
             'name': {
@@ -393,9 +430,10 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         # Get user from context (standard pattern)
         user = self.context.get('request').user if self.context.get('request') else None
         
-        # Extract M2M fields
+        # Extract M2M fields and flags
         contact_ids = validated_data.pop('contact_ids', [])
         department_ids = validated_data.pop('department_ids', [])
+        create_activity = validated_data.pop('create_activity', True)
         validated_data.pop('cycle_id', None)  # Already converted to 'cycle' in validate()
         
         # Create instance without saving
@@ -425,7 +463,14 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
                     client_id=instance.client_id
                 )
         
+        # Auto-create activity if requested and step type is actionable
+        # (Logic will be implemented in Step 4 via StepActivityService)
+        if create_activity and instance.step_type in ['MEETING', 'CALL', 'EMAIL']:
+            # TODO: Will be implemented in Step 4
+            pass
+        
         return instance
+
 
 
 class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -451,12 +496,12 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
             'name', 'stage', 'status',
             'step_type',
             'scheduled_date', 'scheduled_time',
-            'expected_days',
+            'expected_date',
             'previous_step_id',
             'stakeholder',
             'description', 'goal',
             'influence_score', 'criterias', 'metrics',
-            'contact_ids',
+            'contact_ids', 'manager_notes',
             'department_ids'
         ]
     

@@ -113,14 +113,14 @@ export default function ActivityWorkspacePage() {
 
   return (
     <Box>
-      {/* Back Navigation */}
+      {/* Back Navigation TO DO: if coming from territorie get back to territory/actvities */}
       <Button
         startIcon={<ArrowLeftOutlined />}
         onClick={handleBack}
         sx={{ mb: 2 }}
         color="secondary"
       >
-        Back to {activity.account_name || 'Account'}
+        Back to {activity.account_detail?.company_name || 'Account'}
       </Button>
 
       {/* Header */}

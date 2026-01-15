@@ -216,13 +216,13 @@ export default function ActivityHeader({ activity, onSave, onUpdate }) {
             {/* Meta info */}
             <Stack direction="row" spacing={2} divider={<Divider orientation="vertical" flexItem />}>
               <Typography variant="body2" color="text.secondary">
-                <strong>Account:</strong> {activity.company_name || '-'}
+                <strong>Account:</strong> {activity?.account_detail?.company_name|| '-'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 <strong>Type:</strong> {ACTIVITY_TYPE_LABELS[activity?.activity_type] || '-'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                <strong>Owner:</strong> {activity?.owner|| '-'}
+                <strong>Owner:</strong> {activity?.owner_detail?.full_name|| '-'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 <strong>Due:</strong> {formatDueDate()}
