@@ -16,6 +16,7 @@
 
 import PropTypes from 'prop-types';
 import { useState, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -28,7 +29,7 @@ import DecisionCycleTimeline from '../decision-cycles/DecisionCycleTimeline';
 import DecisionCycleEmpty from '../decision-cycles/DecisionCycleEmpty';
 import DecisionCycleModal from '../decision-cycles/DecisionCycleModal';
 import DecisionStepModal from '../decision-cycles/DecisionStepModal';
-import DecisionStepDetail from '../decision-cycles/DecisionStepDetail';
+
 import AlertStepDelete from '../decision-cycles/AlertStepDelete';
 
 import { 
@@ -48,6 +49,8 @@ import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError
  */
 export default function DecisionCycleTab({ accountId, accountName }) {
   
+  const router = useRouter();
+
   // ==============================|| STATE ||============================== //
   
   // Selected cycle ID
@@ -60,9 +63,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   const [stepModalOpen, setStepModalOpen] = useState(false);
   const [stepToEdit, setStepToEdit] = useState(null);
   const [defaultStage, setDefaultStage] = useState(null);
-  
-  const [stepDetailOpen, setStepDetailOpen] = useState(false);
-  const [stepDetail, setStepDetail] = useState(null);
+
   
   const [deleteStepOpen, setDeleteStepOpen] = useState(false);
   const [stepToDelete, setStepToDelete] = useState(null);
@@ -166,10 +167,8 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   }, []);
   
   const handleEditStep = useCallback((step) => {
-    // Open detail view instead of edit modal
-    setStepDetail(step);
-    setStepDetailOpen(true);
-  }, []);
+    router.push(`/accounts/${accountId}/decisionSteps/${step.id}`);
+  }, [router, accountId]);
   
   const handleStepModalClose = useCallback(() => {
     setStepModalOpen(false);
@@ -177,29 +176,9 @@ export default function DecisionCycleTab({ accountId, accountName }) {
     setDefaultStage(null);
   }, []);
   
-  const handleStepDetailClose = useCallback(() => {
-    setStepDetailOpen(false);
-    setStepDetail(null);
-  }, []);
-  
   const handleStepSuccess = useCallback(() => {
     mutateCycle();
   }, [mutateCycle]);
-  
-  const handleStepUpdate = useCallback((updatedStep) => {
-    // Update local step detail
-    setStepDetail(updatedStep);
-    // Revalidate cycle to refresh timeline
-    mutateCycle();
-  }, [mutateCycle]);
-  
-  const handleStepDeleteRequest = useCallback((step) => {
-    setStepToDelete(step);
-    setDeleteStepOpen(true);
-    // Close detail modal
-    setStepDetailOpen(false);
-    setStepDetail(null);
-  }, []);
   
   const handleStepDeleteClose = useCallback(() => {
     setDeleteStepOpen(false);
@@ -304,52 +283,6 @@ export default function DecisionCycleTab({ accountId, accountName }) {
         defaultStage={defaultStage}
         onSuccess={handleStepSuccess}
       />
-      
-      {/* Step Detail Modal */}
-      {stepDetailOpen && stepDetail && (
-        <Box
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            bgcolor: 'rgba(0, 0, 0, 0.5)',
-            zIndex: 1300,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-          onClick={handleStepDetailClose}
-        >
-          <Box
-            onClick={(e) => e.stopPropagation()}
-            sx={{
-              width: 'calc(100% - 48px)',
-              maxWidth: 680,
-              maxHeight: 'calc(100vh - 48px)',
-              bgcolor: 'background.paper',
-              borderRadius: 2,
-              boxShadow: 24,
-              overflow: 'hidden'
-            }}
-          >
-            <Box
-              sx={{
-                maxHeight: 'calc(100vh - 48px)',
-                overflowY: 'auto'
-              }}
-            >
-              <DecisionStepDetail
-                step={stepDetail}
-                closeModal={handleStepDetailClose}
-                onUpdate={handleStepUpdate}
-                onDelete={handleStepDeleteRequest}
-              />
-            </Box>
-          </Box>
-        </Box>
-      )}
       
       {/* Delete Step Alert */}
       <AlertStepDelete

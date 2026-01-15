@@ -98,6 +98,29 @@ export const STAGE_ORDER = [
   'FORMALIZATION'
 ];
 
+/**
+ * Stage labels for UI display
+ */
+export const STAGE_LABELS = {
+  EXPLORATION: 'Exploration',
+  CRITERIA_VALIDATION: 'Criteria Validation',
+  SOLUTION_CONFIRMATION: 'Solution Confirmation',
+  BUSINESS_VALIDATION: 'Business Validation',
+  FORMALIZATION: 'Formalization'
+};
+
+/**
+ * Step status labels for UI display
+ */
+export const STATUS_LABELS = {
+  NOT_STARTED: 'Not Started',
+  PENDING_CLIENT: 'Pending Client',
+  IN_PROGRESS: 'In Progress',
+  IN_CHASING: 'In Chasing',
+  VALIDATED: 'Validated',
+  REJECTED: 'Rejected'
+};
+
 // ==============================|| ENDPOINTS ||============================== //
 
 const endpoints = {
@@ -340,6 +363,152 @@ export function useGetDecisionSteps(options = {}) {
 
   return memoizedValue;
 }
+
+/**
+ * GET DECISION STEP WITH CONTEXT - Step details with related data for workspace
+ * 
+ * Fetches step with:
+ * - completeness_score and completeness_details
+ * - linked cycle info
+ * - linked account info
+ * - activities count
+ * - contacts
+ * 
+ * Used by Step detail workspace page.
+ * 
+ * @param {string} stepId - UUID of the step
+ * @param {Object} options - Additional options
+ * @param {boolean} options.includeActivities - Whether to fetch activities count
+ * @returns {Object} {step, cycle, account, stepLoading, stepError, mutateStep}
+ */
+export function useGetDecisionStepWithContext(stepId, options = {}) {
+  const { tenantId } = useAuth();
+
+  // Fetch step detail
+  const stepSwrKey = useMemo(() => {
+    if (!stepId || !isValidUUID(stepId)) return null;
+    return tenantKey(endpoints.stepDetail(stepId), tenantId);
+  }, [stepId, tenantId]);
+
+  const { 
+    data: stepData, 
+    isLoading: stepLoading, 
+    error: stepError, 
+    isValidating: stepValidating, 
+    mutate: mutateStep 
+  } = useSWR(stepSwrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  const step = stepData?.data || null;
+
+  // Extract cycle ID from step to fetch cycle details
+  const cycleId = step?.cycle_id || step?.cycle?.id || step?.cycle;
+
+  // Fetch cycle detail (for account info and cycle name)
+  const cycleSwrKey = useMemo(() => {
+    if (!cycleId || !isValidUUID(cycleId)) return null;
+    return tenantKey(endpoints.cycleDetail(cycleId), tenantId);
+  }, [cycleId, tenantId]);
+
+  const { 
+    data: cycleData, 
+    isLoading: cycleLoading 
+  } = useSWR(cycleSwrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  const cycle = cycleData?.data || null;
+
+  // Derive account from cycle
+  const account = useMemo(() => {
+    if (!cycle) return null;
+    
+    // Cycle should have account info
+    if (cycle.account) {
+      return typeof cycle.account === 'object' 
+        ? cycle.account 
+        : { id: cycle.account, name: cycle.account_name };
+    }
+    
+    // Fallback: check step for account info
+    if (step?.account) {
+      return typeof step.account === 'object'
+        ? step.account
+        : { id: step.account };
+    }
+    
+    return null;
+  }, [cycle, step]);
+
+  // Compute derived state
+  const isLoading = stepLoading || (cycleId && cycleLoading);
+
+  const memoizedValue = useMemo(
+    () => ({
+      // Step data with completeness
+      step,
+      completenessScore: step?.completeness_score ?? null,
+      completenessDetails: step?.completeness_details ?? null,
+      
+      // Related entities
+      cycle,
+      account,
+      
+      // Loading states
+      stepLoading: isLoading,
+      stepError,
+      stepValidating,
+      
+      // Mutation
+      mutateStep,
+      
+      // Convenience getters
+      stepName: step?.name || '',
+      cycleName: cycle?.name || '',
+      accountName: account?.name || '',
+      accountId: account?.id || cycle?.account_id || cycle?.account || null,
+      stageName: step?.stage ? (STAGE_LABELS[step.stage] || step.stage) : '',
+      statusName: step?.status ? (STATUS_LABELS[step.status] || step.status) : ''
+    }),
+    [step, cycle, account, isLoading, stepError, stepValidating, mutateStep]
+  );
+
+  return memoizedValue;
+}
+
+/**
+ * GET STEP CONTACTS - Contacts linked to a decision step
+ * 
+ * @param {string} stepId - UUID of the step
+ * @returns {Object} {contacts, contactsLoading, contactsError, mutateContacts}
+ */
+export function useGetDecisionStepContacts(stepId) {
+  const { tenantId } = useAuth();
+
+  // For now, contacts come with the step detail
+  // This hook is a placeholder for when we have a dedicated endpoint
+  const { step, stepLoading, stepError, mutateStep } = useGetDecisionStep(stepId);
+
+  const memoizedValue = useMemo(
+    () => ({
+      contacts: step?.contacts || [],
+      contactsCount: step?.contacts?.length || 0,
+      contactsLoading: stepLoading,
+      contactsError: stepError,
+      mutateContacts: mutateStep
+    }),
+    [step, stepLoading, stepError, mutateStep]
+  );
+
+  return memoizedValue;
+}
+
+
 
 /**
  * GET DECISION STEP - Single step details

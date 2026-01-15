@@ -196,7 +196,7 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             
             # Scheduling
             'scheduled_date', 'scheduled_time',
-            'expected_date'
+            'expected_date',
             'started_at', 'completed_at',
             
             # Linked list
