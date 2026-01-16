@@ -19,6 +19,7 @@ import ActivityHeader from 'sections/activities/workspace/ActivityHeader';
 import ActivityTabs, { DEFAULT_TAB } from 'sections/activities/workspace/ActivityTabs';
 import ActivityOverviewTab from 'sections/activities/workspace/ActivityOverviewTab';
 import ActivityPreparationTab from 'sections/activities/workspace/ActivityPreparationTab';
+import ActivityOutcomeTab from 'sections/activities/workspace/ActivityOutcomeTab';
 import ActivityTranscriptTab from 'sections/activities/workspace/ActivityTranscriptTab';
 import ActivitySignalsTab from 'sections/activities/workspace/ActivitySignalsTab';
 
@@ -79,6 +80,8 @@ export default function ActivityWorkspacePage() {
         return <ActivityOverviewTab activity={activity} onSave={handleSaveField} />;
       case 'preparation':
         return <ActivityPreparationTab activity={activity} />;
+      case 'outcome':
+        return <ActivityOutcomeTab activity={activity} onSave={handleSaveField} onUpdate={mutateActivity} />;  
       case 'transcript':
         return <ActivityTranscriptTab activity={activity} />;
       case 'signals':
@@ -98,15 +101,45 @@ export default function ActivityWorkspacePage() {
   }
 
   // Error state
-  if (activityError || !activity) {
+  if (activityError) {
+    const isTimeout = activityError?.response?.status === 408;
+    const isNotFound = activityError?.response?.status === 404;
+    
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
         <Stack spacing={2} alignItems="center">
-          <Typography color="error">Activity not found</Typography>
-          <Button variant="outlined" onClick={() => router.back()}>
-            Go Back
-          </Button>
+          {isNotFound ? (
+            <>
+              <Typography color="error">Activity not found</Typography>
+              <Button variant="outlined" onClick={() => router.back()}>
+                Go Back
+              </Button>
+            </>
+          ) : (
+            <>
+              <Typography color="text.secondary">
+                {isTimeout ? 'Request timed out' : 'Failed to load activity'}
+              </Typography>
+              <Stack direction="row" spacing={2}>
+                <Button variant="contained" onClick={() => mutateActivity()}>
+                  Retry
+                </Button>
+                <Button variant="outlined" onClick={() => router.back()}>
+                  Go Back
+                </Button>
+              </Stack>
+            </>
+          )}
         </Stack>
+      </Box>
+    );
+  }
+
+  // No data state (should not happen if no error, but safety check)
+  if (!activity) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
       </Box>
     );
   }

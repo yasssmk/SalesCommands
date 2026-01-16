@@ -19,6 +19,9 @@ Special Cases:
 """
 
 from typing import Dict, List, Optional, Literal
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Type hints
 OwnershipKey = Literal[
@@ -109,7 +112,8 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     
     'accounts': {
         'client_account_fk': 'client_id',           # Account.client_id
-        'owner_user': 'account_owner_id',                   # Account.owner   
+        'owner_user': 'account_owner_id',                   # Account.owner
+        'owner_team': 'account_owner__team_id',     # Via account_owner → team   
         'created_by': '-',              # BaseModelApp.created_by
         'assigned_to_user': '-',                    # Use owner
         'account_fk': '-',                          # Self reference
@@ -136,9 +140,18 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     'activities': {
         'client_account_fk': 'client_id',           # Activity.client_id
         'owner_user': 'owner_id',                   # Activity.owner
-        'owner_team': 'owner.team_id',              # Via owner
-        'created_by': 'created_by_id',              # BaseModelApp.created_by
-        'assigned_to_user': 'assigned_to_id',       # Activity.assigned_to
+        'owner_team': 'owner__team_id',             # Via owner's team
+        'created_by': 'created_by_id',              # ModuleBaseModel.created_by
+        'assigned_to_user': '-',                    # Not applicable (use owner)
+        'account_fk': 'account_id',                 # Related account
+    },
+    
+    'decision_cycles': {
+        'client_account_fk': 'client_id',           # DecisionCycle.client_id
+        'owner_user': 'account__account_owner_id',  # Via account → account_owner
+        'owner_team': 'account__account_owner__team_id',  # Via account → account_owner → team
+        'created_by': 'created_by_id',              # ModuleBaseModel.created_by
+        'assigned_to_user': '-',                    # Not applicable
         'account_fk': 'account_id',                 # Related account
     },
     
@@ -210,6 +223,7 @@ OWNERSHIP_TYPES = {
     'territories': 'user',
     'contacts': 'account',        # Inherits from account
     'activities': 'user',         # owner_user, assigned_to_user
+    'decision_cycles': 'account', # Inherits from account
     'leads': 'user',             # assigned_to_user, created_by
     'opportunities': 'user',      # deal_owner (mapped to owner_user)
     'campaign': 'user',           # owner_user
@@ -232,7 +246,7 @@ def resolve_field(module: str, key: str) -> Optional[str]:
         Returns None for '-' entries
     """
     if module not in OWNERSHIP_MAP:
-        print(f"[OWNERSHIP] Module '{module}' not found in ownership map")
+        logger.debug(f"Module '{module}' not found in ownership map")
         return None
     
     field = OWNERSHIP_MAP[module].get(key, '-')
@@ -433,11 +447,11 @@ def get_fallback_scope(module: str, action: str) -> str:
     """
     if action in ['read', 'list', 'retrieve']:
         # READ-only fallback to client scope
-        print(f"[OWNERSHIP] No ownership fields for {module} - fallback to 'client' for READ")
+        logger.debug(f"No ownership fields for {module} - fallback to 'client' for READ")
         return 'client'
     else:
         # Write operations without ownership = deny
-        print(f"[OWNERSHIP] No ownership fields for {module} - DENY for {action}")
+        logger.debug(f"No ownership fields for {module} - DENY for {action}")
         return 'none'
 
 

@@ -45,7 +45,7 @@ logger = get_logger(__name__)
 # DECISION CYCLE VIEWSET
 # ============================================================================
 
-class DecisionCycleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
+class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing Decision Cycles.
     
@@ -103,6 +103,11 @@ class DecisionCycleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewS
     
     def get_queryset(self):
         """Get cycles with optimized queries."""
+        logger.debug("get_queryset_called", extra={
+            'action': self.action,
+            'view': 'DecisionCycleViewSet'
+        })
+        
         queryset = super().get_queryset()
         
         if self.action == 'list':
@@ -120,6 +125,9 @@ class DecisionCycleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewS
             )
         else:
             queryset = queryset.select_related('account')
+        
+        # Apply owner scope filter (mine/team/all)
+        queryset = self.apply_owner_scope_filter(queryset)
         
         return queryset
     
@@ -311,7 +319,7 @@ class DecisionCycleViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewS
 # DECISION STEP VIEWSET
 # ============================================================================
 
-class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
+class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing Decision Steps.
     
@@ -374,6 +382,11 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
     
     def get_queryset(self):
         """Get steps with optimized queries."""
+        logger.debug("get_queryset_called", extra={
+            'action': self.action,
+            'view': 'DecisionStepViewSet'
+        })
+        
         queryset = super().get_queryset()
         
         queryset = queryset.select_related(
@@ -391,6 +404,9 @@ class DecisionStepViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSe
         cycle_id = self.request.query_params.get('cycle_id')
         if cycle_id:
             queryset = queryset.filter(cycle_id=cycle_id)
+        
+        # Apply owner scope filter (mine/team/all)
+        queryset = self.apply_owner_scope_filter(queryset)
         
         return queryset
     

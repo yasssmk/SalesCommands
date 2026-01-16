@@ -94,6 +94,7 @@ export default function ActivityModal({
   accountId,
   decisionStepId = null,
   decisionCycleId = null,
+  defaultActivityType = null,
   onSuccess
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -123,7 +124,7 @@ export default function ActivityModal({
   // Build initial values
   const initialValues = useMemo(() => ({
     title: activity?.title || '',
-    activity_type: activity?.activity_type || 'TASK',
+    activity_type: activity?.activity_type || defaultActivityType || 'MEETING',
     status: activity?.status || 'PLANNED',
     description: activity?.description || '',
     call_to_action: activity?.call_to_action || '',
@@ -131,7 +132,7 @@ export default function ActivityModal({
     scheduled_time: activity?.scheduled_time ? dayjs(`2000-01-01T${activity.scheduled_time}`) : null,
     due_date: activity?.due_date ? dayjs(activity.due_date) : null,
     contact_ids: activity?.contacts?.map(c => c.id) || []
-  }), [activity]);
+  }), [activity, defaultActivityType]);
 
   // Formik setup
   const formik = useFormik({
@@ -532,5 +533,6 @@ ActivityModal.propTypes = {
   accountId: PropTypes.string,
   decisionStepId: PropTypes.string,
   decisionCycleId: PropTypes.string,
+  defaultActivityType: PropTypes.string,
   onSuccess: PropTypes.func
 };
