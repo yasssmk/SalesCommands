@@ -87,6 +87,29 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Outcome Notes'),
         help_text=_('Notes about the activity result')
     )
+
+    # ==========================================================================
+    # NEXT STEP AGREEMENT (Post-Activity)
+    # ==========================================================================
+    
+    next_step_agreed = models.BooleanField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name=_('Next Step Agreed'),
+        help_text=_(
+            'True = follow-up activity or step planned, '
+            'False = explicitly no next step agreed, '
+            'Null = not yet determined'
+        )
+    )
+    
+    no_next_step_reason = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_('No Next Step Reason'),
+        help_text=_('Reason provided when next_step_agreed is False')
+    )
     
     # ==========================================================================
     # SCHEDULING

@@ -88,6 +88,10 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     contacts_count = serializers.SerializerMethodField(read_only=True)
     completeness_score = serializers.SerializerMethodField(read_only=True)
     
+    # Stalled detection
+    is_stalled = serializers.BooleanField(read_only=True)
+    stalled_reason = serializers.CharField(read_only=True)
+    
     class Meta:
         model = DecisionStep
         fields = [
@@ -107,6 +111,9 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             
             # Flags
             'is_current', 'has_parallel_steps',
+            
+            # Stalled Detection
+            'is_stalled', 'stalled_reason',
             
             # Summary fields
             'stakeholder', 'departments_list',
@@ -182,6 +189,11 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     completeness_score = serializers.SerializerMethodField(read_only=True)
     completeness_details = serializers.SerializerMethodField(read_only=True)
     
+    # Stalled detection
+    is_stalled = serializers.BooleanField(read_only=True)
+    stalled_reason = serializers.CharField(read_only=True)
+    stalled_details = serializers.SerializerMethodField(read_only=True)
+    
     class Meta:
         model = DecisionStep
         fields = [
@@ -201,6 +213,9 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             
             # Flags
             'is_current', 'has_parallel_steps',
+            
+            # Stalled Detection
+            'is_stalled', 'stalled_reason', 'stalled_details',
             
             # Details
             'stakeholder',
@@ -224,10 +239,12 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'created_by', 'updated_by',
             'created_at', 'updated_at'
         ]
+
         read_only_fields = [
             'id', 'stage_display', 'status_display',
             'departments_list', 'previous_step_info', 'next_step_info', 
             'is_current', 'has_parallel_steps', 
+            'is_stalled', 'stalled_reason', 'stalled_details',
             'step_contacts', 'step_departments',
             'completeness_score', 'completeness_details',
             'created_by', 'updated_by', 'created_at', 'updated_at'
@@ -277,6 +294,22 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         from .services import CompletenessScoreService
         service = CompletenessScoreService()
         return service.get_details(obj)
+    
+    def get_stalled_details(self, obj):
+        """Get detailed stalled information for UI display."""
+        from .constants import StalledReason
+        
+        if not obj.is_stalled:
+            return None
+        
+        return {
+            'reason': obj.stalled_reason,
+            'reason_display': StalledReason(obj.stalled_reason).label if obj.stalled_reason else None,
+            'last_activity_date': obj.last_activity_date,
+            'days_since_last_activity': obj.days_since_last_activity,
+            'has_future_activity': obj.has_future_activity,
+            'expected_end': obj.expected_end,
+        }
 
 class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """

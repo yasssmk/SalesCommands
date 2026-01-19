@@ -23,6 +23,10 @@ def get_urlpatterns():
         # =====================================================================
         # LIST ACTIONS
         # =====================================================================
+        path('create-with-entities/', ActivityViewSet.as_view({
+            'post': 'create_with_entities'
+        }), name='create-with-entities'),
+        
         path('my-activities/', ActivityViewSet.as_view({
             'get': 'my_activities'
         }), name='my-activities'),

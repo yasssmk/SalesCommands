@@ -35,6 +35,9 @@ from ..serializers import (
 )
 from ..constants import ActivityType, ActivityStatus, ActivityOutcome
 from ..filters import ActivityFilter
+from ..services.activity_creation_service import ActivityCreationService
+from ..constants import ActivityType, ActivityStatus, ActivityOutcome
+from ..filters import ActivityFilter
 
 logger = get_logger(__name__)
 
@@ -97,6 +100,10 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         },
         'cancel': {
             'crud': 'update',
+            'scope': 'client'
+        },
+        'create_with_entities': {
+            'crud': 'create',
             'scope': 'client'
         },
         'my_activities': {
@@ -553,6 +560,118 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'success': True,
             'data': serializer.data
         })
+    
+    @action(detail=False, methods=['post'])
+    @transaction.atomic
+    def create_with_entities(self, request):
+        """
+        Create activity with optional inline entity creation.
+        
+        POST /activities/create-with-entities/
+        
+        Body:
+            - activity: Activity data (title, activity_type, account_id, etc.)
+            - inline_contact: Optional {first_name, last_name, email, ...}
+            - inline_cycle: Optional {name}
+            - inline_step: Optional {name, stage, expected_end}
+        
+        Creates entities in FK-safe order:
+        1. Contact (if inline_contact provided)
+        2. DecisionCycle (if inline_cycle provided)
+        3. DecisionStep (if inline_step provided)
+        4. Activity with all relations
+        
+        Returns all created entities.
+        """
+        ctx = ctx_from_request(request)
+        
+        logger.info("activity_create_with_entities_requested", extra=ctx)
+        
+        # Extract data from request
+        activity_data = request.data.get('activity', {})
+        inline_contact = request.data.get('inline_contact')
+        inline_cycle = request.data.get('inline_cycle')
+        inline_step = request.data.get('inline_step')
+        
+        # Validate activity_data exists
+        if not activity_data:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='activity')
+            )
+        
+        # Create service and execute
+        service = ActivityCreationService(
+            user=request.user,
+            client_id=self.get_client_id()
+        )
+        
+        result = service.create_with_entities(
+            activity_data=activity_data,
+            inline_contact=inline_contact,
+            inline_cycle=inline_cycle,
+            inline_step=inline_step,
+        )
+        
+        # Audit log
+        audit_log(
+            event='activity_create_with_entities_success',
+            action='create',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='activity',
+            target_id=str(result['activity'].id),
+            outcome='success',
+            details={
+                'inline_contact_created': result['contact'] is not None,
+                'inline_cycle_created': result['cycle'] is not None,
+                'inline_step_created': result['step'] is not None,
+            }
+        )
+        
+        # Invalidate caches
+        client_id_str = str(self.get_client_id())
+        invalidate_tag(client_id_str, 'activities')
+        if result['contact']:
+            invalidate_tag(client_id_str, 'contacts')
+        if result['cycle'] or result['step']:
+            invalidate_tag(client_id_str, 'decision_cycles')
+        
+        logger.info("activity_create_with_entities_success", extra={
+            **ctx,
+            'activity_id': str(result['activity'].id),
+            'contact_id': str(result['contact'].id) if result['contact'] else None,
+            'cycle_id': str(result['cycle'].id) if result['cycle'] else None,
+            'step_id': str(result['step'].id) if result['step'] else None,
+        })
+        
+        # Build response
+        activity_serializer = ActivitySerializer(
+            result['activity'],
+            context={'request': request}
+        )
+        
+        response_data = {
+            'activity': activity_serializer.data,
+            'created_entities': {
+                'contact': {
+                    'id': str(result['contact'].id),
+                    'name': f"{result['contact'].first_name} {result['contact'].last_name}"
+                } if result['contact'] else None,
+                'cycle': {
+                    'id': str(result['cycle'].id),
+                    'name': result['cycle'].name
+                } if result['cycle'] else None,
+                'step': {
+                    'id': str(result['step'].id),
+                    'name': result['step'].name
+                } if result['step'] else None,
+            }
+        }
+        
+        return Response({
+            'success': True,
+            'data': response_data
+        }, status=status.HTTP_201_CREATED)
     
     # ==========================================================================
     # LIST ACTIONS

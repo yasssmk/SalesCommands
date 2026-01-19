@@ -8,10 +8,10 @@ DecisionStep: Individual decision/validation step within a cycle
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
-from core.error_messages import CoreErrorMessages
-from .constants import DecisionStage, DecisionStepStatus
+from .constants import DecisionStage, DecisionStepStatus, StalledReason
 
 
 class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -373,6 +373,109 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         ).exclude(pk=self.pk)
         
         return siblings.exists()
+    
+    # ==========================================================================
+    # STALLED DETECTION (Computed Properties)
+    # ==========================================================================
+    
+    STALLED_THRESHOLD_DAYS = 7
+    
+    @property
+    def is_stalled(self) -> bool:
+        """Check if step has no forward momentum."""
+        from .constants import StalledReason
+        return self.stalled_reason != StalledReason.NONE
+    
+    @property
+    def stalled_reason(self) -> str:
+        """
+        Determine why this step is stalled (if at all).
+        
+        Priority order:
+        1. EXPECTED_END_PASSED - deadline missed
+        2. NO_NEXT_STEP - last activity explicitly marked no next step
+        3. NO_ACTIVITY - no activities at all
+        4. NO_FUTURE_ACTIVITY - no planned activities
+        5. WAITING_TOO_LONG - no activity in 7+ days
+        
+        Returns StalledReason.NONE if not stalled.
+        """
+        
+        # Terminal statuses are never stalled
+        if self.status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
+            return StalledReason.NONE
+        
+        today = timezone.now().date()
+        
+        # 1. Check if expected_end has passed
+        if self.expected_end and self.expected_end < today:
+            return StalledReason.EXPECTED_END_PASSED
+        
+        # Get activities for this step
+        activities = self.activities.all()
+        
+        # 2. No activities at all
+        if not activities.exists():
+            return StalledReason.NO_ACTIVITY
+        
+        # 3. Check if last completed activity marked no next step
+        from app_modules.activities.constants import ActivityStatus
+        last_completed = activities.filter(
+            status=ActivityStatus.COMPLETED
+        ).order_by('-completed_at').first()
+        
+        if last_completed and last_completed.next_step_agreed is False:
+            return StalledReason.NO_NEXT_STEP
+        
+        # 4. No future activities planned
+        if not self.has_future_activity:
+            # 5. Check if waiting too long
+            if self.days_since_last_activity and self.days_since_last_activity >= self.STALLED_THRESHOLD_DAYS:
+                return StalledReason.WAITING_TOO_LONG
+            return StalledReason.NO_FUTURE_ACTIVITY
+        
+        return StalledReason.NONE
+    
+    @property
+    def last_activity_date(self):
+        """Get the date of the most recent activity."""
+        from django.utils import timezone
+        
+        last_activity = self.activities.order_by('-updated_at').first()
+        if not last_activity:
+            return None
+        
+        # Use completed_at if available, otherwise scheduled_date, otherwise updated_at
+        if last_activity.completed_at:
+            return last_activity.completed_at.date()
+        elif last_activity.scheduled_date:
+            return last_activity.scheduled_date
+        return last_activity.updated_at.date()
+    
+    @property
+    def days_since_last_activity(self):
+        """Calculate days since the last activity."""
+        from django.utils import timezone
+        
+        last_date = self.last_activity_date
+        if not last_date:
+            return None
+        
+        today = timezone.now().date()
+        return (today - last_date).days
+    
+    @property
+    def has_future_activity(self) -> bool:
+        """Check if there are any planned future activities."""
+        from django.utils import timezone
+        from app_modules.activities.constants import ActivityStatus
+        
+        today = timezone.now().date()
+        
+        return self.activities.filter(
+            status=ActivityStatus.PLANNED,
+            scheduled_date__gte=today
+        ).exists()
 
 
 class DecisionStepContact(ModuleBaseModel, ClientScopeManager.ModelMixin):

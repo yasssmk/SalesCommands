@@ -38,3 +38,16 @@ class DecisionStepStatus(models.TextChoices):
     VALIDATED = 'VALIDATED', _('Validated')
     REJECTED = 'REJECTED', _('Rejected')
     ON_HOLD = 'ON_HOLD', _('On Hold')
+
+class StalledReason(models.TextChoices):
+    """
+    Reasons why a DecisionStep might be considered stalled.
+    
+    Used for computed property detection and UI warnings.
+    """
+    NONE = 'NONE', _('Not stalled')
+    NO_ACTIVITY = 'NO_ACTIVITY', _('No activities linked')
+    NO_FUTURE_ACTIVITY = 'NO_FUTURE_ACTIVITY', _('No future activities planned')
+    NO_NEXT_STEP = 'NO_NEXT_STEP', _('Last activity marked no next step agreed')
+    EXPECTED_END_PASSED = 'EXPECTED_END_PASSED', _('Expected end date has passed')
+    WAITING_TOO_LONG = 'WAITING_TOO_LONG', _('No activity in 7+ days')

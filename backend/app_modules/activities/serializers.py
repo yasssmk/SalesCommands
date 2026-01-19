@@ -135,6 +135,9 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             # Call to action
             'call_to_action',
             
+            # Next Step Agreement
+            'next_step_agreed',
+            
             # Relations (simple objects)
             'account', 'owner', 'decision_step',
             
@@ -144,6 +147,7 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             # Timestamps
             'created_at', 'updated_at'
         ]
+
         read_only_fields = fields
     
     def get_activity_type_display(self, obj):
@@ -228,6 +232,9 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'outcome', 'outcome_display',
             'outcome_notes',
             
+            # Next Step Agreement
+            'next_step_agreed', 'no_next_step_reason',
+            
             # Description & CTA
             'description', 'call_to_action',
             
@@ -258,6 +265,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'created_by', 'updated_by',
             'created_at', 'updated_at'
         ]
+
         read_only_fields = [
             'id', 'activity_type_display', 'status_display', 'outcome_display',
             'account_detail', 'contacts_detail', 'owner_detail',
@@ -499,6 +507,9 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'description', 'call_to_action',
             'status', 'outcome', 'outcome_notes',
             'scheduled_date', 'scheduled_time', 'due_date',
+            
+            # Next Step Agreement
+            'next_step_agreed', 'no_next_step_reason',
             
             # Relations
             'contact_ids',
