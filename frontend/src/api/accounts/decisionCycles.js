@@ -365,6 +365,47 @@ export function useGetDecisionSteps(options = {}) {
 }
 
 /**
+ * GET DECISION STEPS BY CYCLE - All steps for a specific cycle
+ * 
+ * Lightweight hook for fetching steps linked to a decision cycle.
+ * Used by ActivityOutcomeTab to display existing steps.
+ * 
+ * @param {string} cycleId - UUID of the decision cycle
+ * @returns {Object} {steps, stepsCount, stepsLoading, stepsError, stepsEmpty, mutateSteps}
+ */
+export function useGetDecisionStepsByCycle(cycleId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!cycleId || !isValidUUID(cycleId)) return null;
+    const url = `${endpoints.steps}?cycle_id=${cycleId}`;
+    return tenantKey(url, tenantId);
+  }, [cycleId, tenantId]);
+
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  const memoizedValue = useMemo(
+    () => ({
+      steps: data?.data?.results || data?.results || [],
+      stepsCount: data?.data?.count || data?.count || 0,
+      stepsLoading: isLoading,
+      stepsError: error,
+      stepsValidating: isValidating,
+      stepsEmpty: !isLoading && !(data?.data?.results?.length || data?.results?.length),
+      mutateSteps: mutate
+    }),
+    [data, isLoading, error, isValidating, mutate]
+  );
+
+  return memoizedValue;
+}
+
+
+/**
  * GET DECISION STEP WITH CONTEXT - Step details with related data for workspace
  * 
  * Fetches step with:

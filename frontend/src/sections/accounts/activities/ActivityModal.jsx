@@ -50,6 +50,10 @@ import {
   ACTIVITY_STATUS_LABELS
 } from 'api/accounts/activities';
 import { useGetContacts } from 'api/businessData/contacts';
+import { 
+  useGetDecisionCyclesByAccount,
+  useGetDecisionStepsByCycle
+} from 'api/accounts/decisionCycles';
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
@@ -121,6 +125,19 @@ export default function ActivityModal({
     }));
   }, [contacts]);
 
+  // Fetch decision cycles for the account
+  const { cycles, cyclesLoading } = useGetDecisionCyclesByAccount(accountId);
+
+  // Cycle options for dropdown
+  const cycleOptions = useMemo(() => {
+    if (!cycles || cycles.length === 0) return [];
+    return cycles.map(cycle => ({
+      id: cycle.id,
+      name: cycle.name,
+      is_active: cycle.is_active
+    }));
+  }, [cycles]);
+
   // Build initial values
   const initialValues = useMemo(() => ({
     title: activity?.title || '',
@@ -131,8 +148,10 @@ export default function ActivityModal({
     scheduled_date: activity?.scheduled_date ? dayjs(activity.scheduled_date) : null,
     scheduled_time: activity?.scheduled_time ? dayjs(`2000-01-01T${activity.scheduled_time}`) : null,
     due_date: activity?.due_date ? dayjs(activity.due_date) : null,
-    contact_ids: activity?.contacts?.map(c => c.id) || []
-  }), [activity, defaultActivityType]);
+    contact_ids: activity?.contacts?.map(c => c.id) || [],
+    decision_cycle_id: activity?.decision_cycle || decisionCycleId || '',
+    decision_step_id: activity?.decision_step || decisionStepId || ''
+  }), [activity, defaultActivityType, decisionCycleId, decisionStepId]);
 
   // Formik setup
   const formik = useFormik({
@@ -159,9 +178,11 @@ export default function ActivityModal({
         // Add relations for create mode
         if (!isEditMode) {
           payload.account_id = accountId;
-          if (decisionStepId) payload.decision_step_id = decisionStepId;
-          if (decisionCycleId) payload.decision_cycle_id = decisionCycleId;
         }
+        
+        // Always include cycle/step (allows updating in edit mode too)
+        payload.decision_cycle_id = values.decision_cycle_id || null;
+        payload.decision_step_id = values.decision_step_id || null;
         
         let result;
         
@@ -192,6 +213,27 @@ export default function ActivityModal({
 
   const { values, errors, touched, handleChange, handleBlur, handleSubmit, resetForm, setFieldValue } = formik;
   
+  // Fetch decision steps based on selected cycle
+  const { steps, stepsLoading } = useGetDecisionStepsByCycle(values.decision_cycle_id);
+
+  // Step options for dropdown
+  const stepOptions = useMemo(() => {
+    if (!steps || steps.length === 0) return [];
+    return steps.map(step => ({
+      id: step.id,
+      name: step.name,
+      status: step.status
+    }));
+  }, [steps]);
+
+  // Reset step when cycle changes
+  useEffect(() => {
+    // Only reset if changing cycle (not on initial load)
+    if (values.decision_cycle_id !== (activity?.decision_cycle || decisionCycleId || '')) {
+      setFieldValue('decision_step_id', '');
+    }
+  }, [values.decision_cycle_id]);
+
   // Reset form when modal opens/closes
   useEffect(() => {
     if (open) {
@@ -454,6 +496,72 @@ export default function ActivityModal({
                     />
                   </Stack>
                 </Grid>
+
+                 {/* Decision Cycle & Step Section */}
+                {cycleOptions.length > 0 && (
+                  <>
+                    <Grid item xs={12}>
+                      <Divider sx={{ my: 1 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          Decision Cycle Link (Optional)
+                        </Typography>
+                      </Divider>
+                    </Grid>
+
+                    {/* Decision Cycle */}
+                    <Grid item xs={12} sm={6}>
+                      <Stack spacing={1}>
+                        <InputLabel htmlFor="decision_cycle_id">Decision Cycle</InputLabel>
+                        <Select
+                          id="decision_cycle_id"
+                          name="decision_cycle_id"
+                          fullWidth
+                          value={values.decision_cycle_id}
+                          onChange={handleChange}
+                          onBlur={handleBlur}
+                          displayEmpty
+                          disabled={cyclesLoading}
+                        >
+                          <MenuItem value="">
+                            <em>None</em>
+                          </MenuItem>
+                          {cycleOptions.map((cycle) => (
+                            <MenuItem key={cycle.id} value={cycle.id}>
+                              {cycle.name}
+                              {!cycle.is_active && ' (Inactive)'}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </Stack>
+                    </Grid>
+
+                    {/* Decision Step */}
+                    <Grid item xs={12} sm={6}>
+                      <Stack spacing={1}>
+                        <InputLabel htmlFor="decision_step_id">Decision Step</InputLabel>
+                        <Select
+                          id="decision_step_id"
+                          name="decision_step_id"
+                          fullWidth
+                          value={values.decision_step_id}
+                          onChange={handleChange}
+                          onBlur={handleBlur}
+                          displayEmpty
+                          disabled={!values.decision_cycle_id || stepsLoading}
+                        >
+                          <MenuItem value="">
+                            <em>{values.decision_cycle_id ? 'None' : 'Select a cycle first'}</em>
+                          </MenuItem>
+                          {stepOptions.map((step) => (
+                            <MenuItem key={step.id} value={step.id}>
+                              {step.name}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </Stack>
+                    </Grid>
+                  </>
+                )}
                 
                 {/* Call to Action */}
                 <Grid item xs={12}>

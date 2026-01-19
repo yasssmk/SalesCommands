@@ -11,7 +11,7 @@ from django.utils.translation import gettext_lazy as _
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
-from .constants import DecisionStage, DecisionStepStatus, DecisionStepType
+from .constants import DecisionStage, DecisionStepStatus
 
 
 class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -87,9 +87,10 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
     @property
     def estimated_timeline_days(self):
         """
-        Calculate estimated timeline in days based on expected_date of steps.
-        Returns the number of days from today to the furthest expected_date.
-        Returns None if no steps have expected_date set.
+        Calculate estimated remaining days based on expected_end fields.
+        
+        Returns the number of days from today to the furthest expected_end.
+        Returns None if no steps have expected_end set.
         """
         from django.utils import timezone
         
@@ -98,15 +99,15 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         if not steps.exists():
             return 0
         
-        # Get the furthest expected_date
-        furthest = steps.filter(expected_date__isnull=False).order_by('-expected_date').first()
+        # Get the furthest expected_end
+        furthest = steps.filter(expected_end__isnull=False).order_by('-expected_end').first()
         
-        if not furthest or not furthest.expected_date:
+        if not furthest or not furthest.expected_end:
             return None
         
         # Calculate days from today
         today = timezone.now().date()
-        delta = (furthest.expected_date - today).days
+        delta = (furthest.expected_end - today).days
         return max(0, delta)
     
     @property
@@ -201,36 +202,19 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
     )
 
     # ==========================================================================
-    # STEP TYPE & SCHEDULING
+    # DEAL TEMPORALITY
     # ==========================================================================
     
-    step_type = models.CharField(
-        max_length=30,
-        choices=DecisionStepType.choices,
-        default=DecisionStepType.OTHER,
-        verbose_name=_('Step Type'),
-        help_text=_('Type of step: meeting, call, task, etc.')
-    )
-    
-    scheduled_date = models.DateField(
+    start_date = models.DateTimeField(
         blank=True,
         null=True,
-        verbose_name=_('Scheduled Date'),
-        help_text=_('Specific date if known (e.g., meeting date)')
+        verbose_name=_('Start Date'),
+        help_text=_('When this step actually started (inferred from first activity)')
     )
     
-    scheduled_time = models.TimeField(
-        blank=True,
-        null=True,
-        verbose_name=_('Scheduled Time'),
-        help_text=_('Specific time if applicable')
-    )
-    
-    started_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name=_('Started At'),
-        help_text=_('When this step actually started')
+    expected_end = models.DateField(
+        verbose_name=_('Expected End'),
+        help_text=_('Expected date for step validation/completion - MANDATORY for timeline')
     )
     
     completed_at = models.DateTimeField(
@@ -297,13 +281,6 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('KPIs to measure success')
     )
 
-    expected_date = models.DateField(
-        blank=True,
-        null=True,
-        verbose_name=_('Expected Date'),
-        help_text=_('Expected date for step validation/completion')
-    )
-
     # ==========================================================================
     # MANAGER FIELDS
     # ==========================================================================
@@ -355,8 +332,7 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
             models.Index(fields=['stage'], name='ds_stage_idx'),
             models.Index(fields=['status'], name='ds_status_idx'),
             models.Index(fields=['previous_step'], name='ds_prev_step_idx'),
-            models.Index(fields=['step_type'], name='ds_step_type_idx'),
-            models.Index(fields=['scheduled_date'], name='ds_scheduled_idx'),
+            models.Index(fields=['expected_end'], name='ds_expected_end_idx'),
         ]
     
     def __str__(self):

@@ -12,7 +12,7 @@ from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from app_modules.core_modules.models import StandardDepartment
 from .models import DecisionCycle, DecisionStep, DecisionStepContact, DecisionStepDepartment
-from .constants import DecisionStage, DecisionStepStatus, DecisionStepType
+from .constants import DecisionStage, DecisionStepStatus
 
 
 # ============================================================================
@@ -73,11 +73,13 @@ class StepMinimalSerializer(serializers.ModelSerializer):
 class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Lightweight serializer for step lists (timeline display).
+    
+    Note: step_type, scheduled_date, scheduled_time have been removed.
+    Type and scheduling now belong exclusively to Activity.
     """
     
     stage_display = serializers.SerializerMethodField(read_only=True)
     status_display = serializers.SerializerMethodField(read_only=True)
-    step_type_display = serializers.SerializerMethodField(read_only=True)
     departments_list = serializers.SerializerMethodField(read_only=True)
     previous_step_info = serializers.SerializerMethodField(read_only=True)
     next_step_info = serializers.SerializerMethodField(read_only=True)
@@ -92,15 +94,12 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             # Identity
             'id', 'name',
             
-            # Type, Stage & Status
-            'step_type', 'step_type_display',
+            # Stage & Status
             'stage', 'stage_display',
             'status', 'status_display',
             
-            # Scheduling
-            'scheduled_date', 'scheduled_time',
-            'expected_date',
-            'started_at', 'completed_at',
+            # Deal Temporality
+            'start_date', 'expected_end', 'completed_at',
             
             # Linked list
             'previous_step', 'previous_step_info',
@@ -123,9 +122,6 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     
     def get_status_display(self, obj):
         return obj.get_status_display() if obj.status else None
-    
-    def get_step_type_display(self, obj):
-        return obj.get_step_type_display() if obj.step_type else None
     
     def get_departments_list(self, obj):
         """Return list of department names."""
@@ -155,8 +151,8 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
         return None
     
     def get_contacts_count(self, obj):
-        return obj.contacts.count()
-
+        return obj.step_contacts.count()
+    
     def get_completeness_score(self, obj):
         """Calculate completeness score for the step."""
         from .services import CompletenessScoreService
@@ -168,11 +164,14 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
 class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Complete serializer for step detail view.
+    
+    Note: step_type, scheduled_date, scheduled_time have been removed.
+    Type and scheduling now belong exclusively to Activity.
+    DecisionStep is a buyer milestone - it observes execution.
     """
     
     stage_display = serializers.SerializerMethodField(read_only=True)
     status_display = serializers.SerializerMethodField(read_only=True)
-    step_type_display = serializers.SerializerMethodField(read_only=True)
     departments_list = serializers.SerializerMethodField(read_only=True)
     previous_step_info = serializers.SerializerMethodField(read_only=True)
     next_step_info = serializers.SerializerMethodField(read_only=True)
@@ -189,15 +188,12 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             # Identity
             'id', 'name', 'cycle',
             
-            # Type, Stage & Status
-            'step_type', 'step_type_display',
+            # Stage & Status
             'stage', 'stage_display',
             'status', 'status_display',
             
-            # Scheduling
-            'scheduled_date', 'scheduled_time',
-            'expected_date',
-            'started_at', 'completed_at',
+            # Deal Temporality
+            'start_date', 'expected_end', 'completed_at',
             
             # Linked list
             'previous_step', 'previous_step_info',
@@ -229,7 +225,7 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'stage_display', 'status_display', 'step_type_display',
+            'id', 'stage_display', 'status_display',
             'departments_list', 'previous_step_info', 'next_step_info', 
             'is_current', 'has_parallel_steps', 
             'step_contacts', 'step_departments',
@@ -242,9 +238,6 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     
     def get_status_display(self, obj):
         return obj.get_status_display() if obj.status else None
-    
-    def get_step_type_display(self, obj):
-        return obj.get_step_type_display() if obj.step_type else None
     
     def get_departments_list(self, obj):
         """Return list of department names for quick display."""
@@ -288,6 +281,11 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
 class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Serializer for step creation.
+    
+    Note: step_type, scheduled_date, scheduled_time have been removed.
+    Type and scheduling belong to Activity. Create activities separately.
+    
+    expected_end is MANDATORY for deal timeline visibility.
     """
     
     cycle_id = serializers.UUIDField(write_only=True)
@@ -302,49 +300,26 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         required=False,
         write_only=True
     )
-    create_activity = serializers.BooleanField(
-        required=False,
-        default=True,
-        write_only=True,
-        help_text='Auto-create an activity for this step (default: True for MEETING/CALL/EMAIL)'
-    )
     
     class Meta:
         model = DecisionStep
         fields = [
             'cycle_id',
             'name', 'stage', 'status',
-            'step_type',
-            'scheduled_date', 'scheduled_time',
-            'expected_date',
+            'expected_end',
             'previous_step_id',
             'stakeholder',
             'description', 'goal',
             'influence_score', 'criterias', 'metrics',
             'contact_ids',
             'department_ids',
-            'create_activity'
         ]
         extra_kwargs = {
-            'name': {
+            'expected_end': {
                 'required': True,
                 'error_messages': {
-                    'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Name'),
+                    'required': 'Expected end date is required for timeline visibility',
                 }
-            },
-            'stage': {
-                'required': True,
-                'error_messages': {
-                    'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Stage'),
-                }
-            },
-            'status': {
-                'required': False,
-                'default': DecisionStepStatus.NOT_STARTED
-            },
-            'step_type': {
-                'required': False,
-                'default': DecisionStepType.OTHER
             }
         }
     
@@ -371,17 +346,6 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         if value not in valid_statuses:
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_FIELD.format(field='Status')
-            )
-        return value
-    
-    def validate_step_type(self, value):
-        if not value:
-            return DecisionStepType.OTHER
-        
-        valid_types = [choice[0] for choice in DecisionStepType.choices]
-        if value not in valid_types:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field='Step Type')
             )
         return value
     
@@ -430,10 +394,9 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         # Get user from context (standard pattern)
         user = self.context.get('request').user if self.context.get('request') else None
         
-        # Extract M2M fields and flags
+        # Extract M2M fields
         contact_ids = validated_data.pop('contact_ids', [])
         department_ids = validated_data.pop('department_ids', [])
-        create_activity = validated_data.pop('create_activity', True)
         validated_data.pop('cycle_id', None)  # Already converted to 'cycle' in validate()
         
         # Create instance without saving
@@ -463,11 +426,8 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
                     client_id=instance.client_id
                 )
         
-        # Auto-create activity if requested and step type is actionable
-        # (Logic will be implemented in Step 4 via StepActivityService)
-        if create_activity and instance.step_type in ['MEETING', 'CALL', 'EMAIL']:
-            # TODO: Will be implemented in Step 4
-            pass
+        # Note: Activity creation is now handled separately via ActivityModal
+        # DecisionStep is a milestone, not an action. Activities are created independently.
         
         return instance
 
@@ -476,6 +436,9 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
 class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Serializer for step updates.
+    
+    Note: step_type, scheduled_date, scheduled_time have been removed.
+    Type and scheduling belong to Activity.
     """
     
     previous_step_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
@@ -494,9 +457,7 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
         model = DecisionStep
         fields = [
             'name', 'stage', 'status',
-            'step_type',
-            'scheduled_date', 'scheduled_time',
-            'expected_date',
+            'expected_end',
             'previous_step_id',
             'stakeholder',
             'description', 'goal',

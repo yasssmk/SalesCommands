@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect  } from 'react';
 import PropTypes from 'prop-types';
 
 // MUI
@@ -31,6 +31,10 @@ import {
   ACTIVITY_OUTCOME_COLORS
 } from 'api/accounts/activities';
 import { useGetContacts } from 'api/businessData/contacts';
+import {
+  useGetDecisionCyclesByAccount,
+  useGetDecisionStepsByCycle
+} from 'api/accounts/decisionCycles';
 
 
 // Icons
@@ -331,9 +335,211 @@ function EditableContactsField({ label, value = [], fieldKey, onSave, accountId 
   );
 }
 
+// ==============================|| EDITABLE CYCLE FIELD ||============================== //
+
+function EditableCycleField({ label, value, fieldKey, onSave, accountId, onCycleChange }) {
+  const [editing, setEditing] = useState(false);
+  const [tempValue, setTempValue] = useState(value || '');
+  const [saving, setSaving] = useState(false);
+
+  // Fetch cycles for the account
+  const { cycles, cyclesLoading } = useGetDecisionCyclesByAccount(accountId);
+
+  const handleSave = async () => {
+    if (tempValue === value) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const success = await onSave(fieldKey, tempValue || null);
+    setSaving(false);
+    if (success) {
+      setEditing(false);
+      onCycleChange?.(tempValue);
+    }
+  };
+
+  const handleCancel = () => {
+    setTempValue(value || '');
+    setEditing(false);
+  };
+
+  const selectedCycle = cycles.find(c => c.id === value);
+  const displayValue = selectedCycle?.name || '-';
+
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+        {label}
+      </Typography>
+      {editing ? (
+        <Stack direction="row" spacing={1} alignItems="flex-start">
+          <Select
+            value={tempValue}
+            onChange={(e) => setTempValue(e.target.value)}
+            size="small"
+            fullWidth
+            autoFocus
+            disabled={saving || cyclesLoading}
+            displayEmpty
+          >
+            <MenuItem value="">
+              <em>None</em>
+            </MenuItem>
+            {cycles.map((cycle) => (
+              <MenuItem key={cycle.id} value={cycle.id}>
+                {cycle.name}
+                {!cycle.is_active && ' (Inactive)'}
+              </MenuItem>
+            ))}
+          </Select>
+          <IconButton size="small" onClick={handleSave} disabled={saving} color="success">
+            <CheckOutlined />
+          </IconButton>
+          <IconButton size="small" onClick={handleCancel} disabled={saving} color="error">
+            <CloseOutlined />
+          </IconButton>
+        </Stack>
+      ) : (
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Typography variant="body1">
+            {cycles.length === 0 ? (
+              <span style={{ color: '#999' }}>No cycles available</span>
+            ) : (
+              displayValue
+            )}
+          </Typography>
+          {cycles.length > 0 && (
+            <IconButton size="small" onClick={() => setEditing(true)}>
+              <EditOutlined />
+            </IconButton>
+          )}
+        </Stack>
+      )}
+    </Box>
+  );
+}
+
+// ==============================|| EDITABLE STEP FIELD ||============================== //
+
+function EditableStepField({ label, value, fieldKey, onSave, cycleId }) {
+  const [editing, setEditing] = useState(false);
+  const [tempValue, setTempValue] = useState(value || '');
+  const [saving, setSaving] = useState(false);
+
+  // Fetch steps for the cycle
+  const { steps, stepsLoading } = useGetDecisionStepsByCycle(cycleId);
+
+  // Reset temp value when cycle changes
+  useEffect(() => {
+    setTempValue(value || '');
+  }, [cycleId, value]);
+
+  const handleSave = async () => {
+    if (tempValue === value) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const success = await onSave(fieldKey, tempValue || null);
+    setSaving(false);
+    if (success) setEditing(false);
+  };
+
+  const handleCancel = () => {
+    setTempValue(value || '');
+    setEditing(false);
+  };
+
+  const selectedStep = steps.find(s => s.id === value);
+  const displayValue = selectedStep?.name || '-';
+
+  // If no cycle selected, show message
+  if (!cycleId) {
+    return (
+      <Box>
+        <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+          {label}
+        </Typography>
+        <Typography variant="body1" color="text.disabled">
+          Select a cycle first
+        </Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+        {label}
+      </Typography>
+      {editing ? (
+        <Stack direction="row" spacing={1} alignItems="flex-start">
+          <Select
+            value={tempValue}
+            onChange={(e) => setTempValue(e.target.value)}
+            size="small"
+            fullWidth
+            autoFocus
+            disabled={saving || stepsLoading}
+            displayEmpty
+          >
+            <MenuItem value="">
+              <em>None</em>
+            </MenuItem>
+            {steps.map((step) => (
+              <MenuItem key={step.id} value={step.id}>
+                {step.name}
+              </MenuItem>
+            ))}
+          </Select>
+          <IconButton size="small" onClick={handleSave} disabled={saving} color="success">
+            <CheckOutlined />
+          </IconButton>
+          <IconButton size="small" onClick={handleCancel} disabled={saving} color="error">
+            <CloseOutlined />
+          </IconButton>
+        </Stack>
+      ) : (
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Typography variant="body1">
+            {steps.length === 0 ? (
+              <span style={{ color: '#999' }}>No steps in cycle</span>
+            ) : (
+              displayValue
+            )}
+          </Typography>
+          {steps.length > 0 && (
+            <IconButton size="small" onClick={() => setEditing(true)}>
+              <EditOutlined />
+            </IconButton>
+          )}
+        </Stack>
+      )}
+    </Box>
+  );
+}
+
 // ==============================|| ACTIVITY OVERVIEW TAB ||============================== //
 
 export default function ActivityOverviewTab({ activity, onSave }) {
+  // Track current cycle for cascading step dropdown
+  const [currentCycleId, setCurrentCycleId] = useState(activity?.decision_cycle || '');
+
+  // Update currentCycleId when activity changes
+  useEffect(() => {
+    setCurrentCycleId(activity?.decision_cycle || '');
+  }, [activity?.decision_cycle]);
+
+  // Handle cycle change - also clear step if cycle changes
+  const handleCycleChange = async (newCycleId) => {
+    setCurrentCycleId(newCycleId);
+    // If cycle changed, clear the step
+    if (newCycleId !== activity?.decision_cycle) {
+      await onSave('decision_step_id', null);
+    }
+  };
+
   // Type options
   const typeOptions = Object.entries(ACTIVITY_TYPE_LABELS).map(([value, label]) => ({
     value,
@@ -392,8 +598,33 @@ export default function ActivityOverviewTab({ activity, onSave }) {
               onSave={onSave}
               accountId={activity?.account}
             />
+            
+           {/* Decision Cycle Link */}
+            <Box sx={{ pt: 2 }}>
+              <Typography variant="h6" sx={{ mb: 2 }}>Decision Cycle</Typography>
+              
+              <Stack spacing={3}>
+                <EditableCycleField
+                  label="Cycle"
+                  value={activity?.decision_cycle}
+                  fieldKey="decision_cycle_id"
+                  onSave={onSave}
+                  accountId={activity?.account}
+                  onCycleChange={handleCycleChange}
+                />
+
+                <EditableStepField
+                  label="Step"
+                  value={activity?.decision_step}
+                  fieldKey="decision_step_id"
+                  onSave={onSave}
+                  cycleId={currentCycleId}
+                />
+              </Stack>
+            </Box>
           </Stack>
         </Grid>
+
 
         {/* Right Column - Outcome & Notes */}
         <Grid item xs={12} md={6}>

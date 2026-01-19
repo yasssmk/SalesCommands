@@ -24,9 +24,7 @@ class CompletenessScoreService:
     FIELD_WEIGHTS = {
         'name': 10,
         'stage': 10,
-        'step_type': 8,
-        'scheduled_date': 12,
-        'expected_date': 10,
+        'expected_end': 15,  
         'description': 8,
         'goal': 8,
         'stakeholder': 6,
@@ -162,17 +160,17 @@ class CompletenessScoreService:
         return 'poor'
 
     def _generate_suggestions(self, missing_fields):
+        """Generate actionable suggestions for missing fields."""
+        # NOTE: step_type and scheduled_date removed - scheduling belongs to Activity
         suggestions_map = {
             'contacts': _('Add contacts involved in this step'),
-            'scheduled_date': _('Set a scheduled date for this step'),
-            'expected_date': _('Set an expected completion date'),
+            'expected_end': _('Set the expected end date for this step'),
             'description': _('Add a description of what will happen'),
             'goal': _('Define the goal of this step'),
             'departments': _('Specify which departments are involved'),
             'stakeholder': _('Identify the key stakeholder'),
             'criterias': _('Add evaluation criteria'),
             'metrics': _('Define success metrics'),
-            'step_type': _('Specify the step type (meeting, call, etc.)'),
         }
 
         suggestions = []

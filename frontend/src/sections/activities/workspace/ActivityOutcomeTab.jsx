@@ -29,17 +29,31 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogActions from '@mui/material/DialogActions';
 
 // Project imports
 import MainCard from 'components/MainCard';
 import {
   completeActivity,
+  updateActivity,
   ACTIVITY_OUTCOMES,
   ACTIVITY_OUTCOME_LABELS,
   ACTIVITY_OUTCOME_COLORS,
   ACTIVITY_STATUS_LABELS
 } from 'api/accounts/activities';
+import {
+  useGetDecisionStepsByCycle,
+  STATUS_COLORS,
+  STATUS_LABELS
+} from 'api/accounts/decisionCycles';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
+
+// Navigation
+import { useRouter } from 'next/navigation';
 
 // Modals
 import ActivityModal from 'sections/accounts/activities/ActivityModal';
@@ -194,8 +208,18 @@ KeyTakeawaysSection.propTypes = {
 // ==============================|| NEXT STEPS SECTION ||============================== //
 
 function NextStepsSection({ activity, onCreateActivity, onCreateStep }) {
+  const router = useRouter();
   const hasLinkedStep = Boolean(activity?.decision_step);
   const hasNextActivity = Boolean(activity?.next_activity);
+  const hasCycle = Boolean(activity?.decision_cycle);
+
+  // Fetch existing steps for the cycle
+  const { steps, stepsLoading } = useGetDecisionStepsByCycle(activity?.decision_cycle);
+
+  // Navigate to step workspace
+  const handleStepClick = (stepId) => {
+    router.push(`/decision-steps/${stepId}`);
+  };
 
   return (
     <SectionCard title="Next Steps" icon={RocketOutlined}>
@@ -245,26 +269,62 @@ function NextStepsSection({ activity, onCreateActivity, onCreateStep }) {
 
         <Divider sx={{ my: 1 }} />
 
-        {/* Decision Step creation */}
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Button
-            variant="text"
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={onCreateStep}
-            color="secondary"
-          >
-            Create Decision Step
-          </Button>
-          {hasLinkedStep && (
-            <Chip
-              label={`Linked to: ${activity.decision_step_detail?.name || 'Step'}`}
-              size="small"
-              variant="outlined"
-              color="primary"
-            />
+        {/* Decision Step section */}
+        <Box>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+            {hasCycle ? (
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<PlusOutlined />}
+                onClick={onCreateStep}
+                color="secondary"
+              >
+                Add Decision Step
+              </Button>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                Link this activity to a Decision Cycle to create steps.
+              </Typography>
+            )}
+            {hasLinkedStep && (
+              <Chip
+                label={`Current: ${activity.decision_step_detail?.name || 'Step'}`}
+                size="small"
+                variant="filled"
+                color="primary"
+                onClick={() => handleStepClick(activity.decision_step)}
+                sx={{ cursor: 'pointer' }}
+              />
+            )}
+          </Stack>
+
+          {/* Existing steps in cycle */}
+          {hasCycle && !stepsLoading && steps.length > 0 && (
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                Steps in this cycle ({steps.length}):
+              </Typography>
+              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                {steps.map((step) => (
+                  <Chip
+                    key={step.id}
+                    label={step.name}
+                    size="small"
+                    variant={step.id === activity?.decision_step ? 'filled' : 'outlined'}
+                    color={STATUS_COLORS[step.status] || 'default'}
+                    onClick={() => handleStepClick(step.id)}
+                    sx={{ 
+                      cursor: 'pointer',
+                      mb: 0.5,
+                      '&:hover': { opacity: 0.8 }
+                    }}
+                  />
+                ))}
+              </Stack>
+            </Box>
           )}
-        </Stack>
+        </Box>
 
         {/* No next step option - Stub for now */}
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
@@ -391,6 +451,9 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [activityModalType, setActivityModalType] = useState(null);
   const [stepModalOpen, setStepModalOpen] = useState(false);
+  const [createdStep, setCreatedStep] = useState(null);
+  const [linkConfirmOpen, setLinkConfirmOpen] = useState(false);
+  const [linking, setLinking] = useState(false);
 
   // Handle create follow-up activity
   const handleCreateActivity = (activityType) => {
@@ -413,6 +476,11 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
     setStepModalOpen(false);
   };
 
+  const handleLinkConfirmClose = () => {
+    setLinkConfirmOpen(false);
+    setCreatedStep(null);
+  };
+
   // Success handlers
   const handleActivitySuccess = () => {
     handleActivityModalClose();
@@ -420,10 +488,40 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
     displaySuccessSnackbar('Follow-up activity created');
   };
 
-  const handleStepSuccess = () => {
+  const handleStepSuccess = (stepData) => {
     handleStepModalClose();
     onUpdate?.();
     displaySuccessSnackbar('Decision step created');
+    
+    // If activity is not already linked to a step, offer to link
+    if (!activity?.decision_step && stepData?.id) {
+      setCreatedStep(stepData);
+      setLinkConfirmOpen(true);
+    }
+  };
+
+  // Link activity to newly created step
+  const handleLinkToStep = async () => {
+    if (!createdStep?.id) return;
+    
+    setLinking(true);
+    try {
+      const result = await updateActivity(activity.id, {
+        decision_step_id: createdStep.id
+      });
+      
+      if (result.success) {
+        displaySuccessSnackbar(`Activity linked to "${createdStep.name}"`);
+        onUpdate?.();
+      } else {
+        displayErrorSnackbar(result.error || 'Failed to link activity');
+      }
+    } catch (error) {
+      displayErrorSnackbar('An error occurred');
+    } finally {
+      setLinking(false);
+      handleLinkConfirmClose();
+    }
   };
 
   return (
@@ -472,6 +570,34 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
           onSuccess={handleStepSuccess}
         />
       )}
+
+      {/* Link Confirmation Dialog */}
+      <Dialog
+        open={linkConfirmOpen}
+        onClose={handleLinkConfirmClose}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Link to this activity?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Do you want to link this activity to the newly created step "{createdStep?.name}"?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleLinkConfirmClose} disabled={linking}>
+            No, skip
+          </Button>
+          <Button 
+            onClick={handleLinkToStep} 
+            variant="contained" 
+            disabled={linking}
+            autoFocus
+          >
+            {linking ? 'Linking...' : 'Yes, link it'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
