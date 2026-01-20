@@ -37,19 +37,16 @@ import * as Yup from 'yup';
 
 // date picker
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
 
-// project imports
+/// project imports
 import { 
   createDecisionStep, 
   useGetDecisionCycleChoices,
   DECISION_STAGES,
-  DECISION_STEP_STATUSES,
-  DECISION_STEP_TYPES,
-  STEP_TYPE_LABELS
+  DECISION_STEP_STATUSES
 } from 'api/accounts/decisionCycles';
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
@@ -62,20 +59,15 @@ const validationSchema = Yup.object({
   stage: Yup.string()
     .required('Stage is required')
     .oneOf(Object.keys(DECISION_STAGES), 'Invalid stage'),
-  step_type: Yup.string()
-    .oneOf(Object.keys(DECISION_STEP_TYPES), 'Invalid step type'),
   status: Yup.string()
     .oneOf(Object.keys(DECISION_STEP_STATUSES), 'Invalid status'),
+  expected_end: Yup.date()
+    .required('Expected end date is required')
+    .min(new Date(), 'Expected end date must be in the future'),
   stakeholder: Yup.string()
     .max(255, 'Stakeholder must be at most 255 characters'),
   description: Yup.string(),
-  goal: Yup.string(),
-  expected_days: Yup.number()
-    .nullable()
-    .positive('Must be a positive number')
-    .integer('Must be a whole number'),
-  scheduled_date: Yup.date().nullable(),
-  scheduled_time: Yup.date().nullable()
+  goal: Yup.string()
 });
 
 // ==============================|| FORM STEP ADD ||============================== //
@@ -93,21 +85,18 @@ export default function FormStepAdd({ cycleId, defaultStage, closeModal, onSucce
   const [submitting, setSubmitting] = useState(false);
   
   // Fetch choices
-  const { stages, statuses, stepTypes, choicesLoading } = useGetDecisionCycleChoices();
+  const { stages, statuses, choicesLoading } = useGetDecisionCycleChoices();
 
   // Formik setup
   const formik = useFormik({
     initialValues: {
       name: '',
       stage: defaultStage || '',
-      step_type: 'OTHER',
       status: 'NOT_STARTED',
+      expected_end: null,
       stakeholder: '',
       description: '',
-      goal: '',
-      expected_days: '',
-      scheduled_date: null,
-      scheduled_time: null
+      goal: ''
     },
     validationSchema,
     onSubmit: async (values) => {
@@ -119,14 +108,11 @@ export default function FormStepAdd({ cycleId, defaultStage, closeModal, onSucce
           cycle_id: cycleId,
           name: values.name.trim(),
           stage: values.stage,
-          step_type: values.step_type || 'OTHER',
           status: values.status || 'NOT_STARTED',
+          expected_end: values.expected_end ? dayjs(values.expected_end).format('YYYY-MM-DD') : null,
           stakeholder: values.stakeholder?.trim() || null,
           description: values.description?.trim() || null,
-          goal: values.goal?.trim() || null,
-          expected_days: values.expected_days ? parseInt(values.expected_days, 10) : null,
-          scheduled_date: values.scheduled_date ? dayjs(values.scheduled_date).format('YYYY-MM-DD') : null,
-          scheduled_time: values.scheduled_time ? dayjs(values.scheduled_time).format('HH:mm:ss') : null
+          goal: values.goal?.trim() || null
         };
         
         const result = await createDecisionStep(payload);
@@ -238,73 +224,27 @@ export default function FormStepAdd({ cycleId, defaultStage, closeModal, onSucce
             </Stack>
           </Grid>
 
-          {/* Step Type */}
+          {/* Expected End Date */}
           <Grid item xs={12} sm={6}>
             <Stack spacing={1}>
-              <InputLabel>Step Type</InputLabel>
-              <FormControl fullWidth>
-                <Select
-                  name="step_type"
-                  value={values.step_type}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                >
-                  {(stepTypes.length > 0 ? stepTypes : Object.entries(DECISION_STEP_TYPES).map(([key]) => ({
-                    value: key,
-                    label: STEP_TYPE_LABELS[key] || key.replace(/_/g, ' ')
-                  }))).map((type) => (
-                    <MenuItem key={type.value} value={type.value}>
-                      {type.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Stack>
-          </Grid>
-
-          {/* Scheduled Date */}
-          <Grid item xs={12} sm={6}>
-            <Stack spacing={1}>
-              <InputLabel>Scheduled Date</InputLabel>
+              <InputLabel required>Expected End Date</InputLabel>
               <LocalizationProvider dateAdapter={AdapterDayjs}>
                 <DatePicker
-                  value={values.scheduled_date}
-                  onChange={(newValue) => setFieldValue('scheduled_date', newValue)}
+                  value={values.expected_end}
+                  onChange={(newValue) => setFieldValue('expected_end', newValue)}
+                  minDate={dayjs()}
                   slotProps={{
                     textField: {
                       fullWidth: true,
-                      placeholder: 'Select date if known',
-                      error: touched.scheduled_date && Boolean(errors.scheduled_date),
-                      helperText: touched.scheduled_date && errors.scheduled_date
+                      placeholder: 'When should this step be completed?',
+                      error: touched.expected_end && Boolean(errors.expected_end),
+                      helperText: touched.expected_end && errors.expected_end
                     }
                   }}
                 />
               </LocalizationProvider>
             </Stack>
           </Grid>
-
-          {/* Scheduled Time (only show if date is set) */}
-          {values.scheduled_date && (
-            <Grid item xs={12} sm={6}>
-              <Stack spacing={1}>
-                <InputLabel>Scheduled Time</InputLabel>
-                <LocalizationProvider dateAdapter={AdapterDayjs}>
-                  <TimePicker
-                    value={values.scheduled_time}
-                    onChange={(newValue) => setFieldValue('scheduled_time', newValue)}
-                    slotProps={{
-                      textField: {
-                        fullWidth: true,
-                        placeholder: 'Select time',
-                        error: touched.scheduled_time && Boolean(errors.scheduled_time),
-                        helperText: touched.scheduled_time && errors.scheduled_time
-                      }
-                    }}
-                  />
-                </LocalizationProvider>
-              </Stack>
-            </Grid>
-          )}
           
           {/* Stakeholder */}
           <Grid item xs={12} sm={6}>

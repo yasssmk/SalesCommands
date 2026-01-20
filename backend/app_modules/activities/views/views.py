@@ -485,7 +485,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             target_type='activity',
             target_id=str(activity.id),
             outcome='success',
-            details={'activity_outcome': outcome}
+            extra={'activity_outcome': outcome}
         )
         
         # Invalidate cache
@@ -621,7 +621,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             target_type='activity',
             target_id=str(result['activity'].id),
             outcome='success',
-            details={
+            extra={
                 'inline_contact_created': result['contact'] is not None,
                 'inline_cycle_created': result['cycle'] is not None,
                 'inline_step_created': result['step'] is not None,

@@ -38,6 +38,7 @@ class DecisionStepStatus(models.TextChoices):
     VALIDATED = 'VALIDATED', _('Validated')
     REJECTED = 'REJECTED', _('Rejected')
     ON_HOLD = 'ON_HOLD', _('On Hold')
+    CANCELLED = 'CANCELLED', _('Cancelled')
 
 class StalledReason(models.TextChoices):
     """

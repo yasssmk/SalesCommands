@@ -133,6 +133,7 @@ const endpoints = {
   // Custom actions
   complete: (id) => `/module-activities/${id}/complete/`,
   cancel: (id) => `/module-activities/${id}/cancel/`,
+  createWithEntities: '/module-activities/create-with-entities/',
   
   // List actions
   myActivities: '/module-activities/my-activities/',
@@ -541,6 +542,85 @@ export async function createActivity(payload) {
 }
 
 /**
+ * CREATE ACTIVITY WITH INLINE ENTITIES
+ * 
+ * Creates an activity with optional inline creation of contact, cycle, and step.
+ * All entities are created in FK-safe order within a single transaction.
+ * 
+ * @param {Object} payload - Combined payload
+ * @param {Object} payload.activity - Activity data (required)
+ * @param {Object} [payload.inline_contact] - Optional inline contact to create
+ * @param {Object} [payload.inline_cycle] - Optional inline cycle to create
+ * @param {Object} [payload.inline_step] - Optional inline step to create (requires cycle)
+ * @returns {Promise<Object>} {success: boolean, data?: {activity, created_entities}, error?: string}
+ */
+export async function createActivityWithEntities(payload) {
+  // Sanitize activity data
+  const sanitizedActivity = payload.activity 
+    ? sanitizeObject(payload.activity, ['title', 'description', 'call_to_action', 'outcome_notes'])
+    : null;
+  
+  // Sanitize inline contact if provided
+  const sanitizedContact = payload.inline_contact
+    ? sanitizeObject(payload.inline_contact, ['first_name', 'last_name', 'email', 'phone', 'job_title'])
+    : null;
+  
+  // Sanitize inline cycle if provided
+  const sanitizedCycle = payload.inline_cycle
+    ? sanitizeObject(payload.inline_cycle, ['name', 'description'])
+    : null;
+  
+  // Sanitize inline step if provided
+  const sanitizedStep = payload.inline_step
+    ? sanitizeObject(payload.inline_step, ['name', 'description', 'goal'])
+    : null;
+  
+  // Build sanitized payload
+  const sanitizedPayload = {
+    activity: sanitizedActivity
+  };
+  
+  if (sanitizedContact) {
+    sanitizedPayload.inline_contact = sanitizedContact;
+  }
+  
+  if (sanitizedCycle) {
+    sanitizedPayload.inline_cycle = sanitizedCycle;
+  }
+  
+  if (sanitizedStep) {
+    sanitizedPayload.inline_step = sanitizedStep;
+  }
+  
+  const result = await api.post(endpoints.createWithEntities, sanitizedPayload);
+  
+  if (result.success) {
+    // Revalidate all potentially affected endpoints
+    revalidateMultiple([
+      endpoints.activities,
+      endpoints.myActivities,
+      endpoints.byAccount,
+      '/company-accounts/',
+      '/module-contacts/',
+      '/module-decision-cycles/'
+    ]);
+    
+    const responseData = result.data?.data || result.data;
+    return { 
+      success: true, 
+      data: responseData
+    };
+  }
+  
+  return { 
+    success: false, 
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null
+  };
+}
+
+/**
  * UPDATE ACTIVITY
  * 
  * @param {string} activityId - UUID of the activity
@@ -640,6 +720,94 @@ export async function completeActivity(activityId, payload = {}) {
       endpoints.myActivities,
       endpoints.overdue,
       '/company-accounts/'
+    ]);
+    const activityData = result.data?.data || result.data;
+    return { success: true, data: activityData };
+  }
+  
+  return { 
+    success: false, 
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null
+  };
+}
+
+/**
+ * MARK ACTIVITY AS NO NEXT STEP
+ * 
+ * Sets next_step_agreed=false with optional reason.
+ * This triggers stalled detection on linked DecisionStep.
+ * 
+ * @param {string} activityId - UUID of the activity
+ * @param {Object} payload - {reason?: string}
+ * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ */
+export async function markNoNextStep(activityId, payload = {}) {
+  if (!activityId || !isValidUUID(activityId)) {
+    return {
+      success: false,
+      error: 'Invalid activity ID format',
+      status: 400
+    };
+  }
+  
+  const result = await api.patch(endpoints.activityDetail(activityId), {
+    next_step_agreed: false,
+    no_next_step_reason: payload.reason?.trim() || null
+  });
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.activities,
+      endpoints.activityDetail(activityId),
+      endpoints.myActivities,
+      '/company-accounts/',
+      '/module-decision-cycles/'
+    ]);
+    const activityData = result.data?.data || result.data;
+    return { success: true, data: activityData };
+  }
+  
+  return { 
+    success: false, 
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null
+  };
+}
+
+/**
+ * MARK ACTIVITY AS NEXT STEP AGREED
+ * 
+ * Sets next_step_agreed=true (follow-up was scheduled).
+ * Call this after creating a follow-up activity or decision step.
+ * 
+ * @param {string} activityId - UUID of the activity
+ * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ */
+
+export async function markNextStepAgreed(activityId) {
+  if (!activityId || !isValidUUID(activityId)) {
+    return {
+      success: false,
+      error: 'Invalid activity ID format',
+      status: 400
+    };
+  }
+  
+  const result = await api.patch(endpoints.activityDetail(activityId), {
+    next_step_agreed: true,
+    no_next_step_reason: null
+  });
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.activities,
+      endpoints.activityDetail(activityId),
+      endpoints.myActivities,
+      '/company-accounts/',
+      '/module-decision-cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };

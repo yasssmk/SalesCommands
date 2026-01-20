@@ -40,6 +40,8 @@ import MainCard from 'components/MainCard';
 import {
   completeActivity,
   updateActivity,
+  markNoNextStep,
+  markNextStepAgreed,
   ACTIVITY_OUTCOMES,
   ACTIVITY_OUTCOME_LABELS,
   ACTIVITY_OUTCOME_COLORS,
@@ -68,6 +70,8 @@ import CloseOutlined from '@ant-design/icons/CloseOutlined';
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
 import BulbOutlined from '@ant-design/icons/BulbOutlined';
 import RocketOutlined from '@ant-design/icons/RocketOutlined';
+import StopOutlined from '@ant-design/icons/StopOutlined';
+import WarningOutlined from '@ant-design/icons/WarningOutlined';
 
 // ==============================|| SECTION CARD WRAPPER ||============================== //
 
@@ -207,11 +211,21 @@ KeyTakeawaysSection.propTypes = {
 
 // ==============================|| NEXT STEPS SECTION ||============================== //
 
-function NextStepsSection({ activity, onCreateActivity, onCreateStep }) {
+function NextStepsSection({ activity, onCreateActivity, onCreateStep, onMarkNoNextStep, onUpdate }) {
   const router = useRouter();
   const hasLinkedStep = Boolean(activity?.decision_step);
   const hasNextActivity = Boolean(activity?.next_activity);
   const hasCycle = Boolean(activity?.decision_cycle);
+  
+  // Next step agreement state
+  const nextStepAgreed = activity?.next_step_agreed;
+  const noNextStepReason = activity?.no_next_step_reason;
+  const hasNextStepDecision = nextStepAgreed !== null && nextStepAgreed !== undefined;
+  
+  // No next step dialog state
+  const [noNextStepOpen, setNoNextStepOpen] = useState(false);
+  const [noNextStepReasonValue, setNoNextStepReasonValue] = useState('');
+  const [submittingNoNextStep, setSubmittingNoNextStep] = useState(false);
 
   // Fetch existing steps for the cycle
   const { steps, stepsLoading } = useGetDecisionStepsByCycle(activity?.decision_cycle);
@@ -219,6 +233,53 @@ function NextStepsSection({ activity, onCreateActivity, onCreateStep }) {
   // Navigate to step workspace
   const handleStepClick = (stepId) => {
     router.push(`/decision-steps/${stepId}`);
+  };
+  
+  // Handle mark no next step
+  const handleNoNextStepClick = () => {
+    setNoNextStepReasonValue(noNextStepReason || '');
+    setNoNextStepOpen(true);
+  };
+  
+  const handleNoNextStepClose = () => {
+    setNoNextStepOpen(false);
+    setNoNextStepReasonValue('');
+  };
+  
+  const handleNoNextStepConfirm = async () => {
+    setSubmittingNoNextStep(true);
+    try {
+      const result = await markNoNextStep(activity.id, { reason: noNextStepReasonValue });
+      if (result.success) {
+        displaySuccessSnackbar('Marked as no next step agreed');
+        onUpdate?.();
+        handleNoNextStepClose();
+      } else {
+        displayErrorSnackbar(result.error || 'Failed to update activity');
+      }
+    } catch (error) {
+      displayErrorSnackbar('An error occurred');
+    } finally {
+      setSubmittingNoNextStep(false);
+    }
+  };
+  
+  // Clear no next step (revert)
+  const handleClearNoNextStep = async () => {
+    try {
+      const result = await updateActivity(activity.id, {
+        next_step_agreed: null,
+        no_next_step_reason: null
+      });
+      if (result.success) {
+        displaySuccessSnackbar('Next step status cleared');
+        onUpdate?.();
+      } else {
+        displayErrorSnackbar(result.error || 'Failed to update');
+      }
+    } catch (error) {
+      displayErrorSnackbar('An error occurred');
+    }
   };
 
   return (
@@ -326,11 +387,114 @@ function NextStepsSection({ activity, onCreateActivity, onCreateStep }) {
           )}
         </Box>
 
-        {/* No next step option - Stub for now */}
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
-          No follow-up needed? Complete the activity with the appropriate outcome below.
-        </Typography>
+        {/* No next step section */}
+        <Divider sx={{ my: 1 }} />
+        
+        {hasNextStepDecision ? (
+          // Show current next step status
+          <Box>
+            {nextStepAgreed === true ? (
+              <Alert severity="success" sx={{ mb: 1 }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" width="100%">
+                  <Typography variant="body2">
+                    ✓ Next step agreed - follow-up scheduled
+                  </Typography>
+                  <Button size="small" onClick={handleClearNoNextStep}>
+                    Clear
+                  </Button>
+                </Stack>
+              </Alert>
+            ) : (
+              <Alert 
+                severity="warning" 
+                icon={<WarningOutlined />}
+                sx={{ mb: 1 }}
+              >
+                <Stack spacing={1}>
+                  <Stack direction="row" alignItems="center" justifyContent="space-between" width="100%">
+                    <Typography variant="body2" fontWeight={600}>
+                      ⚠ No next step agreed
+                    </Typography>
+                    <Button size="small" onClick={handleClearNoNextStep}>
+                      Clear
+                    </Button>
+                  </Stack>
+                  {noNextStepReason && (
+                    <Typography variant="caption" color="text.secondary">
+                      Reason: {noNextStepReason}
+                    </Typography>
+                  )}
+                  <Typography variant="caption" color="text.secondary">
+                    This may trigger stalled detection on the linked Decision Step.
+                  </Typography>
+                </Stack>
+              </Alert>
+            )}
+          </Box>
+        ) : (
+          // Show option to mark no next step
+          <Box>
+            <Button
+              variant="text"
+              size="small"
+              color="warning"
+              startIcon={<StopOutlined />}
+              onClick={handleNoNextStepClick}
+            >
+              Mark as No Next Step Agreed
+            </Button>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, ml: 3 }}>
+              Use this if the prospect declined a follow-up or needs internal validation first.
+            </Typography>
+          </Box>
+        )}
       </Stack>
+      
+      {/* No Next Step Dialog */}
+      <Dialog
+        open={noNextStepOpen}
+        onClose={handleNoNextStepClose}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <WarningOutlined style={{ color: '#faad14' }} />
+            <span>No Next Step Agreed</span>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <DialogContentText>
+              Mark this activity as having no agreed next step. This will trigger stalled detection
+              on the linked Decision Step if present.
+            </DialogContentText>
+            <TextField
+              label="Reason (optional)"
+              multiline
+              rows={3}
+              fullWidth
+              value={noNextStepReasonValue}
+              onChange={(e) => setNoNextStepReasonValue(e.target.value)}
+              placeholder="e.g., Client needs internal validation first, Budget not approved yet..."
+              disabled={submittingNoNextStep}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleNoNextStepClose} disabled={submittingNoNextStep}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleNoNextStepConfirm}
+            variant="contained"
+            color="warning"
+            disabled={submittingNoNextStep}
+          >
+            {submittingNoNextStep ? 'Saving...' : 'Confirm No Next Step'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </SectionCard>
   );
 }
@@ -338,7 +502,9 @@ function NextStepsSection({ activity, onCreateActivity, onCreateStep }) {
 NextStepsSection.propTypes = {
   activity: PropTypes.object,
   onCreateActivity: PropTypes.func.isRequired,
-  onCreateStep: PropTypes.func.isRequired
+  onCreateStep: PropTypes.func.isRequired,
+  onMarkNoNextStep: PropTypes.func,
+  onUpdate: PropTypes.func
 };
 
 // ==============================|| RESULT SECTION ||============================== //
@@ -482,14 +648,34 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
   };
 
   // Success handlers
-  const handleActivitySuccess = () => {
+  const handleActivitySuccess = async () => {
     handleActivityModalClose();
+    
+    // Auto-set next_step_agreed=true when creating follow-up
+    if (activity?.id && activity?.next_step_agreed !== true) {
+      try {
+        await markNextStepAgreed(activity.id);
+      } catch (error) {
+        console.error('Failed to mark next step agreed:', error);
+      }
+    }
+    
     onUpdate?.();
     displaySuccessSnackbar('Follow-up activity created');
   };
 
-  const handleStepSuccess = (stepData) => {
+  const handleStepSuccess = async (stepData) => {
     handleStepModalClose();
+    
+    // Auto-set next_step_agreed=true when creating step
+    if (activity?.id && activity?.next_step_agreed !== true) {
+      try {
+        await markNextStepAgreed(activity.id);
+      } catch (error) {
+        console.error('Failed to mark next step agreed:', error);
+      }
+    }
+    
     onUpdate?.();
     displaySuccessSnackbar('Decision step created');
     
@@ -535,6 +721,7 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
               activity={activity}
               onCreateActivity={handleCreateActivity}
               onCreateStep={handleCreateStep}
+              onUpdate={onUpdate}
             />
           </Stack>
         </Grid>

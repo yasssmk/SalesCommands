@@ -24,8 +24,7 @@ import MainCard from 'components/MainCard';
 import { 
   updateDecisionStepStatus,
   deleteDecisionStep,
-  STATUS_COLORS,
-  STEP_TYPE_LABELS
+  STATUS_COLORS
 } from 'api/accounts/decisionCycles';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
 import AlertStepDelete from 'sections/accounts/decision-cycles/AlertStepDelete';
@@ -38,13 +37,6 @@ import {
   MoreOutlined,
   CheckCircleOutlined,
   DeleteOutlined,
-  PhoneOutlined,
-  MailOutlined,
-  TeamOutlined,
-  CheckSquareOutlined,
-  AuditOutlined,
-  SafetyOutlined,
-  QuestionCircleOutlined
 } from '@ant-design/icons';
 
 // Date formatting
@@ -69,16 +61,6 @@ const STAGE_LABELS = {
   FORMALIZATION: 'Formalization'
 };
 
-// Step type icons mapping
-const TYPE_ICONS = {
-  MEETING: TeamOutlined,
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  TASK_SELLER: CheckSquareOutlined,
-  TASK_BUYER: AuditOutlined,
-  INTERNAL_VALIDATION: SafetyOutlined,
-  OTHER: QuestionCircleOutlined
-};
 
 // ==============================|| STEP HEADER ||============================== //
 
@@ -102,7 +84,6 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
   const statusMenuOpen = Boolean(statusAnchorEl);
 
   // Get type icon component
-  const TypeIcon = TYPE_ICONS[step?.step_type] || TYPE_ICONS.OTHER;
   const statusConfig = STATUS_CONFIG[step?.status] || STATUS_CONFIG.NOT_STARTED;
 
   // ==============================|| HANDLERS ||============================== //
@@ -176,15 +157,6 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
     }
   };
 
-  // Format scheduled date
-  const formatScheduledDate = () => {
-    if (!step?.scheduled_date) return 'Not scheduled';
-    const dateStr = format(new Date(step.scheduled_date), 'MMM d, yyyy');
-    if (step?.scheduled_time) {
-      return `${dateStr} at ${step.scheduled_time.slice(0, 5)}`;
-    }
-    return dateStr;
-  };
 
   // Determine if step can be validated
   const canValidate = step?.status !== 'VALIDATED' && step?.status !== 'REJECTED';
@@ -196,14 +168,6 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
           {/* Row 1: Title + Status/Stage chips */}
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
             <Stack direction="row" spacing={2} alignItems="center" flex={1}>
-              {/* Type Icon */}
-              {TypeIcon && (
-                <Tooltip title={STEP_TYPE_LABELS[step?.step_type] || 'Step'}>
-                  <Box sx={{ fontSize: 24, color: 'primary.main', display: 'flex', alignItems: 'center' }}>
-                    <TypeIcon />
-                  </Box>
-                </Tooltip>
-              )}
 
               {/* Name - Inline Editable */}
               {editingName ? (
@@ -282,24 +246,14 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
             </Stack>
           </Stack>
 
-          {/* Row 2: Meta info + Actions */}
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            {/* Meta info */}
+          {/* Meta info */}
             <Stack direction="row" spacing={2} divider={<Divider orientation="vertical" flexItem />}>
               <Typography variant="body2" color="text.secondary">
                 <strong>Account:</strong> {account?.company_name || '-'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                <strong>Type:</strong> {STEP_TYPE_LABELS[step?.step_type] || '-'}
+                <strong>Expected End:</strong> {step?.expected_end ? format(new Date(step.expected_end), 'MMM d, yyyy') : 'Not set'}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                <strong>Scheduled:</strong> {formatScheduledDate()}
-              </Typography>
-              {step?.stakeholder && (
-                <Typography variant="body2" color="text.secondary">
-                  <strong>Stakeholder:</strong> {step.stakeholder}
-                </Typography>
-              )}
             </Stack>
 
             {/* Actions */}
@@ -327,7 +281,6 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
               </Menu>
             </Stack>
           </Stack>
-        </Stack>
       </MainCard>
 
       {/* Delete Dialog */}

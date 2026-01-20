@@ -37,45 +37,6 @@ export const DECISION_STEP_STATUSES = {
 };
 
 /**
- * Decision step types (matching backend DecisionStepType choices)
- */
-export const DECISION_STEP_TYPES = {
-  MEETING: 'MEETING',
-  CALL: 'CALL',
-  EMAIL: 'EMAIL',
-  TASK_SELLER: 'TASK_SELLER',
-  TASK_BUYER: 'TASK_BUYER',
-  INTERNAL_VALIDATION: 'INTERNAL_VALIDATION',
-  OTHER: 'OTHER'
-};
-
-/**
- * Step type labels for UI display
- */
-export const STEP_TYPE_LABELS = {
-  MEETING: 'Meeting',
-  CALL: 'Call',
-  EMAIL: 'Email',
-  TASK_SELLER: 'Task (Seller)',
-  TASK_BUYER: 'Task (Buyer)',
-  INTERNAL_VALIDATION: 'Internal Validation',
-  OTHER: 'Other'
-};
-
-/**
- * Step type icons mapping (icon component names from ant-design)
- */
-export const STEP_TYPE_ICONS = {
-  MEETING: 'TeamOutlined',
-  CALL: 'PhoneOutlined',
-  EMAIL: 'MailOutlined',
-  TASK_SELLER: 'CheckSquareOutlined',
-  TASK_BUYER: 'AuditOutlined',
-  INTERNAL_VALIDATION: 'SafetyOutlined',
-  OTHER: 'QuestionCircleOutlined'
-};
-
-/**
  * Status colors for UI display
  */
 export const STATUS_COLORS = {

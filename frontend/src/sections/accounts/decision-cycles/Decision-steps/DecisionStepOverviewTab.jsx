@@ -13,14 +13,18 @@ import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 
+// Date pickers
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs from 'dayjs';
+
 // Icons
 import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
-import AppstoreOutlined from '@ant-design/icons/AppstoreOutlined';
 import TeamOutlined from '@ant-design/icons/TeamOutlined';
 import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
 import HistoryOutlined from '@ant-design/icons/HistoryOutlined';
 import UserOutlined from '@ant-design/icons/UserOutlined';
-import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined';
 import FileTextOutlined from '@ant-design/icons/FileTextOutlined';
 import AimOutlined from '@ant-design/icons/AimOutlined';
 import UnorderedListOutlined from '@ant-design/icons/UnorderedListOutlined';
@@ -30,7 +34,12 @@ import EditableField from '../EditableField';
 import EditableTextArea from '../EditableTextArea';
 import EditableChipList from '../EditableChipList';
 import EditableMultiSelect from '../EditableMultiSelect';
-import EditableDateTime from '../EditableDateTime';
+
+// Project imports - Stalled Warning
+import StalledWarning from 'components/stalled/StalledWarning';
+
+// Project imports - Activity Modal (for stalled actions)
+import ActivityModal from 'sections/accounts/activities/ActivityModal';
 
 // Project imports - Phase 2.1 components
 import CompletenessScoreWidget from '../CompletenessScoreWidget';
@@ -53,18 +62,11 @@ const STATUS_CONFIG = {
   IN_PROGRESS: { color: 'info', label: 'In Progress' },
   IN_CHASING: { color: 'secondary', label: 'In Chasing' },
   VALIDATED: { color: 'success', label: 'Validated' },
-  REJECTED: { color: 'error', label: 'Rejected' }
+  REJECTED: { color: 'error', label: 'Rejected' },
+  ON_HOLD: { color: 'default', label: 'On Hold' },
+  CANCELLED: { color: 'default', label: 'Cancelled' }
 };
 
-const STEP_TYPE_CONFIG = {
-  MEETING: { color: 'primary', label: 'Meeting' },
-  CALL: { color: 'info', label: 'Call' },
-  EMAIL: { color: 'default', label: 'Email' },
-  TASK_SELLER: { color: 'warning', label: 'Task (Seller)' },
-  TASK_BUYER: { color: 'secondary', label: 'Task (Buyer)' },
-  INTERNAL_VALIDATION: { color: 'success', label: 'Internal Validation' },
-  OTHER: { color: 'default', label: 'Other' }
-};
 
 // ==============================|| SECTION TITLE ||============================== //
 
@@ -99,6 +101,10 @@ SectionTitle.propTypes = {
  */
 export default function DecisionStepOverviewTab({ step, account, onSave, onUpdate }) {
   const [saving, setSaving] = useState(false);
+  
+  // Activity Modal for stalled actions
+  const [activityModalOpen, setActivityModalOpen] = useState(false);
+  const [activityModalType, setActivityModalType] = useState(null);
   
   // User permissions for manager notes
   const { currentUserId, isAdmin, isManager } = useUserPermissions();
@@ -148,32 +154,66 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
   }, [onSave]);
 
   /**
-   * Save date and time together
+   * Handle expected_end date change
    */
-  const handleSaveDateTime = useCallback(async (newDate, newTime) => {
+  const handleExpectedEndChange = useCallback(async (newDate) => {
+    if (!newDate) return;
+    const formatted = newDate.format('YYYY-MM-DD');
+    return handleSaveField('expected_end', formatted);
+  }, [handleSaveField]);
+
+  /**
+   * Stalled action: Schedule Call
+   */
+  const handleScheduleCall = useCallback(() => {
+    setActivityModalType('CALL');
+    setActivityModalOpen(true);
+  }, []);
+
+  /**
+   * Stalled action: Schedule Meeting
+   */
+  const handleScheduleMeeting = useCallback(() => {
+    setActivityModalType('MEETING');
+    setActivityModalOpen(true);
+  }, []);
+
+  /**
+   * Stalled action: Mark as Validated
+   */
+  const handleMarkValidated = useCallback(async () => {
     setSaving(true);
-    
     try {
-      const result = await updateDecisionStep(step.id, { 
-        scheduled_date: newDate,
-        scheduled_time: newTime
-      }, step.cycle);
-      
+      const result = await updateDecisionStepStatus(step.id, 'VALIDATED', step.cycle);
       if (result.success) {
-        displaySuccessSnackbar('Schedule updated');
+        displaySuccessSnackbar('Step marked as validated');
         onUpdate?.();
-        return true;
       } else {
-        displayErrorSnackbar(result.error || 'Failed to update schedule');
-        return false;
+        displayErrorSnackbar(result.error || 'Failed to update status');
       }
     } catch (error) {
       displayErrorSnackbar('An error occurred');
-      return false;
     } finally {
       setSaving(false);
     }
   }, [step?.id, step?.cycle, onUpdate]);
+
+  /**
+   * Activity modal close
+   */
+  const handleActivityModalClose = useCallback(() => {
+    setActivityModalOpen(false);
+    setActivityModalType(null);
+  }, []);
+
+  /**
+   * Activity created successfully
+   */
+  const handleActivitySuccess = useCallback(() => {
+    handleActivityModalClose();
+    onUpdate?.();
+    displaySuccessSnackbar('Activity created');
+  }, [handleActivityModalClose, onUpdate]);
 
   /**
    * Quick status change
@@ -233,6 +273,17 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
 
   return (
     <Box>
+      {/* ==================== STALLED WARNING ==================== */}
+      <StalledWarning
+        isStalled={step?.is_stalled}
+        stalledReason={step?.stalled_reason}
+        stalledDetails={step?.stalled_details}
+        onScheduleCall={handleScheduleCall}
+        onScheduleMeeting={handleScheduleMeeting}
+        onMarkValidated={handleMarkValidated}
+        dismissible={true}
+      />
+
       <Grid container spacing={3}>
         
         {/* ==================== LEFT COLUMN ==================== */}
@@ -301,16 +352,23 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
               />
             </Box>
 
-            {/* -------------------- SCHEDULED DATE & TIME -------------------- */}
+            {/* -------------------- EXPECTED END DATE -------------------- */}
             <Box>
-              <SectionTitle icon={CalendarOutlined} title="Scheduled Date & Time" />
-              <EditableDateTime
-                dateValue={step?.scheduled_date}
-                timeValue={step?.scheduled_time}
-                onSave={handleSaveDateTime}
-                emptyText="Click to schedule..."
-                showTime={true}
-              />
+              <SectionTitle icon={CalendarOutlined} title="Expected End Date" />
+              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                <DatePicker
+                  value={step?.expected_end ? dayjs(step.expected_end) : null}
+                  onChange={handleExpectedEndChange}
+                  slotProps={{
+                    textField: {
+                      size: 'small',
+                      fullWidth: true,
+                      placeholder: 'Select expected end date...'
+                    }
+                  }}
+                  minDate={dayjs()}
+                />
+              </LocalizationProvider>
             </Box>
 
             {/* -------------------- STAKEHOLDER -------------------- */}
@@ -322,20 +380,6 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
                 onSave={handleSaveField}
                 placeholder="Who is responsible for this step?"
                 emptyText="No stakeholder defined"
-              />
-            </Box>
-
-            {/* -------------------- EXPECTED DAYS -------------------- */}
-            <Box>
-              <SectionTitle icon={ClockCircleOutlined} title="Expected Days" />
-              <EditableField
-                value={step?.expected_days}
-                fieldKey="expected_days"
-                onSave={handleSaveField}
-                placeholder="Duration in days"
-                emptyText="Not estimated"
-                type="number"
-                suffix=" days"
               />
             </Box>
 
@@ -368,15 +412,25 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
 
             {/* -------------------- TIMESTAMPS (Read-only) -------------------- */}
             <Box>
-              <SectionTitle icon={HistoryOutlined} title="Activity Timestamps" />
+              <SectionTitle icon={HistoryOutlined} title="Timeline" />
               <Stack spacing={0.5}>
-                {step?.started_at ? (
+                {step?.start_date ? (
                   <Typography variant="body2" color="text.secondary">
-                    <strong>Started:</strong> {new Date(step.started_at).toLocaleString()}
+                    <strong>Start Date:</strong> {new Date(step.start_date).toLocaleDateString()}
                   </Typography>
                 ) : (
                   <Typography variant="body2" color="text.disabled" fontStyle="italic">
-                    Not started yet
+                    Start date not set
+                  </Typography>
+                )}
+                {step?.expected_end && (
+                  <Typography variant="body2" color="text.secondary">
+                    <strong>Expected End:</strong> {new Date(step.expected_end).toLocaleDateString()}
+                    {new Date(step.expected_end) < new Date() && (
+                      <Typography component="span" variant="caption" color="error.main" sx={{ ml: 0.5 }}>
+                        (overdue)
+                      </Typography>
+                    )}
                   </Typography>
                 )}
                 {step?.completed_at && (
@@ -445,6 +499,19 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
         </Grid>
 
       </Grid>
+      
+      {/* Activity Modal for stalled actions */}
+      <ActivityModal
+        open={activityModalOpen}
+        onClose={handleActivityModalClose}
+        activity={null}
+        accountId={account?.id || step?.account_id}
+        decisionStepId={step?.id}
+        decisionCycleId={step?.cycle}
+        defaultActivityType={activityModalType}
+        onSuccess={handleActivitySuccess}
+      />
+
     </Box>
   );
 }
