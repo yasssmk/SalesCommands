@@ -52,16 +52,6 @@ const STAGE_LABELS = {
   FORMALIZATION: 'Formalization'
 };
 
-const STEP_TYPE_CONFIG = {
-  MEETING: { icon: TeamOutlined, label: 'Meeting', color: 'primary' },
-  CALL: { icon: PhoneOutlined, label: 'Call', color: 'info' },
-  EMAIL: { icon: MailOutlined, label: 'Email', color: 'default' },
-  TASK_SELLER: { icon: CheckSquareOutlined, label: 'Task (Seller)', color: 'warning' },
-  TASK_BUYER: { icon: AuditOutlined, label: 'Task (Buyer)', color: 'secondary' },
-  INTERNAL_VALIDATION: { icon: SafetyOutlined, label: 'Internal Validation', color: 'success' },
-  OTHER: { icon: QuestionCircleOutlined, label: 'Other', color: 'default' }
-};
-
 // ==============================|| INFO ROW ||============================== //
 
 function InfoRow({ icon: Icon, label, value, color }) {
@@ -112,10 +102,7 @@ export default function DecisionStepPreview({
   const open = Boolean(anchorEl) && Boolean(step);
   
   if (!step) return null;
-  
-  // Get step type config
-  const stepTypeConfig = STEP_TYPE_CONFIG[step.step_type] || STEP_TYPE_CONFIG.OTHER;
-  const StepTypeIcon = stepTypeConfig.icon;
+
   
   // Truncate description for preview
   const descriptionPreview = step.description
@@ -178,15 +165,6 @@ export default function DecisionStepPreview({
             {step.name}
           </Typography>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
-            {/* Step Type Chip */}
-            <Chip
-              size="small"
-              icon={<StepTypeIcon style={{ fontSize: 12 }} />}
-              label={stepTypeConfig.label}
-              color={stepTypeConfig.color}
-              variant="outlined"
-              sx={{ height: 22, fontSize: '0.7rem' }}
-            />
             {/* Stage Chip */}
             <Chip
               size="small"
@@ -391,7 +369,6 @@ DecisionStepPreview.propTypes = {
     name: PropTypes.string,
     stage: PropTypes.string,
     status: PropTypes.string,
-    step_type: PropTypes.string,
     stakeholder: PropTypes.string,
     description: PropTypes.string,
     goal: PropTypes.string,

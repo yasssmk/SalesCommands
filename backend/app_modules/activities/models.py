@@ -362,8 +362,8 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
         if new_status and new_status != step.status:
             step.status = new_status
-            if new_status == DecisionStepStatus.IN_PROGRESS and not step.started_at:
-                step.started_at = timezone.now()
+            if new_status == DecisionStepStatus.IN_PROGRESS and not step.start_date:
+                step.start_date = timezone.now()
             step.save(user=user)
 
 

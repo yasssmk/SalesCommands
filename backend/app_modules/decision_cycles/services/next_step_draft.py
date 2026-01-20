@@ -51,7 +51,6 @@ class NextStepDraftService:
             'previous_step_id': str(current_step.id),
             'stage': self._suggest_next_stage(current_step.stage),
             'status': DecisionStepStatus.NOT_STARTED,
-            'step_type': DecisionStepType.MEETING,
             'create_activity': False,
             '_draft_metadata': {
                 'based_on_step_id': str(current_step.id),

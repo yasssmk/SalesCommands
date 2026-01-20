@@ -468,14 +468,7 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Extract create_activity flag before save
-        create_activity = serializer.validated_data.pop('create_activity', True)
-        
         instance = serializer.save()
-        
-        # Auto-create linked activity for applicable step types
-        if create_activity and instance.step_type in self.ACTIVITY_STEP_TYPES:
-            self._create_linked_activity(instance, request.user)
         
         # Audit log
         audit_log(

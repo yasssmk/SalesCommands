@@ -29,35 +29,8 @@ import UserOutlined from '@ant-design/icons/UserOutlined';
 import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined';
 import LinkOutlined from '@ant-design/icons/LinkOutlined';
 import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
-import TeamOutlined from '@ant-design/icons/TeamOutlined';
-import PhoneOutlined from '@ant-design/icons/PhoneOutlined';
-import MailOutlined from '@ant-design/icons/MailOutlined';
-import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
-import AuditOutlined from '@ant-design/icons/AuditOutlined';
-import SafetyOutlined from '@ant-design/icons/SafetyOutlined';
-import QuestionCircleOutlined from '@ant-design/icons/QuestionCircleOutlined';
 
-// ==============================|| STEP TYPE ICONS ||============================== //
 
-const STEP_TYPE_ICONS = {
-  MEETING: TeamOutlined,
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  TASK_SELLER: CheckSquareOutlined,
-  TASK_BUYER: AuditOutlined,
-  INTERNAL_VALIDATION: SafetyOutlined,
-  OTHER: QuestionCircleOutlined
-};
-
-const STEP_TYPE_COLORS = {
-  MEETING: 'primary',
-  CALL: 'info',
-  EMAIL: 'default',
-  TASK_SELLER: 'warning',
-  TASK_BUYER: 'secondary',
-  INTERNAL_VALIDATION: 'success',
-  OTHER: 'default'
-};
 
 // ==============================|| DECISION STEP NODE ||============================== //
 
@@ -83,9 +56,7 @@ export default function DecisionStepNode({
   const theme = useTheme();
   
   const StatusIcon = statusConfig?.icon;
-  const showStepTypeIcon = step.step_type && step.step_type !== 'OTHER';
-  const StepTypeIcon = showStepTypeIcon ? STEP_TYPE_ICONS[step.step_type] : null;
-  const stepTypeColor = STEP_TYPE_COLORS[step.step_type] || 'default';
+
   
   // Determine border color based on status
   const getBorderColor = () => {
@@ -169,27 +140,6 @@ export default function DecisionStepNode({
         {/* Header: Step Type Icon + Name + Status Icon */}
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
           <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ flex: 1, minWidth: 0 }}>
-            {/* Step Type Icon (only if type is set and not OTHER) */}
-            {StepTypeIcon && (
-              <Box
-                sx={{
-                  p: 0.5,
-                  borderRadius: 0.5,
-                  bgcolor: (stepTypeColor === 'default' || !theme.palette[stepTypeColor])
-                    ? alpha(theme.palette.grey[500], 0.1)
-                    : alpha(theme.palette[stepTypeColor].main, 0.1),
-                  color: (stepTypeColor === 'default' || !theme.palette[stepTypeColor])
-                    ? 'text.secondary'
-                    : `${stepTypeColor}.main`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}
-              >
-                <StepTypeIcon style={{ fontSize: 14 }} />
-              </Box>
-            )}
             
             {/* Name */}
             <Typography 
@@ -326,7 +276,6 @@ DecisionStepNode.propTypes = {
     name: PropTypes.string.isRequired,
     status: PropTypes.string.isRequired,
     stage: PropTypes.string.isRequired,
-    step_type: PropTypes.string,
     stakeholder: PropTypes.string,
     expected_days: PropTypes.number,
     contacts_count: PropTypes.number,

@@ -43,7 +43,6 @@ import FileTextOutlined from '@ant-design/icons/FileTextOutlined';
 import UnorderedListOutlined from '@ant-design/icons/UnorderedListOutlined';
 import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
 import HistoryOutlined from '@ant-design/icons/HistoryOutlined';
-import AppstoreOutlined from '@ant-design/icons/AppstoreOutlined';
 import TeamOutlined from '@ant-design/icons/TeamOutlined';
 import ContactsOutlined from '@ant-design/icons/ContactsOutlined';
 import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined';
@@ -71,18 +70,11 @@ const STATUS_CONFIG = {
   IN_PROGRESS: { color: 'info', label: 'In Progress' },
   IN_CHASING: { color: 'secondary', label: 'In Chasing' },
   VALIDATED: { color: 'success', label: 'Validated' },
-  REJECTED: { color: 'error', label: 'Rejected' }
+  REJECTED: { color: 'error', label: 'Rejected' },
+  ON_HOLD: { color: 'default', label: 'On Hold' },
+  CANCELLED: { color: 'default', label: 'Cancelled' }
 };
 
-const STEP_TYPE_CONFIG = {
-  MEETING: { color: 'primary', label: 'Meeting' },
-  CALL: { color: 'info', label: 'Call' },
-  EMAIL: { color: 'default', label: 'Email' },
-  TASK_SELLER: { color: 'warning', label: 'Task (Seller)' },
-  TASK_BUYER: { color: 'secondary', label: 'Task (Buyer)' },
-  INTERNAL_VALIDATION: { color: 'success', label: 'Internal Validation' },
-  OTHER: { color: 'default', label: 'Other' }
-};
 
 const STAGE_LABELS = {
   EXPLORATION: 'Exploration',
@@ -267,7 +259,7 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
   // ==============================|| RENDER ||============================== //
 
   const statusConfig = STATUS_CONFIG[step.status] || STATUS_CONFIG.NOT_STARTED;
-  const stepTypeConfig = STEP_TYPE_CONFIG[step.step_type] || STEP_TYPE_CONFIG.OTHER;
+
 
   return (
     <Box>
@@ -325,31 +317,6 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
                   color={config.color}
                   variant={step.status === statusKey ? 'filled' : 'outlined'}
                   onClick={() => handleStatusChange(statusKey)}
-                  disabled={saving}
-                  sx={{ 
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    '&:hover': {
-                      transform: 'scale(1.05)'
-                    }
-                  }}
-                />
-              ))}
-            </Stack>
-          </Grid>
-
-          {/* -------------------- STEP TYPE -------------------- */}
-          <Grid item xs={12}>
-            <SectionTitle icon={AppstoreOutlined} title="Step Type" />
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {Object.entries(STEP_TYPE_CONFIG).map(([typeKey, config]) => (
-                <Chip
-                  key={typeKey}
-                  label={config.label}
-                  color={config.color}
-                  size="small"
-                  variant={step.step_type === typeKey ? 'filled' : 'outlined'}
-                  onClick={() => handleSaveField('step_type', typeKey)}
                   disabled={saving}
                   sx={{ 
                     cursor: 'pointer',
@@ -544,7 +511,6 @@ DecisionStepDetail.propTypes = {
     name: PropTypes.string.isRequired,
     stage: PropTypes.string.isRequired,
     status: PropTypes.string.isRequired,
-    step_type: PropTypes.string,
     cycle: PropTypes.string,
     stakeholder: PropTypes.string,
     description: PropTypes.string,

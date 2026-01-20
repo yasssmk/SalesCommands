@@ -313,29 +313,6 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
               </Stack>
             </Box>
 
-            {/* -------------------- STEP TYPE -------------------- */}
-            <Box>
-              <SectionTitle icon={AppstoreOutlined} title="Step Type" />
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                {Object.entries(STEP_TYPE_CONFIG).map(([typeKey, config]) => (
-                  <Chip
-                    key={typeKey}
-                    label={config.label}
-                    color={config.color}
-                    size="small"
-                    variant={step?.step_type === typeKey ? 'filled' : 'outlined'}
-                    onClick={() => handleSaveField('step_type', typeKey)}
-                    disabled={saving}
-                    sx={{ 
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      '&:hover': { transform: 'scale(1.05)' }
-                    }}
-                  />
-                ))}
-              </Stack>
-            </Box>
-
             {/* -------------------- DEPARTMENTS -------------------- */}
             <Box>
               <SectionTitle icon={TeamOutlined} title="Departments" />

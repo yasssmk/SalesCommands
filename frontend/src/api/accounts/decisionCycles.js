@@ -276,7 +276,6 @@ export function useGetDecisionCycleChoices() {
       choices: data?.data || {},
       stages: data?.data?.stages || [],
       statuses: data?.data?.statuses || [],
-      stepTypes: data?.data?.step_types || [],
       choicesLoading: isLoading,
       choicesError: error
     }),
