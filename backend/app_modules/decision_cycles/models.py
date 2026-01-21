@@ -226,8 +226,10 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
     )
     
     expected_end = models.DateField(
+        blank=True,
+        null=True,
         verbose_name=_('Expected End'),
-        help_text=_('Expected date for step validation/completion - MANDATORY for timeline')
+        help_text=_('Expected date for step completion - set by user after cycle creation')
     )
     
     completed_at = models.DateTimeField(

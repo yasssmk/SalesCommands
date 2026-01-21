@@ -358,26 +358,24 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
     )
     
     class Meta:
-        model = DecisionStep
-        fields = [
-            'cycle_id',
-            'name', 'stage', 'status',
-            'expected_end',
-            'previous_step_id',
-            'stakeholder',
-            'description', 'goal',
-            'influence_score', 'criterias', 'metrics',
-            'contact_ids',
-            'department_ids',
-        ]
-        extra_kwargs = {
-            'expected_end': {
-                'required': True,
-                'error_messages': {
-                    'required': 'Expected end date is required for timeline visibility',
+            model = DecisionStep
+            fields = [
+                'cycle_id',
+                'name', 'stage', 'status',
+                'expected_end',
+                'previous_step_id',
+                'stakeholder',
+                'description', 'goal',
+                'influence_score', 'criterias', 'metrics',
+                'contact_ids',
+                'department_ids',
+            ]
+            extra_kwargs = {
+                'expected_end': {
+                    'required': False,
+                    'allow_null': True,
                 }
             }
-        }
     
     def validate_name(self, value):
         if not value or not value.strip():

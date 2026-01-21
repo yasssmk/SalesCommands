@@ -5,7 +5,7 @@
  * Follows the same patterns as territories.js for consistency.
  */
 
-import useSWR from 'swr';
+import useSWR, { mutate }from 'swr';
 import { useMemo } from 'react';
 import { useAuth } from 'hooks/useAuth';
 import { api } from 'utils/axiosClient';
@@ -691,6 +691,7 @@ export async function updateDecisionCycle(cycleId, payload) {
  * DELETE DECISION CYCLE
  * 
  * @param {string} cycleId - UUID of the cycle
+ * @param {string} accountId - UUID of the account (for cache invalidation)
  * @returns {Promise<Object>} {success: boolean, status?: number, error?: string}
  */
 export async function deleteDecisionCycle(cycleId) {
@@ -705,11 +706,24 @@ export async function deleteDecisionCycle(cycleId) {
   const result = await api.delete(endpoints.cycleDetail(cycleId));
   
   if (result.success || result.status === 204) {
-    revalidateMultiple([
-      endpoints.cycles,
-      '/company-accounts/'
-    ]);
-    return { success: true, status: result.status ?? 204 };
+    // Clear the deleted cycle and its steps from cache (don't refetch - it's gone)
+    mutate(
+      (key) => {
+        const url = Array.isArray(key) ? key[0] : key;
+        if (typeof url === 'string') {
+          // Match cycle detail
+          if (url.includes(`/decision_cycles/${cycleId}`)) return true;
+          // Match steps by cycle_id
+          if (url.includes(`cycle_id=${cycleId}`)) return true;
+        }
+        return false;
+      },
+      undefined,
+      { revalidate: false }
+    );
+    
+    // NOTE: Don't revalidate here - let the caller do it AFTER updating selection state
+    return { success: true, status: result.status ?? 204, cycleId };
   }
   
   return { 

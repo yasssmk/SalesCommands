@@ -120,20 +120,27 @@ export default function DecisionCycleTab({ accountId, accountName }) {
     }
     
     try {
+      // IMPORTANT: Clear selection FIRST to prevent 404 refetch
+      const wasSelected = selectedCycleId === cycle.id;
+      if (wasSelected) {
+        setSelectedCycleId(null);
+      }
+      
+      // Now delete (cache will be cleared, no auto-revalidation)
       const result = await deleteDecisionCycle(cycle.id);
       
       if (result.success) {
         displaySuccessSnackbar('Decision cycle deleted successfully');
         
-        // Clear selection if deleted cycle was selected
-        if (selectedCycleId === cycle.id) {
-          setSelectedCycleId(null);
-        }
-        
-        // Revalidate cycles list
+        // NOW revalidate cycles list (after selection is cleared)
         mutateCycles();
       } else {
         displayErrorSnackbar(result.error || 'Failed to delete cycle');
+        
+        // Restore selection if delete failed
+        if (wasSelected) {
+          setSelectedCycleId(cycle.id);
+        }
       }
     } catch (error) {
       displayErrorSnackbar(error.message || 'An error occurred');
