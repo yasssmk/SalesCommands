@@ -2,14 +2,21 @@
 /**
  * Decision Cycle Tab Component
  * 
- * Main tab content for Decision Cycle in Account Workspace.
+ * Main tab content for Decision Cycle (Pipeline) in Account Workspace.
  * Orchestrates all decision cycle components.
+ * 
+ * ARCHITECTURE UPDATE:
+ * - Pipeline steps are FIXED and auto-created (no manual step creation)
+ * - Users add ACTIVITIES within steps, not steps themselves
+ * - Click on step header → Step Workspace
+ * - Click on activity card → Activity Workspace
  * 
  * Features:
  * - Cycle selector at top
- * - Timeline display for current cycle
+ * - Pipeline view with steps as columns, activities as cards
  * - Empty state when no cycles
- * - Modals for create/edit cycle and steps
+ * - Modal for create/edit cycle
+ * - Modal for create activity (within a step)
  */
 
 'use client';
@@ -28,9 +35,7 @@ import DecisionCycleSelector from '../decision-cycles/DecisionCycleSelector';
 import DecisionCycleTimeline from '../decision-cycles/DecisionCycleTimeline';
 import DecisionCycleEmpty from '../decision-cycles/DecisionCycleEmpty';
 import DecisionCycleModal from '../decision-cycles/DecisionCycleModal';
-import DecisionStepModal from '../decision-cycles/DecisionStepModal';
-
-import AlertStepDelete from '../decision-cycles/AlertStepDelete';
+import ActivityModal from '../activities/ActivityModal';
 
 import { 
   useGetDecisionCyclesByAccount,
@@ -56,17 +61,13 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   // Selected cycle ID
   const [selectedCycleId, setSelectedCycleId] = useState(null);
   
-  // Modals state
+  // Cycle Modal state (Create/Edit)
   const [cycleModalOpen, setCycleModalOpen] = useState(false);
   const [cycleToEdit, setCycleToEdit] = useState(null);
   
-  const [stepModalOpen, setStepModalOpen] = useState(false);
-  const [stepToEdit, setStepToEdit] = useState(null);
-  const [defaultStage, setDefaultStage] = useState(null);
-
-  
-  const [deleteStepOpen, setDeleteStepOpen] = useState(false);
-  const [stepToDelete, setStepToDelete] = useState(null);
+  // Activity Modal state (Create within step)
+  const [activityModalOpen, setActivityModalOpen] = useState(false);
+  const [activityTargetStep, setActivityTargetStep] = useState(null);
   
   // ==============================|| DATA FETCHING ||============================== //
   
@@ -87,7 +88,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
     return activeCycle?.id || cycles[0]?.id;
   }, [selectedCycleId, cycles]);
   
-  // Fetch current cycle details with steps
+  // Fetch current cycle details with steps (and their activities)
   const { 
     cycle: currentCycle, 
     cycleLoading: currentCycleLoading,
@@ -114,7 +115,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
     if (!cycle?.id) return;
     
     // Confirm deletion
-    if (!window.confirm(`Are you sure you want to delete "${cycle.name}"? This will also delete all steps.`)) {
+    if (!window.confirm(`Are you sure you want to delete "${cycle.name}"? This will also delete all steps and activities.`)) {
       return;
     }
     
@@ -158,36 +159,47 @@ export default function DecisionCycleTab({ accountId, accountName }) {
     }
   }, [cycleToEdit, mutateCycles, mutateCycle]);
   
-  // ==============================|| STEP HANDLERS ||============================== //
+  // ==============================|| PIPELINE HANDLERS ||============================== //
   
-  const handleAddStep = useCallback((stage) => {
-    setStepToEdit(null);
-    setDefaultStage(stage);
-    setStepModalOpen(true);
+  /**
+   * Handle click on step header → Navigate to Step Workspace
+   */
+  const handleStepClick = useCallback((step) => {
+    router.push(`/decision-steps/${step.id}`);
+  }, [router]);
+  
+  /**
+   * Handle click on activity card → Navigate to Activity Workspace
+   */
+  const handleActivityClick = useCallback((activity) => {
+    router.push(`/activities/${activity.id}`);
+  }, [router]);
+  
+  /**
+   * Handle "Add Activity" button click in a step column
+   * Opens ActivityModal with step pre-selected
+   */
+  const handleAddActivity = useCallback((step) => {
+    setActivityTargetStep(step);
+    setActivityModalOpen(true);
   }, []);
   
-  const handleEditStep = useCallback((step) => {
-    router.push(`/accounts/${accountId}/decisionSteps/${step.id}`);
-  }, [router, accountId]);
-  
-  const handleStepModalClose = useCallback(() => {
-    setStepModalOpen(false);
-    setStepToEdit(null);
-    setDefaultStage(null);
+  /**
+   * Handle Activity Modal close
+   */
+  const handleActivityModalClose = useCallback(() => {
+    setActivityModalOpen(false);
+    setActivityTargetStep(null);
   }, []);
   
-  const handleStepSuccess = useCallback(() => {
+  /**
+   * Handle Activity creation success
+   */
+  const handleActivitySuccess = useCallback(() => {
+    // Revalidate cycle to refresh activities in steps
     mutateCycle();
-  }, [mutateCycle]);
-  
-  const handleStepDeleteClose = useCallback(() => {
-    setDeleteStepOpen(false);
-    setStepToDelete(null);
-  }, []);
-  
-  const handleStepDeleteSuccess = useCallback(() => {
-    mutateCycle();
-  }, [mutateCycle]);
+    handleActivityModalClose();
+  }, [mutateCycle, handleActivityModalClose]);
   
   // ==============================|| LOADING STATE ||============================== //
   
@@ -244,7 +256,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
         />
       </Stack>
       
-      {/* Timeline */}
+      {/* Pipeline Timeline */}
       {currentCycleLoading ? (
         <Box 
           sx={{ 
@@ -259,8 +271,9 @@ export default function DecisionCycleTab({ accountId, accountName }) {
       ) : currentCycle ? (
         <DecisionCycleTimeline
           cycle={currentCycle}
-          onAddStep={handleAddStep}
-          onEditStep={handleEditStep}
+          onStepClick={handleStepClick}
+          onActivityClick={handleActivityClick}
+          onAddActivity={handleAddActivity}
           loading={currentCycleLoading}
         />
       ) : null}
@@ -274,23 +287,15 @@ export default function DecisionCycleTab({ accountId, accountName }) {
         onSuccess={handleCycleSuccess}
       />
       
-      {/* Step Modal (Create) */}
-      <DecisionStepModal
-        open={stepModalOpen}
-        modalToggler={setStepModalOpen}
-        step={null}
-        cycleId={currentCycleId}
-        defaultStage={defaultStage}
-        onSuccess={handleStepSuccess}
-      />
-      
-      {/* Delete Step Alert */}
-      <AlertStepDelete
-        open={deleteStepOpen}
-        onClose={handleStepDeleteClose}
-        step={stepToDelete}
-        cycleId={currentCycleId}
-        onSuccess={handleStepDeleteSuccess}
+      {/* Activity Modal (Create within step) */}
+      <ActivityModal
+        open={activityModalOpen}
+        onClose={handleActivityModalClose}
+        activity={null}
+        accountId={accountId}
+        decisionCycleId={currentCycleId}
+        decisionStepId={activityTargetStep?.id}
+        onSuccess={handleActivitySuccess}
       />
     </Box>
   );

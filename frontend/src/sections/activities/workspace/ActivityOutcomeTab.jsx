@@ -30,10 +30,10 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
+import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
-import DialogActions from '@mui/material/DialogActions';
+import DialogTitle from '@mui/material/DialogTitle';
 
 // Project imports
 import MainCard from 'components/MainCard';
@@ -59,8 +59,6 @@ import { useRouter } from 'next/navigation';
 
 // Modals
 import ActivityModal from 'sections/accounts/activities/ActivityModal';
-import DecisionStepModal from 'sections/accounts/decision-cycles/DecisionStepModal';
-
 
 // Icons
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
@@ -211,7 +209,7 @@ KeyTakeawaysSection.propTypes = {
 
 // ==============================|| NEXT STEPS SECTION ||============================== //
 
-function NextStepsSection({ activity, onCreateActivity, onCreateStep, onMarkNoNextStep, onUpdate }) {
+function NextStepsSection({ activity, onCreateActivity, onUpdate }) {
   const router = useRouter();
   const hasLinkedStep = Boolean(activity?.decision_step);
   const hasNextActivity = Boolean(activity?.next_activity);
@@ -227,7 +225,7 @@ function NextStepsSection({ activity, onCreateActivity, onCreateStep, onMarkNoNe
   const [noNextStepReasonValue, setNoNextStepReasonValue] = useState('');
   const [submittingNoNextStep, setSubmittingNoNextStep] = useState(false);
 
-  // Fetch existing steps for the cycle
+  // Fetch existing steps for the cycle (for navigation, not creation)
   const { steps, stepsLoading } = useGetDecisionStepsByCycle(activity?.decision_cycle);
 
   // Navigate to step workspace
@@ -292,7 +290,7 @@ function NextStepsSection({ activity, onCreateActivity, onCreateStep, onMarkNoNe
           </Alert>
         )}
 
-        {/* Quick action buttons */}
+        {/* Quick action buttons - Create follow-up activities */}
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           <Button
             variant="outlined"
@@ -330,24 +328,15 @@ function NextStepsSection({ activity, onCreateActivity, onCreateStep, onMarkNoNe
 
         <Divider sx={{ my: 1 }} />
 
-        {/* Decision Step section */}
+        {/* Pipeline Steps section - Navigation only (no creation) */}
         <Box>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-            {hasCycle ? (
-              <Button
-                variant="text"
-                size="small"
-                startIcon={<PlusOutlined />}
-                onClick={onCreateStep}
-                color="secondary"
-              >
-                Add Decision Step
-              </Button>
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                Link this activity to a Decision Cycle to create steps.
-              </Typography>
-            )}
+            <Typography variant="body2" color="text.secondary">
+              {hasCycle 
+                ? 'Pipeline steps in this cycle:' 
+                : 'Link this activity to a Decision Cycle to see pipeline steps.'
+              }
+            </Typography>
             {hasLinkedStep && (
               <Chip
                 label={`Current: ${activity.decision_step_detail?.name || 'Step'}`}
@@ -360,12 +349,9 @@ function NextStepsSection({ activity, onCreateActivity, onCreateStep, onMarkNoNe
             )}
           </Stack>
 
-          {/* Existing steps in cycle */}
+          {/* Existing steps in cycle - Click to navigate */}
           {hasCycle && !stepsLoading && steps.length > 0 && (
             <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                Steps in this cycle ({steps.length}):
-              </Typography>
               <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
                 {steps.map((step) => (
                   <Chip
@@ -394,80 +380,49 @@ function NextStepsSection({ activity, onCreateActivity, onCreateStep, onMarkNoNe
           // Show current next step status
           <Box>
             {nextStepAgreed === true ? (
-              <Alert severity="success" sx={{ mb: 1 }}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between" width="100%">
-                  <Typography variant="body2">
-                    ✓ Next step agreed - follow-up scheduled
-                  </Typography>
-                  <Button size="small" onClick={handleClearNoNextStep}>
-                    Clear
-                  </Button>
-                </Stack>
+              <Alert severity="success" icon={<CheckCircleOutlined />}>
+                Next step agreed with prospect
               </Alert>
             ) : (
               <Alert 
                 severity="warning" 
                 icon={<WarningOutlined />}
-                sx={{ mb: 1 }}
+                action={
+                  <Button size="small" color="inherit" onClick={handleClearNoNextStep}>
+                    Clear
+                  </Button>
+                }
               >
-                <Stack spacing={1}>
-                  <Stack direction="row" alignItems="center" justifyContent="space-between" width="100%">
-                    <Typography variant="body2" fontWeight={600}>
-                      ⚠ No next step agreed
-                    </Typography>
-                    <Button size="small" onClick={handleClearNoNextStep}>
-                      Clear
-                    </Button>
-                  </Stack>
-                  {noNextStepReason && (
-                    <Typography variant="caption" color="text.secondary">
-                      Reason: {noNextStepReason}
-                    </Typography>
-                  )}
-                  <Typography variant="caption" color="text.secondary">
-                    This may trigger stalled detection on the linked Decision Step.
+                No next step agreed
+                {noNextStepReason && (
+                  <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                    Reason: {noNextStepReason}
                   </Typography>
-                </Stack>
+                )}
               </Alert>
             )}
           </Box>
         ) : (
           // Show option to mark no next step
-          <Box>
-            <Button
-              variant="text"
-              size="small"
-              color="warning"
-              startIcon={<StopOutlined />}
-              onClick={handleNoNextStepClick}
-            >
-              Mark as No Next Step Agreed
-            </Button>
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, ml: 3 }}>
-              Use this if the prospect declined a follow-up or needs internal validation first.
-            </Typography>
-          </Box>
+          <Button
+            variant="text"
+            size="small"
+            color="warning"
+            startIcon={<StopOutlined />}
+            onClick={handleNoNextStepClick}
+          >
+            Mark as No Next Step Agreed
+          </Button>
         )}
       </Stack>
-      
+
       {/* No Next Step Dialog */}
-      <Dialog
-        open={noNextStepOpen}
-        onClose={handleNoNextStepClose}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <WarningOutlined style={{ color: '#faad14' }} />
-            <span>No Next Step Agreed</span>
-          </Stack>
-        </DialogTitle>
+      <Dialog open={noNextStepOpen} onClose={handleNoNextStepClose} maxWidth="sm" fullWidth>
+        <DialogTitle>Mark as No Next Step Agreed</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <DialogContentText>
-              Mark this activity as having no agreed next step. This will trigger stalled detection
-              on the linked Decision Step if present.
+              This will trigger stalled detection on the linked Decision Step if present.
             </DialogContentText>
             <TextField
               label="Reason (optional)"
@@ -502,8 +457,6 @@ function NextStepsSection({ activity, onCreateActivity, onCreateStep, onMarkNoNe
 NextStepsSection.propTypes = {
   activity: PropTypes.object,
   onCreateActivity: PropTypes.func.isRequired,
-  onCreateStep: PropTypes.func.isRequired,
-  onMarkNoNextStep: PropTypes.func,
   onUpdate: PropTypes.func
 };
 
@@ -616,10 +569,6 @@ ResultSection.propTypes = {
 export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [activityModalType, setActivityModalType] = useState(null);
-  const [stepModalOpen, setStepModalOpen] = useState(false);
-  const [createdStep, setCreatedStep] = useState(null);
-  const [linkConfirmOpen, setLinkConfirmOpen] = useState(false);
-  const [linking, setLinking] = useState(false);
 
   // Handle create follow-up activity
   const handleCreateActivity = (activityType) => {
@@ -627,27 +576,13 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
     setActivityModalOpen(true);
   };
 
-  // Handle create decision step
-  const handleCreateStep = () => {
-    setStepModalOpen(true);
-  };
-
-  // Close modals
+  // Close activity modal
   const handleActivityModalClose = () => {
     setActivityModalOpen(false);
     setActivityModalType(null);
   };
 
-  const handleStepModalClose = () => {
-    setStepModalOpen(false);
-  };
-
-  const handleLinkConfirmClose = () => {
-    setLinkConfirmOpen(false);
-    setCreatedStep(null);
-  };
-
-  // Success handlers
+  // Success handler for activity creation
   const handleActivitySuccess = async () => {
     handleActivityModalClose();
     
@@ -664,52 +599,6 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
     displaySuccessSnackbar('Follow-up activity created');
   };
 
-  const handleStepSuccess = async (stepData) => {
-    handleStepModalClose();
-    
-    // Auto-set next_step_agreed=true when creating step
-    if (activity?.id && activity?.next_step_agreed !== true) {
-      try {
-        await markNextStepAgreed(activity.id);
-      } catch (error) {
-        console.error('Failed to mark next step agreed:', error);
-      }
-    }
-    
-    onUpdate?.();
-    displaySuccessSnackbar('Decision step created');
-    
-    // If activity is not already linked to a step, offer to link
-    if (!activity?.decision_step && stepData?.id) {
-      setCreatedStep(stepData);
-      setLinkConfirmOpen(true);
-    }
-  };
-
-  // Link activity to newly created step
-  const handleLinkToStep = async () => {
-    if (!createdStep?.id) return;
-    
-    setLinking(true);
-    try {
-      const result = await updateActivity(activity.id, {
-        decision_step_id: createdStep.id
-      });
-      
-      if (result.success) {
-        displaySuccessSnackbar(`Activity linked to "${createdStep.name}"`);
-        onUpdate?.();
-      } else {
-        displayErrorSnackbar(result.error || 'Failed to link activity');
-      }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred');
-    } finally {
-      setLinking(false);
-      handleLinkConfirmClose();
-    }
-  };
-
   return (
     <Box>
       <Grid container spacing={3}>
@@ -720,7 +609,6 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
             <NextStepsSection
               activity={activity}
               onCreateActivity={handleCreateActivity}
-              onCreateStep={handleCreateStep}
               onUpdate={onUpdate}
             />
           </Stack>
@@ -746,45 +634,6 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
         defaultActivityType={activityModalType}
         onSuccess={handleActivitySuccess}
       />
-
-      {/* Step Modal - Create new decision step */}
-      {activity?.decision_cycle && (
-        <DecisionStepModal
-          open={stepModalOpen}
-          modalToggler={setStepModalOpen}
-          cycleId={activity.decision_cycle}
-          defaultStage={null}
-          onSuccess={handleStepSuccess}
-        />
-      )}
-
-      {/* Link Confirmation Dialog */}
-      <Dialog
-        open={linkConfirmOpen}
-        onClose={handleLinkConfirmClose}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle>Link to this activity?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Do you want to link this activity to the newly created step "{createdStep?.name}"?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleLinkConfirmClose} disabled={linking}>
-            No, skip
-          </Button>
-          <Button 
-            onClick={handleLinkToStep} 
-            variant="contained" 
-            disabled={linking}
-            autoFocus
-          >
-            {linking ? 'Linking...' : 'Yes, link it'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }

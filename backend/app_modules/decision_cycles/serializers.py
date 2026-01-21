@@ -12,7 +12,7 @@ from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from app_modules.core_modules.models import StandardDepartment
 from .models import DecisionCycle, DecisionStep, DecisionStepContact, DecisionStepDepartment
-from .constants import DecisionStage, DecisionStepStatus
+from .constants import PipelineStep, DecisionStepStatus, PIPELINE_STEPS_CONFIG
 
 
 # ============================================================================
@@ -72,10 +72,10 @@ class StepMinimalSerializer(serializers.ModelSerializer):
 
 class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
-    Lightweight serializer for step lists (timeline display).
+    Lightweight serializer for step lists (pipeline display).
     
-    Note: step_type, scheduled_date, scheduled_time have been removed.
-    Type and scheduling now belong exclusively to Activity.
+    Steps are fixed pipeline stages - users cannot create/delete them.
+    Activities are the execution unit within each step.
     """
     
     stage_display = serializers.SerializerMethodField(read_only=True)
@@ -92,20 +92,29 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     is_stalled = serializers.BooleanField(read_only=True)
     stalled_reason = serializers.CharField(read_only=True)
     
+    # Pipeline step properties
+    is_activity_optional = serializers.BooleanField(read_only=True)
+    step_description = serializers.CharField(read_only=True)
+    order = serializers.IntegerField(read_only=True)
+    activities_count = serializers.SerializerMethodField(read_only=True)
+    
     class Meta:
         model = DecisionStep
         fields = [
-            # Identity
-            'id', 'name',
+            # Identity & Order
+            'id', 'name', 'order',
             
-            # Stage & Status
+            # Pipeline Step
             'stage', 'stage_display',
+            'is_activity_optional', 'step_description',
+            
+            # Status
             'status', 'status_display',
             
             # Deal Temporality
             'start_date', 'expected_end', 'completed_at',
             
-            # Linked list
+            # Linked list (legacy, may remove later)
             'previous_step', 'previous_step_info',
             'next_step_info',
             
@@ -117,7 +126,7 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             
             # Summary fields
             'stakeholder', 'departments_list',
-            'contacts_count', 'completeness_score',
+            'contacts_count', 'activities_count', 'completeness_score',
             
             # Timestamps
             'created_at', 'updated_at'
@@ -165,6 +174,10 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
         from .services import CompletenessScoreService
         service = CompletenessScoreService()
         return service.calculate(obj)
+    
+    def get_activities_count(self, obj):
+        """Return count of activities linked to this step."""
+        return obj.activities.count() if hasattr(obj, 'activities') else 0
 
 
 
@@ -194,15 +207,21 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     stalled_reason = serializers.CharField(read_only=True)
     stalled_details = serializers.SerializerMethodField(read_only=True)
     
+    # Pipeline step properties
+    is_activity_optional = serializers.BooleanField(read_only=True)
+    step_description = serializers.CharField(read_only=True)
+    order = serializers.IntegerField(read_only=True)
+    activities_count = serializers.SerializerMethodField(read_only=True)
+    
     class Meta:
         model = DecisionStep
         fields = [
             # Identity
-            'id', 'name', 'cycle',
+            'id', 'name', 'cycle', 'order',
             
             # Stage & Status
             'stage', 'stage_display',
-            'status', 'status_display',
+            'status', 'status_display', 'is_activity_optional', 'step_description',
             
             # Deal Temporality
             'start_date', 'expected_end', 'completed_at',
@@ -221,7 +240,7 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'stakeholder',
             'description', 'goal',
             'influence_score',
-            'criterias', 'metrics',
+            'criterias', 'metrics', 'activities_count',
 
             # Manager
             'manager_notes',
@@ -310,6 +329,10 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'has_future_activity': obj.has_future_activity,
             'expected_end': obj.expected_end,
         }
+    
+    def get_activities_count(self, obj):
+        """Return count of activities linked to this step."""
+        return obj.activities.count() if hasattr(obj, 'activities') else 0
 
 class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
@@ -364,10 +387,10 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         return value.strip()
     
     def validate_stage(self, value):
-        valid_stages = [choice[0] for choice in DecisionStage.choices]
+        valid_stages = [choice[0] for choice in PipelineStep.choices]
         if value not in valid_stages:
             raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field='Stage')
+                CoreErrorMessages.INVALID_FIELD.format(field='Pipeline Step')
             )
         return value
     
@@ -489,9 +512,8 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
     class Meta:
         model = DecisionStep
         fields = [
-            'name', 'stage', 'status',
+            'name', 'status',
             'expected_end',
-            'previous_step_id',
             'stakeholder',
             'description', 'goal',
             'influence_score', 'criterias', 'metrics',

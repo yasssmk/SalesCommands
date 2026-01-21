@@ -36,7 +36,7 @@ from ..serializers import (
     DecisionStepCreateSerializer,
     DecisionStepUpdateSerializer,
 )
-from ..constants import DecisionStage, DecisionStepStatus
+from ..constants import PipelineStep, DecisionStepStatus, PIPELINE_STEPS_CONFIG
 
 logger = get_logger(__name__)
 
@@ -179,40 +179,86 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         """
-        Create a new decision step.
+        Create a new decision cycle with AUTO-CREATED pipeline steps.
         
-        Note: Auto-activity creation has been removed.
-        DecisionStep is a buyer milestone - Activities are created separately.
+        Pipeline steps are fixed and cannot be created manually by users.
+        All 7 steps are created automatically in order:
+        1. Qualification
+        2. Technical Fit
+        3. Solution Validation
+        4. Business Case
+        5. Closing
+        6. Implementation
+        7. Go Live
         """
         ctx = ctx_from_request(request)
-        logger.info("decision_step_create_requested", extra=ctx)
+        logger.info("decision_cycle_create_requested", extra=ctx)
         
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        instance = serializer.save()
+        # Create the cycle
+        cycle = serializer.save()
+        
+        # Auto-create all pipeline steps
+        self._create_pipeline_steps(cycle, request.user)
         
         # Audit log
         audit_log(
-            event='decision_step_create_success',
+            event='decision_cycle_create_success',
             action='create',
             actor_id=str(request.user.id),
             client_id=str(self.get_client_id()),
-            target_type='decision_step',
-            target_id=str(instance.id),
+            target_type='decision_cycle',
+            target_id=str(cycle.id),
             outcome='success'
         )
         
-        logger.info("decision_step_created", extra={
+        logger.info("decision_cycle_created_with_steps", extra={
             **ctx,
-            'step_id': str(instance.id)
+            'cycle_id': str(cycle.id),
+            'steps_created': len(PIPELINE_STEPS_CONFIG)
         })
         
-        output_serializer = DecisionStepSerializer(instance)
+        # Return full cycle with steps
+        output_serializer = DecisionCycleSerializer(cycle)
         return Response({
             'success': True,
             'data': output_serializer.data
         }, status=status.HTTP_201_CREATED)
+    
+    def _create_pipeline_steps(self, cycle, user):
+        """
+        Create all fixed pipeline steps for a new cycle.
+        
+        Steps are created in order with linked-list relationships.
+        """
+        previous_step = None
+        
+        for config in PIPELINE_STEPS_CONFIG:
+            step = DecisionStep(
+                cycle=cycle,
+                client_id=cycle.client_id,
+                name=config['step'].label,  # Use the label from PipelineStep
+                stage=config['step'].value,
+                order=config['order'],
+                status=DecisionStepStatus.NOT_STARTED,
+                previous_step=previous_step,
+                # expected_end will be set by user later
+                expected_end=None,
+                created_by=user,
+                updated_by=user,
+            )
+            step.save(user=user)
+            
+            logger.debug("pipeline_step_created", extra={
+                'cycle_id': str(cycle.id),
+                'step_id': str(step.id),
+                'stage': config['step'].value,
+                'order': config['order']
+            })
+            
+            previous_step = step
     
     @transaction.atomic
     def update(self, request, *args, **kwargs):
@@ -325,20 +371,27 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
 
 class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
-    API endpoints for managing Decision Steps.
+    API endpoints for managing Decision Steps (Pipeline Stages).
+    
+    IMPORTANT: Steps are AUTO-CREATED when a Decision Cycle is created.
+    Users CANNOT create or delete steps manually - they are fixed pipeline stages.
+    Users CAN only:
+        - View steps
+        - Update step details (name, expected_end, stakeholder, etc.)
+        - Add activities within steps
     
     Features:
         - Client-scoped data isolation (multi-tenant)
         - Permission-based access control
-        - Linked-list ordering support
+        - Fixed pipeline structure (7 stages)
         
     Endpoints:
         - GET    /decision-steps/                     - List all steps
-        - POST   /decision-steps/                     - Create step
+        - POST   /decision-steps/                     - BLOCKED (auto-created)
         - GET    /decision-steps/{id}/                - Retrieve step
-        - PUT    /decision-steps/{id}/                - Update step (full)
-        - PATCH  /decision-steps/{id}/                - Update step (partial)
-        - DELETE /decision-steps/{id}/                - Delete step
+        - PUT    /decision-steps/{id}/                - Update step details
+        - PATCH  /decision-steps/{id}/                - Partial update
+        - DELETE /decision-steps/{id}/                - BLOCKED (fixed structure)
         - PATCH  /decision-steps/{id}/status/         - Update step status
     """
     
@@ -354,8 +407,8 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
         'status': ['exact'],
     }
     search_fields = ['name', 'description', 'stakeholder']
-    ordering_fields = ['name', 'stage', 'status', 'created_at', 'updated_at']
-    ordering = ['created_at']
+    ordering_fields = ['name', 'stage', 'status', 'order', 'created_at', 'updated_at']
+    ordering = ['order', 'created_at']
     
     # Security
     authentication_classes = [CustomJWTAuthentication]
@@ -459,38 +512,19 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
             'data': serializer.data
         })
     
-    @transaction.atomic
     def create(self, request, *args, **kwargs):
-        """Create a new decision step with optional auto-activity creation."""
-        ctx = ctx_from_request(request)
-        logger.info("decision_step_create_requested", extra=ctx)
-        
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        instance = serializer.save()
-        
-        # Audit log
-        audit_log(
-            event='decision_step_create_success',
-            action='create',
-            actor_id=str(request.user.id),
-            client_id=str(self.get_client_id()),
-            target_type='decision_step',
-            target_id=str(instance.id),
-            outcome='success'
-        )
-        
-        logger.info("decision_step_created", extra={
-            **ctx,
-            'step_id': str(instance.id)
-        })
-        
-        output_serializer = DecisionStepSerializer(instance)
-        return Response({
-            'success': True,
-            'data': output_serializer.data
-        }, status=status.HTTP_201_CREATED)
+            """
+            BLOCKED: Pipeline steps cannot be created manually.
+            
+            Steps are auto-created when a Decision Cycle is created.
+            Users can only add activities within existing steps.
+            """
+            ctx = ctx_from_request(request)
+            logger.warning("decision_step_manual_create_blocked", extra=ctx)
+            
+            raise StandardizedValidationError(
+                CoreErrorMessages.PERMISSION_DENIED
+            )
 
     
     @transaction.atomic
@@ -533,50 +567,19 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
             'data': output_serializer.data
         })
     
-    @transaction.atomic
     def destroy(self, request, *args, **kwargs):
-        """Delete a decision step and update linked list."""
+        """
+        BLOCKED: Pipeline steps cannot be deleted manually.
+        
+        Steps are fixed pipeline stages. To remove a step's content,
+        delete the activities within it instead.
+        """
         ctx = ctx_from_request(request)
-        instance = self.get_object()
-        step_id = str(instance.id)
-        step_name = instance.name
+        logger.warning("decision_step_manual_delete_blocked", extra=ctx)
         
-        logger.info("decision_step_delete_requested", extra={
-            **ctx,
-            'step_id': step_id
-        })
-        
-        # Update linked list: connect previous to next
-        previous_step = instance.previous_step
-        next_steps = list(instance.next_steps.all())
-        
-        # Point all next steps to the previous step
-        for next_step in next_steps:
-            next_step.previous_step = previous_step
-            next_step.save(update_fields=['previous_step'])
-        
-        instance.delete()
-        
-        # Audit log
-        audit_log(
-            event='decision_step_delete_success',
-            action='delete',
-            actor_id=str(request.user.id),
-            client_id=str(self.get_client_id()),
-            target_type='decision_step',
-            target_id=step_id,
-            outcome='success'
+        raise StandardizedValidationError(
+            CoreErrorMessages.PERMISSION_DENIED
         )
-        
-        logger.info("decision_step_deleted", extra={
-            **ctx,
-            'step_id': step_id
-        })
-        
-        return Response({
-            'success': True,
-            'message': 'Decision step deleted successfully'
-        }, status=status.HTTP_204_NO_CONTENT)
     
     
     # ==========================================================================
@@ -673,23 +676,44 @@ class DecisionCycleChoicesView(APIView):
     API view for retrieving Decision Cycle choices.
     
     GET /decision-cycles/choices/
+    
+    Returns:
+        - pipeline_steps: Fixed pipeline steps with order and config
+        - statuses: Available step statuses
     """
     
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        """Return available choices for stages, statuses, and step types."""
+        """Return available choices for pipeline steps and statuses."""
         ctx = ctx_from_request(request)
         logger.info("decision_cycle_choices_requested", extra=ctx)
+        
+        # Build pipeline steps with full configuration
+        pipeline_steps = []
+        for config in PIPELINE_STEPS_CONFIG:
+            pipeline_steps.append({
+                'value': config['step'].value,
+                'label': config['step'].label,
+                'order': config['order'],
+                'activity_optional': config['activity_optional'],
+                'description': config['description'],
+            })
         
         return Response({
             'success': True,
             'data': {
+                # New: Full pipeline step configuration
+                'pipeline_steps': pipeline_steps,
+                
+                # Legacy alias for backward compatibility
                 'stages': [
                     {'value': choice[0], 'label': choice[1]}
-                    for choice in DecisionStage.choices
+                    for choice in PipelineStep.choices
                 ],
+                
+                # Step statuses
                 'statuses': [
                     {'value': choice[0], 'label': choice[1]}
                     for choice in DecisionStepStatus.choices

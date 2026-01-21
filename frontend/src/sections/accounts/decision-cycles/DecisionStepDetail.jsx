@@ -71,18 +71,25 @@ const STATUS_CONFIG = {
   IN_CHASING: { color: 'secondary', label: 'In Chasing' },
   VALIDATED: { color: 'success', label: 'Validated' },
   REJECTED: { color: 'error', label: 'Rejected' },
-  ON_HOLD: { color: 'default', label: 'On Hold' },
+  ON_HOLD: { color: 'warning', label: 'On Hold' },
   CANCELLED: { color: 'default', label: 'Cancelled' }
 };
 
-
-const STAGE_LABELS = {
-  EXPLORATION: 'Exploration',
-  CRITERIA_VALIDATION: 'Criteria Validation',
-  SOLUTION_CONFIRMATION: 'Solution Confirmation',
-  BUSINESS_VALIDATION: 'Business Validation',
-  FORMALIZATION: 'Formalization'
+/**
+ * Pipeline Step Labels (7 fixed steps)
+ */
+const PIPELINE_STEP_LABELS = {
+  QUALIFICATION: 'Qualification',
+  TECHNICAL_FIT: 'Technical Fit',
+  SOLUTION_VALIDATION: 'Solution Validation',
+  BUSINESS_CASE: 'Business Case',
+  CLOSING: 'Closing',
+  IMPLEMENTATION: 'Implementation',
+  GO_LIVE: 'Go Live'
 };
+
+// Legacy alias
+const STAGE_LABELS = PIPELINE_STEP_LABELS;
 
 // ==============================|| SECTION TITLE ||============================== //
 

@@ -23,11 +23,9 @@ import Tooltip from '@mui/material/Tooltip';
 import MainCard from 'components/MainCard';
 import { 
   updateDecisionStepStatus,
-  deleteDecisionStep,
   STATUS_COLORS
 } from 'api/accounts/decisionCycles';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
-import AlertStepDelete from 'sections/accounts/decision-cycles/AlertStepDelete';
 
 // Icons
 import {
@@ -36,7 +34,6 @@ import {
   CloseOutlined,
   MoreOutlined,
   CheckCircleOutlined,
-  DeleteOutlined,
 } from '@ant-design/icons';
 
 // Date formatting
@@ -50,17 +47,26 @@ const STATUS_CONFIG = {
   IN_PROGRESS: { color: 'info', label: 'In Progress' },
   IN_CHASING: { color: 'secondary', label: 'In Chasing' },
   VALIDATED: { color: 'success', label: 'Validated' },
-  REJECTED: { color: 'error', label: 'Rejected' }
+  REJECTED: { color: 'error', label: 'Rejected' },
+  ON_HOLD: { color: 'warning', label: 'On Hold' },
+  CANCELLED: { color: 'default', label: 'Cancelled' }
 };
 
-const STAGE_LABELS = {
-  EXPLORATION: 'Exploration',
-  CRITERIA_VALIDATION: 'Criteria Validation',
-  SOLUTION_CONFIRMATION: 'Solution Confirmation',
-  BUSINESS_VALIDATION: 'Business Validation',
-  FORMALIZATION: 'Formalization'
+/**
+ * Pipeline Step Labels (7 fixed steps)
+ */
+const PIPELINE_STEP_LABELS = {
+  QUALIFICATION: 'Qualification',
+  TECHNICAL_FIT: 'Technical Fit',
+  SOLUTION_VALIDATION: 'Solution Validation',
+  BUSINESS_CASE: 'Business Case',
+  CLOSING: 'Closing',
+  IMPLEMENTATION: 'Implementation',
+  GO_LIVE: 'Go Live'
 };
 
+// Legacy alias
+const STAGE_LABELS = PIPELINE_STEP_LABELS;
 
 // ==============================|| STEP HEADER ||============================== //
 
@@ -75,9 +81,6 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
   // Menu state
   const [anchorEl, setAnchorEl] = useState(null);
   const menuOpen = Boolean(anchorEl);
-
-  // Delete dialog state
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   // Status menu state
   const [statusAnchorEl, setStatusAnchorEl] = useState(null);
@@ -139,22 +142,6 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
   // Handle mark as validated (quick action)
   const handleMarkValidated = () => {
     handleStatusChange('VALIDATED');
-  };
-
-  // Handle delete
-  const handleDeleteClick = () => {
-    handleMenuClose();
-    setDeleteDialogOpen(true);
-  };
-
-  const handleDeleteSuccess = () => {
-    setDeleteDialogOpen(false);
-    // Navigate back to account after deletion
-    if (account?.id) {
-      router.push(`/accounts/${account.id}?tab=decision-cycle`);
-    } else {
-      router.back();
-    }
   };
 
 
@@ -270,27 +257,9 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
                   Mark Validated
                 </Button>
               )}
-              <IconButton onClick={handleMenuOpen}>
-                <MoreOutlined />
-              </IconButton>
-              <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
-                <MenuItem onClick={handleDeleteClick} sx={{ color: 'error.main' }}>
-                  <DeleteOutlined style={{ marginRight: 8 }} />
-                  Delete Step
-                </MenuItem>
-              </Menu>
             </Stack>
           </Stack>
       </MainCard>
-
-      {/* Delete Dialog */}
-      <AlertStepDelete
-        open={deleteDialogOpen}
-        onClose={() => setDeleteDialogOpen(false)}
-        step={step}
-        cycleId={cycleId}
-        onSuccess={handleDeleteSuccess}
-      />
     </>
   );
 }

@@ -11,7 +11,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
-from .constants import DecisionStage, DecisionStepStatus, StalledReason
+from .constants import PipelineStep, DecisionStepStatus, StalledReason, PIPELINE_STEPS_CONFIG, ACTIVITY_OPTIONAL_STEPS
 
 
 class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -141,15 +141,22 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
 class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
     """
-    Decision Step model representing a single decision/validation.
+    Pipeline Step within a Decision Cycle.
     
-    Each step belongs to a DecisionCycle and is assigned to one
-    of the 5 fixed stages. Steps use a linked-list model for
-    ordering and parallelism support.
+    IMPORTANT: Steps are AUTO-CREATED when a Decision Cycle is created.
+    Users CANNOT create, delete, or reorder steps manually.
     
-    Parallelism convention:
-        If multiple steps share the SAME previous_step AND next_step,
-        they are considered parallel steps.
+    Each step represents a fixed stage in the sales pipeline:
+    - Qualification → Technical Fit → Solution Validation → Business Case → Closing → Implementation → Go Live
+    
+    Steps are AGGREGATORS that derive their data from linked Activities:
+    - stakeholders: union of activity contacts
+    - start_date: date of first activity
+    - expected_end: manually set, but can be auto-adjusted
+    - status: inferred from activity outcomes
+    - stalled: detected when no activity/next action
+    
+    Activities are the EXECUTION UNIT - Steps are OBSERVERS.
     """
     
     # ==========================================================================
@@ -175,9 +182,15 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     stage = models.CharField(
         max_length=30,
-        choices=DecisionStage.choices,
-        verbose_name=_('Stage'),
-        help_text=_('Fixed stage this step belongs to')
+        choices=PipelineStep.choices,
+        verbose_name=_('Pipeline Step'),
+        help_text=_('Fixed pipeline step - auto-assigned, cannot be changed by user')
+    )
+
+    order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name=_('Display Order'),
+        help_text=_('Order in pipeline (1-7), auto-set from PipelineStep config')
     )
     
     status = models.CharField(
@@ -375,6 +388,33 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         return siblings.exists()
     
     # ==========================================================================
+    # PIPELINE STEP PROPERTIES
+    # ==========================================================================
+    
+    @property
+    def is_activity_optional(self) -> bool:
+        """
+        Check if this step allows no activities (e.g., Implementation, Go Live).
+        
+        Activity-optional steps won't trigger stalled detection just because
+        they have no activities - they may be client-side or external.
+        """
+        return self.stage in ACTIVITY_OPTIONAL_STEPS
+    
+    @property
+    def pipeline_step_config(self) -> dict:
+        """Get the configuration for this pipeline step."""
+        for cfg in PIPELINE_STEPS_CONFIG:
+            if cfg['step'] == self.stage:
+                return cfg
+        return {}
+    
+    @property
+    def step_description(self) -> str:
+        """Get the description for this pipeline step from config."""
+        return self.pipeline_step_config.get('description', '')
+    
+    # ==========================================================================
     # STALLED DETECTION (Computed Properties)
     # ==========================================================================
     
@@ -407,9 +447,11 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         
         today = timezone.now().date()
         
-        # 1. Check if expected_end has passed
-        if self.expected_end and self.expected_end < today:
-            return StalledReason.EXPECTED_END_PASSED
+       # Check 1: No activities at all (skip for activity-optional steps)
+        if not self.activities.exists():
+            if self.is_activity_optional:
+                return StalledReason.NONE  # Normal for Implementation/Go Live
+            return StalledReason.NO_ACTIVITY
         
         # Get activities for this step
         activities = self.activities.all()

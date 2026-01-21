@@ -9,19 +9,84 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 
-class DecisionStage(models.TextChoices):
+class PipelineStep(models.TextChoices):
     """
-    Fixed decision stages for layout/grouping.
+    Fixed pipeline steps for Decision Cycles.
     
-    These are NOT steps - they are structural stages
-    used for visual organization of the timeline.
-    Same stages for all Decision Cycles, not optional.
+    These steps are AUTO-CREATED when a Decision Cycle is created.
+    Users CANNOT create, delete, or reorder these steps.
+    Users CAN only add activities within each step.
+    
+    Steps are displayed as columns in the pipeline view.
+    Activities are displayed as cards within each column.
+    
+    IMPORTANT: To modify step names or add/remove steps,
+    update this enum and run the migration.
     """
-    EXPLORATION = 'EXPLORATION', _('Exploration')
-    CRITERIA_VALIDATION = 'CRITERIA_VALIDATION', _('Criteria Validation')
-    SOLUTION_CONFIRMATION = 'SOLUTION_CONFIRMATION', _('Solution Confirmation')
-    BUSINESS_VALIDATION = 'BUSINESS_VALIDATION', _('Business Validation')
-    FORMALIZATION = 'FORMALIZATION', _('Formalization')
+    QUALIFICATION = 'QUALIFICATION', _('Qualification')
+    TECHNICAL_FIT = 'TECHNICAL_FIT', _('Technical Fit')
+    SOLUTION_VALIDATION = 'SOLUTION_VALIDATION', _('Solution Validation')
+    BUSINESS_CASE = 'BUSINESS_CASE', _('Business Case')
+    CLOSING = 'CLOSING', _('Closing')
+    IMPLEMENTATION = 'IMPLEMENTATION', _('Implementation')
+    GO_LIVE = 'GO_LIVE', _('Go Live')
+
+
+# Pipeline step configuration
+# Order determines display sequence (left to right)
+PIPELINE_STEPS_CONFIG = [
+    {
+        'step': PipelineStep.QUALIFICATION,
+        'order': 1,
+        'activity_optional': False,
+        'description': 'Identify needs and validate opportunity fit',
+    },
+    {
+        'step': PipelineStep.TECHNICAL_FIT,
+        'order': 2,
+        'activity_optional': False,
+        'description': 'Validate technical and operational requirements',
+    },
+    {
+        'step': PipelineStep.SOLUTION_VALIDATION,
+        'order': 3,
+        'activity_optional': False,
+        'description': 'Confirm solution meets buyer criteria',
+    },
+    {
+        'step': PipelineStep.BUSINESS_CASE,
+        'order': 4,
+        'activity_optional': False,
+        'description': 'Secure budget and business approval',
+    },
+    {
+        'step': PipelineStep.CLOSING,
+        'order': 5,
+        'activity_optional': False,
+        'description': 'Finalize contract and legal terms',
+    },
+    {
+        'step': PipelineStep.IMPLEMENTATION,
+        'order': 6,
+        'activity_optional': True,  # Often client-side, no AE action
+        'description': 'Deploy and configure solution',
+    },
+    {
+        'step': PipelineStep.GO_LIVE,
+        'order': 7,
+        'activity_optional': True,  # Often client-side, no AE action
+        'description': 'Launch and verify successful adoption',
+    },
+]
+
+# Quick lookup helpers
+PIPELINE_STEPS_ORDER = [cfg['step'] for cfg in PIPELINE_STEPS_CONFIG]
+ACTIVITY_OPTIONAL_STEPS = [cfg['step'] for cfg in PIPELINE_STEPS_CONFIG if cfg['activity_optional']]
+
+
+# Legacy alias for backward compatibility during migration
+# TODO: Remove after full migration
+DecisionStage = PipelineStep
 
 
 class DecisionStepStatus(models.TextChoices):

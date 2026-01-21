@@ -2,28 +2,27 @@
 /**
  * Decision Cycles Components Index
  * 
- * Centralized exports for all Decision Cycle components.
+ * ARCHITECTURE (Pipeline Steps):
+ * - Pipeline steps are FIXED and auto-created with each cycle (7 steps)
+ * - Users CANNOT create/delete/reorder steps
+ * - Users add ACTIVITIES within steps
  */
 
-// Main components
+// ==============================|| CYCLE COMPONENTS ||============================== //
+
 export { default as DecisionCycleTimeline } from './DecisionCycleTimeline';
 export { default as DecisionCycleSelector } from './DecisionCycleSelector';
 export { default as DecisionCycleEmpty } from './DecisionCycleEmpty';
 export { default as DecisionCycleModal } from './DecisionCycleModal';
 
-// Step components
-export { default as DecisionStepNode } from './DecisionStepNode';
-export { default as DecisionStepPreview } from './DecisionStepPreview';
-export { default as DecisionStepModal } from './DecisionStepModal';
-export { default as DecisionStepDetail } from './DecisionStepDetail';
-export { default as FormStepAdd } from './FormStepAdd';
+// ==============================|| STEP COMPONENTS ||============================== //
 
-// Editable field components
+export { default as DecisionStepDetail } from './DecisionStepDetail';
+
+// ==============================|| EDITABLE FIELD COMPONENTS ||============================== //
+
 export { default as EditableField } from './EditableField';
 export { default as EditableTextArea } from './EditableTextArea';
 export { default as EditableChipList } from './EditableChipList';
 export { default as EditableMultiSelect } from './EditableMultiSelect';
 export { default as EditableDateTime } from './EditableDateTime';
-
-// Alert components
-export { default as AlertStepDelete } from './AlertStepDelete';

@@ -14,15 +14,23 @@ import { isValidUUID, sanitizeObject } from 'utils/validators';
 
 // ==============================|| CONSTANTS ||============================== //
 /**
- * Decision stages (matching backend DecisionStage choices)
+ * Pipeline Steps (matching backend PipelineStep choices)
+ * 
+ * These are FIXED steps auto-created with each Decision Cycle.
+ * Users CANNOT create/delete steps - only add activities within them.
  */
-export const DECISION_STAGES = {
-  EXPLORATION: 'EXPLORATION',
-  CRITERIA_VALIDATION: 'CRITERIA_VALIDATION',
-  SOLUTION_CONFIRMATION: 'SOLUTION_CONFIRMATION',
-  BUSINESS_VALIDATION: 'BUSINESS_VALIDATION',
-  FORMALIZATION: 'FORMALIZATION'
+export const PIPELINE_STEPS = {
+  QUALIFICATION: 'QUALIFICATION',
+  TECHNICAL_FIT: 'TECHNICAL_FIT',
+  SOLUTION_VALIDATION: 'SOLUTION_VALIDATION',
+  BUSINESS_CASE: 'BUSINESS_CASE',
+  CLOSING: 'CLOSING',
+  IMPLEMENTATION: 'IMPLEMENTATION',
+  GO_LIVE: 'GO_LIVE'
 };
+
+// Legacy alias for backward compatibility
+export const DECISION_STAGES = PIPELINE_STEPS;
 
 /**
  * Decision step statuses (matching backend DecisionStepStatus choices)
@@ -45,30 +53,91 @@ export const STATUS_COLORS = {
   IN_PROGRESS: 'info',
   IN_CHASING: 'secondary',
   VALIDATED: 'success',
-  REJECTED: 'error'
+  REJECTED: 'error',
+  ON_HOLD: 'warning',
+  CANCELLED: 'default'
 };
 
 /**
- * Stage order for timeline display
+ * Pipeline steps order for display (left to right)
  */
-export const STAGE_ORDER = [
-  'EXPLORATION',
-  'CRITERIA_VALIDATION',
-  'SOLUTION_CONFIRMATION',
-  'BUSINESS_VALIDATION',
-  'FORMALIZATION'
+export const PIPELINE_STEPS_ORDER = [
+  'QUALIFICATION',
+  'TECHNICAL_FIT',
+  'SOLUTION_VALIDATION',
+  'BUSINESS_CASE',
+  'CLOSING',
+  'IMPLEMENTATION',
+  'GO_LIVE'
 ];
 
+// Legacy alias for backward compatibility
+export const STAGE_ORDER = PIPELINE_STEPS_ORDER;
+
 /**
- * Stage labels for UI display
+ * Pipeline step labels for UI display
  */
-export const STAGE_LABELS = {
-  EXPLORATION: 'Exploration',
-  CRITERIA_VALIDATION: 'Criteria Validation',
-  SOLUTION_CONFIRMATION: 'Solution Confirmation',
-  BUSINESS_VALIDATION: 'Business Validation',
-  FORMALIZATION: 'Formalization'
+export const PIPELINE_STEP_LABELS = {
+  QUALIFICATION: 'Qualification',
+  TECHNICAL_FIT: 'Technical Fit',
+  SOLUTION_VALIDATION: 'Solution Validation',
+  BUSINESS_CASE: 'Business Case',
+  CLOSING: 'Closing',
+  IMPLEMENTATION: 'Implementation',
+  GO_LIVE: 'Go Live'
 };
+
+// Legacy alias for backward compatibility
+export const STAGE_LABELS = PIPELINE_STEP_LABELS;
+
+/**
+ * Pipeline step configuration
+ * 
+ * activity_optional: true = step can have no activities (e.g., client-side work)
+ * description: Short description of what happens in this step
+ */
+export const PIPELINE_STEP_CONFIG = {
+  QUALIFICATION: {
+    order: 1,
+    activity_optional: false,
+    description: 'Identify needs and validate opportunity fit'
+  },
+  TECHNICAL_FIT: {
+    order: 2,
+    activity_optional: false,
+    description: 'Validate technical and operational requirements'
+  },
+  SOLUTION_VALIDATION: {
+    order: 3,
+    activity_optional: false,
+    description: 'Confirm solution meets buyer criteria'
+  },
+  BUSINESS_CASE: {
+    order: 4,
+    activity_optional: false,
+    description: 'Secure budget and business approval'
+  },
+  CLOSING: {
+    order: 5,
+    activity_optional: false,
+    description: 'Finalize contract and legal terms'
+  },
+  IMPLEMENTATION: {
+    order: 6,
+    activity_optional: true,
+    description: 'Deploy and configure solution'
+  },
+  GO_LIVE: {
+    order: 7,
+    activity_optional: true,
+    description: 'Launch and verify successful adoption'
+  }
+};
+
+/**
+ * Steps where no activity is expected (client-side work)
+ */
+export const ACTIVITY_OPTIONAL_STEPS = ['IMPLEMENTATION', 'GO_LIVE'];
 
 /**
  * Step status labels for UI display
@@ -79,7 +148,9 @@ export const STATUS_LABELS = {
   IN_PROGRESS: 'In Progress',
   IN_CHASING: 'In Chasing',
   VALIDATED: 'Validated',
-  REJECTED: 'Rejected'
+  REJECTED: 'Rejected',
+  ON_HOLD: 'On Hold',
+  CANCELLED: 'Cancelled'
 };
 
 // ==============================|| ENDPOINTS ||============================== //
