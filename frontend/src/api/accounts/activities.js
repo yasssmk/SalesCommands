@@ -125,22 +125,17 @@ export const ACTIVITY_OUTCOME_COLORS = {
 // ==============================|| ENDPOINTS ||============================== //
 
 const endpoints = {
-  // Activities
   activities: '/module-activities/',
   activityDetail: (id) => `/module-activities/${id}/`,
-  choices: '/module-activities/choices/',
-  
-  // Custom actions
+  myActivities: '/module-activities/my-activities/',
+  byAccount: (accountId) => `/module-activities/by-account/${accountId}/`,
+  byStep: (stepId) => `/module-activities/by-step/${stepId}/`,
+  overdue: '/module-activities/overdue/',
+  upcoming: '/module-activities/upcoming/',
   complete: (id) => `/module-activities/${id}/complete/`,
   cancel: (id) => `/module-activities/${id}/cancel/`,
   createWithEntities: '/module-activities/create-with-entities/',
-  
-  // List actions
-  myActivities: '/module-activities/my-activities/',
-  byAccount: '/module-activities/by-account/',
-  byStep: '/module-activities/by-step/',
-  overdue: '/module-activities/overdue/',
-  upcoming: '/module-activities/upcoming/'
+  unlinkedByAccount: (accountId) => `/module-activities/unlinked/by-account/${accountId}/`,
 };
 
 // ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
@@ -292,11 +287,11 @@ export function useGetActivitiesByAccount(accountId, options = {}) {
 
   const swrKey = useMemo(() => {
     if (!accountId || !isValidUUID(accountId)) return null;
-    const url = buildUrlWithParams(endpoints.byAccount, { 
+    const url = buildUrlWithParams(endpoints.byAccount(accountId), { 
       page, 
       pageSize, 
       ordering, 
-      filters: { ...filters, account_id: accountId } 
+      filters
     });
     return tenantKey(url, tenantId);
   }, [accountId, page, pageSize, ordering, filters, tenantId]);
@@ -364,6 +359,161 @@ export function useGetActivitiesByStep(stepId, options = {}) {
   );
 
   return memoizedValue;
+}
+
+/**
+ * GET UNLINKED ACTIVITIES FOR ACCOUNT
+ * 
+ * Retrieves activities not linked to any decision step.
+ * Used for "Link Existing Activity" feature in pipeline timeline.
+ * 
+ * @param {string} accountId - UUID of the account
+ * @param {Object} options - Query options
+ * @param {boolean} options.excludeCancelled - Exclude cancelled activities (default: true)
+ * @param {number} options.limit - Maximum results (default: 50, max: 100)
+ * @returns {Promise<Object>} {success: boolean, data?: Array, error?: string}
+ */
+export async function getUnlinkedActivities(accountId, options = {}) {
+  if (!accountId || !isValidUUID(accountId)) {
+    return {
+      success: false,
+      error: 'Invalid account ID format',
+      status: 400
+    };
+  }
+  
+  const { excludeCancelled = true, limit = 50 } = options;
+  
+  const params = new URLSearchParams();
+  if (!excludeCancelled) params.append('exclude_cancelled', 'false');
+  if (limit !== 50) params.append('limit', String(limit));
+  
+  const queryString = params.toString();
+  const url = queryString 
+    ? `${endpoints.unlinkedByAccount(accountId)}?${queryString}`
+    : endpoints.unlinkedByAccount(accountId);
+  
+  const result = await api.get(url);
+  
+  if (result.success) {
+    const data = result.data?.data || result.data;
+    return { 
+      success: true, 
+      data: data?.results || data || [] 
+    };
+  }
+  
+  return { 
+    success: false, 
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null
+  };
+}
+
+/**
+ * LINK ACTIVITY TO DECISION STEP
+ * 
+ * Links an existing activity to a decision cycle and step.
+ * Uses PATCH to update the activity's decision_cycle_id and decision_step_id.
+ * 
+ * @param {string} activityId - UUID of the activity to link
+ * @param {string} cycleId - UUID of the decision cycle
+ * @param {string} stepId - UUID of the decision step
+ * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ */
+export async function linkActivityToStep(activityId, cycleId, stepId) {
+  if (!activityId || !isValidUUID(activityId)) {
+    return {
+      success: false,
+      error: 'Invalid activity ID format',
+      status: 400
+    };
+  }
+  
+  if (!cycleId || !isValidUUID(cycleId)) {
+    return {
+      success: false,
+      error: 'Invalid cycle ID format',
+      status: 400
+    };
+  }
+  
+  if (!stepId || !isValidUUID(stepId)) {
+    return {
+      success: false,
+      error: 'Invalid step ID format',
+      status: 400
+    };
+  }
+  
+  const result = await api.patch(endpoints.activityDetail(activityId), {
+    decision_cycle_id: cycleId,
+    decision_step_id: stepId
+  });
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.activities,
+      endpoints.activityDetail(activityId),
+      endpoints.myActivities,
+      endpoints.byStep(stepId),
+      '/module-decision-cycles/',
+      `/module-decision-cycles/${cycleId}/`,
+      `/module-decision-cycles/by-account/`
+    ]);
+    const activityData = result.data?.data || result.data;
+    return { success: true, data: activityData };
+  }
+  
+  return { 
+    success: false, 
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null
+  };
+}
+
+/**
+ * UNLINK ACTIVITY FROM DECISION STEP
+ * 
+ * Removes an activity's link to decision cycle and step.
+ * Sets decision_cycle_id and decision_step_id to null.
+ * 
+ * @param {string} activityId - UUID of the activity to unlink
+ * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ */
+export async function unlinkActivityFromStep(activityId) {
+  if (!activityId || !isValidUUID(activityId)) {
+    return {
+      success: false,
+      error: 'Invalid activity ID format',
+      status: 400
+    };
+  }
+  
+  const result = await api.patch(endpoints.activityDetail(activityId), {
+    decision_cycle_id: null,
+    decision_step_id: null
+  });
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.activities,
+      endpoints.activityDetail(activityId),
+      endpoints.myActivities,
+      '/module-decision-cycles/'
+    ]);
+    const activityData = result.data?.data || result.data;
+    return { success: true, data: activityData };
+  }
+  
+  return { 
+    success: false, 
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null
+  };
 }
 
 /**
@@ -527,6 +677,7 @@ export async function createActivity(payload) {
       endpoints.activities,
       endpoints.myActivities,
       endpoints.byAccount,
+      '/company-accounts/',
       '/company-accounts/'
     ]);
     const activityData = result.data?.data || result.data;
@@ -599,10 +750,10 @@ export async function createActivityWithEntities(payload) {
     revalidateMultiple([
       endpoints.activities,
       endpoints.myActivities,
-      endpoints.byAccount,
       '/company-accounts/',
       '/module-contacts/',
-      '/module-decision-cycles/'
+      '/module-decision-cycles/',
+      '/module-activities/'
     ]);
     
     const responseData = result.data?.data || result.data;

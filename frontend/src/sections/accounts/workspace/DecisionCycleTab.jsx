@@ -170,17 +170,19 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   
   /**
    * Handle click on step header → Navigate to Step Workspace
+   * Route: /accounts/{accountId}/decisionSteps/{stepId}
    */
   const handleStepClick = useCallback((step) => {
-    router.push(`/decision-steps/${step.id}`);
-  }, [router]);
+    router.push(`/accounts/${accountId}/decisionSteps/${step.id}`);
+  }, [router, accountId]);
   
   /**
    * Handle click on activity card → Navigate to Activity Workspace
+   * Route: /accounts/{accountId}/activities/{activityId}
    */
   const handleActivityClick = useCallback((activity) => {
-    router.push(`/activities/${activity.id}`);
-  }, [router]);
+    router.push(`/accounts/${accountId}/activities/${activity.id}`);
+  }, [router, accountId]);
   
   /**
    * Handle "Add Activity" button click in a step column
@@ -278,6 +280,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
       ) : currentCycle ? (
         <DecisionCycleTimeline
           cycle={currentCycle}
+          accountId={accountId}
           onStepClick={handleStepClick}
           onActivityClick={handleActivityClick}
           onAddActivity={handleAddActivity}

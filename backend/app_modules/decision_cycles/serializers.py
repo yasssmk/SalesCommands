@@ -19,6 +19,64 @@ from .constants import PipelineStep, DecisionStepStatus, PIPELINE_STEPS_CONFIG
 # HELPER SERIALIZERS
 # ============================================================================
 
+class ActivityTimelineSerializer(serializers.Serializer):
+    """
+    Minimal serializer for activity cards in pipeline timeline.
+    
+    Optimized for display in step columns - no deep nesting.
+    Used by DecisionStepListSerializer.
+    """
+    id = serializers.UUIDField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    activity_type = serializers.CharField(read_only=True)
+    activity_type_display = serializers.SerializerMethodField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    status_display = serializers.SerializerMethodField(read_only=True)
+    outcome = serializers.CharField(read_only=True, allow_null=True)
+    outcome_display = serializers.SerializerMethodField(read_only=True)
+    scheduled_date = serializers.DateField(read_only=True, allow_null=True)
+    scheduled_time = serializers.TimeField(read_only=True, allow_null=True)
+    completed_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    contacts_count = serializers.SerializerMethodField(read_only=True)
+    
+    # Contact info for display
+    primary_contact = serializers.SerializerMethodField(read_only=True)
+    
+    def get_activity_type_display(self, obj):
+        return obj.get_activity_type_display() if hasattr(obj, 'get_activity_type_display') else obj.activity_type
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display() if hasattr(obj, 'get_status_display') else obj.status
+    
+    def get_outcome_display(self, obj):
+        if not obj.outcome:
+            return None
+        return obj.get_outcome_display() if hasattr(obj, 'get_outcome_display') else obj.outcome
+    
+    def get_contacts_count(self, obj):
+        if hasattr(obj, '_prefetched_contacts_count'):
+            return obj._prefetched_contacts_count
+        return obj.contacts.count() if hasattr(obj, 'contacts') else 0
+    
+    def get_primary_contact(self, obj):
+        """Return first contact info for card display."""
+        if hasattr(obj, '_prefetched_contacts') and obj._prefetched_contacts:
+            contact = obj._prefetched_contacts[0]
+        elif hasattr(obj, 'contacts'):
+            contact = obj.contacts.first()
+        else:
+            return None
+        
+        if not contact:
+            return None
+        
+        return {
+            'id': str(contact.id),
+            'name': f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
+            'job_title': contact.job_title
+        }
+
+
 class DecisionStepContactSerializer(serializers.ModelSerializer):
     """Serializer for junction table between DecisionStep and Contact."""
     
@@ -76,6 +134,8 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     
     Steps are fixed pipeline stages - users cannot create/delete them.
     Activities are the execution unit within each step.
+    
+    Includes nested activities for timeline card display.
     """
     
     stage_display = serializers.SerializerMethodField(read_only=True)
@@ -97,6 +157,9 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     step_description = serializers.CharField(read_only=True)
     order = serializers.IntegerField(read_only=True)
     activities_count = serializers.SerializerMethodField(read_only=True)
+    
+    # Activities for timeline cards
+    activities = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionStep
@@ -127,6 +190,9 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             # Summary fields
             'stakeholder', 'departments_list',
             'contacts_count', 'activities_count', 'completeness_score',
+            
+            # Activities for timeline
+            'activities',
             
             # Timestamps
             'created_at', 'updated_at'
@@ -178,6 +244,27 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     def get_activities_count(self, obj):
         """Return count of activities linked to this step."""
         return obj.activities.count() if hasattr(obj, 'activities') else 0
+    
+    def get_activities(self, obj):
+        """
+        Return activities for timeline card display.
+        
+        Ordered by scheduled_date (soonest first), limited to avoid overload.
+        Uses prefetched data when available to avoid N+1.
+        """
+        MAX_ACTIVITIES_PER_STEP = 10  # Limit for performance
+        
+        # Use prefetched data if available
+        if hasattr(obj, '_prefetched_objects_cache') and 'activities' in obj._prefetched_objects_cache:
+            activities = list(obj._prefetched_objects_cache['activities'])[:MAX_ACTIVITIES_PER_STEP]
+        elif hasattr(obj, 'activities'):
+            activities = obj.activities.select_related('owner').prefetch_related('contacts').order_by(
+                'scheduled_date', 'scheduled_time', '-created_at'
+            )[:MAX_ACTIVITIES_PER_STEP]
+        else:
+            return []
+        
+        return ActivityTimelineSerializer(activities, many=True).data
 
 
 

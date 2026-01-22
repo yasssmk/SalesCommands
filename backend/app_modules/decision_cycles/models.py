@@ -436,20 +436,35 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         Priority order:
         1. EXPECTED_END_PASSED - deadline missed
         2. NO_NEXT_STEP - last activity explicitly marked no next step
-        3. NO_ACTIVITY - no activities at all
+        3. NO_ACTIVITY - no activities at all (only for active steps)
         4. NO_FUTURE_ACTIVITY - no planned activities
         5. WAITING_TOO_LONG - no activity in 7+ days
         
         Returns StalledReason.NONE if not stalled.
+        
+        NOT_STARTED steps are NEVER stalled - you can't lose momentum
+        if you haven't started yet.
         """
         
-        # Terminal statuses are never stalled
-        if self.status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
+        # Non-active statuses are never stalled:
+        # - NOT_STARTED: Can't lose momentum if never started
+        # - VALIDATED/REJECTED: Terminal states
+        # - ON_HOLD: Intentionally paused
+        # - CANCELLED: No longer active
+        NON_STALLABLE_STATUSES = [
+            DecisionStepStatus.NOT_STARTED,
+            DecisionStepStatus.VALIDATED,
+            DecisionStepStatus.REJECTED,
+            DecisionStepStatus.ON_HOLD,
+            DecisionStepStatus.CANCELLED,
+        ]
+        
+        if self.status in NON_STALLABLE_STATUSES:
             return StalledReason.NONE
         
         today = timezone.now().date()
         
-       # Check 1: No activities at all (skip for activity-optional steps)
+        # Check 1: No activities at all (skip for activity-optional steps)
         if not self.activities.exists():
             if self.is_activity_optional:
                 return StalledReason.NONE  # Normal for Implementation/Go Live

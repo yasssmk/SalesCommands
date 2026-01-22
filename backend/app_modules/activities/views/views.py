@@ -126,6 +126,10 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'crud': 'read',
             'scope': 'client'
         },
+        'unlinked_for_account': {
+            'crud': 'read',
+            'scope': 'client'
+        }
     }
     
     def get_serializer_class(self):
@@ -852,6 +856,60 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             })
         
         serializer = ActivityListSerializer(queryset, many=True, context={'request': request})
+        return Response({
+            'success': True,
+            'data': {
+                'results': serializer.data,
+                'count': len(serializer.data)
+            }
+        })
+    
+    @action(detail=False, methods=['get'], url_path='unlinked/by-account/(?P<account_id>[^/.]+)')
+    def unlinked_for_account(self, request, account_id=None):
+        """
+        Get activities not linked to any decision step for a specific account.
+        
+        GET /activities/unlinked/by-account/{account_id}/
+        
+        Returns activities where decision_step is NULL, useful for the
+        "Link Existing Activity" feature in the pipeline timeline.
+        
+        Query params:
+            - exclude_cancelled: bool (default: true) - Exclude cancelled activities
+            - limit: int (default: 50) - Maximum results to return
+        """
+        ctx = ctx_from_request(request)
+        logger.info("unlinked_activities_by_account_requested", extra={
+            **ctx,
+            'account_id': account_id
+        })
+        
+        # Parse query params
+        exclude_cancelled = request.query_params.get('exclude_cancelled', 'true').lower() == 'true'
+        limit = min(int(request.query_params.get('limit', 50)), 100)  # Cap at 100
+        
+        # Build queryset
+        queryset = self.get_queryset().filter(
+            account_id=account_id,
+            decision_step__isnull=True  # Not linked to any step
+        ).select_related(
+            'owner',
+            'decision_cycle'
+        ).prefetch_related(
+            'contacts'
+        ).order_by('-scheduled_date', '-created_at')
+        
+        # Optionally exclude cancelled
+        if exclude_cancelled:
+            from app_modules.activities.constants import ActivityStatus
+            queryset = queryset.exclude(status=ActivityStatus.CANCELLED)
+        
+        # Limit results
+        queryset = queryset[:limit]
+        
+        # Use list serializer for lightweight response
+        serializer = ActivityListSerializer(queryset, many=True)
+        
         return Response({
             'success': True,
             'data': {

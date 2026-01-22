@@ -63,6 +63,8 @@ import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
 import SettingOutlined from '@ant-design/icons/SettingOutlined';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
+import UserOutlined from '@ant-design/icons/UserOutlined';
+import LinkOutlined from '@ant-design/icons/LinkOutlined';
 
 // project imports
 import { 
@@ -73,6 +75,7 @@ import {
   STATUS_LABELS,
   ACTIVITY_OPTIONAL_STEPS
 } from 'api/accounts/decisionCycles';
+import LinkActivityModal from './LinkActivityModal';
 
 // ==============================|| LOCALSTORAGE HELPERS ||============================== //
 
@@ -156,6 +159,18 @@ const STATUS_CONFIG = {
   }
 };
 
+/**
+ * Human-readable labels for stalled reasons
+ */
+const STALLED_REASON_LABELS = {
+  NONE: 'Not stalled',
+  NO_ACTIVITY: 'No activities linked to this step',
+  NO_FUTURE_ACTIVITY: 'No future activities planned',
+  NO_NEXT_STEP: 'Last activity marked no next step agreed',
+  EXPECTED_END_PASSED: 'Expected end date has passed',
+  WAITING_TOO_LONG: 'No activity in 7+ days'
+};
+
 // ==============================|| ACTIVITY TYPE ICONS ||============================== //
 
 const ACTIVITY_TYPE_ICONS = {
@@ -170,29 +185,89 @@ const ACTIVITY_TYPE_ICONS = {
 // ==============================|| ACTIVITY CARD ||============================== //
 
 /**
+ * Activity Status Configuration
+ */
+const ACTIVITY_STATUS_CONFIG = {
+  PLANNED: { color: 'info', label: 'Planned', icon: CalendarOutlined },
+  IN_PROGRESS: { color: 'warning', label: 'In Progress', icon: SyncOutlined },
+  COMPLETED: { color: 'success', label: 'Completed', icon: CheckCircleFilled },
+  CANCELLED: { color: 'default', label: 'Cancelled', icon: CloseCircleFilled }
+};
+
+/**
+ * Activity Outcome Configuration
+ */
+const ACTIVITY_OUTCOME_CONFIG = {
+  POSITIVE: { color: 'success', label: 'Positive' },
+  NEUTRAL: { color: 'default', label: 'Neutral' },
+  NEGATIVE: { color: 'error', label: 'Negative' },
+  NO_SHOW: { color: 'warning', label: 'No Show' },
+  RESCHEDULED: { color: 'info', label: 'Rescheduled' }
+};
+
+/**
  * Activity Card Component
  * 
- * Lightweight card for displaying an activity within a pipeline step.
+ * Enriched card for displaying an activity within a pipeline step.
+ * Shows: title, type, date/time, contact, status, outcome
  */
 function ActivityCard({ activity, onClick }) {
   const theme = useTheme();
   
   const TypeIcon = ACTIVITY_TYPE_ICONS[activity.activity_type] || CalendarOutlined;
-  const isCompleted = activity.status === 'COMPLETED';
-  const isPast = activity.scheduled_date && new Date(activity.scheduled_date) < new Date();
+  const statusConfig = ACTIVITY_STATUS_CONFIG[activity.status] || ACTIVITY_STATUS_CONFIG.PLANNED;
+  const outcomeConfig = activity.outcome ? ACTIVITY_OUTCOME_CONFIG[activity.outcome] : null;
   
-  // Format date
+  const isCompleted = activity.status === 'COMPLETED';
+  const isCancelled = activity.status === 'CANCELLED';
+  const isOverdue = activity.scheduled_date && 
+    new Date(activity.scheduled_date) < new Date() && 
+    !isCompleted && !isCancelled;
+  
+  // Format date with relative display
   const formatDate = (dateStr) => {
     if (!dateStr) return null;
     const date = new Date(dateStr);
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
     
     if (date.toDateString() === today.toDateString()) return 'Today';
     if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    
+    // Show day of week if within 7 days
+    const diffDays = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
+    if (diffDays > 0 && diffDays <= 7) {
+      return date.toLocaleDateString('en-US', { weekday: 'short' });
+    }
     
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+  
+  // Format time (HH:MM)
+  const formatTime = (timeStr) => {
+    if (!timeStr) return null;
+    return timeStr.slice(0, 5);
+  };
+
+  // Get border color based on state
+  const getBorderColor = () => {
+    if (isCancelled) return theme.palette.grey[300];
+    if (isCompleted) return theme.palette.success.light;
+    if (isOverdue) return theme.palette.error.light;
+    return theme.palette.divider;
+  };
+  
+  // Get background color based on state
+  const getBgColor = () => {
+    if (isCancelled) return alpha(theme.palette.grey[500], 0.04);
+    if (isCompleted) return alpha(theme.palette.success.main, 0.04);
+    if (isOverdue) return alpha(theme.palette.error.main, 0.04);
+    return 'background.paper';
   };
 
   return (
@@ -200,12 +275,13 @@ function ActivityCard({ activity, onClick }) {
       elevation={0}
       onClick={() => onClick?.(activity)}
       sx={{
-        p: 1.5,
+        p: 1.25,
         cursor: 'pointer',
         border: '1px solid',
-        borderColor: isCompleted ? 'success.light' : 'divider',
+        borderColor: getBorderColor(),
         borderRadius: 1.5,
-        bgcolor: isCompleted ? alpha(theme.palette.success.main, 0.04) : 'background.paper',
+        bgcolor: getBgColor(),
+        opacity: isCancelled ? 0.6 : 1,
         transition: 'all 0.2s ease',
         '&:hover': {
           borderColor: 'primary.main',
@@ -216,50 +292,117 @@ function ActivityCard({ activity, onClick }) {
       }}
     >
       <Stack spacing={0.75}>
-        {/* Header: Type icon + Title */}
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <TypeIcon style={{ fontSize: 14, color: theme.palette.text.secondary }} />
+        {/* Row 1: Type icon + Title + Status indicator */}
+        <Stack direction="row" alignItems="flex-start" spacing={0.75}>
+          <Tooltip title={activity.activity_type_display || activity.activity_type}>
+            <Box
+              sx={{
+                p: 0.5,
+                borderRadius: 1,
+                bgcolor: isOverdue ? 'error.lighter' : 'grey.100',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <TypeIcon style={{ 
+                fontSize: 14, 
+                color: isOverdue ? theme.palette.error.main : theme.palette.text.secondary 
+              }} />
+            </Box>
+          </Tooltip>
           <Typography 
             variant="body2" 
             fontWeight={500}
-            noWrap
             sx={{ 
               flex: 1,
-              textDecoration: isCompleted ? 'line-through' : 'none',
-              color: isCompleted ? 'text.secondary' : 'text.primary'
+              lineHeight: 1.3,
+              textDecoration: isCancelled ? 'line-through' : 'none',
+              color: isCancelled ? 'text.disabled' : isCompleted ? 'text.secondary' : 'text.primary',
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden'
             }}
           >
-            {activity.subject || activity.activity_type_display || 'Activity'}
+            {activity.title || activity.activity_type_display || 'Activity'}
           </Typography>
         </Stack>
         
-        {/* Date + Status */}
-        <Stack direction="row" alignItems="center" justifyContent="space-between">
+        {/* Row 2: Date/Time + Overdue badge */}
+        <Stack direction="row" alignItems="center" spacing={0.5} flexWrap="wrap">
           {activity.scheduled_date && (
-            <Typography 
-              variant="caption" 
-              color={isPast && !isCompleted ? 'error.main' : 'text.secondary'}
-            >
-              {formatDate(activity.scheduled_date)}
-              {activity.scheduled_time && ` ${activity.scheduled_time.slice(0, 5)}`}
+            <Stack direction="row" alignItems="center" spacing={0.25}>
+              <CalendarOutlined style={{ fontSize: 11, color: isOverdue ? theme.palette.error.main : theme.palette.text.disabled }} />
+              <Typography 
+                variant="caption" 
+                sx={{
+                  color: isOverdue ? 'error.main' : 'text.secondary',
+                  fontWeight: isOverdue ? 600 : 400
+                }}
+              >
+                {formatDate(activity.scheduled_date)}
+              </Typography>
+            </Stack>
+          )}
+          {activity.scheduled_time && (
+            <Typography variant="caption" color="text.secondary">
+              {formatTime(activity.scheduled_time)}
             </Typography>
           )}
-          {activity.outcome && (
+          {isOverdue && (
             <Chip
-              label={activity.outcome_display || activity.outcome}
+              label="Overdue"
               size="small"
-              color={activity.outcome === 'POSITIVE' ? 'success' : activity.outcome === 'NEGATIVE' ? 'error' : 'default'}
-              sx={{ height: 18, fontSize: '0.65rem' }}
+              color="error"
+              variant="outlined"
+              sx={{ height: 16, fontSize: '0.6rem', '& .MuiChip-label': { px: 0.5 } }}
             />
           )}
         </Stack>
         
-        {/* Contacts preview */}
-        {activity.contacts_count > 0 && (
-          <Typography variant="caption" color="text.secondary">
-            {activity.contacts_count} contact{activity.contacts_count > 1 ? 's' : ''}
-          </Typography>
+        {/* Row 3: Primary contact */}
+        {activity.primary_contact && (
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <UserOutlined style={{ fontSize: 11, color: theme.palette.text.disabled }} />
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1 }}>
+              {activity.primary_contact.name}
+              {activity.primary_contact.job_title && (
+                <Typography component="span" variant="caption" color="text.disabled">
+                  {' · '}{activity.primary_contact.job_title}
+                </Typography>
+              )}
+            </Typography>
+            {activity.contacts_count > 1 && (
+              <Chip
+                label={`+${activity.contacts_count - 1}`}
+                size="small"
+                variant="outlined"
+                sx={{ height: 16, fontSize: '0.6rem', '& .MuiChip-label': { px: 0.5 } }}
+              />
+            )}
+          </Stack>
         )}
+        
+        {/* Row 4: Status + Outcome (if completed) */}
+        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={0.5}>
+          <Chip
+            label={statusConfig.label}
+            size="small"
+            color={statusConfig.color}
+            variant={isCompleted || isCancelled ? 'filled' : 'outlined'}
+            sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+          />
+          {outcomeConfig && (
+            <Chip
+              label={outcomeConfig.label}
+              size="small"
+              color={outcomeConfig.color}
+              variant="filled"
+              sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+            />
+          )}
+        </Stack>
       </Stack>
     </Paper>
   );
@@ -283,7 +426,8 @@ function PipelineStepColumn({
   activities,
   onStepClick, 
   onActivityClick,
-  onAddActivity
+  onAddActivity,
+  onLinkExisting
 }) {
   const theme = useTheme();
   
@@ -299,6 +443,29 @@ function PipelineStepColumn({
   const isRejected = step.status === 'REJECTED';
   const isStalled = step.is_stalled && !isActivityOptional;
   const hasActivities = activities && activities.length > 0;
+  
+  // Activity statistics
+  const totalActivities = activities?.length || 0;
+  const completedActivities = activities?.filter(a => a.status === 'COMPLETED').length || 0;
+  const progressPercent = totalActivities > 0 ? Math.round((completedActivities / totalActivities) * 100) : 0;
+  
+  // Date formatting helper
+  const formatStepDate = (dateStr) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    const today = new Date();
+    const diffDays = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return { text: `${Math.abs(diffDays)}d overdue`, color: 'error.main' };
+    if (diffDays === 0) return { text: 'Due today', color: 'warning.main' };
+    if (diffDays <= 7) return { text: `${diffDays}d left`, color: 'warning.main' };
+    return { 
+      text: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), 
+      color: 'text.secondary' 
+    };
+  };
+  
+  const expectedEndInfo = formatStepDate(step.expected_end);
   
   // Column border color
   const getBorderColor = () => {
@@ -340,7 +507,7 @@ function PipelineStepColumn({
           }
         }}
       >
-        <Stack spacing={0.5}>
+        <Stack spacing={0.75}>
           {/* Step name + Status icon */}
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="subtitle2" fontWeight={600} noWrap sx={{ flex: 1 }}>
@@ -354,20 +521,82 @@ function PipelineStepColumn({
             </Tooltip>
           </Stack>
           
-          {/* Step description */}
-          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3 }}>
-            {step.step_description || stepConfig.description || ''}
-          </Typography>
+          {/* Activity progress bar (only if has activities) */}
+          {totalActivities > 0 && (
+            <Box>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.25 }}>
+                <Typography variant="caption" color="text.secondary">
+                  {completedActivities}/{totalActivities} activities
+                </Typography>
+                <Typography variant="caption" color={progressPercent === 100 ? 'success.main' : 'text.secondary'}>
+                  {progressPercent}%
+                </Typography>
+              </Stack>
+              <Box
+                sx={{
+                  height: 4,
+                  borderRadius: 2,
+                  bgcolor: 'grey.200',
+                  overflow: 'hidden'
+                }}
+              >
+                <Box
+                  sx={{
+                    height: '100%',
+                    width: `${progressPercent}%`,
+                    bgcolor: progressPercent === 100 ? 'success.main' : 'primary.main',
+                    borderRadius: 2,
+                    transition: 'width 0.3s ease'
+                  }}
+                />
+              </Box>
+            </Box>
+          )}
           
-          {/* Expected end + Stalled warning */}
-          <Stack direction="row" alignItems="center" spacing={1}>
-            {step.expected_end && (
-              <Typography variant="caption" color="text.secondary">
-                Due: {new Date(step.expected_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              </Typography>
+          {/* Timeline dates + Stalled warning */}
+          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
+            {/* Start date */}
+            {step.start_date && (
+              <Tooltip title="Started">
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                  <CalendarOutlined style={{ fontSize: 10 }} />
+                  {new Date(step.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Typography>
+              </Tooltip>
             )}
+            
+            {/* Expected end with urgency coloring */}
+            {expectedEndInfo && (
+              <Tooltip title="Expected completion">
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    color: expectedEndInfo.color,
+                    fontWeight: expectedEndInfo.color !== 'text.secondary' ? 600 : 400,
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 0.25 
+                  }}
+                >
+                  <ClockCircleOutlined style={{ fontSize: 10 }} />
+                  {expectedEndInfo.text}
+                </Typography>
+              </Tooltip>
+            )}
+            
+            {/* Completed date */}
+            {step.completed_at && (
+              <Tooltip title="Completed">
+                <Typography variant="caption" color="success.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                  <CheckCircleFilled style={{ fontSize: 10 }} />
+                  {new Date(step.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Typography>
+              </Tooltip>
+            )}
+            
+            {/* Stalled warning */}
             {isStalled && (
-              <Tooltip title={step.stalled_reason || 'Step is stalled'}>
+              <Tooltip title={STALLED_REASON_LABELS[step.stalled_reason] || 'Step needs attention'}>
                 <WarningOutlined style={{ fontSize: 14, color: theme.palette.warning.main }} />
               </Tooltip>
             )}
@@ -416,27 +645,51 @@ function PipelineStepColumn({
         )}
       </Box>
       
-      {/* Add Activity Button */}
+      {/* Action Buttons */}
       <Box sx={{ p: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-        <Button
-          size="small"
-          startIcon={<PlusOutlined />}
-          onClick={(e) => {
-            e.stopPropagation();
-            onAddActivity?.(step);
-          }}
-          fullWidth
-          sx={{
-            justifyContent: 'flex-start',
-            color: 'text.secondary',
-            '&:hover': {
-              bgcolor: 'primary.lighter',
-              color: 'primary.main'
-            }
-          }}
-        >
-          Add Activity
-        </Button>
+        <Stack spacing={0.5}>
+          {/* Add New Activity */}
+          <Button
+            size="small"
+            startIcon={<PlusOutlined />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddActivity?.(step);
+            }}
+            fullWidth
+            sx={{
+              justifyContent: 'flex-start',
+              color: 'text.secondary',
+              '&:hover': {
+                bgcolor: 'primary.lighter',
+                color: 'primary.main'
+              }
+            }}
+          >
+            Add Activity
+          </Button>
+          
+          {/* Link Existing Activity */}
+          <Button
+            size="small"
+            startIcon={<LinkOutlined />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onLinkExisting?.(step);
+            }}
+            fullWidth
+            sx={{
+              justifyContent: 'flex-start',
+              color: 'text.secondary',
+              '&:hover': {
+                bgcolor: 'secondary.lighter',
+                color: 'secondary.main'
+              }
+            }}
+          >
+            Link Existing
+          </Button>
+        </Stack>
       </Box>
     </Paper>
   );
@@ -447,7 +700,8 @@ PipelineStepColumn.propTypes = {
   activities: PropTypes.array,
   onStepClick: PropTypes.func,
   onActivityClick: PropTypes.func,
-  onAddActivity: PropTypes.func
+  onAddActivity: PropTypes.func,
+  onLinkExisting: PropTypes.func
 };
 
 // ==============================|| COLUMN VISIBILITY MENU ||============================== //
@@ -632,16 +886,24 @@ HiddenColumnsIndicator.propTypes = {
  */
 export default function DecisionCycleTimeline({ 
   cycle, 
+  accountId,
   onStepClick, 
   onActivityClick,
   onAddActivity,
+  onRefresh,
   loading = false 
 }) {
   const theme = useTheme();
   const router = useRouter();
   
   // Hidden columns state (persisted per cycle)
-  const [hiddenColumns, setHiddenColumns] = useState([]);
+  const [hiddenColumns, setHiddenColumns] = useState(() => 
+    getHiddenColumns(cycle?.id)
+  );
+
+  // Link Activity Modal state
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [linkModalStep, setLinkModalStep] = useState(null);
   
   // Load hidden columns from localStorage when cycle changes
   useEffect(() => {
@@ -718,22 +980,40 @@ export default function DecisionCycleTimeline({
     }
   }, [steps, cycle?.id]);
   
-  // Default handlers
+  // Default handlers - use callbacks or fallback to correct routes
   const handleStepClick = (step) => {
     if (onStepClick) {
       onStepClick(step);
-    } else {
-      router.push(`/decision-steps/${step.id}`);
+    } else if (accountId) {
+      router.push(`/accounts/${accountId}/decisionSteps/${step.id}`);
     }
   };
   
   const handleActivityClick = (activity) => {
     if (onActivityClick) {
       onActivityClick(activity);
-    } else {
-      router.push(`/activities/${activity.id}`);
+    } else if (accountId) {
+      router.push(`/accounts/${accountId}/activities/${activity.id}`);
     }
   };
+
+  // Handle link existing activity
+  const handleLinkExisting = useCallback((step) => {
+    setLinkModalStep(step);
+    setLinkModalOpen(true);
+  }, []);
+  
+  // Handle link modal close
+  const handleLinkModalClose = useCallback(() => {
+    setLinkModalOpen(false);
+    setLinkModalStep(null);
+  }, []);
+  
+  // Handle link success
+  const handleLinkSuccess = useCallback((linkedActivities) => {
+    // Trigger refresh of cycle data
+    onRefresh?.();
+  }, [onRefresh]);
   
   const handleAddActivity = (step) => {
     if (onAddActivity) {
@@ -804,15 +1084,16 @@ export default function DecisionCycleTimeline({
         }}
       >
         {visibleSteps.map((step) => (
-          <PipelineStepColumn
-            key={step.id}
-            step={step}
-            activities={activitiesByStep[step.id] || []}
-            onStepClick={handleStepClick}
-            onActivityClick={handleActivityClick}
-            onAddActivity={handleAddActivity}
-          />
-        ))}
+            <PipelineStepColumn
+              key={step.id}
+              step={step}
+              activities={activitiesByStep[step.id] || []}
+              onStepClick={handleStepClick}
+              onActivityClick={handleActivityClick}
+              onAddActivity={onAddActivity}
+              onLinkExisting={handleLinkExisting}
+            />
+          ))}
         
         {/* Empty state when all columns hidden */}
         {visibleSteps.length === 0 && steps.length > 0 && (
@@ -839,6 +1120,15 @@ export default function DecisionCycleTimeline({
           </Box>
         )}
       </Box>
+      {/* Link Activity Modal */}
+      <LinkActivityModal
+        open={linkModalOpen}
+        onClose={handleLinkModalClose}
+        accountId={accountId}
+        cycleId={cycle?.id}
+        step={linkModalStep}
+        onSuccess={handleLinkSuccess}
+      />
     </Box>
   );
 }
@@ -850,8 +1140,10 @@ DecisionCycleTimeline.propTypes = {
     steps: PropTypes.array,
     expected_closing_date: PropTypes.string
   }),
+  accountId: PropTypes.string,
   onStepClick: PropTypes.func,
   onActivityClick: PropTypes.func,
   onAddActivity: PropTypes.func,
+  onRefresh: PropTypes.func,
   loading: PropTypes.bool
 };

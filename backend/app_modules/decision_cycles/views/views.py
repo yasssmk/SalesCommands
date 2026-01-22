@@ -12,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
+from django.db.models import Prefetch
 
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
@@ -110,18 +111,37 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         
         queryset = super().get_queryset()
         
+        # Import Activity model for prefetch
+        from app_modules.activities.models import Activity
+        
+        # Prefetch for activities in timeline (limited, ordered)
+        activities_prefetch = Prefetch(
+            'steps__activities',
+            queryset=Activity.objects.select_related('owner').prefetch_related(
+                'contacts'
+            ).order_by('scheduled_date', 'scheduled_time', '-created_at')[:10],
+            to_attr='_prefetched_timeline_activities'
+        )
+        
         if self.action == 'list':
+            # List: include activities for pipeline timeline display
             queryset = queryset.select_related('account').prefetch_related(
                 'steps',
-                'steps__step_departments__department'
+                'steps__step_departments__department',
+                'steps__activities',
+                'steps__activities__contacts'
             )
         elif self.action == 'retrieve':
+            # Retrieve: full data including activities for timeline
             queryset = queryset.select_related('account').prefetch_related(
                 'steps',
                 'steps__previous_step',
                 'steps__contacts',
                 'steps__step_departments__department',
-                'steps__step_contacts__contact'
+                'steps__step_contacts__contact',
+                'steps__activities',
+                'steps__activities__owner',
+                'steps__activities__contacts'
             )
         else:
             queryset = queryset.select_related('account')
@@ -346,6 +366,8 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         Get all decision cycles for a specific account.
         
         GET /decision-cycles/by-account/{account_id}/
+        
+        Returns full cycle data including steps with activities for timeline display.
         """
         ctx = ctx_from_request(request)
         logger.info("decision_cycles_by_account_requested", extra={
@@ -353,8 +375,19 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             'account_id': account_id
         })
         
+        # Import Activity model for prefetch
+        from app_modules.activities.models import Activity
+        
+        # Build optimized queryset with activities for timeline
         queryset = self.get_queryset().filter(account_id=account_id)
-        serializer = DecisionCycleListSerializer(queryset, many=True)
+        queryset = queryset.prefetch_related(
+            'steps__activities',
+            'steps__activities__owner',
+            'steps__activities__contacts'
+        )
+        
+        # Use full serializer to include nested steps with activities
+        serializer = DecisionCycleSerializer(queryset, many=True)
         
         return Response({
             'success': True,

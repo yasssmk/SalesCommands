@@ -46,6 +46,10 @@ def get_urlpatterns():
         path('upcoming/', ActivityViewSet.as_view({
             'get': 'upcoming'
         }), name='upcoming'),
+
+        path('unlinked/by-account/<uuid:account_id>/', ActivityViewSet.as_view({
+            'get': 'unlinked_for_account'
+        }), name='unlinked-by-account'),
         
         # =====================================================================
         # CRUD OPERATIONS
