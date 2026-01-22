@@ -123,6 +123,129 @@ class StepMinimalSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'stage', 'status']
         read_only_fields = fields
 
+# ============================================================================
+# TIMELINE SERIALIZERS (Performance optimized for by_account endpoint)
+# ============================================================================
+
+class DecisionStepTimelineSerializer(serializers.ModelSerializer):
+    """
+    Ultra-lightweight serializer for timeline display in by_account endpoint.
+    
+    PERFORMANCE OPTIMIZED:
+    - No model property access (is_stalled, completeness_score, has_parallel_steps)
+    - Uses annotated counts instead of queryset methods
+    - Uses prefetched activities only
+    - No SerializerMethodField with DB queries
+    
+    Required annotations on queryset:
+    - activities_count: Count('activities')
+    
+    Required prefetch:
+    - activities (with Prefetch and limited queryset)
+    """
+    
+    stage_display = serializers.SerializerMethodField(read_only=True)
+    status_display = serializers.SerializerMethodField(read_only=True)
+    
+    # Annotated count (set by ViewSet queryset with Count())
+    activities_count = serializers.IntegerField(read_only=True, default=0)
+    
+    # Activities from prefetch cache
+    activities = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = DecisionStep
+        fields = [
+            # Identity & Order
+            'id', 'name', 'order',
+            
+            # Pipeline Step
+            'stage', 'stage_display',
+            
+            # Status
+            'status', 'status_display',
+            
+            # Timeline
+            'expected_end',
+            
+            # Summary (no DB queries - uses annotation)
+            'stakeholder',
+            'activities_count',
+            
+            # Activities for cards (from prefetch)
+            'activities',
+        ]
+        read_only_fields = fields
+    
+    def get_stage_display(self, obj):
+        """Return stage label without DB query."""
+        return obj.get_stage_display() if obj.stage else None
+    
+    def get_status_display(self, obj):
+        """Return status label without DB query."""
+        return obj.get_status_display() if obj.status else None
+    
+    def get_activities(self, obj):
+        """
+        Return activities from prefetch cache ONLY.
+        
+        Does NOT make any DB query - relies entirely on prefetched data.
+        If not prefetched, returns empty list.
+        
+        Limited to 5 activities per step for timeline card performance.
+        """
+        MAX_ACTIVITIES = 5
+        
+        # Check prefetch cache first
+        if hasattr(obj, '_prefetched_objects_cache') and 'activities' in obj._prefetched_objects_cache:
+            activities = list(obj._prefetched_objects_cache['activities'])[:MAX_ACTIVITIES]
+            return ActivityTimelineSerializer(activities, many=True).data
+        
+        # No prefetch = empty list (avoid N+1)
+        return []
+
+
+class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for cycle list in by_account endpoint.
+    
+    PERFORMANCE OPTIMIZED:
+    - Uses DecisionStepTimelineSerializer for steps
+    - Uses annotated counts (prefixed with _annotated_ to avoid property conflict)
+    - No computed properties with DB queries
+    
+    Required annotations on queryset:
+    - _annotated_steps_count: Count('steps')
+    - _annotated_validated_steps_count: Count('steps', filter=Q(steps__status='VALIDATED'))
+    
+    Required prefetch:
+    - steps (ordered, with activities prefetch)
+    """
+    
+    account_name = serializers.SerializerMethodField(read_only=True)
+    
+    # Use timeline-optimized step serializer
+    steps = DecisionStepTimelineSerializer(many=True, read_only=True)
+    
+    # Annotated counts - use source to map from annotation names
+    steps_count = serializers.IntegerField(source='_annotated_steps_count', read_only=True, default=0)
+    validated_steps_count = serializers.IntegerField(source='_annotated_validated_steps_count', read_only=True, default=0)
+    
+    class Meta:
+        model = DecisionCycle
+        fields = [
+            'id', 'name', 'description',
+            'account', 'account_name',
+            'is_active',
+            'steps', 'steps_count', 'validated_steps_count',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = fields
+    
+    def get_account_name(self, obj):
+        """Return account name from select_related (no extra query)."""
+        return obj.account.company_name if obj.account else None
+    
 
 # ============================================================================
 # DECISION STEP SERIALIZERS
