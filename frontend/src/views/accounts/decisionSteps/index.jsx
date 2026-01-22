@@ -16,6 +16,7 @@ import MainCard from 'components/MainCard';
 import { useGetDecisionStep, updateDecisionStep } from 'api/accounts/decisionCycles';
 import { useGetAccount } from 'api/admin/accounts';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
+import WorkspaceBreadcrumb, { buildStepBreadcrumbs } from 'components/WorkspaceBreadcrumb';
 
 // Section imports
 import DecisionStepHeader from 'sections/accounts/decision-cycles/Decision-steps/DecisionStepHeader';
@@ -26,8 +27,6 @@ import DecisionStepContactsTab from 'sections/accounts/decision-cycles/Decision-
 import DecisionStepSignalsTab from 'sections/accounts/decision-cycles/Decision-steps/DecisionStepSignalsTab';
 import DecisionStepAIPrepTab from 'sections/accounts/decision-cycles/Decision-steps/DecisionStepAIPrepTab';
 
-// Icons
-import { ArrowLeftOutlined } from '@ant-design/icons';
 
 // ==============================|| DECISION STEP WORKSPACE PAGE ||============================== //
 
@@ -49,6 +48,7 @@ export default function DecisionStepWorkspacePage() {
 
   // Derived data
   const cycleId = step?.cycle_id || step?.cycle;
+  const cycleName = step?.cycle_detail?.name || step?.cycle_name || 'Decision Cycle';
   const isLoading = stepLoading || accountLoading;
 
   // Handle tab change via URL
@@ -76,14 +76,6 @@ export default function DecisionStepWorkspacePage() {
     }
   };
 
-  // Handle back navigation
-  const handleBack = () => {
-    if (accountId) {
-      router.push(`/accounts/${accountId}?tab=decision-cycle`);
-    } else {
-      router.back();
-    }
-  };
 
   // Render tab content
   const renderTabContent = () => {
@@ -151,17 +143,19 @@ export default function DecisionStepWorkspacePage() {
     );
   }
 
+  // Build breadcrumb items
+  const breadcrumbItems = buildStepBreadcrumbs({
+    accountId: accountId,
+    accountName: account?.company_name,
+    cycleName: cycleName,
+    stepName: step.name
+  });
+
+
   return (
     <Box>
-      {/* Back Navigation */}
-      <Button
-        startIcon={<ArrowLeftOutlined />}
-        onClick={handleBack}
-        sx={{ mb: 2 }}
-        color="secondary"
-      >
-        Back to {account?.company_name || 'Account'}
-      </Button>
+      {/* Breadcrumb Navigation */}
+      <WorkspaceBreadcrumb items={breadcrumbItems} />
 
       {/* Header */}
       <DecisionStepHeader 

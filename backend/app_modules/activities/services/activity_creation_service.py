@@ -92,7 +92,7 @@ class ActivityCreationService:
                 account = CompanyAccount.objects.get(id=account_id, client_id=self.client_id)
             except CompanyAccount.DoesNotExist:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.NOT_FOUND.format(resource='Account')
+                    CoreErrorMessages.OBJECT_NOT_FOUND
                 )
             
             # Track IDs to link
@@ -146,6 +146,15 @@ class ActivityCreationService:
                     'step_id': str(step.id),
                     'cycle_id': str(cycle_id),
                 })
+            
+            # ==================================================================
+            # VALIDATION: If cycle is provided, step is REQUIRED
+            # ==================================================================
+            
+            if cycle_id and not step_id:
+                raise StandardizedValidationError(
+                    "A pipeline step is required when linking to a decision cycle"
+                )
             
             # ==================================================================
             # STEP 4: Create Activity

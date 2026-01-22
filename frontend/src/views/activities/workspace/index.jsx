@@ -13,6 +13,7 @@ import Typography from '@mui/material/Typography';
 import MainCard from 'components/MainCard';
 import { useGetActivity, updateActivity } from 'api/accounts/activities';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
+import WorkspaceBreadcrumb, { buildActivityBreadcrumbs } from 'components/WorkspaceBreadcrumb';
 
 // Section imports
 import ActivityHeader from 'sections/activities/workspace/ActivityHeader';
@@ -23,9 +24,6 @@ import ActivityOutcomeTab from 'sections/activities/workspace/ActivityOutcomeTab
 import ActivityTranscriptTab from 'sections/activities/workspace/ActivityTranscriptTab';
 import ActivitySignalsTab from 'sections/activities/workspace/ActivitySignalsTab';
 
-
-// Icons
-import { ArrowLeftOutlined } from '@ant-design/icons';
 
 // ==============================|| ACTIVITY WORKSPACE PAGE ||============================== //
 
@@ -64,14 +62,6 @@ export default function ActivityWorkspacePage() {
     }
   };
 
-  // Handle back navigation
-  const handleBack = () => {
-    if (activity?.account) {
-      router.push(`/accounts/${activity.account}?tab=activities`);
-    } else {
-      router.back();
-    }
-  };
 
   // Render tab content
   const renderTabContent = () => {
@@ -144,17 +134,20 @@ export default function ActivityWorkspacePage() {
     );
   }
 
+  // Build breadcrumb items
+  const breadcrumbItems = buildActivityBreadcrumbs({
+    accountId: activity.account,
+    accountName: activity.account_detail?.company_name,
+    stepId: activity.decision_step || null,
+    stepName: activity.decision_step_detail?.name || null,
+    activityTitle: activity.title
+  });
+
+
   return (
     <Box>
-      {/* Back Navigation TO DO: if coming from territorie get back to territory/actvities */}
-      <Button
-        startIcon={<ArrowLeftOutlined />}
-        onClick={handleBack}
-        sx={{ mb: 2 }}
-        color="secondary"
-      >
-        Back to {activity.account_detail?.company_name || 'Account'}
-      </Button>
+      {/* Breadcrumb Navigation */}
+      <WorkspaceBreadcrumb items={breadcrumbItems} />
 
       {/* Header */}
       <ActivityHeader 

@@ -3,7 +3,11 @@
  * Activity Modal Component
  * 
  * Modal for creating and editing activities.
- * Supports inline creation of Contact, Decision Cycle, and Decision Step.
+ * Supports inline creation of Contact and Decision Cycle.
+ * 
+ * Note: Decision Steps (Pipeline Steps) are FIXED and auto-created when a cycle
+ * is created. Users SELECT from existing steps, they cannot create new ones.
+ * When a cycle is selected, a step selection is REQUIRED.
  * 
  * UX Goal: Allow activity creation in <30 seconds even when prerequisite
  * entities don't exist yet.
@@ -84,7 +88,17 @@ const validationSchema = Yup.object({
   scheduled_date: Yup.date()
     .nullable(),
   due_date: Yup.date()
+    .nullable(),
+  decision_cycle_id: Yup.string()
+    .nullable(),
+  // Step is required when a cycle is selected (pipeline steps are fixed, not optional)
+  decision_step_id: Yup.string()
     .nullable()
+    .when('decision_cycle_id', {
+      is: (cycleId) => Boolean(cycleId),
+      then: (schema) => schema.required('Please select a pipeline step for this cycle'),
+      otherwise: (schema) => schema.nullable()
+    })
 });
 
 // ==============================|| INLINE CONTACT FORM ||============================== //
@@ -210,105 +224,6 @@ InlineCycleForm.propTypes = {
   onCancel: PropTypes.func.isRequired
 };
 
-// ==============================|| INLINE STEP FORM ||============================== //
-
-function InlineStepForm({ onSave, onCancel }) {
-  const [name, setName] = useState('');
-  const [stage, setStage] = useState('EXPLORATION');
-  const [expectedEnd, setExpectedEnd] = useState(null);
-
-  const handleSave = () => {
-    if (!name.trim()) {
-      displayErrorSnackbar('Step name is required');
-      return;
-    }
-    if (!expectedEnd) {
-      displayErrorSnackbar('Expected end date is required');
-      return;
-    }
-    onSave({
-      name: name.trim(),
-      stage: stage,
-      expected_end: expectedEnd.format('YYYY-MM-DD'),
-      status: 'NOT_STARTED'
-    });
-  };
-
-  const stageOptions = [
-    { value: 'EXPLORATION', label: 'Exploration' },
-    { value: 'CRITERIA_VALIDATION', label: 'Criteria Validation' },
-    { value: 'SOLUTION_CONFIRMATION', label: 'Solution Confirmation' },
-    { value: 'BUSINESS_VALIDATION', label: 'Business Validation' },
-    { value: 'FORMALIZATION', label: 'Formalization' }
-  ];
-
-  return (
-    <Box sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 1, mb: 2 }}>
-      <Stack spacing={2}>
-        <Typography variant="subtitle2" color="primary">
-          + Quick Create Decision Step
-        </Typography>
-        <Grid container spacing={1.5}>
-          <Grid item xs={12}>
-            <TextField
-              size="small"
-              fullWidth
-              label="Step Name *"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Technical Demo"
-              autoFocus
-            />
-          </Grid>
-          <Grid item xs={6}>
-            <Select
-              size="small"
-              fullWidth
-              value={stage}
-              onChange={(e) => setStage(e.target.value)}
-            >
-              {stageOptions.map((opt) => (
-                <MenuItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </Grid>
-          <Grid item xs={6}>
-            <LocalizationProvider dateAdapter={AdapterDayjs}>
-              <DatePicker
-                value={expectedEnd}
-                onChange={setExpectedEnd}
-                minDate={dayjs()}
-                slotProps={{
-                  textField: {
-                    size: 'small',
-                    fullWidth: true,
-                    placeholder: 'Expected End *'
-                  }
-                }}
-              />
-            </LocalizationProvider>
-          </Grid>
-        </Grid>
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
-          <Button size="small" onClick={onCancel} startIcon={<CloseOutlined />}>
-            Cancel
-          </Button>
-          <Button size="small" variant="contained" onClick={handleSave}>
-            Create Step
-          </Button>
-        </Stack>
-      </Stack>
-    </Box>
-  );
-}
-
-InlineStepForm.propTypes = {
-  onSave: PropTypes.func.isRequired,
-  onCancel: PropTypes.func.isRequired
-};
-
 // ==============================|| ACTIVITY MODAL ||============================== //
 
 /**
@@ -338,12 +253,10 @@ export default function ActivityModal({
   // Inline creation modes
   const [showInlineContact, setShowInlineContact] = useState(false);
   const [showInlineCycle, setShowInlineCycle] = useState(false);
-  const [showInlineStep, setShowInlineStep] = useState(false);
   
   // Inline creation data
   const [inlineContact, setInlineContact] = useState(null);
   const [inlineCycle, setInlineCycle] = useState(null);
-  const [inlineStep, setInlineStep] = useState(null);
   
   const isEditMode = Boolean(activity?.id);
   
@@ -426,7 +339,7 @@ export default function ActivityModal({
           result = await updateActivity(activity.id, activityPayload);
         } else {
           // Create mode - check if we need inline entity creation
-          const hasInlineEntities = inlineContact || inlineCycle || inlineStep;
+          const hasInlineEntities = inlineContact || inlineCycle;
           
           if (hasInlineEntities) {
             // Use multi-entity creation endpoint
@@ -437,16 +350,13 @@ export default function ActivityModal({
               activityPayload.decision_cycle_id = values.decision_cycle_id || null;
             }
             
-            // If not creating inline step, use selected step
-            if (!inlineStep) {
-              activityPayload.decision_step_id = values.decision_step_id || null;
-            }
+            // Step always comes from form selection (pipeline steps are fixed)
+            activityPayload.decision_step_id = values.decision_step_id || null;
             
             result = await createActivityWithEntities({
               activity: activityPayload,
               inline_contact: inlineContact || null,
-              inline_cycle: inlineCycle || null,
-              inline_step: inlineStep || null
+              inline_cycle: inlineCycle || null
             });
           } else {
             // Standard creation
@@ -516,10 +426,8 @@ export default function ActivityModal({
       // Reset inline creation state
       setShowInlineContact(false);
       setShowInlineCycle(false);
-      setShowInlineStep(false);
       setInlineContact(null);
       setInlineCycle(null);
-      setInlineStep(null);
     }
   }, [open, initialValues, resetForm]);
   
@@ -869,7 +777,7 @@ export default function ActivityModal({
                           </Typography>
                           <Button size="small" color="error" onClick={() => {
                             setInlineCycle(null);
-                            setInlineStep(null); // Clear step too
+                            // Step selection will be cleared when cycle changes via useEffect
                           }}>
                             Remove
                           </Button>
@@ -900,75 +808,37 @@ export default function ActivityModal({
                   </Stack>
                 </Grid>
 
-                {/* Decision Step */}
+                {/* Decision Step (Pipeline Steps are fixed - select only) */}
                 <Grid item xs={12} sm={6}>
                   <Stack spacing={1}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center">
-                      <InputLabel>Decision Step</InputLabel>
-                      {!showInlineStep && !inlineStep && !isEditMode && (values.decision_cycle_id || inlineCycle) && (
-                        <Button
-                          size="small"
-                          startIcon={<PlusOutlined />}
-                          onClick={() => setShowInlineStep(true)}
-                        >
-                          Create New
-                        </Button>
-                      )}
-                    </Stack>
-                    
-                    {/* Inline Step Form */}
-                    {showInlineStep && (
-                      <InlineStepForm
-                        onSave={(stepData) => {
-                          setInlineStep(stepData);
-                          setShowInlineStep(false);
-                          // Clear existing step selection
-                          setFieldValue('decision_step_id', '');
-                          displaySuccessSnackbar(`Step "${stepData.name}" will be created with this activity`);
-                        }}
-                        onCancel={() => setShowInlineStep(false)}
-                      />
-                    )}
-                    
-                    {/* Show pending inline step */}
-                    {inlineStep ? (
-                      <Box sx={{ p: 1, bgcolor: 'success.lighter', borderRadius: 1 }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="body2" color="success.dark">
-                            ✓ New step: {inlineStep.name}
-                          </Typography>
-                          <Button size="small" color="error" onClick={() => setInlineStep(null)}>
-                            Remove
-                          </Button>
-                        </Stack>
-                      </Box>
-                    ) : (
-                      <Select
-                        id="decision_step_id"
-                        name="decision_step_id"
-                        fullWidth
-                        value={values.decision_step_id}
-                        onChange={handleChange}
-                        onBlur={handleBlur}
-                        displayEmpty
-                        disabled={Boolean(inlineCycle) || stepsLoading || !values.decision_cycle_id}
-                      >
-                        <MenuItem value="">
-                          <em>
-                            {!values.decision_cycle_id 
-                              ? 'Select a cycle first' 
-                              : stepOptions.length === 0 
-                                ? 'No steps yet' 
-                                : 'None'
-                            }
-                          </em>
+                    <InputLabel>Decision Step {values.decision_cycle_id && !inlineCycle && '*'}</InputLabel>
+                    <Select
+                      id="decision_step_id"
+                      name="decision_step_id"
+                      fullWidth
+                      value={values.decision_step_id}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      displayEmpty
+                      disabled={Boolean(inlineCycle) || stepsLoading || !values.decision_cycle_id}
+                      error={Boolean(touched.decision_step_id && errors.decision_step_id)}
+                    >
+                      <MenuItem value="">
+                        <em>
+                          {!values.decision_cycle_id 
+                            ? 'Select a cycle first' 
+                            : 'Select a pipeline step'
+                          }
+                        </em>
+                      </MenuItem>
+                      {stepOptions.map((step) => (
+                        <MenuItem key={step.id} value={step.id}>
+                          {step.name}
                         </MenuItem>
-                        {stepOptions.map((step) => (
-                          <MenuItem key={step.id} value={step.id}>
-                            {step.name}
-                          </MenuItem>
-                        ))}
-                      </Select>
+                      ))}
+                    </Select>
+                    {touched.decision_step_id && errors.decision_step_id && (
+                      <FormHelperText error>{errors.decision_step_id}</FormHelperText>
                     )}
                   </Stack>
                 </Grid>

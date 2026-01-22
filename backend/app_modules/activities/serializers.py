@@ -384,7 +384,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 attrs['account'] = account
             except CompanyAccount.DoesNotExist:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.NOT_FOUND.format(resource='Account')
+                    CoreErrorMessages.OBJECT_NOT_FOUND
                 )
             
             # Validate contacts (optional)
@@ -413,7 +413,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     attrs['decision_cycle'] = decision_cycle
                 except DecisionCycle.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.NOT_FOUND.format(resource='Decision Cycle')
+                        CoreErrorMessages.OBJECT_NOT_FOUND
                     )
             
             # Validate decision_step (optional)
@@ -430,8 +430,15 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     attrs['decision_step'] = decision_step
                 except DecisionStep.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.NOT_FOUND.format(resource='Decision Step')
+                        CoreErrorMessages.OBJECT_NOT_FOUND
                     )
+            
+            # RULE: If cycle is provided, step is REQUIRED (pipeline steps are fixed)
+            if attrs.get('decision_cycle') and not attrs.get('decision_step'):
+                raise StandardizedValidationError(
+                    "A pipeline step is required when linking to a decision cycle"
+                )
+            
             
             # Validate previous_activity (optional)
             previous_activity_id = attrs.pop('previous_activity_id', None)
@@ -445,7 +452,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     attrs['previous_activity'] = previous_activity
                 except Activity.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.NOT_FOUND.format(resource='Previous Activity')
+                        CoreErrorMessages.OBJECT_NOT_FOUND
                     )
             
             return attrs
@@ -556,7 +563,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         attrs['decision_cycle'] = decision_cycle
                     except DecisionCycle.DoesNotExist:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.NOT_FOUND.format(resource='Decision Cycle')
+                            CoreErrorMessages.OBJECT_NOT_FOUND
                         )
                 else:
                     attrs['decision_cycle'] = None
@@ -573,10 +580,26 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         attrs['decision_step'] = decision_step
                     except DecisionStep.DoesNotExist:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.NOT_FOUND.format(resource='Decision Step')
+                            CoreErrorMessages.OBJECT_NOT_FOUNDformat(resource='Decision Step')
                         )
                 else:
                     attrs['decision_step'] = None
+            
+            # RULE: If cycle is provided, step is REQUIRED (pipeline steps are fixed)
+            # Determine final values considering both new attrs and existing instance
+            final_cycle = attrs.get('decision_cycle', instance.decision_cycle)
+            final_step = attrs.get('decision_step', instance.decision_step)
+            
+            # Handle explicit None assignments
+            if 'decision_cycle' in attrs:
+                final_cycle = attrs['decision_cycle']
+            if 'decision_step' in attrs:
+                final_step = attrs['decision_step']
+            
+            if final_cycle and not final_step:
+                raise StandardizedValidationError(
+                    "A pipeline step is required when linking to a decision cycle"
+                )
             
             return attrs
             
