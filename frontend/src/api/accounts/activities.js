@@ -128,14 +128,15 @@ const endpoints = {
   activities: '/module-activities/',
   activityDetail: (id) => `/module-activities/${id}/`,
   myActivities: '/module-activities/my-activities/',
-  byAccount: (accountId) => `/module-activities/by-account/${accountId}/`,
-  byStep: (stepId) => `/module-activities/by-step/${stepId}/`,
+  byAccount: '/module-activities/by-account/',
+  byStep: '/module-activities/by-step/',
   overdue: '/module-activities/overdue/',
   upcoming: '/module-activities/upcoming/',
   complete: (id) => `/module-activities/${id}/complete/`,
   cancel: (id) => `/module-activities/${id}/cancel/`,
   createWithEntities: '/module-activities/create-with-entities/',
   unlinkedByAccount: (accountId) => `/module-activities/unlinked/by-account/${accountId}/`,
+  choices: '/module-activities/choices/',
 };
 
 // ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
@@ -287,15 +288,14 @@ export function useGetActivitiesByAccount(accountId, options = {}) {
 
   const swrKey = useMemo(() => {
     if (!accountId || !isValidUUID(accountId)) return null;
-    const url = buildUrlWithParams(endpoints.byAccount(accountId), { 
+    const url = buildUrlWithParams(endpoints.byAccount, { 
       page, 
       pageSize, 
       ordering, 
-      filters
+      filters: { ...filters, account_id: accountId }
     });
     return tenantKey(url, tenantId);
   }, [accountId, page, pageSize, ordering, filters, tenantId]);
-
   const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,

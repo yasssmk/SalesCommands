@@ -178,11 +178,11 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   
   /**
    * Handle click on activity card → Navigate to Activity Workspace
-   * Route: /accounts/{accountId}/activities/{activityId}
+   * Route: /activities/{activityId}
    */
   const handleActivityClick = useCallback((activity) => {
-    router.push(`/accounts/${accountId}/activities/${activity.id}`);
-  }, [router, accountId]);
+    router.push(`/activities/${activity.id}`);
+  }, [router]);
   
   /**
    * Handle "Add Activity" button click in a step column

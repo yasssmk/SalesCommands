@@ -992,8 +992,8 @@ export default function DecisionCycleTimeline({
   const handleActivityClick = (activity) => {
     if (onActivityClick) {
       onActivityClick(activity);
-    } else if (accountId) {
-      router.push(`/accounts/${accountId}/activities/${activity.id}`);
+    } else {
+      router.push(`/activities/${activity.id}`);
     }
   };
 
