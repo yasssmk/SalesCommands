@@ -284,6 +284,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
           onStepClick={handleStepClick}
           onActivityClick={handleActivityClick}
           onAddActivity={handleAddActivity}
+          onRefresh={mutateCycle}
           loading={currentCycleLoading}
         />
       ) : null}

@@ -422,7 +422,7 @@ export async function getUnlinkedActivities(accountId, options = {}) {
  * @param {string} stepId - UUID of the decision step
  * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
  */
-export async function linkActivityToStep(activityId, cycleId, stepId) {
+export async function linkActivityToStep(activityId, cycleId, stepId, accountId = null) {
   if (!activityId || !isValidUUID(activityId)) {
     return {
       success: false,
@@ -453,15 +453,22 @@ export async function linkActivityToStep(activityId, cycleId, stepId) {
   });
   
   if (result.success) {
-    revalidateMultiple([
+    const revalidatePaths = [
       endpoints.activities,
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
-      endpoints.byStep(stepId),
+      endpoints.byStep,  // Prefix-based: revalidates all /module-activities/by-step/* queries
       '/module-decision-cycles/',
       `/module-decision-cycles/${cycleId}/`,
-      `/module-decision-cycles/by-account/`
-    ]);
+      '/module-decision-cycles/by-account/'
+    ];
+    
+    // Also revalidate unlinked activities list if accountId provided
+    if (accountId) {
+      revalidatePaths.push(endpoints.unlinkedByAccount(accountId));
+    }
+    
+    revalidateMultiple(revalidatePaths);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
   }

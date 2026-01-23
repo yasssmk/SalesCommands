@@ -156,6 +156,8 @@ function ActivityListItem({ activity, selected, onToggle }) {
               )}
             </Stack>
           }
+          primaryTypographyProps={{ component: 'div' }}
+          secondaryTypographyProps={{ component: 'div' }}
         />
       </ListItemButton>
     </ListItem>
@@ -305,7 +307,7 @@ export default function LinkActivityModal({
       // Link each selected activity
       const results = await Promise.all(
         selectedIds.map(activityId => 
-          linkActivityToStep(activityId, cycleId, step.id)
+          linkActivityToStep(activityId, cycleId, step.id, accountId)
         )
       );
       
