@@ -246,6 +246,7 @@ export default function ActivityModal({
   decisionStepId = null,
   decisionCycleId = null,
   defaultActivityType = null,
+  previousActivityId = null,
   onSuccess
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -344,15 +345,16 @@ export default function ActivityModal({
           if (hasInlineEntities) {
             // Use multi-entity creation endpoint
             activityPayload.account_id = accountId;
-            
             // If not creating inline cycle, use selected cycle
             if (!inlineCycle) {
               activityPayload.decision_cycle_id = values.decision_cycle_id || null;
             }
-            
             // Step always comes from form selection (pipeline steps are fixed)
             activityPayload.decision_step_id = values.decision_step_id || null;
-            
+            // Link to previous activity if provided (for follow-up activities)
+            if (previousActivityId) {
+              activityPayload.previous_activity_id = previousActivityId;
+            }
             result = await createActivityWithEntities({
               activity: activityPayload,
               inline_contact: inlineContact || null,
@@ -363,6 +365,10 @@ export default function ActivityModal({
             activityPayload.account_id = accountId;
             activityPayload.decision_cycle_id = values.decision_cycle_id || null;
             activityPayload.decision_step_id = values.decision_step_id || null;
+            // Link to previous activity if provided (for follow-up activities)
+            if (previousActivityId) {
+              activityPayload.previous_activity_id = previousActivityId;
+            }
             result = await createActivity(activityPayload);
           }
         }

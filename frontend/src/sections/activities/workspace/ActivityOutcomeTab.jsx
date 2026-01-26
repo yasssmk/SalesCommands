@@ -21,55 +21,45 @@ import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
 import Grid from '@mui/material/Grid';
+import IconButton from '@mui/material/IconButton';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogTitle from '@mui/material/DialogTitle';
 
 // Project imports
-import MainCard from 'components/MainCard';
 import {
   completeActivity,
   updateActivity,
   markNoNextStep,
   markNextStepAgreed,
-  ACTIVITY_OUTCOMES,
   ACTIVITY_OUTCOME_LABELS,
   ACTIVITY_OUTCOME_COLORS,
-  ACTIVITY_STATUS_LABELS
+  ACTIVITY_TYPE_LABELS,
+  ACTIVITY_STATUS_LABELS,
+  ACTIVITY_STATUS_COLORS
 } from 'api/accounts/activities';
-import {
-  useGetDecisionStepsByCycle,
-  STATUS_COLORS,
-  STATUS_LABELS
-} from 'api/accounts/decisionCycles';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
 
 // Navigation
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'
 
 // Modals
 import ActivityModal from 'sections/accounts/activities/ActivityModal';
+import LinkExistingActivityModal from './LinkExistingActivityModal';
 
 // Icons
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
-import EditOutlined from '@ant-design/icons/EditOutlined';
 import CheckOutlined from '@ant-design/icons/CheckOutlined';
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
 import BulbOutlined from '@ant-design/icons/BulbOutlined';
 import RocketOutlined from '@ant-design/icons/RocketOutlined';
 import StopOutlined from '@ant-design/icons/StopOutlined';
-import WarningOutlined from '@ant-design/icons/WarningOutlined';
+import LinkOutlined from '@ant-design/icons/LinkOutlined';
 
 // ==============================|| SECTION CARD WRAPPER ||============================== //
 
@@ -209,71 +199,33 @@ KeyTakeawaysSection.propTypes = {
 
 // ==============================|| NEXT STEPS SECTION ||============================== //
 
-function NextStepsSection({ activity, onCreateActivity, onUpdate }) {
+function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate }) {
   const router = useRouter();
-  const hasLinkedStep = Boolean(activity?.decision_step);
-  const hasNextActivity = Boolean(activity?.next_activity);
-  const hasCycle = Boolean(activity?.decision_cycle);
   
-  // Next step agreement state
-  const nextStepAgreed = activity?.next_step_agreed;
-  const noNextStepReason = activity?.no_next_step_reason;
-  const hasNextStepDecision = nextStepAgreed !== null && nextStepAgreed !== undefined;
-  
-  // No next step dialog state
-  const [noNextStepOpen, setNoNextStepOpen] = useState(false);
-  const [noNextStepReasonValue, setNoNextStepReasonValue] = useState('');
-  const [submittingNoNextStep, setSubmittingNoNextStep] = useState(false);
+  // Get next activity info from the activity object
+  const nextActivityInfo = activity?.next_activity_info;
+  const hasNextActivity = Boolean(nextActivityInfo);
 
-  // Fetch existing steps for the cycle (for navigation, not creation)
-  const { steps, stepsLoading } = useGetDecisionStepsByCycle(activity?.decision_cycle);
-
-  // Navigate to step workspace
-  const handleStepClick = (stepId) => {
-    router.push(`/decision-steps/${stepId}`);
-  };
-  
-  // Handle mark no next step
-  const handleNoNextStepClick = () => {
-    setNoNextStepReasonValue(noNextStepReason || '');
-    setNoNextStepOpen(true);
-  };
-  
-  const handleNoNextStepClose = () => {
-    setNoNextStepOpen(false);
-    setNoNextStepReasonValue('');
-  };
-  
-  const handleNoNextStepConfirm = async () => {
-    setSubmittingNoNextStep(true);
-    try {
-      const result = await markNoNextStep(activity.id, { reason: noNextStepReasonValue });
-      if (result.success) {
-        displaySuccessSnackbar('Marked as no next step agreed');
-        onUpdate?.();
-        handleNoNextStepClose();
-      } else {
-        displayErrorSnackbar(result.error || 'Failed to update activity');
-      }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred');
-    } finally {
-      setSubmittingNoNextStep(false);
+  // Navigate to activity workspace
+  const handleActivityClick = (activityId) => {
+    if (activityId) {
+      router.push(`/activities/${activityId}`);
     }
   };
-  
-  // Clear no next step (revert)
-  const handleClearNoNextStep = async () => {
+
+  // Unlink next activity
+  const handleUnlinkActivity = async () => {
+    if (!activity?.id) return;
+    
     try {
       const result = await updateActivity(activity.id, {
-        next_step_agreed: null,
-        no_next_step_reason: null
+        next_activity_id: null
       });
       if (result.success) {
-        displaySuccessSnackbar('Next step status cleared');
+        displaySuccessSnackbar('Next activity unlinked');
         onUpdate?.();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to update');
+        displayErrorSnackbar(result.error || 'Failed to unlink activity');
       }
     } catch (error) {
       displayErrorSnackbar('An error occurred');
@@ -283,14 +235,7 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate }) {
   return (
     <SectionCard title="Next Steps" icon={RocketOutlined}>
       <Stack spacing={2}>
-        {/* Show existing next activity if present */}
-        {hasNextActivity && (
-          <Alert severity="info" sx={{ mb: 1 }}>
-            A follow-up activity is already linked to this activity.
-          </Alert>
-        )}
-
-        {/* Quick action buttons - Create follow-up activities */}
+        {/* Action buttons row */}
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           <Button
             variant="outlined"
@@ -324,132 +269,80 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate }) {
           >
             Internal Task
           </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            color="secondary"
+            startIcon={<LinkOutlined />}
+            onClick={onLinkExisting}
+          >
+            Link Existing
+          </Button>
         </Stack>
 
-        <Divider sx={{ my: 1 }} />
-
-        {/* Pipeline Steps section - Navigation only (no creation) */}
-        <Box>
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              {hasCycle 
-                ? 'Pipeline steps in this cycle:' 
-                : 'Link this activity to a Decision Cycle to see pipeline steps.'
-              }
-            </Typography>
-            {hasLinkedStep && (
-              <Chip
-                label={`Current: ${activity.decision_step_detail?.name || 'Step'}`}
-                size="small"
-                variant="filled"
-                color="primary"
-                onClick={() => handleStepClick(activity.decision_step)}
-                sx={{ cursor: 'pointer' }}
-              />
-            )}
-          </Stack>
-
-          {/* Existing steps in cycle - Click to navigate */}
-          {hasCycle && !stepsLoading && steps.length > 0 && (
-            <Box>
-              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                {steps.map((step) => (
-                  <Chip
-                    key={step.id}
-                    label={step.name}
-                    size="small"
-                    variant={step.id === activity?.decision_step ? 'filled' : 'outlined'}
-                    color={STATUS_COLORS[step.status] || 'default'}
-                    onClick={() => handleStepClick(step.id)}
-                    sx={{ 
-                      cursor: 'pointer',
-                      mb: 0.5,
-                      '&:hover': { opacity: 0.8 }
-                    }}
-                  />
-                ))}
-              </Stack>
-            </Box>
-          )}
-        </Box>
-
-        {/* No next step section */}
-        <Divider sx={{ my: 1 }} />
-        
-        {hasNextStepDecision ? (
-          // Show current next step status
+        {/* Next Activity Card (if linked) */}
+        {hasNextActivity && (
           <Box>
-            {nextStepAgreed === true ? (
-              <Alert severity="success" icon={<CheckCircleOutlined />}>
-                Next step agreed with prospect
-              </Alert>
-            ) : (
-              <Alert 
-                severity="warning" 
-                icon={<WarningOutlined />}
-                action={
-                  <Button size="small" color="inherit" onClick={handleClearNoNextStep}>
-                    Clear
-                  </Button>
-                }
-              >
-                No next step agreed
-                {noNextStepReason && (
-                  <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                    Reason: {noNextStepReason}
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+              Linked next activity:
+            </Typography>
+            <Card 
+              variant="outlined" 
+              sx={{ 
+                p: 1.5, 
+                cursor: 'pointer',
+                '&:hover': { bgcolor: 'action.hover' }
+              }}
+            >
+              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <Stack 
+                  direction="row" 
+                  spacing={1.5} 
+                  alignItems="center"
+                  onClick={() => handleActivityClick(nextActivityInfo.id)}
+                  sx={{ flex: 1, cursor: 'pointer' }}
+                >
+                  <Chip
+                    label={ACTIVITY_TYPE_LABELS[nextActivityInfo.activity_type] || nextActivityInfo.activity_type}
+                    size="small"
+                    variant="outlined"
+                  />
+                  <Typography variant="body2" fontWeight={500}>
+                    {nextActivityInfo.title}
                   </Typography>
-                )}
-              </Alert>
-            )}
+                  {nextActivityInfo.scheduled_date && (
+                    <Typography variant="caption" color="text.secondary">
+                      {new Date(nextActivityInfo.scheduled_date).toLocaleDateString()}
+                    </Typography>
+                  )}
+                  <Chip
+                    label={ACTIVITY_STATUS_LABELS[nextActivityInfo.status] || nextActivityInfo.status}
+                    size="small"
+                    color={ACTIVITY_STATUS_COLORS[nextActivityInfo.status] || 'default'}
+                  />
+                </Stack>
+                <IconButton 
+                  size="small" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUnlinkActivity();
+                  }}
+                  sx={{ ml: 1 }}
+                >
+                  <CloseOutlined />
+                </IconButton>
+              </Stack>
+            </Card>
           </Box>
-        ) : (
-          // Show option to mark no next step
-          <Button
-            variant="text"
-            size="small"
-            color="warning"
-            startIcon={<StopOutlined />}
-            onClick={handleNoNextStepClick}
-          >
-            Mark as No Next Step Agreed
-          </Button>
+        )}
+
+        {/* Empty state hint */}
+        {!hasNextActivity && (
+          <Typography variant="caption" color="text.secondary">
+            Create or link a follow-up activity. If completed without a next step, it will be marked as "No next step agreed".
+          </Typography>
         )}
       </Stack>
-
-      {/* No Next Step Dialog */}
-      <Dialog open={noNextStepOpen} onClose={handleNoNextStepClose} maxWidth="sm" fullWidth>
-        <DialogTitle>Mark as No Next Step Agreed</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <DialogContentText>
-              This will trigger stalled detection on the linked Decision Step if present.
-            </DialogContentText>
-            <TextField
-              label="Reason (optional)"
-              multiline
-              rows={3}
-              fullWidth
-              value={noNextStepReasonValue}
-              onChange={(e) => setNoNextStepReasonValue(e.target.value)}
-              placeholder="e.g., Client needs internal validation first, Budget not approved yet..."
-              disabled={submittingNoNextStep}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleNoNextStepClose} disabled={submittingNoNextStep}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleNoNextStepConfirm}
-            variant="contained"
-            color="warning"
-            disabled={submittingNoNextStep}
-          >
-            {submittingNoNextStep ? 'Saving...' : 'Confirm No Next Step'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </SectionCard>
   );
 }
@@ -457,18 +350,22 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate }) {
 NextStepsSection.propTypes = {
   activity: PropTypes.object,
   onCreateActivity: PropTypes.func.isRequired,
+  onLinkExisting: PropTypes.func.isRequired,
   onUpdate: PropTypes.func
 };
 
 // ==============================|| RESULT SECTION ||============================== //
 
-function ResultSection({ activity, onComplete, onUpdate }) {
+function ResultSection({ activity, onUpdate }) {
   const [selectedOutcome, setSelectedOutcome] = useState(activity?.outcome || '');
+  const [outcomeNotes, setOutcomeNotes] = useState(activity?.outcome_notes || '');
   const [completing, setCompleting] = useState(false);
 
   const isCompleted = activity?.status === 'COMPLETED';
   const isCancelled = activity?.status === 'CANCELLED';
-  const canComplete = !isCompleted && !isCancelled;
+
+  // Check if activity has a next step linked
+  const hasNextStep = Boolean(activity?.next_activity);
 
   const handleComplete = async () => {
     if (!selectedOutcome) {
@@ -478,10 +375,18 @@ function ResultSection({ activity, onComplete, onUpdate }) {
 
     setCompleting(true);
     try {
-      const result = await completeActivity(activity.id, {
+      // Build payload
+      const payload = {
         outcome: selectedOutcome,
-        outcome_notes: activity.outcome_notes || null
-      });
+        outcome_notes: outcomeNotes.trim() || null
+      };
+
+      // If no next step is linked, auto-set next_step_agreed to false
+      if (!hasNextStep) {
+        payload.next_step_agreed = false;
+      }
+
+      const result = await completeActivity(activity.id, payload);
 
       if (result.success) {
         displaySuccessSnackbar('Activity completed successfully');
@@ -513,6 +418,16 @@ function ResultSection({ activity, onComplete, onUpdate }) {
               size="small"
             />
           </Stack>
+          {activity.outcome_notes && (
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                Notes:
+              </Typography>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                {activity.outcome_notes}
+              </Typography>
+            </Box>
+          )}
         </Stack>
       ) : isCancelled ? (
         <Alert severity="warning">
@@ -520,6 +435,7 @@ function ResultSection({ activity, onComplete, onUpdate }) {
         </Alert>
       ) : (
         <Stack spacing={2}>
+          {/* Outcome Select */}
           <Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               Select outcome
@@ -542,6 +458,32 @@ function ResultSection({ activity, onComplete, onUpdate }) {
             </Select>
           </Box>
 
+          {/* Outcome Notes */}
+          <Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Outcome notes
+            </Typography>
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              size="small"
+              placeholder="Add notes about the outcome..."
+              value={outcomeNotes}
+              onChange={(e) => setOutcomeNotes(e.target.value)}
+            />
+          </Box>
+
+          {/* Warning if no next step */}
+          {!hasNextStep && (
+            <Alert severity="info" icon={false} sx={{ py: 0.5 }}>
+              <Typography variant="caption">
+                No next step linked. Completing will mark this as "No next step agreed".
+              </Typography>
+            </Alert>
+          )}
+
+          {/* Complete Button */}
           <Button
             variant="contained"
             color="success"
@@ -560,7 +502,6 @@ function ResultSection({ activity, onComplete, onUpdate }) {
 
 ResultSection.propTypes = {
   activity: PropTypes.object,
-  onComplete: PropTypes.func,
   onUpdate: PropTypes.func
 };
 
@@ -569,6 +510,7 @@ ResultSection.propTypes = {
 export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [activityModalType, setActivityModalType] = useState(null);
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
 
   // Handle create follow-up activity
   const handleCreateActivity = (activityType) => {
@@ -599,18 +541,35 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
     displaySuccessSnackbar('Follow-up activity created');
   };
 
+  // Handle link existing activity
+  const handleLinkExisting = () => {
+    setLinkModalOpen(true);
+  };
+
+  const handleLinkModalClose = () => {
+    setLinkModalOpen(false);
+  };
+
+  const handleLinkSuccess = () => {
+    setLinkModalOpen(false);
+    onUpdate?.();
+    displaySuccessSnackbar('Activity linked as next step');
+  };
+
+
   return (
     <Box>
       <Grid container spacing={3}>
-        {/* Left Column - Key Takeaways + Next Steps */}
+        {/* Left Column - Next Steps + Key Takeaways */}
         <Grid item xs={12} md={8}>
           <Stack spacing={3}>
-            <KeyTakeawaysSection activity={activity} onSave={onSave} />
             <NextStepsSection
               activity={activity}
               onCreateActivity={handleCreateActivity}
+              onLinkExisting={handleLinkExisting}
               onUpdate={onUpdate}
             />
+            <KeyTakeawaysSection activity={activity} onSave={onSave} />
           </Stack>
         </Grid>
 
@@ -632,8 +591,19 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
         decisionStepId={activity?.decision_step || null}
         decisionCycleId={activity?.decision_cycle || null}
         defaultActivityType={activityModalType}
+        previousActivityId={activity?.id}
         onSuccess={handleActivitySuccess}
       />
+
+      {linkModalOpen && (
+        <LinkExistingActivityModal
+          open={linkModalOpen}
+          onClose={handleLinkModalClose}
+          currentActivity={activity}
+          onSuccess={handleLinkSuccess}
+        />
+      )}
+
     </Box>
   );
 }

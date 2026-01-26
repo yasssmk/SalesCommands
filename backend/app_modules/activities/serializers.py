@@ -505,6 +505,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     )
     decision_cycle_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     decision_step_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    next_activity_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     
     class Meta:
         model = Activity
@@ -521,6 +522,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # Relations
             'contact_ids',
             'decision_cycle_id', 'decision_step_id',
+            'next_activity_id',  # NEW
             
             # Future fields
             'transcript', 'preparation_notes'
@@ -585,6 +587,28 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 else:
                     attrs['decision_step'] = None
             
+            if 'next_activity_id' in attrs:
+                next_activity_id = attrs.pop('next_activity_id')
+                if next_activity_id:
+                    try:
+                        next_activity = Activity.objects.get(
+                            id=next_activity_id,
+                            client_id=client_id,
+                            account=account  # Must be same account
+                        )
+                        # Prevent self-reference
+                        if next_activity.id == instance.id:
+                            raise StandardizedValidationError(
+                                "Activity cannot be linked to itself"
+                            )
+                        attrs['next_activity'] = next_activity
+                    except Activity.DoesNotExist:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.OBJECT_NOT_FOUND
+                        )
+                else:
+                    attrs['next_activity'] = None
+            
             # RULE: If cycle is provided, step is REQUIRED (pipeline steps are fixed)
             # Determine final values considering both new attrs and existing instance
             final_cycle = attrs.get('decision_cycle', instance.decision_cycle)
@@ -611,18 +635,31 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             )
     
     def update(self, instance, validated_data):
-        """Update activity with proper audit fields."""
+        """Update activity with proper audit fields and M2M."""
         user = self.context.get('request').user if self.context.get('request') else None
         contacts = validated_data.pop('_contacts', None)
         
-        # Update fields
+        # Handle next_activity link (bidirectional)
+        if 'next_activity' in validated_data:
+            new_next = validated_data.get('next_activity')
+            old_next = instance.next_activity
+            
+            # Clear old next activity's previous_activity if it pointed to us
+            if old_next and old_next != new_next:
+                old_next.previous_activity = None
+                old_next.save(user=user)
+            
+            # Set new next activity's previous_activity to point to us
+            if new_next:
+                # Clear any existing previous_activity on the new next
+                if new_next.previous_activity and new_next.previous_activity != instance:
+                    pass  # Don't break existing chains, just override
+                new_next.previous_activity = instance
+                new_next.save(user=user)
+        
+        # Update instance fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        
-        # Auto-set completed_at if status changed to COMPLETED
-        if validated_data.get('status') == ActivityStatus.COMPLETED and not instance.completed_at:
-            from django.utils import timezone
-            instance.completed_at = timezone.now()
         
         instance.save(user=user)
         
