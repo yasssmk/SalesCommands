@@ -35,18 +35,41 @@ class ActivityContactSerializer(serializers.ModelSerializer):
     """Minimal contact serializer for activity responses."""
     
     full_name = serializers.SerializerMethodField(read_only=True)
+    department_name = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Contact
-        fields = ['id', 'first_name', 'last_name', 'full_name', 'email', 'job_title']
+        fields = [
+            'id', 'first_name', 'last_name', 'full_name',
+            'email', 'phone_number', 'job_title', 'department_name'
+        ]
+        read_only_fields = fields
+    
+    def get_full_name(self, obj):
+        return f"{obj.first_name or ''} {obj.last_name or ''}".strip()
+    
+    def get_department_name(self, obj):
+        """Get department display name from standard_department."""
+        if obj.standard_department:
+            return obj.standard_department.get_name_display()
+        return None
+
+
+class ActivityOwnerSerializer(serializers.ModelSerializer):
+    """Minimal user serializer for activity owner."""
+    
+    full_name = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'first_name', 'last_name', 'full_name']
         read_only_fields = fields
     
     def get_full_name(self, obj):
         return f"{obj.first_name or ''} {obj.last_name or ''}".strip()
 
-
-class ActivityOwnerSerializer(serializers.ModelSerializer):
-    """Minimal user serializer for activity owner."""
+class ActivityInvitedUserSerializer(serializers.ModelSerializer):
+    """Minimal user serializer for invited users."""
     
     full_name = serializers.SerializerMethodField(read_only=True)
     
@@ -207,6 +230,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     account_detail = ActivityAccountSerializer(source='account', read_only=True)
     contacts_detail = ActivityContactSerializer(source='contacts', many=True, read_only=True)
     owner_detail = ActivityOwnerSerializer(source='owner', read_only=True)
+    invited_users_detail = ActivityInvitedUserSerializer(source='invited_users', many=True, read_only=True)
     decision_cycle_detail = ActivityDecisionCycleSerializer(source='decision_cycle', read_only=True)
     decision_step_detail = ActivityDecisionStepSerializer(source='decision_step', read_only=True)
     
@@ -247,7 +271,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'decision_cycle', 'decision_step',
             
             # Relations (detailed)
-            'account_detail', 'contacts_detail', 'owner_detail',
+            'account_detail', 'invited_users_detail', 'contacts_detail', 'owner_detail',
             'decision_cycle_detail', 'decision_step_detail',
             
             # Linked list
@@ -321,6 +345,12 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         required=False,
         default=list
     )
+    invited_user_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        write_only=True,
+        required=False,
+        default=list
+    )
     decision_cycle_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     decision_step_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     previous_activity_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
@@ -337,7 +367,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'scheduled_date', 'scheduled_time', 'due_date',
             
             # Relations
-            'contact_ids',
+            'contact_ids', 'invited_user_ids',
             'decision_cycle_id', 'decision_step_id',
             'previous_activity_id',
             
@@ -372,36 +402,67 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             client_id = self._get_client_id_from_context()
             attrs['client_id'] = client_id
             
+            # =================================================================
             # Validate account
-            account_id = attrs.pop('account_id', None)
-            if not account_id:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field='Account')
-                )
-            
+            # =================================================================
+            account_id = attrs.pop('account_id')
             try:
                 account = CompanyAccount.objects.get(id=account_id, client_id=client_id)
                 attrs['account'] = account
             except CompanyAccount.DoesNotExist:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.OBJECT_NOT_FOUND
+                    CoreErrorMessages.NOT_FOUND.format(resource='Account')
                 )
             
-            # Validate contacts (optional)
+            # =================================================================
+            # REQUIRED: At least one contact
+            # =================================================================
             contact_ids = attrs.pop('contact_ids', [])
-            if contact_ids:
-                contacts = Contact.objects.filter(
-                    id__in=contact_ids,
-                    client_id=client_id,
-                    account=account
+            if not contact_ids:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='At least one contact')
                 )
-                if contacts.count() != len(contact_ids):
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_FIELD.format(field='Some contacts not found or not belonging to this account')
-                    )
-                attrs['_contacts'] = contacts
             
+            contacts = Contact.objects.filter(
+                id__in=contact_ids,
+                client_id=client_id,
+                account=account
+            )
+            if contacts.count() != len(contact_ids):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(field='Some contacts not found or do not belong to this account')
+                )
+            attrs['_contacts'] = list(contacts)
+            
+            # =================================================================
+            # REQUIRED: At least one date (scheduled_date OR due_date)
+            # =================================================================
+            scheduled_date = attrs.get('scheduled_date')
+            due_date = attrs.get('due_date')
+            
+            if not scheduled_date and not due_date:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='Scheduled date or due date')
+                )
+            
+            # =================================================================
+            # Validate invited_users (optional)
+            # =================================================================
+            invited_user_ids = attrs.pop('invited_user_ids', [])
+            if invited_user_ids:
+                invited_users = User.objects.filter(
+                    id__in=invited_user_ids,
+                    client_id=client_id
+                )
+                if invited_users.count() != len(invited_user_ids):
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(field='Some invited users not found')
+                    )
+                attrs['_invited_users'] = list(invited_users)
+            
+            # =================================================================
             # Validate decision_cycle (optional)
+            # =================================================================
             decision_cycle_id = attrs.pop('decision_cycle_id', None)
             if decision_cycle_id:
                 try:
@@ -413,24 +474,30 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     attrs['decision_cycle'] = decision_cycle
                 except DecisionCycle.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.OBJECT_NOT_FOUND
+                        CoreErrorMessages.NOT_FOUND.format(resource='Decision Cycle')
                     )
             
-            # Validate decision_step (optional)
+            # =================================================================
+            # Validate decision_step (optional, requires cycle)
+            # =================================================================
             decision_step_id = attrs.pop('decision_step_id', None)
             if decision_step_id:
+                decision_cycle = attrs.get('decision_cycle')
+                if not decision_cycle:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_DATA.format(
+                            detail='Decision step requires a decision cycle'
+                        )
+                    )
                 try:
                     decision_step = DecisionStep.objects.get(
                         id=decision_step_id,
-                        client_id=client_id
+                        cycle=decision_cycle
                     )
-                    # Auto-set decision_cycle if not provided
-                    if not attrs.get('decision_cycle'):
-                        attrs['decision_cycle'] = decision_step.cycle
                     attrs['decision_step'] = decision_step
                 except DecisionStep.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.OBJECT_NOT_FOUND
+                        CoreErrorMessages.NOT_FOUND.format(resource='Decision Step')
                     )
             
             # RULE: If cycle is provided, step is REQUIRED (pipeline steps are fixed)
@@ -439,8 +506,9 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     "A pipeline step is required when linking to a decision cycle"
                 )
             
-            
+            # =================================================================
             # Validate previous_activity (optional)
+            # =================================================================
             previous_activity_id = attrs.pop('previous_activity_id', None)
             if previous_activity_id:
                 try:
@@ -452,7 +520,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     attrs['previous_activity'] = previous_activity
                 except Activity.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.OBJECT_NOT_FOUND
+                        CoreErrorMessages.NOT_FOUND.format(resource='Previous Activity')
                     )
             
             return attrs
@@ -468,6 +536,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         """Create activity with proper audit fields and M2M."""
         user = self.context.get('request').user if self.context.get('request') else None
         contacts = validated_data.pop('_contacts', [])
+        invited_users = validated_data.pop('_invited_users', [])
         client_id = validated_data.pop('client_id', None)
         
         # Set owner to current user
@@ -480,6 +549,10 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         # Set M2M contacts
         if contacts:
             instance.contacts.set(contacts)
+        
+        # Set M2M invited_users
+        if invited_users:
+            instance.invited_users.set(invited_users)
         
         # Update previous activity's next_activity if needed
         if instance.previous_activity:
@@ -496,9 +569,19 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
 class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Serializer for activity updates.
+    
+    Business Rules:
+        - contacts cannot be empty (at least 1 required)
+        - outcome is only valid when status=COMPLETED
+        - reopening (from COMPLETED to other status) clears outcome
     """
     
     contact_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        write_only=True,
+        required=False
+    )
+    invited_user_ids = serializers.ListField(
         child=serializers.UUIDField(),
         write_only=True,
         required=False
@@ -520,25 +603,63 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'next_step_agreed', 'no_next_step_reason',
             
             # Relations
-            'contact_ids',
+            'contact_ids', 'invited_user_ids',
             'decision_cycle_id', 'decision_step_id',
-            'next_activity_id',  # NEW
+            'next_activity_id',
             
             # Future fields
             'transcript', 'preparation_notes'
         ]
     
     def validate(self, attrs):
-        """Validate update data."""
+        """Validate update data with status/outcome business rules."""
         try:
             client_id = self._get_client_id_from_context()
             instance = self.instance
             account = instance.account
             
-            # Validate contacts (optional)
+            # =================================================================
+            # STATUS CHANGE LOGIC
+            # =================================================================
+            new_status = attrs.get('status')
+            current_status = instance.status
+            
+            if new_status and new_status != current_status:
+                # Rule: If reopening (from COMPLETED to non-COMPLETED), clear outcome
+                if current_status == ActivityStatus.COMPLETED and new_status != ActivityStatus.COMPLETED:
+                    attrs['outcome'] = None
+                    attrs['outcome_notes'] = None
+                    attrs['completed_at'] = None
+                
+                # Rule: If completing, set completed_at
+                if new_status == ActivityStatus.COMPLETED and current_status != ActivityStatus.COMPLETED:
+                    from django.utils import timezone
+                    attrs['completed_at'] = timezone.now()
+            
+            # =================================================================
+            # OUTCOME VALIDATION
+            # =================================================================
+            new_outcome = attrs.get('outcome')
+            final_status = new_status if new_status else current_status
+            
+            # Rule: outcome is only valid if status is COMPLETED
+            if new_outcome and final_status != ActivityStatus.COMPLETED:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_DATA.format(
+                        detail='Outcome can only be set when activity is completed'
+                    )
+                )
+            
+            # =================================================================
+            # CONTACTS VALIDATION (cannot be empty)
+            # =================================================================
             if 'contact_ids' in attrs:
                 contact_ids = attrs.pop('contact_ids')
-                if contact_ids:
+                if contact_ids is not None:
+                    if len(contact_ids) == 0:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.REQUIRED_FIELD.format(field='At least one contact')
+                        )
                     contacts = Contact.objects.filter(
                         id__in=contact_ids,
                         client_id=client_id,
@@ -548,11 +669,30 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         raise StandardizedValidationError(
                             CoreErrorMessages.INVALID_FIELD.format(field='Some contacts not found')
                         )
-                    attrs['_contacts'] = contacts
-                else:
-                    attrs['_contacts'] = []
+                    attrs['_contacts'] = list(contacts)
             
-            # Validate decision_cycle (optional)
+            # =================================================================
+            # INVITED USERS VALIDATION
+            # =================================================================
+            if 'invited_user_ids' in attrs:
+                invited_user_ids = attrs.pop('invited_user_ids')
+                if invited_user_ids is not None:
+                    if invited_user_ids:
+                        invited_users = User.objects.filter(
+                            id__in=invited_user_ids,
+                            client_id=client_id
+                        )
+                        if invited_users.count() != len(invited_user_ids):
+                            raise StandardizedValidationError(
+                                CoreErrorMessages.INVALID_FIELD.format(field='Some invited users not found')
+                            )
+                        attrs['_invited_users'] = list(invited_users)
+                    else:
+                        attrs['_invited_users'] = []
+            
+            # =================================================================
+            # DECISION CYCLE VALIDATION
+            # =================================================================
             if 'decision_cycle_id' in attrs:
                 decision_cycle_id = attrs.pop('decision_cycle_id')
                 if decision_cycle_id:
@@ -565,28 +705,44 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         attrs['decision_cycle'] = decision_cycle
                     except DecisionCycle.DoesNotExist:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.OBJECT_NOT_FOUND
+                            CoreErrorMessages.NOT_FOUND.format(resource='Decision Cycle')
                         )
                 else:
                     attrs['decision_cycle'] = None
+                    # Clear step if cycle is cleared
+                    if 'decision_step_id' not in attrs:
+                        attrs['decision_step'] = None
             
-            # Validate decision_step (optional)
+            # =================================================================
+            # DECISION STEP VALIDATION
+            # =================================================================
             if 'decision_step_id' in attrs:
                 decision_step_id = attrs.pop('decision_step_id')
                 if decision_step_id:
+                    # Get cycle from attrs or instance
+                    decision_cycle = attrs.get('decision_cycle', instance.decision_cycle)
+                    if not decision_cycle:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_DATA.format(
+                                detail='Decision step requires a decision cycle'
+                            )
+                        )
                     try:
                         decision_step = DecisionStep.objects.get(
                             id=decision_step_id,
-                            client_id=client_id
+                            cycle=decision_cycle
                         )
                         attrs['decision_step'] = decision_step
                     except DecisionStep.DoesNotExist:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.OBJECT_NOT_FOUNDformat(resource='Decision Step')
+                            CoreErrorMessages.NOT_FOUND.format(resource='Decision Step')
                         )
                 else:
                     attrs['decision_step'] = None
             
+            # =================================================================
+            # NEXT ACTIVITY VALIDATION
+            # =================================================================
             if 'next_activity_id' in attrs:
                 next_activity_id = attrs.pop('next_activity_id')
                 if next_activity_id:
@@ -594,36 +750,22 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         next_activity = Activity.objects.get(
                             id=next_activity_id,
                             client_id=client_id,
-                            account=account  # Must be same account
+                            account=account
                         )
-                        # Prevent self-reference
+                        # Prevent circular reference
                         if next_activity.id == instance.id:
                             raise StandardizedValidationError(
-                                "Activity cannot be linked to itself"
+                                CoreErrorMessages.INVALID_DATA.format(
+                                    detail='Activity cannot be its own next activity'
+                                )
                             )
                         attrs['next_activity'] = next_activity
                     except Activity.DoesNotExist:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.OBJECT_NOT_FOUND
+                            CoreErrorMessages.NOT_FOUND.format(resource='Next Activity')
                         )
                 else:
                     attrs['next_activity'] = None
-            
-            # RULE: If cycle is provided, step is REQUIRED (pipeline steps are fixed)
-            # Determine final values considering both new attrs and existing instance
-            final_cycle = attrs.get('decision_cycle', instance.decision_cycle)
-            final_step = attrs.get('decision_step', instance.decision_step)
-            
-            # Handle explicit None assignments
-            if 'decision_cycle' in attrs:
-                final_cycle = attrs['decision_cycle']
-            if 'decision_step' in attrs:
-                final_step = attrs['decision_step']
-            
-            if final_cycle and not final_step:
-                raise StandardizedValidationError(
-                    "A pipeline step is required when linking to a decision cycle"
-                )
             
             return attrs
             
@@ -637,34 +779,20 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     def update(self, instance, validated_data):
         """Update activity with proper audit fields and M2M."""
         user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Handle M2M contacts
         contacts = validated_data.pop('_contacts', None)
+        if contacts is not None:
+            instance.contacts.set(contacts)
         
-        # Handle next_activity link (bidirectional)
-        if 'next_activity' in validated_data:
-            new_next = validated_data.get('next_activity')
-            old_next = instance.next_activity
-            
-            # Clear old next activity's previous_activity if it pointed to us
-            if old_next and old_next != new_next:
-                old_next.previous_activity = None
-                old_next.save(user=user)
-            
-            # Set new next activity's previous_activity to point to us
-            if new_next:
-                # Clear any existing previous_activity on the new next
-                if new_next.previous_activity and new_next.previous_activity != instance:
-                    pass  # Don't break existing chains, just override
-                new_next.previous_activity = instance
-                new_next.save(user=user)
+        # Handle M2M invited_users
+        invited_users = validated_data.pop('_invited_users', None)
+        if invited_users is not None:
+            instance.invited_users.set(invited_users)
         
-        # Update instance fields
+        # Update other fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         
         instance.save(user=user)
-        
-        # Update M2M contacts if provided
-        if contacts is not None:
-            instance.contacts.set(contacts)
-        
         return instance

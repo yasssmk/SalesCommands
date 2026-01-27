@@ -98,6 +98,10 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'crud': 'update',
             'scope': 'client'
         },
+        'reopen': {
+            'crud': 'update',
+            'scope': 'client'
+        },
         'cancel': {
             'crud': 'update',
             'scope': 'client'
@@ -173,7 +177,9 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'created_by',
                 'updated_by'
             ).prefetch_related(
-                'contacts'
+                'contacts',
+                'contacts__standard_department',
+                'invited_users'
             )
         else:
             # Default: moderate optimization
@@ -442,13 +448,18 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     @transaction.atomic
     def complete(self, request, pk=None):
         """
-        Mark activity as completed.
+        Mark activity as completed or update outcome if already completed.
         
         POST /activities/{id}/complete/
         
         Body:
             - outcome (optional): ActivityOutcome choice
-            - notes (optional): Outcome notes
+            - outcome_notes (optional): Outcome notes
+        
+        Behavior:
+            - If not completed: completes the activity with outcome
+            - If already completed: updates outcome and outcome_notes only
+            - If cancelled: returns error
         """
         ctx = ctx_from_request(request)
         activity = self.get_object()
@@ -456,21 +467,17 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         logger.info("activity_complete_requested", extra={
             **ctx,
             'activity_id': str(activity.id),
+            'current_status': activity.status,
         })
         
-        # Validate not already completed
-        if activity.status == ActivityStatus.COMPLETED:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_DATA.format(detail='Activity is already completed')
-            )
-        
+        # Cannot complete a cancelled activity
         if activity.status == ActivityStatus.CANCELLED:
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_DATA.format(detail='Cannot complete a cancelled activity')
             )
         
         outcome = request.data.get('outcome')
-        notes = request.data.get('notes')
+        outcome_notes = request.data.get('outcome_notes') or request.data.get('notes')  # Support both field names
         
         # Validate outcome if provided
         if outcome and outcome not in ActivityOutcome.values:
@@ -478,19 +485,49 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 CoreErrorMessages.INVALID_FIELD.format(field='outcome')
             )
         
-        activity.complete(outcome=outcome, notes=notes, user=request.user)
-        
-        # Audit log
-        audit_log(
-            event='activity_complete_success',
-            action='update',
-            actor_id=str(request.user.id),
-            client_id=str(self.get_client_id()),
-            target_type='activity',
-            target_id=str(activity.id),
-            outcome='success',
-            extra={'activity_outcome': outcome}
-        )
+        # If already completed, just update outcome fields
+        if activity.status == ActivityStatus.COMPLETED:
+            logger.info("activity_outcome_update", extra={
+                **ctx,
+                'activity_id': str(activity.id),
+                'old_outcome': activity.outcome,
+                'new_outcome': outcome,
+            })
+            
+            # Update outcome fields only
+            if outcome is not None:
+                activity.outcome = outcome
+            if outcome_notes is not None:
+                activity.outcome_notes = outcome_notes
+            
+            activity.save(user=request.user)
+            
+            # Audit log
+            audit_log(
+                event='activity_outcome_updated',
+                action='update',
+                actor_id=str(request.user.id),
+                client_id=str(self.get_client_id()),
+                target_type='activity',
+                target_id=str(activity.id),
+                outcome='success',
+                extra={'activity_outcome': outcome}
+            )
+        else:
+            # Complete the activity
+            activity.complete(outcome=outcome, notes=outcome_notes, user=request.user)
+            
+            # Audit log
+            audit_log(
+                event='activity_complete_success',
+                action='update',
+                actor_id=str(request.user.id),
+                client_id=str(self.get_client_id()),
+                target_type='activity',
+                target_id=str(activity.id),
+                outcome='success',
+                extra={'activity_outcome': outcome}
+            )
         
         # Invalidate cache
         invalidate_tag(str(self.get_client_id()), 'activities')
@@ -499,6 +536,92 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             **ctx,
             'activity_id': str(activity.id),
             'outcome': outcome,
+        })
+        
+        serializer = ActivitySerializer(activity, context={'request': request})
+        return Response({
+            'success': True,
+            'data': serializer.data
+        })
+    
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def reopen(self, request, pk=None):
+        """
+        Reopen a completed or cancelled activity.
+        
+        POST /activities/{id}/reopen/
+        
+        Body:
+            - status (optional): Target status ('PLANNED' or 'IN_PROGRESS'), defaults to 'PLANNED'
+        
+        Behavior:
+            - Clears outcome, outcome_notes, and completed_at
+            - Sets status to PLANNED or IN_PROGRESS
+            - Only works on COMPLETED or CANCELLED activities
+        """
+        ctx = ctx_from_request(request)
+        activity = self.get_object()
+        
+        logger.info("activity_reopen_requested", extra={
+            **ctx,
+            'activity_id': str(activity.id),
+            'current_status': activity.status,
+        })
+        
+        # Can only reopen completed or cancelled activities
+        if activity.status not in [ActivityStatus.COMPLETED, ActivityStatus.CANCELLED]:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_DATA.format(
+                    detail='Only completed or cancelled activities can be reopened'
+                )
+            )
+        
+        # Get target status (default to PLANNED)
+        target_status = request.data.get('status', ActivityStatus.PLANNED)
+        
+        # Validate target status
+        valid_target_statuses = [ActivityStatus.PLANNED, ActivityStatus.IN_PROGRESS]
+        if target_status not in valid_target_statuses:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(
+                    field=f"status (must be one of: {', '.join(valid_target_statuses)})"
+                )
+            )
+        
+        old_status = activity.status
+        
+        # Clear outcome fields and reopen
+        activity.status = target_status
+        activity.outcome = None
+        activity.outcome_notes = None
+        activity.completed_at = None
+        
+        activity.save(user=request.user)
+        
+        # Audit log
+        audit_log(
+            event='activity_reopen_success',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='activity',
+            target_id=str(activity.id),
+            outcome='success',
+            extra={
+                'old_status': old_status,
+                'new_status': target_status
+            }
+        )
+        
+        # Invalidate cache
+        invalidate_tag(str(self.get_client_id()), 'activities')
+        
+        logger.info("activity_reopened", extra={
+            **ctx,
+            'activity_id': str(activity.id),
+            'old_status': old_status,
+            'new_status': target_status,
         })
         
         serializer = ActivitySerializer(activity, context={'request': request})

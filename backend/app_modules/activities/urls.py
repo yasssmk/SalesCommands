@@ -72,6 +72,10 @@ def get_urlpatterns():
         path('<uuid:pk>/complete/', ActivityViewSet.as_view({
             'post': 'complete'
         }), name='complete'),
+
+        path('<uuid:pk>/reopen/', ActivityViewSet.as_view({
+            'post': 'reopen'
+        }), name='reopen'),
         
         path('<uuid:pk>/cancel/', ActivityViewSet.as_view({
             'post': 'cancel'

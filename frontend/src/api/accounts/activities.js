@@ -134,6 +134,7 @@ const endpoints = {
   upcoming: '/module-activities/upcoming/',
   complete: (id) => `/module-activities/${id}/complete/`,
   cancel: (id) => `/module-activities/${id}/cancel/`,
+  reopen: (id) => `/module-activities/${id}/reopen/`,
   createWithEntities: '/module-activities/create-with-entities/',
   unlinkedByAccount: (accountId) => `/module-activities/unlinked/by-account/${accountId}/`,
   choices: '/module-activities/choices/',
@@ -996,6 +997,47 @@ export async function cancelActivity(activityId, payload = {}) {
   }
   
   const result = await api.post(endpoints.cancel(activityId), payload);
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.activities,
+      endpoints.activityDetail(activityId),
+      endpoints.myActivities,
+      endpoints.overdue,
+      '/company-accounts/'
+    ]);
+    const activityData = result.data?.data || result.data;
+    return { success: true, data: activityData };
+  }
+  
+  return { 
+    success: false, 
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null
+  };
+}
+
+/**
+ * REOPEN ACTIVITY
+ * 
+ * Reopens a completed or cancelled activity.
+ * Clears outcome, outcome_notes, and completed_at.
+ * 
+ * @param {string} activityId - UUID of the activity
+ * @param {Object} payload - {status?: 'PLANNED' | 'IN_PROGRESS'} - defaults to 'PLANNED'
+ * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ */
+export async function reopenActivity(activityId, payload = {}) {
+  if (!activityId || !isValidUUID(activityId)) {
+    return {
+      success: false,
+      error: 'Invalid activity ID format',
+      status: 400
+    };
+  }
+  
+  const result = await api.post(endpoints.reopen(activityId), payload);
   
   if (result.success) {
     revalidateMultiple([

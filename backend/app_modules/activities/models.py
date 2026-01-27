@@ -174,6 +174,14 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Owner'),
         help_text=_('User responsible for this activity')
     )
+
+    invited_users = models.ManyToManyField(
+        'end_users.User',
+        related_name='module_invited_activities',
+        blank=True,
+        verbose_name=_('Invited Users'),
+        help_text=_('Internal users invited to participate in this activity')
+    )
     
     # ==========================================================================
     # RELATIONSHIPS - DECISION CYCLE (OPTIONAL)
