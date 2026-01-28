@@ -147,11 +147,14 @@ export default function ActivityWorkspacePage() {
   return (
     <Box>
       {/* Breadcrumb Navigation */}
-      <WorkspaceBreadcrumb items={breadcrumbItems} />
+      <Box sx={{ mb: 2 }}>
+        <WorkspaceBreadcrumb items={breadcrumbItems} />
+      </Box>
 
       {/* Header */}
       <ActivityHeader 
-        activity={activity} 
+        activity={activity}
+        loading={activityLoading}
         onSave={handleSaveField} 
         onUpdate={mutateActivity}
       />
