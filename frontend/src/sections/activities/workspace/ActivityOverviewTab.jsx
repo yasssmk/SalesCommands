@@ -64,6 +64,7 @@ import {
 
 // Project imports - Utils & Hooks
 import AsyncUserSelect from 'components/AsyncSelection/AsyncUserSelect';
+import AsyncContactSelect from 'components/AsyncSelection/AsyncContactSelect';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
 import { useAuth } from 'hooks/useAuth';
 
@@ -72,7 +73,6 @@ import CheckOutlined from '@ant-design/icons/CheckOutlined';
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
-import UserOutlined from '@ant-design/icons/UserOutlined';
 import TeamOutlined from '@ant-design/icons/TeamOutlined';
 import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
 import BulbOutlined from '@ant-design/icons/BulbOutlined';
@@ -990,7 +990,7 @@ function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
   ];
 
   // Owner handlers
-  const handleOwnerSelect = (user) => {
+  const handleOwnerSelect = (event, user) => {
     setSelectedOwner(user);
   };
 
@@ -1016,7 +1016,7 @@ function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
   };
 
   // Invited users handlers
-  const handleUserSelect = (user) => {
+  const handleUserSelect = (event, user) => {
     setSelectedUser(user);
   };
 
@@ -1057,12 +1057,32 @@ function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
   return (
     <>
       <Box>
-        {/* Subsection Title */}
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-          <UserOutlined style={{ fontSize: 14, color: theme.palette.text.secondary }} />
-          <Typography variant="caption" fontWeight={600} color="text.secondary" textTransform="uppercase">
+      {/* Subsection Title with Add button */}
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5, minHeight: 30 }}>
+          <Typography 
+            variant="caption" 
+            fontWeight={600} 
+            color="text.secondary" 
+            textTransform="uppercase"
+          >
             Internal Team
           </Typography>
+          {!addingUser && (
+            <IconButton 
+              size="small" 
+              onClick={() => setAddingUser(true)} 
+              disabled={saving}
+              sx={{ 
+                p: 0.25,
+                color: theme.palette.success.main,
+                '&:hover': {
+                  bgcolor: 'success.lighter'
+                }
+              }}
+            >
+              <PlusOutlined style={{ fontSize: 14 }} />
+            </IconButton>
+          )}
         </Stack>
 
         <Stack spacing={1.5}>
@@ -1148,21 +1168,9 @@ function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
 
           {/* Invited Users */}
           <Box>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
               <Typography variant="caption" color="text.secondary">
                 Invited Users
               </Typography>
-              {!addingUser && (
-                <IconButton 
-                  size="small" 
-                  onClick={() => setAddingUser(true)} 
-                  disabled={saving}
-                  sx={{ p: 0.25 }}
-                >
-                  <PlusOutlined style={{ fontSize: 14 }} />
-                </IconButton>
-              )}
-            </Stack>
 
             <Stack spacing={1}>
               {invitedUsers.map((user) => (
@@ -1272,44 +1280,45 @@ InternalTeamSubsection.propTypes = {
 
 // ==============================|| SECTION 2: PEOPLE - EXTERNAL CONTACTS ||============================== //
 
+
 function ExternalContactsSubsection({ contacts = [], accountId, activityType, onSave }) {
   const theme = useTheme();
   const router = useRouter();
   
+  // Edit states
   const [addingContact, setAddingContact] = useState(false);
+  const [selectedContact, setSelectedContact] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [searchValue, setSearchValue] = useState('');
 
-  // Fetch account contacts for selection
-  const { contacts: accountContacts = [], contactsLoading } = useGetContacts({
-    account_id: accountId,
-    page_size: 50
-  });
+  // Build list of already assigned contact IDs for exclusion
+  const assignedContactIds = contacts.map((c) => c.id).filter(Boolean);
 
-  // Filter out already selected contacts
-  const availableContacts = accountContacts.filter(
-    (c) => !contacts.some((sc) => sc.id === c.id)
-  );
+  // Contact handlers
+  const handleContactSelect = (event, contact) => {
+    setSelectedContact(contact);
+  };
 
-  // Filter by search
-  const filteredContacts = availableContacts.filter((c) => {
-    const name = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
-    const email = (c.email || '').toLowerCase();
-    const search = searchValue.toLowerCase();
-    return name.includes(search) || email.includes(search);
-  });
-
-  const handleAddContact = async (contact) => {
-    if (!contact) return;
+  const handleContactConfirm = async () => {
+    if (!selectedContact?.id) return;
+    // Check if contact is already assigned
+    if (assignedContactIds.includes(selectedContact.id)) {
+      displayErrorSnackbar('This contact is already assigned');
+      return;
+    }
     setSaving(true);
-    const newContactIds = [...contacts.map((c) => c.id), contact.id];
+    const newContactIds = [...assignedContactIds, selectedContact.id];
     const success = await onSave('contact_ids', newContactIds);
     setSaving(false);
     if (success) {
       setAddingContact(false);
-      setSearchValue('');
+      setSelectedContact(null);
     }
+  };
+
+  const handleContactCancel = () => {
+    setAddingContact(false);
+    setSelectedContact(null);
   };
 
   const handleRemoveContact = async () => {
@@ -1333,18 +1342,15 @@ function ExternalContactsSubsection({ contacts = [], accountId, activityType, on
     <>
       <Box>
         {/* Subsection Title with Add button */}
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <TeamOutlined style={{ fontSize: 14, color: theme.palette.text.secondary }} />
-            <Typography variant="caption" fontWeight={600} color="text.secondary" textTransform="uppercase">
-              External Contacts
-            </Typography>
-          </Stack>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5, minHeight: 30 }}>
+          <Typography variant="caption" fontWeight={600} color="text.secondary" textTransform="uppercase">
+            External Contacts
+          </Typography>
           {!addingContact && (
             <IconButton 
               size="small" 
               onClick={() => setAddingContact(true)} 
-              disabled={saving || availableContacts.length === 0}
+              disabled={saving}
               sx={{ 
                 p: 0.25,
                 color: theme.palette.success.main,
@@ -1372,69 +1378,70 @@ function ExternalContactsSubsection({ contacts = [], accountId, activityType, on
             />
           ))}
 
-          {/* Add Contact Search Box */}
+          {/* Add Contact - Same pattern as InternalTeamSubsection */}
           {addingContact && (
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: 1,
-                bgcolor: 'background.paper',
-                border: '1px solid',
-                borderColor: 'success.light'
-              }}
-            >
-              <TextField
-                size="small"
-                fullWidth
-                placeholder="Search contacts..."
-                value={searchValue}
-                onChange={(e) => setSearchValue(e.target.value)}
-                autoFocus
-                sx={{ mb: 1 }}
-              />
-              <Stack spacing={0.5} sx={{ maxHeight: 150, overflow: 'auto' }}>
-                {contactsLoading ? (
-                  <Typography variant="caption" color="text.secondary">Loading...</Typography>
-                ) : filteredContacts.length === 0 ? (
-                  <Typography variant="caption" color="text.secondary">
-                    {searchValue ? 'No contacts found' : 'No more contacts available'}
-                  </Typography>
-                ) : (
-                  filteredContacts.slice(0, 5).map((contact) => (
-                    <Box
-                      key={contact.id}
-                      onClick={() => handleAddContact(contact)}
-                      sx={{
-                        p: 1,
-                        borderRadius: 0.5,
-                        cursor: 'pointer',
-                        '&:hover': { bgcolor: 'action.hover' }
-                      }}
-                    >
+            <Stack spacing={1}>
+              {/* Show selected contact preview OR search field */}
+              {selectedContact ? (
+                <Box
+                  sx={{
+                    p: 1,
+                    borderRadius: 1,
+                    bgcolor: 'success.lighter',
+                    border: '1px solid',
+                    borderColor: 'success.light'
+                  }}
+                >
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Box flex={1}>
                       <Typography variant="body2" fontWeight={500}>
-                        {contact.first_name} {contact.last_name}
+                        {selectedContact.first_name} {selectedContact.last_name}
                       </Typography>
-                      {contact.job_title && (
-                        <Typography variant="caption" color="text.secondary">
-                          {contact.job_title}
-                        </Typography>
-                      )}
+                      <Typography variant="caption" color="text.secondary">
+                        {selectedContact.job_title || selectedContact.email || ''}
+                      </Typography>
                     </Box>
-                  ))
-                )}
-              </Stack>
-              <Button
-                size="small"
-                onClick={() => {
-                  setAddingContact(false);
-                  setSearchValue('');
-                }}
-                sx={{ mt: 1 }}
-                fullWidth
-              >
-                Cancel
-              </Button>
-            </Box>
+                    <IconButton 
+                      size="small" 
+                      onClick={handleContactConfirm} 
+                      disabled={saving}
+                      sx={{ color: theme.palette.success.main }}
+                    >
+                      <CheckOutlined />
+                    </IconButton>
+                    <IconButton 
+                      size="small" 
+                      onClick={handleContactCancel} 
+                      disabled={saving}
+                      sx={{ color: theme.palette.error.main }}
+                    >
+                      <CloseOutlined />
+                    </IconButton>
+                  </Stack>
+                </Box>
+              ) : (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Box flex={1}>
+                    <AsyncContactSelect
+                      value={null}
+                      onChange={handleContactSelect}
+                      placeholder="Search contacts..."
+                      disabled={saving}
+                      filters={accountId ? { account_id: accountId } : {}}
+                      excludeIds={assignedContactIds}
+                    />
+                  </Box>
+                  <IconButton 
+                    size="small" 
+                    onClick={handleContactCancel} 
+                    disabled={saving}
+                    sx={{ color: theme.palette.error.main }}
+                  >
+                    <CloseOutlined />
+                  </IconButton>
+                </Stack>
+              )}
+            </Stack>
           )}
 
           {/* Empty state */}
@@ -1589,7 +1596,6 @@ function CycleStepSubsection({ activity, onSave }) {
         <Typography variant="caption" color="text.secondary" gutterBottom display="block">
           Decision Cycle
         </Typography>
-        <Stack direction="row" spacing={1} alignItems="center">
           <InlineSelectField
             value={currentCycleId}
             fieldKey="decision_cycle_id"
@@ -1599,16 +1605,6 @@ function CycleStepSubsection({ activity, onSave }) {
             placeholder="No cycle"
             disabled={cyclesLoading}
           />
-          {currentCycleId && (
-            <IconButton 
-              size="small" 
-              onClick={handleCycleClick}
-              sx={{ p: 0.25 }}
-            >
-              <LinkOutlined style={{ fontSize: 12, color: theme.palette.primary.main }} />
-            </IconButton>
-          )}
-        </Stack>
       </Box>
 
       {/* Step - only if cycle is selected */}
@@ -1617,7 +1613,6 @@ function CycleStepSubsection({ activity, onSave }) {
           <Typography variant="caption" color="text.secondary" gutterBottom display="block">
             Pipeline Step
           </Typography>
-          <Stack direction="row" spacing={1} alignItems="center">
             <InlineSelectField
               value={currentStepId}
               fieldKey="decision_step_id"
@@ -1627,16 +1622,6 @@ function CycleStepSubsection({ activity, onSave }) {
               placeholder="No step"
               disabled={stepsLoading}
             />
-            {currentStepId && (
-              <IconButton 
-                size="small" 
-                onClick={handleStepClick}
-                sx={{ p: 0.25 }}
-              >
-                <LinkOutlined style={{ fontSize: 12, color: theme.palette.primary.main }} />
-              </IconButton>
-            )}
-          </Stack>
         </Box>
       )}
     </Stack>

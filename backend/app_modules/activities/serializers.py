@@ -452,7 +452,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             if invited_user_ids:
                 invited_users = User.objects.filter(
                     id__in=invited_user_ids,
-                    client_id=client_id
+                    client_account_id=client_id
                 )
                 if invited_users.count() != len(invited_user_ids):
                     raise StandardizedValidationError(
@@ -575,6 +575,8 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         - outcome is only valid when status=COMPLETED
         - reopening (from COMPLETED to other status) clears outcome
     """
+
+    owner_id = serializers.UUIDField(write_only=True, required=False)
     
     contact_ids = serializers.ListField(
         child=serializers.UUIDField(),
@@ -603,7 +605,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'next_step_agreed', 'no_next_step_reason',
             
             # Relations
-            'contact_ids', 'invited_user_ids',
+            'owner_id', 'contact_ids', 'invited_user_ids',
             'decision_cycle_id', 'decision_step_id',
             'next_activity_id',
             
@@ -672,6 +674,28 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     attrs['_contacts'] = list(contacts)
             
             # =================================================================
+            # OWNER VALIDATION
+            # =================================================================
+            if 'owner_id' in attrs:
+                owner_id = attrs.pop('owner_id')
+                if owner_id:
+                    try:
+                        owner = User.objects.get(id=owner_id)
+                        if not owner.is_active:
+                            raise StandardizedValidationError(
+                                CoreErrorMessages.INVALID_FIELD.format(field='Owner (inactive user)')
+                            )
+                        if str(owner.client_account_id) != str(client_id):
+                            raise StandardizedValidationError(
+                                CoreErrorMessages.INVALID_FIELD.format(field='Owner (different client)')
+                            )
+                        attrs['owner'] = owner
+                    except User.DoesNotExist:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.OBJECT_NOT_FOUND
+                        )
+                    
+            # =================================================================
             # INVITED USERS VALIDATION
             # =================================================================
             if 'invited_user_ids' in attrs:
@@ -680,7 +704,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     if invited_user_ids:
                         invited_users = User.objects.filter(
                             id__in=invited_user_ids,
-                            client_id=client_id
+                            client_account_id=client_id
                         )
                         if invited_users.count() != len(invited_user_ids):
                             raise StandardizedValidationError(
