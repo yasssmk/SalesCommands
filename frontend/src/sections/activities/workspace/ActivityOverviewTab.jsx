@@ -26,6 +26,7 @@ import { useRouter } from 'next/navigation';
 import { useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -1635,66 +1636,166 @@ CycleStepSubsection.propTypes = {
 
 // ==============================|| SECTION 3: LINKED CONTEXT - ACTIVITIES ||============================== //
 
-function LinkedActivitiesSubsection({ activity, onSave }) {
-  const [confirmUnlink, setConfirmUnlink] = useState(null);
-  const [saving, setSaving] = useState(false);
+// ==============================|| SECTION 3: LINKED CONTEXT - ACTIVITIES ||============================== //
 
-  const previousActivity = activity?.previous_activity_info;
-  const nextActivity = activity?.next_activity_info;
+function LinkedActivitiesSubsection({ activity }) {
+  const theme = useTheme();
+  
+  // Use sequence_context for calculated previous/next (read-only)
+  const sequenceContext = activity?.sequence_context;
+  
+  // Check if activity belongs to a cycle
+  const hasCycle = Boolean(activity?.decision_cycle);
+  
+  // Get previous/next from sequence context (can be multiple)
+  const previousActivities = sequenceContext?.previous_activities || [];
+  const nextActivities = sequenceContext?.next_activities || [];
+  
+  // For backward compatibility, also check legacy fields for standalone activities
+  const legacyPrevious = !hasCycle ? activity?.previous_activity_info : null;
+  const legacyNext = !hasCycle ? activity?.next_activity_info : null;
+  
+  // Determine what to display
+  const displayPrevious = previousActivities.length > 0 
+    ? previousActivities 
+    : (legacyPrevious ? [legacyPrevious] : []);
+  const displayNext = nextActivities.length > 0 
+    ? nextActivities 
+    : (legacyNext ? [legacyNext] : []);
+  
+  // Position indicator
+  const position = sequenceContext?.position;
+  const total = sequenceContext?.total;
 
-  const handleUnlink = async (fieldKey) => {
-    setSaving(true);
-    const success = await onSave(fieldKey, null);
-    setSaving(false);
-    setConfirmUnlink(null);
-    return success;
-  };
+  // No cycle = show message
+  if (!hasCycle) {
+    return (
+      <Box>
+        <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+          Activity Sequence
+        </Typography>
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 1,
+            bgcolor: theme.palette.grey[50],
+            border: '1px dashed',
+            borderColor: theme.palette.grey[300],
+            textAlign: 'center'
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            Link this activity to a Decision Cycle to see its position in the sequence.
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
-    <>
-      <Stack direction="row" spacing={3} alignItems="flex-start" flexWrap="wrap" useFlexGap>
-        {/* Previous Activity */}
-        <Box sx={{ flex: 1, minWidth: 200 }}>
-          <ActivityMiniCard
-            activity={previousActivity}
-            label="Previous Activity"
-            onUnlink={previousActivity ? () => setConfirmUnlink('previous_activity_id') : undefined}
-            unlinkTooltip="Unlink previous"
+    <Box>
+      {/* Position indicator */}
+      {position && total && (
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
+          <Typography variant="caption" color="text.secondary">
+            Activity Sequence
+          </Typography>
+          <Chip
+            label={`${position} of ${total}`}
             size="small"
-            emptyText="No previous activity"
+            variant="outlined"
+            sx={{ 
+              height: 20, 
+              fontSize: '0.7rem',
+              bgcolor: theme.palette.primary.lighter,
+              borderColor: theme.palette.primary.light,
+              color: theme.palette.primary.dark
+            }}
           />
+        </Stack>
+      )}
+      
+      <Stack direction="row" spacing={3} alignItems="flex-start" flexWrap="wrap" useFlexGap>
+        {/* Previous Activity(ies) */}
+        <Box sx={{ flex: 1, minWidth: 200 }}>
+          {displayPrevious.length === 0 ? (
+            <ActivityMiniCard
+              activity={null}
+              label="Previous Activity"
+              size="small"
+              emptyText="First in sequence"
+              navigateOnClick={false}
+            />
+          ) : displayPrevious.length === 1 ? (
+            <ActivityMiniCard
+              activity={displayPrevious[0]}
+              label="Previous Activity"
+              size="small"
+              navigateOnClick={true}
+            />
+          ) : (
+            <Box>
+              <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+                Previous Activities ({displayPrevious.length})
+              </Typography>
+              <Stack spacing={0.5}>
+                {displayPrevious.map((act) => (
+                  <ActivityMiniCard
+                    key={act.id}
+                    activity={act}
+                    size="small"
+                    navigateOnClick={true}
+                    variant="compact"
+                  />
+                ))}
+              </Stack>
+            </Box>
+          )}
         </Box>
 
-        {/* Next Activity */}
+        {/* Next Activity(ies) */}
         <Box sx={{ flex: 1, minWidth: 200 }}>
-          <ActivityMiniCard
-            activity={nextActivity}
-            label="Next Activity"
-            onUnlink={nextActivity ? () => setConfirmUnlink('next_activity_id') : undefined}
-            unlinkTooltip="Unlink next"
-            size="small"
-            emptyText="No next activity"
-          />
+          {displayNext.length === 0 ? (
+            <ActivityMiniCard
+              activity={null}
+              label="Next Activity"
+              size="small"
+              emptyText="Last in sequence"
+              navigateOnClick={false}
+            />
+          ) : displayNext.length === 1 ? (
+            <ActivityMiniCard
+              activity={displayNext[0]}
+              label="Next Activity"
+              size="small"
+              navigateOnClick={true}
+            />
+          ) : (
+            <Box>
+              <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+                Next Activities ({displayNext.length})
+              </Typography>
+              <Stack spacing={0.5}>
+                {displayNext.map((act) => (
+                  <ActivityMiniCard
+                    key={act.id}
+                    activity={act}
+                    size="small"
+                    navigateOnClick={true}
+                    variant="compact"
+                  />
+                ))}
+              </Stack>
+            </Box>
+          )}
         </Box>
       </Stack>
-
-      {/* Confirm Unlink Dialog */}
-      <ConfirmDialog
-        open={!!confirmUnlink}
-        onClose={() => setConfirmUnlink(null)}
-        onConfirm={() => handleUnlink(confirmUnlink)}
-        title="Unlink Activity"
-        message={`Unlink this ${confirmUnlink === 'previous_activity_id' ? 'previous' : 'next'} activity?`}
-        confirmLabel="Unlink"
-        confirmColor="warning"
-      />
-    </>
+    </Box>
   );
 }
 
 LinkedActivitiesSubsection.propTypes = {
-  activity: PropTypes.object,
-  onSave: PropTypes.func.isRequired
+  activity: PropTypes.object
 };
 
 // ==============================|| SECTION 3: LINKED CONTEXT (MAIN) ||============================== //
@@ -1720,8 +1821,8 @@ function LinkedContextSection({ activity, onSave }) {
           {/* Divider */}
           <Divider />
 
-          {/* Row 2: Previous & Next Activities */}
-          <LinkedActivitiesSubsection activity={activity} onSave={onSave} />
+          {/* Row 2: Previous & Next Activities (read-only, calculated) */}
+          <LinkedActivitiesSubsection activity={activity} />
         </Stack>
       </Box>
     </Box>

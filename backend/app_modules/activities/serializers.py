@@ -16,7 +16,7 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from end_users.models import User
 from .models import Activity
 from .constants import ActivityType, ActivityStatus, ActivityOutcome
-
+from .services import ActivitySequenceService, SequenceScope
 
 # ============================================================================
 # HELPER SERIALIZERS
@@ -237,6 +237,10 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Previous/Next activity info
     previous_activity_info = serializers.SerializerMethodField(read_only=True)
     next_activity_info = serializers.SerializerMethodField(read_only=True)
+
+    # Sequence context (NEW - dynamic calculation based on scope)
+    # Replaces manual previous/next with calculated sequence
+    sequence_context = serializers.SerializerMethodField(read_only=True)
     
     # Computed fields
     is_overdue = serializers.BooleanField(read_only=True)
@@ -256,38 +260,37 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'outcome', 'outcome_display',
             'outcome_notes',
             
-            # Next Step Agreement
-            'next_step_agreed', 'no_next_step_reason',
-            
-            # Description & CTA
-            'description', 'call_to_action',
-            
             # Scheduling
             'scheduled_date', 'scheduled_time',
             'due_date', 'completed_at',
             
-            # Relations (IDs)
-            'account', 'owner',
-            'decision_cycle', 'decision_step',
+            # Content
+            'description', 'call_to_action',
             
-            # Relations (detailed)
-            'account_detail', 'invited_users_detail', 'contacts_detail', 'owner_detail',
+            # Next Step Agreement
+            'next_step_agreed',
+            
+            # Relations (IDs for write)
+            'account', 'decision_cycle', 'decision_step',
+            
+            # Relations (nested for read)
+            'account_detail', 'contacts_detail', 'owner_detail', 
+            'invited_users_detail',
             'decision_cycle_detail', 'decision_step_detail',
             
-            # Linked list
+            # Previous/Next activity (DEPRECATED - kept for backward compatibility)
             'previous_activity', 'next_activity',
             'previous_activity_info', 'next_activity_info',
+            
+            # Sequence context (NEW - dynamic playlist calculation)
+            'sequence_context',
             
             # Future fields (stubs)
             'transcript', 'preparation_notes',
             
             # Computed
-            'is_overdue', 'is_scheduled',
-            'has_previous', 'has_next',
-            
-            # Audit
-            'created_by', 'updated_by',
-            'created_at', 'updated_at'
+            'is_overdue', 'is_scheduled', 'has_previous', 'has_next',
+            'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
 
         read_only_fields = [
@@ -309,6 +312,25 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         return obj.get_outcome_display() if obj.outcome else None
     
     def get_previous_activity_info(self, obj):
+        """
+        DEPRECATED: Use sequence_context.previous_activities instead.
+        
+        Kept for backward compatibility during frontend migration.
+        Now returns first activity from sequence_context if available,
+        falls back to manual previous_activity field.
+        """
+        # If activity belongs to a cycle, use calculated sequence
+        if obj.decision_cycle_id:
+            context = ActivitySequenceService.get_sequence_context(
+                activity=obj,
+                scope=SequenceScope.DECISION_CYCLE
+            )
+            if context and context.get('previous_activities'):
+                # Return first previous activity for backward compatibility
+                return context['previous_activities'][0]
+            return None
+        
+        # Fallback to manual field for standalone activities
         if obj.previous_activity:
             return {
                 'id': str(obj.previous_activity.id),
@@ -319,6 +341,25 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         return None
     
     def get_next_activity_info(self, obj):
+        """
+        DEPRECATED: Use sequence_context.next_activities instead.
+        
+        Kept for backward compatibility during frontend migration.
+        Now returns first activity from sequence_context if available,
+        falls back to manual next_activity field.
+        """
+        # If activity belongs to a cycle, use calculated sequence
+        if obj.decision_cycle_id:
+            context = ActivitySequenceService.get_sequence_context(
+                activity=obj,
+                scope=SequenceScope.DECISION_CYCLE
+            )
+            if context and context.get('next_activities'):
+                # Return first next activity for backward compatibility
+                return context['next_activities'][0]
+            return None
+        
+        # Fallback to manual field for standalone activities
         if obj.next_activity:
             return {
                 'id': str(obj.next_activity.id),
@@ -327,6 +368,27 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 'status': obj.next_activity.status
             }
         return None
+    
+    def get_sequence_context(self, obj):
+        """
+        Get the dynamic sequence context for this activity.
+        
+        Calculates previous/next activities based on:
+        - decision_step.order (pipeline position)
+        - COALESCE(scheduled_date, due_date)
+        - COALESCE(scheduled_time, due_time)
+        - created_at (fallback)
+        
+        Returns None if activity doesn't belong to a decision_cycle.
+        """
+        # Only calculate for activities linked to a cycle
+        if not obj.decision_cycle_id:
+            return None
+        
+        return ActivitySequenceService.get_sequence_context(
+            activity=obj,
+            scope=SequenceScope.DECISION_CYCLE
+        )
 
 
 # ============================================================================
@@ -474,7 +536,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     attrs['decision_cycle'] = decision_cycle
                 except DecisionCycle.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.NOT_FOUND.format(resource='Decision Cycle')
+                        CoreErrorMessages.OBJECT_NOT_FOUND
                     )
             
             # =================================================================

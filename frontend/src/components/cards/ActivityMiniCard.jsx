@@ -81,6 +81,7 @@ export default function ActivityMiniCard({
   showTypeIcon = true,
   variant = 'default',
   size = 'medium',
+  displayVariant = 'default',
   navigateOnClick = true,
   emptyText = 'None',
   sx = {}
@@ -152,11 +153,78 @@ export default function ActivityMiniCard({
   };
 
   // Build metadata line
+  const effectiveDate = activity.scheduled_date || activity.due_date;
   const metaParts = [
     TYPE_LABELS[activity.activity_type] || activity.activity_type,
-    showDate && activity.scheduled_date && formatDate(activity.scheduled_date)
+    showDate && effectiveDate && formatDate(effectiveDate)
   ].filter(Boolean);
 
+  // ========== COMPACT VARIANT ==========
+  // Used when displaying multiple activities in a list (e.g., multiple previous/next)
+  if (displayVariant === 'compact') {
+    return (
+      <Box
+        onClick={navigateOnClick ? handleClick : undefined}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          py: 0.5,
+          px: 1,
+          borderRadius: 0.5,
+          bgcolor: 'grey.50',
+          cursor: navigateOnClick ? 'pointer' : 'default',
+          '&:hover': navigateOnClick ? {
+            bgcolor: 'grey.100',
+            '& .compact-title': { textDecoration: 'underline' }
+          } : {},
+          ...sx
+        }}
+      >
+        {/* Type Icon */}
+        <Box sx={{ display: 'flex', color: 'warning.main' }}>
+          <TypeIcon style={{ fontSize: 12 }} />
+        </Box>
+        
+        {/* Title */}
+        <Typography 
+          variant="caption" 
+          fontWeight={500} 
+          color={navigateOnClick ? 'primary.main' : 'text.primary'}
+          className="compact-title"
+          noWrap
+          sx={{ flex: 1, minWidth: 0 }}
+        >
+          {activity.title}
+        </Typography>
+        
+        {/* Date (compact) */}
+        {showDate && effectiveDate && (
+          <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+            {formatDate(effectiveDate)}
+          </Typography>
+        )}
+        
+        {/* Status dot instead of chip */}
+        {showStatus && activity.status && (
+          <Box
+            sx={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              bgcolor: activity.status === 'COMPLETED' ? 'success.main' 
+                : activity.status === 'CANCELLED' ? 'error.main'
+                : activity.status === 'IN_PROGRESS' ? 'info.main'
+                : 'grey.400',
+              flexShrink: 0
+            }}
+          />
+        )}
+      </Box>
+    );
+  }
+
+  // ========== DEFAULT VARIANT ==========
   return (
     <Box sx={sx}>
       {/* Optional label above card */}
@@ -233,7 +301,8 @@ ActivityMiniCard.propTypes = {
     title: PropTypes.string,
     activity_type: PropTypes.string,
     status: PropTypes.string,
-    scheduled_date: PropTypes.string
+    scheduled_date: PropTypes.string,
+    due_date: PropTypes.string
   }),
   /** Label displayed above the card */
   label: PropTypes.string,
@@ -247,10 +316,12 @@ ActivityMiniCard.propTypes = {
   showStatus: PropTypes.bool,
   /** Show type icon */
   showTypeIcon: PropTypes.bool,
-  /** Visual variant */
+  /** Card visual variant (passed to RemovableCard) */
   variant: PropTypes.oneOf(['default', 'outlined', 'filled']),
   /** Size variant */
   size: PropTypes.oneOf(['small', 'medium', 'large']),
+  /** Display variant: default (full card) or compact (inline for lists) */
+  displayVariant: PropTypes.oneOf(['default', 'compact']),
   /** Navigate to activity on click */
   navigateOnClick: PropTypes.bool,
   /** Text to show when activity is null */

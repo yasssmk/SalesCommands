@@ -14,6 +14,7 @@
 
 import { useState } from 'react';
 import PropTypes from 'prop-types';
+import { useTheme } from '@mui/material/styles';
 
 // MUI
 import Box from '@mui/material/Box';
@@ -201,10 +202,26 @@ KeyTakeawaysSection.propTypes = {
 
 function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate }) {
   const router = useRouter();
+  const theme = useTheme();
   
-  // Get next activity info from the activity object
-  const nextActivityInfo = activity?.next_activity_info;
-  const hasNextActivity = Boolean(nextActivityInfo);
+  // Check if activity belongs to a decision cycle
+  const hasCycle = Boolean(activity?.decision_cycle);
+  
+  // Get next activities from sequence_context (calculated) or legacy field (manual)
+  const sequenceContext = activity?.sequence_context;
+  const nextActivitiesFromSequence = sequenceContext?.next_activities || [];
+  const legacyNextActivity = activity?.next_activity_info;
+  
+  // Determine what to display
+  const nextActivities = hasCycle 
+    ? nextActivitiesFromSequence 
+    : (legacyNextActivity ? [legacyNextActivity] : []);
+  const hasNextActivity = nextActivities.length > 0;
+  
+  // Sequence position info
+  const position = sequenceContext?.position;
+  const total = sequenceContext?.total;
+  const isLastInSequence = position === total;
 
   // Navigate to activity workspace
   const handleActivityClick = (activityId) => {
@@ -213,9 +230,9 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
     }
   };
 
-  // Unlink next activity
+  // Unlink next activity (only for standalone activities without cycle)
   const handleUnlinkActivity = async () => {
-    if (!activity?.id) return;
+    if (!activity?.id || hasCycle) return;
     
     try {
       const result = await updateActivity(activity.id, {
@@ -230,6 +247,12 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
     } catch (error) {
       displayErrorSnackbar('An error occurred');
     }
+  };
+
+  // Format date helper
+  const formatDate = (dateStr) => {
+    if (!dateStr) return null;
+    return new Date(dateStr).toLocaleDateString();
   };
 
   return (
@@ -269,78 +292,122 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
           >
             Internal Task
           </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            color="secondary"
-            startIcon={<LinkOutlined />}
-            onClick={onLinkExisting}
-          >
-            Link Existing
-          </Button>
+          {/* Link Existing only for standalone activities (no cycle) */}
+          {!hasCycle && (
+            <Button
+              variant="outlined"
+              size="small"
+              color="secondary"
+              startIcon={<LinkOutlined />}
+              onClick={onLinkExisting}
+            >
+              Link Existing
+            </Button>
+          )}
         </Stack>
 
-        {/* Next Activity Card (if linked) */}
+        {/* Next Activities Display */}
         {hasNextActivity && (
           <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-              Linked next activity:
-            </Typography>
-            <Card 
-              variant="outlined" 
-              sx={{ 
-                p: 1.5, 
-                cursor: 'pointer',
-                '&:hover': { bgcolor: 'action.hover' }
-              }}
-            >
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Stack 
-                  direction="row" 
-                  spacing={1.5} 
-                  alignItems="center"
-                  onClick={() => handleActivityClick(nextActivityInfo.id)}
-                  sx={{ flex: 1, cursor: 'pointer' }}
-                >
-                  <Chip
-                    label={ACTIVITY_TYPE_LABELS[nextActivityInfo.activity_type] || nextActivityInfo.activity_type}
-                    size="small"
-                    variant="outlined"
-                  />
-                  <Typography variant="body2" fontWeight={500}>
-                    {nextActivityInfo.title}
-                  </Typography>
-                  {nextActivityInfo.scheduled_date && (
-                    <Typography variant="caption" color="text.secondary">
-                      {new Date(nextActivityInfo.scheduled_date).toLocaleDateString()}
-                    </Typography>
-                  )}
-                  <Chip
-                    label={ACTIVITY_STATUS_LABELS[nextActivityInfo.status] || nextActivityInfo.status}
-                    size="small"
-                    color={ACTIVITY_STATUS_COLORS[nextActivityInfo.status] || 'default'}
-                  />
-                </Stack>
-                <IconButton 
-                  size="small" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleUnlinkActivity();
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                {hasCycle ? 'Next in sequence:' : 'Linked next activity:'}
+              </Typography>
+              {hasCycle && nextActivities.length > 1 && (
+                <Chip
+                  label={`${nextActivities.length} activities`}
+                  size="small"
+                  variant="outlined"
+                  sx={{ height: 18, fontSize: '0.7rem' }}
+                />
+              )}
+            </Stack>
+            
+            <Stack spacing={1}>
+              {nextActivities.map((nextAct) => (
+                <Card 
+                  key={nextAct.id}
+                  variant="outlined" 
+                  sx={{ 
+                    p: 1.5, 
+                    cursor: 'pointer',
+                    '&:hover': { bgcolor: 'action.hover' }
                   }}
-                  sx={{ ml: 1 }}
                 >
-                  <CloseOutlined />
-                </IconButton>
-              </Stack>
-            </Card>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Stack 
+                      direction="row" 
+                      spacing={1.5} 
+                      alignItems="center"
+                      onClick={() => handleActivityClick(nextAct.id)}
+                      sx={{ flex: 1, cursor: 'pointer' }}
+                    >
+                      <Chip
+                        label={ACTIVITY_TYPE_LABELS[nextAct.activity_type] || nextAct.activity_type}
+                        size="small"
+                        variant="outlined"
+                      />
+                      <Typography variant="body2" fontWeight={500}>
+                        {nextAct.title}
+                      </Typography>
+                      {(nextAct.scheduled_date || nextAct.due_date) && (
+                        <Typography variant="caption" color="text.secondary">
+                          {formatDate(nextAct.scheduled_date || nextAct.due_date)}
+                        </Typography>
+                      )}
+                      <Chip
+                        label={ACTIVITY_STATUS_LABELS[nextAct.status] || nextAct.status}
+                        size="small"
+                        color={ACTIVITY_STATUS_COLORS[nextAct.status] || 'default'}
+                      />
+                    </Stack>
+                    {/* Unlink button only for standalone activities (no cycle) */}
+                    {!hasCycle && (
+                      <IconButton 
+                        size="small" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUnlinkActivity();
+                        }}
+                        sx={{ ml: 1 }}
+                      >
+                        <CloseOutlined />
+                      </IconButton>
+                    )}
+                  </Stack>
+                </Card>
+              ))}
+            </Stack>
           </Box>
         )}
 
         {/* Empty state hint */}
         {!hasNextActivity && (
-          <Typography variant="caption" color="text.secondary">
-            Create or link a follow-up activity. If completed without a next step, it will be marked as "No next step agreed".
-          </Typography>
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 1,
+              bgcolor: theme.palette.grey[50],
+              border: '1px dashed',
+              borderColor: theme.palette.grey[300]
+            }}
+          >
+            {hasCycle ? (
+              isLastInSequence ? (
+                <Typography variant="body2" color="text.secondary" textAlign="center">
+                  This is the last activity in the sequence. Create a new activity to continue the cycle.
+                </Typography>
+              ) : (
+                <Typography variant="body2" color="text.secondary" textAlign="center">
+                  No activities scheduled after this one in the cycle. Create a follow-up to continue.
+                </Typography>
+              )
+            ) : (
+              <Typography variant="body2" color="text.secondary" textAlign="center">
+                Create or link a follow-up activity. If completed without a next step, it will be marked as "No next step agreed".
+              </Typography>
+            )}
+          </Box>
         )}
       </Stack>
     </SectionCard>
