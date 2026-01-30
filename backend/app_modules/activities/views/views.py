@@ -16,7 +16,7 @@ from django.utils import timezone
 
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, ActivityErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
 from core.logging import get_logger, ctx_from_request
@@ -36,8 +36,6 @@ from ..serializers import (
 from ..constants import ActivityType, ActivityStatus, ActivityOutcome
 from ..filters import ActivityFilter
 from ..services.activity_creation_service import ActivityCreationService
-from ..constants import ActivityType, ActivityStatus, ActivityOutcome
-from ..filters import ActivityFilter
 
 logger = get_logger(__name__)
 
@@ -473,7 +471,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         # Cannot complete a cancelled activity
         if activity.status == ActivityStatus.CANCELLED:
             raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_DATA.format(detail='Cannot complete a cancelled activity')
+                ActivityErrorMessages.CANNOT_COMPLETE_CANCELLED
             )
         
         outcome = request.data.get('outcome')
@@ -572,9 +570,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         # Can only reopen completed or cancelled activities
         if activity.status not in [ActivityStatus.COMPLETED, ActivityStatus.CANCELLED]:
             raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_DATA.format(
-                    detail='Only completed or cancelled activities can be reopened'
-                )
+                ActivityErrorMessages.CANNOT_REOPEN
             )
         
         # Get target status (default to PLANNED)
@@ -584,9 +580,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         valid_target_statuses = [ActivityStatus.PLANNED, ActivityStatus.IN_PROGRESS]
         if target_status not in valid_target_statuses:
             raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(
-                    field=f"status (must be one of: {', '.join(valid_target_statuses)})"
-                )
+                ActivityErrorMessages.INVALID_TARGET_STATUS
             )
         
         old_status = activity.status
@@ -652,12 +646,12 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         # Validate not already completed or cancelled
         if activity.status == ActivityStatus.COMPLETED:
             raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_DATA.format(detail='Cannot cancel a completed activity')
+                ActivityErrorMessages.CANNOT_CANCEL_COMPLETED
             )
         
         if activity.status == ActivityStatus.CANCELLED:
             raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_DATA.format(detail='Activity is already cancelled')
+                ActivityErrorMessages.ALREADY_CANCELLED
             )
         
         notes = request.data.get('notes')

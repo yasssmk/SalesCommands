@@ -8,7 +8,7 @@ Follows the same patterns as CompanyAccountSerializer and DecisionCycleSerialize
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, ActivityErrorMessages, AccountErrorMessages
 from core.exceptions import StandardizedValidationError
 from app_modules.accounts.models import CompanyAccount
 from app_modules.contacts.models import Contact
@@ -54,22 +54,14 @@ class ActivityContactSerializer(serializers.ModelSerializer):
             return obj.standard_department.get_name_display()
         return None
 
-
-class ActivityOwnerSerializer(serializers.ModelSerializer):
-    """Minimal user serializer for activity owner."""
+class ActivityUserSerializer(serializers.ModelSerializer):
+    """
+    Minimal user serializer for activity-related users.
     
-    full_name = serializers.SerializerMethodField(read_only=True)
-    
-    class Meta:
-        model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'full_name']
-        read_only_fields = fields
-    
-    def get_full_name(self, obj):
-        return f"{obj.first_name or ''} {obj.last_name or ''}".strip()
-
-class ActivityInvitedUserSerializer(serializers.ModelSerializer):
-    """Minimal user serializer for invited users."""
+    Used for:
+        - Activity owner
+        - Invited users
+    """
     
     full_name = serializers.SerializerMethodField(read_only=True)
     
@@ -229,8 +221,8 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Nested serializers for relations
     account_detail = ActivityAccountSerializer(source='account', read_only=True)
     contacts_detail = ActivityContactSerializer(source='contacts', many=True, read_only=True)
-    owner_detail = ActivityOwnerSerializer(source='owner', read_only=True)
-    invited_users_detail = ActivityInvitedUserSerializer(source='invited_users', many=True, read_only=True)
+    owner_detail = ActivityUserSerializer(source='owner', read_only=True)
+    invited_users_detail = ActivityUserSerializer(source='invited_users', many=True, read_only=True)
     decision_cycle_detail = ActivityDecisionCycleSerializer(source='decision_cycle', read_only=True)
     decision_step_detail = ActivityDecisionStepSerializer(source='decision_step', read_only=True)
     
@@ -462,14 +454,11 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             False: explicitly marked as no next step AND no pending activities
             None: unknown, UI should prompt user
         """
-        import logging
-        logger = logging.getLogger(__name__)
         
         # Priority 1: Check sequence context for PENDING activities in cycle
         # Reality (actual pending activities) takes precedence over past declarations
         if obj.decision_cycle_id:
             context = self._get_cached_sequence_context(obj)
-            logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: Priority 1 - checking sequence context")
             
             if context and context.get('next_activities'):
                 all_next = context['next_activities']
@@ -479,26 +468,18 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                     act for act in all_next
                     if act.get('status') in ('PLANNED', 'IN_PROGRESS')
                 ]
-                logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: pending_next count={len(pending_next)}")
                 
                 if pending_next:
-                    logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: returning True (has pending next in sequence)")
                     return True
         
         # Priority 2: Check legacy next_activity FK for standalone
         if obj.next_activity_id:
-            logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: Priority 2 - checking legacy FK")
             if obj.next_activity and obj.next_activity.status in ('PLANNED', 'IN_PROGRESS'):
-                logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: returning True (legacy FK pending)")
                 return True
         
         # Priority 3: Explicit value (only applies when no pending activities exist)
         if obj.next_step_agreed is not None:
-            logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: Priority 3 - explicit next_step_agreed={obj.next_step_agreed}")
             return obj.next_step_agreed
-        
-        # Priority 4: Unknown - UI should prompt
-        logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: Priority 4 - returning None (unknown)")
         return None
     
     def _get_cached_sequence_context(self, obj):
@@ -603,7 +584,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 attrs['account'] = account
             except CompanyAccount.DoesNotExist:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.NOT_FOUND.format(resource='Account')
+                    AccountErrorMessages.ACCOUNT_NOT_FOUND
                 )
             
             # =================================================================
@@ -677,9 +658,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 decision_cycle = attrs.get('decision_cycle')
                 if not decision_cycle:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_DATA.format(
-                            detail='Decision step requires a decision cycle'
-                        )
+                        ActivityErrorMessages.CYCLE_REQUIRED_FOR_STEP
                     )
                 try:
                     decision_step = DecisionStep.objects.get(
@@ -689,13 +668,13 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     attrs['decision_step'] = decision_step
                 except DecisionStep.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.NOT_FOUND.format(resource='Decision Step')
+                        CoreErrorMessages.OBJECT_NOT_FOUND
                     )
             
             # RULE: If cycle is provided, step is REQUIRED (pipeline steps are fixed)
             if attrs.get('decision_cycle') and not attrs.get('decision_step'):
                 raise StandardizedValidationError(
-                    "A pipeline step is required when linking to a decision cycle"
+                    ActivityErrorMessages.STEP_REQUIRES_CYCLE
                 )
             
             # =================================================================
@@ -712,7 +691,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     attrs['previous_activity'] = previous_activity
                 except Activity.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.NOT_FOUND.format(resource='Previous Activity')
+                        CoreErrorMessages.OBJECT_NOT_FOUND
                     )
             
             return attrs
@@ -921,7 +900,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         attrs['decision_cycle'] = decision_cycle
                     except DecisionCycle.DoesNotExist:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.NOT_FOUND.format(resource='Decision Cycle')
+                            CoreErrorMessages.OBJECT_NOT_FOUND
                         )
                 else:
                     attrs['decision_cycle'] = None
@@ -939,9 +918,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     decision_cycle = attrs.get('decision_cycle', instance.decision_cycle)
                     if not decision_cycle:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.INVALID_DATA.format(
-                                detail='Decision step requires a decision cycle'
-                            )
+                            ActivityErrorMessages.CYCLE_REQUIRED_FOR_STEP
                         )
                     try:
                         decision_step = DecisionStep.objects.get(
@@ -951,7 +928,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         attrs['decision_step'] = decision_step
                     except DecisionStep.DoesNotExist:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.NOT_FOUND.format(resource='Decision Step')
+                            CoreErrorMessages.OBJECT_NOT_FOUND
                         )
                 else:
                     attrs['decision_step'] = None
@@ -971,14 +948,12 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         # Prevent circular reference
                         if next_activity.id == instance.id:
                             raise StandardizedValidationError(
-                                CoreErrorMessages.INVALID_DATA.format(
-                                    detail='Activity cannot be its own next activity'
-                                )
+                                ActivityErrorMessages.CIRCULAR_REFERENCE
                             )
                         attrs['next_activity'] = next_activity
                     except Activity.DoesNotExist:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.NOT_FOUND.format(resource='Next Activity')
+                            CoreErrorMessages.OBJECT_NOT_FOUND
                         )
                 else:
                     attrs['next_activity'] = None
@@ -994,7 +969,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 if next_step_agreed is False:
                     if not no_next_step_reason:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.REQUIRED_FIELD.format(field='Reason for no next step')
+                            ActivityErrorMessages.NO_NEXT_STEP_REASON_REQUIRED
                         )
                     
                     # Validate reason format: must be standard code or "OTHER: text"
@@ -1004,9 +979,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     
                     if not is_standard_code and not is_other_format:
                         raise StandardizedValidationError(
-                            CoreErrorMessages.INVALID_FIELD.format(
-                                field=f"Reason must be one of {', '.join(valid_codes)} or 'OTHER: <custom text>'"
-                            )
+                            ActivityErrorMessages.INVALID_NO_NEXT_STEP_REASON
                         )
                 
                 # Rule: If setting next_step_agreed to True or None, clear no_next_step_reason

@@ -7,6 +7,7 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 // MUI
+import { useTheme } from '@mui/material/styles';
 import { alpha } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -58,6 +59,8 @@ const TYPE_ICONS = {
 // ==============================|| ACTIVITY ROW (with navigation) ||============================== //
 
 function ActivityRow({ activity, onNavigate, onComplete, onCancel }) {
+  const theme = useTheme();
+
   const TypeIcon = TYPE_ICONS[activity.activity_type] || QuestionCircleOutlined;
   const isCompleted = activity.status === 'COMPLETED';
   const isCancelled = activity.status === 'CANCELLED';
@@ -95,7 +98,7 @@ function ActivityRow({ activity, onNavigate, onComplete, onCancel }) {
               bgcolor: 'action.hover'
             }}
           >
-            <TypeIcon style={{ fontSize: 18 }} />
+            <TypeIcon style={{ fontSize: theme.iconSizes.lg}} />
           </Box>
         </Tooltip>
         
@@ -118,7 +121,7 @@ function ActivityRow({ activity, onNavigate, onComplete, onCancel }) {
             </Typography>
             {activity.scheduled_date && (
               <Stack direction="row" alignItems="center" spacing={0.5}>
-                <CalendarOutlined style={{ fontSize: 11, opacity: 0.6 }} />
+                <CalendarOutlined style={{ fontSize: theme.iconSizes.xs , opacity: 0.6 }} />
                 <Typography variant="caption" color="text.secondary">
                   {formatDateOnly(activity.scheduled_date)}
                 </Typography>
@@ -145,21 +148,21 @@ function ActivityRow({ activity, onNavigate, onComplete, onCancel }) {
           {canComplete && (
             <Tooltip title="Mark Complete">
               <IconButton size="small" color="success" onClick={() => onComplete(activity)}>
-                <CheckCircleOutlined style={{ fontSize: 16 }} />
+                <CheckCircleOutlined style={{ fontSize: theme.iconSizes.md  }} />
               </IconButton>
             </Tooltip>
           )}
           {canComplete && (
             <Tooltip title="Cancel">
               <IconButton size="small" color="warning" onClick={() => onCancel(activity)}>
-                <CloseCircleOutlined style={{ fontSize: 16 }} />
+                <CloseCircleOutlined style={{ fontSize: theme.iconSizes.md  }} />
               </IconButton>
             </Tooltip>
           )}
         </Stack>
         
         {/* Navigate arrow */}
-        <RightOutlined style={{ fontSize: 14, opacity: 0.4 }} />
+        <RightOutlined style={{ fontSize: theme.iconSizes.sm, opacity: 0.4 }} />
       </Stack>
     </Box>
   );

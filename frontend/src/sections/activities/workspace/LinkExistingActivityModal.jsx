@@ -12,6 +12,7 @@ import { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
 
 // MUI
+import { useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
@@ -46,6 +47,8 @@ import { displayErrorSnackbar } from 'utils/displayError';
 // ==============================|| ACTIVITY LIST ITEM ||============================== //
 
 function ActivityListItem({ activity, selected, onSelect }) {
+  const theme = useTheme();
+
   return (
     <ListItemButton
       selected={selected}
@@ -92,7 +95,12 @@ function ActivityListItem({ activity, selected, onSelect }) {
         
         {/* Selected indicator */}
         {selected && (
-          <CheckOutlined style={{ color: '#1890ff', fontSize: 18 }} />
+          <CheckOutlined 
+            style={{ 
+              color: theme.palette.primary.main, 
+              fontSize: theme.iconSizes.lg 
+            }} 
+          />
         )}
       </Stack>
     </ListItemButton>

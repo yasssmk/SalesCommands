@@ -631,7 +631,7 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
                 attrs['cycle'] = cycle
             except DecisionCycle.DoesNotExist:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.NOT_FOUND.format(resource='Decision Cycle')
+                    CoreErrorMessages.OBJECT_NOT_FOUND
                 )
         
         # Validate previous_step exists and belongs to same cycle
@@ -648,7 +648,7 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
                 attrs['previous_step'] = previous_step
             except DecisionStep.DoesNotExist:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.NOT_FOUND.format(resource='Previous Step')
+                    CoreErrorMessages.OBJECT_NOT_FOUND
                 )
         
         return attrs
@@ -745,7 +745,7 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
                     attrs['previous_step'] = previous_step
                 except DecisionStep.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.NOT_FOUND.format(resource='Previous Step')
+                        CoreErrorMessages.OBJECT_NOT_FOUND
                     )
             else:
                 attrs['previous_step'] = None

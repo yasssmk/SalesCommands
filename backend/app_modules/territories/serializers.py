@@ -62,7 +62,7 @@ class TerritoryValidationMixin:
                 )
         except User.DoesNotExist:
             raise StandardizedValidationError(
-                CoreErrorMessages.NOT_FOUND.format(resource='Owner')
+                CoreErrorMessages.OBJECT_NOT_FOUND
             )
     
     def _validate_filter_account_owner(self, owner_id):

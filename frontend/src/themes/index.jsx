@@ -10,6 +10,7 @@ import useConfig from 'hooks/useConfig';
 import Palette from './palette';
 import Typography from './typography';
 import CustomShadows from './shadows';
+import IconSizes from './iconSizes';
 import componentsOverride from './overrides';
 import { NextAppDirEmotionCacheProvider } from './emotionCache';
 
@@ -23,6 +24,7 @@ const ThemeCustomization = React.memo(function ThemeCustomization({ children }) 
 
   const themeTypography = useMemo(() => Typography(fontFamily), [fontFamily]);
   const themeCustomShadows = useMemo(() => CustomShadows(theme), [theme]);
+   const themeIconSizes = useMemo(() => IconSizes(), []);
 
   const themeOptions = useMemo(
     () => ({
@@ -45,7 +47,8 @@ const ThemeCustomization = React.memo(function ThemeCustomization({ children }) 
       },
       palette: theme.palette,
       customShadows: themeCustomShadows,
-      typography: themeTypography
+      typography: themeTypography,
+      iconSizes: IconSizes
     }),
     [themeDirection, theme, themeTypography, themeCustomShadows]
   );

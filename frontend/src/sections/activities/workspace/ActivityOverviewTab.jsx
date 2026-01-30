@@ -90,7 +90,7 @@ function SectionHeader({ icon: Icon, title }) {
   
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-      {Icon && <Icon style={{ fontSize: 16, color: theme.palette.text.secondary }} />}
+      {Icon && <Icon style={{ fontSize: theme.iconSizes.md, color: theme.palette.text.secondary }} />}
       <Typography variant="subtitle2" fontWeight={600} color="text.primary">
         {title}
       </Typography>
@@ -401,7 +401,7 @@ function EditableDateField({ label, value, fieldKey, onSave }) {
             <EditOutlined 
               className="edit-icon"
               style={{ 
-                fontSize: 12, 
+                fontSize: theme.iconSizes.xs, 
                 color: theme.palette.text.secondary,
                 opacity: 0,
                 transition: 'opacity 0.2s'
@@ -524,7 +524,7 @@ function EditableTimeField({ label, value, fieldKey, onSave }) {
             <EditOutlined 
               className="edit-icon"
               style={{ 
-                fontSize: 12, 
+                fontSize: theme.iconSizes.xs, 
                 color: theme.palette.text.secondary,
                 opacity: 0,
                 transition: 'opacity 0.2s'
@@ -614,7 +614,7 @@ function InlineSelectField({ label, value, fieldKey, onSave, options = [], displ
             <EditOutlined 
               className="edit-icon"
               style={{ 
-                fontSize: 12, 
+                fontSize: theme.iconSizes.xs, 
                 color: theme.palette.text.secondary,
                 opacity: 0,
                 transition: 'opacity 0.2s'
@@ -762,7 +762,7 @@ function EditableTextField({
       <EditOutlined 
         className="edit-icon"
         style={{ 
-          fontSize: 12, 
+          fontSize: theme.iconSizes.xs, 
           color: theme.palette.text.secondary,
           opacity: 0,
           transition: 'opacity 0.2s'
@@ -797,7 +797,7 @@ function ScheduledRow({ activity, onSave }) {
       }}
     >
       <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 1 }}>
-        <CalendarOutlined style={{ fontSize: 14, color: theme.palette.info.main }} />
+        <CalendarOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.info.main }} />
         <Typography variant="caption" fontWeight={600} color="info.main">
           Scheduled (Meeting/Call)
         </Typography>
@@ -852,7 +852,7 @@ function DueDateRow({ activity, onSave }) {
       <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 1 }}>
         <ClockCircleOutlined 
           style={{ 
-            fontSize: 14, 
+            fontSize: theme.iconSizes.sm, 
             color: isOverdue ? theme.palette.error.main : theme.palette.warning.main 
           }} 
         />
@@ -1081,7 +1081,7 @@ function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
                 }
               }}
             >
-              <PlusOutlined style={{ fontSize: 14 }} />
+              <PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />
             </IconButton>
           )}
         </Stack>
@@ -1360,7 +1360,7 @@ function ExternalContactsSubsection({ contacts = [], accountId, activityType, on
                 }
               }}
             >
-              <PlusOutlined style={{ fontSize: 14 }} />
+              <PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />
             </IconButton>
           )}
         </Stack>
@@ -1636,7 +1636,6 @@ CycleStepSubsection.propTypes = {
 
 // ==============================|| SECTION 3: LINKED CONTEXT - ACTIVITIES ||============================== //
 
-// ==============================|| SECTION 3: LINKED CONTEXT - ACTIVITIES ||============================== //
 
 function LinkedActivitiesSubsection({ activity }) {
   const theme = useTheme();
@@ -1797,7 +1796,7 @@ function ComingSoonBanner() {
         borderColor: theme.palette.grey[300]
       }}
     >
-      <RocketOutlined style={{ fontSize: 16, color: theme.palette.info.main }} />
+      <RocketOutlined style={{ fontSize: theme.iconSizes.md, color: theme.palette.info.main }} />
       <Typography variant="body2" color="text.secondary">
         <strong>Coming Soon:</strong> AI-powered meeting prep, email drafts, call insights, and signal extraction.
       </Typography>

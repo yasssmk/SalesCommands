@@ -1,4 +1,4 @@
-// frontend/src/api/activities/activities.js
+// frontend/src/api/accounts/activities.js
 /**
  * API hooks and mutations for Activities module.
  * 

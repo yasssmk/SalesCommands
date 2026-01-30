@@ -276,7 +276,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
     if (isCompleted && activity.completed_at) {
       return (
         <Stack direction="row" spacing={0.75} alignItems="center">
-          <CheckCircleOutlined style={{ fontSize: 14, color: theme.palette.success.main, display: 'flex' }} />
+          <CheckCircleOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.success.main, display: 'flex' }} />
           <Typography variant="body2" color="success.main">
             {format(new Date(activity.completed_at), 'MMM d, yyyy HH:mm')}
           </Typography>
@@ -288,7 +288,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
     if (isCancelled) {
       return (
         <Stack direction="row" spacing={0.75} alignItems="center">
-          <StopOutlined style={{ fontSize: 14, color: theme.palette.error.main, display: 'flex' }} />
+          <StopOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.error.main, display: 'flex' }} />
           <Typography variant="body2" color="error.main">
             Cancelled
           </Typography>
@@ -305,7 +305,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
         <Stack direction="row" spacing={0.75} alignItems="center">
           <ClockCircleOutlined 
             style={{ 
-              fontSize: 14, 
+              fontSize: theme.iconSizes.sm, 
               color: isOverdue ? theme.palette.error.main : theme.palette.text.secondary,
               display: 'flex'
             }} 
@@ -440,7 +440,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
                       {TypeIconOption && (
                         <TypeIconOption 
                           style={{ 
-                            fontSize: 18, 
+                            fontSize: theme.iconSizes.lg, 
                             color: isSelected ? theme.palette.primary.main : theme.palette.text.secondary 
                           }} 
                         />
@@ -494,7 +494,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
                   '&:hover .info-link': { textDecoration: 'underline' }
                 }}
               >
-                <BankOutlined style={{ fontSize: 14, color: theme.palette.text.secondary, display: 'flex' }} />
+                <BankOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.secondary, display: 'flex' }} />
                 <Typography variant="body2" color="primary.main" className="info-link">
                   {activity.account_detail.company_name}
                 </Typography>
@@ -504,7 +504,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
             {/* Origin: Decision Cycle > Step */}
             {activity.decision_cycle_detail && (
               <Stack direction="row" spacing={0.75} alignItems="center">
-                <ApartmentOutlined style={{ fontSize: 14, color: theme.palette.text.secondary, display: 'flex' }} />
+                <ApartmentOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.secondary, display: 'flex' }} />
                 <Stack direction="row" spacing={0.5} alignItems="center">
                   <Typography
                     variant="body2"
@@ -516,7 +516,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
                   </Typography>
                   {activity.decision_step_detail && (
                     <>
-                      <RightOutlined style={{ fontSize: 10, color: theme.palette.text.disabled }} />
+                      <RightOutlined style={{ fontSize: theme.iconSizes.xs - 2, color: theme.palette.text.disabled }} />
                       <Typography
                         variant="body2"
                         color="primary.main"
@@ -536,7 +536,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
             {/* Scheduled Date/Time */}
             {activity.scheduled_date && (
               <Stack direction="row" spacing={0.75} alignItems="center">
-                <CalendarOutlined style={{ fontSize: 14, color: theme.palette.text.secondary, display: 'flex' }} />
+                <CalendarOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.secondary, display: 'flex' }} />
                 <Typography variant="body2" color="text.secondary">
                   {formatScheduledDateTime()}
                 </Typography>

@@ -244,7 +244,7 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
                     })
                 except Territory.DoesNotExist:
                     raise StandardizedValidationError(
-                        CoreErrorMessages.NOT_FOUND.format(resource=f'Territory with ID {territory_id}')
+                        CoreErrorMessages.OBJECT_NOT_FOUND
                     )
                 except Exception as e:
                     logger.error("territory_filter_unexpected_error", extra={

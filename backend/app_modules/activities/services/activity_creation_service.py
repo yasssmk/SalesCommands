@@ -19,7 +19,7 @@ from django.utils.translation import gettext_lazy as _
 
 from core.logging import get_logger
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, ActivityErrorMessages, AccountErrorMessages
 
 from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
@@ -92,7 +92,7 @@ class ActivityCreationService:
                 account = CompanyAccount.objects.get(id=account_id, client_id=self.client_id)
             except CompanyAccount.DoesNotExist:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.OBJECT_NOT_FOUND
+                    AccountErrorMessages.ACCOUNT_NOT_FOUND
                 )
             
             # Track IDs to link
@@ -153,7 +153,7 @@ class ActivityCreationService:
             
             if cycle_id and not step_id:
                 raise StandardizedValidationError(
-                    "A pipeline step is required when linking to a decision cycle"
+                    ActivityErrorMessages.STEP_REQUIRES_CYCLE
                 )
             
             # ==================================================================
@@ -364,5 +364,5 @@ class ActivityCreationService:
             raise
         except Exception as e:
             raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Activity creation failed: {str(e)}")
+                ActivityErrorMessages.CREATION_FAILED.format(detail=str(e))
             )

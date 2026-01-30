@@ -72,12 +72,14 @@ import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined';
 // ==============================|| SECTION CARD WRAPPER ||============================== //
 
 function SectionCard({ title, icon: Icon, children, action }) {
+  const theme = useTheme();
+  
   return (
     <Card variant="outlined" sx={{ height: '100%' }}>
       <CardContent>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
           <Stack direction="row" spacing={1} alignItems="center">
-            {Icon && <Icon style={{ fontSize: 18, color: '#8c8c8c' }} />}
+            {Icon && <Icon style={{ fontSize: theme.iconSizes.md, color: '#8c8c8c' }} />}
             <Typography variant="subtitle1" fontWeight={600}>
               {title}
             </Typography>
@@ -254,7 +256,7 @@ function ActivityMiniCard({ activity: activityItem, onNavigate, onUnlink, showUn
               }}
               sx={{ ml: 'auto' }}
             >
-              <CloseOutlined style={{ fontSize: 14 }} />
+              <CloseOutlined style={{ fontSize: theme.iconSizes.sm, }} />
             </IconButton>
           )}
         </Stack>
@@ -683,7 +685,7 @@ function ResultSection({ activity, onUpdate }) {
             >
               <Stack spacing={1.5}>
                 <Stack direction="row" spacing={1} alignItems="center">
-                  <WarningOutlined style={{ fontSize: 16, color: theme.palette.warning.main }} />
+                  <WarningOutlined style={{ fontSize: theme.iconSizes.md, color: theme.palette.warning.main }} />
                   <Typography variant="subtitle2" color="warning.dark">
                     No follow-up activity planned
                   </Typography>
