@@ -122,6 +122,54 @@ export const ACTIVITY_OUTCOME_COLORS = {
   OTHER: 'default'
 };
 
+/**
+ * No Next Step Reasons (matching backend NoNextStepReason choices)
+ * 
+ * Used when completing an activity without a planned follow-up.
+ * Note: If prospect says "I'll call you back", create a TASK with due_date instead.
+ */
+export const NO_NEXT_STEP_REASONS = {
+  CLOSE_WON: 'CLOSE_WON',
+  CLOSE_LOST: 'CLOSE_LOST',
+  ON_HOLD: 'ON_HOLD',
+  NOT_QUALIFIED: 'NOT_QUALIFIED',
+  OTHER: 'OTHER'
+};
+
+/**
+ * No Next Step Reason labels for UI display
+ */
+export const NO_NEXT_STEP_REASON_LABELS = {
+  CLOSE_WON: 'Close Won',
+  CLOSE_LOST: 'Close Lost',
+  ON_HOLD: 'On Hold',
+  NOT_QUALIFIED: 'Not Qualified',
+  OTHER: 'Other'
+};
+
+/**
+ * No Next Step Reason colors for UI display
+ */
+export const NO_NEXT_STEP_REASON_COLORS = {
+  CLOSE_WON: 'success',
+  CLOSE_LOST: 'error',
+  ON_HOLD: 'warning',
+  NOT_QUALIFIED: 'default',
+  OTHER: 'default'
+};
+
+/**
+ * No Next Step Reason icons (ant-design icon names)
+ */
+export const NO_NEXT_STEP_REASON_ICONS = {
+  CLOSE_WON: 'TrophyOutlined',
+  CLOSE_LOST: 'CloseCircleOutlined',
+  ON_HOLD: 'PauseCircleOutlined',
+  NOT_QUALIFIED: 'StopOutlined',
+  OTHER: 'QuestionCircleOutlined'
+};
+
+
 // ==============================|| ENDPOINTS ||============================== //
 
 const endpoints = {

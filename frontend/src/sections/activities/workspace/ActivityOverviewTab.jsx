@@ -1647,7 +1647,7 @@ function LinkedActivitiesSubsection({ activity }) {
   // Check if activity belongs to a cycle
   const hasCycle = Boolean(activity?.decision_cycle);
   
-  // Get previous/next from sequence context (can be multiple)
+  // Get previous/next from sequence context (backend returns max 1 each)
   const previousActivities = sequenceContext?.previous_activities || [];
   const nextActivities = sequenceContext?.next_activities || [];
   
@@ -1655,13 +1655,9 @@ function LinkedActivitiesSubsection({ activity }) {
   const legacyPrevious = !hasCycle ? activity?.previous_activity_info : null;
   const legacyNext = !hasCycle ? activity?.next_activity_info : null;
   
-  // Determine what to display
-  const displayPrevious = previousActivities.length > 0 
-    ? previousActivities 
-    : (legacyPrevious ? [legacyPrevious] : []);
-  const displayNext = nextActivities.length > 0 
-    ? nextActivities 
-    : (legacyNext ? [legacyNext] : []);
+  // Determine what to display (always max 1 item now)
+  const previousActivity = previousActivities[0] || legacyPrevious || null;
+  const nextActivity = nextActivities[0] || legacyNext || null;
   
   // Position indicator
   const position = sequenceContext?.position;
@@ -1716,78 +1712,26 @@ function LinkedActivitiesSubsection({ activity }) {
       )}
       
       <Stack direction="row" spacing={3} alignItems="flex-start" flexWrap="wrap" useFlexGap>
-        {/* Previous Activity(ies) */}
+        {/* Previous Activity (max 1) */}
         <Box sx={{ flex: 1, minWidth: 200 }}>
-          {displayPrevious.length === 0 ? (
-            <ActivityMiniCard
-              activity={null}
-              label="Previous Activity"
-              size="small"
-              emptyText="First in sequence"
-              navigateOnClick={false}
-            />
-          ) : displayPrevious.length === 1 ? (
-            <ActivityMiniCard
-              activity={displayPrevious[0]}
-              label="Previous Activity"
-              size="small"
-              navigateOnClick={true}
-            />
-          ) : (
-            <Box>
-              <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                Previous Activities ({displayPrevious.length})
-              </Typography>
-              <Stack spacing={0.5}>
-                {displayPrevious.map((act) => (
-                  <ActivityMiniCard
-                    key={act.id}
-                    activity={act}
-                    size="small"
-                    navigateOnClick={true}
-                    variant="compact"
-                  />
-                ))}
-              </Stack>
-            </Box>
-          )}
+          <ActivityMiniCard
+            activity={previousActivity}
+            label="Previous Activity"
+            size="small"
+            emptyText="First in sequence"
+            navigateOnClick={Boolean(previousActivity)}
+          />
         </Box>
 
-        {/* Next Activity(ies) */}
+        {/* Next Activity (max 1) */}
         <Box sx={{ flex: 1, minWidth: 200 }}>
-          {displayNext.length === 0 ? (
-            <ActivityMiniCard
-              activity={null}
-              label="Next Activity"
-              size="small"
-              emptyText="Last in sequence"
-              navigateOnClick={false}
-            />
-          ) : displayNext.length === 1 ? (
-            <ActivityMiniCard
-              activity={displayNext[0]}
-              label="Next Activity"
-              size="small"
-              navigateOnClick={true}
-            />
-          ) : (
-            <Box>
-              <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                Next Activities ({displayNext.length})
-              </Typography>
-              <Stack spacing={0.5}>
-                {displayNext.map((act) => (
-                  <ActivityMiniCard
-                    key={act.id}
-                    activity={act}
-                    size="small"
-                    navigateOnClick={true}
-                    variant="compact"
-                  />
-                ))}
-              </Stack>
-            </Box>
-          )}
+          <ActivityMiniCard
+            activity={nextActivity}
+            label="Next Activity"
+            size="small"
+            emptyText="No pending follow-up"
+            navigateOnClick={Boolean(nextActivity)}
+          />
         </Box>
       </Stack>
     </Box>

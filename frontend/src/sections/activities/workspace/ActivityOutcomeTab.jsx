@@ -41,7 +41,10 @@ import {
   ACTIVITY_OUTCOME_COLORS,
   ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
-  ACTIVITY_STATUS_COLORS
+  ACTIVITY_STATUS_COLORS,
+  NO_NEXT_STEP_REASONS,
+  NO_NEXT_STEP_REASON_LABELS,
+  NO_NEXT_STEP_REASON_COLORS
 } from 'api/accounts/activities';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
 
@@ -61,6 +64,10 @@ import BulbOutlined from '@ant-design/icons/BulbOutlined';
 import RocketOutlined from '@ant-design/icons/RocketOutlined';
 import StopOutlined from '@ant-design/icons/StopOutlined';
 import LinkOutlined from '@ant-design/icons/LinkOutlined';
+import WarningOutlined from '@ant-design/icons/WarningOutlined';
+import TrophyOutlined from '@ant-design/icons/TrophyOutlined';
+import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
+import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined';
 
 // ==============================|| SECTION CARD WRAPPER ||============================== //
 
@@ -198,6 +205,99 @@ KeyTakeawaysSection.propTypes = {
   onSave: PropTypes.func.isRequired
 };
 
+// ==============================|| ACTIVITY MINI CARD (Reusable) ||============================== //
+
+function ActivityMiniCard({ activity: activityItem, onNavigate, onUnlink, showUnlink = false }) {
+  const theme = useTheme();
+  
+  // Format date helper
+  const formatDate = (dateStr) => {
+    if (!dateStr) return null;
+    return new Date(dateStr).toLocaleDateString();
+  };
+
+  const displayDate = activityItem.scheduled_date || activityItem.due_date;
+  const stepName = activityItem.decision_step_name;
+
+  return (
+    <Card 
+      variant="outlined" 
+      sx={{ 
+        p: 1.5, 
+        cursor: 'pointer',
+        transition: 'all 0.15s ease-in-out',
+        '&:hover': { 
+          bgcolor: 'action.hover',
+          borderColor: theme.palette.primary.light
+        }
+      }}
+      onClick={() => onNavigate(activityItem.id)}
+    >
+      <Stack spacing={1}>
+        {/* Row 1: Type + Title */}
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <Chip
+            label={ACTIVITY_TYPE_LABELS[activityItem.activity_type] || activityItem.activity_type}
+            size="small"
+            variant="outlined"
+            sx={{ minWidth: 80 }}
+          />
+          <Typography variant="body2" fontWeight={500} noWrap sx={{ flex: 1 }}>
+            {activityItem.title}
+          </Typography>
+          {showUnlink && (
+            <IconButton 
+              size="small" 
+              onClick={(e) => {
+                e.stopPropagation();
+                onUnlink?.();
+              }}
+              sx={{ ml: 'auto' }}
+            >
+              <CloseOutlined style={{ fontSize: 14 }} />
+            </IconButton>
+          )}
+        </Stack>
+        
+        {/* Row 2: Meta info (step, date, status) */}
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          {stepName && (
+            <Chip
+              label={stepName}
+              size="small"
+              variant="filled"
+              sx={{ 
+                height: 20, 
+                fontSize: '0.7rem',
+                bgcolor: theme.palette.grey[100],
+                color: theme.palette.text.secondary
+              }}
+            />
+          )}
+          {displayDate && (
+            <Typography variant="caption" color="text.secondary">
+              {formatDate(displayDate)}
+            </Typography>
+          )}
+          <Chip
+            label={ACTIVITY_STATUS_LABELS[activityItem.status] || activityItem.status}
+            size="small"
+            color={ACTIVITY_STATUS_COLORS[activityItem.status] || 'default'}
+            sx={{ height: 20, fontSize: '0.7rem' }}
+          />
+        </Stack>
+      </Stack>
+    </Card>
+  );
+}
+
+ActivityMiniCard.propTypes = {
+  activity: PropTypes.object.isRequired,
+  onNavigate: PropTypes.func.isRequired,
+  onUnlink: PropTypes.func,
+  showUnlink: PropTypes.bool
+};
+
 // ==============================|| NEXT STEPS SECTION ||============================== //
 
 function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate }) {
@@ -222,6 +322,9 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
   const position = sequenceContext?.position;
   const total = sequenceContext?.total;
   const isLastInSequence = position === total;
+  
+  // Check effective next step status from API
+  const effectiveHasNextStep = activity?.effective_has_next_step;
 
   // Navigate to activity workspace
   const handleActivityClick = (activityId) => {
@@ -249,139 +352,107 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
     }
   };
 
-  // Format date helper
-  const formatDate = (dateStr) => {
-    if (!dateStr) return null;
-    return new Date(dateStr).toLocaleDateString();
-  };
-
   return (
     <SectionCard title="Next Steps" icon={RocketOutlined}>
       <Stack spacing={2}>
-        {/* Action buttons row */}
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={() => onCreateActivity('MEETING')}
-          >
-            Schedule Meeting
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={() => onCreateActivity('CALL')}
-          >
-            Schedule Call
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={() => onCreateActivity('EMAIL')}
-          >
-            Send Email
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={() => onCreateActivity('TASK')}
-          >
-            Internal Task
-          </Button>
-          {/* Link Existing only for standalone activities (no cycle) */}
-          {!hasCycle && (
-            <Button
-              variant="outlined"
-              size="small"
-              color="secondary"
-              startIcon={<LinkOutlined />}
-              onClick={onLinkExisting}
-            >
-              Link Existing
-            </Button>
-          )}
-        </Stack>
-
-        {/* Next Activities Display */}
+        {/* Next Activities Display - Show first if exists */}
         {hasNextActivity && (
           <Box>
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-              <Typography variant="caption" color="text.secondary">
-                {hasCycle ? 'Next in sequence:' : 'Linked next activity:'}
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                {hasCycle ? 'Next in sequence' : 'Linked follow-up'}
               </Typography>
               {hasCycle && nextActivities.length > 1 && (
                 <Chip
                   label={`${nextActivities.length} activities`}
                   size="small"
+                  color="primary"
                   variant="outlined"
-                  sx={{ height: 18, fontSize: '0.7rem' }}
+                  sx={{ height: 20, fontSize: '0.7rem' }}
+                />
+              )}
+              {effectiveHasNextStep === true && (
+                <Chip
+                  icon={<CheckOutlined style={{ fontSize: 12 }} />}
+                  label="Next step agreed"
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                  sx={{ height: 20, fontSize: '0.7rem', ml: 'auto' }}
                 />
               )}
             </Stack>
             
             <Stack spacing={1}>
               {nextActivities.map((nextAct) => (
-                <Card 
+                <ActivityMiniCard
                   key={nextAct.id}
-                  variant="outlined" 
-                  sx={{ 
-                    p: 1.5, 
-                    cursor: 'pointer',
-                    '&:hover': { bgcolor: 'action.hover' }
-                  }}
-                >
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Stack 
-                      direction="row" 
-                      spacing={1.5} 
-                      alignItems="center"
-                      onClick={() => handleActivityClick(nextAct.id)}
-                      sx={{ flex: 1, cursor: 'pointer' }}
-                    >
-                      <Chip
-                        label={ACTIVITY_TYPE_LABELS[nextAct.activity_type] || nextAct.activity_type}
-                        size="small"
-                        variant="outlined"
-                      />
-                      <Typography variant="body2" fontWeight={500}>
-                        {nextAct.title}
-                      </Typography>
-                      {(nextAct.scheduled_date || nextAct.due_date) && (
-                        <Typography variant="caption" color="text.secondary">
-                          {formatDate(nextAct.scheduled_date || nextAct.due_date)}
-                        </Typography>
-                      )}
-                      <Chip
-                        label={ACTIVITY_STATUS_LABELS[nextAct.status] || nextAct.status}
-                        size="small"
-                        color={ACTIVITY_STATUS_COLORS[nextAct.status] || 'default'}
-                      />
-                    </Stack>
-                    {/* Unlink button only for standalone activities (no cycle) */}
-                    {!hasCycle && (
-                      <IconButton 
-                        size="small" 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleUnlinkActivity();
-                        }}
-                        sx={{ ml: 1 }}
-                      >
-                        <CloseOutlined />
-                      </IconButton>
-                    )}
-                  </Stack>
-                </Card>
+                  activity={nextAct}
+                  onNavigate={handleActivityClick}
+                  onUnlink={handleUnlinkActivity}
+                  showUnlink={!hasCycle}
+                />
               ))}
             </Stack>
           </Box>
         )}
 
-        {/* Empty state hint */}
+        {/* Action buttons row */}
+        <Box>
+          {hasNextActivity && (
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+              Create additional follow-up
+            </Typography>
+          )}
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<PlusOutlined />}
+              onClick={() => onCreateActivity('MEETING')}
+            >
+              Meeting
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<PlusOutlined />}
+              onClick={() => onCreateActivity('CALL')}
+            >
+              Call
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<PlusOutlined />}
+              onClick={() => onCreateActivity('EMAIL')}
+            >
+              Email
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<PlusOutlined />}
+              onClick={() => onCreateActivity('TASK')}
+            >
+              Task
+            </Button>
+            {/* Link Existing only for standalone activities (no cycle) */}
+            {!hasCycle && (
+              <Button
+                variant="outlined"
+                size="small"
+                color="secondary"
+                startIcon={<LinkOutlined />}
+                onClick={onLinkExisting}
+              >
+                Link Existing
+              </Button>
+            )}
+          </Stack>
+        </Box>
+
+        {/* Empty state hint - only if no next activities */}
         {!hasNextActivity && (
           <Box
             sx={{
@@ -395,16 +466,16 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
             {hasCycle ? (
               isLastInSequence ? (
                 <Typography variant="body2" color="text.secondary" textAlign="center">
-                  This is the last activity in the sequence. Create a new activity to continue the cycle.
+                  This is the last activity in the sequence. Create a follow-up to continue the cycle.
                 </Typography>
               ) : (
                 <Typography variant="body2" color="text.secondary" textAlign="center">
-                  No activities scheduled after this one in the cycle. Create a follow-up to continue.
+                  No activities scheduled after this one. Create a follow-up to continue.
                 </Typography>
               )
             ) : (
               <Typography variant="body2" color="text.secondary" textAlign="center">
-                Create or link a follow-up activity. If completed without a next step, it will be marked as "No next step agreed".
+                No follow-up activity linked. Create or link one, or select a reason when completing.
               </Typography>
             )}
           </Box>
@@ -424,19 +495,48 @@ NextStepsSection.propTypes = {
 // ==============================|| RESULT SECTION ||============================== //
 
 function ResultSection({ activity, onUpdate }) {
+  const theme = useTheme();
   const [selectedOutcome, setSelectedOutcome] = useState(activity?.outcome || '');
   const [outcomeNotes, setOutcomeNotes] = useState(activity?.outcome_notes || '');
   const [completing, setCompleting] = useState(false);
+  
+  // No next step reason state
+  const [noNextStepReason, setNoNextStepReason] = useState('');
+  const [otherReasonText, setOtherReasonText] = useState('');
 
   const isCompleted = activity?.status === 'COMPLETED';
   const isCancelled = activity?.status === 'CANCELLED';
 
-  // Check if activity has a next step linked
-  const hasNextStep = Boolean(activity?.next_activity);
+  // Use effective_has_next_step from API (calculated field)
+  // true = has next step, false = explicitly no next step, null = unknown (ask user)
+  const effectiveHasNextStep = activity?.effective_has_next_step;
+  
+  // Show no next step reason selector when:
+  // - effectiveHasNextStep is null (unknown) or false (explicitly no next step)
+  // - activity is not completed/cancelled
+  const needsNoNextStepReason = effectiveHasNextStep !== true && !isCompleted && !isCancelled;
+  
+  // Check if form is valid for completion
+  const isReasonValid = noNextStepReason && (noNextStepReason !== 'OTHER' || otherReasonText.trim());
+  const canComplete = selectedOutcome && (!needsNoNextStepReason || isReasonValid);
+
+  // Build the reason string for API
+  const buildReasonString = () => {
+    if (!noNextStepReason) return null;
+    if (noNextStepReason === 'OTHER') {
+      return `OTHER: ${otherReasonText.trim()}`;
+    }
+    return noNextStepReason;
+  };
 
   const handleComplete = async () => {
     if (!selectedOutcome) {
       displayErrorSnackbar('Please select an outcome');
+      return;
+    }
+
+    if (needsNoNextStepReason && !isReasonValid) {
+      displayErrorSnackbar('Please select a reason for no next step');
       return;
     }
 
@@ -448,9 +548,10 @@ function ResultSection({ activity, onUpdate }) {
         outcome_notes: outcomeNotes.trim() || null
       };
 
-      // If no next step is linked, auto-set next_step_agreed to false
-      if (!hasNextStep) {
+      // If no next step, include reason
+      if (needsNoNextStepReason) {
         payload.next_step_agreed = false;
+        payload.no_next_step_reason = buildReasonString();
       }
 
       const result = await completeActivity(activity.id, payload);
@@ -466,6 +567,32 @@ function ResultSection({ activity, onUpdate }) {
     } finally {
       setCompleting(false);
     }
+  };
+
+  // Render completed state info for no_next_step_reason
+  const renderCompletedNoNextStepInfo = () => {
+    if (!activity?.no_next_step_reason) return null;
+    
+    const reason = activity.no_next_step_reason;
+    const isStandardReason = Object.keys(NO_NEXT_STEP_REASONS).includes(reason);
+    const displayLabel = isStandardReason 
+      ? NO_NEXT_STEP_REASON_LABELS[reason] 
+      : (reason.startsWith('OTHER:') ? reason.substring(6).trim() : reason);
+    const chipColor = isStandardReason ? NO_NEXT_STEP_REASON_COLORS[reason] : 'default';
+    
+    return (
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Typography variant="body2" color="text.secondary">
+          No next step:
+        </Typography>
+        <Chip
+          label={displayLabel}
+          color={chipColor}
+          size="small"
+          variant="outlined"
+        />
+      </Stack>
+    );
   };
 
   return (
@@ -495,6 +622,8 @@ function ResultSection({ activity, onUpdate }) {
               </Typography>
             </Box>
           )}
+          {/* Show no next step reason if applicable */}
+          {activity?.next_step_agreed === false && renderCompletedNoNextStepInfo()}
         </Stack>
       ) : isCancelled ? (
         <Alert severity="warning">
@@ -533,7 +662,7 @@ function ResultSection({ activity, onUpdate }) {
             <TextField
               fullWidth
               multiline
-              rows={3}
+              rows={2}
               size="small"
               placeholder="Add notes about the outcome..."
               value={outcomeNotes}
@@ -541,11 +670,96 @@ function ResultSection({ activity, onUpdate }) {
             />
           </Box>
 
-          {/* Warning if no next step */}
-          {!hasNextStep && (
-            <Alert severity="info" icon={false} sx={{ py: 0.5 }}>
+          {/* No Next Step Section - Only show if needed */}
+          {needsNoNextStepReason && (
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 1,
+                bgcolor: theme.palette.warning.lighter,
+                border: '1px solid',
+                borderColor: theme.palette.warning.light
+              }}
+            >
+              <Stack spacing={1.5}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <WarningOutlined style={{ fontSize: 16, color: theme.palette.warning.main }} />
+                  <Typography variant="subtitle2" color="warning.dark">
+                    No follow-up activity planned
+                  </Typography>
+                </Stack>
+                
+                <Typography variant="caption" color="text.secondary">
+                  Select a reason to complete without scheduling a next step:
+                </Typography>
+                
+                <Select
+                  value={noNextStepReason}
+                  onChange={(e) => {
+                    setNoNextStepReason(e.target.value);
+                    if (e.target.value !== 'OTHER') {
+                      setOtherReasonText('');
+                    }
+                  }}
+                  fullWidth
+                  size="small"
+                  displayEmpty
+                >
+                  <MenuItem value="" disabled>
+                    <em>Select reason...</em>
+                  </MenuItem>
+                  <MenuItem value="CLOSE_WON">
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <TrophyOutlined style={{ color: theme.palette.success.main }} />
+                      <span>Close Won</span>
+                    </Stack>
+                  </MenuItem>
+                  <MenuItem value="CLOSE_LOST">
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <CloseCircleOutlined style={{ color: theme.palette.error.main }} />
+                      <span>Close Lost</span>
+                    </Stack>
+                  </MenuItem>
+                  <MenuItem value="ON_HOLD">
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <PauseCircleOutlined style={{ color: theme.palette.warning.main }} />
+                      <span>On Hold</span>
+                    </Stack>
+                  </MenuItem>
+                  <MenuItem value="NOT_QUALIFIED">
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <StopOutlined style={{ color: theme.palette.grey[500] }} />
+                      <span>Not Qualified</span>
+                    </Stack>
+                  </MenuItem>
+                  <MenuItem value="OTHER">
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <span>Other reason...</span>
+                    </Stack>
+                  </MenuItem>
+                </Select>
+                
+                {/* Other reason text input */}
+                {noNextStepReason === 'OTHER' && (
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Enter reason..."
+                    value={otherReasonText}
+                    onChange={(e) => setOtherReasonText(e.target.value)}
+                    error={noNextStepReason === 'OTHER' && !otherReasonText.trim()}
+                    helperText={noNextStepReason === 'OTHER' && !otherReasonText.trim() ? 'Please enter a reason' : ''}
+                  />
+                )}
+              </Stack>
+            </Box>
+          )}
+
+          {/* Success indicator if next step exists */}
+          {effectiveHasNextStep === true && (
+            <Alert severity="success" icon={<CheckOutlined />} sx={{ py: 0.5 }}>
               <Typography variant="caption">
-                No next step linked. Completing will mark this as "No next step agreed".
+                Next step agreed - follow-up activity is scheduled.
               </Typography>
             </Alert>
           )}
@@ -556,7 +770,7 @@ function ResultSection({ activity, onUpdate }) {
             color="success"
             startIcon={<CheckCircleOutlined />}
             onClick={handleComplete}
-            disabled={!selectedOutcome || completing}
+            disabled={!canComplete || completing}
             fullWidth
           >
             {completing ? 'Completing...' : 'Complete Activity'}

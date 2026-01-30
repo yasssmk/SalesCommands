@@ -15,7 +15,7 @@ from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from end_users.models import User
 from .models import Activity
-from .constants import ActivityType, ActivityStatus, ActivityOutcome
+from .constants import ActivityType, ActivityStatus, ActivityOutcome, NoNextStepReason
 from .services import ActivitySequenceService, SequenceScope
 
 # ============================================================================
@@ -241,6 +241,11 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Sequence context (NEW - dynamic calculation based on scope)
     # Replaces manual previous/next with calculated sequence
     sequence_context = serializers.SerializerMethodField(read_only=True)
+
+    # Next Step Agreement (computed fields for UX logic)
+    no_next_step_reason_display = serializers.SerializerMethodField(read_only=True)
+    has_next_in_sequence = serializers.SerializerMethodField(read_only=True)
+    effective_has_next_step = serializers.SerializerMethodField(read_only=True)
     
     # Computed fields
     is_overdue = serializers.BooleanField(read_only=True)
@@ -268,7 +273,10 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'description', 'call_to_action',
             
             # Next Step Agreement
-            'next_step_agreed',
+            'next_step_agreed', 'no_next_step_reason',
+            'no_next_step_reason_display', 'has_next_in_sequence', 'effective_has_next_step',
+            
+            # Relations (IDs for write)
             
             # Relations (IDs for write)
             'account', 'decision_cycle', 'decision_step',
@@ -298,6 +306,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'account_detail', 'contacts_detail', 'owner_detail',
             'decision_cycle_detail', 'decision_step_detail',
             'previous_activity_info', 'next_activity_info',
+            'no_next_step_reason_display', 'has_next_in_sequence', 'effective_has_next_step',
             'is_overdue', 'is_scheduled', 'has_previous', 'has_next',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
@@ -380,15 +389,136 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         - created_at (fallback)
         
         Returns None if activity doesn't belong to a decision_cycle.
+        
+        NOTE: Uses _get_cached_sequence_context to ensure consistency
+        with get_effective_has_next_step calculations.
         """
-        # Only calculate for activities linked to a cycle
         if not obj.decision_cycle_id:
             return None
         
-        return ActivitySequenceService.get_sequence_context(
-            activity=obj,
-            scope=SequenceScope.DECISION_CYCLE
-        )
+        # Use cached version to ensure consistency across all computed fields
+        return self._get_cached_sequence_context(obj)
+    
+    def get_no_next_step_reason_display(self, obj):
+        """
+        Get the display label for no_next_step_reason.
+        
+        Handles both standard codes (CLOSE_WON, etc.) and custom "OTHER: text" format.
+        """
+        if not obj.no_next_step_reason:
+            return None
+        
+        reason = obj.no_next_step_reason
+        
+        # Check if it's a standard code
+        if reason in NoNextStepReason.values:
+            return NoNextStepReason(reason).label
+        
+        # Handle "OTHER: custom text" format
+        if reason.startswith('OTHER:'):
+            return reason[6:].strip()  # Return the custom text
+        
+        # Fallback: return as-is
+        return reason
+    
+    def get_has_next_in_sequence(self, obj):
+        """
+        Check if activity has PENDING next activities in its sequence.
+        
+        Returns:
+            True: has pending (PLANNED/IN_PROGRESS) next activities
+            False: no pending next activities in sequence
+            None: activity is standalone (not in a cycle)
+        """
+        if not obj.decision_cycle_id:
+            return None
+        
+        context = self._get_cached_sequence_context(obj)
+        if context and context.get('next_activities'):
+            # Only count PLANNED or IN_PROGRESS as valid "next steps"
+            pending_next = [
+                act for act in context['next_activities']
+                if act.get('status') in ('PLANNED', 'IN_PROGRESS')
+            ]
+            return len(pending_next) > 0
+        return False
+    
+    def get_effective_has_next_step(self, obj):
+        """
+        Determine the effective next step status for UX logic.
+        
+        Priority (UPDATED):
+            1. If PENDING next_activities exist in sequence → True (reality wins)
+            2. If next_activity FK is set and PENDING → True
+            3. If next_step_agreed is explicitly set → return its value
+            4. Otherwise → None (ask user to confirm)
+        
+        RATIONALE: If someone marked "no next step" but then a next activity
+        was created, the reality (pending activities exist) should override
+        the outdated explicit flag.
+        
+        Returns:
+            True: next step exists or was agreed
+            False: explicitly marked as no next step AND no pending activities
+            None: unknown, UI should prompt user
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Priority 1: Check sequence context for PENDING activities in cycle
+        # Reality (actual pending activities) takes precedence over past declarations
+        if obj.decision_cycle_id:
+            context = self._get_cached_sequence_context(obj)
+            logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: Priority 1 - checking sequence context")
+            
+            if context and context.get('next_activities'):
+                all_next = context['next_activities']
+                
+                # Filter to only count PLANNED or IN_PROGRESS activities
+                pending_next = [
+                    act for act in all_next
+                    if act.get('status') in ('PLANNED', 'IN_PROGRESS')
+                ]
+                logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: pending_next count={len(pending_next)}")
+                
+                if pending_next:
+                    logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: returning True (has pending next in sequence)")
+                    return True
+        
+        # Priority 2: Check legacy next_activity FK for standalone
+        if obj.next_activity_id:
+            logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: Priority 2 - checking legacy FK")
+            if obj.next_activity and obj.next_activity.status in ('PLANNED', 'IN_PROGRESS'):
+                logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: returning True (legacy FK pending)")
+                return True
+        
+        # Priority 3: Explicit value (only applies when no pending activities exist)
+        if obj.next_step_agreed is not None:
+            logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: Priority 3 - explicit next_step_agreed={obj.next_step_agreed}")
+            return obj.next_step_agreed
+        
+        # Priority 4: Unknown - UI should prompt
+        logger.info(f"[DEBUG effective_has_next_step] Activity {obj.id}: Priority 4 - returning None (unknown)")
+        return None
+    
+    def _get_cached_sequence_context(self, obj):
+        """
+        Get sequence context with caching to avoid duplicate calculations.
+        
+        Uses instance._sequence_context_cache as temporary storage.
+        """
+        cache_attr = '_sequence_context_cache'
+        
+        if not hasattr(obj, cache_attr):
+            if obj.decision_cycle_id:
+                setattr(obj, cache_attr, ActivitySequenceService.get_sequence_context(
+                    activity=obj,
+                    scope=SequenceScope.DECISION_CYCLE
+                ))
+            else:
+                setattr(obj, cache_attr, None)
+        
+        return getattr(obj, cache_attr)
 
 
 # ============================================================================
@@ -852,6 +982,36 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         )
                 else:
                     attrs['next_activity'] = None
+        
+            # =================================================================
+            # NEXT STEP AGREEMENT VALIDATION
+            # =================================================================
+            if 'next_step_agreed' in attrs:
+                next_step_agreed = attrs.get('next_step_agreed')
+                no_next_step_reason = attrs.get('no_next_step_reason')
+                
+                # Rule: If setting next_step_agreed to False, reason is REQUIRED
+                if next_step_agreed is False:
+                    if not no_next_step_reason:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.REQUIRED_FIELD.format(field='Reason for no next step')
+                        )
+                    
+                    # Validate reason format: must be standard code or "OTHER: text"
+                    valid_codes = [choice[0] for choice in NoNextStepReason.choices]
+                    is_standard_code = no_next_step_reason in valid_codes
+                    is_other_format = no_next_step_reason.startswith('OTHER:') and len(no_next_step_reason) > 6
+                    
+                    if not is_standard_code and not is_other_format:
+                        raise StandardizedValidationError(
+                            CoreErrorMessages.INVALID_FIELD.format(
+                                field=f"Reason must be one of {', '.join(valid_codes)} or 'OTHER: <custom text>'"
+                            )
+                        )
+                
+                # Rule: If setting next_step_agreed to True or None, clear no_next_step_reason
+                elif next_step_agreed is True or next_step_agreed is None:
+                    attrs['no_next_step_reason'] = None
             
             return attrs
             
