@@ -162,18 +162,26 @@ class ActivityErrorMessages:
     INVALID_TARGET_STATUS = _("Target status must be PLANNED or IN_PROGRESS")
     
     # Relation validation
-    STEP_REQUIRES_CYCLE = _("A pipeline step is required when linking to a decision cycle")
-    CYCLE_REQUIRED_FOR_STEP = _("Decision step requires a decision cycle")
+    STEP_REQUIRES_CYCLE = _("Please select a pipeline step when linking to a decision cycle")
+    CYCLE_REQUIRED_FOR_STEP = _("Please select a decision cycle before choosing a step")
     CIRCULAR_REFERENCE = _("Activity cannot be its own next activity")
     CONTACT_MUST_BELONG_TO_ACCOUNT = _("Contact must belong to the activity's account")
-    STEP_MUST_BELONG_TO_CYCLE = _("Decision step must belong to the selected decision cycle")
+    STEP_MUST_BELONG_TO_CYCLE = _("The selected step does not belong to this decision cycle")
     
     # Next Step Agreement
     NO_NEXT_STEP_REASON_REQUIRED = _("A reason is required when no follow-up is planned")
     INVALID_NO_NEXT_STEP_REASON = _("Reason must be a valid code or 'OTHER: <custom text>'")
     
-    # Creation
-    CREATION_FAILED = _("Activity creation failed: {detail}")
+    # Creation - Generic
+    CREATION_FAILED = _("Activity creation failed. Please try again.")
+    
+    # Creation - Inline entities
+    CONTACT_CREATION_FAILED = _("Failed to create contact. Please try again.")
+    CYCLE_CREATION_FAILED = _("Failed to create decision cycle. Please try again.")
+    INLINE_ENTITY_FAILED = _("Failed to create {entity}. Please try again.")
+
+    # Creation - Validation failures (with context)
+    CREATION_INVALID_DATA = _("Activity creation failed: {detail}")
     
     # Not found
     ACTIVITY_NOT_FOUND = _("Activity not found")

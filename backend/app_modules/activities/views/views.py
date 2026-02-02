@@ -733,6 +733,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         inline_contact = request.data.get('inline_contact')
         inline_cycle = request.data.get('inline_cycle')
         inline_step = request.data.get('inline_step')
+        inline_step_stage = request.data.get('inline_step_stage')
         
         # Validate activity_data exists
         if not activity_data:
@@ -751,6 +752,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             inline_contact=inline_contact,
             inline_cycle=inline_cycle,
             inline_step=inline_step,
+            inline_step_stage=inline_step_stage,
         )
         
         # Audit log
@@ -791,24 +793,53 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             context={'request': request}
         )
         
+        # Build created_entities with detailed info
+        created_entities = {}
+
+        if result['contact']:
+            created_entities['contact'] = {
+                'id': str(result['contact'].id),
+                'first_name': result['contact'].first_name,
+                'last_name': result['contact'].last_name,
+                'full_name': f"{result['contact'].first_name} {result['contact'].last_name}",
+                'email': result['contact'].email,
+                'phone_number': str(result['contact'].phone_number) if result['contact'].phone_number else None,
+                'job_title': result['contact'].job_title,
+            }
+
+        if result['cycle']:
+            created_entities['cycle'] = {
+                'id': str(result['cycle'].id),
+                'name': result['cycle'].name,
+                'is_active': result['cycle'].is_active,
+                'steps_count': result['cycle'].steps.count(),
+            }
+
+        if result['step']:
+            created_entities['step'] = {
+                'id': str(result['step'].id),
+                'name': result['step'].name,
+                'stage': result['step'].stage,
+                'order': result['step'].order,
+            }
+
+        # Build summary
+        entities_created = []
+        if result['contact']:
+            entities_created.append('contact')
+        if result['cycle']:
+            entities_created.append('cycle')
+
         response_data = {
             'activity': activity_serializer.data,
-            'created_entities': {
-                'contact': {
-                    'id': str(result['contact'].id),
-                    'name': f"{result['contact'].first_name} {result['contact'].last_name}"
-                } if result['contact'] else None,
-                'cycle': {
-                    'id': str(result['cycle'].id),
-                    'name': result['cycle'].name
-                } if result['cycle'] else None,
-                'step': {
-                    'id': str(result['step'].id),
-                    'name': result['step'].name
-                } if result['step'] else None,
+            'created_entities': created_entities if created_entities else None,
+            'summary': {
+                'entities_created': entities_created,
+                'has_inline_creations': len(entities_created) > 0,
+                'step_auto_assigned': result['cycle'] is not None,  # Step was auto-assigned if cycle was inline
             }
         }
-        
+
         return Response({
             'success': True,
             'data': response_data

@@ -42,6 +42,7 @@ import EditableField from 'sections/accounts/workspace/EditableField';
 import {
   cancelActivity,
   updateActivity,
+  reopenActivity,
   ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_COLORS,
@@ -70,7 +71,8 @@ import {
   ClockCircleOutlined,
   BankOutlined,
   ApartmentOutlined,
-  RightOutlined
+  RightOutlined,
+  UndoOutlined,    
 } from '@ant-design/icons';
 
 // ==============================|| TYPE CONFIGURATION ||============================== //
@@ -178,7 +180,10 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
   
   const isCompleted = activity.status === 'COMPLETED';
   const isCancelled = activity.status === 'CANCELLED';
+  const isPlanned = activity.status === 'PLANNED';
   const canComplete = !isCompleted && !isCancelled;
+  const canCancel = isPlanned
+  const canReopen = isCompleted || isCancelled; 
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -205,6 +210,28 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
     } else {
       displayErrorSnackbar({
         message: result.error || 'Failed to cancel activity',
+        status: result.status
+      });
+    }
+  } catch (err) {
+    displayErrorSnackbar({
+      message: err?.message || 'An unexpected error occurred',
+      status: 500
+    });
+  }
+};
+
+// Reopen activity (COMPLETED/CANCELLED → PLANNED)
+const handleReopenActivity = async () => {
+  handleMenuClose();
+  try {
+    const result = await reopenActivity(activity.id, { status: 'PLANNED' });
+    if (result.success) {
+      displaySuccessSnackbar('Activity reopened');
+      onUpdate?.();
+    } else {
+      displayErrorSnackbar({
+        message: result.error || 'Failed to reopen activity',
         status: result.status
       });
     }
@@ -373,6 +400,8 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
               <MoreOutlined />
             </IconButton>
             <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
+              
+              {/* Complete - For PLANNED or IN_PROGRESS */}
               {canComplete && (
                 <MenuItem onClick={handleCompleteClick}>
                   <ListItemIcon>
@@ -381,7 +410,9 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
                   <Typography>Complete</Typography>
                 </MenuItem>
               )}
-              {canComplete && (
+              
+              {/* Cancel - For PLANNED or IN_PROGRESS */}
+              {canCancel && (
                 <MenuItem onClick={handleCancelActivity}>
                   <ListItemIcon>
                     <StopOutlined style={{ color: theme.palette.warning.main }} />
@@ -389,7 +420,21 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
                   <Typography>Cancel</Typography>
                 </MenuItem>
               )}
-              {canComplete && <Divider />}
+              
+              {/* Reopen - Only for COMPLETED or CANCELLED */}
+              {canReopen && (
+                <MenuItem onClick={handleReopenActivity}>
+                  <ListItemIcon>
+                    <UndoOutlined style={{ color: theme.palette.primary.main }} />
+                  </ListItemIcon>
+                  <Typography>Reopen</Typography>
+                </MenuItem>
+              )}
+              
+              {/* Divider before Delete */}
+              <Divider />
+              
+              {/* Delete - Always available */}
               <MenuItem onClick={handleDeleteClick}>
                 <ListItemIcon>
                   <DeleteOutlined style={{ color: theme.palette.error.main }} />

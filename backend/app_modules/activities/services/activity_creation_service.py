@@ -56,6 +56,7 @@ class ActivityCreationService:
         inline_contact: dict = None,
         inline_cycle: dict = None,
         inline_step: dict = None,
+        inline_step_stage: str = None,
     ) -> dict:
         """
         Create activity with optional inline entities.
@@ -112,7 +113,7 @@ class ActivityCreationService:
                     'contact_id': str(contact.id),
                     'account_id': str(account_id),
                 })
-            
+
             # ==================================================================
             # STEP 2: Create DecisionCycle (if inline_cycle provided)
             # ==================================================================
@@ -121,41 +122,66 @@ class ActivityCreationService:
                 created_entities['cycle'] = cycle
                 cycle_id = str(cycle.id)
                 
-                logger.info("inline_cycle_created", extra={
-                    'cycle_id': str(cycle.id),
-                    'account_id': str(account_id),
-                })
-            
-            # ==================================================================
-            # STEP 3: Create DecisionStep (if inline_step provided)
-            # ==================================================================
-            if inline_step:
-                # Step requires a cycle
-                if not cycle_id:
+                target_stage = inline_step_stage or 'QUALIFICATION'
+
+                # Find the step by stage
+                assigned_step = DecisionStep.objects.filter(
+                    cycle_id=cycle_id,
+                    stage=target_stage
+                ).first()
+
+                # Fallback to QUALIFICATION if stage not found
+                if not assigned_step:
+                    assigned_step = DecisionStep.objects.filter(
+                        cycle_id=cycle_id,
+                        order=1
+                    ).first()
+                    logger.warning("inline_step_stage_fallback", extra={
+                        'requested_stage': target_stage,
+                        'fallback_stage': 'QUALIFICATION',
+                        'cycle_id': str(cycle.id),
+                    })
+
+                if assigned_step:
+                    step_id = str(assigned_step.id)
+                    logger.info("inline_cycle_step_assigned", extra={
+                        'cycle_id': str(cycle.id),
+                        'step_id': step_id,
+                        'step_stage': assigned_step.stage,
+                        'account_id': str(account_id),
+                    })
+                else:
+                    # Should never happen if _create_cycle worked correctly
+                    logger.error("inline_cycle_missing_qualification_step", extra={
+                        'cycle_id': str(cycle.id),
+                        'account_id': str(account_id),
+                    })
                     raise StandardizedValidationError(
-                        CoreErrorMessages.REQUIRED_FIELD.format(
-                            field='Decision Cycle (required when creating inline step)'
-                        )
+                        ActivityErrorMessages.CYCLE_CREATION_FAILED
                     )
+
+            # ==================================================================
+            # STEP 3: Validate step belongs to cycle (if both provided)
+            # ==================================================================
+            if cycle_id and step_id:
+                step_exists = DecisionStep.objects.filter(
+                    id=step_id,
+                    cycle_id=cycle_id
+                ).exists()
                 
-                step = self._create_step(inline_step, cycle_id)
-                created_entities['step'] = step
-                step_id = str(step.id)
-                
-                logger.info("inline_step_created", extra={
-                    'step_id': str(step.id),
-                    'cycle_id': str(cycle_id),
-                })
-            
+                if not step_exists:
+                    raise StandardizedValidationError(
+                        ActivityErrorMessages.STEP_MUST_BELONG_TO_CYCLE
+                    )
+
             # ==================================================================
             # VALIDATION: If cycle is provided, step is REQUIRED
             # ==================================================================
-            
             if cycle_id and not step_id:
                 raise StandardizedValidationError(
                     ActivityErrorMessages.STEP_REQUIRES_CYCLE
                 )
-            
+
             # ==================================================================
             # STEP 4: Create Activity
             # ==================================================================
@@ -181,9 +207,12 @@ class ActivityCreationService:
         except Exception as e:
             logger.error("activity_creation_service_error", extra={
                 'error': str(e),
+                'account_id': str(activity_data.get('account_id')) if activity_data else None,
+                'has_inline_contact': bool(inline_contact),
+                'has_inline_cycle': bool(inline_cycle),
             })
             raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=str(e))
+                ActivityErrorMessages.CREATION_FAILED
             )
     
     def _create_contact(self, data: dict, account_id: str) -> Contact:
@@ -201,14 +230,22 @@ class ActivityCreationService:
                     CoreErrorMessages.REQUIRED_FIELD.format(field='Contact Last Name')
                 )
             
+            # Handle both 'phone_number' and 'phone' keys from frontend
+            phone_value = data.get('phone_number') or data.get('phone')
+            phone_number = (phone_value or '').strip() or None
+            
+            # Handle standard_department_id
+            standard_department_id = data.get('standard_department_id')
+            
             contact = Contact(
                 client_id=self.client_id,
                 account_id=account_id,
                 first_name=first_name,
                 last_name=last_name,
                 email=(data.get('email') or '').strip() or None,
-                phone=(data.get('phone') or '').strip() or None,
+                phone_number=phone_number,
                 job_title=(data.get('job_title') or '').strip() or None,
+                standard_department_id=standard_department_id,
                 created_by=self.user,
                 updated_by=self.user,
             )
@@ -218,13 +255,25 @@ class ActivityCreationService:
         except StandardizedValidationError:
             raise
         except Exception as e:
+            logger.error("inline_contact_creation_failed", extra={
+                'error': str(e),
+                'account_id': str(account_id),
+            })
             raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Contact creation failed: {str(e)}")
+                ActivityErrorMessages.CONTACT_CREATION_FAILED
             )
     
     def _create_cycle(self, data: dict, account_id: str) -> DecisionCycle:
-        """Create a decision cycle with minimal required fields."""
+        """
+        Create a decision cycle with auto-created pipeline steps.
+        
+        Pipeline steps are FIXED and auto-created (same as DecisionCycleViewSet.create).
+        All 7 steps are created: Qualification → Technical Fit → Solution Validation 
+        → Business Case → Closing → Implementation → Go Live
+        """
         try:
+            from app_modules.decision_cycles.constants import PIPELINE_STEPS_CONFIG
+            
             name = data.get('name', '').strip()
             
             if not name:
@@ -232,6 +281,7 @@ class ActivityCreationService:
                     CoreErrorMessages.REQUIRED_FIELD.format(field='Decision Cycle Name')
                 )
             
+            # Create the cycle
             cycle = DecisionCycle(
                 client_id=self.client_id,
                 account_id=account_id,
@@ -241,63 +291,63 @@ class ActivityCreationService:
                 updated_by=self.user,
             )
             cycle.save()
+            
+            # Auto-create all 7 pipeline steps (FIXED structure)
+            self._create_pipeline_steps(cycle)
+            
+            logger.info("inline_cycle_created_with_steps", extra={
+                'cycle_id': str(cycle.id),
+                'account_id': str(account_id),
+                'steps_created': len(PIPELINE_STEPS_CONFIG),
+            })
+            
             return cycle
         
         except StandardizedValidationError:
             raise
         except Exception as e:
+            logger.error("inline_cycle_creation_failed", extra={
+                'error': str(e),
+                'account_id': str(account_id),
+            })
             raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Decision Cycle creation failed: {str(e)}")
+                ActivityErrorMessages.CYCLE_CREATION_FAILED
             )
-    
-    def _create_step(self, data: dict, cycle_id: str) -> DecisionStep:
-        """Create a decision step with required fields."""
-        try:
-            from app_modules.decision_cycles.constants import DecisionStage
-            
-            name = data.get('name', '').strip()
-            stage = data.get('stage')
-            expected_end = data.get('expected_end')
-            
-            if not name:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field='Decision Step Name')
-                )
-            if not stage:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field='Decision Step Stage')
-                )
-            if not expected_end:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field='Decision Step Expected End Date')
-                )
-            
-            # Validate stage
-            valid_stages = [choice[0] for choice in DecisionStage.choices]
-            if stage not in valid_stages:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field='Decision Step Stage')
-                )
-            
+
+    def _create_pipeline_steps(self, cycle: DecisionCycle) -> None:
+        """
+        Create all fixed pipeline steps for a new cycle.
+        
+        Steps are created in order with linked-list relationships.
+        This mirrors DecisionCycleViewSet._create_pipeline_steps().
+        """
+        from app_modules.decision_cycles.constants import PIPELINE_STEPS_CONFIG
+        
+        previous_step = None
+        
+        for config in PIPELINE_STEPS_CONFIG:
             step = DecisionStep(
-                client_id=self.client_id,
-                cycle_id=cycle_id,
-                name=name,
-                stage=stage,
-                expected_end=expected_end,
+                cycle=cycle,
+                client_id=cycle.client_id,
+                name=config['step'].label,
+                stage=config['step'].value,
+                order=config['order'],
                 status=DecisionStepStatus.NOT_STARTED,
+                previous_step=previous_step,
+                expected_end=None,
                 created_by=self.user,
                 updated_by=self.user,
             )
-            step.save()
-            return step
-        
-        except StandardizedValidationError:
-            raise
-        except Exception as e:
-            raise StandardizedValidationError(
-                CoreErrorMessages.UNEXPECTED_ERROR.format(detail=f"Decision Step creation failed: {str(e)}")
-            )
+            step.save(user=self.user)
+            
+            logger.debug("pipeline_step_created", extra={
+                'cycle_id': str(cycle.id),
+                'step_id': str(step.id),
+                'stage': config['step'].value,
+                'order': config['order'],
+            })
+            
+            previous_step = step
     
     def _create_activity(
         self,
@@ -363,6 +413,11 @@ class ActivityCreationService:
         except StandardizedValidationError:
             raise
         except Exception as e:
+            logger.error("activity_creation_failed", extra={
+                'error': str(e),
+                'account_id': str(activity_data.get('account_id')),
+                'activity_type': activity_data.get('activity_type'),
+            })
             raise StandardizedValidationError(
-                ActivityErrorMessages.CREATION_FAILED.format(detail=str(e))
+                ActivityErrorMessages.CREATION_FAILED
             )
