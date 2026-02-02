@@ -324,6 +324,10 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
         """
         ctx = ctx_from_request(request)
         instance = self.get_object()
+
+        # TEST ERROR MESSAGE ERRORDISPLAY IN FRONT
+        raise StandardizedValidationError(
+            'Territory deletion is currently disabled.',)
         
         # Prevent deletion of system territories
         if instance.is_system:

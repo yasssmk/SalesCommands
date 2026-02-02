@@ -131,19 +131,23 @@ export default function DecisionCycleTab({ accountId, accountName }) {
       
       if (result.success) {
         displaySuccessSnackbar('Decision cycle deleted successfully');
-        
         // NOW revalidate cycles list (after selection is cleared)
         mutateCycles();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to delete cycle');
-        
+        displayErrorSnackbar({
+          message: result.error || 'Failed to delete decision cycle',
+          status: result.status
+        });
         // Restore selection if delete failed
         if (wasSelected) {
           setSelectedCycleId(cycle.id);
         }
       }
-    } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
     }
   }, [selectedCycleId, mutateCycles]);
   

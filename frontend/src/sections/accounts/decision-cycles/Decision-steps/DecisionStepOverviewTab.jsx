@@ -189,10 +189,16 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
         displaySuccessSnackbar('Step marked as validated');
         onUpdate?.();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to update status');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to mark step as validated',
+          status: result.status
+        });
       }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
     } finally {
       setSaving(false);
     }
@@ -220,20 +226,24 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
    */
   const handleStatusChange = useCallback(async (newStatus) => {
     setSaving(true);
-    
     try {
       const result = await updateDecisionStepStatus(step.id, newStatus, step.cycle);
-      
       if (result.success) {
         displaySuccessSnackbar('Status updated');
         onUpdate?.();
         return true;
       } else {
-        displayErrorSnackbar(result.error || 'Failed to update status');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to update status',
+          status: result.status
+        });
         return false;
       }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
       return false;
     } finally {
       setSaving(false);

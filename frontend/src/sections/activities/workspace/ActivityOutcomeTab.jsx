@@ -343,14 +343,21 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
       const result = await updateActivity(activity.id, {
         next_activity_id: null
       });
+      
       if (result.success) {
         displaySuccessSnackbar('Next activity unlinked');
         onUpdate?.();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to unlink activity');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to unlink activity',
+          status: result.status
+        });
       }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
     }
   };
 
@@ -533,15 +540,21 @@ function ResultSection({ activity, onUpdate }) {
 
   const handleComplete = async () => {
     if (!selectedOutcome) {
-      displayErrorSnackbar('Please select an outcome');
+      displayErrorSnackbar({
+        message: 'Please select an outcome',
+        status: 400
+      });
       return;
     }
-
+    
     if (needsNoNextStepReason && !isReasonValid) {
-      displayErrorSnackbar('Please select a reason for no next step');
+      displayErrorSnackbar({
+        message: 'Please select a reason for no next step',
+        status: 400
+      });
       return;
     }
-
+    
     setCompleting(true);
     try {
       // Build payload
@@ -549,23 +562,29 @@ function ResultSection({ activity, onUpdate }) {
         outcome: selectedOutcome,
         outcome_notes: outcomeNotes.trim() || null
       };
-
+      
       // If no next step, include reason
       if (needsNoNextStepReason) {
         payload.next_step_agreed = false;
         payload.no_next_step_reason = buildReasonString();
       }
-
+      
       const result = await completeActivity(activity.id, payload);
-
+      
       if (result.success) {
         displaySuccessSnackbar('Activity completed successfully');
         onUpdate?.();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to complete activity');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to complete activity',
+          status: result.status
+        });
       }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
     } finally {
       setCompleting(false);
     }

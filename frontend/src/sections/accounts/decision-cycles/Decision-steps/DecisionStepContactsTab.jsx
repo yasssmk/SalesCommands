@@ -186,54 +186,60 @@ export default function DecisionStepContactsTab({ step, accountId }) {
   
   // Add contacts to step
   const handleAddContacts = useCallback(async () => {
-    if (selectedContacts.length === 0) return;
-    
-    setSaving(true);
-    try {
-      // Merge existing + new contact IDs
-      const newContactIds = [...stepContactIds, ...selectedContacts.map(c => c.id)];
-      
-      const result = await updateDecisionStep(step.id, { contact_ids: newContactIds }, step.cycle);
-      
-      if (result.success) {
-        displaySuccessSnackbar(`${selectedContacts.length} contact(s) added`);
-        setSelectedContacts([]);
-        setAddMode(false);
-        // Parent should handle refresh via onUpdate
-        window.location.reload(); // Temporary - ideally use mutate
-      } else {
-        displayErrorSnackbar(result.error || 'Failed to add contacts');
-      }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred');
-    } finally {
-      setSaving(false);
-    }
-  }, [selectedContacts, stepContactIds, step?.id, step?.cycle]);
+  if (selectedContacts.length === 0) return;
   
-  // Remove contact from step
-  const handleRemoveContact = useCallback(async (contact) => {
-    const contactIdToRemove = contact.contact_id || contact.contact?.id || contact.id;
+  setSaving(true);
+  try {
+    const newContactIds = [...stepContactIds, ...selectedContacts.map(c => c.id)];
+    const result = await updateDecisionStep(step.id, { contact_ids: newContactIds }, step.cycle);
     
-    setSaving(true);
-    try {
-      // Filter out the removed contact
-      const newContactIds = stepContactIds.filter(id => id !== contactIdToRemove);
-      
-      const result = await updateDecisionStep(step.id, { contact_ids: newContactIds }, step.cycle);
-      
-      if (result.success) {
-        displaySuccessSnackbar('Contact removed');
-        window.location.reload(); // Temporary - ideally use mutate
-      } else {
-        displayErrorSnackbar(result.error || 'Failed to remove contact');
-      }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred');
-    } finally {
-      setSaving(false);
+    if (result.success) {
+      displaySuccessSnackbar(`${selectedContacts.length} contact(s) added`);
+      setSelectedContacts([]);
+      setAddMode(false);
+      onUpdate?.(); // Triggers mutateStep → SWR revalidates step data
+    } else {
+      displayErrorSnackbar({
+        message: result.error || 'Failed to add contacts',
+        status: result.status
+      });
     }
-  }, [stepContactIds, step?.id, step?.cycle]);
+  } catch (error) {
+    displayErrorSnackbar({
+      message: error?.message || 'An unexpected error occurred',
+      status: 500
+    });
+  } finally {
+    setSaving(false);
+  }
+}, [selectedContacts, stepContactIds, step?.id, step?.cycle, onUpdate]);
+
+const handleRemoveContact = useCallback(async (contact) => {
+  const contactIdToRemove = contact.contact_id || contact.contact?.id || contact.id;
+  
+  setSaving(true);
+  try {
+    const newContactIds = stepContactIds.filter(id => id !== contactIdToRemove);
+    const result = await updateDecisionStep(step.id, { contact_ids: newContactIds }, step.cycle);
+    
+    if (result.success) {
+      displaySuccessSnackbar('Contact removed');
+      onUpdate?.(); // Triggers mutateStep → SWR revalidates step data
+    } else {
+      displayErrorSnackbar({
+        message: result.error || 'Failed to remove contact',
+        status: result.status
+      });
+    }
+  } catch (error) {
+    displayErrorSnackbar({
+      message: error?.message || 'An unexpected error occurred',
+      status: 500
+    });
+  } finally {
+    setSaving(false);
+  }
+}, [stepContactIds, step?.id, step?.cycle, onUpdate]);
   
   // Cancel add mode
   const handleCancelAdd = useCallback(() => {

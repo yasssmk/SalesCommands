@@ -327,6 +327,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         instance = self.get_object()
         cycle_id = str(instance.id)
         cycle_name = instance.name
+
         
         logger.info("decision_cycle_delete_requested", extra={
             **ctx,

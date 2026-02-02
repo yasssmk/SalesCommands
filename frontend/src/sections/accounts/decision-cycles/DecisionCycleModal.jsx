@@ -110,11 +110,17 @@ export default function DecisionCycleModal({
           onSuccess?.(result.data);
           handleClose();
         } else {
-          displayErrorSnackbar(result.error || 'Failed to save cycle');
+          displayErrorSnackbar({
+            message: result.error || (isEditMode ? 'Failed to update decision cycle' : 'Failed to create decision cycle'),
+            status: result.status
+          });
         }
-      } catch (error) {
-        displayErrorSnackbar(error.message || 'An error occurred');
-      } finally {
+        } catch (err) {
+        displayErrorSnackbar({
+          message: err?.message || 'An unexpected error occurred',
+          status: 500
+        });
+        } finally {
         setSubmitting(false);
       }
     }

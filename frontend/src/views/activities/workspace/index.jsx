@@ -53,11 +53,17 @@ export default function ActivityWorkspacePage() {
         mutateActivity();
         return true;
       } else {
-        displayErrorSnackbar(result.error || 'Failed to update');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to update activity',
+          status: result.status
+        });
         return false;
       }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
       return false;
     }
   };

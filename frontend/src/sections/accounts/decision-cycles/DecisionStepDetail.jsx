@@ -164,14 +164,20 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
         displaySuccessSnackbar('Step updated');
         onUpdate?.(result.data);
         return true;
-      } else {
-        displayErrorSnackbar(result.error || 'Failed to update step');
-        return false;
-      }
-    } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
-      return false;
-    } finally {
+        } else {
+          displayErrorSnackbar({
+            message: result.error || 'Failed to update step',
+            status: result.status
+          });
+          return false;
+        }
+        } catch (err) {
+          displayErrorSnackbar({
+            message: err?.message || 'An unexpected error occurred',
+            status: 500
+          });
+          return false;
+        } finally {
       setSaving(false);
     }
   }, [step.id, step.cycle, onUpdate]);
@@ -190,17 +196,23 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
         displaySuccessSnackbar('Step updated');
         onUpdate?.(result.data);
         return true;
-      } else {
-        displayErrorSnackbar(result.error || 'Failed to update step');
-        return false;
-      }
-    } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, [step.id, step.cycle, onUpdate]);
+        } else {
+          displayErrorSnackbar({
+            message: result.error || 'Failed to update step',
+            status: result.status
+          });
+          return false;
+        }
+        } catch (err) {
+          displayErrorSnackbar({
+            message: err?.message || 'An unexpected error occurred',
+            status: 500
+          });
+          return false;
+        } finally {
+          setSaving(false);
+        }
+      }, [step.id, step.cycle, onUpdate]);
 
   /**
    * Save date and time together
@@ -220,15 +232,21 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
         onUpdate?.(result.data);
         return true;
       } else {
-        displayErrorSnackbar(result.error || 'Failed to update schedule');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to update schedule',
+          status: result.status
+        });
         return false;
       }
-    } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
-      return false;
-    } finally {
-      setSaving(false);
-    }
+      } catch (err) {
+        displayErrorSnackbar({
+          message: err?.message || 'An unexpected error occurred',
+          status: 500
+        });
+        return false;
+      } finally {
+            setSaving(false);
+          }
   }, [step.id, step.cycle, onUpdate]);
   
   /**
@@ -245,13 +263,19 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
         onUpdate?.(result.data);
         return true;
       } else {
-        displayErrorSnackbar(result.error || 'Failed to update status');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to update status',
+          status: result.status
+        });
         return false;
       }
-    } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
-      return false;
-    } finally {
+      } catch (err) {
+        displayErrorSnackbar({
+          message: err?.message || 'An unexpected error occurred',
+          status: 500
+        });
+        return false;
+      }finally {
       setSaving(false);
     }
   }, [step.id, step.cycle, onUpdate]);

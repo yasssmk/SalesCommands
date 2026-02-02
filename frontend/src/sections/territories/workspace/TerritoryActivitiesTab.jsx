@@ -196,10 +196,10 @@ export default function TerritoryActivitiesTab({ territoryId, territory }) {
         displaySuccessSnackbar('Activity cancelled');
         mutateActivities();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to cancel activity');
+        displayErrorSnackbar(result);
       }
     } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
+      displayErrorSnackbar(error);
     }
   }, [mutateActivities]);
 

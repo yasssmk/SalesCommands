@@ -140,21 +140,27 @@ export default function AccountActivitiesTab({ accountId, account }) {
   }, []);
 
   const handleCancel = useCallback(async (activity) => {
-    if (!activity?.id) return;
+  if (!activity?.id) return;
+  
+  try {
+    const result = await cancelActivity(activity.id, { notes: 'Cancelled by user' });
     
-    try {
-      const result = await cancelActivity(activity.id, { notes: 'Cancelled by user' });
-      
-      if (result.success) {
-        displaySuccessSnackbar('Activity cancelled');
-        mutateActivities();
-      } else {
-        displayErrorSnackbar(result.error || 'Failed to cancel activity');
-      }
-    } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
+    if (result.success) {
+      displaySuccessSnackbar('Activity cancelled');
+      mutateActivities();
+    } else {
+      displayErrorSnackbar({
+        message: result.error || 'Failed to cancel activity',
+        status: result.status
+      });
     }
-  }, [mutateActivities]);
+  } catch (err) {
+    displayErrorSnackbar({
+      message: err?.message || 'An unexpected error occurred',
+      status: 500
+    });
+  }
+}, [mutateActivities]);
 
   // ==============================|| HANDLERS - MODAL CLOSE ||============================== //
 

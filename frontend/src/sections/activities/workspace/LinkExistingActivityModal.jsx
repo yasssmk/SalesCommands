@@ -184,21 +184,27 @@ export default function LinkExistingActivityModal({
   // Handle link action
   const handleLink = async () => {
     if (!selectedActivity || !currentActivity?.id) return;
-
+    
     setLinking(true);
     try {
       // Update current activity to set next_activity
       const result = await updateActivity(currentActivity.id, {
         next_activity_id: selectedActivity.id
       });
-
+      
       if (result.success) {
         onSuccess?.();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to link activity');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to link activity',
+          status: result.status
+        });
       }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred while linking');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
     } finally {
       setLinking(false);
     }

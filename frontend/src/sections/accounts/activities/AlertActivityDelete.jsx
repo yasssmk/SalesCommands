@@ -60,10 +60,16 @@ export default function AlertActivityDelete({
         onSuccess?.(activity);
         onClose();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to delete activity');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to delete activity',
+          status: result.status
+        });
       }
-    } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
     } finally {
       setDeleting(false);
     }

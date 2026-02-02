@@ -392,11 +392,17 @@ export default function ActivityModal({
           onSuccess?.(result.data?.activity || result.data);
           handleClose();
         } else {
-          displayErrorSnackbar(result.error || 'Failed to save activity');
+          displayErrorSnackbar({
+            message: result.error || (isEditMode ? 'Failed to update activity' : 'Failed to create activity'),
+            status: result.status
+          });
         }
-      } catch (error) {
-        displayErrorSnackbar(error.message || 'An error occurred');
-      } finally {
+        } catch (err) {
+        displayErrorSnackbar({
+          message: err?.message || 'An unexpected error occurred',
+          status: 500
+        });
+        } finally {
         setSubmitting(false);
       }
     }

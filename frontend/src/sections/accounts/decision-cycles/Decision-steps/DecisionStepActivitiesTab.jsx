@@ -232,10 +232,16 @@ export default function DecisionStepActivitiesTab({ step, accountId, onUpdate })
         mutateActivities();
         onUpdate?.();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to cancel activity');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to cancel activity',
+          status: result.status
+        });
       }
-    } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
     }
   }, [mutateActivities, onUpdate]);
   

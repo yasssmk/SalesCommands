@@ -196,15 +196,25 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
   };
 
   const handleCancelActivity = async () => {
-    handleMenuClose();
+  handleMenuClose();
+  try {
     const result = await cancelActivity(activity.id);
     if (result.success) {
       displaySuccessSnackbar('Activity cancelled');
       onUpdate?.();
     } else {
-      displayErrorSnackbar(result.error || 'Failed to cancel');
+      displayErrorSnackbar({
+        message: result.error || 'Failed to cancel activity',
+        status: result.status
+      });
     }
-  };
+  } catch (err) {
+    displayErrorSnackbar({
+      message: err?.message || 'An unexpected error occurred',
+      status: 500
+    });
+  }
+};
 
   const handleDeleteClick = () => {
     handleMenuClose();
@@ -242,7 +252,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
   const handleTypeChange = async (newType) => {
     handleTypeMenuClose();
     if (newType === activity.activity_type) return;
-
+    
     setSavingType(true);
     try {
       const result = await updateActivity(activity.id, { activity_type: newType });
@@ -250,10 +260,16 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
         displaySuccessSnackbar('Activity type updated');
         onUpdate?.();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to update type');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to update activity type',
+          status: result.status
+        });
       }
-    } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
     } finally {
       setSavingType(false);
     }

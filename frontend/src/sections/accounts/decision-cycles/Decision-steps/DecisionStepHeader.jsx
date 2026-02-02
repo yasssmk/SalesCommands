@@ -119,21 +119,25 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
   const handleStatusMenuOpen = (event) => setStatusAnchorEl(event.currentTarget);
   const handleStatusMenuClose = () => setStatusAnchorEl(null);
 
-  // Handle status change
   const handleStatusChange = async (newStatus) => {
     handleStatusMenuClose();
     setSaving(true);
-    
     try {
       const result = await updateDecisionStepStatus(step.id, newStatus, cycleId);
       if (result.success) {
         displaySuccessSnackbar('Status updated');
         onUpdate?.();
       } else {
-        displayErrorSnackbar(result.error || 'Failed to update status');
+        displayErrorSnackbar({
+          message: result.error || 'Failed to update status',
+          status: result.status
+        });
       }
-    } catch (error) {
-      displayErrorSnackbar('An error occurred');
+    } catch (err) {
+      displayErrorSnackbar({
+        message: err?.message || 'An unexpected error occurred',
+        status: 500
+      });
     } finally {
       setSaving(false);
     }

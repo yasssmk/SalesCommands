@@ -397,25 +397,45 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     def perform_destroy(self, instance):
         """
         Delete activity with linked list cleanup and audit logging.
+        
+        Uses direct database updates to avoid unique constraint violations
+        on OneToOneField (next_activity_id, previous_activity_id).
+        
+        Strategy:
+            1. Capture adjacent activity IDs before any modification
+            2. Clear links on the instance being deleted (breaks the chain)
+            3. Reconnect adjacent activities
+            4. Delete the instance
         """
         user = self.request.user
         client_id = self.get_client_id()
         activity_id = str(instance.id)
         account_id = str(instance.account_id)
         
-        # Update linked list: connect previous to next
-        if instance.previous_activity and instance.next_activity:
-            instance.previous_activity.next_activity = instance.next_activity
-            instance.previous_activity.save()
-            instance.next_activity.previous_activity = instance.previous_activity
-            instance.next_activity.save()
-        elif instance.previous_activity:
-            instance.previous_activity.next_activity = None
-            instance.previous_activity.save()
-        elif instance.next_activity:
-            instance.next_activity.previous_activity = None
-            instance.next_activity.save()
+        # Capture adjacent activity IDs before modification
+        previous_id = instance.previous_activity_id
+        next_id = instance.next_activity_id
         
+        # Step 1: Clear links on the instance being deleted
+        # This releases the unique constraint on next_activity_id and previous_activity_id
+        Activity.objects.filter(id=instance.id).update(
+            previous_activity=None,
+            next_activity=None
+        )
+        
+        # Step 2: Reconnect adjacent activities
+        if previous_id and next_id:
+            # Chain: A → [B] → C  becomes  A → C
+            Activity.objects.filter(id=previous_id).update(next_activity=next_id)
+            Activity.objects.filter(id=next_id).update(previous_activity=previous_id)
+        elif previous_id:
+            # Chain: A → [B]  becomes  A (end)
+            Activity.objects.filter(id=previous_id).update(next_activity=None)
+        elif next_id:
+            # Chain: [B] → C  becomes  C (start)
+            Activity.objects.filter(id=next_id).update(previous_activity=None)
+        
+        # Step 3: Delete the instance
         instance.delete()
         
         # Audit log
@@ -437,7 +457,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'activity_id': activity_id,
             'account_id': account_id,
         })
-    
+
     # ==========================================================================
     # CUSTOM ACTIONS
     # ==========================================================================

@@ -80,7 +80,6 @@ export default function ActivityCompleteModal({
       if (!activity?.id) return;
       
       setSubmitting(true);
-      
       try {
         const result = await completeActivity(activity.id, {
           outcome: values.outcome,
@@ -92,10 +91,16 @@ export default function ActivityCompleteModal({
           onSuccess?.(result.data);
           handleClose();
         } else {
-          displayErrorSnackbar(result.error || 'Failed to complete activity');
+          displayErrorSnackbar({
+            message: result.error || 'Failed to complete activity',
+            status: result.status
+          });
         }
-      } catch (error) {
-        displayErrorSnackbar(error.message || 'An error occurred');
+      } catch (err) {
+        displayErrorSnackbar({
+          message: err?.message || 'An unexpected error occurred',
+          status: 500
+        });
       } finally {
         setSubmitting(false);
       }
