@@ -27,10 +27,9 @@ class ActivityStatus(models.TextChoices):
     """
     Status of an activity.
     
-    Lifecycle: PLANNED → IN_PROGRESS → COMPLETED/CANCELLED
+    Lifecycle: PLANNED → COMPLETED/CANCELLED
     """
     PLANNED = 'PLANNED', _('Planned')
-    IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
     COMPLETED = 'COMPLETED', _('Completed')
     CANCELLED = 'CANCELLED', _('Cancelled')
 

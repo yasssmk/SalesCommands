@@ -55,7 +55,6 @@ export const ACTIVITY_TYPE_ICONS = {
  */
 export const ACTIVITY_STATUSES = {
   PLANNED: 'PLANNED',
-  IN_PROGRESS: 'IN_PROGRESS',
   COMPLETED: 'COMPLETED',
   CANCELLED: 'CANCELLED'
 };
@@ -65,7 +64,6 @@ export const ACTIVITY_STATUSES = {
  */
 export const ACTIVITY_STATUS_LABELS = {
   PLANNED: 'Planned',
-  IN_PROGRESS: 'In Progress',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled'
 };
@@ -75,7 +73,6 @@ export const ACTIVITY_STATUS_LABELS = {
  */
 export const ACTIVITY_STATUS_COLORS = {
   PLANNED: 'default',
-  IN_PROGRESS: 'info',
   COMPLETED: 'success',
   CANCELLED: 'error'
 };

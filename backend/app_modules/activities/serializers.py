@@ -418,7 +418,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         Check if activity has PENDING next activities in its sequence.
         
         Returns:
-            True: has pending (PLANNED/IN_PROGRESS) next activities
+            True: has pending (PLANNED) next activities
             False: no pending next activities in sequence
             None: activity is standalone (not in a cycle)
         """
@@ -427,10 +427,10 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         
         context = self._get_cached_sequence_context(obj)
         if context and context.get('next_activities'):
-            # Only count PLANNED or IN_PROGRESS as valid "next steps"
+            # Only count PLANNED as valid "next steps"
             pending_next = [
                 act for act in context['next_activities']
-                if act.get('status') in ('PLANNED', 'IN_PROGRESS')
+                if act.get('status') == 'PLANNED'
             ]
             return len(pending_next) > 0
         return False
@@ -439,15 +439,11 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         """
         Determine the effective next step status for UX logic.
         
-        Priority (UPDATED):
+        Priority:
             1. If PENDING next_activities exist in sequence → True (reality wins)
             2. If next_activity FK is set and PENDING → True
             3. If next_step_agreed is explicitly set → return its value
             4. Otherwise → None (ask user to confirm)
-        
-        RATIONALE: If someone marked "no next step" but then a next activity
-        was created, the reality (pending activities exist) should override
-        the outdated explicit flag.
         
         Returns:
             True: next step exists or was agreed
@@ -456,17 +452,16 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         """
         
         # Priority 1: Check sequence context for PENDING activities in cycle
-        # Reality (actual pending activities) takes precedence over past declarations
         if obj.decision_cycle_id:
             context = self._get_cached_sequence_context(obj)
             
             if context and context.get('next_activities'):
                 all_next = context['next_activities']
                 
-                # Filter to only count PLANNED or IN_PROGRESS activities
+                # Filter to only count PLANNED activities
                 pending_next = [
                     act for act in all_next
-                    if act.get('status') in ('PLANNED', 'IN_PROGRESS')
+                    if act.get('status') == 'PLANNED'
                 ]
                 
                 if pending_next:
@@ -474,7 +469,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         
         # Priority 2: Check legacy next_activity FK for standalone
         if obj.next_activity_id:
-            if obj.next_activity and obj.next_activity.status in ('PLANNED', 'IN_PROGRESS'):
+            if obj.next_activity and obj.next_activity.status == 'PLANNED':
                 return True
         
         # Priority 3: Explicit value (only applies when no pending activities exist)

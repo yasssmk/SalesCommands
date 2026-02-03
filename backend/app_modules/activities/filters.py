@@ -3,7 +3,7 @@
 FilterSet for Activity module.
 
 Uses BaseInFilter to accept comma-separated values for choice fields.
-Example: ?status=PLANNED,IN_PROGRESS → filters for status IN ['PLANNED', 'IN_PROGRESS']
+Example: ?status=PLANNED,COMPLETED → filters for status IN ['PLANNED', 'COMPLETED']
 """
 
 import django_filters
@@ -15,7 +15,7 @@ from .models import Activity
 class CharInFilter(BaseInFilter, CharFilter):
     """
     Filter that accepts comma-separated string values.
-    Example: ?status=PLANNED,IN_PROGRESS → ['PLANNED', 'IN_PROGRESS']
+    Example: ?status=PLANNED,COMPLETED → ['PLANNED', 'COMPLETED']
     """
     pass
 
@@ -83,12 +83,12 @@ class ActivityFilter(django_filters.FilterSet):
         if value:
             return queryset.filter(
                 due_date__lt=today,
-                status__in=[ActivityStatus.PLANNED, ActivityStatus.IN_PROGRESS]
+                status__in=ActivityStatus.PLANNED
             )
         else:
             return queryset.exclude(
                 due_date__lt=today,
-                status__in=[ActivityStatus.PLANNED, ActivityStatus.IN_PROGRESS]
+                status__in=ActivityStatus.PLANNED
             )
     
     def filter_has_decision_step(self, queryset, name, value):

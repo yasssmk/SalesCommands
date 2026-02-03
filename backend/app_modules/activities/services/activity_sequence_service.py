@@ -498,13 +498,13 @@ class ActivitySequenceService:
         """
         Get PENDING activities with rank > current_rank.
         
-        Only returns activities with status PLANNED or IN_PROGRESS.
+        Only returns activities with status PLANNED 
         Skips COMPLETED and CANCELLED activities.
         
         This ensures "next activities" shows actual upcoming work,
         not already-completed activities that happen to be sequenced after.
         """
-        pending_statuses = ('PLANNED', 'IN_PROGRESS')
+        pending_statuses = ('PLANNED')
         return [
             act for act in ranked_activities
             if act['_rank'] > current_rank and act.get('status') in pending_statuses

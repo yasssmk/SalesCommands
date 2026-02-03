@@ -570,12 +570,9 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         
         POST /activities/{id}/reopen/
         
-        Body:
-            - status (optional): Target status ('PLANNED' or 'IN_PROGRESS'), defaults to 'PLANNED'
-        
         Behavior:
             - Clears outcome, outcome_notes, and completed_at
-            - Sets status to PLANNED or IN_PROGRESS
+            - Sets status back to PLANNED
             - Only works on COMPLETED or CANCELLED activities
         """
         ctx = ctx_from_request(request)
@@ -593,25 +590,16 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 ActivityErrorMessages.CANNOT_REOPEN
             )
         
-        # Get target status (default to PLANNED)
-        target_status = request.data.get('status', ActivityStatus.PLANNED)
-        
-        # Validate target status
-        valid_target_statuses = [ActivityStatus.PLANNED, ActivityStatus.IN_PROGRESS]
-        if target_status not in valid_target_statuses:
-            raise StandardizedValidationError(
-                ActivityErrorMessages.INVALID_TARGET_STATUS
-            )
-        
         old_status = activity.status
         
-        # Clear outcome fields and reopen
-        activity.status = target_status
+        # Clear outcome fields and reopen as PLANNED
+        activity.status = ActivityStatus.PLANNED
         activity.outcome = None
         activity.outcome_notes = None
         activity.completed_at = None
         
         activity.save(user=request.user)
+        target_status = activity.status
         
         # Audit log
         audit_log(

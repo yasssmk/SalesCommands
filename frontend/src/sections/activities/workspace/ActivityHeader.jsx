@@ -175,7 +175,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
   // ==============================|| DERIVED VALUES ||============================== //
 
   const TypeIcon = TYPE_ICONS[activity.activity_type] || QuestionCircleOutlined;
-  const avatarColor = TYPE_AVATAR_COLORS[activity.activity_type] || 'grey.500';
+  const avatarColor = TYPE_AVATAR_COLORS[activity.activity_type] || 'grey.500'; 
   const typeChipColor = TYPE_CHIP_COLORS[activity.activity_type] || 'default';
   
   const isCompleted = activity.status === 'COMPLETED';
@@ -401,7 +401,7 @@ const handleReopenActivity = async () => {
             </IconButton>
             <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
               
-              {/* Complete - For PLANNED or IN_PROGRESS */}
+              {/* Complete - For PLANNED  */}
               {canComplete && (
                 <MenuItem onClick={handleCompleteClick}>
                   <ListItemIcon>
@@ -411,7 +411,7 @@ const handleReopenActivity = async () => {
                 </MenuItem>
               )}
               
-              {/* Cancel - For PLANNED or IN_PROGRESS */}
+              {/* Cancel - For PLANNED  */}
               {canCancel && (
                 <MenuItem onClick={handleCancelActivity}>
                   <ListItemIcon>
