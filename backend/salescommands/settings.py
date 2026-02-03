@@ -322,6 +322,7 @@ DATABASES = {
 DATABASES["default"]["OPTIONS"] = {
     "options": "-c statement_timeout=6000 -c idle_in_transaction_session_timeout=10000"
 }
+DATABASES["default"]["CONN_MAX_AGE"] = 600  # Reuse DB connections for 10 minutes
 
 
 # ==============================

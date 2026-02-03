@@ -16,4 +16,10 @@ class ActivitiesConfig(AppConfig):
     
     def ready(self):
         """Import signals when app is ready."""
-        pass  # Signals will be added later if needed
+        try:
+            from app_modules.activities.signals import cache_invalidation  # noqa: F401
+            print("[ACTIVITIES] Cache invalidation signals loaded successfully")
+        except ImportError as e:
+            print(f"[ACTIVITIES] Warning: Could not load cache signals: {e}")
+        except Exception as e:
+            print(f"[ACTIVITIES] Error loading signals: {e}")

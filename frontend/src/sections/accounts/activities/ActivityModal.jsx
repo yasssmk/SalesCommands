@@ -142,14 +142,13 @@ export default function ActivityModal({
   
   const isEditMode = Boolean(activity?.id);
   
-  // Fetch choices
-  const { choicesLoading } = useGetActivityChoices();
+  // Fetch choices (skip when modal is closed)
+  const { choicesLoading } = useGetActivityChoices(open);
   
-  // Fetch contacts for the account
-  const { contacts, contactsLoading } = useGetContacts({ 
-    filters: { account_id: accountId },
-    pageSize: 100 
-  });
+  // Fetch contacts for the account (skip when modal is closed)
+  const { contacts, contactsLoading } = useGetContacts(
+    open ? { filters: { account_id: accountId }, pageSize: 100 } : null
+  );
 
   // Contact options for autocomplete
   const contactOptions = useMemo(() => {
@@ -162,8 +161,8 @@ export default function ActivityModal({
     }));
   }, [contacts]);
 
-  // Fetch decision cycles for the account
-  const { cycles, cyclesLoading } = useGetDecisionCyclesByAccount(accountId);
+  // Fetch decision cycles for the account (skip when modal is closed)
+  const { cycles, cyclesLoading } = useGetDecisionCyclesByAccount(open ? accountId : null);
 
   // Cycle options for dropdown
   const cycleOptions = useMemo(() => {
@@ -292,8 +291,8 @@ export default function ActivityModal({
 
   const { values, errors, touched, handleChange, handleBlur, handleSubmit, resetForm, setFieldValue } = formik;
   
-  // Fetch decision steps based on selected cycle
-  const { steps, stepsLoading } = useGetDecisionStepsByCycle(values.decision_cycle_id);
+  // Fetch decision steps based on selected cycle (skip when modal is closed)
+  const { steps, stepsLoading } = useGetDecisionStepsByCycle(open ? values.decision_cycle_id : null);
 
   // Step options for dropdown
   const stepOptions = useMemo(() => {

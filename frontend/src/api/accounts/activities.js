@@ -572,12 +572,13 @@ export async function unlinkActivityFromStep(activityId) {
 /**
  * GET ACTIVITY CHOICES - Types, statuses, and outcomes for dropdowns
  * 
+ * @param {boolean} enabled - When false, SWR key is null (skip fetch). Default: true.
  * @returns {Object} {choices, types, statuses, outcomes, choicesLoading, choicesError}
  */
-export function useGetActivityChoices() {
+export function useGetActivityChoices(enabled = true) {
   const { tenantId } = useAuth();
 
-  const swrKey = tenantKey(endpoints.choices, tenantId);
+  const swrKey = enabled ? tenantKey(endpoints.choices, tenantId) : null;
 
   const { data, isLoading, error } = useSWR(swrKey, {
     revalidateOnFocus: false,
@@ -591,10 +592,10 @@ export function useGetActivityChoices() {
       types: data?.data?.activity_types || [],
       statuses: data?.data?.statuses || [],
       outcomes: data?.data?.outcomes || [],
-      choicesLoading: isLoading,
+      choicesLoading: enabled ? isLoading : false,
       choicesError: error
     }),
-    [data, isLoading, error]
+    [data, isLoading, error, enabled]
   );
 
   return memoizedValue;

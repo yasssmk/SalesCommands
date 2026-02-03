@@ -21,7 +21,13 @@ from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
-from core.cache_utils import invalidate_tag
+from core.cache_utils import (
+    invalidate_tag,
+    build_drf_cache_key,
+    cache_get_set,
+    get_permissions_version,
+    _is_redis_backend,
+)
 
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from permissions.owner_scope import OwnerScopeMixin
@@ -133,6 +139,30 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'scope': 'client'
         }
     }
+
+    # ==========================================================================
+    # CACHE HELPERS
+    # ==========================================================================
+
+    def _invalidate_activity_caches(self, client_id):
+        """
+        Invalidate all activity-related caches and cross-module dependencies.
+
+        When an activity changes, we must invalidate:
+        - Activity cache (list, detail, filtered views)
+        - Account cache (workspace stats, activities_count)
+        - Decision cycle cache (timeline: activities per step)
+        """
+        client_id_str = str(client_id)
+        invalidate_tag(client_id_str, 'activities')
+        invalidate_tag(client_id_str, 'accounts')
+        invalidate_tag(client_id_str, 'decision_cycles')
+
+        logger.info('cache_invalidation_activity', extra={
+            'event': 'cache_invalidation',
+            'client_id': client_id_str,
+            'tags': ['activities', 'accounts', 'decision_cycles'],
+        })
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""
@@ -195,56 +225,136 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     
     def retrieve(self, request, *args, **kwargs):
         """
-        Retrieve a single activity.
+        Retrieve a single activity with Redis caching.
         GET /activities/{id}/
+        
+        Cache: 60s, tag 'activities', keyed by activity pk.
         """
         ctx = ctx_from_request(request)
-        instance = self.get_object()
+        pk = kwargs.get('pk')
+        
+        # Skip cache if no Redis
+        if not _is_redis_backend():
+            instance = self.get_object()
+            logger.info("activity_retrieved", extra={
+                **ctx,
+                'activity_id': str(instance.id),
+            })
+            serializer = self.get_serializer(instance)
+            return Response({
+                'success': True,
+                'data': serializer.data
+            })
+        
+        client_id = self.get_client_id()
+        cache_key = build_drf_cache_key(
+            namespace='activity_detail',
+            client_id=client_id,
+            user_id=request.user.id,
+            perm_version=get_permissions_version(),
+            extra=str(pk),
+            tag_namespace='activities',
+        )
+        
+        def producer():
+            instance = self.get_object()
+            serializer = ActivitySerializer(instance, context={'request': request})
+            return {
+                'success': True,
+                'data': serializer.data
+            }
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=producer,
+            ttl=60,
+            tag=(client_id, 'activities'),
+        )
         
         logger.info("activity_retrieved", extra={
             **ctx,
-            'activity_id': str(instance.id),
+            'activity_id': str(pk),
         })
         
-        serializer = self.get_serializer(instance)
-        return Response({
-            'success': True,
-            'data': serializer.data
-        })
+        return Response(cached_data)
     
     def list(self, request, *args, **kwargs):
         """
-        List activities with pagination.
+        List activities with pagination and Redis caching.
         GET /activities/
+        
+        Cache: 60s, tag 'activities', includes query_string for filter uniqueness.
         """
         ctx = ctx_from_request(request)
         logger.info("activities_list_requested", extra=ctx)
         
+        # Skip cache if no Redis
+        if not _is_redis_backend():
+            return self._list_uncached(request, ctx)
+        
+        client_id = self.get_client_id()
+        cache_key = build_drf_cache_key(
+            namespace='activities_list',
+            client_id=client_id,
+            user_id=request.user.id,
+            perm_version=get_permissions_version(),
+            query_string=request.META.get('QUERY_STRING', ''),
+            tag_namespace='activities',
+        )
+        
+        def producer():
+            return self._list_uncached_data(request)
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=producer,
+            ttl=60,
+            tag=(client_id, 'activities'),
+        )
+        
+        logger.info("activities_list_success", extra={
+            **ctx,
+            'count': cached_data.get('data', {}).get('count', '-') if isinstance(cached_data.get('data'), dict) else '-',
+        })
+        
+        return Response(cached_data)
+    
+    def _list_uncached(self, request, ctx):
+        """Fallback list without cache (FileBasedCache or Redis down)."""
+        data = self._list_uncached_data(request)
+        
+        logger.info("activities_list_success", extra={
+            **ctx,
+            'count': data.get('data', {}).get('count', '-') if isinstance(data.get('data'), dict) else '-',
+        })
+        
+        return Response(data)
+    
+    def _list_uncached_data(self, request):
+        """Produce list data dict (cache-friendly, no Response object)."""
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
         
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            response = self.get_paginated_response(serializer.data)
-            
-            logger.info("activities_list_success", extra={
-                **ctx,
-                'count': response.data.get('count', 0)
-            })
-            
-            return Response({
+            return {
                 'success': True,
-                'data': response.data
-            })
+                'data': {
+                    'results': serializer.data,
+                    'count': self.paginator.page.paginator.count,
+                    'next': self.paginator.get_next_link(),
+                    'previous': self.paginator.get_previous_link(),
+                }
+            }
         
         serializer = self.get_serializer(queryset, many=True)
-        return Response({
+        return {
             'success': True,
             'data': {
                 'results': serializer.data,
                 'count': len(serializer.data)
             }
-        })
+        }
 
     # ==========================================================================
     # CRUD OPERATIONS
@@ -356,8 +466,8 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             outcome='success'
         )
         
-        # Invalidate cache
-        invalidate_tag(str(client_id), 'activities')
+        # Invalidate caches (activities + cross-module)
+        self._invalidate_activity_caches(client_id)
         
         logger.info("activity_created", extra={
             **ctx_from_request(self.request),
@@ -386,8 +496,8 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             outcome='success'
         )
         
-        # Invalidate cache
-        invalidate_tag(str(client_id), 'activities')
+        # Invalidate caches (activities + cross-module)
+        self._invalidate_activity_caches(client_id)
         
         logger.info("activity_updated", extra={
             **ctx_from_request(self.request),
@@ -449,8 +559,8 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             outcome='success'
         )
         
-        # Invalidate cache
-        invalidate_tag(str(client_id), 'activities')
+        # Invalidate caches (activities + cross-module)
+        self._invalidate_activity_caches(client_id)
         
         logger.info("activity_deleted", extra={
             **ctx_from_request(self.request),
@@ -547,8 +657,8 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 extra={'activity_outcome': outcome}
             )
         
-        # Invalidate cache
-        invalidate_tag(str(self.get_client_id()), 'activities')
+        # Invalidate caches (activities + cross-module)
+        self._invalidate_activity_caches(self.get_client_id())
         
         logger.info("activity_completed", extra={
             **ctx,
@@ -616,8 +726,8 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             }
         )
         
-        # Invalidate cache
-        invalidate_tag(str(self.get_client_id()), 'activities')
+        # Invalidate caches (activities + cross-module)
+        self._invalidate_activity_caches(self.get_client_id())
         
         logger.info("activity_reopened", extra={
             **ctx,
@@ -676,8 +786,8 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             outcome='success'
         )
         
-        # Invalidate cache
-        invalidate_tag(str(self.get_client_id()), 'activities')
+        # Invalidate caches (activities + cross-module)
+        self._invalidate_activity_caches(self.get_client_id())
         
         logger.info("activity_cancelled", extra={
             **ctx,
@@ -759,13 +869,11 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             }
         )
         
-        # Invalidate caches
-        client_id_str = str(self.get_client_id())
-        invalidate_tag(client_id_str, 'activities')
+        # Invalidate caches (activities + accounts + decision_cycles)
+        self._invalidate_activity_caches(self.get_client_id())
+        # Additional: contacts cache only if inline contact was created
         if result['contact']:
-            invalidate_tag(client_id_str, 'contacts')
-        if result['cycle'] or result['step']:
-            invalidate_tag(client_id_str, 'decision_cycles')
+            invalidate_tag(str(self.get_client_id()), 'contacts')
         
         logger.info("activity_create_with_entities_success", extra={
             **ctx,
@@ -840,40 +948,72 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     @action(detail=False, methods=['get'])
     def my_activities(self, request):
         """
-        Get current user's activities.
+        Get current user's activities with Redis caching.
         
         GET /activities/my-activities/
+        
+        Cache: 60s, tag 'activities', scoped by user_id + query_string.
         """
         ctx = ctx_from_request(request)
         logger.info("my_activities_requested", extra=ctx)
         
+        if not _is_redis_backend():
+            return Response(self._produce_my_activities(request))
+        
+        client_id = self.get_client_id()
+        cache_key = build_drf_cache_key(
+            namespace='activities_my',
+            client_id=client_id,
+            user_id=request.user.id,
+            perm_version=get_permissions_version(),
+            query_string=request.META.get('QUERY_STRING', ''),
+            tag_namespace='activities',
+        )
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=lambda: self._produce_my_activities(request),
+            ttl=60,
+            tag=(client_id, 'activities'),
+        )
+        
+        return Response(cached_data)
+    
+    def _produce_my_activities(self, request):
+        """Produce my_activities data dict (cache-friendly)."""
         queryset = self.get_queryset().filter(owner=request.user)
         queryset = self.filter_queryset(queryset)
         
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = ActivityListSerializer(page, many=True, context={'request': request})
-            response = self.get_paginated_response(serializer.data)
-            return Response({
+            return {
                 'success': True,
-                'data': response.data
-            })
+                'data': {
+                    'results': serializer.data,
+                    'count': self.paginator.page.paginator.count,
+                    'next': self.paginator.get_next_link(),
+                    'previous': self.paginator.get_previous_link(),
+                }
+            }
         
         serializer = ActivityListSerializer(queryset, many=True, context={'request': request})
-        return Response({
+        return {
             'success': True,
             'data': {
                 'results': serializer.data,
                 'count': len(serializer.data)
             }
-        })
+        }
     
     @action(detail=False, methods=['get'])
     def by_account(self, request):
         """
-        Get activities for a specific account.
+        Get activities for a specific account with Redis caching.
         
         GET /activities/by-account/?account_id={uuid}
+        
+        Cache: 60s, tag 'activities', account_id included via query_string hash.
         """
         ctx = ctx_from_request(request)
         account_id = request.query_params.get('account_id')
@@ -888,33 +1028,63 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'account_id': account_id,
         })
         
+        if not _is_redis_backend():
+            return Response(self._produce_by_account(request, account_id))
+        
+        client_id = self.get_client_id()
+        cache_key = build_drf_cache_key(
+            namespace='activities_by_account',
+            client_id=client_id,
+            user_id=request.user.id,
+            perm_version=get_permissions_version(),
+            query_string=request.META.get('QUERY_STRING', ''),
+            tag_namespace='activities',
+        )
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=lambda: self._produce_by_account(request, account_id),
+            ttl=60,
+            tag=(client_id, 'activities'),
+        )
+        
+        return Response(cached_data)
+    
+    def _produce_by_account(self, request, account_id):
+        """Produce by_account data dict (cache-friendly)."""
         queryset = self.get_queryset().filter(account_id=account_id)
         queryset = self.filter_queryset(queryset)
         
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = ActivityListSerializer(page, many=True, context={'request': request})
-            response = self.get_paginated_response(serializer.data)
-            return Response({
+            return {
                 'success': True,
-                'data': response.data
-            })
+                'data': {
+                    'results': serializer.data,
+                    'count': self.paginator.page.paginator.count,
+                    'next': self.paginator.get_next_link(),
+                    'previous': self.paginator.get_previous_link(),
+                }
+            }
         
         serializer = ActivityListSerializer(queryset, many=True, context={'request': request})
-        return Response({
+        return {
             'success': True,
             'data': {
                 'results': serializer.data,
                 'count': len(serializer.data)
             }
-        })
+        }
     
     @action(detail=False, methods=['get'])
     def by_step(self, request):
         """
-        Get activities for a specific decision step.
+        Get activities for a specific decision step with Redis caching.
         
         GET /activities/by-step/?step_id={uuid}
+        
+        Cache: 60s, tag 'activities', step_id included via query_string hash.
         """
         ctx = ctx_from_request(request)
         step_id = request.query_params.get('step_id')
@@ -929,37 +1099,91 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'step_id': step_id,
         })
         
+        if not _is_redis_backend():
+            return Response(self._produce_by_step(request, step_id))
+        
+        client_id = self.get_client_id()
+        cache_key = build_drf_cache_key(
+            namespace='activities_by_step',
+            client_id=client_id,
+            user_id=request.user.id,
+            perm_version=get_permissions_version(),
+            query_string=request.META.get('QUERY_STRING', ''),
+            tag_namespace='activities',
+        )
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=lambda: self._produce_by_step(request, step_id),
+            ttl=60,
+            tag=(client_id, 'activities'),
+        )
+        
+        return Response(cached_data)
+    
+    def _produce_by_step(self, request, step_id):
+        """Produce by_step data dict (cache-friendly)."""
         queryset = self.get_queryset().filter(decision_step_id=step_id)
         queryset = self.filter_queryset(queryset)
         
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = ActivityListSerializer(page, many=True, context={'request': request})
-            response = self.get_paginated_response(serializer.data)
-            return Response({
+            return {
                 'success': True,
-                'data': response.data
-            })
+                'data': {
+                    'results': serializer.data,
+                    'count': self.paginator.page.paginator.count,
+                    'next': self.paginator.get_next_link(),
+                    'previous': self.paginator.get_previous_link(),
+                }
+            }
         
         serializer = ActivityListSerializer(queryset, many=True, context={'request': request})
-        return Response({
+        return {
             'success': True,
             'data': {
                 'results': serializer.data,
                 'count': len(serializer.data)
             }
-        })
+        }
     
     @action(detail=False, methods=['get'])
     def overdue(self, request):
         """
-        Get overdue activities for current user.
+        Get overdue activities for current user with Redis caching.
         
         GET /activities/overdue/
+        
+        Cache: 30s (time-dependent: results change as time passes).
         """
         ctx = ctx_from_request(request)
         logger.info("overdue_activities_requested", extra=ctx)
         
+        if not _is_redis_backend():
+            return Response(self._produce_overdue(request))
+        
+        client_id = self.get_client_id()
+        cache_key = build_drf_cache_key(
+            namespace='activities_overdue',
+            client_id=client_id,
+            user_id=request.user.id,
+            perm_version=get_permissions_version(),
+            query_string=request.META.get('QUERY_STRING', ''),
+            tag_namespace='activities',
+        )
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=lambda: self._produce_overdue(request),
+            ttl=30,
+            tag=(client_id, 'activities'),
+        )
+        
+        return Response(cached_data)
+    
+    def _produce_overdue(self, request):
+        """Produce overdue data dict (cache-friendly)."""
         queryset = self.get_queryset().filter(
             owner=request.user,
             status=ActivityStatus.PLANNED,
@@ -970,31 +1194,61 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = ActivityListSerializer(page, many=True, context={'request': request})
-            response = self.get_paginated_response(serializer.data)
-            return Response({
+            return {
                 'success': True,
-                'data': response.data
-            })
+                'data': {
+                    'results': serializer.data,
+                    'count': self.paginator.page.paginator.count,
+                    'next': self.paginator.get_next_link(),
+                    'previous': self.paginator.get_previous_link(),
+                }
+            }
         
         serializer = ActivityListSerializer(queryset, many=True, context={'request': request})
-        return Response({
+        return {
             'success': True,
             'data': {
                 'results': serializer.data,
                 'count': len(serializer.data)
             }
-        })
+        }
     
     @action(detail=False, methods=['get'])
     def upcoming(self, request):
         """
-        Get upcoming activities for current user.
+        Get upcoming activities for current user with Redis caching.
         
         GET /activities/upcoming/
+        
+        Cache: 30s (time-dependent: results change as time passes).
         """
         ctx = ctx_from_request(request)
         logger.info("upcoming_activities_requested", extra=ctx)
         
+        if not _is_redis_backend():
+            return Response(self._produce_upcoming(request))
+        
+        client_id = self.get_client_id()
+        cache_key = build_drf_cache_key(
+            namespace='activities_upcoming',
+            client_id=client_id,
+            user_id=request.user.id,
+            perm_version=get_permissions_version(),
+            query_string=request.META.get('QUERY_STRING', ''),
+            tag_namespace='activities',
+        )
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=lambda: self._produce_upcoming(request),
+            ttl=30,
+            tag=(client_id, 'activities'),
+        )
+        
+        return Response(cached_data)
+    
+    def _produce_upcoming(self, request):
+        """Produce upcoming data dict (cache-friendly)."""
         queryset = self.get_queryset().filter(
             owner=request.user,
             status=ActivityStatus.PLANNED,
@@ -1005,20 +1259,24 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = ActivityListSerializer(page, many=True, context={'request': request})
-            response = self.get_paginated_response(serializer.data)
-            return Response({
+            return {
                 'success': True,
-                'data': response.data
-            })
+                'data': {
+                    'results': serializer.data,
+                    'count': self.paginator.page.paginator.count,
+                    'next': self.paginator.get_next_link(),
+                    'previous': self.paginator.get_previous_link(),
+                }
+            }
         
         serializer = ActivityListSerializer(queryset, many=True, context={'request': request})
-        return Response({
+        return {
             'success': True,
             'data': {
                 'results': serializer.data,
                 'count': len(serializer.data)
             }
-        })
+        }
     
     @action(detail=False, methods=['get'], url_path='unlinked/by-account/(?P<account_id>[^/.]+)')
     def unlinked_for_account(self, request, account_id=None):
@@ -1027,8 +1285,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         
         GET /activities/unlinked/by-account/{account_id}/
         
-        Returns activities where decision_step is NULL, useful for the
-        "Link Existing Activity" feature in the pipeline timeline.
+        Cache: 60s, tag 'activities', keyed by account_id + query params.
         
         Query params:
             - exclude_cancelled: bool (default: true) - Exclude cancelled activities
@@ -1040,14 +1297,39 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'account_id': account_id
         })
         
+        if not _is_redis_backend():
+            return Response(self._produce_unlinked_for_account(request, account_id))
+        
+        client_id = self.get_client_id()
+        cache_key = build_drf_cache_key(
+            namespace='activities_unlinked',
+            client_id=client_id,
+            user_id=request.user.id,
+            perm_version=get_permissions_version(),
+            query_string=request.META.get('QUERY_STRING', ''),
+            extra=str(account_id),
+            tag_namespace='activities',
+        )
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=lambda: self._produce_unlinked_for_account(request, account_id),
+            ttl=60,
+            tag=(client_id, 'activities'),
+        )
+        
+        return Response(cached_data)
+    
+    def _produce_unlinked_for_account(self, request, account_id):
+        """Produce unlinked_for_account data dict (cache-friendly)."""
         # Parse query params
         exclude_cancelled = request.query_params.get('exclude_cancelled', 'true').lower() == 'true'
-        limit = min(int(request.query_params.get('limit', 50)), 100)  # Cap at 100
+        limit = min(int(request.query_params.get('limit', 50)), 100)
         
         # Build queryset
         queryset = self.get_queryset().filter(
             account_id=account_id,
-            decision_step__isnull=True  # Not linked to any step
+            decision_step__isnull=True
         ).select_related(
             'owner',
             'decision_cycle'
@@ -1057,22 +1339,20 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         
         # Optionally exclude cancelled
         if exclude_cancelled:
-            from app_modules.activities.constants import ActivityStatus
             queryset = queryset.exclude(status=ActivityStatus.CANCELLED)
         
         # Limit results
         queryset = queryset[:limit]
         
-        # Use list serializer for lightweight response
         serializer = ActivityListSerializer(queryset, many=True)
         
-        return Response({
+        return {
             'success': True,
             'data': {
                 'results': serializer.data,
                 'count': len(serializer.data)
             }
-        })
+        }
 
 
 # ============================================================================
@@ -1084,29 +1364,62 @@ class ActivityChoicesView(APIView):
     API endpoint for retrieving activity choices (types, statuses, outcomes).
     
     GET /activities/choices/
+    
+    Cache: 300s (5 minutes) - Static enum data, only changes on redeploy.
     """
     
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        """Return all activity choices."""
+        """Return all activity choices with Redis caching."""
         logger.info("activity_choices_requested", extra=ctx_from_request(request))
         
-        return Response({
-            'success': True,
-            'data': {
-                'activity_types': [
-                    {'value': choice[0], 'label': choice[1]}
-                    for choice in ActivityType.choices
-                ],
-                'statuses': [
-                    {'value': choice[0], 'label': choice[1]}
-                    for choice in ActivityStatus.choices
-                ],
-                'outcomes': [
-                    {'value': choice[0], 'label': choice[1]}
-                    for choice in ActivityOutcome.choices
-                ]
+        client_id = getattr(request.user, 'client_account_id', None)
+        
+        # Skip cache if no Redis or no tenant context
+        if not _is_redis_backend() or not client_id:
+            return Response({
+                'success': True,
+                'data': self._build_choices_data()
+            })
+        
+        cache_key = build_drf_cache_key(
+            namespace='activity_choices',
+            client_id=client_id,
+            perm_version=get_permissions_version(),
+            tag_namespace='activities',
+        )
+        
+        def producer():
+            return {
+                'success': True,
+                'data': self._build_choices_data()
             }
-        })
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=producer,
+            ttl=300,
+            tag=(client_id, 'activities'),
+        )
+        
+        return Response(cached_data)
+    
+    @staticmethod
+    def _build_choices_data():
+        """Build choices dict from enums. Extracted for cache producer reuse."""
+        return {
+            'activity_types': [
+                {'value': choice[0], 'label': choice[1]}
+                for choice in ActivityType.choices
+            ],
+            'statuses': [
+                {'value': choice[0], 'label': choice[1]}
+                for choice in ActivityStatus.choices
+            ],
+            'outcomes': [
+                {'value': choice[0], 'label': choice[1]}
+                for choice in ActivityOutcome.choices
+            ],
+        }

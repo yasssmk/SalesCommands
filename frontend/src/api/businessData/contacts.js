@@ -107,18 +107,22 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
 /**
  * GET CONTACTS - Paginated list with filters
  * 
- * @param {Object} options - {page, pageSize, search, ordering, filters}
+ * @param {Object|null} options - {page, pageSize, search, ordering, filters}. Pass null to skip fetch.
  * @returns {Object} {contacts, contactsCount, contactsLoading, contactsError, contactsValidating, contactsEmpty}
  */
 export function useGetContacts(options = {}) {
   const { tenantId } = useAuth();
-  const { page = 1, pageSize = 10, search = '', ordering = '', filters = {} } = options;
+
+  // null options = skip fetch (modal closed, component not active)
+  const enabled = options !== null;
+  const { page = 1, pageSize = 10, search = '', ordering = '', filters = {} } = options || {};
 
   const urlWithParams = useMemo(() => {
+    if (!enabled) return null;
     return buildUrlWithParams(endpoints.contacts, { page, pageSize, search, ordering, filters });
-  }, [page, pageSize, search, ordering, filters]);
+  }, [enabled, page, pageSize, search, ordering, filters]);
 
-  const swrKey = tenantKey(urlWithParams, tenantId);
+  const swrKey = urlWithParams ? tenantKey(urlWithParams, tenantId) : null;
 
   const { data, isLoading, error, isValidating } = useSWR(swrKey, {
     revalidateOnFocus: false,
@@ -130,7 +134,7 @@ export function useGetContacts(options = {}) {
     () => ({
       contacts: data?.data?.results || data?.results || [],
       contactsCount: data?.data?.count || data?.count || 0,
-      contactsLoading: isLoading,
+      contactsLoading: enabled ? isLoading : false,
       contactsError: error,
       contactsValidating: isValidating,
       contactsEmpty: !isLoading && !(data?.data?.results?.length || data?.results?.length)
