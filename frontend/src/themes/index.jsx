@@ -48,9 +48,9 @@ const ThemeCustomization = React.memo(function ThemeCustomization({ children }) 
       palette: theme.palette,
       customShadows: themeCustomShadows,
       typography: themeTypography,
-      iconSizes: IconSizes
+      iconSizes: themeIconSizes
     }),
-    [themeDirection, theme, themeTypography, themeCustomShadows]
+    [themeDirection, theme, themeTypography, themeCustomShadows, themeIconSizes]
   );
 
   // ✅ createTheme est coûteux, mais déjà optimisé par les useMemo ci-dessus

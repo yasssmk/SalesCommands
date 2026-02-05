@@ -141,14 +141,14 @@ class ActivitySequenceService:
             )
             return None
         
-        # Get previous activities (most recent COMPLETED, exclude CANCELLED)
-        previous_activities = cls._get_previous_completed_activities(
-            ranked_activities, current_rank
+        # Get previous activities (context-dependent based on current status)
+        previous_activities = cls._get_previous_activities(
+            ranked_activities, current_rank, activity.status
         )
         
         # Get next activities (only PENDING: PLANNED/IN_PROGRESS)
         next_activities = cls._get_pending_activities_after_rank(
-            ranked_activities, current_rank
+            ranked_activities, current_rank, activity.status
         )
         
         return {
@@ -474,54 +474,80 @@ class ActivitySequenceService:
         return result
     
     @classmethod
-    def _get_previous_completed_activities(
+    def _get_previous_activities(
         cls,
         ranked_activities: List[Dict],
-        current_rank: int
+        current_rank: int,
+        current_status: str = None
     ) -> List[Dict]:
         """
-        Get the most recent COMPLETED activity before current rank.
+        Get the most relevant previous activity before current rank.
         
-        Excludes CANCELLED activities.
-        Returns at most 1 activity (the immediately previous completed one).
+        Returns at most 1 activity.
         
-        For "previous", we want to show what was done before, so COMPLETED
-        is more relevant than PLANNED.
+        Behavior depends on current activity status:
+        - COMPLETED: previous = most recent COMPLETED before current rank
+          (shows what was done before this completed work)
+        - PLANNED/IN_PROGRESS: previous = closest activity before by rank,
+          any non-CANCELLED status (shows sequential context)
         """
-        # Get all activities with rank < current, excluding CANCELLED
-        previous = [
-            act for act in ranked_activities
-            if act['_rank'] < current_rank and act.get('status') != 'CANCELLED'
-        ]
+        if current_status == 'COMPLETED':
+            # For completed activities, only show completed predecessors
+            previous = [
+                act for act in ranked_activities
+                if act['_rank'] < current_rank and act.get('status') == 'COMPLETED'
+            ]
+        else:
+            # For non-completed activities, show closest predecessor regardless of status
+            previous = [
+                act for act in ranked_activities
+                if act['_rank'] < current_rank and act.get('status') != 'CANCELLED'
+            ]
         
         if not previous:
             return []
         
-        # Sort by rank descending to get the most recent first
+        # Sort by rank descending to get the closest one first
         previous_sorted = sorted(previous, key=lambda x: x['_rank'], reverse=True)
         
-        # Return only the first one (most recent)
-        return [previous_sorted[0]]
+        # Return only the first one (closest), formatted for API response
+        return [cls._format_activity_for_response(previous_sorted[0])]
     
     
     @classmethod
     def _get_pending_activities_after_rank(
         cls, 
         ranked_activities: List[Dict], 
-        current_rank: int
+        current_rank: int,
+        current_status: str = None
     ) -> List[Dict]:
         """
-        Get PENDING activities with rank > current_rank.
+        Get PENDING activities relative to current activity.
         
-        Only returns activities with status PLANNED 
+        Only returns activities with status PLANNED or IN_PROGRESS.
         Skips COMPLETED and CANCELLED activities.
         
-        This ensures "next activities" shows actual upcoming work,
-        not already-completed activities that happen to be sequenced after.
+        Behavior depends on current activity status:
+        - COMPLETED: ALL pending activities in scope are "next"
+        (remaining work regardless of chronological rank)
+        - PLANNED/IN_PROGRESS: only pending with rank > current
+        (respects sequence order for non-completed activities)
         """
-        pending_statuses = ('PLANNED')
+        pending_statuses = ('PLANNED', 'IN_PROGRESS')
+        
+        if current_status == 'COMPLETED':
+            # For completed activities, all remaining pending work is "next"
+            # regardless of rank (scheduled_date may be before completed_at)
+            return [
+                cls._format_activity_for_response(act)
+                for act in ranked_activities
+                if act['_rank'] != current_rank and act.get('status') in pending_statuses
+            ]
+        
+        # For non-completed activities, respect sequence order
         return [
-            act for act in ranked_activities
+            cls._format_activity_for_response(act)
+            for act in ranked_activities
             if act['_rank'] > current_rank and act.get('status') in pending_statuses
         ]
     

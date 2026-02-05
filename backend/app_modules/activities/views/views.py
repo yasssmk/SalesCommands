@@ -98,46 +98,19 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     
     # Action policies for custom actions
     action_policies = {
-        'complete': {
-            'crud': 'update',
-            'scope': 'client'
-        },
-        'reopen': {
-            'crud': 'update',
-            'scope': 'client'
-        },
-        'cancel': {
-            'crud': 'update',
-            'scope': 'client'
-        },
-        'create_with_entities': {
-            'crud': 'create',
-            'scope': 'client'
-        },
-        'my_activities': {
-            'crud': 'read',
-            'scope': 'mine'
-        },
-        'by_account': {
-            'crud': 'read',
-            'scope': 'client'
-        },
-        'by_step': {
-            'crud': 'read',
-            'scope': 'client'
-        },
-        'overdue': {
-            'crud': 'read',
-            'scope': 'client'
-        },
-        'upcoming': {
-            'crud': 'read',
-            'scope': 'client'
-        },
-        'unlinked_for_account': {
-            'crud': 'read',
-            'scope': 'client'
-        }
+        # === Write actions: delegate to registry (respects tier) ===
+        'complete':             {'crud': 'update'},
+        'reopen':               {'crud': 'update'},
+        'cancel':               {'crud': 'update'},
+        'create_with_entities': {'crud': 'create'},
+
+        # === Read actions: explicit scope where needed ===
+        'my_activities':        {'crud': 'read', 'scope': 'mine'},
+        'by_account':           {'crud': 'read'},
+        'by_step':              {'crud': 'read'},
+        'overdue':              {'crud': 'read'},
+        'upcoming':             {'crud': 'read'},
+        'unlinked_for_account': {'crud': 'read'},
     }
 
     # ==========================================================================
