@@ -73,6 +73,8 @@ const CreateSchema = Yup.object().shape({
   account: Yup.object()
     .required('Account is required')
     .nullable(),
+  standard_department_id: Yup.string()
+    .required('Department is required'),
   notes: Yup.string()
     .max(2000, 'Notes must not exceed 2000 characters')
 });
@@ -302,16 +304,17 @@ function FormContactAdd({ closeModal, prefilledAccount = null }) {
 
             <Grid item xs={12} sm={6}>
               <Stack spacing={1}>
-                <InputLabel htmlFor="standard_department_id">Department</InputLabel>
+                <InputLabel htmlFor="standard_department_id" required>Department</InputLabel>
                 <FormControl fullWidth error={Boolean(touched.standard_department_id && errors.standard_department_id)}>
                   <Select
                     id="standard_department_id"
                     displayEmpty
                     value={values.standard_department_id}
                     onChange={(e) => setFieldValue('standard_department_id', e.target.value)}
+                    onBlur={() => formik.setFieldTouched('standard_department_id', true)}
                   >
                     <MenuItem value="">
-                      <em>Select department</em>
+                      <em>Select department *</em>
                     </MenuItem>
                     {standardDepartments.map((dept) => (
                       <MenuItem key={dept.value} value={dept.value}>
@@ -320,7 +323,7 @@ function FormContactAdd({ closeModal, prefilledAccount = null }) {
                     ))}
                   </Select>
                   {touched.standard_department_id && errors.standard_department_id && (
-                    <FormHelperText>{errors.standard_department_id}</FormHelperText>
+                    <FormHelperText error>{errors.standard_department_id}</FormHelperText>
                   )}
                 </FormControl>
               </Stack>

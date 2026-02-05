@@ -236,6 +236,11 @@ class ActivityCreationService:
             
             # Handle standard_department_id
             standard_department_id = data.get('standard_department_id')
+            if not standard_department_id:
+                from app_modules.core_modules.models import StandardDepartment
+                default_dept = StandardDepartment.objects.filter(name='General Management').first()
+                if default_dept:
+                    standard_department_id = default_dept.id
             
             contact = Contact(
                 client_id=self.client_id,

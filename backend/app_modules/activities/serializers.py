@@ -819,6 +819,25 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 )
             
             # =================================================================
+            # DATE VALIDATION (at least one date must survive after update)
+            # =================================================================
+            # Compute final state: if field in attrs, user explicitly changed it;
+            # otherwise keep current instance value.
+            # This allows switching from scheduled_date to due_date (or vice versa)
+            # by clearing one and setting the other in the same request.
+            final_scheduled = attrs['scheduled_date'] if 'scheduled_date' in attrs else instance.scheduled_date
+            final_due = attrs['due_date'] if 'due_date' in attrs else instance.due_date
+
+            if not final_scheduled and not final_due:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='Scheduled date or due date')
+                )
+
+            # Auto-clear scheduled_time when scheduled_date is removed
+            if 'scheduled_date' in attrs and not attrs['scheduled_date']:
+                attrs['scheduled_time'] = None
+            
+            # =================================================================
             # CONTACTS VALIDATION (cannot be empty)
             # =================================================================
             if 'contact_ids' in attrs:

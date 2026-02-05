@@ -16,6 +16,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Grid from '@mui/material/Grid';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
+import FormHelperText from '@mui/material/FormHelperText';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
@@ -50,7 +51,7 @@ const validationSchema = Yup.object({
     .max(150, 'Job title must be at most 150 characters')
     .nullable(),
   standard_department_id: Yup.string()
-    .nullable()
+    .required('Department is required')
 });
 
 // ==============================|| INLINE CONTACT FORM ||============================== //
@@ -166,10 +167,11 @@ export default function InlineContactForm({ onSave, onCancel }) {
             onBlur={handleBlur}
             displayEmpty
             disabled={choicesLoading}
+            error={Boolean(touched.standard_department_id && errors.standard_department_id)}
             endAdornment={choicesLoading ? <CircularProgress size={20} sx={{ mr: 2 }} /> : null}
           >
             <MenuItem value="">
-              <em>Select department</em>
+              <em>Select department *</em>
             </MenuItem>
             {standardDepartments.map((dept) => (
               <MenuItem key={dept.value} value={dept.value}>
@@ -177,6 +179,9 @@ export default function InlineContactForm({ onSave, onCancel }) {
               </MenuItem>
             ))}
           </Select>
+          {touched.standard_department_id && errors.standard_department_id && (
+            <FormHelperText error>{errors.standard_department_id}</FormHelperText>
+          )}
         </Grid>
       </Grid>
       <Stack direction="row" spacing={1} justifyContent="flex-end">

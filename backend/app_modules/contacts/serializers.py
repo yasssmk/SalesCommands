@@ -262,6 +262,12 @@ class ContactSerializer(ContactDetailsSerializer, ClientScopeManager.SerializerM
         account = CompanyAccount.objects.get(id=account_id)
         validated_data['account'] = account
         
+        # Default standard_department to "General Management" if not provided
+        if 'standard_department' not in validated_data or validated_data.get('standard_department') is None:
+            default_dept = StandardDepartment.objects.filter(name='General Management').first()
+            if default_dept:
+                validated_data['standard_department'] = default_dept
+        
         # Create instance
         instance = Contact(**validated_data)
         

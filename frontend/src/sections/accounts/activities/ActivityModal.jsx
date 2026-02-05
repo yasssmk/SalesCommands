@@ -547,8 +547,17 @@ export default function ActivityModal({
                   </Stack>
                 </Grid>
                 
-                {/* Spacer for grid alignment */}
+               {/* Spacer for grid alignment */}
                 <Grid item xs={12} sm={6} />
+                
+                {/* ==================== CONTACTS ==================== */}
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Contacts
+                    </Typography>
+                  </Divider>
+                </Grid>
                 
                 {/* Contacts */}
                 <Grid item xs={12}>
@@ -641,6 +650,53 @@ export default function ActivityModal({
                         onCancel={() => setShowInlineContact(false)}
                       />
                     )}
+                  </Stack>
+                </Grid>
+
+                {/* ==================== ACTIVITY DETAILS ==================== */}
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Activity Details (Optional)
+                    </Typography>
+                  </Divider>
+                </Grid>
+                
+                {/* Call to Action */}
+                <Grid item xs={12}>
+                  <Stack spacing={1}>
+                    <InputLabel htmlFor="call_to_action">Call to Action</InputLabel>
+                    <TextField
+                      id="call_to_action"
+                      name="call_to_action"
+                      fullWidth
+                      placeholder="e.g., Ask about budget timeline"
+                      value={values.call_to_action}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      error={Boolean(touched.call_to_action && errors.call_to_action)}
+                      helperText={touched.call_to_action && errors.call_to_action}
+                    />
+                  </Stack>
+                </Grid>
+                
+                {/* Description */}
+                <Grid item xs={12}>
+                  <Stack spacing={1}>
+                    <InputLabel htmlFor="description">Description</InputLabel>
+                    <TextField
+                      id="description"
+                      name="description"
+                      fullWidth
+                      multiline
+                      rows={3}
+                      placeholder="Additional details about this activity..."
+                      value={values.description}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      error={Boolean(touched.description && errors.description)}
+                      helperText={touched.description && errors.description}
+                    />
                   </Stack>
                 </Grid>
 
@@ -769,44 +825,6 @@ export default function ActivityModal({
                     </Stack>
                   </Grid>
                 )}
-                
-                {/* Call to Action */}
-                <Grid item xs={12}>
-                  <Stack spacing={1}>
-                    <InputLabel htmlFor="call_to_action">Call to Action</InputLabel>
-                    <TextField
-                      id="call_to_action"
-                      name="call_to_action"
-                      fullWidth
-                      placeholder="e.g., Ask about budget timeline"
-                      value={values.call_to_action}
-                      onChange={handleChange}
-                      onBlur={handleBlur}
-                      error={Boolean(touched.call_to_action && errors.call_to_action)}
-                      helperText={touched.call_to_action && errors.call_to_action}
-                    />
-                  </Stack>
-                </Grid>
-                
-                {/* Description */}
-                <Grid item xs={12}>
-                  <Stack spacing={1}>
-                    <InputLabel htmlFor="description">Description</InputLabel>
-                    <TextField
-                      id="description"
-                      name="description"
-                      fullWidth
-                      multiline
-                      rows={3}
-                      placeholder="Additional details about this activity..."
-                      value={values.description}
-                      onChange={handleChange}
-                      onBlur={handleBlur}
-                      error={Boolean(touched.description && errors.description)}
-                      helperText={touched.description && errors.description}
-                    />
-                  </Stack>
-                </Grid>
                 
               </Grid>
             </Box>
