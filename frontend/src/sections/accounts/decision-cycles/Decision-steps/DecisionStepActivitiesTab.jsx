@@ -35,15 +35,15 @@ import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
 // Project imports
 import ActivityModal from 'sections/accounts/activities/ActivityModal';
 import ActivityCompleteModal from 'sections/accounts/activities/ActivityCompleteModal';
+import AlertActivityCancel from '../activities/AlertActivityCancel';
 import { 
   useGetActivitiesByStep,
-  cancelActivity,
   ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_COLORS
 } from 'api/accounts/activities';
-import { formatDateOnly } from 'config/formatters';
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
+import { formatDateOnly } from 'config/formatters';
 
 // ==============================|| TYPE ICONS ||============================== //
 
@@ -196,6 +196,8 @@ export default function DecisionStepActivitiesTab({ step, accountId, onUpdate })
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [activityToComplete, setActivityToComplete] = useState(null);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [activityToCancel, setActivityToCancel] = useState(null);
   
   // Fetch activities
   const {
@@ -223,26 +225,22 @@ export default function DecisionStepActivitiesTab({ step, accountId, onUpdate })
     setCompleteModalOpen(true);
   }, []);
   
-  // Cancel activity
-  const handleCancel = useCallback(async (activity) => {
-    try {
-      const result = await cancelActivity(activity.id);
-      if (result.success) {
-        displaySuccessSnackbar('Activity cancelled');
-        mutateActivities();
-        onUpdate?.();
-      } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to cancel activity',
-          status: result.status
-        });
-      }
-    } catch (err) {
-      displayErrorSnackbar({
-        message: err?.message || 'An unexpected error occurred',
-        status: 500
-      });
-    }
+// Cancel activity (open modal)
+  const handleCancel = useCallback((activity) => {
+    setActivityToCancel(activity);
+    setCancelModalOpen(true);
+  }, []);
+  
+  const handleCancelModalClose = useCallback(() => {
+    setCancelModalOpen(false);
+    setActivityToCancel(null);
+  }, []);
+  
+  const handleCancelSuccess = useCallback(() => {
+    setCancelModalOpen(false);
+    setActivityToCancel(null);
+    mutateActivities();
+    onUpdate?.();
   }, [mutateActivities, onUpdate]);
   
   // Modal success handlers
@@ -413,6 +411,14 @@ export default function DecisionStepActivitiesTab({ step, accountId, onUpdate })
           onSuccess={handleCompleteSuccess}
         />
       )}
+
+      {/* Cancel Confirmation */}
+      <AlertActivityCancel
+        open={cancelModalOpen}
+        handleClose={handleCancelModalClose}
+        activity={activityToCancel}
+        onSuccess={handleCancelSuccess}
+      />
     </Box>
   );
 }

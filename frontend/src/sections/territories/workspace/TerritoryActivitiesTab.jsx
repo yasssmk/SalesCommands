@@ -28,6 +28,7 @@ import Typography from '@mui/material/Typography';
 import ActivityTable, { COLUMN_TO_BACKEND_FIELD } from 'sections/accounts/activities/ActivityTable';
 import ActivityModal from 'sections/accounts/activities/ActivityModal';
 import ActivityCompleteModal from 'sections/accounts/activities/ActivityCompleteModal';
+import AlertActivityCancel from 'sections/accounts/activities/AlertActivityCancel';
 import AlertActivityDelete from 'sections/accounts/activities/AlertActivityDelete';
 
 // hooks
@@ -37,7 +38,6 @@ import { useAuth } from 'hooks/useAuth';
 // api
 import { 
   useGetActivities,
-  cancelActivity
 } from 'api/accounts/activities';
 import { useGetAccounts } from 'api/admin/accounts';
 import { tenantKey } from 'api/_swr';
@@ -89,6 +89,9 @@ export default function TerritoryActivitiesTab({ territoryId, territory }) {
   
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [activityToComplete, setActivityToComplete] = useState(null);
+
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [activityToCancel, setActivityToCancel] = useState(null);
 
   // ==============================|| DATA FETCHING ||============================== //
 
@@ -186,21 +189,20 @@ export default function TerritoryActivitiesTab({ territoryId, territory }) {
     setCompleteModalOpen(true);
   }, []);
 
-  const handleCancel = useCallback(async (activity) => {
-    if (!activity?.id) return;
-    
-    try {
-      const result = await cancelActivity(activity.id, { notes: 'Cancelled by user' });
-      
-      if (result.success) {
-        displaySuccessSnackbar('Activity cancelled');
-        mutateActivities();
-      } else {
-        displayErrorSnackbar(result);
-      }
-    } catch (error) {
-      displayErrorSnackbar(error);
-    }
+  const handleCancel = useCallback((activity) => {
+    setActivityToCancel(activity);
+    setCancelModalOpen(true);
+  }, []);
+
+  const handleCancelModalClose = useCallback(() => {
+    setCancelModalOpen(false);
+    setActivityToCancel(null);
+  }, []);
+
+  const handleCancelSuccess = useCallback(() => {
+    setCancelModalOpen(false);
+    setActivityToCancel(null);
+    mutateActivities();
   }, [mutateActivities]);
 
   // ==============================|| HANDLERS - MODAL CLOSE ||============================== //
@@ -303,6 +305,14 @@ export default function TerritoryActivitiesTab({ territoryId, territory }) {
           onSuccess={handleCompleteSuccess}
         />
       )}
+
+      {/* Cancel Confirmation */}
+      <AlertActivityCancel
+        open={cancelModalOpen}
+        handleClose={handleCancelModalClose}
+        activity={activityToCancel}
+        onSuccess={handleCancelSuccess}
+      />
 
       {/* Delete Confirmation */}
       <AlertActivityDelete

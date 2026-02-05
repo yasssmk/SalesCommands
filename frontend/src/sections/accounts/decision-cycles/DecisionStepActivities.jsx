@@ -37,12 +37,12 @@ import QuestionCircleOutlined from '@ant-design/icons/QuestionCircleOutlined';
 import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
 
 // project imports
-import ActivityModal from '../activities/ActivityModal';
-import ActivityCompleteModal from '../activities/ActivityCompleteModal';
-import AlertActivityDelete from '../activities/AlertActivityDelete';
+import ActivityModal from 'sections/accounts/activities/ActivityModal';
+import ActivityCompleteModal from 'sections/accounts/activities/ActivityCompleteModal';
+import AlertActivityDelete from 'sections/accounts/activities/AlertActivityDelete';
+import AlertActivityCancel from 'sections/accounts/activities/AlertActivityCancel';
 import { 
   useGetActivitiesByStep,
-  cancelActivity,
   ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_COLORS
@@ -192,6 +192,9 @@ export default function DecisionStepActivities({ stepId, accountId, cycleId }) {
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [activityToComplete, setActivityToComplete] = useState(null);
   
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [activityToCancel, setActivityToCancel] = useState(null);
+  
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [activityToDelete, setActivityToDelete] = useState(null);
   
@@ -226,24 +229,20 @@ export default function DecisionStepActivities({ stepId, accountId, cycleId }) {
     setCompleteModalOpen(true);
   }, []);
   
-  const handleCancel = useCallback(async (activity) => {
-    try {
-      const result = await cancelActivity(activity.id);
-      if (result.success) {
-        displaySuccessSnackbar('Activity cancelled');
-        mutateActivities();
-      } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to cancel activity',
-          status: result.status
-        });
-      }
-    } catch (err) {
-      displayErrorSnackbar({
-        message: err?.message || 'An unexpected error occurred',
-        status: 500
-      });
-    }
+  const handleCancel = useCallback((activity) => {
+    setActivityToCancel(activity);
+    setCancelModalOpen(true);
+  }, []);
+  
+  const handleCancelModalClose = useCallback(() => {
+    setCancelModalOpen(false);
+    setActivityToCancel(null);
+  }, []);
+  
+  const handleCancelSuccess = useCallback(() => {
+    setCancelModalOpen(false);
+    setActivityToCancel(null);
+    mutateActivities();
   }, [mutateActivities]);
   
   const handleModalClose = useCallback(() => {
@@ -345,6 +344,14 @@ export default function DecisionStepActivities({ stepId, accountId, cycleId }) {
           onSuccess={handleSuccess}
         />
       )}
+
+      {/* Cancel Confirmation */}
+      <AlertActivityCancel
+        open={cancelModalOpen}
+        handleClose={handleCancelModalClose}
+        activity={activityToCancel}
+        onSuccess={handleCancelSuccess}
+      />
       
       {/* Delete Confirmation */}
       <AlertActivityDelete

@@ -24,6 +24,8 @@ import ActivityTable, { COLUMN_TO_BACKEND_FIELD } from './ActivityTable';
 import ActivityModal from './ActivityModal';
 import ActivityCompleteModal from './ActivityCompleteModal';
 import AlertActivityDelete from './AlertActivityDelete';
+import AlertActivityCancel from './AlertActivityCancel';
+import AlertActivityReopen from 'sections/accounts/activities/AlertActivityReopen';
 
 // hooks
 import useLocalStorage from 'hooks/useLocalStorage';
@@ -32,7 +34,6 @@ import { useAuth } from 'hooks/useAuth';
 // api
 import { 
   useGetActivitiesByAccount,
-  cancelActivity
 } from 'api/accounts/activities';
 import { tenantKey } from 'api/_swr';
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
@@ -71,14 +72,18 @@ export default function AccountActivitiesTab({ accountId, account }) {
 
   // ==============================|| MODAL STATE ||============================== //
 
-  const [activityModalOpen, setActivityModalOpen] = useState(false);
-  const [activityToEdit, setActivityToEdit] = useState(null);
-  
+  const [activityModalOpen, setActivityModalOpen] = useState(false);  
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [activityToDelete, setActivityToDelete] = useState(null);
   
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [activityToComplete, setActivityToComplete] = useState(null);
+
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [activityToCancel, setActivityToCancel] = useState(null);
+
+  const [reopenModalOpen, setReopenModalOpen] = useState(false);
+  const [activityToReopen, setActivityToReopen] = useState(null);
 
   // ==============================|| DATA FETCHING ||============================== //
 
@@ -120,12 +125,6 @@ export default function AccountActivitiesTab({ accountId, account }) {
   // ==============================|| HANDLERS - CRUD ||============================== //
 
   const handleAdd = useCallback(() => {
-    setActivityToEdit(null);
-    setActivityModalOpen(true);
-  }, []);
-
-  const handleEdit = useCallback((activity) => {
-    setActivityToEdit(activity);
     setActivityModalOpen(true);
   }, []);
 
@@ -139,34 +138,42 @@ export default function AccountActivitiesTab({ accountId, account }) {
     setCompleteModalOpen(true);
   }, []);
 
-  const handleCancel = useCallback(async (activity) => {
-  if (!activity?.id) return;
-  
-  try {
-    const result = await cancelActivity(activity.id, { notes: 'Cancelled by user' });
-    
-    if (result.success) {
-      displaySuccessSnackbar('Activity cancelled');
-      mutateActivities();
-    } else {
-      displayErrorSnackbar({
-        message: result.error || 'Failed to cancel activity',
-        status: result.status
-      });
-    }
-  } catch (err) {
-    displayErrorSnackbar({
-      message: err?.message || 'An unexpected error occurred',
-      status: 500
-    });
-  }
-}, [mutateActivities]);
+  const handleCancel = useCallback((activity) => {
+    setActivityToCancel(activity);
+    setCancelModalOpen(true);
+  }, []);
+
+  const handleCancelModalClose = useCallback(() => {
+    setCancelModalOpen(false);
+    setActivityToCancel(null);
+  }, []);
+
+  const handleCancelSuccess = useCallback(() => {
+    setCancelModalOpen(false);
+    setActivityToCancel(null);
+    mutateActivities();
+  }, [mutateActivities]);
+
+  const handleReopen = useCallback((activity) => {
+    setActivityToReopen(activity);
+    setReopenModalOpen(true);
+  }, []);
+
+  const handleReopenModalClose = useCallback(() => {
+    setReopenModalOpen(false);
+    setActivityToReopen(null);
+  }, []);
+
+  const handleReopenSuccess = useCallback(() => {
+    setReopenModalOpen(false);
+    setActivityToReopen(null);
+    mutateActivities();
+  }, [mutateActivities]);
 
   // ==============================|| HANDLERS - MODAL CLOSE ||============================== //
 
   const handleActivityModalClose = useCallback(() => {
     setActivityModalOpen(false);
-    setActivityToEdit(null);
   }, []);
 
   const handleDeleteModalClose = useCallback(() => {
@@ -210,10 +217,10 @@ export default function AccountActivitiesTab({ accountId, account }) {
         onSearchChange={handleSearchChange}
         onSortingChange={handleSortingChange}
         onAdd={handleAdd}
-        onEdit={handleEdit}
         onDelete={handleDelete}
         onComplete={handleComplete}
         onCancel={handleCancel}
+        onReopen={handleReopen}
         showAccount={false}
         emptyMessage="No activities yet"
         emptyDescription="Create your first activity to start tracking your sales actions for this account"
@@ -223,7 +230,7 @@ export default function AccountActivitiesTab({ accountId, account }) {
       <ActivityModal
         open={activityModalOpen}
         onClose={handleActivityModalClose}
-        activity={activityToEdit}
+        activity={null}
         accountId={accountId}
         onSuccess={handleActivitySuccess}
       />
@@ -237,6 +244,22 @@ export default function AccountActivitiesTab({ accountId, account }) {
           onSuccess={handleCompleteSuccess}
         />
       )}
+
+      {/* Cancel Confirmation */}
+      <AlertActivityCancel
+        open={cancelModalOpen}
+        handleClose={handleCancelModalClose}
+        activity={activityToCancel}
+        onSuccess={handleCancelSuccess}
+      />
+
+      {/* Reopen Confirmation */}
+      <AlertActivityReopen
+        open={reopenModalOpen}
+        handleClose={handleReopenModalClose}
+        activity={activityToReopen}
+        onSuccess={handleReopenSuccess}
+      />
 
       {/* Delete Confirmation */}
       <AlertActivityDelete

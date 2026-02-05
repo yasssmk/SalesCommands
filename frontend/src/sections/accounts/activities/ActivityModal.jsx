@@ -89,12 +89,21 @@ const validationSchema = Yup.object({
     .max(500, 'Call to action must be at most 500 characters')
     .nullable(),
   scheduled_date: Yup.date()
-    .nullable(),
+    .nullable()
+    .typeError('Please select a valid date')
+    .when('due_date', {
+      is: (dueDate) => !dueDate,
+      then: (schema) => schema.required('Scheduled date or due date is required'),
+      otherwise: (schema) => schema.nullable()
+    }),
   due_date: Yup.date()
-    .nullable(),
+    .nullable()
+    .typeError('Please select a valid date'),
+  contact_ids: Yup.array()
+    .of(Yup.string()),
+  has_inline_contact: Yup.boolean(),
   decision_cycle_id: Yup.string()
     .nullable(),
-  // Step is required when a cycle is selected (pipeline steps are fixed, not optional)
   decision_step_id: Yup.string()
     .nullable()
     .when('decision_cycle_id', {
@@ -102,7 +111,7 @@ const validationSchema = Yup.object({
       then: (schema) => schema.required('Please select a pipeline step for this cycle'),
       otherwise: (schema) => schema.nullable()
     })
-});
+}, [['scheduled_date', 'due_date']]);
 
 // ==============================|| ACTIVITY MODAL ||============================== //
 
@@ -185,6 +194,7 @@ export default function ActivityModal({
     scheduled_time: activity?.scheduled_time ? dayjs(`2000-01-01T${activity.scheduled_time}`) : null,
     due_date: activity?.due_date ? dayjs(activity.due_date) : null,
     contact_ids: activity?.contacts?.map(c => c.id) || [],
+    has_inline_contact: false,
     decision_cycle_id: activity?.decision_cycle || decisionCycleId || '',
     decision_step_id: activity?.decision_step || decisionStepId || ''
   }), [activity, defaultActivityType, decisionCycleId, decisionStepId]);
@@ -198,6 +208,14 @@ export default function ActivityModal({
       setSubmitting(true);
       
       try {
+        // Guard: at least one contact (selected or inline)
+        if (values.contact_ids.length === 0 && !values.has_inline_contact) {
+          formik.setFieldError('contact_ids', 'At least one contact is required');
+          formik.setFieldTouched('contact_ids', true, false);
+          setSubmitting(false);
+          return;
+        }
+
         // Build activity payload
         const activityPayload = {
           title: values.title.trim(),
@@ -273,18 +291,12 @@ export default function ActivityModal({
           onSuccess?.(result.data?.activity || result.data);
           handleClose();
         } else {
-          displayErrorSnackbar({
-            message: result.error || (isEditMode ? 'Failed to update activity' : 'Failed to create activity'),
-            status: result.status
-          });
+          displayErrorSnackbar(result);
         }
         } catch (err) {
-        displayErrorSnackbar({
-          message: err?.message || 'An unexpected error occurred',
-          status: 500
-        });
+          displayErrorSnackbar(err);
         } finally {
-        setSubmitting(false);
+          setSubmitting(false);
       }
     }
   });
@@ -480,7 +492,7 @@ export default function ActivityModal({
                 {/* Scheduled Date */}
                 <Grid item xs={12} sm={6}>
                   <Stack spacing={1}>
-                    <InputLabel>Scheduled Date</InputLabel>
+                     <InputLabel required={!values.due_date}>Scheduled Date</InputLabel>
                     <LocalizationProvider dateAdapter={AdapterDayjs}>
                       <DatePicker
                         value={values.scheduled_date}
@@ -541,7 +553,7 @@ export default function ActivityModal({
                 {/* Contacts */}
                 <Grid item xs={12}>
                   <Stack spacing={1}>
-                    <InputLabel>Contacts</InputLabel>
+                    <InputLabel required>Contacts</InputLabel>
                     
                     <Autocomplete
                       multiple
@@ -552,12 +564,15 @@ export default function ActivityModal({
                       onChange={(event, newValue) => {
                         setFieldValue('contact_ids', newValue.map(c => c.id));
                       }}
+                      onBlur={() => formik.setFieldTouched('contact_ids', true)}
                       getOptionLabel={(option) => option.label || ''}
                       isOptionEqualToValue={(option, value) => option.id === value.id}
                       renderInput={(params) => (
                         <TextField
                           {...params}
                           placeholder={contactOptions.length === 0 ? 'No contacts yet' : 'Select contacts...'}
+                          error={Boolean(touched.contact_ids && errors.contact_ids && !inlineContact)}
+                          helperText={touched.contact_ids && errors.contact_ids && !inlineContact ? errors.contact_ids : ''}
                           InputProps={{
                             ...params.InputProps,
                             endAdornment: (
@@ -590,7 +605,10 @@ export default function ActivityModal({
                           <Typography variant="body2" color="success.dark">
                             ✓ New contact: {inlineContact.first_name} {inlineContact.last_name}
                           </Typography>
-                          <Button size="small" color="error" onClick={() => setInlineContact(null)}>
+                         <Button size="small" color="error" onClick={() => {
+                            setInlineContact(null);
+                            setFieldValue('has_inline_contact', false);
+                          }}>
                             Remove
                           </Button>
                         </Stack>
@@ -615,6 +633,9 @@ export default function ActivityModal({
                         onSave={(contactData) => {
                           setInlineContact(contactData);
                           setShowInlineContact(false);
+                          // Sync Formik: mark inline contact exists + clear error
+                          setFieldValue('has_inline_contact', true);
+                          formik.setFieldError('contact_ids', undefined);
                           displaySuccessSnackbar(`Contact "${contactData.first_name} ${contactData.last_name}" will be created with this activity`);
                         }}
                         onCancel={() => setShowInlineContact(false)}

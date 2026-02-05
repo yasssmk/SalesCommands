@@ -38,6 +38,7 @@ import EditOutlined from '@ant-design/icons/EditOutlined';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
+import UndoOutlined from '@ant-design/icons/UndoOutlined';
 import PhoneOutlined from '@ant-design/icons/PhoneOutlined';
 import MailOutlined from '@ant-design/icons/MailOutlined';
 import TeamOutlined from '@ant-design/icons/TeamOutlined';
@@ -95,6 +96,7 @@ const TYPE_ICONS = {
  * @param {string} props.emptyMessage - Empty state message
  * @param {string} props.emptyDescription - Empty state description
  */
+
 export default function ActivityTable({
   activities = [],
   loading = false,
@@ -111,6 +113,7 @@ export default function ActivityTable({
   onDelete,
   onComplete,
   onCancel,
+  onReopen,
   showAccount = false,
   showActions = true,
   emptyMessage = 'No activities found',
@@ -136,6 +139,10 @@ export default function ActivityTable({
   const handleCancel = useCallback((activity) => {
     if (onCancel) onCancel(activity);
   }, [onCancel]);
+
+  const handleReopen = useCallback((activity) => {
+    if (onReopen) onReopen(activity);
+  }, [onReopen]);
 
   // ==============================|| COLUMNS ||============================== //
 
@@ -331,6 +338,7 @@ export default function ActivityTable({
           const isCancelled = activity.status === 'CANCELLED';
           const canComplete = !isCompleted && !isCancelled;
           const canCancel = !isCompleted && !isCancelled;
+          const canReopen = isCompleted || isCancelled;
           
           return (
             <Stack direction="row" spacing={0.5} justifyContent="flex-end">
@@ -362,6 +370,22 @@ export default function ActivityTable({
                     }}
                   >
                     <CloseCircleOutlined />
+                  </IconButton>
+                </Tooltip>
+              )}
+              
+              {/* Reopen */}
+              {canReopen && onReopen && (
+                <Tooltip title="Reopen">
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleReopen(activity);
+                    }}
+                  >
+                    <UndoOutlined />
                   </IconButton>
                 </Tooltip>
               )}
@@ -404,7 +428,7 @@ export default function ActivityTable({
     }
 
     return baseColumns;
-  }, [showAccount, showActions, onEdit, onDelete, onComplete, onCancel, handleEdit, handleDelete, handleComplete, handleCancel]);
+  }, [showAccount, showActions, onEdit, onDelete, onComplete, onCancel, onReopen, handleEdit, handleDelete, handleComplete, handleCancel, handleReopen]);
 
   // ==============================|| RENDER ||============================== //
 
@@ -451,6 +475,7 @@ ActivityTable.propTypes = {
   onDelete: PropTypes.func,
   onComplete: PropTypes.func,
   onCancel: PropTypes.func,
+  onReopen: PropTypes.func,
   showAccount: PropTypes.bool,
   showActions: PropTypes.bool,
   emptyMessage: PropTypes.string,

@@ -5,11 +5,11 @@
  * Follows the same patterns as decisionCycles.js for consistency.
  */
 
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 import { useMemo } from 'react';
 import { useAuth } from 'hooks/useAuth';
 import { api } from 'utils/axiosClient';
-import { tenantKey, revalidateMultiple } from 'api/_swr';
+import { tenantKey, revalidateMultiple, matchKey } from 'api/_swr';
 import { isValidUUID, sanitizeObject } from 'utils/validators';
 
 // ==============================|| CONSTANTS ||============================== //
@@ -797,6 +797,11 @@ export async function createActivityWithEntities(payload) {
     sanitizedPayload.inline_step = sanitizedStep;
   }
   
+  // Forward inline_step_stage (string, no sanitization needed)
+  if (payload.inline_step_stage) {
+    sanitizedPayload.inline_step_stage = payload.inline_step_stage;
+  }
+  
   const result = await api.post(endpoints.createWithEntities, sanitizedPayload);
   
   if (result.success) {
@@ -882,9 +887,20 @@ export async function deleteActivity(activityId) {
   const result = await api.delete(endpoints.activityDetail(activityId));
   
   if (result.success || result.status === 204) {
+    // Clear deleted activity's SWR cache immediately (prevent 404 refetch)
+    mutate(
+      matchKey(endpoints.activityDetail(activityId)),
+      undefined,
+      { revalidate: false }
+    );
+    
+    // Revalidate list endpoints only (avoid broad prefix that matches detail URLs)
     revalidateMultiple([
-      endpoints.activities,
       endpoints.myActivities,
+      endpoints.byAccount,
+      endpoints.byStep,
+      endpoints.overdue,
+      endpoints.upcoming,
       '/company-accounts/'
     ]);
     return { success: true, status: result.status ?? 204 };

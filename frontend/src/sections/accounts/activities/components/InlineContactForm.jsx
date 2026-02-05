@@ -180,10 +180,10 @@ export default function InlineContactForm({ onSave, onCancel }) {
         </Grid>
       </Grid>
       <Stack direction="row" spacing={1} justifyContent="flex-end">
-        <Button size="small" onClick={onCancel} startIcon={<CloseOutlined />}>
+        <Button type="button" size="small" onClick={onCancel} startIcon={<CloseOutlined />}>
           Cancel
         </Button>
-        <Button size="small" variant="contained" onClick={handleSubmit}>
+        <Button type="button" size="small" variant="contained" onClick={handleSubmit}>
           Add Contact
         </Button>
       </Stack>

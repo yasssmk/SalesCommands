@@ -1,15 +1,4 @@
-// frontend/src/sections/accounts/activities/components/InlineCycleForm.jsx
-/**
- * Inline Cycle Form Component
- * 
- * Quick-create decision cycle form for use in modals.
- * Includes cycle name and initial pipeline step selection.
- */
-
-'use client';
-
 import PropTypes from 'prop-types';
-import { useState } from 'react';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -21,11 +10,12 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
+// third-party
+import { useFormik } from 'formik';
+import * as Yup from 'yup';
+
 // icons
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
-
-// project imports
-import { displayErrorSnackbar } from 'utils/displayError';
 
 // ==============================|| PIPELINE STEPS (FIXED) ||============================== //
 
@@ -39,23 +29,35 @@ export const PIPELINE_STEPS = [
   { value: 'GO_LIVE', label: 'Go Live' },
 ];
 
+// ==============================|| VALIDATION SCHEMA ||============================== //
+
+const validationSchema = Yup.object({
+  name: Yup.string()
+    .required('Cycle name is required')
+    .max(255, 'Name must be at most 255 characters'),
+  step_stage: Yup.string()
+    .required('Pipeline step is required')
+});
+
 // ==============================|| INLINE CYCLE FORM ||============================== //
 
 export default function InlineCycleForm({ onSave, onCancel }) {
-  const [name, setName] = useState('');
-  const [stepStage, setStepStage] = useState('QUALIFICATION');
-
-  const handleSave = () => {
-    if (!name.trim()) {
-      displayErrorSnackbar('Cycle name is required');
-      return;
+  const formik = useFormik({
+    initialValues: {
+      name: '',
+      step_stage: 'QUALIFICATION'
+    },
+    validationSchema,
+    onSubmit: (values) => {
+      onSave({
+        name: values.name.trim(),
+        is_active: true,
+        step_stage: values.step_stage
+      });
     }
-    onSave({
-      name: name.trim(),
-      is_active: true,
-      step_stage: stepStage
-    });
-  };
+  });
+
+  const { values, errors, touched, handleChange, handleBlur, handleSubmit } = formik;
 
   return (
     <Box sx={{ pt: 1, pb: 2 }}>
@@ -67,17 +69,25 @@ export default function InlineCycleForm({ onSave, onCancel }) {
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              id="name"
+              name="name"
+              value={values.name}
+              onChange={handleChange}
+              onBlur={handleBlur}
               placeholder="Cycle name *"
+              error={Boolean(touched.name && errors.name)}
+              helperText={touched.name && errors.name}
               autoFocus
             />
           </Grid>
           <Grid item xs={12} sm={6}>
             <Select
               fullWidth
-              value={stepStage}
-              onChange={(e) => setStepStage(e.target.value)}
+              id="step_stage"
+              name="step_stage"
+              value={values.step_stage}
+              onChange={handleChange}
+              onBlur={handleBlur}
               displayEmpty
             >
               {PIPELINE_STEPS.map((step) => (
@@ -89,10 +99,10 @@ export default function InlineCycleForm({ onSave, onCancel }) {
           </Grid>
         </Grid>
         <Stack direction="row" spacing={1} justifyContent="flex-end">
-          <Button size="small" onClick={onCancel} startIcon={<CloseOutlined />}>
+          <Button type="button" size="small" onClick={onCancel} startIcon={<CloseOutlined />}>
             Cancel
           </Button>
-          <Button size="small" variant="contained" onClick={handleSave}>
+          <Button type="button" size="small" variant="contained" onClick={handleSubmit}>
             Create Cycle
           </Button>
         </Stack>

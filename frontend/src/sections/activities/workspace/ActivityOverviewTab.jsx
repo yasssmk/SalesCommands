@@ -66,7 +66,7 @@ import {
 // Project imports - Utils & Hooks
 import AsyncUserSelect from 'components/AsyncSelection/AsyncUserSelect';
 import AsyncContactSelect from 'components/AsyncSelection/AsyncContactSelect';
-import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
+import { displaySuccessSnackbar, displayErrorSnackbar, displayWarningSnackbar  } from 'utils/displayError';
 import { useAuth } from 'hooks/useAuth';
 
 // Icons
@@ -999,7 +999,7 @@ function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
     if (!selectedOwner?.id) return;
     // Check if user is already assigned
     if (assignedUserIds.includes(selectedOwner.id)) {
-      displayErrorSnackbar('This user is already assigned');
+      displayWarningSnackbar('This user is already assigned');
       return;
     }
     setSaving(true);
@@ -1025,7 +1025,7 @@ function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
     if (!selectedUser?.id) return;
     // Check if user is already assigned
     if (assignedUserIds.includes(selectedUser.id)) {
-      displayErrorSnackbar('This user is already assigned');
+      displayWarningSnackbar('This user is already assigned');
       return;
     }
     setSaving(true);
@@ -1304,7 +1304,7 @@ function ExternalContactsSubsection({ contacts = [], accountId, activityType, on
     if (!selectedContact?.id) return;
     // Check if contact is already assigned
     if (assignedContactIds.includes(selectedContact.id)) {
-      displayErrorSnackbar('This contact is already assigned');
+      displayWarningSnackbar('This contact is already assigned');
       return;
     }
     setSaving(true);
@@ -1827,11 +1827,11 @@ export default function ActivityOverviewTab({ activity, onUpdate, mutate }) {
         onUpdate?.();
         return true;
       } else {
-        displayErrorSnackbar(result?.error || 'Update failed');
+        displayErrorSnackbar(result|| 'Update failed');
         return false;
       }
     } catch (error) {
-      displayErrorSnackbar(error.message || 'An error occurred');
+      displayErrorSnackbar(error|| 'An error occurred');
       return false;
     }
   };

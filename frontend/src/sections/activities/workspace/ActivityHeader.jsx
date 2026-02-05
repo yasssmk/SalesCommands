@@ -40,9 +40,7 @@ import { format } from 'date-fns';
 import MainCard from 'components/MainCard';
 import EditableField from 'sections/accounts/workspace/EditableField';
 import {
-  cancelActivity,
   updateActivity,
-  reopenActivity,
   ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_COLORS,
@@ -54,6 +52,8 @@ import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError
 // Modals
 import ActivityCompleteModal from 'sections/accounts/activities/ActivityCompleteModal';
 import AlertActivityDelete from 'sections/accounts/activities/AlertActivityDelete';
+import AlertActivityCancel from 'sections/accounts/activities/AlertActivityCancel';
+import AlertActivityReopen from 'sections/accounts/activities/AlertActivityReopen';
 
 // Icons
 import {
@@ -158,6 +158,8 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
 
   // Modal states
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   // ==============================|| LOADING STATE ||============================== //
@@ -200,48 +202,25 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
     onUpdate?.();
   };
 
-  const handleCancelActivity = async () => {
-  handleMenuClose();
-  try {
-    const result = await cancelActivity(activity.id);
-    if (result.success) {
-      displaySuccessSnackbar('Activity cancelled');
-      onUpdate?.();
-    } else {
-      displayErrorSnackbar({
-        message: result.error || 'Failed to cancel activity',
-        status: result.status
-      });
-    }
-  } catch (err) {
-    displayErrorSnackbar({
-      message: err?.message || 'An unexpected error occurred',
-      status: 500
-    });
-  }
-};
+  const handleCancelClick = () => {
+    handleMenuClose();
+    setCancelDialogOpen(true);
+  };
 
-// Reopen activity (COMPLETED/CANCELLED → PLANNED)
-const handleReopenActivity = async () => {
-  handleMenuClose();
-  try {
-    const result = await reopenActivity(activity.id, { status: 'PLANNED' });
-    if (result.success) {
-      displaySuccessSnackbar('Activity reopened');
-      onUpdate?.();
-    } else {
-      displayErrorSnackbar({
-        message: result.error || 'Failed to reopen activity',
-        status: result.status
-      });
-    }
-  } catch (err) {
-    displayErrorSnackbar({
-      message: err?.message || 'An unexpected error occurred',
-      status: 500
-    });
-  }
-};
+  const handleCancelSuccess = () => {
+    setCancelDialogOpen(false);
+    onUpdate?.();
+  };
+
+  const handleReopenClick = () => {
+      handleMenuClose();
+      setReopenDialogOpen(true);
+    };
+
+  const handleReopenSuccess = () => {
+    setReopenDialogOpen(false);
+    onUpdate?.();
+  };
 
   const handleDeleteClick = () => {
     handleMenuClose();
@@ -287,16 +266,10 @@ const handleReopenActivity = async () => {
         displaySuccessSnackbar('Activity type updated');
         onUpdate?.();
       } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to update activity type',
-          status: result.status
-        });
+        displayErrorSnackbar(result);
       }
     } catch (err) {
-      displayErrorSnackbar({
-        message: err?.message || 'An unexpected error occurred',
-        status: 500
-      });
+      displayErrorSnackbar(err);
     } finally {
       setSavingType(false);
     }
@@ -413,7 +386,7 @@ const handleReopenActivity = async () => {
               
               {/* Cancel - For PLANNED  */}
               {canCancel && (
-                <MenuItem onClick={handleCancelActivity}>
+                <MenuItem onClick={handleCancelClick}>
                   <ListItemIcon>
                     <StopOutlined style={{ color: theme.palette.warning.main }} />
                   </ListItemIcon>
@@ -423,7 +396,7 @@ const handleReopenActivity = async () => {
               
               {/* Reopen - Only for COMPLETED or CANCELLED */}
               {canReopen && (
-                <MenuItem onClick={handleReopenActivity}>
+                <MenuItem onClick={handleReopenClick}>
                   <ListItemIcon>
                     <UndoOutlined style={{ color: theme.palette.primary.main }} />
                   </ListItemIcon>
@@ -618,6 +591,22 @@ const handleReopenActivity = async () => {
         onSuccess={handleCompleteSuccess}
       />
 
+      {/* Cancel Dialog */}
+      <AlertActivityCancel
+        open={cancelDialogOpen}
+        handleClose={() => setCancelDialogOpen(false)}
+        activity={activity}
+        onSuccess={handleCancelSuccess}
+      />
+
+      {/* Reopen Dialog */}
+      <AlertActivityReopen
+        open={reopenDialogOpen}
+        handleClose={() => setReopenDialogOpen(false)}
+        activity={activity}
+        onSuccess={handleReopenSuccess}
+      />
+
       {/* Delete Dialog */}
       <AlertActivityDelete
         open={deleteDialogOpen}
@@ -625,7 +614,12 @@ const handleReopenActivity = async () => {
         activity={activity}
         onSuccess={() => {
           setDeleteDialogOpen(false);
-          window.history.back();
+          // Navigate deterministically to parent account (avoid stale SWR refetch)
+          if (activity?.account_detail?.id) {
+            router.push(`/accounts/${activity.account_detail.id}`);
+          } else {
+            router.push('/territories');
+          }
         }}
       />
     </>
