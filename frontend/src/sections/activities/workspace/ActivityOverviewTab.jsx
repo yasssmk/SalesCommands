@@ -546,7 +546,7 @@ EditableTimeField.propTypes = {
 
 // ==============================|| INLINE SELECT FIELD (COMPACT) ||============================== //
 
-function InlineSelectField({ label, value, fieldKey, onSave, options = [], displayValue, placeholder = 'Select...', disabled = false }) {
+function InlineSelectField({ label, value, fieldKey, onSave, options = [], displayValue, placeholder = 'Select...', disabled = false, allowEmpty = true }) {
   const theme = useTheme();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -580,7 +580,7 @@ function InlineSelectField({ label, value, fieldKey, onSave, options = [], displ
             sx={{ minWidth: 150 }}
             autoFocus
           >
-            <MenuItem value=""><em>None</em></MenuItem>
+            {allowEmpty && <MenuItem value=""><em>None</em></MenuItem>}
             {options.map((opt) => (
               <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
             ))}
@@ -1608,7 +1608,7 @@ function CycleStepSubsection({ activity, onSave }) {
           />
       </Box>
 
-      {/* Step - only if cycle is selected */}
+      {/* Step - required when cycle is selected */}
       {currentCycleId && (
         <Box>
           <Typography variant="caption" color="text.secondary" gutterBottom display="block">
@@ -1620,8 +1620,9 @@ function CycleStepSubsection({ activity, onSave }) {
               onSave={onSave}
               options={stepOptions}
               displayValue={activity?.decision_step_detail?.name}
-              placeholder="No step"
+              placeholder="Select a step"
               disabled={stepsLoading}
+              allowEmpty={false}
             />
         </Box>
       )}

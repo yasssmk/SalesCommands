@@ -606,12 +606,25 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         
         outcome = request.data.get('outcome')
         outcome_notes = request.data.get('outcome_notes') or request.data.get('notes')  # Support both field names
+        next_step_agreed = request.data.get('next_step_agreed')
+        no_next_step_reason = request.data.get('no_next_step_reason')
         
         # Validate outcome if provided
         if outcome and outcome not in ActivityOutcome.values:
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_FIELD.format(field='outcome')
             )
+        
+        # Validate no_next_step_reason format if provided
+        if next_step_agreed is False and no_next_step_reason:
+            from ..constants import NoNextStepReason
+            valid_codes = [choice[0] for choice in NoNextStepReason.choices]
+            is_standard_code = no_next_step_reason in valid_codes
+            is_other_format = no_next_step_reason.startswith('OTHER:') and len(no_next_step_reason) > 6
+            if not is_standard_code and not is_other_format:
+                raise StandardizedValidationError(
+                    ActivityErrorMessages.INVALID_NO_NEXT_STEP_REASON
+                )
         
         # If already completed, just update outcome fields
         if activity.status == ActivityStatus.COMPLETED:
@@ -627,6 +640,14 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 activity.outcome = outcome
             if outcome_notes is not None:
                 activity.outcome_notes = outcome_notes
+            
+            # Update next step agreement fields
+            if next_step_agreed is not None:
+                activity.next_step_agreed = next_step_agreed
+                if next_step_agreed is True:
+                    activity.no_next_step_reason = None
+                elif next_step_agreed is False:
+                    activity.no_next_step_reason = no_next_step_reason
             
             activity.save(user=request.user)
             
@@ -645,6 +666,15 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             # Complete the activity
             activity.complete(outcome=outcome, notes=outcome_notes, user=request.user)
             
+            # Save next step agreement fields after completion
+            if next_step_agreed is not None:
+                activity.next_step_agreed = next_step_agreed
+                if next_step_agreed is True:
+                    activity.no_next_step_reason = None
+                elif next_step_agreed is False:
+                    activity.no_next_step_reason = no_next_step_reason
+                activity.save(user=request.user)
+            
             # Audit log
             audit_log(
                 event='activity_complete_success',
@@ -654,7 +684,10 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 target_type='activity',
                 target_id=str(activity.id),
                 outcome='success',
-                extra={'activity_outcome': outcome}
+                extra={
+                    'activity_outcome': outcome,
+                    'next_step_agreed': next_step_agreed,
+                }
             )
         
         # Invalidate caches (activities + cross-module)

@@ -311,16 +311,23 @@ class ActivitySequenceService:
         
         Uses:
         - Coalesce(decision_step__order, 999) for step ordering
-        - Coalesce(scheduled_date, due_date, MAX_DATE) for date ordering
+        - Effective date based on status:
+          - COMPLETED: completed_at date (when the work actually happened)
+          - PLANNED/other: COALESCE(scheduled_date, due_date, MAX_DATE)
         - Coalesce(scheduled_time, MAX_TIME) for time ordering
         - ROW_NUMBER() for unique ranking
         
         ORDER BY:
         1. decision_step__order (nulls last = 999)
-        2. effective_date (scheduled_date OR due_date, nulls last)
+        2. effective_date (completed_at for COMPLETED, else scheduled/due)
         3. scheduled_time (nulls last)
         4. created_at
+        
+        This ensures a COMPLETED activity (completed Feb 4, scheduled Feb 19)
+        ranks before a PLANNED activity (scheduled Feb 10).
         """
+        from ..constants import ActivityStatus
+        
         # Annotate with effective values for ordering
         annotated = queryset.annotate(
             # Step order with nulls last
@@ -329,11 +336,19 @@ class ActivitySequenceService:
                 Value(999),
                 output_field=IntegerField()
             ),
-            # Effective date: COALESCE(scheduled_date, due_date, MAX_DATE)
-            _effective_date=Coalesce(
-                F('scheduled_date'),
-                F('due_date'),
-                Value(cls._MAX_DATE),
+            # Effective date: use completed_at for COMPLETED, else scheduled/due
+            _effective_date=Case(
+                When(
+                    status=ActivityStatus.COMPLETED,
+                    completed_at__isnull=False,
+                    then=F('completed_at__date'),
+                ),
+                default=Coalesce(
+                    F('scheduled_date'),
+                    F('due_date'),
+                    Value(cls._MAX_DATE),
+                    output_field=DateField()
+                ),
                 output_field=DateField()
             ),
             # Effective time: COALESCE(scheduled_time, MAX_TIME)
@@ -364,7 +379,7 @@ class ActivitySequenceService:
         ).only(
             'id', 'title', 'activity_type', 'status', 'outcome',
             'scheduled_date', 'scheduled_time', 'due_date',
-            'created_at',
+            'completed_at', 'created_at',
             'decision_step__id', 'decision_step__order', 'decision_step__name',
             'owner__id', 'owner__first_name', 'owner__last_name'
         ).order_by('_rank')

@@ -230,6 +230,7 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     # Annotated counts - use source to map from annotation names
     steps_count = serializers.IntegerField(source='_annotated_steps_count', read_only=True, default=0)
     validated_steps_count = serializers.IntegerField(source='_annotated_validated_steps_count', read_only=True, default=0)
+    has_steps_needing_attention = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionCycle
@@ -238,6 +239,7 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
             'account', 'account_name',
             'is_active',
             'steps', 'steps_count', 'validated_steps_count',
+            'has_steps_needing_attention',
             'created_at', 'updated_at'
         ]
         read_only_fields = fields
@@ -246,6 +248,42 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
         """Return account name from select_related (no extra query)."""
         return obj.account.company_name if obj.account else None
     
+    def get_has_steps_needing_attention(self, obj):
+        """
+        Check if any step needs next step resolution.
+        
+        PERFORMANCE: Uses prefetched data only — no additional DB queries.
+        Iterates prefetched steps → prefetched activities per step.
+        """
+        steps_cache = getattr(obj, '_prefetched_objects_cache', {})
+        steps = steps_cache.get('steps', [])
+        
+        for step in steps:
+            activities_cache = getattr(step, '_prefetched_objects_cache', {})
+            activities = activities_cache.get('activities', [])
+            
+            if not activities:
+                continue
+            
+            # Find most recent completed activity
+            completed = [a for a in activities if a.status == 'COMPLETED']
+            if not completed:
+                continue
+            
+            last_completed = max(completed, key=lambda a: a.completed_at or a.created_at)
+            
+            # Check if there are any PLANNED activities
+            has_planned = any(a.status == 'PLANNED' for a in activities)
+            if has_planned:
+                continue
+            
+            # Check if next step resolution is missing
+            if last_completed.next_step_agreed is None:
+                return True
+            if last_completed.next_step_agreed is False and not last_completed.no_next_step_reason:
+                return True
+        
+        return False
 
 # ============================================================================
 # DECISION STEP SERIALIZERS
@@ -274,6 +312,9 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     # Stalled detection
     is_stalled = serializers.BooleanField(read_only=True)
     stalled_reason = serializers.CharField(read_only=True)
+    
+    # Next step attention
+    needs_next_step_attention = serializers.BooleanField(read_only=True)
     
     # Pipeline step properties
     is_activity_optional = serializers.BooleanField(read_only=True)
@@ -309,6 +350,9 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             
             # Stalled Detection
             'is_stalled', 'stalled_reason',
+
+            # Next Step Attention
+            'needs_next_step_attention',
             
             # Summary fields
             'stakeholder', 'departments_list',
@@ -416,6 +460,9 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     is_stalled = serializers.BooleanField(read_only=True)
     stalled_reason = serializers.CharField(read_only=True)
     stalled_details = serializers.SerializerMethodField(read_only=True)
+
+     # Next step attention
+    needs_next_step_attention = serializers.BooleanField(read_only=True)
     
     # Pipeline step properties
     is_activity_optional = serializers.BooleanField(read_only=True)
@@ -445,6 +492,9 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             
             # Stalled Detection
             'is_stalled', 'stalled_reason', 'stalled_details',
+
+            # Next Step Attention
+            'needs_next_step_attention',
             
             # Details
             'stakeholder',
@@ -473,7 +523,7 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'id', 'stage_display', 'status_display',
             'departments_list', 'previous_step_info', 'next_step_info', 
             'is_current', 'has_parallel_steps', 
-            'is_stalled', 'stalled_reason', 'stalled_details',
+            'is_stalled', 'stalled_reason', 'stalled_details', 'needs_next_step_attention',
             'step_contacts', 'step_departments',
             'completeness_score', 'completeness_details',
             'created_by', 'updated_by', 'created_at', 'updated_at'
@@ -852,6 +902,7 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
     steps_count = serializers.IntegerField(read_only=True)
     validated_steps_count = serializers.IntegerField(read_only=True)
     estimated_timeline_days = serializers.IntegerField(read_only=True)
+    has_steps_needing_attention = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionCycle
@@ -861,17 +912,31 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             'is_active',
             'steps', 'steps_count', 'validated_steps_count',
             'estimated_timeline_days',
+            'has_steps_needing_attention',
             'created_by', 'updated_by',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
             'id', 'account_name', 'steps', 'steps_count',
             'validated_steps_count', 'estimated_timeline_days',
+            'has_steps_needing_attention',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
     
     def get_account_name(self, obj):
         return obj.account.company_name if obj.account else None
+    
+    def get_has_steps_needing_attention(self, obj):
+        """
+        Check if any step in this cycle needs next step resolution.
+        
+        Uses model property on prefetched steps.
+        Same performance profile as is_stalled (already called per step).
+        """
+        for step in obj.steps.all():
+            if step.needs_next_step_attention:
+                return True
+        return False
 
 
 class DecisionCycleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):

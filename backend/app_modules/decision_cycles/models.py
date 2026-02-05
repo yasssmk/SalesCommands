@@ -535,6 +535,49 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
             status=ActivityStatus.PLANNED,
             scheduled_date__gte=today
         ).exists()
+    
+    @property
+    def needs_next_step_attention(self) -> bool:
+        """
+        Check if the last completed activity in this step needs next step resolution.
+        
+        Returns True when:
+        - The step has at least one COMPLETED activity
+        - AND the most recent completed activity has either:
+          - next_step_agreed=None (never determined, e.g. linked after completion)
+          - next_step_agreed=False AND no_next_step_reason is empty (no justification)
+        - AND there are no PLANNED activities after it in the step
+        
+        This is a notification signal, NOT a blocker.
+        Used by frontend to prompt user at step/cycle level.
+        """
+        from app_modules.activities.constants import ActivityStatus
+        
+        # Get the most recent completed activity in this step
+        last_completed = self.activities.filter(
+            status=ActivityStatus.COMPLETED
+        ).order_by('-completed_at').first()
+        
+        if not last_completed:
+            return False
+        
+        # If there are planned activities in this step, no attention needed
+        has_planned = self.activities.filter(
+            status=ActivityStatus.PLANNED
+        ).exists()
+        if has_planned:
+            return False
+        
+        # Check if next step resolution is missing
+        if last_completed.next_step_agreed is None:
+            # Never determined (e.g. completed activity linked to cycle after the fact)
+            return True
+        
+        if last_completed.next_step_agreed is False and not last_completed.no_next_step_reason:
+            # Explicitly no next step but no justification provided
+            return True
+        
+        return False
 
 
 class DecisionStepContact(ModuleBaseModel, ClientScopeManager.ModelMixin):

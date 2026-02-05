@@ -10,6 +10,10 @@
  * Designed for fast, non-form-like post-call workflow.
  */
 
+
+// TO DO DELETE THIS FILE - DEAD CODE
+
+
 'use client';
 
 import { useState } from 'react';
@@ -53,7 +57,6 @@ import { useRouter } from 'next/navigation'
 
 // Modals
 import ActivityModal from 'sections/accounts/activities/ActivityModal';
-import LinkExistingActivityModal from './LinkExistingActivityModal';
 
 // Icons
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
@@ -302,22 +305,17 @@ ActivityMiniCard.propTypes = {
 
 // ==============================|| NEXT STEPS SECTION ||============================== //
 
-function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate }) {
+function NextStepsSection({ activity, onCreateActivity, onUpdate }) {
   const router = useRouter();
   const theme = useTheme();
   
-  // Check if activity belongs to a decision cycle
-  const hasCycle = Boolean(activity?.decision_cycle);
+  // Check if activity belongs to a sequence (Decision Cycle or future Campaign)
+  // Future-ready: add || Boolean(activity?.campaign) when campaign FK is added
+  const isInSequence = Boolean(activity?.decision_cycle);
   
-  // Get next activities from sequence_context (calculated) or legacy field (manual)
+  // Get next activities from sequence_context (calculated by backend)
   const sequenceContext = activity?.sequence_context;
-  const nextActivitiesFromSequence = sequenceContext?.next_activities || [];
-  const legacyNextActivity = activity?.next_activity_info;
-  
-  // Determine what to display
-  const nextActivities = hasCycle 
-    ? nextActivitiesFromSequence 
-    : (legacyNextActivity ? [legacyNextActivity] : []);
+  const nextActivities = sequenceContext?.next_activities || [];
   const hasNextActivity = nextActivities.length > 0;
   
   // Sequence position info
@@ -335,78 +333,87 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
     }
   };
 
-  // Unlink next activity (only for standalone activities without cycle)
-  const handleUnlinkActivity = async () => {
-    if (!activity?.id || hasCycle) return;
-    
-    try {
-      const result = await updateActivity(activity.id, {
-        next_activity_id: null
-      });
-      
-      if (result.success) {
-        displaySuccessSnackbar('Next activity unlinked');
-        onUpdate?.();
-      } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to unlink activity',
-          status: result.status
-        });
-      }
-    } catch (err) {
-      displayErrorSnackbar({
-        message: err?.message || 'An unexpected error occurred',
-        status: 500
-      });
-    }
-  };
+  // ========== DISABLED STATE: Not in a sequence ==========
+  if (!isInSequence) {
+    return (
+      <SectionCard title="Next Steps" icon={RocketOutlined}>
+        <Box
+          sx={{
+            p: 3,
+            borderRadius: 1,
+            bgcolor: theme.palette.grey[50],
+            border: '1px dashed',
+            borderColor: theme.palette.grey[200],
+            opacity: 0.7,
+            textAlign: 'center'
+          }}
+        >
+          <LinkOutlined style={{ fontSize: theme.iconSizes.lg, color: theme.palette.grey[400], marginBottom: 8 }} />
+          <Typography variant="body2" color="text.disabled" sx={{ mb: 0.5 }}>
+            Next step planning requires a sequence.
+          </Typography>
+          <Typography variant="caption" color="text.disabled">
+            Link this activity to a Decision Cycle from the Overview tab to enable next steps.
+          </Typography>
+        </Box>
+      </SectionCard>
+    );
+  }
 
+  // ========== ACTIVE STATE: In a sequence ==========
   return (
     <SectionCard title="Next Steps" icon={RocketOutlined}>
       <Stack spacing={2}>
-        {/* Next Activities Display - Show first if exists */}
+        {/* Sequence position indicator */}
+        {position && total && (
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="caption" color="text.secondary">
+              Position in sequence
+            </Typography>
+            <Chip
+              label={`${position} of ${total}`}
+              size="small"
+              variant="outlined"
+              sx={{
+                height: 20,
+                fontSize: '0.7rem',
+                bgcolor: theme.palette.primary.lighter,
+                borderColor: theme.palette.primary.light,
+                color: theme.palette.primary.dark
+              }}
+            />
+            {effectiveHasNextStep === true && (
+              <Chip
+                icon={<CheckOutlined style={{ fontSize: 12 }} />}
+                label="Next step agreed"
+                size="small"
+                color="success"
+                variant="outlined"
+                sx={{ height: 20, fontSize: '0.7rem', ml: 'auto' }}
+              />
+            )}
+          </Stack>
+        )}
+
+        {/* Next Activities List (ordered by sequence) */}
         {hasNextActivity && (
           <Box>
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
-              <Typography variant="subtitle2" color="text.secondary">
-                {hasCycle ? 'Next in sequence' : 'Linked follow-up'}
-              </Typography>
-              {hasCycle && nextActivities.length > 1 && (
-                <Chip
-                  label={`${nextActivities.length} activities`}
-                  size="small"
-                  color="primary"
-                  variant="outlined"
-                  sx={{ height: 20, fontSize: '0.7rem' }}
-                />
-              )}
-              {effectiveHasNextStep === true && (
-                <Chip
-                  icon={<CheckOutlined style={{ fontSize: 12 }} />}
-                  label="Next step agreed"
-                  size="small"
-                  color="success"
-                  variant="outlined"
-                  sx={{ height: 20, fontSize: '0.7rem', ml: 'auto' }}
-                />
-              )}
-            </Stack>
-            
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+              Upcoming in sequence ({nextActivities.length})
+            </Typography>
             <Stack spacing={1}>
-              {nextActivities.map((nextAct) => (
+              {nextActivities.map((nextAct, index) => (
                 <ActivityMiniCard
                   key={nextAct.id}
                   activity={nextAct}
                   onNavigate={handleActivityClick}
-                  onUnlink={handleUnlinkActivity}
-                  showUnlink={!hasCycle}
                 />
               ))}
             </Stack>
           </Box>
         )}
 
-        {/* Action buttons row */}
+        {/* Create follow-up buttons */}
         <Box>
           {hasNextActivity && (
             <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
@@ -446,18 +453,6 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
             >
               Task
             </Button>
-            {/* Link Existing only for standalone activities (no cycle) */}
-            {!hasCycle && (
-              <Button
-                variant="outlined"
-                size="small"
-                color="secondary"
-                startIcon={<LinkOutlined />}
-                onClick={onLinkExisting}
-              >
-                Link Existing
-              </Button>
-            )}
           </Stack>
         </Box>
 
@@ -472,21 +467,12 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
               borderColor: theme.palette.grey[300]
             }}
           >
-            {hasCycle ? (
-              isLastInSequence ? (
-                <Typography variant="body2" color="text.secondary" textAlign="center">
-                  This is the last activity in the sequence. Create a follow-up to continue the cycle.
-                </Typography>
-              ) : (
-                <Typography variant="body2" color="text.secondary" textAlign="center">
-                  No activities scheduled after this one. Create a follow-up to continue.
-                </Typography>
-              )
-            ) : (
-              <Typography variant="body2" color="text.secondary" textAlign="center">
-                No follow-up activity linked. Create or link one, or select a reason when completing.
-              </Typography>
-            )}
+            <Typography variant="body2" color="text.secondary" textAlign="center">
+              {isLastInSequence
+                ? 'This is the last activity in the sequence. Create a follow-up to continue the cycle.'
+                : 'No activities scheduled after this one. Create a follow-up to continue.'
+              }
+            </Typography>
           </Box>
         )}
       </Stack>
@@ -497,7 +483,6 @@ function NextStepsSection({ activity, onCreateActivity, onLinkExisting, onUpdate
 NextStepsSection.propTypes = {
   activity: PropTypes.object,
   onCreateActivity: PropTypes.func.isRequired,
-  onLinkExisting: PropTypes.func.isRequired,
   onUpdate: PropTypes.func
 };
 
@@ -812,7 +797,6 @@ ResultSection.propTypes = {
 export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [activityModalType, setActivityModalType] = useState(null);
-  const [linkModalOpen, setLinkModalOpen] = useState(false);
 
   // Handle create follow-up activity
   const handleCreateActivity = (activityType) => {
@@ -843,21 +827,6 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
     displaySuccessSnackbar('Follow-up activity created');
   };
 
-  // Handle link existing activity
-  const handleLinkExisting = () => {
-    setLinkModalOpen(true);
-  };
-
-  const handleLinkModalClose = () => {
-    setLinkModalOpen(false);
-  };
-
-  const handleLinkSuccess = () => {
-    setLinkModalOpen(false);
-    onUpdate?.();
-    displaySuccessSnackbar('Activity linked as next step');
-  };
-
 
   return (
     <Box>
@@ -868,7 +837,6 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
             <NextStepsSection
               activity={activity}
               onCreateActivity={handleCreateActivity}
-              onLinkExisting={handleLinkExisting}
               onUpdate={onUpdate}
             />
             <KeyTakeawaysSection activity={activity} onSave={onSave} />
@@ -884,7 +852,7 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
         </Grid>
       </Grid>
 
-     {/* Activity Modal - Create follow-up activity */}
+      {/* Activity Modal - Create follow-up activity */}
       <ActivityModal
         open={activityModalOpen}
         onClose={handleActivityModalClose}
@@ -896,16 +864,6 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
         previousActivityId={activity?.id}
         onSuccess={handleActivitySuccess}
       />
-
-      {linkModalOpen && (
-        <LinkExistingActivityModal
-          open={linkModalOpen}
-          onClose={handleLinkModalClose}
-          currentActivity={activity}
-          onSuccess={handleLinkSuccess}
-        />
-      )}
-
     </Box>
   );
 }

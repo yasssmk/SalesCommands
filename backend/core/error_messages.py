@@ -164,6 +164,7 @@ class ActivityErrorMessages:
     # Relation validation
     STEP_REQUIRES_CYCLE = _("Please select a pipeline step when linking to a decision cycle")
     CYCLE_REQUIRED_FOR_STEP = _("Please select a decision cycle before choosing a step")
+    STEP_REQUIRED_FOR_CYCLE = _("Please select a pipeline step when linking to a decision cycle")
     CIRCULAR_REFERENCE = _("Activity cannot be its own next activity")
     CONTACT_MUST_BELONG_TO_ACCOUNT = _("Contact must belong to the activity's account")
     STEP_MUST_BELONG_TO_CYCLE = _("The selected step does not belong to this decision cycle")

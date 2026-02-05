@@ -929,6 +929,19 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     attrs['decision_step'] = None
             
             # =================================================================
+            # RULE: Cycle requires step (partial-update aware)
+            # =================================================================
+            effective_cycle = attrs.get('decision_cycle', instance.decision_cycle)
+            effective_step = attrs.get('decision_step', instance.decision_step)
+            # Handle explicit None set via attrs (user clearing the step)
+            if 'decision_step' in attrs:
+                effective_step = attrs['decision_step']
+            if effective_cycle and not effective_step:
+                raise StandardizedValidationError(
+                    ActivityErrorMessages.STEP_REQUIRED_FOR_CYCLE
+                )
+            
+            # =================================================================
             # NEXT ACTIVITY VALIDATION
             # =================================================================
             if 'next_activity_id' in attrs:
