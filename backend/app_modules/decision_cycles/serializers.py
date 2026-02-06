@@ -194,157 +194,74 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
     def get_stage_display(self, obj):
         """Return stage label without DB query."""
         return obj.get_stage_display() if obj.stage else None
-    
+
     def get_status_display(self, obj):
         """Return status label without DB query."""
         return obj.get_status_display() if obj.status else None
-    
+
     def get_activities(self, obj):
         """
         Return activities from prefetch cache ONLY.
-        
+
         Does NOT make any DB query - relies entirely on prefetched data.
         If not prefetched, returns empty list.
-        
+
         Limited to 5 activities per step for timeline card performance.
         """
         MAX_ACTIVITIES = 5
-        
+
         # Check prefetch cache first
         if hasattr(obj, '_prefetched_objects_cache') and 'activities' in obj._prefetched_objects_cache:
             activities = list(obj._prefetched_objects_cache['activities'])[:MAX_ACTIVITIES]
             return ActivityTimelineSerializer(activities, many=True).data
-        
+
         # No prefetch = empty list (avoid N+1)
         return []
-    
+
     # ==========================================================================
-    # AGGREGATION GETTERS (timeline — prefetched data ONLY, zero DB queries)
+    # AGGREGATION GETTERS (reads from bulk context injected by view)
+    # ==========================================================================
+    # The view pre-computes bulk aggregation via StepAggregationService and
+    # injects results into serializer context as 'step_aggregations'.
+    # Fallback: if context not available, compute from prefetched data directly.
     # ==========================================================================
 
-    def _get_prefetched_activities(self, obj):
-        """Get activities from prefetch cache. Returns list, never triggers query."""
-        if hasattr(obj, '_prefetched_objects_cache') and 'activities' in obj._prefetched_objects_cache:
-            return list(obj._prefetched_objects_cache['activities'])
-        return []
+    def _get_step_aggregation(self, obj):
+        """
+        Get pre-computed aggregation for this step from serializer context.
+        Falls back to on-the-fly computation from prefetched data if context
+        is not available (e.g. when used outside by_account view).
+        """
+        # Try context-based bulk result first
+        step_aggregations = self.context.get('step_aggregations')
+        if step_aggregations and obj.id in step_aggregations:
+            return step_aggregations[obj.id]
 
-    def _get_prefetched_step_contacts(self, obj):
-        """Get manual step contacts from to_attr prefetch. Never triggers query."""
-        return getattr(obj, '_prefetched_step_contacts', [])
-
-    def _get_prefetched_step_departments(self, obj):
-        """Get manual step departments from to_attr prefetch. Never triggers query."""
-        return getattr(obj, '_prefetched_step_departments', [])
+        # Fallback: compute from prefetched data using service
+        from .services import StepAggregationService
+        service = StepAggregationService()
+        bulk = service.get_bulk_aggregation([obj])
+        return bulk.get(obj.id, {})
 
     def get_all_contacts_count(self, obj):
-        """
-        Count of deduplicated contacts: manual step contacts + activity contacts.
-        Uses prefetched data exclusively — zero DB queries.
-        """
-        contact_ids = set()
-
-        # Manual contacts (from to_attr prefetch)
-        for sc in self._get_prefetched_step_contacts(obj):
-            contact_ids.add(sc.contact_id)
-
-        # Activity contacts (from prefetched activities → prefetched contacts)
-        for activity in self._get_prefetched_activities(obj):
-            if hasattr(activity, '_prefetched_objects_cache') and 'contacts' in activity._prefetched_objects_cache:
-                for contact in activity._prefetched_objects_cache['contacts']:
-                    contact_ids.add(contact.id)
-
-        return len(contact_ids)
+        """Count of deduplicated contacts. Reads from bulk context."""
+        agg = self._get_step_aggregation(obj)
+        return agg.get('all_contacts_count', 0)
 
     def get_all_departments_list(self, obj):
-        """
-        Merged & deduplicated departments: manual + activity contact departments.
-        Uses prefetched data exclusively — zero DB queries.
-        Returns list of {id, name} for timeline display.
-        """
-        departments = {}  # id → name (dedup by id)
-
-        # Manual departments (from to_attr prefetch)
-        for sd in self._get_prefetched_step_departments(obj):
-            dept = sd.department
-            if dept and dept.id not in departments:
-                departments[dept.id] = {
-                    'id': str(dept.id),
-                    'name': dept.get_name_display(),
-                }
-
-        # Activity contact departments (from prefetched contacts → select_related department)
-        for activity in self._get_prefetched_activities(obj):
-            if hasattr(activity, '_prefetched_objects_cache') and 'contacts' in activity._prefetched_objects_cache:
-                for contact in activity._prefetched_objects_cache['contacts']:
-                    dept = contact.standard_department
-                    if dept and dept.id not in departments:
-                        departments[dept.id] = {
-                            'id': str(dept.id),
-                            'name': dept.get_name_display(),
-                        }
-
-        return list(departments.values())
+        """Merged departments list. Reads from bulk context."""
+        agg = self._get_step_aggregation(obj)
+        return agg.get('all_departments_list', [])
 
     def get_effective_start_date(self, obj):
-        """
-        Real observed start from prefetched activities.
-        First completed activity date, fallback to first scheduled.
-        Zero DB queries.
-        """
-        activities = self._get_prefetched_activities(obj)
-        if not activities:
-            return None
-
-        # Priority 1: earliest completed_at
-        completed_dates = [
-            a.completed_at.date()
-            for a in activities
-            if a.status == 'COMPLETED' and a.completed_at
-        ]
-        if completed_dates:
-            return min(completed_dates)
-
-        # Priority 2: earliest scheduled_date
-        scheduled_dates = [
-            a.scheduled_date
-            for a in activities
-            if a.scheduled_date
-        ]
-        if scheduled_dates:
-            return min(scheduled_dates)
-
-        return None
+        """Real observed start date. Reads from bulk context."""
+        agg = self._get_step_aggregation(obj)
+        return agg.get('effective_start_date')
 
     def get_effective_end_date(self, obj):
-        """
-        Projected end from prefetched activities.
-        Last planned activity date, fallback to last completed.
-        Zero DB queries.
-        """
-        activities = self._get_prefetched_activities(obj)
-        if not activities:
-            return None
-
-        # Priority 1: latest due_date or scheduled_date among PLANNED activities
-        planned_dates = []
-        for a in activities:
-            if a.status == 'PLANNED':
-                date = a.due_date or a.scheduled_date
-                if date:
-                    planned_dates.append(date)
-        if planned_dates:
-            return max(planned_dates)
-
-        # Priority 2: latest completed_at
-        completed_dates = [
-            a.completed_at.date()
-            for a in activities
-            if a.status == 'COMPLETED' and a.completed_at
-        ]
-        if completed_dates:
-            return max(completed_dates)
-
-        return None
+        """Projected end date. Reads from bulk context."""
+        agg = self._get_step_aggregation(obj)
+        return agg.get('effective_end_date')
 
 
 class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
@@ -354,11 +271,16 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     PERFORMANCE OPTIMIZED:
     - Uses DecisionStepTimelineSerializer for steps
     - Uses annotated counts (prefixed with _annotated_ to avoid property conflict)
+    - Cycle-level insights from CycleAggregationService via serializer context
     - No computed properties with DB queries
     
     Required annotations on queryset:
     - _annotated_steps_count: Count('steps')
     - _annotated_validated_steps_count: Count('steps', filter=Q(steps__status='VALIDATED'))
+    
+    Required context (injected by view):
+    - cycle_summaries: dict from CycleAggregationService.get_bulk_summaries()
+    - step_aggregations: dict from StepAggregationService.get_bulk_aggregation()
     
     Required prefetch:
     - steps (ordered, with activities prefetch)
@@ -372,6 +294,12 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     # Annotated counts - use source to map from annotation names
     steps_count = serializers.IntegerField(source='_annotated_steps_count', read_only=True, default=0)
     validated_steps_count = serializers.IntegerField(source='_annotated_validated_steps_count', read_only=True, default=0)
+    
+    # Cycle-level insights (from CycleAggregationService via context)
+    cycle_status = serializers.SerializerMethodField(read_only=True)
+    progress = serializers.SerializerMethodField(read_only=True)
+    stalled_steps_count = serializers.SerializerMethodField(read_only=True)
+    is_at_risk = serializers.SerializerMethodField(read_only=True)
     has_steps_needing_attention = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
@@ -381,6 +309,9 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
             'account', 'account_name',
             'is_active',
             'steps', 'steps_count', 'validated_steps_count',
+            # Cycle-level insights
+            'cycle_status', 'progress',
+            'stalled_steps_count', 'is_at_risk',
             'has_steps_needing_attention',
             'created_at', 'updated_at'
         ]
@@ -389,43 +320,61 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     def get_account_name(self, obj):
         """Return account name from select_related (no extra query)."""
         return obj.account.company_name if obj.account else None
-    
+
+    # ==========================================================================
+    # CYCLE-LEVEL INSIGHT GETTERS (reads from bulk context injected by view)
+    # ==========================================================================
+
+    def _get_cycle_summary(self, obj):
+        """
+        Get pre-computed cycle summary from serializer context.
+        Falls back to on-the-fly computation if context not available.
+        """
+        cycle_summaries = self.context.get('cycle_summaries')
+        if cycle_summaries and obj.id in cycle_summaries:
+            return cycle_summaries[obj.id]
+
+        # Fallback: compute directly (triggers DB queries)
+        from .services import CycleAggregationService
+        service = CycleAggregationService()
+        return {
+            'cycle_status': service.get_cycle_status(obj),
+            'progress': service.get_progress(obj),
+            'stalled_steps_count': len(service.get_stalled_steps(obj)),
+            'is_at_risk': service.get_cycle_status(obj) in (
+                CycleAggregationService.STATUS_AT_RISK,
+                CycleAggregationService.STATUS_STALLED,
+            ),
+            'has_steps_needing_attention': any(
+                service._stalled_detection.needs_next_step_attention(s)
+                for s in obj.steps.all()
+            ),
+        }
+
+    def get_cycle_status(self, obj):
+        """Derived cycle status. Reads from bulk context."""
+        return self._get_cycle_summary(obj).get('cycle_status', 'NOT_STARTED')
+
+    def get_progress(self, obj):
+        """Progress metrics. Reads from bulk context."""
+        return self._get_cycle_summary(obj).get('progress', {
+            'total_steps': 0,
+            'validated_steps': 0,
+            'current_step_name': None,
+            'percentage': 0,
+        })
+
+    def get_stalled_steps_count(self, obj):
+        """Count of stalled steps. Reads from bulk context."""
+        return self._get_cycle_summary(obj).get('stalled_steps_count', 0)
+
+    def get_is_at_risk(self, obj):
+        """Whether cycle is at risk. Reads from bulk context."""
+        return self._get_cycle_summary(obj).get('is_at_risk', False)
+
     def get_has_steps_needing_attention(self, obj):
-        """
-        Check if any step needs next step resolution.
-        
-        PERFORMANCE: Uses prefetched data only — no additional DB queries.
-        Iterates prefetched steps → prefetched activities per step.
-        """
-        steps_cache = getattr(obj, '_prefetched_objects_cache', {})
-        steps = steps_cache.get('steps', [])
-        
-        for step in steps:
-            activities_cache = getattr(step, '_prefetched_objects_cache', {})
-            activities = activities_cache.get('activities', [])
-            
-            if not activities:
-                continue
-            
-            # Find most recent completed activity
-            completed = [a for a in activities if a.status == 'COMPLETED']
-            if not completed:
-                continue
-            
-            last_completed = max(completed, key=lambda a: a.completed_at or a.created_at)
-            
-            # Check if there are any PLANNED activities
-            has_planned = any(a.status == 'PLANNED' for a in activities)
-            if has_planned:
-                continue
-            
-            # Check if next step resolution is missing
-            if last_completed.next_step_agreed is None:
-                return True
-            if last_completed.next_step_agreed is False and not last_completed.no_next_step_reason:
-                return True
-        
-        return False
+        """Whether any step needs next step resolution. Reads from bulk context."""
+        return self._get_cycle_summary(obj).get('has_steps_needing_attention', False)
 
 # ============================================================================
 # DECISION STEP SERIALIZERS
@@ -736,127 +685,47 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         return service.get_details(obj)
     
     def get_stalled_details(self, obj):
-        """Get detailed stalled information for UI display."""
-        from .constants import StalledReason
-        
-        if not obj.is_stalled:
-            return None
-        
-        return {
-            'reason': obj.stalled_reason,
-            'reason_display': StalledReason(obj.stalled_reason).label if obj.stalled_reason else None,
-            'last_activity_date': obj.last_activity_date,
-            'days_since_last_activity': obj.days_since_last_activity,
-            'has_future_activity': obj.has_future_activity,
-            'expected_end': obj.expected_end,
-        }
+        """Get detailed stalled information for UI display. Delegates to service."""
+        from .services import StalledDetectionService
+        return StalledDetectionService().get_stalled_details(obj)
     
     def get_activities_count(self, obj):
         """Return count of activities linked to this step."""
         return obj.activities.count() if hasattr(obj, 'activities') else 0
     
     # ==========================================================================
-    # AGGREGATION GETTERS (detail view — single instance, queries OK)
+    # AGGREGATION GETTERS (detail view — delegates to StepAggregationService)
     # ==========================================================================
 
-    def _get_cached_all_contacts(self, obj):
-        """
-        Cache all_contacts queryset result on serializer instance to avoid
-        evaluating the same queryset multiple times (contacts + departments).
-        """
-        cache_key = f'_all_contacts_{obj.pk}'
-        if not hasattr(self, cache_key):
-            setattr(self, cache_key, list(obj.all_contacts))
-        return getattr(self, cache_key)
-
     def get_aggregated_contacts(self, obj):
-        """Contacts derived from linked activities only (read-only)."""
-        contacts = obj.aggregated_contacts.select_related('standard_department')
-        return [
-            {
-                'id': str(c.id),
-                'first_name': c.first_name,
-                'last_name': c.last_name,
-                'email': c.email,
-                'job_title': c.job_title,
-                'department_name': c.standard_department.get_name_display() if c.standard_department else None,
-            }
-            for c in contacts
-        ]
+        """Contacts derived from linked activities only. Delegates to service."""
+        from .services import StepAggregationService
+        return StepAggregationService().get_aggregated_contacts(obj)
 
     def get_aggregated_departments(self, obj):
-        """Departments derived from activity contacts' standard_department."""
-        departments = obj.aggregated_departments
-        return [
-            {
-                'id': str(d.id),
-                'name': d.get_name_display(),
-            }
-            for d in departments
-        ]
+        """Departments derived from activity contacts. Delegates to service."""
+        from .services import StepAggregationService
+        return StepAggregationService().get_aggregated_departments(obj)
 
     def get_effective_start_date(self, obj):
-        """Real observed start date from first activity."""
-        return obj.effective_start_date
+        """Real observed start date from first activity. Delegates to service."""
+        from .services import StepAggregationService
+        return StepAggregationService().get_effective_start_date(obj)
 
     def get_effective_end_date(self, obj):
-        """Projected end date from last planned/completed activity."""
-        return obj.effective_end_date
+        """Projected end date from last planned activity. Delegates to service."""
+        from .services import StepAggregationService
+        return StepAggregationService().get_effective_end_date(obj)
 
     def get_all_contacts(self, obj):
-        """
-        Merged view: manual step contacts + activity contacts (deduplicated).
-        Each contact includes a 'source' field for frontend badge display.
-        Performance: caches result to avoid double evaluation.
-        """
-        all_contacts = self._get_cached_all_contacts(obj)
-
-        # Build set of manual contact IDs for source tagging
-        manual_ids = set(
-            obj.step_contacts.values_list('contact_id', flat=True)
-        )
-        # Build set of activity contact IDs
-        activity_ids = set(
-            obj.aggregated_contacts.values_list('id', flat=True)
-        )
-
-        return [
-            {
-                'id': str(c.id),
-                'first_name': c.first_name,
-                'last_name': c.last_name,
-                'email': c.email,
-                'job_title': c.job_title,
-                'department_name': c.standard_department.get_name_display() if c.standard_department else None,
-                'source': self._get_contact_source(c.id, manual_ids, activity_ids),
-            }
-            for c in all_contacts
-        ]
+        """Merged contacts: manual + activity, with source tagging. Delegates to service."""
+        from .services import StepAggregationService
+        return StepAggregationService().get_all_contacts(obj)
 
     def get_all_departments(self, obj):
-        """Merged view: manual step departments + activity contact departments."""
-        departments = obj.all_departments
-        return [
-            {
-                'id': str(d.id),
-                'name': d.get_name_display(),
-            }
-            for d in departments
-        ]
-
-    @staticmethod
-    def _get_contact_source(contact_id, manual_ids, activity_ids):
-        """
-        Determine contact source for frontend badge display.
-        Returns: 'manual', 'activity', or 'both'.
-        """
-        in_manual = contact_id in manual_ids
-        in_activity = contact_id in activity_ids
-        if in_manual and in_activity:
-            return 'both'
-        if in_manual:
-            return 'manual'
-        return 'activity'
+        """Merged departments: manual + activity. Delegates to service."""
+        from .services import StepAggregationService
+        return StepAggregationService().get_all_departments(obj)
 
 class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """

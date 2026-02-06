@@ -452,15 +452,60 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             Prefetch('steps', queryset=steps_queryset),
             activities_prefetch
         ).order_by('-is_active', '-updated_at')
-        
-        # Use timeline-optimized serializer (no expensive properties)
-        serializer = DecisionCycleTimelineSerializer(queryset, many=True)
-        
+
+        # =====================================================================
+        # BULK SERVICE COMPUTATION (zero additional queries — prefetched data)
+        # =====================================================================
+        # Evaluate queryset once, then run services on prefetched data.
+        # Results are injected into serializer context so serializers read
+        # from dicts instead of recomputing per instance.
+        # =====================================================================
+        cycles = list(queryset)
+
+        # Collect all prefetched steps across all cycles
+        all_steps = []
+        for cycle in cycles:
+            cycle_steps = getattr(cycle, '_prefetched_objects_cache', {}).get('steps', [])
+            all_steps.extend(cycle_steps)
+
+        # Bulk step aggregation (contacts count, departments, effective dates)
+        from ..services import StepAggregationService, StalledDetectionService, CycleAggregationService
+
+        step_aggregations = StepAggregationService().get_bulk_aggregation(all_steps)
+
+        # Bulk stalled detection (is_stalled, reason, needs_next_step_attention)
+        stalled_results = StalledDetectionService().detect_bulk(all_steps)
+
+        # Bulk cycle summaries (cycle_status, progress, stalled_steps_count, is_at_risk)
+        cycle_summaries = CycleAggregationService().get_bulk_summaries(
+            cycles,
+            stalled_results=stalled_results,
+        )
+
+        logger.debug("by_account_bulk_services_computed", extra={
+            **ctx,
+            'account_id': account_id,
+            'cycles_count': len(cycles),
+            'steps_count': len(all_steps),
+        })
+
+        # Use timeline-optimized serializer with pre-computed context
+        serializer = DecisionCycleTimelineSerializer(
+            cycles,
+            many=True,
+            context={
+                'request': request,
+                'step_aggregations': step_aggregations,
+                'stalled_results': stalled_results,
+                'cycle_summaries': cycle_summaries,
+            }
+        )
+
         return Response({
             'success': True,
             'data': {
                 'results': serializer.data,
-                'count': len(serializer.data)
+                'count': len(cycles)
             }
         })
 
