@@ -57,6 +57,12 @@ ACTION_TO_CRUD: dict[str, CrudAction] = {
     'patch': 'update',          # Lowercase PATCH (rare but supported)
     'delete': 'delete',         # Already CRUD action (passthrough)
     'read': 'read',             # Already CRUD action (passthrough)
+
+    # Activity module - custom status transition actions
+    # Maps to 'update' so registry activities.update scope applies per tier
+    'complete': 'update',       # POST /activities/{id}/complete/
+    'reopen': 'update',         # POST /activities/{id}/reopen/
+    'cancel': 'update',         # POST /activities/{id}/cancel/
 }
 
 

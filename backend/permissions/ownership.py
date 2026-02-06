@@ -138,12 +138,12 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     },
     
     'activities': {
-        'client_account_fk': 'client_id',           # Activity.client_id
-        'owner_user': 'owner_id',                   # Activity.owner
-        'owner_team': 'owner__team_id',             # Via owner's team
-        'created_by': 'created_by_id',              # ModuleBaseModel.created_by
+        'client_account_fk': 'client_id',           # UUIDField — name IS 'client_id'
+        'owner_user': 'owner',                       # ForeignKey — Python attr name is 'owner' (not 'owner_id')
+        'owner_team': 'owner__team_id',             # Traversal — OK (skips field existence check)
+        'created_by': 'created_by',                  # ForeignKey — Python attr name is 'created_by' (not 'created_by_id')
         'assigned_to_user': '-',                    # Not applicable (use owner)
-        'account_fk': 'account_id',                 # Related account
+        'account_fk': 'account_id',                 # Not used in mine/team scope filtering — kept as-is
     },
     
     'decision_cycles': {
