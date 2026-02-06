@@ -375,6 +375,14 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         - Annotations for counts (single query vs N+1)
         - Limited activity prefetch (max 5 per step)
         - No completeness_score, is_stalled computation for list view
+        - Prefetched activity contacts + departments for aggregation (zero extra queries in serializer)
+        
+        SQL BUDGET: ~5 queries total regardless of step/activity count:
+        1. Cycles (with annotations)
+        2. Steps (with annotation)
+        3. Activities (with select_related owner, prefetch contacts)
+        4. Activity contacts (with select_related standard_department)
+        5. Step contacts + Step departments (to_attr prefetch)
         """
         ctx = ctx_from_request(request)
         logger.info("decision_cycles_by_account_requested", extra={
@@ -382,22 +390,46 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             'account_id': account_id
         })
         
-        # Import Activity model for prefetch
+        # Import models for prefetch
         from app_modules.activities.models import Activity
+        from ..models import DecisionStepContact, DecisionStepDepartment
         
         # Build optimized steps queryset with activity count annotation
+        # + to_attr prefetch for manual contacts/departments (used by timeline serializer)
         steps_queryset = DecisionStep.objects.annotate(
             activities_count=Count('activities')
+        ).prefetch_related(
+            Prefetch(
+                'step_contacts',
+                queryset=DecisionStepContact.objects.select_related('contact'),
+                to_attr='_prefetched_step_contacts'
+            ),
+            Prefetch(
+                'step_departments',
+                queryset=DecisionStepDepartment.objects.select_related('department'),
+                to_attr='_prefetched_step_departments'
+            ),
         ).order_by('order')
         
-        # Build limited activities prefetch (max 5 per step for timeline cards)
+        # Build activities prefetch with contacts + departments for aggregation
+        # contacts prefetched with standard_department for department aggregation
         activities_prefetch = Prefetch(
             'steps__activities',
             queryset=Activity.objects.select_related(
                 'owner'
+            ).prefetch_related(
+                Prefetch(
+                    'contacts',
+                    queryset=Activity.contacts.field.related_model.objects.select_related(
+                        'standard_department'
+                    ).only(
+                        'id', 'first_name', 'last_name', 'email',
+                        'job_title', 'standard_department_id'
+                    )
+                )
             ).only(
                 'id', 'title', 'activity_type', 'status', 'outcome',
-                'scheduled_date', 'scheduled_time', 'completed_at',
+                'scheduled_date', 'scheduled_time', 'due_date', 'completed_at',
                 'owner_id', 'decision_step_id', 'created_at'
             ).order_by('-scheduled_date', '-created_at')
         )

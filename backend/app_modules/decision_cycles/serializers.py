@@ -141,7 +141,9 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
     - activities_count: Count('activities')
     
     Required prefetch:
-    - activities (with Prefetch and limited queryset)
+    - activities (with Prefetch, limited, with contacts + contacts__standard_department)
+    - step_contacts (with Prefetch, to_attr='_prefetched_step_contacts')
+    - step_departments (with Prefetch, to_attr='_prefetched_step_departments')
     """
     
     stage_display = serializers.SerializerMethodField(read_only=True)
@@ -152,6 +154,12 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
     
     # Activities from prefetch cache
     activities = serializers.SerializerMethodField(read_only=True)
+
+    # Aggregation from prefetched data (zero DB queries)
+    all_contacts_count = serializers.SerializerMethodField(read_only=True)
+    all_departments_list = serializers.SerializerMethodField(read_only=True)
+    effective_start_date = serializers.SerializerMethodField(read_only=True)
+    effective_end_date = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionStep
@@ -171,6 +179,12 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
             # Summary (no DB queries - uses annotation)
             'stakeholder',
             'activities_count',
+
+            # Aggregation (no DB queries - uses prefetch)
+            'all_contacts_count',
+            'all_departments_list',
+            'effective_start_date',
+            'effective_end_date',
             
             # Activities for cards (from prefetch)
             'activities',
@@ -203,6 +217,134 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
         
         # No prefetch = empty list (avoid N+1)
         return []
+    
+    # ==========================================================================
+    # AGGREGATION GETTERS (timeline — prefetched data ONLY, zero DB queries)
+    # ==========================================================================
+
+    def _get_prefetched_activities(self, obj):
+        """Get activities from prefetch cache. Returns list, never triggers query."""
+        if hasattr(obj, '_prefetched_objects_cache') and 'activities' in obj._prefetched_objects_cache:
+            return list(obj._prefetched_objects_cache['activities'])
+        return []
+
+    def _get_prefetched_step_contacts(self, obj):
+        """Get manual step contacts from to_attr prefetch. Never triggers query."""
+        return getattr(obj, '_prefetched_step_contacts', [])
+
+    def _get_prefetched_step_departments(self, obj):
+        """Get manual step departments from to_attr prefetch. Never triggers query."""
+        return getattr(obj, '_prefetched_step_departments', [])
+
+    def get_all_contacts_count(self, obj):
+        """
+        Count of deduplicated contacts: manual step contacts + activity contacts.
+        Uses prefetched data exclusively — zero DB queries.
+        """
+        contact_ids = set()
+
+        # Manual contacts (from to_attr prefetch)
+        for sc in self._get_prefetched_step_contacts(obj):
+            contact_ids.add(sc.contact_id)
+
+        # Activity contacts (from prefetched activities → prefetched contacts)
+        for activity in self._get_prefetched_activities(obj):
+            if hasattr(activity, '_prefetched_objects_cache') and 'contacts' in activity._prefetched_objects_cache:
+                for contact in activity._prefetched_objects_cache['contacts']:
+                    contact_ids.add(contact.id)
+
+        return len(contact_ids)
+
+    def get_all_departments_list(self, obj):
+        """
+        Merged & deduplicated departments: manual + activity contact departments.
+        Uses prefetched data exclusively — zero DB queries.
+        Returns list of {id, name} for timeline display.
+        """
+        departments = {}  # id → name (dedup by id)
+
+        # Manual departments (from to_attr prefetch)
+        for sd in self._get_prefetched_step_departments(obj):
+            dept = sd.department
+            if dept and dept.id not in departments:
+                departments[dept.id] = {
+                    'id': str(dept.id),
+                    'name': dept.get_name_display(),
+                }
+
+        # Activity contact departments (from prefetched contacts → select_related department)
+        for activity in self._get_prefetched_activities(obj):
+            if hasattr(activity, '_prefetched_objects_cache') and 'contacts' in activity._prefetched_objects_cache:
+                for contact in activity._prefetched_objects_cache['contacts']:
+                    dept = contact.standard_department
+                    if dept and dept.id not in departments:
+                        departments[dept.id] = {
+                            'id': str(dept.id),
+                            'name': dept.get_name_display(),
+                        }
+
+        return list(departments.values())
+
+    def get_effective_start_date(self, obj):
+        """
+        Real observed start from prefetched activities.
+        First completed activity date, fallback to first scheduled.
+        Zero DB queries.
+        """
+        activities = self._get_prefetched_activities(obj)
+        if not activities:
+            return None
+
+        # Priority 1: earliest completed_at
+        completed_dates = [
+            a.completed_at.date()
+            for a in activities
+            if a.status == 'COMPLETED' and a.completed_at
+        ]
+        if completed_dates:
+            return min(completed_dates)
+
+        # Priority 2: earliest scheduled_date
+        scheduled_dates = [
+            a.scheduled_date
+            for a in activities
+            if a.scheduled_date
+        ]
+        if scheduled_dates:
+            return min(scheduled_dates)
+
+        return None
+
+    def get_effective_end_date(self, obj):
+        """
+        Projected end from prefetched activities.
+        Last planned activity date, fallback to last completed.
+        Zero DB queries.
+        """
+        activities = self._get_prefetched_activities(obj)
+        if not activities:
+            return None
+
+        # Priority 1: latest due_date or scheduled_date among PLANNED activities
+        planned_dates = []
+        for a in activities:
+            if a.status == 'PLANNED':
+                date = a.due_date or a.scheduled_date
+                if date:
+                    planned_dates.append(date)
+        if planned_dates:
+            return max(planned_dates)
+
+        # Priority 2: latest completed_at
+        completed_dates = [
+            a.completed_at.date()
+            for a in activities
+            if a.status == 'COMPLETED' and a.completed_at
+        ]
+        if completed_dates:
+            return max(completed_dates)
+
+        return None
 
 
 class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
@@ -469,6 +611,14 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     step_description = serializers.CharField(read_only=True)
     order = serializers.IntegerField(read_only=True)
     activities_count = serializers.SerializerMethodField(read_only=True)
+
+    # Aggregation from Activities (detail view only — uses @property)
+    aggregated_contacts = serializers.SerializerMethodField(read_only=True)
+    aggregated_departments = serializers.SerializerMethodField(read_only=True)
+    effective_start_date = serializers.SerializerMethodField(read_only=True)
+    effective_end_date = serializers.SerializerMethodField(read_only=True)
+    all_contacts = serializers.SerializerMethodField(read_only=True)
+    all_departments = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionStep
@@ -509,10 +659,18 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'completeness_score',
             'completeness_details',
             
-            # Departments & Contacts
+            # Departments & Contacts (manual)
             'departments_list',
             'step_departments',
             'step_contacts',
+
+            # Aggregation from Activities
+            'aggregated_contacts',
+            'aggregated_departments',
+            'effective_start_date',
+            'effective_end_date',
+            'all_contacts',
+            'all_departments',
             
             # Audit
             'created_by', 'updated_by',
@@ -526,6 +684,9 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'is_stalled', 'stalled_reason', 'stalled_details', 'needs_next_step_attention',
             'step_contacts', 'step_departments',
             'completeness_score', 'completeness_details',
+            'aggregated_contacts', 'aggregated_departments',
+            'effective_start_date', 'effective_end_date',
+            'all_contacts', 'all_departments',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
     
@@ -593,6 +754,109 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     def get_activities_count(self, obj):
         """Return count of activities linked to this step."""
         return obj.activities.count() if hasattr(obj, 'activities') else 0
+    
+    # ==========================================================================
+    # AGGREGATION GETTERS (detail view — single instance, queries OK)
+    # ==========================================================================
+
+    def _get_cached_all_contacts(self, obj):
+        """
+        Cache all_contacts queryset result on serializer instance to avoid
+        evaluating the same queryset multiple times (contacts + departments).
+        """
+        cache_key = f'_all_contacts_{obj.pk}'
+        if not hasattr(self, cache_key):
+            setattr(self, cache_key, list(obj.all_contacts))
+        return getattr(self, cache_key)
+
+    def get_aggregated_contacts(self, obj):
+        """Contacts derived from linked activities only (read-only)."""
+        contacts = obj.aggregated_contacts.select_related('standard_department')
+        return [
+            {
+                'id': str(c.id),
+                'first_name': c.first_name,
+                'last_name': c.last_name,
+                'email': c.email,
+                'job_title': c.job_title,
+                'department_name': c.standard_department.get_name_display() if c.standard_department else None,
+            }
+            for c in contacts
+        ]
+
+    def get_aggregated_departments(self, obj):
+        """Departments derived from activity contacts' standard_department."""
+        departments = obj.aggregated_departments
+        return [
+            {
+                'id': str(d.id),
+                'name': d.get_name_display(),
+            }
+            for d in departments
+        ]
+
+    def get_effective_start_date(self, obj):
+        """Real observed start date from first activity."""
+        return obj.effective_start_date
+
+    def get_effective_end_date(self, obj):
+        """Projected end date from last planned/completed activity."""
+        return obj.effective_end_date
+
+    def get_all_contacts(self, obj):
+        """
+        Merged view: manual step contacts + activity contacts (deduplicated).
+        Each contact includes a 'source' field for frontend badge display.
+        Performance: caches result to avoid double evaluation.
+        """
+        all_contacts = self._get_cached_all_contacts(obj)
+
+        # Build set of manual contact IDs for source tagging
+        manual_ids = set(
+            obj.step_contacts.values_list('contact_id', flat=True)
+        )
+        # Build set of activity contact IDs
+        activity_ids = set(
+            obj.aggregated_contacts.values_list('id', flat=True)
+        )
+
+        return [
+            {
+                'id': str(c.id),
+                'first_name': c.first_name,
+                'last_name': c.last_name,
+                'email': c.email,
+                'job_title': c.job_title,
+                'department_name': c.standard_department.get_name_display() if c.standard_department else None,
+                'source': self._get_contact_source(c.id, manual_ids, activity_ids),
+            }
+            for c in all_contacts
+        ]
+
+    def get_all_departments(self, obj):
+        """Merged view: manual step departments + activity contact departments."""
+        departments = obj.all_departments
+        return [
+            {
+                'id': str(d.id),
+                'name': d.get_name_display(),
+            }
+            for d in departments
+        ]
+
+    @staticmethod
+    def _get_contact_source(contact_id, manual_ids, activity_ids):
+        """
+        Determine contact source for frontend badge display.
+        Returns: 'manual', 'activity', or 'both'.
+        """
+        in_manual = contact_id in manual_ids
+        in_activity = contact_id in activity_ids
+        if in_manual and in_activity:
+            return 'both'
+        if in_manual:
+            return 'manual'
+        return 'activity'
 
 class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """

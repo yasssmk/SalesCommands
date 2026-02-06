@@ -578,6 +578,145 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         
         return False
 
+    # ==========================================================================
+    # AGGREGATION PROPERTIES (Computed from linked Activities)
+    # ==========================================================================
+    # These properties derive data automatically from activities.
+    # They trigger DB queries — acceptable for detail view (single instance).
+    # For list/timeline views, use annotations & prefetch (see views.py).
+    # ==========================================================================
+
+    @property
+    def aggregated_contacts(self):
+        """
+        Union of all contacts from linked activities.
+        Returns QuerySet of Contact objects involved in this step's activities.
+        READ-ONLY / computed — not stored in DecisionStepContact.
+        """
+        from app_modules.contacts.models import Contact
+
+        return Contact.objects.filter(
+            activities__decision_step=self
+        ).distinct()
+
+    @property
+    def aggregated_departments(self):
+        """
+        Union of departments from all activity contacts' standard_department.
+        Derived automatically from contacts linked to this step's activities.
+        """
+        from app_modules.core_modules.models import StandardDepartment
+
+        return StandardDepartment.objects.filter(
+            module_contacts__activities__decision_step=self
+        ).distinct()
+
+    @property
+    def effective_start_date(self):
+        """
+        Date of the FIRST completed activity linked to this step.
+        Uses completed_at date, fallback to scheduled_date.
+        Different from start_date which is set on status change.
+        This is the REAL observed start.
+        """
+        from app_modules.activities.constants import ActivityStatus
+
+        first_completed = self.activities.filter(
+            status=ActivityStatus.COMPLETED
+        ).order_by('completed_at').first()
+
+        if first_completed:
+            if first_completed.completed_at:
+                return first_completed.completed_at.date()
+            return first_completed.scheduled_date
+
+        # Fallback: first activity by scheduled_date (even if not completed)
+        first_activity = self.activities.order_by('scheduled_date').exclude(
+            scheduled_date__isnull=True
+        ).first()
+
+        if first_activity:
+            return first_activity.scheduled_date
+
+        return None
+
+    @property
+    def effective_end_date(self):
+        """
+        Expected end derived from activities:
+        - If PLANNED activities exist: scheduled_date or due_date of the LAST planned activity
+        - If no planned activities: completed_at of the LAST completed activity
+        This complements the manual expected_end field.
+        """
+        from app_modules.activities.constants import ActivityStatus
+        from django.db.models.functions import Coalesce
+        from django.db.models import F
+
+        # Priority 1: Last planned activity date
+        last_planned = self.activities.filter(
+            status=ActivityStatus.PLANNED
+        ).exclude(
+            scheduled_date__isnull=True, due_date__isnull=True
+        ).order_by(
+            Coalesce('due_date', 'scheduled_date').desc()
+        ).first()
+
+        if last_planned:
+            return last_planned.due_date or last_planned.scheduled_date
+
+        # Priority 2: Last completed activity date
+        last_completed = self.activities.filter(
+            status=ActivityStatus.COMPLETED,
+            completed_at__isnull=False
+        ).order_by('-completed_at').first()
+
+        if last_completed:
+            return last_completed.completed_at.date()
+
+        return None
+
+    @property
+    def all_contacts(self):
+        """
+        Merged view: manually-added step contacts + aggregated activity contacts.
+        Deduplicated by contact.id.
+        Returns QuerySet of Contact objects — this is what the frontend
+        should display as "Stakeholders".
+        """
+        from app_modules.contacts.models import Contact
+        from django.db.models import Q
+
+        manual_contact_ids = self.step_contacts.values_list('contact_id', flat=True)
+        activity_contact_ids = Contact.objects.filter(
+            activities__decision_step=self
+        ).values_list('id', flat=True)
+
+        all_ids = set(manual_contact_ids) | set(activity_contact_ids)
+
+        if not all_ids:
+            return Contact.objects.none()
+
+        return Contact.objects.filter(id__in=all_ids).select_related('standard_department')
+
+    @property
+    def all_departments(self):
+        """
+        Merged view: manually-added step departments + aggregated activity contact departments.
+        Deduplicated by department.id.
+        """
+        from app_modules.core_modules.models import StandardDepartment
+
+        manual_dept_ids = self.step_departments.values_list('department_id', flat=True)
+        activity_dept_ids = StandardDepartment.objects.filter(
+            module_contacts__activities__decision_step=self
+        ).values_list('id', flat=True)
+
+        all_ids = set(manual_dept_ids) | set(activity_dept_ids)
+
+        if not all_ids:
+            return StandardDepartment.objects.none()
+
+        return StandardDepartment.objects.filter(id__in=all_ids)
 
 class DecisionStepContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
     """

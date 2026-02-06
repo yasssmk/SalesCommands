@@ -6,6 +6,7 @@ import { useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 
 // MUI
+import { useTheme, alpha } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
@@ -28,6 +29,7 @@ import UserOutlined from '@ant-design/icons/UserOutlined';
 import FileTextOutlined from '@ant-design/icons/FileTextOutlined';
 import AimOutlined from '@ant-design/icons/AimOutlined';
 import UnorderedListOutlined from '@ant-design/icons/UnorderedListOutlined';
+import ContactsOutlined from '@ant-design/icons/ContactsOutlined';
 
 // Project imports - Existing editable components
 import EditableField from '../EditableField';
@@ -100,6 +102,7 @@ SectionTitle.propTypes = {
  * - Bottom: Stakeholder, Description, Goal, Criterias, Metrics
  */
 export default function DecisionStepOverviewTab({ step, account, onSave, onUpdate }) {
+  const theme = useTheme();
   const [saving, setSaving] = useState(false);
   
   // Activity Modal for stalled actions
@@ -338,6 +341,71 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
                 chipColor="default"
               />
             </Box>
+
+            {/* -------------------- ALL STAKEHOLDERS (Read-only, aggregated) -------------------- */}
+            {step?.all_contacts && step.all_contacts.length > 0 && (
+              <Box>
+                <SectionTitle icon={ContactsOutlined} title="All Stakeholders" />
+                <Stack spacing={1}>
+                  {step.all_contacts.map((contact) => {
+                    const name = [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email || 'Unknown';
+                    const sourceColor = contact.source === 'both' 
+                      ? 'primary' 
+                      : contact.source === 'activity' 
+                        ? 'info' 
+                        : 'default';
+                    const sourceLabel = contact.source === 'both' 
+                      ? 'Manual + Activity' 
+                      : contact.source === 'activity' 
+                        ? 'From Activity' 
+                        : 'Manual';
+
+                    return (
+                      <Box
+                        key={contact.id}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          py: 0.75,
+                          px: 1,
+                          borderRadius: 1,
+                          bgcolor: 'grey.50',
+                          border: '1px solid',
+                          borderColor: 'grey.200'
+                        }}
+                      >
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={500} noWrap>
+                            {name}
+                          </Typography>
+                          {(contact.job_title || contact.department_name) && (
+                            <Typography variant="caption" color="text.secondary" noWrap>
+                              {[contact.job_title, contact.department_name].filter(Boolean).join(' · ')}
+                            </Typography>
+                          )}
+                        </Box>
+                        <Chip
+                          label={sourceLabel}
+                          size="small"
+                          color={sourceColor}
+                          variant="outlined"
+                          sx={{ 
+                            height: 20, 
+                            fontSize: '0.65rem', 
+                            '& .MuiChip-label': { px: 0.75 },
+                            flexShrink: 0
+                          }}
+                        />
+                      </Box>
+                    );
+                  })}
+                </Stack>
+                <Typography variant="caption" color="text.disabled" sx={{ mt: 0.5, display: 'block', fontStyle: 'italic' }}>
+                  Merged from manual assignments and linked activities
+                </Typography>
+              </Box>
+            )}
 
             {/* -------------------- EXPECTED END DATE -------------------- */}
             <Box>

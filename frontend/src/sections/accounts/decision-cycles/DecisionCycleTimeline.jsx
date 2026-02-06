@@ -59,6 +59,7 @@ import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
 import PhoneOutlined from '@ant-design/icons/PhoneOutlined';
 import MailOutlined from '@ant-design/icons/MailOutlined';
 import TeamOutlined from '@ant-design/icons/TeamOutlined';
+import ApartmentOutlined from '@ant-design/icons/ApartmentOutlined';
 import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
 import SettingOutlined from '@ant-design/icons/SettingOutlined';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
@@ -553,14 +554,43 @@ function PipelineStepColumn({
             </Box>
           )}
           
+          {/* Aggregated stakeholders & departments */}
+          {(step.all_contacts_count > 0 || (step.all_departments_list && step.all_departments_list.length > 0)) && (
+            <Stack direction="row" alignItems="center" spacing={0.75} flexWrap="wrap" sx={{ mt: 0.25 }}>
+              {step.all_contacts_count > 0 && (
+                <Tooltip title="Stakeholders (manual + from activities)">
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                    <TeamOutlined style={{ fontSize: theme.iconSizes?.xs || 12, color: theme.palette.text.secondary }} />
+                    {step.all_contacts_count}
+                  </Typography>
+                </Tooltip>
+              )}
+              {step.all_departments_list && step.all_departments_list.map((dept) => (
+                <Chip
+                  key={dept.id}
+                  label={dept.name}
+                  size="small"
+                  variant="outlined"
+                  sx={{ 
+                    height: 16, 
+                    fontSize: '0.6rem', 
+                    '& .MuiChip-label': { px: 0.5 },
+                    borderColor: 'grey.300',
+                    color: 'text.secondary'
+                  }}
+                />
+              ))}
+            </Stack>
+          )}
+
           {/* Timeline dates + Stalled warning */}
           <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
-            {/* Start date */}
-            {step.start_date && (
-              <Tooltip title="Started">
+            {/* Effective start date (from activities, preferred) */}
+            {(step.effective_start_date || step.start_date) && (
+              <Tooltip title={step.effective_start_date ? 'Observed start (first activity)' : 'Started'}>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-                  <CalendarOutlined style={{ fontSize: 10 }} />
-                  {new Date(step.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  <CalendarOutlined style={{ fontSize: theme.iconSizes?.xs || 12, color: theme.palette.text.secondary }} />
+                  {new Date(step.effective_start_date || step.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </Typography>
               </Tooltip>
             )}
@@ -590,6 +620,24 @@ function PipelineStepColumn({
                 <Typography variant="caption" color="success.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
                   <CheckCircleFilled style={{ fontSize: 10 }} />
                   {new Date(step.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Typography>
+              </Tooltip>
+            )}
+
+            {/* Effective end from activities (shown only when different from expected_end) */}
+            {step.effective_end_date && step.effective_end_date !== step.expected_end && (
+              <Tooltip title="Projected end (from activities)">
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 0.25, 
+                    color: 'info.main', 
+                    fontStyle: 'italic' 
+                  }}
+                >
+                  → {new Date(step.effective_end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </Typography>
               </Tooltip>
             )}

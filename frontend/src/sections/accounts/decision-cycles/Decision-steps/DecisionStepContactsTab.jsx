@@ -6,7 +6,7 @@ import PropTypes from 'prop-types';
 import { useState, useCallback, useMemo } from 'react';
 
 // MUI
-import { alpha } from '@mui/material/styles';
+import { useTheme, alpha } from '@mui/material/styles';
 import Autocomplete from '@mui/material/Autocomplete';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
@@ -19,6 +19,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import Divider from '@mui/material/Divider';
 
 // Icons
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
@@ -26,6 +27,7 @@ import CloseOutlined from '@ant-design/icons/CloseOutlined';
 import UserOutlined from '@ant-design/icons/UserOutlined';
 import MailOutlined from '@ant-design/icons/MailOutlined';
 import PhoneOutlined from '@ant-design/icons/PhoneOutlined';
+import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined';
 
 // Project imports
 import { useGetContacts } from 'api/businessData/contacts';
@@ -158,7 +160,8 @@ ContactCard.propTypes = {
  * @param {object} step - Decision Step data
  * @param {string} accountId - Account UUID for fetching available contacts
  */
-export default function DecisionStepContactsTab({ step, accountId }) {
+export default function DecisionStepContactsTab({ step, accountId, onUpdate  }) {
+  const theme = useTheme();
   const [saving, setSaving] = useState(false);
   const [addMode, setAddMode] = useState(false);
   const [selectedContacts, setSelectedContacts] = useState([]);
@@ -351,6 +354,72 @@ const handleRemoveContact = useCallback(async (contact) => {
           )}
         </Box>
       )}
+
+      {/* ==================== AGGREGATED CONTACTS FROM ACTIVITIES (Read-only) ==================== */}
+      {step?.aggregated_contacts && step.aggregated_contacts.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+            <ThunderboltOutlined style={{ fontSize: theme.iconSizes?.sm || 14, color: theme.palette.info.main }} />
+            <Typography variant="subtitle2" color="text.secondary" fontWeight={600}>
+              Contacts from Activities
+            </Typography>
+            <Chip
+              label={step.aggregated_contacts.length}
+              size="small"
+              color="info"
+              variant="outlined"
+              sx={{ height: 20, fontSize: '0.7rem', '& .MuiChip-label': { px: 0.75 } }}
+            />
+          </Stack>
+          <Typography variant="caption" color="text.disabled" sx={{ mb: 1.5, display: 'block', fontStyle: 'italic' }}>
+            These contacts appear because they participated in activities linked to this step. They are managed from the Activity module.
+          </Typography>
+          <Grid container spacing={1.5}>
+            {step.aggregated_contacts.map((contact) => {
+              const name = [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email || 'Unknown';
+              return (
+                <Grid item xs={12} sm={6} md={4} key={contact.id}>
+                  <Box
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 1.5,
+                      bgcolor: alpha(theme.palette.info.main, 0.04),
+                      border: '1px solid',
+                      borderColor: alpha(theme.palette.info.main, 0.15),
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5
+                    }}
+                  >
+                    <Avatar sx={{ bgcolor: 'info.lighter', color: 'info.main', width: 36, height: 36 }}>
+                      <UserOutlined style={{ fontSize: theme.iconSizes?.sm || 14 }} />
+                    </Avatar>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="body2" fontWeight={500} noWrap>
+                        {name}
+                      </Typography>
+                      {(contact.job_title || contact.department_name) && (
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          {[contact.job_title, contact.department_name].filter(Boolean).join(' · ')}
+                        </Typography>
+                      )}
+                      {contact.email && (
+                        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.25 }}>
+                          <MailOutlined style={{ fontSize: theme.iconSizes?.xs || 12, color: theme.palette.text.disabled }} />
+                          <Typography variant="caption" color="text.disabled" noWrap>
+                            {contact.email}
+                          </Typography>
+                        </Stack>
+                      )}
+                    </Box>
+                  </Box>
+                </Grid>
+              );
+            })}
+          </Grid>
+          <Divider sx={{ mt: 3 }} />
+        </Box>
+      )}
       
       {/* Empty state */}
       {stepContacts.length === 0 && !addMode && (
@@ -419,5 +488,6 @@ const handleRemoveContact = useCallback(async (contact) => {
 
 DecisionStepContactsTab.propTypes = {
   step: PropTypes.object.isRequired,
-  accountId: PropTypes.string
-};
+  accountId: PropTypes.string,
+  onUpdate: PropTypes.func
+}

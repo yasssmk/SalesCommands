@@ -45,6 +45,7 @@ export const DECISION_STEP_STATUSES = {
   ON_HOLD: 'ON_HOLD',
   CANCELLED: 'CANCELLED'
 };
+
 /**
  * Status colors for UI display
  */
