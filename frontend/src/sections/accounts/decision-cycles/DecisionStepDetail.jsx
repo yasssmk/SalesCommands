@@ -412,13 +412,23 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
           <Grid item xs={12} sm={6}>
             <SectionTitle icon={HistoryOutlined} title="Activity Timestamps" />
             <Stack spacing={0.5}>
-              {step.started_at ? (
+              {step.start_date ? (
                 <Typography variant="body2" color="text.secondary">
-                  <strong>Started:</strong> {new Date(step.started_at).toLocaleString()}
+                  <strong>Started:</strong> {new Date(step.start_date).toLocaleDateString()}
                 </Typography>
               ) : (
                 <Typography variant="body2" color="text.disabled" fontStyle="italic">
                   Not started yet
+                </Typography>
+              )}
+              {step.expected_end && (
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Expected End:</strong> {new Date(step.expected_end).toLocaleDateString()}
+                  {new Date(step.expected_end) < new Date() && (
+                    <Typography component="span" variant="caption" color="error.main" sx={{ ml: 0.5 }}>
+                      (overdue)
+                    </Typography>
+                  )}
                 </Typography>
               )}
               {step.completed_at && (
@@ -441,19 +451,6 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
             />
           </Grid>
           
-          {/* -------------------- EXPECTED DAYS -------------------- */}
-          <Grid item xs={12} sm={6}>
-            <SectionTitle icon={ClockCircleOutlined} title="Expected Days" />
-            <EditableField
-              value={step.expected_days}
-              fieldKey="expected_days"
-              onSave={handleSaveField}
-              placeholder="Duration in days"
-              emptyText="Not estimated"
-              type="number"
-              suffix=" days"
-            />
-          </Grid>
           
           {/* -------------------- DESCRIPTION -------------------- */}
           <Grid item xs={12}>
@@ -546,10 +543,8 @@ DecisionStepDetail.propTypes = {
     stakeholder: PropTypes.string,
     description: PropTypes.string,
     goal: PropTypes.string,
-    expected_days: PropTypes.number,
-    scheduled_date: PropTypes.string,
-    scheduled_time: PropTypes.string,
-    started_at: PropTypes.string,
+    expected_end: PropTypes.string,
+    start_date: PropTypes.string,
     completed_at: PropTypes.string,
     departments_list: PropTypes.array,
     criterias: PropTypes.array,

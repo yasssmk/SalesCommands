@@ -823,10 +823,10 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
                 # If reverting from VALIDATED/REJECTED, clear completed_at
                 validated_data['completed_at'] = None
         
-        # Check for status change to auto-set started_at
+        # Check for status change to auto-set start_date
         if new_status and new_status != instance.status:
-            if new_status == DecisionStepStatus.IN_PROGRESS and not instance.started_at:
-                validated_data['started_at'] = timezone.now()
+            if new_status == DecisionStepStatus.IN_PROGRESS and not instance.start_date:
+                validated_data['start_date'] = timezone.now()
         
         # Update fields
         for attr, value in validated_data.items():

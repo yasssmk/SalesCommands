@@ -435,8 +435,8 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         
         Priority order:
         1. EXPECTED_END_PASSED - deadline missed
-        2. NO_NEXT_STEP - last activity explicitly marked no next step
-        3. NO_ACTIVITY - no activities at all (only for active steps)
+        2. NO_ACTIVITY - no activities at all (only for non-optional steps)
+        3. NO_NEXT_STEP - last activity explicitly marked no next step
         4. NO_FUTURE_ACTIVITY - no planned activities
         5. WAITING_TOO_LONG - no activity in 7+ days
         
@@ -464,22 +464,19 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         
         today = timezone.now().date()
         
-        # Check 1: No activities at all (skip for activity-optional steps)
+        # 1. Expected end date has passed (highest priority)
+        if self.expected_end and self.expected_end < today:
+            return StalledReason.EXPECTED_END_PASSED
+        
+        # 2. No activities at all (skip for activity-optional steps)
         if not self.activities.exists():
             if self.is_activity_optional:
                 return StalledReason.NONE  # Normal for Implementation/Go Live
             return StalledReason.NO_ACTIVITY
         
-        # Get activities for this step
-        activities = self.activities.all()
-        
-        # 2. No activities at all
-        if not activities.exists():
-            return StalledReason.NO_ACTIVITY
-        
         # 3. Check if last completed activity marked no next step
         from app_modules.activities.constants import ActivityStatus
-        last_completed = activities.filter(
+        last_completed = self.activities.filter(
             status=ActivityStatus.COMPLETED
         ).order_by('-completed_at').first()
         
@@ -525,15 +522,17 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     @property
     def has_future_activity(self) -> bool:
-        """Check if there are any planned future activities."""
-        from django.utils import timezone
+        """Check if there are any planned future activities.
+        
+        A PLANNED activity is by definition a future activity,
+        regardless of its scheduled_date. Activities without
+        a scheduled_date or with a past scheduled_date but still
+        in PLANNED status are still pending execution.
+        """
         from app_modules.activities.constants import ActivityStatus
         
-        today = timezone.now().date()
-        
         return self.activities.filter(
-            status=ActivityStatus.PLANNED,
-            scheduled_date__gte=today
+            status=ActivityStatus.PLANNED
         ).exists()
     
     @property

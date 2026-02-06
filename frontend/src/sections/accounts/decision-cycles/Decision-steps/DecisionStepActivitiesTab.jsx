@@ -35,7 +35,7 @@ import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
 // Project imports
 import ActivityModal from 'sections/accounts/activities/ActivityModal';
 import ActivityCompleteModal from 'sections/accounts/activities/ActivityCompleteModal';
-import AlertActivityCancel from '../activities/AlertActivityCancel';
+import AlertActivityCancel from 'sections/accounts/activities/AlertActivityCancel';
 import { 
   useGetActivitiesByStep,
   ACTIVITY_TYPE_LABELS,

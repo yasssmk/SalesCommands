@@ -658,12 +658,12 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
     def update_status(self, request, pk=None):
         """
         Update step status only.
-        
+
         PATCH /decision-steps/{id}/status/
         Body: { "status": "VALIDATED" }
-        
+
         Auto-sets:
-            - started_at when status changes to IN_PROGRESS
+            - start_date when status changes to IN_PROGRESS
             - completed_at when status changes to VALIDATED or REJECTED
         """
         from django.utils import timezone
@@ -690,11 +690,11 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
         update_fields = ['status', 'updated_at', 'updated_by']
         fields_changed = ['status']
         
-        # Auto-set started_at when moving to IN_PROGRESS
-        if new_status == DecisionStepStatus.IN_PROGRESS and not instance.started_at:
-            instance.started_at = timezone.now()
-            update_fields.append('started_at')
-            fields_changed.append('started_at')
+        # Auto-set start_date when moving to IN_PROGRESS
+        if new_status == DecisionStepStatus.IN_PROGRESS and not instance.start_date:
+            instance.start_date = timezone.now()
+            update_fields.append('start_date')
+            fields_changed.append('start_date')
         
         # Auto-set completed_at when VALIDATED or REJECTED
         if new_status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
