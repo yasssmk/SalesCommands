@@ -93,17 +93,28 @@ class DecisionStepStatus(models.TextChoices):
     """
     Status choices for Decision Steps.
     
-    VALIDATED = explicit client approval
-    REJECTED = explicit refusal / loss
+    ALL statuses are DERIVED automatically from activity data.
+    No manual status change — the step observes its activities.
+    
+    Derivation priority (highest first):
+    1. WON        — activity completed with no_next_step_reason=CLOSE_WON
+    2. REJECTED   — activity completed with reason=CLOSE_LOST or NOT_QUALIFIED
+    3. OVERDUE    — expected_end < today and step not WON/REJECTED
+    4. VALIDATED  — all activities completed + future activity exists in sequence
+    5. IN_PROGRESS — at least 1 PLANNED activity exists
+    6. ON_HOLD    — completed activities exist, no PLANNED, no future activity
+    7. NOT_STARTED — no activities or all cancelled
+    
+    IN_CHASING: Reserved for future Campaign/Sequence feature (not auto-derived).
     """
     NOT_STARTED = 'NOT_STARTED', _('Not Started')
-    PENDING_CLIENT = 'PENDING_CLIENT', _('Pending Client')
     IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
-    IN_CHASING = 'IN_CHASING', _('In Chasing')
-    VALIDATED = 'VALIDATED', _('Validated')
-    REJECTED = 'REJECTED', _('Rejected')
     ON_HOLD = 'ON_HOLD', _('On Hold')
-    CANCELLED = 'CANCELLED', _('Cancelled')
+    IN_CHASING = 'IN_CHASING', _('In Chasing')
+    OVERDUE = 'OVERDUE', _('Overdue')
+    VALIDATED = 'VALIDATED', _('Validated')
+    WON = 'WON', _('Won')
+    REJECTED = 'REJECTED', _('Rejected')
 
 class StalledReason(models.TextChoices):
     """

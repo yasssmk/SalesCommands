@@ -454,9 +454,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         ).order_by('-is_active', '-updated_at')
 
         # =====================================================================
-        # BULK SERVICE COMPUTATION (zero additional queries — prefetched data)
-        # =====================================================================
-        # Evaluate queryset once, then run services on prefetched data.
+        # BULK SERVICE COMPUTATION
         # Results are injected into serializer context so serializers read
         # from dicts instead of recomputing per instance.
         # =====================================================================
@@ -469,9 +467,17 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             all_steps.extend(cycle_steps)
 
         # Bulk step aggregation (contacts count, departments, effective dates)
-        from ..services import StepAggregationService, StalledDetectionService, CycleAggregationService
+        from ..services import (
+            StepAggregationService,
+            StalledDetectionService,
+            StepStatusDerivationService,
+            CycleAggregationService,
+        )
 
         step_aggregations = StepAggregationService().get_bulk_aggregation(all_steps)
+
+        # Bulk status derivation (derived_status, color — replaces manual status)
+        step_derived_statuses = StepStatusDerivationService().derive_bulk(all_steps)
 
         # Bulk stalled detection (is_stalled, reason, needs_next_step_attention)
         stalled_results = StalledDetectionService().detect_bulk(all_steps)
@@ -496,6 +502,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             context={
                 'request': request,
                 'step_aggregations': step_aggregations,
+                'step_derived_statuses': step_derived_statuses,
                 'stalled_results': stalled_results,
                 'cycle_summaries': cycle_summaries,
             }

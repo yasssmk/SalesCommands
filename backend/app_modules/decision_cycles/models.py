@@ -417,80 +417,15 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         return self.pipeline_step_config.get('description', '')
     
     # ==========================================================================
-    # STALLED DETECTION (Computed Properties)
+    # STALLED DETECTION & STATUS DERIVATION
     # ==========================================================================
-    
-    STALLED_THRESHOLD_DAYS = 7
-    
-    @property
-    def is_stalled(self) -> bool:
-        """Check if step has no forward momentum."""
-        from .constants import StalledReason
-        return self.stalled_reason != StalledReason.NONE
-    
-    @property
-    def stalled_reason(self) -> str:
-        """
-        Determine why this step is stalled (if at all).
-        
-        Priority order:
-        1. EXPECTED_END_PASSED - deadline missed
-        2. NO_ACTIVITY - no activities at all (only for non-optional steps)
-        3. NO_NEXT_STEP - last activity explicitly marked no next step
-        4. NO_FUTURE_ACTIVITY - no planned activities
-        5. WAITING_TOO_LONG - no activity in 7+ days
-        
-        Returns StalledReason.NONE if not stalled.
-        
-        NOT_STARTED steps are NEVER stalled - you can't lose momentum
-        if you haven't started yet.
-        """
-        
-        # Non-active statuses are never stalled:
-        # - NOT_STARTED: Can't lose momentum if never started
-        # - VALIDATED/REJECTED: Terminal states
-        # - ON_HOLD: Intentionally paused
-        # - CANCELLED: No longer active
-        NON_STALLABLE_STATUSES = [
-            DecisionStepStatus.NOT_STARTED,
-            DecisionStepStatus.VALIDATED,
-            DecisionStepStatus.REJECTED,
-            DecisionStepStatus.ON_HOLD,
-            DecisionStepStatus.CANCELLED,
-        ]
-        
-        if self.status in NON_STALLABLE_STATUSES:
-            return StalledReason.NONE
-        
-        today = timezone.now().date()
-        
-        # 1. Expected end date has passed (highest priority)
-        if self.expected_end and self.expected_end < today:
-            return StalledReason.EXPECTED_END_PASSED
-        
-        # 2. No activities at all (skip for activity-optional steps)
-        if not self.activities.exists():
-            if self.is_activity_optional:
-                return StalledReason.NONE  # Normal for Implementation/Go Live
-            return StalledReason.NO_ACTIVITY
-        
-        # 3. Check if last completed activity marked no next step
-        from app_modules.activities.constants import ActivityStatus
-        last_completed = self.activities.filter(
-            status=ActivityStatus.COMPLETED
-        ).order_by('-completed_at').first()
-        
-        if last_completed and last_completed.next_step_agreed is False:
-            return StalledReason.NO_NEXT_STEP
-        
-        # 4. No future activities planned
-        if not self.has_future_activity:
-            # 5. Check if waiting too long
-            if self.days_since_last_activity and self.days_since_last_activity >= self.STALLED_THRESHOLD_DAYS:
-                return StalledReason.WAITING_TOO_LONG
-            return StalledReason.NO_FUTURE_ACTIVITY
-        
-        return StalledReason.NONE
+    # Step status is DERIVED automatically — never written manually.
+    # See: services/step_status_derivation_service.py (status from activities)
+    # See: services/stalled_detection_service.py (stalled diagnostics)
+    #
+    # These services are called by serializers at read time.
+    # No @property on the model — avoids N+1 queries in list views.
+    # ==========================================================================
     
     @property
     def last_activity_date(self):

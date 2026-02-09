@@ -340,15 +340,17 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # METHODS
     # ==========================================================================
     
-    def complete(self, outcome=None, notes=None, user=None, update_step_status=True):
+    def complete(self, outcome=None, notes=None, user=None):
         """
-        Mark activity as completed and optionally sync linked DecisionStep status.
+        Mark activity as completed.
+
+        Step status is NOT updated here — it is derived automatically
+        by StepStatusDerivationService from activity data on read.
 
         Args:
             outcome: ActivityOutcome choice
             notes: Optional outcome notes
             user: User completing the activity
-            update_step_status: Whether to update linked DecisionStep (default: True)
         """
         self.status = ActivityStatus.COMPLETED
         self.completed_at = timezone.now()
@@ -359,56 +361,7 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
             self.outcome_notes = notes
 
         self.save(user=user)
-
-        # Sync with linked DecisionStep if present
-        if update_step_status and self.decision_step:
-            self._sync_step_status(outcome, user)
     
-    def _sync_step_status(self, outcome, user):
-        """
-        Update linked DecisionStep status based on activity outcome.
-
-        Logic:
-        - Positive outcomes (SUCCESSFUL, MEETING_SCHEDULED) → IN_PROGRESS if NOT_STARTED
-        - Follow-up needed (NO_ANSWER, CALLBACK_REQUESTED, FOLLOW_UP_NEEDED) → IN_CHASING
-        - Negative outcomes (NOT_INTERESTED, WRONG_CONTACT) → No change (let user decide)
-        """
-        from app_modules.decision_cycles.constants import DecisionStepStatus
-
-        step = self.decision_step
-
-        # Define outcome categories
-        positive_outcomes = [
-            ActivityOutcome.SUCCESSFUL,
-            ActivityOutcome.MEETING_SCHEDULED,
-        ]
-        follow_up_outcomes = [
-            ActivityOutcome.NO_ANSWER,
-            ActivityOutcome.CALLBACK_REQUESTED,
-            ActivityOutcome.FOLLOW_UP_NEEDED,
-        ]
-
-        # Only update if step is not already VALIDATED or REJECTED
-        if step.status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
-            return
-
-        new_status = None
-
-        if outcome in positive_outcomes:
-            # Move to IN_PROGRESS if not started
-            if step.status == DecisionStepStatus.NOT_STARTED:
-                new_status = DecisionStepStatus.IN_PROGRESS
-        elif outcome in follow_up_outcomes:
-            # Move to IN_CHASING
-            new_status = DecisionStepStatus.IN_CHASING
-
-        if new_status and new_status != step.status:
-            step.status = new_status
-            if new_status == DecisionStepStatus.IN_PROGRESS and not step.start_date:
-                step.start_date = timezone.now()
-            step.save(user=user)
-
-
     
     def cancel(self, notes=None, user=None):
         """

@@ -132,7 +132,7 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
     Ultra-lightweight serializer for timeline display in by_account endpoint.
     
     PERFORMANCE OPTIMIZED:
-    - No model property access (is_stalled, completeness_score, has_parallel_steps)
+    - No model property access — all computed fields from services via context
     - Uses annotated counts instead of queryset methods
     - Uses prefetched activities only
     - No SerializerMethodField with DB queries
@@ -144,10 +144,18 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
     - activities (with Prefetch, limited, with contacts + contacts__standard_department)
     - step_contacts (with Prefetch, to_attr='_prefetched_step_contacts')
     - step_departments (with Prefetch, to_attr='_prefetched_step_departments')
+    
+    Required context (injected by view):
+    - step_derived_statuses: dict from StepStatusDerivationService.derive_bulk()
+    - step_aggregations: dict from StepAggregationService.get_bulk_aggregation()
     """
     
     stage_display = serializers.SerializerMethodField(read_only=True)
-    status_display = serializers.SerializerMethodField(read_only=True)
+    
+    # Derived status (from StepStatusDerivationService via context)
+    derived_status = serializers.SerializerMethodField(read_only=True)
+    derived_status_display = serializers.SerializerMethodField(read_only=True)
+    derived_status_color = serializers.SerializerMethodField(read_only=True)
     
     # Annotated count (set by ViewSet queryset with Count())
     activities_count = serializers.IntegerField(read_only=True, default=0)
@@ -161,6 +169,9 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
     effective_start_date = serializers.SerializerMethodField(read_only=True)
     effective_end_date = serializers.SerializerMethodField(read_only=True)
     
+    # Pipeline step properties (needed by frontend for column rendering)
+    is_activity_optional = serializers.BooleanField(read_only=True)
+    
     class Meta:
         model = DecisionStep
         fields = [
@@ -169,12 +180,13 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
             
             # Pipeline Step
             'stage', 'stage_display',
+            'is_activity_optional',
             
-            # Status
-            'status', 'status_display',
+            # Derived Status (replaces manual status)
+            'derived_status', 'derived_status_display', 'derived_status_color',
             
             # Timeline
-            'expected_end',
+            'expected_end', 'completed_at',
             
             # Summary (no DB queries - uses annotation)
             'stakeholder',
@@ -195,9 +207,34 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
         """Return stage label without DB query."""
         return obj.get_stage_display() if obj.stage else None
 
-    def get_status_display(self, obj):
-        """Return status label without DB query."""
-        return obj.get_status_display() if obj.status else None
+    # ==========================================================================
+    # DERIVED STATUS GETTERS (reads from bulk context injected by view)
+    # ==========================================================================
+
+    def _get_derived_status(self, obj):
+        """
+        Get pre-computed derived status from serializer context.
+        Falls back to on-the-fly computation if context not available.
+        """
+        step_derived_statuses = self.context.get('step_derived_statuses')
+        if step_derived_statuses and obj.id in step_derived_statuses:
+            return step_derived_statuses[obj.id]
+
+        # Fallback: compute directly (triggers DB queries)
+        from .services import StepStatusDerivationService
+        return StepStatusDerivationService().derive(obj)
+
+    def get_derived_status(self, obj):
+        """Derived step status. Reads from bulk context."""
+        return self._get_derived_status(obj).get('status', 'NOT_STARTED')
+
+    def get_derived_status_display(self, obj):
+        """Derived step status display label. Reads from bulk context."""
+        return self._get_derived_status(obj).get('status_display', 'Not Started')
+
+    def get_derived_status_color(self, obj):
+        """MUI color token for derived status. Reads from bulk context."""
+        return self._get_derived_status(obj).get('color', 'secondary.light')
 
     def get_activities(self, obj):
         """
@@ -372,10 +409,6 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
         """Whether cycle is at risk. Reads from bulk context."""
         return self._get_cycle_summary(obj).get('is_at_risk', False)
 
-    def get_has_steps_needing_attention(self, obj):
-        """Whether any step needs next step resolution. Reads from bulk context."""
-        return self._get_cycle_summary(obj).get('has_steps_needing_attention', False)
-
 # ============================================================================
 # DECISION STEP SERIALIZERS
 # ============================================================================
@@ -391,7 +424,6 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     """
     
     stage_display = serializers.SerializerMethodField(read_only=True)
-    status_display = serializers.SerializerMethodField(read_only=True)
     departments_list = serializers.SerializerMethodField(read_only=True)
     previous_step_info = serializers.SerializerMethodField(read_only=True)
     next_step_info = serializers.SerializerMethodField(read_only=True)
@@ -400,12 +432,10 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     contacts_count = serializers.SerializerMethodField(read_only=True)
     completeness_score = serializers.SerializerMethodField(read_only=True)
     
-    # Stalled detection
-    is_stalled = serializers.BooleanField(read_only=True)
-    stalled_reason = serializers.CharField(read_only=True)
-    
-    # Next step attention
-    needs_next_step_attention = serializers.BooleanField(read_only=True)
+    # Derived status (from StepStatusDerivationService)
+    derived_status = serializers.SerializerMethodField(read_only=True)
+    derived_status_display = serializers.SerializerMethodField(read_only=True)
+    derived_status_color = serializers.SerializerMethodField(read_only=True)
     
     # Pipeline step properties
     is_activity_optional = serializers.BooleanField(read_only=True)
@@ -426,8 +456,8 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             'stage', 'stage_display',
             'is_activity_optional', 'step_description',
             
-            # Status
-            'status', 'status_display',
+            # Derived Status (replaces manual status)
+            'derived_status', 'derived_status_display', 'derived_status_color',
             
             # Deal Temporality
             'start_date', 'expected_end', 'completed_at',
@@ -438,12 +468,6 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
             
             # Flags
             'is_current', 'has_parallel_steps',
-            
-            # Stalled Detection
-            'is_stalled', 'stalled_reason',
-
-            # Next Step Attention
-            'needs_next_step_attention',
             
             # Summary fields
             'stakeholder', 'departments_list',
@@ -459,9 +483,28 @@ class DecisionStepListSerializer(ClientScopeManager.SerializerMixin, serializers
     
     def get_stage_display(self, obj):
         return obj.get_stage_display() if obj.stage else None
-    
-    def get_status_display(self, obj):
-        return obj.get_status_display() if obj.status else None
+
+    # ==========================================================================
+    # DERIVED STATUS (single-instance — DB queries acceptable for list)
+    # ==========================================================================
+
+    def _get_derived_status(self, obj):
+        """Compute derived status. Triggers DB queries."""
+        if not hasattr(self, '_derived_status_cache'):
+            self._derived_status_cache = {}
+        if obj.id not in self._derived_status_cache:
+            from .services import StepStatusDerivationService
+            self._derived_status_cache[obj.id] = StepStatusDerivationService().derive(obj)
+        return self._derived_status_cache[obj.id]
+
+    def get_derived_status(self, obj):
+        return self._get_derived_status(obj).get('status', 'NOT_STARTED')
+
+    def get_derived_status_display(self, obj):
+        return self._get_derived_status(obj).get('status_display', 'Not Started')
+
+    def get_derived_status_color(self, obj):
+        return self._get_derived_status(obj).get('color', 'secondary.light')
     
     def get_departments_list(self, obj):
         """Return list of department names."""
@@ -533,10 +576,12 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     Note: step_type, scheduled_date, scheduled_time have been removed.
     Type and scheduling now belong exclusively to Activity.
     DecisionStep is a buyer milestone - it observes execution.
+    
+    Status is DERIVED automatically from activity data via StepStatusDerivationService.
+    No manual status field exposed — frontend reads derived_status instead.
     """
     
     stage_display = serializers.SerializerMethodField(read_only=True)
-    status_display = serializers.SerializerMethodField(read_only=True)
     departments_list = serializers.SerializerMethodField(read_only=True)
     previous_step_info = serializers.SerializerMethodField(read_only=True)
     next_step_info = serializers.SerializerMethodField(read_only=True)
@@ -547,13 +592,10 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     completeness_score = serializers.SerializerMethodField(read_only=True)
     completeness_details = serializers.SerializerMethodField(read_only=True)
     
-    # Stalled detection
-    is_stalled = serializers.BooleanField(read_only=True)
-    stalled_reason = serializers.CharField(read_only=True)
-    stalled_details = serializers.SerializerMethodField(read_only=True)
-
-     # Next step attention
-    needs_next_step_attention = serializers.BooleanField(read_only=True)
+    # Derived status (from StepStatusDerivationService)
+    derived_status = serializers.SerializerMethodField(read_only=True)
+    derived_status_display = serializers.SerializerMethodField(read_only=True)
+    derived_status_color = serializers.SerializerMethodField(read_only=True)
     
     # Pipeline step properties
     is_activity_optional = serializers.BooleanField(read_only=True)
@@ -561,7 +603,7 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     order = serializers.IntegerField(read_only=True)
     activities_count = serializers.SerializerMethodField(read_only=True)
 
-    # Aggregation from Activities (detail view only — uses @property)
+    # Aggregation from Activities (detail view only — uses service)
     aggregated_contacts = serializers.SerializerMethodField(read_only=True)
     aggregated_departments = serializers.SerializerMethodField(read_only=True)
     effective_start_date = serializers.SerializerMethodField(read_only=True)
@@ -577,7 +619,10 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             
             # Stage & Status
             'stage', 'stage_display',
-            'status', 'status_display', 'is_activity_optional', 'step_description',
+            'is_activity_optional', 'step_description',
+            
+            # Derived Status (replaces manual status)
+            'derived_status', 'derived_status_display', 'derived_status_color',
             
             # Deal Temporality
             'start_date', 'expected_end', 'completed_at',
@@ -588,12 +633,6 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             
             # Flags
             'is_current', 'has_parallel_steps',
-            
-            # Stalled Detection
-            'is_stalled', 'stalled_reason', 'stalled_details',
-
-            # Next Step Attention
-            'needs_next_step_attention',
             
             # Details
             'stakeholder',
@@ -627,10 +666,10 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         ]
 
         read_only_fields = [
-            'id', 'stage_display', 'status_display',
-            'departments_list', 'previous_step_info', 'next_step_info', 
-            'is_current', 'has_parallel_steps', 
-            'is_stalled', 'stalled_reason', 'stalled_details', 'needs_next_step_attention',
+            'id', 'stage_display',
+            'derived_status', 'derived_status_display', 'derived_status_color',
+            'departments_list', 'previous_step_info', 'next_step_info',
+            'is_current', 'has_parallel_steps',
             'step_contacts', 'step_departments',
             'completeness_score', 'completeness_details',
             'aggregated_contacts', 'aggregated_departments',
@@ -641,9 +680,28 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     
     def get_stage_display(self, obj):
         return obj.get_stage_display() if obj.stage else None
-    
-    def get_status_display(self, obj):
-        return obj.get_status_display() if obj.status else None
+
+    # ==========================================================================
+    # DERIVED STATUS (single-instance — DB queries acceptable for detail)
+    # ==========================================================================
+
+    def _get_derived_status(self, obj):
+        """Compute derived status. Triggers DB queries."""
+        if not hasattr(self, '_derived_status_cache'):
+            self._derived_status_cache = {}
+        if obj.id not in self._derived_status_cache:
+            from .services import StepStatusDerivationService
+            self._derived_status_cache[obj.id] = StepStatusDerivationService().derive(obj)
+        return self._derived_status_cache[obj.id]
+
+    def get_derived_status(self, obj):
+        return self._get_derived_status(obj).get('status', 'NOT_STARTED')
+
+    def get_derived_status_display(self, obj):
+        return self._get_derived_status(obj).get('status_display', 'Not Started')
+
+    def get_derived_status_color(self, obj):
+        return self._get_derived_status(obj).get('color', 'secondary.light')
     
     def get_departments_list(self, obj):
         """Return list of department names for quick display."""
@@ -683,11 +741,6 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         from .services import CompletenessScoreService
         service = CompletenessScoreService()
         return service.get_details(obj)
-    
-    def get_stalled_details(self, obj):
-        """Get detailed stalled information for UI display. Delegates to service."""
-        from .services import StalledDetectionService
-        return StalledDetectionService().get_stalled_details(obj)
     
     def get_activities_count(self, obj):
         """Return count of activities linked to this step."""
@@ -734,7 +787,7 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
     Note: step_type, scheduled_date, scheduled_time have been removed.
     Type and scheduling belong to Activity. Create activities separately.
     
-    expected_end is MANDATORY for deal timeline visibility.
+    Status is DERIVED automatically — new steps start as NOT_STARTED (model default).
     """
     
     cycle_id = serializers.UUIDField(write_only=True)
@@ -754,7 +807,7 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
             model = DecisionStep
             fields = [
                 'cycle_id',
-                'name', 'stage', 'status',
+                'name', 'stage',
                 'expected_end',
                 'previous_step_id',
                 'stakeholder',
@@ -782,17 +835,6 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
         if value not in valid_stages:
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_FIELD.format(field='Pipeline Step')
-            )
-        return value
-    
-    def validate_status(self, value):
-        if not value:
-            return DecisionStepStatus.NOT_STARTED
-        
-        valid_statuses = [choice[0] for choice in DecisionStepStatus.choices]
-        if value not in valid_statuses:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field='Status')
             )
         return value
     
@@ -838,7 +880,6 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
     
     def create(self, validated_data):
         """Create decision step with proper audit fields."""
-        # Get user from context (standard pattern)
         user = self.context.get('request').user if self.context.get('request') else None
         
         # Extract M2M fields
@@ -873,9 +914,6 @@ class DecisionStepCreateSerializer(ClientScopeManager.SerializerMixin, serialize
                     client_id=instance.client_id
                 )
         
-        # Note: Activity creation is now handled separately via ActivityModal
-        # DecisionStep is a milestone, not an action. Activities are created independently.
-        
         return instance
 
 
@@ -886,6 +924,8 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
     
     Note: step_type, scheduled_date, scheduled_time have been removed.
     Type and scheduling belong to Activity.
+    
+    Status is DERIVED automatically — not editable by user.
     """
     
     previous_step_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
@@ -903,7 +943,7 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
     class Meta:
         model = DecisionStep
         fields = [
-            'name', 'status',
+            'name',
             'expected_end',
             'stakeholder',
             'description', 'goal',
@@ -936,30 +976,15 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
         return attrs
     
     def update(self, instance, validated_data):
-        """Update decision step with proper audit fields and auto-set completed_at."""
-        from django.utils import timezone
-        
+        """Update decision step with proper audit fields."""
         user = self.context.get('request').user if self.context.get('request') else None
         
         # Extract M2M fields
         contact_ids = validated_data.pop('contact_ids', None)
         department_ids = validated_data.pop('department_ids', None)
         
-        # Check for status change to auto-set completed_at
-        new_status = validated_data.get('status')
-        if new_status and new_status != instance.status:
-            if new_status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
-                # Auto-set completed_at if not already set
-                if not instance.completed_at:
-                    validated_data['completed_at'] = timezone.now()
-            elif instance.status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
-                # If reverting from VALIDATED/REJECTED, clear completed_at
-                validated_data['completed_at'] = None
-        
-        # Check for status change to auto-set start_date
-        if new_status and new_status != instance.status:
-            if new_status == DecisionStepStatus.IN_PROGRESS and not instance.start_date:
-                validated_data['start_date'] = timezone.now()
+        # Status is derived automatically from activities — no manual update.
+        # completed_at and start_date are observed from activity data.
         
         # Update fields
         for attr, value in validated_data.items():
@@ -969,7 +994,6 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
         
         # Update contacts M2M if provided
         if contact_ids is not None:
-            # Clear existing and add new
             instance.step_contacts.all().delete()
             if contact_ids:
                 from app_modules.contacts.models import Contact
@@ -983,7 +1007,6 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
         
         # Update departments M2M if provided
         if department_ids is not None:
-            # Clear existing and add new
             instance.step_departments.all().delete()
             if department_ids:
                 departments = StandardDepartment.objects.filter(id__in=department_ids)
@@ -1028,6 +1051,9 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
 class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Complete serializer for cycle detail view.
+    
+    Cycle-level attention flags (has_steps_needing_attention) are now
+    provided by CycleAggregationService via timeline context, not here.
     """
     
     account_name = serializers.SerializerMethodField(read_only=True)
@@ -1035,7 +1061,6 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
     steps_count = serializers.IntegerField(read_only=True)
     validated_steps_count = serializers.IntegerField(read_only=True)
     estimated_timeline_days = serializers.IntegerField(read_only=True)
-    has_steps_needing_attention = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionCycle
@@ -1045,14 +1070,12 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             'is_active',
             'steps', 'steps_count', 'validated_steps_count',
             'estimated_timeline_days',
-            'has_steps_needing_attention',
             'created_by', 'updated_by',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
             'id', 'account_name', 'steps', 'steps_count',
             'validated_steps_count', 'estimated_timeline_days',
-            'has_steps_needing_attention',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
     
