@@ -47,14 +47,11 @@ import ActivityModal from 'sections/accounts/activities/ActivityModal';
 import CompletenessScoreWidget from '../CompletenessScoreWidget';
 import ManagerNotesSection from '../ManagerNotesSection';
 
-// Project imports - API & hooks
-import { 
-  updateDecisionStep,
-  updateDecisionStepStatus 
-} from 'api/accounts/decisionCycles';
-import { useGetContactChoices, useGetContacts } from 'api/businessData/contacts';
+// Project imports - Shared hook
+import { useDecisionStepEdit } from 'hooks/useDecisionStepEdit';
+
+// Project imports - Permissions
 import { useUserPermissions, canViewManagerNotes, canEditManagerNotes } from 'hooks/useUserPermissions';
-import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
 // ==============================|| CONFIGURATION ||============================== //
 
@@ -101,9 +98,29 @@ SectionTitle.propTypes = {
  * - Right column: Completeness Score, Manager Notes, Timestamps
  * - Bottom: Stakeholder, Description, Goal, Criterias, Metrics
  */
-export default function DecisionStepOverviewTab({ step, account, onSave, onUpdate }) {
+export default function DecisionStepOverviewTab({ step, account, onUpdate }) {
   const theme = useTheme();
-  const [saving, setSaving] = useState(false);
+  
+  // Derive accountId
+  const accountId = account?.id || step?.account_id;
+  
+  // ==============================|| SHARED EDIT HOOK ||============================== //
+  
+  const {
+    saving,
+    handleSaveField,
+    handleSaveMultiSelect,
+    handleStatusChange,
+    handleExpectedEndChange,
+    handleSaveManagerNotes,
+    handleDeleteManagerNotes,
+    departmentOptions,
+    contactOptions,
+    deptLoading,
+    contactsLoading
+  } = useDecisionStepEdit({ step, accountId, onUpdate });
+  
+  // ==============================|| STALLED ACTION STATE ||============================== //
   
   // Activity Modal for stalled actions
   const [activityModalOpen, setActivityModalOpen] = useState(false);
@@ -112,58 +129,7 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
   // User permissions for manager notes
   const { currentUserId, isAdmin, isManager } = useUserPermissions();
   
-  // Fetch departments for editing
-  const { standardDepartments = [], choicesLoading: deptLoading } = useGetContactChoices();
-  
-  // Fetch contacts for this account
-  const accountId = account?.id || step?.account_id;
-  const { contacts = [], contactsLoading } = useGetContacts({ 
-    pageSize: 100,
-    filters: { account: accountId }
-  });
-
-  // Transform departments for EditableMultiSelect
-  const departmentOptions = standardDepartments.map(d => ({
-    id: d.value || d.id,
-    name: d.label || d.name || d.display_name
-  }));
-
-  // Transform contacts for EditableMultiSelect  
-  const contactOptions = contacts.map(c => ({
-    id: c.id,
-    name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || 'Unknown'
-  }));
-
-  // ==============================|| HANDLERS ||============================== //
-
-  /**
-   * Save a single field
-   */
-  const handleSaveField = useCallback(async (fieldKey, newValue) => {
-    setSaving(true);
-    const success = await onSave(fieldKey, newValue);
-    setSaving(false);
-    return success;
-  }, [onSave]);
-
-  /**
-   * Save multi-select fields (departments, contacts)
-   */
-  const handleSaveMultiSelect = useCallback(async (fieldKey, newIds) => {
-    setSaving(true);
-    const success = await onSave(fieldKey, newIds);
-    setSaving(false);
-    return success;
-  }, [onSave]);
-
-  /**
-   * Handle expected_end date change
-   */
-  const handleExpectedEndChange = useCallback(async (newDate) => {
-    if (!newDate) return;
-    const formatted = newDate.format('YYYY-MM-DD');
-    return handleSaveField('expected_end', formatted);
-  }, [handleSaveField]);
+  // ==============================|| STALLED ACTION HANDLERS ||============================== //
 
   /**
    * Stalled action: Schedule Call
@@ -185,27 +151,8 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
    * Stalled action: Mark as Validated
    */
   const handleMarkValidated = useCallback(async () => {
-    setSaving(true);
-    try {
-      const result = await updateDecisionStepStatus(step.id, 'VALIDATED', step.cycle);
-      if (result.success) {
-        displaySuccessSnackbar('Step marked as validated');
-        onUpdate?.();
-      } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to mark step as validated',
-          status: result.status
-        });
-      }
-    } catch (err) {
-      displayErrorSnackbar({
-        message: err?.message || 'An unexpected error occurred',
-        status: 500
-      });
-    } finally {
-      setSaving(false);
-    }
-  }, [step?.id, step?.cycle, onUpdate]);
+    return handleStatusChange('VALIDATED');
+  }, [handleStatusChange]);
 
   /**
    * Activity modal close
@@ -221,51 +168,7 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
   const handleActivitySuccess = useCallback(() => {
     handleActivityModalClose();
     onUpdate?.();
-    displaySuccessSnackbar('Activity created');
   }, [handleActivityModalClose, onUpdate]);
-
-  /**
-   * Quick status change
-   */
-  const handleStatusChange = useCallback(async (newStatus) => {
-    setSaving(true);
-    try {
-      const result = await updateDecisionStepStatus(step.id, newStatus, step.cycle);
-      if (result.success) {
-        displaySuccessSnackbar('Status updated');
-        onUpdate?.();
-        return true;
-      } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to update status',
-          status: result.status
-        });
-        return false;
-      }
-    } catch (err) {
-      displayErrorSnackbar({
-        message: err?.message || 'An unexpected error occurred',
-        status: 500
-      });
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, [step?.id, step?.cycle, onUpdate]);
-
-  /**
-   * Save manager notes
-   */
-  const handleSaveManagerNotes = useCallback(async (newNotes) => {
-    return handleSaveField('manager_notes', newNotes);
-  }, [handleSaveField]);
-
-  /**
-   * Delete manager notes
-   */
-  const handleDeleteManagerNotes = useCallback(async () => {
-    return handleSaveField('manager_notes', '');
-  }, [handleSaveField]);
 
   // ==============================|| PERMISSION CHECKS ||============================== //
 
@@ -574,6 +477,5 @@ export default function DecisionStepOverviewTab({ step, account, onSave, onUpdat
 DecisionStepOverviewTab.propTypes = {
   step: PropTypes.object.isRequired,
   account: PropTypes.object,
-  onSave: PropTypes.func.isRequired,
   onUpdate: PropTypes.func
 };

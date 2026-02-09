@@ -27,8 +27,11 @@ import { useRouter } from 'next/navigation';
 
 // material-ui
 import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
+import LinearProgress from '@mui/material/LinearProgress';
 import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
 
 // project imports
 import DecisionCycleSelector from '../decision-cycles/DecisionCycleSelector';
@@ -40,7 +43,9 @@ import ActivityModal from '../activities/ActivityModal';
 import { 
   useGetDecisionCyclesByAccount,
   useGetDecisionCycle,
-  deleteDecisionCycle
+  deleteDecisionCycle,
+  CYCLE_DERIVED_STATUS_LABELS,
+  CYCLE_STATUS_COLORS
 } from 'api/accounts/decisionCycles';
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
@@ -268,6 +273,67 @@ export default function DecisionCycleTab({ accountId, accountName }) {
           loading={currentCycleLoading}
         />
       </Stack>
+
+      {/* Cycle Summary Strip */}
+      {currentCycle && !currentCycleLoading && (
+        <Stack
+          direction="row"
+          spacing={2}
+          alignItems="center"
+          sx={{
+            mb: 2,
+            px: 2,
+            py: 1.5,
+            borderRadius: 1,
+            bgcolor: 'grey.50',
+            border: '1px solid',
+            borderColor: 'divider'
+          }}
+        >
+          {/* Derived Status Chip */}
+          {currentCycle.cycle_status && (
+            <Chip
+              label={CYCLE_DERIVED_STATUS_LABELS[currentCycle.cycle_status] || currentCycle.cycle_status}
+              color={CYCLE_STATUS_COLORS[currentCycle.cycle_status] || 'default'}
+              size="small"
+              variant="filled"
+            />
+          )}
+
+          {/* Progress */}
+          {currentCycle.steps_count > 0 && (
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 160 }}>
+              <LinearProgress
+                variant="determinate"
+                value={((currentCycle.validated_steps_count || 0) / currentCycle.steps_count) * 100}
+                sx={{ flex: 1, height: 6, borderRadius: 3 }}
+              />
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {currentCycle.validated_steps_count || 0}/{currentCycle.steps_count}
+              </Typography>
+            </Stack>
+          )}
+
+          {/* Stalled Count */}
+          {currentCycle.stalled_steps_count > 0 && (
+            <Chip
+              label={`${currentCycle.stalled_steps_count} stalled`}
+              color="error"
+              size="small"
+              variant="outlined"
+            />
+          )}
+
+          {/* Timeline Span */}
+          {(currentCycle.created_at || currentCycle.expected_closing_date) && (
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ ml: 'auto' }}>
+              {currentCycle.created_at && new Date(currentCycle.created_at).toLocaleDateString()}
+              {currentCycle.created_at && currentCycle.expected_closing_date && ' → '}
+              {currentCycle.expected_closing_date && new Date(currentCycle.expected_closing_date).toLocaleDateString()}
+            </Typography>
+          )}
+        </Stack>
+      )}
       
       {/* Pipeline Timeline */}
       {currentCycleLoading ? (

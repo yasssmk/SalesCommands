@@ -31,6 +31,7 @@ import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import Chip from '@mui/material/Chip';
 
 // icons
 import DownOutlined from '@ant-design/icons/DownOutlined';
@@ -39,6 +40,12 @@ import EditOutlined from '@ant-design/icons/EditOutlined';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
 import FolderOutlined from '@ant-design/icons/FolderOutlined';
+
+// project imports
+import {
+  CYCLE_DERIVED_STATUS_LABELS,
+  CYCLE_STATUS_COLORS
+} from 'api/accounts/decisionCycles';
 
 // ==============================|| CYCLE MENU ITEM ||============================== //
 
@@ -67,11 +74,28 @@ function CycleMenuItem({ cycle, isSelected, onSelect, onEdit, onDelete }) {
       </ListItemIcon>
       
       <ListItemText
-        primary={cycle.name}
-        secondary={cycle.steps_count !== undefined ? `${cycle.steps_count} steps` : null}
-        primaryTypographyProps={{
-          fontWeight: isSelected ? 600 : 400
-        }}
+        primary={
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="body1" fontWeight={isSelected ? 600 : 400}>
+              {cycle.name}
+            </Typography>
+            {cycle.cycle_status && (
+              <Chip
+                label={CYCLE_DERIVED_STATUS_LABELS[cycle.cycle_status] || cycle.cycle_status}
+                color={CYCLE_STATUS_COLORS[cycle.cycle_status] || 'default'}
+                size="small"
+                variant="outlined"
+                sx={{ height: 20, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+              />
+            )}
+          </Stack>
+        }
+        secondary={
+          cycle.steps_count !== undefined
+            ? `${cycle.validated_steps_count || 0}/${cycle.steps_count} validated`
+            : null
+        }
+        primaryTypographyProps={{ component: 'div' }}
         secondaryTypographyProps={{
           variant: 'caption'
         }}

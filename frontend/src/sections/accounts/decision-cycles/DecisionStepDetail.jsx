@@ -18,7 +18,6 @@
 'use client';
 
 import PropTypes from 'prop-types';
-import { useState, useCallback } from 'react';
 
 // material-ui
 import { useTheme, alpha } from '@mui/material/styles';
@@ -54,13 +53,8 @@ import EditableChipList from './EditableChipList';
 import EditableMultiSelect from './EditableMultiSelect';
 import EditableDateTime from './EditableDateTime';
 import DecisionStepActivities from './DecisionStepActivities';
-import { 
-  updateDecisionStep,
-  updateDecisionStepStatus,
-  DECISION_STEP_STATUSES
-} from 'api/accounts/decisionCycles';
-import { useGetContactChoices, useGetContacts } from 'api/businessData/contacts';
-import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
+import { DECISION_STEP_STATUSES } from 'api/accounts/decisionCycles';
+import { useDecisionStepEdit } from './hooks/useDecisionStepEdit';
 
 // ==============================|| CONFIGURATION ||============================== //
 
@@ -123,162 +117,21 @@ SectionTitle.propTypes = {
 export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelete, accountId }) {
   const theme = useTheme();
   
-  const [saving, setSaving] = useState(false);
+  // ==============================|| SHARED EDIT HOOK ||============================== //
   
-  // ==============================|| DATA FETCHING ||============================== //
+  const {
+    saving,
+    handleSaveField,
+    handleSaveMultiSelect,
+    handleStatusChange,
+    handleSaveDateTime,
+    departmentOptions,
+    contactOptions,
+    deptLoading,
+    contactsLoading
+  } = useDecisionStepEdit({ step, accountId, onUpdate });
   
-  // Fetch departments for editing
-  const { standardDepartments = [], choicesLoading: deptLoading } = useGetContactChoices();
-  
-  // Fetch contacts for this account
-  const { contacts = [], contactsLoading } = useGetContacts({ 
-    pageSize: 100,
-    filters: { account: accountId }
-  });
-
-  // Transform departments for EditableMultiSelect
-  const departmentOptions = standardDepartments.map(d => ({
-    id: d.value || d.id,
-    name: d.label || d.name || d.display_name
-  }));
-
-  // Transform contacts for EditableMultiSelect  
-  const contactOptions = contacts.map(c => ({
-    id: c.id,
-    name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || 'Unknown'
-  }));
-  
-  // ==============================|| HANDLERS ||============================== //
-  
-  /**
-   * Save a single field
-   */
-  const handleSaveField = useCallback(async (fieldKey, newValue) => {
-    setSaving(true);
-    
-    try {
-      const payload = { [fieldKey]: newValue };
-      const result = await updateDecisionStep(step.id, payload, step.cycle);
-      
-      if (result.success) {
-        displaySuccessSnackbar('Step updated');
-        onUpdate?.(result.data);
-        return true;
-        } else {
-          displayErrorSnackbar({
-            message: result.error || 'Failed to update step',
-            status: result.status
-          });
-          return false;
-        }
-        } catch (err) {
-          displayErrorSnackbar({
-            message: err?.message || 'An unexpected error occurred',
-            status: 500
-          });
-          return false;
-        } finally {
-      setSaving(false);
-    }
-  }, [step.id, step.cycle, onUpdate]);
-
-  /**
-   * Save multi-select fields (departments, contacts)
-   */
-  const handleSaveMultiSelect = useCallback(async (fieldKey, newIds) => {
-    setSaving(true);
-    
-    try {
-      const payload = { [fieldKey]: newIds };
-      const result = await updateDecisionStep(step.id, payload, step.cycle);
-      
-      if (result.success) {
-        displaySuccessSnackbar('Step updated');
-        onUpdate?.(result.data);
-        return true;
-        } else {
-          displayErrorSnackbar({
-            message: result.error || 'Failed to update step',
-            status: result.status
-          });
-          return false;
-        }
-        } catch (err) {
-          displayErrorSnackbar({
-            message: err?.message || 'An unexpected error occurred',
-            status: 500
-          });
-          return false;
-        } finally {
-          setSaving(false);
-        }
-      }, [step.id, step.cycle, onUpdate]);
-
-  /**
-   * Save date and time together
-   */
-  const handleSaveDateTime = useCallback(async (newDate, newTime) => {
-    setSaving(true);
-    
-    try {
-      const payload = { 
-        scheduled_date: newDate,
-        scheduled_time: newTime
-      };
-      const result = await updateDecisionStep(step.id, payload, step.cycle);
-      
-      if (result.success) {
-        displaySuccessSnackbar('Schedule updated');
-        onUpdate?.(result.data);
-        return true;
-      } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to update schedule',
-          status: result.status
-        });
-        return false;
-      }
-      } catch (err) {
-        displayErrorSnackbar({
-          message: err?.message || 'An unexpected error occurred',
-          status: 500
-        });
-        return false;
-      } finally {
-            setSaving(false);
-          }
-  }, [step.id, step.cycle, onUpdate]);
-  
-  /**
-   * Quick status change
-   */
-  const handleStatusChange = useCallback(async (newStatus) => {
-    setSaving(true);
-    
-    try {
-      const result = await updateDecisionStepStatus(step.id, newStatus, step.cycle);
-      
-      if (result.success) {
-        displaySuccessSnackbar('Status updated');
-        onUpdate?.(result.data);
-        return true;
-      } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to update status',
-          status: result.status
-        });
-        return false;
-      }
-      } catch (err) {
-        displayErrorSnackbar({
-          message: err?.message || 'An unexpected error occurred',
-          status: 500
-        });
-        return false;
-      }finally {
-      setSaving(false);
-    }
-  }, [step.id, step.cycle, onUpdate]);
+  // ==============================|| MODAL-SPECIFIC HANDLERS ||============================== //
   
   /**
    * Delete step request

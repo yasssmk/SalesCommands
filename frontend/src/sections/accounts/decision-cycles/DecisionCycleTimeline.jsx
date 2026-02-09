@@ -44,6 +44,8 @@ import Checkbox from '@mui/material/Checkbox';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Divider from '@mui/material/Divider';
+import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
 import Badge from '@mui/material/Badge';
 
 // icons
@@ -1114,6 +1116,30 @@ export default function DecisionCycleTimeline({
           />
         </Stack>
       </Stack>
+      
+      {/* Cycle-Level Risk/Stalled Alert */}
+      {(cycle?.is_at_risk || cycle?.stalled_steps_count > 0) && (
+        <Alert 
+          severity={cycle?.is_at_risk ? 'error' : 'warning'}
+          variant="outlined"
+          sx={{ mb: 2 }}
+        >
+          <AlertTitle>
+            {cycle?.is_at_risk ? 'Cycle at risk' : 'Attention needed'}
+          </AlertTitle>
+          {cycle?.stalled_steps_count > 0 && (
+            <Typography variant="body2">
+              {cycle.stalled_steps_count} step{cycle.stalled_steps_count > 1 ? 's' : ''} stalled — 
+              click on the step header to take action.
+            </Typography>
+          )}
+          {cycle?.is_at_risk && cycle?.stalled_steps_count === 0 && (
+            <Typography variant="body2">
+              This cycle is at risk. Review step statuses and plan next actions.
+            </Typography>
+          )}
+        </Alert>
+      )}
       
       {/* Pipeline Columns */}
       <Box

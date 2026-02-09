@@ -732,7 +732,7 @@ export async function createActivity(payload) {
       endpoints.myActivities,
       endpoints.byAccount,
       '/company-accounts/',
-      '/company-accounts/'
+      '/module-decision-cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
@@ -855,7 +855,8 @@ export async function updateActivity(activityId, payload) {
       endpoints.activities,
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
-      '/company-accounts/'
+      '/company-accounts/',
+      '/module-decision-cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
@@ -901,7 +902,8 @@ export async function deleteActivity(activityId) {
       endpoints.byStep,
       endpoints.overdue,
       endpoints.upcoming,
-      '/company-accounts/'
+      '/company-accounts/',
+      '/module-decision-cycles/'
     ]);
     return { success: true, status: result.status ?? 204 };
   }
@@ -940,7 +942,8 @@ export async function completeActivity(activityId, payload = {}) {
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
       endpoints.overdue,
-      '/company-accounts/'
+      '/company-accounts/',
+      '/module-decision-cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
@@ -1066,7 +1069,8 @@ export async function cancelActivity(activityId, payload = {}) {
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
       endpoints.overdue,
-      '/company-accounts/'
+      '/company-accounts/',
+      '/module-decision-cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
@@ -1107,7 +1111,8 @@ export async function reopenActivity(activityId, payload = {}) {
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
       endpoints.overdue,
-      '/company-accounts/'
+      '/company-accounts/',
+      '/module-decision-cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };

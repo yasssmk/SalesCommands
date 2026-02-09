@@ -13,7 +13,7 @@ import Typography from '@mui/material/Typography';
 
 // Project imports
 import MainCard from 'components/MainCard';
-import { useGetDecisionStep, updateDecisionStep } from 'api/accounts/decisionCycles';
+import { useGetDecisionStep } from 'api/accounts/decisionCycles';
 import { useGetAccount } from 'api/admin/accounts';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
 import WorkspaceBreadcrumb, { buildStepBreadcrumbs } from 'components/WorkspaceBreadcrumb';
@@ -58,29 +58,6 @@ export default function DecisionStepWorkspacePage() {
     router.push(`?${urlParams.toString()}`, { scroll: false });
   };
 
-  // Handle inline field save
-  const handleSaveField = async (fieldKey, newValue) => {
-    try {
-      const result = await updateDecisionStep(stepId, { [fieldKey]: newValue }, cycleId);
-      if (result.success) {
-        displaySuccessSnackbar('Step updated');
-        mutateStep();
-        return true;
-      } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to update step',
-          status: result.status
-        });
-        return false;
-      }
-    } catch (err) {
-      displayErrorSnackbar({
-        message: err?.message || 'An unexpected error occurred',
-        status: 500
-      });
-      return false;
-    }
-  };
 
   // Render tab content
   const renderTabContent = () => {
@@ -90,7 +67,6 @@ export default function DecisionStepWorkspacePage() {
           <DecisionStepOverviewTab 
             step={step} 
             account={account}
-            onSave={handleSaveField}
             onUpdate={mutateStep}
           />
         );
@@ -118,7 +94,6 @@ export default function DecisionStepWorkspacePage() {
           <DecisionStepOverviewTab 
             step={step}
             account={account}
-            onSave={handleSaveField}
             onUpdate={mutateStep}
           />
         );
@@ -167,7 +142,6 @@ export default function DecisionStepWorkspacePage() {
         step={step}
         account={account}
         cycleId={cycleId}
-        onSave={handleSaveField}
         onUpdate={mutateStep}
       />
 

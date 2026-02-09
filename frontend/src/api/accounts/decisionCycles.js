@@ -155,6 +155,46 @@ export const STATUS_LABELS = {
   CANCELLED: 'Cancelled'
 };
 
+/**
+ * Derived cycle statuses (from CycleAggregationService)
+ * These are COMPUTED by backend, not user-settable.
+ */
+export const CYCLE_DERIVED_STATUS = {
+  NOT_STARTED: 'NOT_STARTED',
+  IN_PROGRESS: 'IN_PROGRESS',
+  STALLED: 'STALLED',
+  AT_RISK: 'AT_RISK',
+  ON_TRACK: 'ON_TRACK',
+  WON: 'WON',
+  LOST: 'LOST'
+};
+
+/**
+ * Cycle derived status labels for UI display
+ */
+export const CYCLE_DERIVED_STATUS_LABELS = {
+  NOT_STARTED: 'Not Started',
+  IN_PROGRESS: 'In Progress',
+  STALLED: 'Stalled',
+  AT_RISK: 'At Risk',
+  ON_TRACK: 'On Track',
+  WON: 'Won',
+  LOST: 'Lost'
+};
+
+/**
+ * Cycle derived status colors for MUI Chip color prop
+ */
+export const CYCLE_STATUS_COLORS = {
+  NOT_STARTED: 'default',
+  IN_PROGRESS: 'info',
+  STALLED: 'error',
+  AT_RISK: 'warning',
+  ON_TRACK: 'success',
+  WON: 'success',
+  LOST: 'error'
+};
+
 // ==============================|| ENDPOINTS ||============================== //
 
 const endpoints = {
@@ -439,23 +479,20 @@ export function useGetDecisionStepsByCycle(cycleId) {
 
 
 /**
- * GET DECISION STEP WITH CONTEXT - Step details with related data for workspace
+ * GET DECISION STEP WITH CONTEXT - Step details with cycle + account for workspace
  * 
- * Fetches step with:
- * - completeness_score and completeness_details
- * - linked cycle info
- * - linked account info
- * - activities count
- * - contacts
+ * Use this hook ONLY for workspace pages that need breadcrumbs,
+ * cycle name, and account context. Makes 2 SWR calls (step + cycle).
  * 
- * Used by Step detail workspace page.
+ * For modals or lightweight displays, use useGetDecisionStep instead.
+ * 
+ * Returns convenience getters (cycleName, accountName, accountId, etc.)
+ * derived from the cycle's account relationship.
  * 
  * @param {string} stepId - UUID of the step
- * @param {Object} options - Additional options
- * @param {boolean} options.includeActivities - Whether to fetch activities count
- * @returns {Object} {step, cycle, account, stepLoading, stepError, mutateStep}
+ * @returns {Object} {step, cycle, account, stepLoading, stepError, stepValidating, mutateStep, ...convenience}
  */
-export function useGetDecisionStepWithContext(stepId, options = {}) {
+export function useGetDecisionStepWithContext(stepId) {
   const { tenantId } = useAuth();
 
   // Fetch step detail
@@ -498,28 +535,24 @@ export function useGetDecisionStepWithContext(stepId, options = {}) {
 
   const cycle = cycleData?.data || null;
 
-  // Derive account from cycle
+  // Derive account from cycle or step
   const account = useMemo(() => {
-    if (!cycle) return null;
-    
-    // Cycle should have account info
-    if (cycle.account) {
+    // Priority 1: cycle.account (most reliable — cycle always has account)
+    if (cycle?.account) {
       return typeof cycle.account === 'object' 
         ? cycle.account 
-        : { id: cycle.account, name: cycle.account_name };
+        : { id: cycle.account, name: cycle.account_name || '' };
     }
     
-    // Fallback: check step for account info
-    if (step?.account) {
-      return typeof step.account === 'object'
-        ? step.account
-        : { id: step.account };
+    // Priority 2: step.account_id (available if backend includes it)
+    if (step?.account_id) {
+      return { id: step.account_id, name: step.account_name || '' };
     }
     
     return null;
   }, [cycle, step]);
 
-  // Compute derived state
+  // Loading = step loading OR waiting for cycle (only if cycleId is known)
   const isLoading = stepLoading || (cycleId && cycleLoading);
 
   const memoizedValue = useMemo(
@@ -585,10 +618,16 @@ export function useGetDecisionStepContacts(stepId) {
 
 
 /**
- * GET DECISION STEP - Single step details
+ * GET DECISION STEP - Single step details (lightweight)
+ * 
+ * Use this hook for modals, inline displays, and any context where
+ * only step data is needed (no cycle name, no account breadcrumb).
+ * 
+ * For workspace pages that need cycle + account context (breadcrumbs,
+ * navigation), use useGetDecisionStepWithContext instead.
  * 
  * @param {string} stepId - UUID of the step
- * @returns {Object} {step, stepLoading, stepError, mutateStep}
+ * @returns {Object} {step, stepLoading, stepError, stepValidating, mutateStep}
  */
 export function useGetDecisionStep(stepId) {
   const { tenantId } = useAuth();
@@ -674,7 +713,8 @@ export async function updateDecisionCycle(cycleId, payload) {
     revalidateMultiple([
       endpoints.cycles,
       endpoints.cycleDetail(cycleId),
-      '/company-accounts/'
+      '/company-accounts/',
+      '/decision_cycles/by-account/'
     ]);
     // Extract nested data from backend response { success, data }
     const cycleData = result.data?.data || result.data;
@@ -792,7 +832,8 @@ export async function updateDecisionStep(stepId, payload, cycleId = null) {
   if (result.success) {
     const revalidatePaths = [
       endpoints.steps,
-      endpoints.stepDetail(stepId)
+      endpoints.stepDetail(stepId),
+      '/decision_cycles/by-account/'
     ];
     
     if (cycleId) {
@@ -837,7 +878,8 @@ export async function updateDecisionStepStatus(stepId, status, cycleId = null) {
   if (result.success) {
     const revalidatePaths = [
       endpoints.steps,
-      endpoints.stepDetail(stepId)
+      endpoints.stepDetail(stepId),
+      '/decision_cycles/by-account/'
     ];
     
     if (cycleId) {
@@ -879,7 +921,8 @@ export async function deleteDecisionStep(stepId, cycleId = null) {
   if (result.success || result.status === 204) {
     const revalidatePaths = [
       endpoints.steps,
-      endpoints.cycles
+      endpoints.cycles,
+      '/decision_cycles/by-account/'
     ];
     
     if (cycleId) {
