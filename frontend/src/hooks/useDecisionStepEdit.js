@@ -21,8 +21,7 @@ import { useState, useCallback, useMemo } from 'react';
 
 // API
 import {
-  updateDecisionStep,
-  updateDecisionStepStatus
+  updateDecisionStep
 } from 'api/accounts/decisionCycles';
 import { useGetContactChoices, useGetContacts } from 'api/businessData/contacts';
 
@@ -150,43 +149,6 @@ export function useDecisionStepEdit({ step, accountId, onUpdate }) {
   );
 
   /**
-   * Quick status change via dedicated endpoint.
-   * @param {string} newStatus - Status key (e.g. 'VALIDATED')
-   * @returns {Promise<boolean>} success
-   */
-  const handleStatusChange = useCallback(
-    async (newStatus) => {
-      if (!stepId) return false;
-      setSaving(true);
-
-      try {
-        const result = await updateDecisionStepStatus(stepId, newStatus, cycleId);
-
-        if (result.success) {
-          displaySuccessSnackbar('Status updated');
-          onUpdate?.(result.data);
-          return true;
-        } else {
-          displayErrorSnackbar({
-            message: result.error || 'Failed to update status',
-            status: result.status
-          });
-          return false;
-        }
-      } catch (err) {
-        displayErrorSnackbar({
-          message: err?.message || 'An unexpected error occurred',
-          status: 500
-        });
-        return false;
-      } finally {
-        setSaving(false);
-      }
-    },
-    [stepId, cycleId, onUpdate]
-  );
-
-  /**
    * Update expected_end date (from DatePicker — dayjs object).
    * @param {Object|string} newDate - dayjs object or ISO string
    * @returns {Promise<boolean>} success
@@ -275,7 +237,6 @@ export function useDecisionStepEdit({ step, accountId, onUpdate }) {
     // Field handlers (all async, return boolean success)
     handleSaveField,
     handleSaveMultiSelect,
-    handleStatusChange,
     handleExpectedEndChange,
     handleSaveDateTime,
     handleSaveManagerNotes,

@@ -74,8 +74,6 @@ import {
   PIPELINE_STEPS_ORDER, 
   PIPELINE_STEP_LABELS, 
   PIPELINE_STEP_CONFIG,
-  STATUS_COLORS,
-  STATUS_LABELS,
   ACTIVITY_OPTIONAL_STEPS
 } from 'api/accounts/decisionCycles';
 import LinkActivityModal from './LinkActivityModal';
@@ -111,36 +109,17 @@ const saveHiddenColumns = (cycleId, hiddenColumns) => {
 
 // ==============================|| STATUS CONFIG ||============================== //
 
+/**
+ * Step derived status config for timeline columns.
+ * Status is 100% derived from activities by backend.
+ * bgColor used for column header background.
+ */
 const STATUS_CONFIG = {
-  NOT_STARTED: {
-    color: 'default',
-    bgColor: 'grey.200',
-    icon: MinusCircleOutlined,
-    label: 'Not Started'
-  },
-  PENDING_CLIENT: {
-    color: 'warning',
-    bgColor: 'warning.lighter',
-    icon: PauseCircleOutlined,
-    label: 'Pending Client'
-  },
-  IN_PROGRESS: {
-    color: 'info',
-    bgColor: 'info.lighter',
-    icon: SyncOutlined,
-    label: 'In Progress'
-  },
-  IN_CHASING: {
-    color: 'secondary',
-    bgColor: 'secondary.lighter',
-    icon: ClockCircleOutlined,
-    label: 'In Chasing'
-  },
-  VALIDATED: {
-    color: 'success',
-    bgColor: 'success.lighter',
+  WON: {
+    color: 'primary',
+    bgColor: 'primary.lighter',
     icon: CheckCircleFilled,
-    label: 'Validated'
+    label: 'Won'
   },
   REJECTED: {
     color: 'error',
@@ -148,30 +127,42 @@ const STATUS_CONFIG = {
     icon: CloseCircleFilled,
     label: 'Rejected'
   },
+  OVERDUE: {
+    color: 'error',
+    bgColor: 'error.lighter',
+    icon: ClockCircleOutlined,
+    label: 'Overdue'
+  },
+  VALIDATED: {
+    color: 'primary',
+    bgColor: 'primary.lighter',
+    icon: CheckCircleFilled,
+    label: 'Validated'
+  },
+  IN_PROGRESS: {
+    color: 'secondary',
+    bgColor: 'secondary.lighter',
+    icon: SyncOutlined,
+    label: 'In Progress'
+  },
   ON_HOLD: {
     color: 'warning',
     bgColor: 'warning.lighter',
     icon: PauseCircleOutlined,
     label: 'On Hold'
   },
-  CANCELLED: {
+  IN_CHASING: {
+    color: 'warning',
+    bgColor: 'warning.lighter',
+    icon: ClockCircleOutlined,
+    label: 'In Chasing'
+  },
+  NOT_STARTED: {
     color: 'default',
     bgColor: 'grey.200',
-    icon: CloseCircleFilled,
-    label: 'Cancelled'
+    icon: MinusCircleOutlined,
+    label: 'Not Started'
   }
-};
-
-/**
- * Human-readable labels for stalled reasons
- */
-const STALLED_REASON_LABELS = {
-  NONE: 'Not stalled',
-  NO_ACTIVITY: 'No activities linked to this step',
-  NO_FUTURE_ACTIVITY: 'No future activities planned',
-  NO_NEXT_STEP: 'Last activity marked no next step agreed',
-  EXPECTED_END_PASSED: 'Expected end date has passed',
-  WAITING_TOO_LONG: 'No activity in 7+ days'
 };
 
 // ==============================|| ACTIVITY TYPE ICONS ||============================== //
@@ -223,8 +214,10 @@ function ActivityCard({ activity, onClick }) {
   
   const isCompleted = activity.status === 'COMPLETED';
   const isCancelled = activity.status === 'CANCELLED';
-  const isOverdue = activity.scheduled_date && 
-    new Date(activity.scheduled_date) < new Date() && 
+  // Overdue: check scheduled_date first, fallback to due_date
+  const activityDate = activity.scheduled_date || activity.due_date;
+  const isOverdue = activityDate && 
+    new Date(activityDate) < new Date() && 
     !isCompleted && !isCancelled;
   
   // Format date with relative display
@@ -302,7 +295,9 @@ function ActivityCard({ activity, onClick }) {
               sx={{
                 p: 0.5,
                 borderRadius: 1,
-                bgcolor: isOverdue ? 'error.lighter' : 'grey.100',
+                bgcolor: isOverdue 
+                  ? alpha(theme.palette.error.main, 0.12) 
+                  : alpha(theme.palette.text.secondary, 0.08),
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -334,7 +329,7 @@ function ActivityCard({ activity, onClick }) {
         
         {/* Row 2: Date/Time + Overdue badge */}
         <Stack direction="row" alignItems="center" spacing={0.5} flexWrap="wrap">
-          {activity.scheduled_date && (
+          {activityDate && (
             <Stack direction="row" alignItems="center" spacing={0.25}>
               <CalendarOutlined style={{ fontSize: 11, color: isOverdue ? theme.palette.error.main : theme.palette.text.disabled }} />
               <Typography 
@@ -344,7 +339,7 @@ function ActivityCard({ activity, onClick }) {
                   fontWeight: isOverdue ? 600 : 400
                 }}
               >
-                {formatDate(activity.scheduled_date)}
+                {formatDate(activity)}
               </Typography>
             </Stack>
           )}
@@ -436,15 +431,17 @@ function PipelineStepColumn({
   
   if (!step) return null;
   
-  const statusConfig = STATUS_CONFIG[step.status] || STATUS_CONFIG.NOT_STARTED;
+  const statusConfig = STATUS_CONFIG[step.derived_status] || STATUS_CONFIG.NOT_STARTED;
   const StatusIcon = statusConfig.icon;
   const stepConfig = PIPELINE_STEP_CONFIG[step.stage] || {};
   const isActivityOptional = stepConfig.activity_optional || step.is_activity_optional || false;
   
-  // Determine column state
-  const isValidated = step.status === 'VALIDATED';
-  const isRejected = step.status === 'REJECTED';
-  const isStalled = step.is_stalled && !isActivityOptional;
+  // Determine column state from derived status
+  const isWon = step.derived_status === 'WON';
+  const isValidated = step.derived_status === 'VALIDATED';
+  const isRejected = step.derived_status === 'REJECTED';
+  const isOverdue = step.derived_status === 'OVERDUE';
+  const isOnHold = step.derived_status === 'ON_HOLD';
   const hasActivities = activities && activities.length > 0;
   
   // Activity statistics
@@ -470,12 +467,13 @@ function PipelineStepColumn({
   
   const expectedEndInfo = formatStepDate(step.expected_end);
   
-  // Column border color
+  // Column border color — derived from step status
   const getBorderColor = () => {
-    if (isStalled) return theme.palette.warning.main;
-    if (isValidated) return theme.palette.success.main;
+    if (isWon || isValidated) return theme.palette.primary.main;
     if (isRejected) return theme.palette.error.main;
-    if (step.status === 'IN_PROGRESS') return theme.palette.info.main;
+    if (isOverdue) return theme.palette.error.light;
+    if (isOnHold) return theme.palette.warning.main;
+    if (step.derived_status === 'IN_PROGRESS') return theme.palette.secondary.main;
     return theme.palette.divider;
   };
 
@@ -486,7 +484,7 @@ function PipelineStepColumn({
         flex: '0 0 220px',
         minWidth: 220,
         maxWidth: 260,
-        bgcolor: 'background.default',
+        bgcolor: 'background.paper',
         border: '1px solid',
         borderColor: getBorderColor(),
         borderRadius: 2,
@@ -501,12 +499,15 @@ function PipelineStepColumn({
         onClick={() => onStepClick?.(step)}
         sx={{
           p: 1.5,
-          bgcolor: isValidated ? 'success.lighter' : isRejected ? 'error.lighter' : 'grey.50',
+          bgcolor: (isWon || isValidated || isRejected || isOverdue)
+            ? alpha(theme.palette[statusConfig.color]?.main || theme.palette.grey[500], 0.08)
+            : alpha(theme.palette.background.default, 0.6),
           borderBottom: '1px solid',
           borderColor: 'divider',
           cursor: 'pointer',
+          transition: 'background-color 0.2s ease',
           '&:hover': {
-            bgcolor: isValidated ? 'success.light' : isRejected ? 'error.light' : 'grey.100'
+            bgcolor: alpha(theme.palette[statusConfig.color]?.main || theme.palette.primary.main, 0.14)
           }
         }}
       >
@@ -644,12 +645,6 @@ function PipelineStepColumn({
               </Tooltip>
             )}
             
-            {/* Stalled warning */}
-            {isStalled && (
-              <Tooltip title={STALLED_REASON_LABELS[step.stalled_reason] || 'Step needs attention'}>
-                <WarningOutlined style={{ fontSize: 14, color: theme.palette.warning.main }} />
-              </Tooltip>
-            )}
           </Stack>
         </Stack>
       </Box>

@@ -2,11 +2,10 @@
 
 'use client';
 
-import { useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 
 // MUI
-import { useTheme, alpha } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
@@ -37,12 +36,6 @@ import EditableTextArea from '../EditableTextArea';
 import EditableChipList from '../EditableChipList';
 import EditableMultiSelect from '../EditableMultiSelect';
 
-// Project imports - Stalled Warning
-import StalledWarning from 'components/stalled/StalledWarning';
-
-// Project imports - Activity Modal (for stalled actions)
-import ActivityModal from 'sections/accounts/activities/ActivityModal';
-
 // Project imports - Phase 2.1 components
 import CompletenessScoreWidget from '../CompletenessScoreWidget';
 import ManagerNotesSection from '../ManagerNotesSection';
@@ -55,15 +48,19 @@ import { useUserPermissions, canViewManagerNotes, canEditManagerNotes } from 'ho
 
 // ==============================|| CONFIGURATION ||============================== //
 
+/**
+ * Step derived status config — read-only display.
+ * Status is 100% derived from activities by backend.
+ */
 const STATUS_CONFIG = {
-  NOT_STARTED: { color: 'default', label: 'Not Started' },
-  PENDING_CLIENT: { color: 'warning', label: 'Pending Client' },
-  IN_PROGRESS: { color: 'info', label: 'In Progress' },
-  IN_CHASING: { color: 'secondary', label: 'In Chasing' },
-  VALIDATED: { color: 'success', label: 'Validated' },
+  WON: { color: 'primary', label: 'Won' },
   REJECTED: { color: 'error', label: 'Rejected' },
-  ON_HOLD: { color: 'default', label: 'On Hold' },
-  CANCELLED: { color: 'default', label: 'Cancelled' }
+  OVERDUE: { color: 'error', label: 'Overdue' },
+  VALIDATED: { color: 'primary', label: 'Validated' },
+  IN_PROGRESS: { color: 'secondary', label: 'In Progress' },
+  ON_HOLD: { color: 'warning', label: 'On Hold' },
+  IN_CHASING: { color: 'warning', label: 'In Chasing' },
+  NOT_STARTED: { color: 'default', label: 'Not Started' }
 };
 
 
@@ -110,7 +107,6 @@ export default function DecisionStepOverviewTab({ step, account, onUpdate }) {
     saving,
     handleSaveField,
     handleSaveMultiSelect,
-    handleStatusChange,
     handleExpectedEndChange,
     handleSaveManagerNotes,
     handleDeleteManagerNotes,
@@ -120,55 +116,8 @@ export default function DecisionStepOverviewTab({ step, account, onUpdate }) {
     contactsLoading
   } = useDecisionStepEdit({ step, accountId, onUpdate });
   
-  // ==============================|| STALLED ACTION STATE ||============================== //
-  
-  // Activity Modal for stalled actions
-  const [activityModalOpen, setActivityModalOpen] = useState(false);
-  const [activityModalType, setActivityModalType] = useState(null);
-  
   // User permissions for manager notes
   const { currentUserId, isAdmin, isManager } = useUserPermissions();
-  
-  // ==============================|| STALLED ACTION HANDLERS ||============================== //
-
-  /**
-   * Stalled action: Schedule Call
-   */
-  const handleScheduleCall = useCallback(() => {
-    setActivityModalType('CALL');
-    setActivityModalOpen(true);
-  }, []);
-
-  /**
-   * Stalled action: Schedule Meeting
-   */
-  const handleScheduleMeeting = useCallback(() => {
-    setActivityModalType('MEETING');
-    setActivityModalOpen(true);
-  }, []);
-
-  /**
-   * Stalled action: Mark as Validated
-   */
-  const handleMarkValidated = useCallback(async () => {
-    return handleStatusChange('VALIDATED');
-  }, [handleStatusChange]);
-
-  /**
-   * Activity modal close
-   */
-  const handleActivityModalClose = useCallback(() => {
-    setActivityModalOpen(false);
-    setActivityModalType(null);
-  }, []);
-
-  /**
-   * Activity created successfully
-   */
-  const handleActivitySuccess = useCallback(() => {
-    handleActivityModalClose();
-    onUpdate?.();
-  }, [handleActivityModalClose, onUpdate]);
 
   // ==============================|| PERMISSION CHECKS ||============================== //
 
@@ -189,44 +138,20 @@ export default function DecisionStepOverviewTab({ step, account, onUpdate }) {
 
   return (
     <Box>
-      {/* ==================== STALLED WARNING ==================== */}
-      <StalledWarning
-        isStalled={step?.is_stalled}
-        stalledReason={step?.stalled_reason}
-        stalledDetails={step?.stalled_details}
-        onScheduleCall={handleScheduleCall}
-        onScheduleMeeting={handleScheduleMeeting}
-        onMarkValidated={handleMarkValidated}
-        dismissible={true}
-      />
-
       <Grid container spacing={3}>
         
         {/* ==================== LEFT COLUMN ==================== */}
         <Grid item xs={12} md={6}>
           <Stack spacing={3}>
             
-            {/* -------------------- STATUS -------------------- */}
+            {/* -------------------- STATUS (read-only, derived from activities) -------------------- */}
             <Box>
               <SectionTitle icon={CheckCircleFilled} title="Status" />
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                {Object.entries(STATUS_CONFIG).map(([statusKey, config]) => (
-                  <Chip
-                    key={statusKey}
-                    label={config.label}
-                    color={config.color}
-                    variant={step?.status === statusKey ? 'filled' : 'outlined'}
-                    onClick={() => handleStatusChange(statusKey)}
-                    disabled={saving}
-                    size="small"
-                    sx={{ 
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      '&:hover': { transform: 'scale(1.05)' }
-                    }}
-                  />
-                ))}
-              </Stack>
+              <Chip
+                label={step?.derived_status_display || STATUS_CONFIG[step?.derived_status]?.label || 'Not Started'}
+                color={STATUS_CONFIG[step?.derived_status]?.color || 'default'}
+                size="small"
+              />
             </Box>
 
             {/* -------------------- DEPARTMENTS -------------------- */}
@@ -457,18 +382,6 @@ export default function DecisionStepOverviewTab({ step, account, onUpdate }) {
         </Grid>
 
       </Grid>
-      
-      {/* Activity Modal for stalled actions */}
-      <ActivityModal
-        open={activityModalOpen}
-        onClose={handleActivityModalClose}
-        activity={null}
-        accountId={account?.id || step?.account_id}
-        decisionStepId={step?.id}
-        decisionCycleId={step?.cycle}
-        defaultActivityType={activityModalType}
-        onSuccess={handleActivitySuccess}
-      />
 
     </Box>
   );

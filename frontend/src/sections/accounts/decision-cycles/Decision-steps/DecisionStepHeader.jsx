@@ -4,36 +4,23 @@
 
 import { useState } from 'react';
 import PropTypes from 'prop-types';
-import { useRouter } from 'next/navigation';
 
 // MUI
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import Divider from '@mui/material/Divider';
-import Tooltip from '@mui/material/Tooltip';
 
 // Project imports
 import MainCard from 'components/MainCard';
-import { 
-  updateDecisionStepStatus,
-  STATUS_COLORS
-} from 'api/accounts/decisionCycles';
-import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
 
 // Icons
 import {
   EditOutlined,
   CheckOutlined,
   CloseOutlined,
-  MoreOutlined,
-  CheckCircleOutlined,
 } from '@ant-design/icons';
 
 // Date formatting
@@ -41,15 +28,19 @@ import { format } from 'date-fns';
 
 // ==============================|| CONFIGURATION ||============================== //
 
+/**
+ * Step derived status config — read-only display.
+ * Status is 100% derived from activities by backend.
+ */
 const STATUS_CONFIG = {
-  NOT_STARTED: { color: 'default', label: 'Not Started' },
-  PENDING_CLIENT: { color: 'warning', label: 'Pending Client' },
-  IN_PROGRESS: { color: 'info', label: 'In Progress' },
-  IN_CHASING: { color: 'secondary', label: 'In Chasing' },
-  VALIDATED: { color: 'success', label: 'Validated' },
+  WON: { color: 'primary', label: 'Won' },
   REJECTED: { color: 'error', label: 'Rejected' },
+  OVERDUE: { color: 'error', label: 'Overdue' },
+  VALIDATED: { color: 'primary', label: 'Validated' },
+  IN_PROGRESS: { color: 'secondary', label: 'In Progress' },
   ON_HOLD: { color: 'warning', label: 'On Hold' },
-  CANCELLED: { color: 'default', label: 'Cancelled' }
+  IN_CHASING: { color: 'warning', label: 'In Chasing' },
+  NOT_STARTED: { color: 'default', label: 'Not Started' }
 };
 
 /**
@@ -71,23 +62,14 @@ const STAGE_LABELS = PIPELINE_STEP_LABELS;
 // ==============================|| STEP HEADER ||============================== //
 
 export default function StepHeader({ step, account, cycleId, onSave, onUpdate }) {
-  const router = useRouter();
 
   // Edit name state
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(step?.name || '');
   const [saving, setSaving] = useState(false);
 
-  // Menu state
-  const [anchorEl, setAnchorEl] = useState(null);
-  const menuOpen = Boolean(anchorEl);
-
-  // Status menu state
-  const [statusAnchorEl, setStatusAnchorEl] = useState(null);
-  const statusMenuOpen = Boolean(statusAnchorEl);
-
-  // Get type icon component
-  const statusConfig = STATUS_CONFIG[step?.status] || STATUS_CONFIG.NOT_STARTED;
+  // Derived status (read-only, computed by backend from activities)
+  const statusConfig = STATUS_CONFIG[step?.derived_status] || STATUS_CONFIG.NOT_STARTED;
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -110,47 +92,6 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
     setNameValue(step?.name || '');
     setEditingName(false);
   };
-
-  // Handle menu
-  const handleMenuOpen = (event) => setAnchorEl(event.currentTarget);
-  const handleMenuClose = () => setAnchorEl(null);
-
-  // Handle status menu
-  const handleStatusMenuOpen = (event) => setStatusAnchorEl(event.currentTarget);
-  const handleStatusMenuClose = () => setStatusAnchorEl(null);
-
-  const handleStatusChange = async (newStatus) => {
-    handleStatusMenuClose();
-    setSaving(true);
-    try {
-      const result = await updateDecisionStepStatus(step.id, newStatus, cycleId);
-      if (result.success) {
-        displaySuccessSnackbar('Status updated');
-        onUpdate?.();
-      } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to update status',
-          status: result.status
-        });
-      }
-    } catch (err) {
-      displayErrorSnackbar({
-        message: err?.message || 'An unexpected error occurred',
-        status: 500
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Handle mark as validated (quick action)
-  const handleMarkValidated = () => {
-    handleStatusChange('VALIDATED');
-  };
-
-
-  // Determine if step can be validated
-  const canValidate = step?.status !== 'VALIDATED' && step?.status !== 'REJECTED';
 
   return (
     <>
@@ -201,39 +142,12 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
                 variant="outlined"
               />
               
-              {/* Status Chip (clickable to change) */}
-              <Tooltip title="Click to change status">
-                <Chip
-                  label={statusConfig.label}
-                  color={statusConfig.color}
-                  size="small"
-                  onClick={handleStatusMenuOpen}
-                  sx={{ cursor: 'pointer' }}
-                />
-              </Tooltip>
-              
-              {/* Status Menu */}
-              <Menu
-                anchorEl={statusAnchorEl}
-                open={statusMenuOpen}
-                onClose={handleStatusMenuClose}
-              >
-                {Object.entries(STATUS_CONFIG).map(([key, config]) => (
-                  <MenuItem
-                    key={key}
-                    onClick={() => handleStatusChange(key)}
-                    selected={step?.status === key}
-                  >
-                    <Chip
-                      label={config.label}
-                      color={config.color}
-                      size="small"
-                      variant={step?.status === key ? 'filled' : 'outlined'}
-                      sx={{ pointerEvents: 'none' }}
-                    />
-                  </MenuItem>
-                ))}
-              </Menu>
+              {/* Derived Status Chip (read-only) */}
+              <Chip
+                label={step?.derived_status_display || statusConfig.label}
+                color={statusConfig.color}
+                size="small"
+              />
             </Stack>
           </Stack>
 
@@ -247,21 +161,6 @@ export default function StepHeader({ step, account, cycleId, onSave, onUpdate })
               </Typography>
             </Stack>
 
-            {/* Actions */}
-            <Stack direction="row" spacing={1}>
-              {canValidate && (
-                <Button
-                  variant="contained"
-                  color="success"
-                  size="small"
-                  startIcon={<CheckCircleOutlined />}
-                  onClick={handleMarkValidated}
-                  disabled={saving}
-                >
-                  Mark Validated
-                </Button>
-              )}
-            </Stack>
           </Stack>
       </MainCard>
     </>

@@ -408,6 +408,10 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     def get_is_at_risk(self, obj):
         """Whether cycle is at risk. Reads from bulk context."""
         return self._get_cycle_summary(obj).get('is_at_risk', False)
+    
+    def get_has_steps_needing_attention(self, obj):
+        """Whether any step needs next step resolution. Reads from bulk context."""
+        return self._get_cycle_summary(obj).get('has_steps_needing_attention', False)
 
 # ============================================================================
 # DECISION STEP SERIALIZERS

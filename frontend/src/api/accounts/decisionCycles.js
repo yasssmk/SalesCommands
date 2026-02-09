@@ -34,31 +34,63 @@ export const DECISION_STAGES = PIPELINE_STEPS;
 
 /**
  * Decision step statuses (matching backend DecisionStepStatus choices)
+ * 
+ * Status is 100% DERIVED from activities by StepStatusDerivationService.
+ * No manual status changes — status reflects observable reality.
+ * 
+ * Derivation priority (highest first):
+ * 1. WON         — activity completed with no_next_step_reason=CLOSE_WON
+ * 2. REJECTED    — activity completed with reason ∈ {CLOSE_LOST, NOT_QUALIFIED}
+ * 3. OVERDUE     — expected_end < today and step not WON/REJECTED
+ * 4. VALIDATED   — completed + later step in cycle has activities
+ * 5. IN_PROGRESS — at least 1 PLANNED activity
+ * 6. ON_HOLD     — completed exist, no PLANNED, no later step activity
+ * 7. NOT_STARTED — no activities or all cancelled
+ * 
+ * IN_CHASING: Reserved for future Campaign/Sequence feature.
  */
 export const DECISION_STEP_STATUSES = {
-  NOT_STARTED: 'NOT_STARTED',
-  PENDING_CLIENT: 'PENDING_CLIENT',
-  IN_PROGRESS: 'IN_PROGRESS',
-  IN_CHASING: 'IN_CHASING',
-  VALIDATED: 'VALIDATED',
+  WON: 'WON',
   REJECTED: 'REJECTED',
+  OVERDUE: 'OVERDUE',
+  VALIDATED: 'VALIDATED',
+  IN_PROGRESS: 'IN_PROGRESS',
   ON_HOLD: 'ON_HOLD',
-  CANCELLED: 'CANCELLED'
+  IN_CHASING: 'IN_CHASING',
+  NOT_STARTED: 'NOT_STARTED'
 };
 
 /**
- * Status colors for UI display
+ * Status colors for MUI Chip color prop (generic palette keys).
+ * Used by components that render Chip with color="xxx".
  */
 export const STATUS_COLORS = {
-  NOT_STARTED: 'default',
-  PENDING_CLIENT: 'warning',
-  IN_PROGRESS: 'info',
-  IN_CHASING: 'secondary',
-  VALIDATED: 'success',
+  WON: 'primary',
   REJECTED: 'error',
+  OVERDUE: 'error',
+  VALIDATED: 'primary',
+  IN_PROGRESS: 'secondary',
   ON_HOLD: 'warning',
-  CANCELLED: 'default'
+  IN_CHASING: 'warning',
+  NOT_STARTED: 'default'
 };
+
+/**
+ * Status → MUI theme token mapping (from StepStatusDerivationService.STATUS_COLORS).
+ * Used for fine-grained styling: borders, backgrounds, custom sx.
+ * Access via theme.palette — e.g. theme.palette.primary.dark
+ */
+export const STATUS_THEME_TOKENS = {
+  WON: 'primary.dark',
+  REJECTED: 'error.main',
+  OVERDUE: 'error.light',
+  VALIDATED: 'primary.light',
+  IN_PROGRESS: 'secondary.main',
+  ON_HOLD: 'warning.light',
+  IN_CHASING: 'warning.dark',
+  NOT_STARTED: 'secondary.light'
+};
+
 
 /**
  * Pipeline steps order for display (left to right)
@@ -142,17 +174,18 @@ export const PIPELINE_STEP_CONFIG = {
 export const ACTIVITY_OPTIONAL_STEPS = ['IMPLEMENTATION', 'GO_LIVE'];
 
 /**
- * Step status labels for UI display
+ * Step status labels for UI display.
+ * Backend also returns derived_status_display — prefer that when available.
  */
 export const STATUS_LABELS = {
-  NOT_STARTED: 'Not Started',
-  PENDING_CLIENT: 'Pending Client',
-  IN_PROGRESS: 'In Progress',
-  IN_CHASING: 'In Chasing',
-  VALIDATED: 'Validated',
+  WON: 'Won',
   REJECTED: 'Rejected',
+  OVERDUE: 'Overdue',
+  VALIDATED: 'Validated',
+  IN_PROGRESS: 'In Progress',
   ON_HOLD: 'On Hold',
-  CANCELLED: 'Cancelled'
+  IN_CHASING: 'In Chasing',
+  NOT_STARTED: 'Not Started'
 };
 
 /**
@@ -580,7 +613,7 @@ export function useGetDecisionStepWithContext(stepId) {
       accountName: account?.name || '',
       accountId: account?.id || cycle?.account_id || cycle?.account || null,
       stageName: step?.stage ? (STAGE_LABELS[step.stage] || step.stage) : '',
-      statusName: step?.status ? (STATUS_LABELS[step.status] || step.status) : ''
+      statusName: step?.derived_status_display || (step?.derived_status ? (STATUS_LABELS[step.derived_status] || step.derived_status) : '')
     }),
     [step, cycle, account, isLoading, stepError, stepValidating, mutateStep]
   );

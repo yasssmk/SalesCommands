@@ -53,20 +53,23 @@ import EditableChipList from './EditableChipList';
 import EditableMultiSelect from './EditableMultiSelect';
 import EditableDateTime from './EditableDateTime';
 import DecisionStepActivities from './DecisionStepActivities';
-import { DECISION_STEP_STATUSES } from 'api/accounts/decisionCycles';
 import { useDecisionStepEdit } from './hooks/useDecisionStepEdit';
 
 // ==============================|| CONFIGURATION ||============================== //
 
+/**
+ * Step derived status config — read-only display.
+ * Status is 100% derived from activities by backend.
+ */
 const STATUS_CONFIG = {
-  NOT_STARTED: { color: 'default', label: 'Not Started' },
-  PENDING_CLIENT: { color: 'warning', label: 'Pending Client' },
-  IN_PROGRESS: { color: 'info', label: 'In Progress' },
-  IN_CHASING: { color: 'secondary', label: 'In Chasing' },
-  VALIDATED: { color: 'success', label: 'Validated' },
+  WON: { color: 'primary', label: 'Won' },
   REJECTED: { color: 'error', label: 'Rejected' },
+  OVERDUE: { color: 'error', label: 'Overdue' },
+  VALIDATED: { color: 'primary', label: 'Validated' },
+  IN_PROGRESS: { color: 'secondary', label: 'In Progress' },
   ON_HOLD: { color: 'warning', label: 'On Hold' },
-  CANCELLED: { color: 'default', label: 'Cancelled' }
+  IN_CHASING: { color: 'warning', label: 'In Chasing' },
+  NOT_STARTED: { color: 'default', label: 'Not Started' }
 };
 
 /**
@@ -119,11 +122,10 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
   
   // ==============================|| SHARED EDIT HOOK ||============================== //
   
-  const {
+const {
     saving,
     handleSaveField,
     handleSaveMultiSelect,
-    handleStatusChange,
     handleSaveDateTime,
     departmentOptions,
     contactOptions,
@@ -142,7 +144,7 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
 
   // ==============================|| RENDER ||============================== //
 
-  const statusConfig = STATUS_CONFIG[step.status] || STATUS_CONFIG.NOT_STARTED;
+  const statusConfig = STATUS_CONFIG[step.derived_status] || STATUS_CONFIG.NOT_STARTED;
 
 
   return (
@@ -190,28 +192,14 @@ export default function DecisionStepDetail({ step, closeModal, onUpdate, onDelet
       <Box sx={{ p: 2.5 }}>
         <Grid container spacing={3}>
           
-          {/* -------------------- STATUS -------------------- */}
+          {/* -------------------- STATUS (read-only, derived from activities) -------------------- */}
           <Grid item xs={12}>
             <SectionTitle icon={CheckCircleFilled} title="Status" />
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {Object.entries(STATUS_CONFIG).map(([statusKey, config]) => (
-                <Chip
-                  key={statusKey}
-                  label={config.label}
-                  color={config.color}
-                  variant={step.status === statusKey ? 'filled' : 'outlined'}
-                  onClick={() => handleStatusChange(statusKey)}
-                  disabled={saving}
-                  sx={{ 
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    '&:hover': {
-                      transform: 'scale(1.05)'
-                    }
-                  }}
-                />
-              ))}
-            </Stack>
+            <Chip
+              label={step.derived_status_display || statusConfig.label}
+              color={statusConfig.color}
+              size="small"
+            />
           </Grid>
 
           {/* -------------------- DEPARTMENTS -------------------- */}
