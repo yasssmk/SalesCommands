@@ -39,6 +39,8 @@ import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 
 // Date pickers
@@ -78,7 +80,6 @@ import TeamOutlined from '@ant-design/icons/TeamOutlined';
 import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
 import BulbOutlined from '@ant-design/icons/BulbOutlined';
 import ApartmentOutlined from '@ant-design/icons/ApartmentOutlined';
-import LinkOutlined from '@ant-design/icons/LinkOutlined';
 import RocketOutlined from '@ant-design/icons/RocketOutlined';
 import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
@@ -421,129 +422,6 @@ EditableDateField.propTypes = {
   onSave: PropTypes.func.isRequired
 };
 
-// ==============================|| EDITABLE TIME FIELD (COMPACT) ||============================== //
-
-function EditableTimeField({ label, value, fieldKey, onSave }) {
-  const theme = useTheme();
-  const [editing, setEditing] = useState(false);
-  const [tempValue, setTempValue] = useState(value ? dayjs(`1970-01-01T${value}`) : null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setTempValue(value ? dayjs(`1970-01-01T${value}`) : null);
-  }, [value]);
-
-  const handleSave = async () => {
-    setSaving(true);
-    const formattedTime = tempValue ? tempValue.format('HH:mm:ss') : null;
-    const success = await onSave(fieldKey, formattedTime);
-    setSaving(false);
-    if (success) setEditing(false);
-  };
-
-  const handleClear = async () => {
-    setSaving(true);
-    const success = await onSave(fieldKey, null);
-    setSaving(false);
-    if (success) {
-      setTempValue(null);
-      setEditing(false);
-    }
-  };
-
-  const handleCancel = () => {
-    setTempValue(value ? dayjs(`1970-01-01T${value}`) : null);
-    setEditing(false);
-  };
-
-  const displayValue = value ? dayjs(`1970-01-01T${value}`).format('h:mm A') : '—';
-
-  return (
-    <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Box sx={{ minWidth: 100 }}>
-        {label && (
-          <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-            {label}
-          </Typography>
-        )}
-        {editing ? (
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            <TimePicker
-              value={tempValue}
-              onChange={(newValue) => setTempValue(newValue)}
-              slotProps={{ 
-                textField: { 
-                  size: 'small',
-                  sx: { width: 120 }
-                } 
-              }}
-              disabled={saving}
-            />
-            <IconButton 
-              size="small" 
-              onClick={handleSave} 
-              disabled={saving}
-              sx={{ color: theme.palette.success.main }}
-            >
-              <CheckOutlined />
-            </IconButton>
-            {/* Clear button - only show if there's a value */}
-            {value && (
-              <IconButton 
-                size="small" 
-                onClick={handleClear} 
-                disabled={saving}
-                sx={{ color: theme.palette.warning.main }}
-              >
-                <DeleteOutlined />
-              </IconButton>
-            )}
-            <IconButton 
-              size="small" 
-              onClick={handleCancel} 
-              disabled={saving}
-              sx={{ color: theme.palette.error.main }}
-            >
-              <CloseOutlined />
-            </IconButton>
-          </Stack>
-        ) : (
-          <Stack 
-            direction="row" 
-            spacing={0.5} 
-            alignItems="center"
-            onClick={() => setEditing(true)}
-            sx={{ 
-              cursor: 'pointer',
-              '&:hover .edit-icon': { opacity: 1 }
-            }}
-          >
-            <Typography variant="body2" color={value ? 'text.primary' : 'text.disabled'}>
-              {displayValue}
-            </Typography>
-            <EditOutlined 
-              className="edit-icon"
-              style={{ 
-                fontSize: theme.iconSizes.xs, 
-                color: theme.palette.text.secondary,
-                opacity: 0,
-                transition: 'opacity 0.2s'
-              }} 
-            />
-          </Stack>
-        )}
-      </Box>
-    </LocalizationProvider>
-  );
-}
-
-EditableTimeField.propTypes = {
-  label: PropTypes.string,
-  value: PropTypes.string,
-  fieldKey: PropTypes.string.isRequired,
-  onSave: PropTypes.func.isRequired
-};
-
 // ==============================|| INLINE SELECT FIELD (COMPACT) ||============================== //
 
 function InlineSelectField({ label, value, fieldKey, onSave, options = [], displayValue, placeholder = 'Select...', disabled = false, allowEmpty = true }) {
@@ -780,195 +658,414 @@ EditableTextField.propTypes = {
   emptyText: PropTypes.string
 };
 
-// ==============================|| SCHEDULE ROW (MEETING) ||============================== //
+// ==============================|| UNIFIED DATE SECTION (COMPACT) ||============================== //
 
-function ScheduledRow({ activity, onSave }) {
+/**
+ * Compact date section — fits in ~20% of row width.
+ * 
+ * Read mode: mode label + date + time, click to edit
+ * Edit mode: [toggle + pickers] [✓] [✗] — standard inline row
+ * Overdue detection on both scheduled_date and due_date
+ */
+function UnifiedDateSection({ activity, onSaveBatch }) {
   const theme = useTheme();
-  const hasScheduled = activity?.scheduled_date;
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  return (
-    <Box
-      sx={{
-        p: 1.5,
-        borderRadius: 1,
-        bgcolor: hasScheduled ? 'info.lighter' : 'grey.50',
-        border: '1px solid',
-        borderColor: hasScheduled ? 'info.light' : 'grey.200'
-      }}
-    >
-      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 1 }}>
-        <CalendarOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.info.main }} />
-        <Typography variant="caption" fontWeight={600} color="info.main">
-          Scheduled (Meeting/Call)
-        </Typography>
-      </Stack>
-      
-      <Stack direction="row" spacing={3} alignItems="center">
-        <EditableDateField
-          label="Date"
-          value={activity?.scheduled_date}
-          fieldKey="scheduled_date"
-          onSave={onSave}
-        />
-        <EditableTimeField
-          label="Time"
-          value={activity?.scheduled_time}
-          fieldKey="scheduled_time"
-          onSave={onSave}
-        />
-      </Stack>
-    </Box>
-  );
-}
+  // Derive mode from current data
+  const currentMode = activity?.scheduled_date ? 'scheduled' : 'due_date';
+  const currentDate = currentMode === 'scheduled' ? activity?.scheduled_date : activity?.due_date;
+  const currentTime = activity?.scheduled_time;
 
-ScheduledRow.propTypes = {
-  activity: PropTypes.object,
-  onSave: PropTypes.func.isRequired
-};
+  // Edit state (local draft until Save)
+  const [draftMode, setDraftMode] = useState(currentMode);
+  const [draftDate, setDraftDate] = useState(currentDate ? dayjs(currentDate) : null);
+  const [draftTime, setDraftTime] = useState(currentTime ? dayjs(`1970-01-01T${currentTime}`) : null);
 
-// ==============================|| DUE DATE ROW (DEADLINE) ||============================== //
+  // Sync drafts when activity data changes (after save)
+  useEffect(() => {
+    if (!editing) {
+      setDraftMode(currentMode);
+      setDraftDate(currentDate ? dayjs(currentDate) : null);
+      setDraftTime(currentTime ? dayjs(`1970-01-01T${currentTime}`) : null);
+    }
+  }, [currentMode, currentDate, currentTime, editing]);
 
-function DueDateRow({ activity, onSave }) {
-  const theme = useTheme();
-  
-  const isOverdue = activity?.due_date && 
-    activity?.status !== 'COMPLETED' && 
+  // Overdue: any date in the past + not completed/cancelled
+  const isOverdue = currentDate &&
+    activity?.status !== 'COMPLETED' &&
     activity?.status !== 'CANCELLED' &&
-    new Date(activity.due_date) < new Date();
-  
-  const hasDueDate = activity?.due_date;
+    new Date(currentDate) < new Date();
 
-  return (
-    <Box
-      sx={{
-        p: 1.5,
-        borderRadius: 1,
-        bgcolor: isOverdue ? 'error.lighter' : (hasDueDate ? 'warning.lighter' : 'grey.50'),
-        border: '1px solid',
-        borderColor: isOverdue ? 'error.light' : (hasDueDate ? 'warning.light' : 'grey.200'),
-        width: '100%'
-      }}
-    >
-      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 1 }}>
-        <ClockCircleOutlined 
-          style={{ 
-            fontSize: theme.iconSizes.sm, 
-            color: isOverdue ? theme.palette.error.main : theme.palette.warning.main 
-          }} 
-        />
-        <Typography 
-          variant="caption" 
-          fontWeight={600} 
-          color={isOverdue ? 'error.main' : 'warning.main'}
-        >
-          Due Date (Deadline)
-        </Typography>
-        {isOverdue && (
-          <Typography 
-            variant="caption" 
-            fontWeight={600}
-            sx={{ 
-              ml: 1,
-              px: 1,
-              py: 0.25,
-              borderRadius: 0.5,
-              bgcolor: 'error.main',
-              color: 'error.contrastText'
+  const handleStartEdit = () => {
+    setDraftMode(currentMode);
+    setDraftDate(currentDate ? dayjs(currentDate) : null);
+    setDraftTime(currentTime ? dayjs(`1970-01-01T${currentTime}`) : null);
+    setEditing(true);
+  };
+
+  const handleCancel = () => {
+    setDraftMode(currentMode);
+    setDraftDate(currentDate ? dayjs(currentDate) : null);
+    setDraftTime(currentTime ? dayjs(`1970-01-01T${currentTime}`) : null);
+    setEditing(false);
+  };
+
+  // Save — single atomic PATCH with all fields
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const formattedDate = draftDate ? draftDate.format('YYYY-MM-DD') : null;
+      const formattedTime = draftTime ? draftTime.format('HH:mm:ss') : null;
+
+      const payload = draftMode === 'scheduled'
+        ? { scheduled_date: formattedDate, scheduled_time: formattedTime, due_date: null }
+        : { scheduled_date: null, scheduled_time: null, due_date: formattedDate };
+
+      const success = await onSaveBatch(payload);
+      if (success) setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Display values
+  const displayDate = currentDate ? dayjs(currentDate).format('MMM D, YYYY') : '—';
+  const displayTime = currentTime ? dayjs(`1970-01-01T${currentTime}`).format('h:mm A') : null;
+
+  // ── EDIT MODE ──
+  if (editing) {
+    return (
+      <Stack direction="row" spacing={0.5} alignItems="flex-start">
+        <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
+          <ToggleButtonGroup
+            value={draftMode}
+            exclusive
+            onChange={(_e, val) => { if (val) setDraftMode(val); }}
+            size="small"
+            disabled={saving}
+            sx={{
+              height: 24,
+              '& .MuiToggleButton-root': {
+                px: 1,
+                py: 0,
+                fontSize: theme.typography.caption.fontSize,
+                fontWeight: theme.typography.fontWeightMedium,
+                textTransform: 'none',
+                lineHeight: '24px',
+                borderColor: theme.palette.grey[300],
+                color: theme.palette.text.secondary,
+                '&.Mui-selected': {
+                  bgcolor: 'primary.main',
+                  color: 'primary.contrastText',
+                  borderColor: 'primary.main',
+                  '&:hover': { bgcolor: 'primary.dark' }
+                }
+              }
             }}
           >
-            OVERDUE
+            <ToggleButton value="scheduled">Scheduled</ToggleButton>
+            <ToggleButton value="due_date">Due Date</ToggleButton>
+          </ToggleButtonGroup>
+
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <DatePicker
+              value={draftDate}
+              onChange={(val) => setDraftDate(val)}
+              disabled={saving}
+              slotProps={{
+                textField: { size: 'small', fullWidth: true, placeholder: 'Select date' }
+              }}
+            />
+            {draftMode === 'scheduled' && (
+              <TimePicker
+                value={draftTime}
+                onChange={(val) => setDraftTime(val)}
+                disabled={saving}
+                slotProps={{
+                  textField: { size: 'small', fullWidth: true, placeholder: 'Time' }
+                }}
+              />
+            )}
+          </LocalizationProvider>
+        </Stack>
+
+        <IconButton
+          size="small"
+          onClick={handleSave}
+          disabled={saving}
+          sx={{ color: theme.palette.success.main }}
+        >
+          <CheckOutlined />
+        </IconButton>
+        <IconButton
+          size="small"
+          onClick={handleCancel}
+          disabled={saving}
+          sx={{ color: theme.palette.error.main }}
+        >
+          <CloseOutlined />
+        </IconButton>
+      </Stack>
+    );
+  }
+
+  // ── READ MODE ──
+  return (
+    <Box
+      onClick={handleStartEdit}
+      sx={{
+        cursor: 'pointer',
+        '&:hover .edit-icon': { opacity: 1 }
+      }}
+    >
+      {/* Label — identical to CTA: caption + gutterBottom + display:block, no wrapper padding */}
+      <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+        {currentMode === 'scheduled' ? 'Scheduled' : 'Due Date'}
+      </Typography>
+
+      {/* Value row — py: 0.5 matches EditableTextField read mode */}
+      <Stack
+        direction="row"
+        spacing={0.5}
+        alignItems="center"
+        sx={{
+          py: 0.5,
+          ...(isOverdue && {
+            px: 1,
+            borderRadius: 1,
+            bgcolor: 'error.lighter',
+            border: '1px solid',
+            borderColor: 'error.light'
+          })
+        }}
+      >
+        <Typography
+          variant="body2"
+          fontWeight={theme.typography.fontWeightMedium}
+          color={isOverdue ? 'error.main' : 'text.primary'}
+        >
+          {displayDate}
+        </Typography>
+        {displayTime && (
+          <Typography variant="body2" color="text.secondary">
+            · {displayTime}
           </Typography>
         )}
-      </Stack>
-      
-      <EditableDateField
-        value={activity?.due_date}
-        fieldKey="due_date"
-        onSave={onSave}
-      />
+        <EditOutlined
+          className="edit-icon"
+          style={{
+            fontSize: theme.iconSizes.xs,
+            color: theme.palette.text.secondary,
+            opacity: 0,
+            transition: 'opacity 0.2s'
+          }}
+        />
+
+
+    </Stack>
     </Box>
   );
 }
 
-DueDateRow.propTypes = {
+UnifiedDateSection.propTypes = {
   activity: PropTypes.object,
-  onSave: PropTypes.func.isRequired
+  onSaveBatch: PropTypes.func.isRequired
+};
+
+// ==============================|| EDITABLE DESCRIPTION (SAVE/CANCEL) ||============================== //
+
+/**
+ * Click-to-edit multiline text with Save/Cancel icons on the right.
+ * Same inline row pattern as EditableTextField and UnifiedDateSection.
+ * No auto-save — changes are local until user confirms.
+ */
+function EditableDescription({ value, fieldKey, onSave, placeholder, emptyText, minRows = 2, maxRows = 4 }) {
+  const theme = useTheme();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(value || '');
+  }, [value, editing]);
+
+  const handleStartEdit = () => {
+    setDraft(value || '');
+    setEditing(true);
+  };
+
+  const handleCancel = () => {
+    setDraft(value || '');
+    setEditing(false);
+  };
+
+  const handleSave = async () => {
+    const newValue = draft.trim() || null;
+    if (newValue === value || (newValue === null && !value)) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const success = await onSave(fieldKey, newValue);
+      if (success) setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Escape') handleCancel();
+  };
+
+  const hasValue = value !== null && value !== undefined && value !== '';
+
+  if (editing) {
+    return (
+      <Stack direction="row" spacing={0.5} alignItems="center">
+        <TextField
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          multiline
+          minRows={minRows}
+          maxRows={maxRows}
+          size="small"
+          fullWidth
+          disabled={saving}
+          autoFocus
+          sx={{ flex: 1 }}
+        />
+        <IconButton
+          size="small"
+          onClick={handleSave}
+          disabled={saving}
+          sx={{ color: theme.palette.success.main }}
+        >
+          <CheckOutlined />
+        </IconButton>
+        <IconButton
+          size="small"
+          onClick={handleCancel}
+          disabled={saving}
+          sx={{ color: theme.palette.error.main }}
+        >
+          <CloseOutlined />
+        </IconButton>
+      </Stack>
+    );
+  }
+
+  return (
+    <Stack
+      direction="row"
+      spacing={0.5}
+      alignItems="flex-start"
+      onClick={handleStartEdit}
+      sx={{
+        cursor: 'pointer',
+        py: 0.5,
+        '&:hover .edit-icon': { opacity: 1 }
+      }}
+    >
+      <Typography
+        variant="body2"
+        color={hasValue ? 'text.primary' : 'text.disabled'}
+        fontStyle={hasValue ? 'normal' : 'italic'}
+        sx={{ flex: 1, whiteSpace: 'pre-wrap' }}
+      >
+        {hasValue ? value : emptyText}
+      </Typography>
+      <EditOutlined
+        className="edit-icon"
+        style={{
+          fontSize: theme.iconSizes.xs,
+          color: theme.palette.text.secondary,
+          opacity: 0,
+          transition: 'opacity 0.2s',
+          marginTop: 2
+        }}
+      />
+    </Stack>
+  );
+}
+
+EditableDescription.propTypes = {
+  value: PropTypes.string,
+  fieldKey: PropTypes.string.isRequired,
+  onSave: PropTypes.func.isRequired,
+  placeholder: PropTypes.string,
+  emptyText: PropTypes.string,
+  minRows: PropTypes.number,
+  maxRows: PropTypes.number
 };
 
 // ==============================|| SECTION 1: DETAILS (COMBINED) ||============================== //
 
-function DetailsSection({ activity, onSave }) {
+function DetailsSection({ activity, onSave, onSaveBatch }) {
   return (
     <Box>
       <SectionHeader icon={BulbOutlined} title="Details" />
-      
-      <Grid container spacing={2}>
-        {/* Left Column: CTA + Description */}
-        <Grid item xs={12} md={6}>
-          <Box
-            sx={{
-              p: 2,
-              borderRadius: 1,
-              bgcolor: 'grey.50',
-              border: '1px solid',
-              borderColor: 'grey.200',
-              height: '100%'
-            }}
-          >
-            <Stack spacing={2}>
-              {/* Call to Action - Single line */}
-              <Box>
-                <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                  Call to Action
-                </Typography>
-                <EditableTextField
-                  value={activity?.call_to_action}
-                  fieldKey="call_to_action"
-                  onSave={onSave}
-                  placeholder="Main objective for this activity..."
-                  emptyText="Click to define objective..."
-                />
-              </Box>
 
-              {/* Description - Multiline */}
-              <Box>
-                <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                  Description
-                </Typography>
-                <EditableTextBox
-                  value={activity?.description}
-                  fieldKey="description"
-                  onSave={onSave}
-                  placeholder="Add context or details..."
-                  emptyText="Click to add description..."
-                  minRows={2}
-                  maxRows={4}
-                />
-              </Box>
-            </Stack>
-          </Box>
-        </Grid>
+      <Box
+        sx={{
+          p: 2,
+          borderRadius: 1,
+          bgcolor: 'grey.50',
+          border: '1px solid',
+          borderColor: 'grey.200'
+        }}
+      >
+        <Stack spacing={1.5}>
+          {/* Row 1: Call to Action (flex) + Date (compact) */}
+          <Stack direction="row" spacing={2} alignItems="stretch">
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+                Call to Action
+              </Typography>
+              <EditableTextField
+                value={activity?.call_to_action}
+                fieldKey="call_to_action"
+                onSave={onSave}
+                placeholder="Main objective for this activity..."
+                emptyText="Click to define objective..."
+              />
+            </Box>
 
-        {/* Right Column: Schedule (2 distinct rows) */}
-        <Grid item xs={12} md={6}>
-          <Stack spacing={2} sx={{ height: '100%' }}>
-            {/* Row 1: Scheduled (Meeting/Call) */}
-            <ScheduledRow activity={activity} onSave={onSave} />
+            <Divider orientation="vertical" flexItem />
 
-            {/* Row 2: Due Date (Deadline) - flex 1 to fill remaining space */}
-            <Box sx={{ flex: 1, display: 'flex' }}>
-              <DueDateRow activity={activity} onSave={onSave} />
+            <Box sx={{ minWidth: 160, flexShrink: 0 }}>
+              <UnifiedDateSection activity={activity} onSaveBatch={onSaveBatch} />
             </Box>
           </Stack>
-        </Grid>
-      </Grid>
+
+          {/* Row 2: Description (full width, save/cancel) */}
+          <Box>
+            <Typography variant="caption" color="text.secondary" gutterBottom display="block">
+              Description
+            </Typography>
+            <EditableDescription
+              value={activity?.description}
+              fieldKey="description"
+              onSave={onSave}
+              placeholder="Add context or details..."
+              emptyText="Click to add description..."
+              minRows={2}
+              maxRows={4}
+            />
+          </Box>
+        </Stack>
+      </Box>
     </Box>
   );
 }
 
 DetailsSection.propTypes = {
   activity: PropTypes.object,
-  onSave: PropTypes.func.isRequired
+  onSave: PropTypes.func.isRequired,
+  onSaveBatch: PropTypes.func.isRequired
 };
 
 // ==============================|| SECTION 2: PEOPLE - INTERNAL TEAM ||============================== //
@@ -1812,7 +1909,7 @@ export default function ActivityOverviewTab({ activity, onUpdate, mutate }) {
   const clientId = client?.id;
 
   /**
-   * Handle field save
+   * Handle single field save
    * 
    * @param {string} fieldKey - Field name to update
    * @param {any} newValue - New value for the field
@@ -1828,11 +1925,37 @@ export default function ActivityOverviewTab({ activity, onUpdate, mutate }) {
         onUpdate?.();
         return true;
       } else {
-        displayErrorSnackbar(result|| 'Update failed');
+        displayErrorSnackbar(result || 'Update failed');
         return false;
       }
     } catch (error) {
-      displayErrorSnackbar(error|| 'An error occurred');
+      displayErrorSnackbar(error || 'An error occurred');
+      return false;
+    }
+  };
+
+  /**
+   * Handle batch field save (atomic PATCH with multiple fields)
+   * Used by UnifiedDateSection for mode switches.
+   * 
+   * @param {Object} payload - Multiple fields to update atomically
+   * @returns {Promise<boolean>} Success status
+   */
+  const handleSaveBatch = async (payload) => {
+    try {
+      const result = await updateActivity(activity.id, payload);
+
+      if (result.success) {
+        displaySuccessSnackbar('Activity updated');
+        mutate?.();
+        onUpdate?.();
+        return true;
+      } else {
+        displayErrorSnackbar(result || 'Update failed');
+        return false;
+      }
+    } catch (error) {
+      displayErrorSnackbar(error || 'An error occurred');
       return false;
     }
   };
@@ -1840,15 +1963,15 @@ export default function ActivityOverviewTab({ activity, onUpdate, mutate }) {
   return (
     <Stack spacing={3}>
       {/* Section 1: Details (CTA + Description + Schedule) */}
-      <DetailsSection activity={activity} onSave={handleSave} />
+      <DetailsSection activity={activity} onSave={handleSave} onSaveBatch={handleSaveBatch} />
 
-      {/* Section 3: People */}
+      {/* Section 2: People */}
       <PeopleSection activity={activity} onSave={handleSave} clientId={clientId} />
 
-      {/* Section 4: Linked Context */}
+      {/* Section 3: Linked Context */}
       <LinkedContextSection activity={activity} onSave={handleSave} />
 
-      {/* Section 5: Coming Soon */}
+      {/* Section 4: Coming Soon */}
       <ComingSoonBanner />
     </Stack>
   );

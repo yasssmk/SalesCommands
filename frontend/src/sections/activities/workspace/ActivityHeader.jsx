@@ -277,24 +277,14 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
 
   // ==============================|| FORMAT HELPERS ||============================== //
 
-  const formatScheduledDateTime = () => {
-    if (!activity.scheduled_date) return null;
-    const dateStr = format(new Date(activity.scheduled_date), 'MMM d, yyyy');
-    if (activity.scheduled_time) {
-      const timeStr = activity.scheduled_time.slice(0, 5);
-      return `${dateStr} at ${timeStr}`;
-    }
-    return dateStr;
-  };
-
   const renderDateInfo = () => {
-    // Completed: show completed_at
+    // Completed: show only completed_at
     if (isCompleted && activity.completed_at) {
       return (
         <Stack direction="row" spacing={0.75} alignItems="center">
           <CheckCircleOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.success.main, display: 'flex' }} />
           <Typography variant="body2" color="success.main">
-            {format(new Date(activity.completed_at), 'MMM d, yyyy HH:mm')}
+            Completed {format(new Date(activity.completed_at), 'MMM d, yyyy HH:mm')}
           </Typography>
         </Stack>
       );
@@ -312,28 +302,37 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
       );
     }
 
-    // Due date
-    if (activity.due_date) {
-      const dueDate = new Date(activity.due_date);
-      const isOverdue = dueDate < new Date();
-      
-      return (
-        <Stack direction="row" spacing={0.75} alignItems="center">
-          <ClockCircleOutlined 
-            style={{ 
-              fontSize: theme.iconSizes.sm, 
-              color: isOverdue ? theme.palette.error.main : theme.palette.text.secondary,
-              display: 'flex'
-            }} 
-          />
-          <Typography variant="body2" color={isOverdue ? 'error.main' : 'text.secondary'}>
-            Due {format(dueDate, 'MMM d, yyyy')}
-          </Typography>
-        </Stack>
-      );
+    // Active: show effective date (scheduled_date or due_date) with overdue on both
+    const effectiveDate = activity.scheduled_date || activity.due_date;
+    if (!effectiveDate) return null;
+
+    const dateObj = new Date(effectiveDate);
+    const isOverdue = dateObj < new Date();
+    const isScheduled = Boolean(activity.scheduled_date);
+    const label = isScheduled ? 'Scheduled' : 'Due';
+    const Icon = isScheduled ? CalendarOutlined : ClockCircleOutlined;
+
+    // Format: "Scheduled: MMM d, yyyy at HH:mm" or "Due: MMM d, yyyy"
+    let dateText = format(dateObj, 'MMM d, yyyy');
+    if (isScheduled && activity.scheduled_time) {
+      dateText += ` at ${activity.scheduled_time.slice(0, 5)}`;
     }
 
-    return null;
+    return (
+      <Stack direction="row" spacing={0.75} alignItems="center">
+        <Icon
+          style={{
+            fontSize: theme.iconSizes.sm,
+            color: isOverdue ? theme.palette.error.main : theme.palette.text.secondary,
+            display: 'flex'
+          }}
+        />
+        <Typography variant="body2" color={isOverdue ? 'error.main' : 'text.secondary'}>
+          {label}: {dateText}
+          {isOverdue && ' (Overdue)'}
+        </Typography>
+      </Stack>
+    );
   };
 
   // ==============================|| RENDER ||============================== //
@@ -551,12 +550,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
                   {activity.decision_step_detail && (
                     <>
                       <RightOutlined style={{ fontSize: theme.iconSizes.xs - 2, color: theme.palette.text.disabled }} />
-                      <Typography
-                        variant="body2"
-                        color="primary.main"
-                        onClick={handleStepClick}
-                        sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
-                      >
+                      <Typography variant="body2" color="text.secondary">
                         {activity.decision_step_detail.name}
                       </Typography>
                     </>
@@ -566,16 +560,6 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
             )}
 
             {/* TODO: Origin from Campaign (future) */}
-
-            {/* Scheduled Date/Time */}
-            {activity.scheduled_date && (
-              <Stack direction="row" spacing={0.75} alignItems="center">
-                <CalendarOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.secondary, display: 'flex' }} />
-                <Typography variant="body2" color="text.secondary">
-                  {formatScheduledDateTime()}
-                </Typography>
-              </Stack>
-            )}
 
             {/* Due Date or Completed At */}
             {renderDateInfo()}

@@ -351,7 +351,7 @@ function ActivityCard({ activity, onClick }) {
         <Stack direction="row" alignItems="center" spacing={0.5} flexWrap="wrap">
           {activityDate && (
             <Stack direction="row" alignItems="center" spacing={0.25}>
-              <CalendarOutlined style={{ fontSize: 11, color: isOverdue ? theme.palette.error.main : theme.palette.text.disabled }} />
+              <CalendarOutlined style={{ fontSize: theme.iconSizes?.xs, color: isOverdue ? theme.palette.error.main : theme.palette.text.disabled }} />
               <Typography 
                 variant="caption" 
                 sx={{
@@ -614,7 +614,7 @@ function PipelineStepColumn({
                       gap: 0.25
                     }}
                   >
-                    <CalendarOutlined style={{ fontSize: theme.iconSizes?.xs || 10, color: theme.palette.text.disabled }} />
+                    <CalendarOutlined style={{ fontSize: theme.iconSizes?.xs, color: theme.palette.text.disabled }} />
                     {isStartConfirmed
                       ? formatShortDate(startDateValue)
                       : `(${formatShortDate(startDateValue)})`
