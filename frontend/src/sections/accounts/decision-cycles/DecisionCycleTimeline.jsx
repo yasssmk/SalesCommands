@@ -190,13 +190,22 @@ const ACTIVITY_STATUS_CONFIG = {
 
 /**
  * Activity Outcome Configuration
+ * 
+ * Keys match backend ActivityOutcome choices.
+ * Category determines border/background color on activity cards:
+ * - positive: green (deal advancing)
+ * - neutral: warning (needs attention, ambiguous)
+ * - negative: error (deal at risk)
  */
 const ACTIVITY_OUTCOME_CONFIG = {
-  POSITIVE: { color: 'success', label: 'Positive' },
-  NEUTRAL: { color: 'default', label: 'Neutral' },
-  NEGATIVE: { color: 'error', label: 'Negative' },
-  NO_SHOW: { color: 'warning', label: 'No Show' },
-  RESCHEDULED: { color: 'info', label: 'Rescheduled' }
+  SUCCESSFUL:         { color: 'success', label: 'Successful',         category: 'positive' },
+  MEETING_SCHEDULED:  { color: 'success', label: 'Meeting Scheduled',  category: 'positive' },
+  NO_ANSWER:          { color: 'warning', label: 'No Answer',          category: 'neutral' },
+  CALLBACK_REQUESTED: { color: 'info',    label: 'Callback Requested', category: 'neutral' },
+  FOLLOW_UP_NEEDED:   { color: 'warning', label: 'Follow-up Needed',  category: 'neutral' },
+  OTHER:              { color: 'default', label: 'Other',              category: 'neutral' },
+  NOT_INTERESTED:     { color: 'error',   label: 'Not Interested',     category: 'negative' },
+  WRONG_CONTACT:      { color: 'error',   label: 'Wrong Contact',      category: 'negative' }
 };
 
 /**
@@ -250,18 +259,29 @@ function ActivityCard({ activity, onClick }) {
     return timeStr.slice(0, 5);
   };
 
-  // Get border color based on state
+  // Outcome category for completed activities (positive/neutral/negative)
+  const outcomeCategory = outcomeConfig?.category || 'neutral';
+
+  // Get border color based on state + outcome
   const getBorderColor = () => {
     if (isCancelled) return theme.palette.grey[300];
-    if (isCompleted) return theme.palette.success.light;
+    if (isCompleted) {
+      if (outcomeCategory === 'positive') return theme.palette.success.light;
+      if (outcomeCategory === 'negative') return theme.palette.error.light;
+      return theme.palette.warning.light; // neutral outcome
+    }
     if (isOverdue) return theme.palette.error.light;
     return theme.palette.divider;
   };
   
-  // Get background color based on state
+  // Get background color based on state + outcome
   const getBgColor = () => {
     if (isCancelled) return alpha(theme.palette.grey[500], 0.04);
-    if (isCompleted) return alpha(theme.palette.success.main, 0.04);
+    if (isCompleted) {
+      if (outcomeCategory === 'positive') return alpha(theme.palette.success.main, 0.04);
+      if (outcomeCategory === 'negative') return alpha(theme.palette.error.main, 0.04);
+      return alpha(theme.palette.warning.main, 0.04); // neutral outcome
+    }
     if (isOverdue) return alpha(theme.palette.error.main, 0.04);
     return 'background.paper';
   };
@@ -327,7 +347,7 @@ function ActivityCard({ activity, onClick }) {
           </Typography>
         </Stack>
         
-        {/* Row 2: Date/Time + Overdue badge */}
+        {/* Row 2: Date/Time */}
         <Stack direction="row" alignItems="center" spacing={0.5} flexWrap="wrap">
           {activityDate && (
             <Stack direction="row" alignItems="center" spacing={0.25}>
@@ -339,7 +359,7 @@ function ActivityCard({ activity, onClick }) {
                   fontWeight: isOverdue ? 600 : 400
                 }}
               >
-                {formatDate(activity)}
+                {formatDate(activityDate)}
               </Typography>
             </Stack>
           )}
@@ -347,15 +367,6 @@ function ActivityCard({ activity, onClick }) {
             <Typography variant="caption" color="text.secondary">
               {formatTime(activity.scheduled_time)}
             </Typography>
-          )}
-          {isOverdue && (
-            <Chip
-              label="Overdue"
-              size="small"
-              color="error"
-              variant="outlined"
-              sx={{ height: 16, fontSize: '0.6rem', '& .MuiChip-label': { px: 0.5 } }}
-            />
           )}
         </Stack>
         
@@ -385,10 +396,10 @@ function ActivityCard({ activity, onClick }) {
         {/* Row 4: Status + Outcome (if completed) */}
         <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={0.5}>
           <Chip
-            label={statusConfig.label}
+            label={isOverdue ? 'Overdue' : statusConfig.label}
             size="small"
-            color={statusConfig.color}
-            variant={isCompleted || isCancelled ? 'filled' : 'outlined'}
+            color={isOverdue ? 'error' : statusConfig.color}
+            variant={isCompleted || isCancelled || isOverdue ? 'filled' : 'outlined'}
             sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
           />
           {outcomeConfig && (
@@ -444,9 +455,10 @@ function PipelineStepColumn({
   const isOnHold = step.derived_status === 'ON_HOLD';
   const hasActivities = activities && activities.length > 0;
   
-  // Activity statistics
-  const totalActivities = activities?.length || 0;
-  const completedActivities = activities?.filter(a => a.status === 'COMPLETED').length || 0;
+  // Activity statistics (exclude cancelled from counts and progress)
+  const activeActivities = activities?.filter(a => a.status !== 'CANCELLED') || [];
+  const totalActivities = activeActivities.length;
+  const completedActivities = activeActivities.filter(a => a.status === 'COMPLETED').length;
   const progressPercent = totalActivities > 0 ? Math.round((completedActivities / totalActivities) * 100) : 0;
   
   // Date formatting helper
@@ -557,18 +569,10 @@ function PipelineStepColumn({
             </Box>
           )}
           
-          {/* Aggregated stakeholders & departments */}
-          {(step.all_contacts_count > 0 || (step.all_departments_list && step.all_departments_list.length > 0)) && (
+          {/* Aggregated departments
+          {step.all_departments_list && step.all_departments_list.length > 0 && (
             <Stack direction="row" alignItems="center" spacing={0.75} flexWrap="wrap" sx={{ mt: 0.25 }}>
-              {step.all_contacts_count > 0 && (
-                <Tooltip title="Stakeholders (manual + from activities)">
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-                    <TeamOutlined style={{ fontSize: theme.iconSizes?.xs || 12, color: theme.palette.text.secondary }} />
-                    {step.all_contacts_count}
-                  </Typography>
-                </Tooltip>
-              )}
-              {step.all_departments_list && step.all_departments_list.map((dept) => (
+              {step.all_departments_list.map((dept) => (
                 <Chip
                   key={dept.id}
                   label={dept.name}
@@ -584,7 +588,7 @@ function PipelineStepColumn({
                 />
               ))}
             </Stack>
-          )}
+          )} */}
 
           {/* Timeline dates + Stalled warning */}
           <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">

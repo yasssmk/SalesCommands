@@ -41,11 +41,11 @@ export const DECISION_STAGES = PIPELINE_STEPS;
  * Derivation priority (highest first):
  * 1. WON         — activity completed with no_next_step_reason=CLOSE_WON
  * 2. REJECTED    — activity completed with reason ∈ {CLOSE_LOST, NOT_QUALIFIED}
- * 3. OVERDUE     — expected_end < today and step not WON/REJECTED
- * 4. VALIDATED   — completed + later step in cycle has activities
- * 5. IN_PROGRESS — at least 1 PLANNED activity
+ * 3. OVERDUE     — expected_end < today OR any PLANNED activity past scheduled/due date
+ * 4. VALIDATED   — ALL activities completed (0 PLANNED) + later step has activities
+ * 5. IN_PROGRESS — PLANNED exists AND (some are current/past/undated OR completed exist)
  * 6. ON_HOLD     — completed exist, no PLANNED, no later step activity
- * 7. NOT_STARTED — no activities or all cancelled
+ * 7. NOT_STARTED — no activities, all cancelled, OR only future-dated PLANNED with no completed
  * 
  * IN_CHASING: Reserved for future Campaign/Sequence feature.
  */
@@ -84,8 +84,8 @@ export const STATUS_THEME_TOKENS = {
   WON: 'primary.dark',
   REJECTED: 'error.main',
   OVERDUE: 'error.light',
-  VALIDATED: 'primary.light',
-  IN_PROGRESS: 'secondary.main',
+  VALIDATED: 'primary.dark',
+  IN_PROGRESS: 'primary.light',
   ON_HOLD: 'warning.light',
   IN_CHASING: 'warning.dark',
   NOT_STARTED: 'secondary.light'

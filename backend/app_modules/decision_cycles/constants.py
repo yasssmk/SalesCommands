@@ -91,19 +91,19 @@ DecisionStage = PipelineStep
 
 class DecisionStepStatus(models.TextChoices):
     """
-    Status choices for Decision Steps.
+    Status of a Decision Step in the pipeline.
     
     ALL statuses are DERIVED automatically from activity data.
     No manual status change — the step observes its activities.
     
     Derivation priority (highest first):
-    1. WON        — activity completed with no_next_step_reason=CLOSE_WON
-    2. REJECTED   — activity completed with reason=CLOSE_LOST or NOT_QUALIFIED
-    3. OVERDUE    — expected_end < today and step not WON/REJECTED
-    4. VALIDATED  — all activities completed + future activity exists in sequence
-    5. IN_PROGRESS — at least 1 PLANNED activity exists
-    6. ON_HOLD    — completed activities exist, no PLANNED, no future activity
-    7. NOT_STARTED — no activities or all cancelled
+    1. WON         — activity completed with no_next_step_reason=CLOSE_WON
+    2. REJECTED    — activity completed with reason=CLOSE_LOST or NOT_QUALIFIED
+    3. OVERDUE     — expected_end < today OR any PLANNED activity past scheduled/due date
+    4. VALIDATED   — ALL activities completed (0 PLANNED) + later step has activities
+    5. IN_PROGRESS — PLANNED exists AND (some are current/past/undated OR completed exist)
+    6. ON_HOLD     — completed exist, no PLANNED, no activity in later steps
+    7. NOT_STARTED — no activities, all cancelled, OR only future-dated PLANNED with no completed
     
     IN_CHASING: Reserved for future Campaign/Sequence feature (not auto-derived).
     """

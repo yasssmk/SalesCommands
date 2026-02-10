@@ -42,7 +42,6 @@ import ActivityModal from '../activities/ActivityModal';
 
 import { 
   useGetDecisionCyclesByAccount,
-  useGetDecisionCycle,
   deleteDecisionCycle,
   CYCLE_DERIVED_STATUS_LABELS,
   CYCLE_STATUS_COLORS
@@ -76,7 +75,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   
   // ==============================|| DATA FETCHING ||============================== //
   
-  // Fetch all cycles for this account
+  // Single request: all cycles with steps, activities, derived statuses
   const { 
     cycles, 
     cyclesLoading, 
@@ -93,12 +92,13 @@ export default function DecisionCycleTab({ accountId, accountName }) {
     return activeCycle?.id || cycles[0]?.id;
   }, [selectedCycleId, cycles]);
   
-  // Fetch current cycle details with steps (and their activities)
-  const { 
-    cycle: currentCycle, 
-    cycleLoading: currentCycleLoading,
-    mutateCycle 
-  } = useGetDecisionCycle(currentCycleId);
+  // Derive current cycle from by-account response (no extra request)
+  const currentCycle = useMemo(() => {
+    if (!currentCycleId || !cycles?.length) return null;
+    return cycles.find(c => c.id === currentCycleId) || null;
+  }, [currentCycleId, cycles]);
+  
+  const currentCycleLoading = cyclesLoading;
   
   // ==============================|| CYCLE HANDLERS ||============================== //
   
@@ -168,12 +168,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
     if (!cycleToEdit && data?.id) {
       setSelectedCycleId(data.id);
     }
-    
-    // Revalidate current cycle if editing
-    if (cycleToEdit) {
-      mutateCycle();
-    }
-  }, [cycleToEdit, mutateCycles, mutateCycle]);
+  }, [cycleToEdit, mutateCycles]);
   
   // ==============================|| PIPELINE HANDLERS ||============================== //
   
@@ -213,11 +208,11 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   /**
    * Handle Activity creation success
    */
-  const handleActivitySuccess = useCallback(() => {
-    // Revalidate cycle to refresh activities in steps
-    mutateCycle();
+const handleActivitySuccess = useCallback(() => {
+    // Revalidate cycles to refresh activities in steps
+    mutateCycles();
     handleActivityModalClose();
-  }, [mutateCycle, handleActivityModalClose]);
+  }, [mutateCycles, handleActivityModalClose]);
   
   // ==============================|| LOADING STATE ||============================== //
   
@@ -354,7 +349,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
           onStepClick={handleStepClick}
           onActivityClick={handleActivityClick}
           onAddActivity={handleAddActivity}
-          onRefresh={mutateCycle}
+          onRefresh={mutateCycles}
           loading={currentCycleLoading}
         />
       ) : null}

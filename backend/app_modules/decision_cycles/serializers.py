@@ -36,6 +36,7 @@ class ActivityTimelineSerializer(serializers.Serializer):
     outcome_display = serializers.SerializerMethodField(read_only=True)
     scheduled_date = serializers.DateField(read_only=True, allow_null=True)
     scheduled_time = serializers.TimeField(read_only=True, allow_null=True)
+    due_date = serializers.DateField(read_only=True, allow_null=True)
     completed_at = serializers.DateTimeField(read_only=True, allow_null=True)
     contacts_count = serializers.SerializerMethodField(read_only=True)
     
