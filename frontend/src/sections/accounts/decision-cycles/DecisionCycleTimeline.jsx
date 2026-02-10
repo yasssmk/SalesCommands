@@ -461,23 +461,31 @@ function PipelineStepColumn({
   const completedActivities = activeActivities.filter(a => a.status === 'COMPLETED').length;
   const progressPercent = totalActivities > 0 ? Math.round((completedActivities / totalActivities) * 100) : 0;
   
-  // Date formatting helper
-  const formatStepDate = (dateStr) => {
+ // Short date formatter
+  const formatShortDate = (dateStr) => {
     if (!dateStr) return null;
-    const date = new Date(dateStr);
-    const today = new Date();
-    const diffDays = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays < 0) return { text: `${Math.abs(diffDays)}d overdue`, color: 'error.main' };
-    if (diffDays === 0) return { text: 'Due today', color: 'warning.main' };
-    if (diffDays <= 7) return { text: `${diffDays}d left`, color: 'warning.main' };
-    return { 
-      text: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), 
-      color: 'text.secondary' 
-    };
+    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
-  
-  const expectedEndInfo = formatStepDate(step.expected_end);
+
+  // Step lifecycle states
+  const STARTED_STATUSES = ['IN_PROGRESS', 'OVERDUE', 'ON_HOLD', 'IN_CHASING', 'VALIDATED', 'WON', 'REJECTED'];
+  const CLOSED_STATUSES = ['VALIDATED', 'WON', 'REJECTED'];
+
+  const isStepStarted = STARTED_STATUSES.includes(step.derived_status);
+  const isStepClosed = CLOSED_STATUSES.includes(step.derived_status);
+
+  // Start date: effective_start_date (observed) > start_date (manual)
+  const startDateValue = step.effective_start_date || step.start_date || null;
+  const isStartConfirmed = isStepStarted && !!startDateValue;
+
+  // End date: completed_at (closed) > effective_end_date (last activity) > expected_end (manual fallback)
+  const endDateValue = isStepClosed
+    ? (step.completed_at || step.effective_end_date || step.expected_end)
+    : (step.effective_end_date || step.expected_end || null);
+  const isEndConfirmed = isStepClosed && !!endDateValue;
+
+  // Overdue: end date is past and step is not closed
+  const isEndOverdue = !isStepClosed && endDateValue && new Date(endDateValue) < new Date();
   
   // Column border color — derived from step status
   const getBorderColor = () => {
@@ -590,66 +598,64 @@ function PipelineStepColumn({
             </Stack>
           )} */}
 
-          {/* Timeline dates + Stalled warning */}
-          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
-            {/* Effective start date (from activities, preferred) */}
-            {(step.effective_start_date || step.start_date) && (
-              <Tooltip title={step.effective_start_date ? 'Observed start (first activity)' : 'Started'}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-                  <CalendarOutlined style={{ fontSize: theme.iconSizes?.xs || 12, color: theme.palette.text.secondary }} />
-                  {new Date(step.effective_start_date || step.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </Typography>
-              </Tooltip>
-            )}
-            
-            {/* Expected end with urgency coloring */}
-            {expectedEndInfo && (
-              <Tooltip title="Expected completion">
-                <Typography 
-                  variant="caption" 
-                  sx={{ 
-                    color: expectedEndInfo.color,
-                    fontWeight: expectedEndInfo.color !== 'text.secondary' ? 600 : 400,
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: 0.25 
-                  }}
-                >
-                  <ClockCircleOutlined style={{ fontSize: 10 }} />
-                  {expectedEndInfo.text}
-                </Typography>
-              </Tooltip>
-            )}
-            
-            {/* Completed date */}
-            {step.completed_at && (
-              <Tooltip title="Completed">
-                <Typography variant="caption" color="success.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-                  <CheckCircleFilled style={{ fontSize: 10 }} />
-                  {new Date(step.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </Typography>
-              </Tooltip>
-            )}
+          {/* Timeline: Start ←→ End */}
+          {(startDateValue || endDateValue) && (
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              {/* Start date */}
+              {startDateValue ? (
+                <Tooltip title={isStartConfirmed ? 'Started' : 'Projected start'}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: 'text.secondary',
+                      fontStyle: isStartConfirmed ? 'normal' : 'italic',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.25
+                    }}
+                  >
+                    <CalendarOutlined style={{ fontSize: theme.iconSizes?.xs || 10, color: theme.palette.text.disabled }} />
+                    {isStartConfirmed
+                      ? formatShortDate(startDateValue)
+                      : `(${formatShortDate(startDateValue)})`
+                    }
+                  </Typography>
+                </Tooltip>
+              ) : (
+                <Box />
+              )}
 
-            {/* Effective end from activities (shown only when different from expected_end) */}
-            {step.effective_end_date && step.effective_end_date !== step.expected_end && (
-              <Tooltip title="Projected end (from activities)">
-                <Typography 
-                  variant="caption" 
-                  sx={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: 0.25, 
-                    color: 'info.main', 
-                    fontStyle: 'italic' 
-                  }}
-                >
-                  → {new Date(step.effective_end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </Typography>
-              </Tooltip>
-            )}
-            
-          </Stack>
+              {/* End date */}
+              {endDateValue ? (
+                <Tooltip title={isEndConfirmed ? 'Closed' : (isEndOverdue ? 'Overdue' : 'Expected end')}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: isEndConfirmed
+                        ? (isRejected ? 'error.main' : 'success.main')
+                        : (isEndOverdue ? 'error.main' : 'text.secondary'),
+                      fontStyle: isEndConfirmed ? 'normal' : 'italic',
+                      fontWeight: (isEndConfirmed || isEndOverdue) ? theme.typography.fontWeightMedium : theme.typography.fontWeightRegular,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.25
+                    }}
+                  >
+                    {isEndConfirmed
+                      ? <CheckCircleFilled style={{ fontSize: theme.iconSizes.xs, color: theme.palette[isRejected ? 'error' : 'success'].main }} />
+                      : <ClockCircleOutlined style={{ fontSize: theme.iconSizes.xs, color: isEndOverdue ? theme.palette.error.main : theme.palette.text.disabled }} />
+                    }
+                    {isEndConfirmed
+                      ? formatShortDate(endDateValue)
+                      : `(${formatShortDate(endDateValue)})`
+                    }
+                  </Typography>
+                </Tooltip>
+              ) : (
+                <Box />
+              )}
+            </Stack>
+          )}
         </Stack>
       </Box>
       

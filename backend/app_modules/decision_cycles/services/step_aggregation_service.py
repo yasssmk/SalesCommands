@@ -161,11 +161,12 @@ class StepAggregationService:
     def get_effective_start_date(self, step):
         """
         Date of first completed activity linked to this step.
-        Fallback: first activity by scheduled_date.
+        Fallback: first activity by earliest date (scheduled_date or due_date).
 
         Returns date or None. Triggers 1-2 DB queries.
         """
         from app_modules.activities.constants import ActivityStatus
+        from django.db.models.functions import Coalesce
 
         first_completed = step.activities.filter(
             status=ActivityStatus.COMPLETED
@@ -174,15 +175,17 @@ class StepAggregationService:
         if first_completed:
             if first_completed.completed_at:
                 return first_completed.completed_at.date()
-            return first_completed.scheduled_date
+            return first_completed.scheduled_date or first_completed.due_date
 
-        # Fallback: first scheduled activity
+        # Fallback: first activity by earliest date (scheduled_date or due_date)
         first_activity = step.activities.exclude(
-            scheduled_date__isnull=True
-        ).order_by('scheduled_date').first()
+            scheduled_date__isnull=True, due_date__isnull=True
+        ).order_by(
+            Coalesce('scheduled_date', 'due_date')
+        ).first()
 
         if first_activity:
-            return first_activity.scheduled_date
+            return first_activity.scheduled_date or first_activity.due_date
 
         return None
 
@@ -352,14 +355,17 @@ class StepAggregationService:
             first = min(completed, key=lambda a: a.completed_at)
             return first.completed_at.date()
 
-        # Priority 2: first scheduled activity
-        scheduled = [
+        # Priority 2: first activity by earliest date (scheduled_date or due_date)
+        dated = [
             a for a in activities
-            if a.scheduled_date
+            if a.scheduled_date or a.due_date
         ]
-        if scheduled:
-            first = min(scheduled, key=lambda a: a.scheduled_date)
-            return first.scheduled_date
+        if dated:
+            first = min(
+                dated,
+                key=lambda a: a.scheduled_date or a.due_date
+            )
+            return first.scheduled_date or first.due_date
 
         return None
 

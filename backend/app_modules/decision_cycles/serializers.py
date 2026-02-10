@@ -186,8 +186,8 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
             # Derived Status (replaces manual status)
             'derived_status', 'derived_status_display', 'derived_status_color',
             
-            # Timeline
-            'expected_end', 'completed_at',
+            # Timeline (model fields)
+            'start_date', 'expected_end', 'completed_at',
             
             # Summary (no DB queries - uses annotation)
             'stakeholder',
