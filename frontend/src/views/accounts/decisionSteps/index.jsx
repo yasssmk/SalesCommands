@@ -48,7 +48,7 @@ export default function DecisionStepWorkspacePage() {
 
   // Derived data
   const cycleId = step?.cycle_id || step?.cycle;
-  const cycleName = step?.cycle_detail?.name || step?.cycle_name || 'Decision Cycle';
+  const cycleName = step?.cycle_detail?.name || step?.cycle_name || null;
   const isLoading = stepLoading || accountLoading;
 
   // Handle tab change via URL
@@ -142,6 +142,7 @@ export default function DecisionStepWorkspacePage() {
         step={step}
         account={account}
         cycleId={cycleId}
+        cycleName={cycleName}
         onUpdate={mutateStep}
       />
 

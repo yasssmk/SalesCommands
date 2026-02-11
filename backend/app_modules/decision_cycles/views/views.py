@@ -682,20 +682,59 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
         })
     
     def retrieve(self, request, *args, **kwargs):
-        """Retrieve a single decision step."""
+        """
+        Retrieve a single decision step with Redis caching.
+        
+        GET /decision-cycles/steps/{id}/
+        
+        Cache: 60s, tag 'decision_cycles', keyed by step pk.
+        
+        Note: DecisionStepSerializer triggers multiple DB queries per step
+        (derived_status, completeness_score, aggregated_contacts, etc.).
+        Caching avoids re-executing these on repeated navigation.
+        """
         ctx = ctx_from_request(request)
-        instance = self.get_object()
+        pk = kwargs.get('pk')
         
         logger.info("decision_step_retrieved", extra={
             **ctx,
-            'step_id': str(instance.id)
+            'step_id': str(pk)
         })
         
-        serializer = self.get_serializer(instance)
-        return Response({
-            'success': True,
-            'data': serializer.data
-        })
+        if not _is_redis_backend():
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            return Response({
+                'success': True,
+                'data': serializer.data
+            })
+        
+        client_id = self.get_client_id()
+        cache_key = build_drf_cache_key(
+            namespace='decision_step_detail',
+            client_id=client_id,
+            user_id=request.user.id,
+            perm_version=get_permissions_version(),
+            extra=str(pk),
+            tag_namespace='decision_cycles',
+        )
+        
+        def producer():
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            return {
+                'success': True,
+                'data': serializer.data
+            }
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=producer,
+            ttl=60,
+            tag=(client_id, 'decision_cycles'),
+        )
+        
+        return Response(cached_data)
     
     def create(self, request, *args, **kwargs):
             """

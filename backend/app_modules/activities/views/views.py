@@ -615,6 +615,31 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                     ActivityErrorMessages.INVALID_NO_NEXT_STEP_REASON
                 )
         
+        # ── Enforce no_next_step_reason when in a cycle with no next step ──
+        # Dual-layer protection: backend mirrors frontend OutcomeTab logic.
+        # Only applies on first completion (not outcome updates).
+        if (
+            activity.status != ActivityStatus.COMPLETED
+            and activity.decision_cycle_id
+            and next_step_agreed is not True
+        ):
+            # Check if PLANNED activities exist after this one in the cycle
+            has_pending_next = Activity.objects.filter(
+                decision_cycle_id=activity.decision_cycle_id,
+                status=ActivityStatus.PLANNED,
+            ).exclude(id=activity.id).exists()
+            
+            if not has_pending_next:
+                # No next step in sequence → reason is mandatory
+                if not no_next_step_reason:
+                    raise StandardizedValidationError(
+                        ActivityErrorMessages.NO_NEXT_STEP_REASON_REQUIRED
+                    )
+                
+                # Auto-set next_step_agreed=False if not provided
+                if next_step_agreed is None:
+                    next_step_agreed = False
+        
         # If already completed, just update outcome fields
         if activity.status == ActivityStatus.COMPLETED:
             logger.info("activity_outcome_update", extra={

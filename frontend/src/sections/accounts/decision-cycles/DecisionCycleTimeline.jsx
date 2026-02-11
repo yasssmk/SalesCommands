@@ -480,13 +480,16 @@ function PipelineStepColumn({
   const isStartConfirmed = isStepStarted && !!startDateValue;
 
   // End date: completed_at (closed) > effective_end_date (last activity) > expected_end (manual fallback)
-  const endDateValue = isStepClosed
+  // ON_HOLD is treated as settled for date display (deal paused, not overdue)
+  const isEndSettled = isStepClosed || isOnHold;
+  const endDateValue = isEndSettled
     ? (step.completed_at || step.effective_end_date || step.expected_end)
     : (step.effective_end_date || step.expected_end || null);
   const isEndConfirmed = isStepClosed && !!endDateValue;
 
-  // Overdue: end date is past and step is not closed
-  const isEndOverdue = !isStepClosed && endDateValue && new Date(endDateValue) < new Date();
+  // Overdue: end date is past and step is NOT closed and NOT on hold
+  // ON_HOLD = deal paused, nothing is "overdue" — it's just waiting
+  const isEndOverdue = !isEndSettled && endDateValue && new Date(endDateValue) < new Date();
   
   // Column border color — derived from step status
   const getBorderColor = () => {
@@ -626,17 +629,24 @@ function PipelineStepColumn({
                 <Box />
               )}
 
-              {/* End date */}
+              {/* End date — 3 visual states: Closed / On Hold / Projected (with overdue) */}
               {endDateValue ? (
-                <Tooltip title={isEndConfirmed ? 'Closed' : (isEndOverdue ? 'Overdue' : 'Expected end')}>
+                <Tooltip title={
+                  isEndConfirmed ? 'Closed'
+                    : isOnHold ? 'On Hold'
+                    : isEndOverdue ? 'Overdue'
+                    : 'Expected end'
+                }>
                   <Typography
                     variant="caption"
                     sx={{
                       color: isEndConfirmed
                         ? (isRejected ? 'error.main' : 'success.main')
-                        : (isEndOverdue ? 'error.main' : 'text.secondary'),
-                      fontStyle: isEndConfirmed ? 'normal' : 'italic',
-                      fontWeight: (isEndConfirmed || isEndOverdue) ? theme.typography.fontWeightMedium : theme.typography.fontWeightRegular,
+                        : isOnHold ? 'warning.main'
+                        : isEndOverdue ? 'error.main'
+                        : 'text.secondary',
+                      fontStyle: (isEndConfirmed || isOnHold) ? 'normal' : 'italic',
+                      fontWeight: (isEndConfirmed || isOnHold || isEndOverdue) ? theme.typography.fontWeightMedium : theme.typography.fontWeightRegular,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 0.25
@@ -644,9 +654,11 @@ function PipelineStepColumn({
                   >
                     {isEndConfirmed
                       ? <CheckCircleFilled style={{ fontSize: theme.iconSizes.xs, color: theme.palette[isRejected ? 'error' : 'success'].main }} />
-                      : <ClockCircleOutlined style={{ fontSize: theme.iconSizes.xs, color: isEndOverdue ? theme.palette.error.main : theme.palette.text.disabled }} />
+                      : isOnHold
+                        ? <PauseCircleOutlined style={{ fontSize: theme.iconSizes.xs, color: theme.palette.warning.main }} />
+                        : <ClockCircleOutlined style={{ fontSize: theme.iconSizes.xs, color: isEndOverdue ? theme.palette.error.main : theme.palette.text.disabled }} />
                     }
-                    {isEndConfirmed
+                    {(isEndConfirmed || isOnHold)
                       ? formatShortDate(endDateValue)
                       : `(${formatShortDate(endDateValue)})`
                     }

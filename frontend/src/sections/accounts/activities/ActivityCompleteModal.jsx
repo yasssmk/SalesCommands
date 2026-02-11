@@ -11,6 +11,8 @@ import PropTypes from 'prop-types';
 import { useState } from 'react';
 
 // material-ui
+import { useTheme } from '@mui/material/styles';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -34,23 +36,38 @@ import MainCard from 'components/MainCard';
 import { 
   completeActivity,
   ACTIVITY_OUTCOMES,
-  ACTIVITY_OUTCOME_LABELS
+  ACTIVITY_OUTCOME_LABELS,
+  NO_NEXT_STEP_REASON_LABELS
 } from 'api/accounts/activities';
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
 // assets
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
+import TrophyOutlined from '@ant-design/icons/TrophyOutlined';
+import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
+import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined';
+import StopOutlined from '@ant-design/icons/StopOutlined';
+import InfoCircleOutlined from '@ant-design/icons/InfoCircleOutlined';
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
-const validationSchema = Yup.object({
+// Validation schema is built dynamically based on needsNoNextStepReason
+const buildValidationSchema = (needsReason) => Yup.object({
   outcome: Yup.string()
     .required('Please select an outcome'),
   outcome_notes: Yup.string()
     .max(2000, 'Notes must be at most 2000 characters')
-    .nullable()
+    .nullable(),
+  no_next_step_reason: needsReason
+    ? Yup.string().required('Please select a reason for no next step')
+    : Yup.string().nullable(),
+  other_reason_text: Yup.string()
+    .when('no_next_step_reason', {
+      is: 'OTHER',
+      then: (schema) => needsReason ? schema.required('Please enter a reason') : schema,
+      otherwise: (schema) => schema.nullable()
+    })
 });
-
 // ==============================|| ACTIVITY COMPLETE MODAL ||============================== //
 
 /**
@@ -67,24 +84,54 @@ export default function ActivityCompleteModal({
   activity,
   onSuccess
 }) {
+  const theme = useTheme();
   const [submitting, setSubmitting] = useState(false);
+
+  // Determine if no_next_step_reason is required
+  // Same logic as OutcomeTab: activity in a cycle with no pending next step
+  const effectiveHasNextStep = activity?.effective_has_next_step;
+  const needsNoNextStepReason = effectiveHasNextStep !== true 
+    && activity?.status !== 'COMPLETED' 
+    && activity?.status !== 'CANCELLED';
+
+  // Build reason string for API
+  const buildReasonString = (reason, otherText) => {
+    if (!reason) return null;
+    if (reason === 'OTHER') return `OTHER: ${otherText.trim()}`;
+    return reason;
+  };
 
   // Formik setup
   const formik = useFormik({
     initialValues: {
       outcome: '',
-      outcome_notes: ''
+      outcome_notes: '',
+      no_next_step_reason: '',
+      other_reason_text: ''
     },
-    validationSchema,
+    validationSchema: buildValidationSchema(needsNoNextStepReason),
+    enableReinitialize: false,
     onSubmit: async (values) => {
       if (!activity?.id) return;
       
       setSubmitting(true);
       try {
-        const result = await completeActivity(activity.id, {
+        // Build payload
+        const payload = {
           outcome: values.outcome,
           outcome_notes: values.outcome_notes?.trim() || null
-        });
+        };
+
+        // Include no_next_step_reason if required
+        if (needsNoNextStepReason && values.no_next_step_reason) {
+          payload.next_step_agreed = false;
+          payload.no_next_step_reason = buildReasonString(
+            values.no_next_step_reason,
+            values.other_reason_text
+          );
+        }
+
+        const result = await completeActivity(activity.id, payload);
         
         if (result.success) {
           displaySuccessSnackbar('Activity completed successfully');
@@ -107,7 +154,7 @@ export default function ActivityCompleteModal({
     }
   });
 
-  const { values, errors, touched, handleChange, handleBlur, handleSubmit, resetForm } = formik;
+  const { values, errors, touched, handleChange, handleBlur, handleSubmit, resetForm, setFieldValue } = formik;
   
   const handleClose = () => {
     resetForm();
@@ -206,6 +253,93 @@ export default function ActivityCompleteModal({
                   />
                 </Stack>
               </Grid>
+
+              {/* No Next Step Reason — shown when activity is in a cycle with no pending next step */}
+              {needsNoNextStepReason && (
+                <Grid item xs={12}>
+                  <Alert 
+                    severity="warning" 
+                    icon={<InfoCircleOutlined />}
+                    sx={{ mb: 2 }}
+                  >
+                    <Typography variant="caption">
+                      No follow-up activity is scheduled. Please indicate why.
+                    </Typography>
+                  </Alert>
+                  <Stack spacing={1.5}>
+                    <InputLabel htmlFor="no_next_step_reason" required>
+                      Reason for no next step
+                    </InputLabel>
+                    <Select
+                      id="no_next_step_reason"
+                      name="no_next_step_reason"
+                      fullWidth
+                      value={values.no_next_step_reason}
+                      onChange={(e) => {
+                        handleChange(e);
+                        // Clear other text when switching away from OTHER
+                        if (e.target.value !== 'OTHER') {
+                          setFieldValue('other_reason_text', '');
+                        }
+                      }}
+                      onBlur={handleBlur}
+                      error={Boolean(touched.no_next_step_reason && errors.no_next_step_reason)}
+                      displayEmpty
+                    >
+                      <MenuItem value="" disabled>
+                        <em>Select a reason...</em>
+                      </MenuItem>
+                      <MenuItem value="CLOSE_WON">
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <TrophyOutlined style={{ color: theme.palette.success.main }} />
+                          <span>{NO_NEXT_STEP_REASON_LABELS.CLOSE_WON}</span>
+                        </Stack>
+                      </MenuItem>
+                      <MenuItem value="CLOSE_LOST">
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <CloseCircleOutlined style={{ color: theme.palette.error.main }} />
+                          <span>{NO_NEXT_STEP_REASON_LABELS.CLOSE_LOST}</span>
+                        </Stack>
+                      </MenuItem>
+                      <MenuItem value="ON_HOLD">
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <PauseCircleOutlined style={{ color: theme.palette.warning.main }} />
+                          <span>{NO_NEXT_STEP_REASON_LABELS.ON_HOLD}</span>
+                        </Stack>
+                      </MenuItem>
+                      <MenuItem value="NOT_QUALIFIED">
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <StopOutlined style={{ color: theme.palette.grey[500] }} />
+                          <span>{NO_NEXT_STEP_REASON_LABELS.NOT_QUALIFIED}</span>
+                        </Stack>
+                      </MenuItem>
+                      <MenuItem value="OTHER">
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <span>Other reason...</span>
+                        </Stack>
+                      </MenuItem>
+                    </Select>
+                    {touched.no_next_step_reason && errors.no_next_step_reason && (
+                      <FormHelperText error>{errors.no_next_step_reason}</FormHelperText>
+                    )}
+
+                    {/* Other reason text input */}
+                    {values.no_next_step_reason === 'OTHER' && (
+                      <TextField
+                        fullWidth
+                        size="small"
+                        name="other_reason_text"
+                        placeholder="Enter reason..."
+                        value={values.other_reason_text}
+                        onChange={handleChange}
+                        onBlur={handleBlur}
+                        error={Boolean(touched.other_reason_text && errors.other_reason_text)}
+                        helperText={touched.other_reason_text && errors.other_reason_text}
+                      />
+                    )}
+                  </Stack>
+                </Grid>
+              )}
               
             </Grid>
           </Box>
@@ -242,7 +376,10 @@ ActivityCompleteModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   activity: PropTypes.shape({
     id: PropTypes.string,
-    title: PropTypes.string
+    title: PropTypes.string,
+    status: PropTypes.string,
+    effective_has_next_step: PropTypes.bool,
+    decision_cycle: PropTypes.string
   }),
   onSuccess: PropTypes.func
 };

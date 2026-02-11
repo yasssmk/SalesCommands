@@ -608,6 +608,15 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     order = serializers.IntegerField(read_only=True)
     activities_count = serializers.SerializerMethodField(read_only=True)
 
+    # Cycle name (avoids extra fetch on frontend)
+    cycle_name = serializers.SerializerMethodField(read_only=True)
+
+    # Completed activities count (for header progression)
+    completed_activities_count = serializers.SerializerMethodField(read_only=True)
+
+    # Distinct users involved in activities (owners + other participants)
+    activity_owners = serializers.SerializerMethodField(read_only=True)
+
     # Aggregation from Activities (detail view only — uses service)
     aggregated_contacts = serializers.SerializerMethodField(read_only=True)
     aggregated_departments = serializers.SerializerMethodField(read_only=True)
@@ -644,6 +653,8 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'description', 'goal',
             'influence_score',
             'criterias', 'metrics', 'activities_count',
+            'cycle_name', 'completed_activities_count',
+            'activity_owners',
 
             # Manager
             'manager_notes',
@@ -679,7 +690,7 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'completeness_score', 'completeness_details',
             'aggregated_contacts', 'aggregated_departments',
             'effective_start_date', 'effective_end_date',
-            'all_contacts', 'all_departments',
+            'all_contacts', 'all_departments', 'cycle_name', 'completed_activities_count','activity_owners',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
     
@@ -748,8 +759,59 @@ class DecisionStepSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         return service.get_details(obj)
     
     def get_activities_count(self, obj):
-        """Return count of activities linked to this step."""
-        return obj.activities.count() if hasattr(obj, 'activities') else 0
+        """Return count of active activities (excludes CANCELLED)."""
+        if hasattr(obj, 'activities'):
+            return obj.activities.exclude(status='CANCELLED').count()
+        return 0
+    
+    def get_cycle_name(self, obj):
+        """Return cycle name without extra query (uses select_related)."""
+        if hasattr(obj, 'cycle') and obj.cycle:
+            return obj.cycle.name
+        return None
+
+    def get_completed_activities_count(self, obj):
+        """Return count of completed activities for this step."""
+        if hasattr(obj, 'activities'):
+            return obj.activities.filter(status='COMPLETED').count()
+        return 0
+    
+    def get_activity_owners(self, obj):
+        """
+        Return distinct users involved in this step's activities.
+        Includes activity owners — lightweight payload for avatar display.
+        """
+        if not hasattr(obj, 'activities'):
+            return []
+
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        # Get distinct owner IDs from non-cancelled activities
+        owner_ids = (
+            obj.activities
+            .exclude(status='CANCELLED')
+            .values_list('owner_id', flat=True)
+            .distinct()
+        )
+
+        if not owner_ids:
+            return []
+
+        users = User.objects.filter(id__in=owner_ids).only(
+            'id', 'first_name', 'last_name', 'email'
+        )
+
+        return [
+            {
+                'id': str(u.id),
+                'first_name': u.first_name or '',
+                'last_name': u.last_name or '',
+                'full_name': f"{u.first_name or ''} {u.last_name or ''}".strip() or u.email,
+                'email': u.email
+            }
+            for u in users
+        ]
     
     # ==========================================================================
     # AGGREGATION GETTERS (detail view — delegates to StepAggregationService)
