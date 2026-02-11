@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState, useEffect } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 
 // material-ui
@@ -175,31 +175,60 @@ export default function AccountWorkspacePage() {
 // ==============================|| TAB CONTENT COMPONENT ||============================== //
 
 /**
- * Tab Content - Renders the appropriate tab component
+ * Tab Content - KeepAlive pattern for heavy tabs
  * 
- * Placeholder components for now, will be replaced with actual implementations.
+ * DecisionCycleTab and AccountActivitiesTab are kept mounted but hidden
+ * via CSS display:none when inactive. This prevents unmount/remount cycles
+ * that trigger redundant API fetches and SWR cache misses on tab switch.
+ * 
+ * Lightweight tabs (placeholders) use conditional rendering as before.
  */
 function TabContent({ tab, accountId, account }) {
-  const content = useMemo(() => {
-    switch (tab) {
-      case 'summary':
-        return <TabPlaceholder title="Summary" description="Account summary and key information will be displayed here." />;
-      case 'qualification':
-        return <TabPlaceholder title="Qualification" description="Account qualification data and signals will be displayed here." />;
-      case 'decision-cycle':
-        return <DecisionCycleTab accountId={accountId} accountName={account?.company_name} />;
-      case 'activities':
-        return <AccountActivitiesTab accountId={accountId} account={account} />;
-      case 'contacts':
-        return <AccountContactsTab accountId={accountId} account={account} />;
-      case 'signals':
-        return <TabPlaceholder title="Signals" description="Account signals and alerts will be displayed here." />;
-      default:
-        return <TabPlaceholder title="Summary" description="Account summary and key information will be displayed here." />;
-    }
-  }, [tab, accountId, account]);
+  // Track which heavy tabs have been visited (lazy mount)
+  const [mountedTabs, setMountedTabs] = useState(new Set());
 
-  return content;
+  useEffect(() => {
+    if (['decision-cycle', 'activities', 'contacts'].includes(tab)) {
+      setMountedTabs((prev) => {
+        if (prev.has(tab)) return prev;
+        const next = new Set(prev);
+        next.add(tab);
+        return next;
+      });
+    }
+  }, [tab]);
+
+  return (
+    <>
+      {/* KeepAlive tabs: mounted once, hidden with CSS when inactive */}
+      {mountedTabs.has('decision-cycle') && (
+        <Box sx={{ display: tab === 'decision-cycle' ? 'block' : 'none' }}>
+          <DecisionCycleTab accountId={accountId} accountName={account?.company_name} />
+        </Box>
+      )}
+      {mountedTabs.has('activities') && (
+        <Box sx={{ display: tab === 'activities' ? 'block' : 'none' }}>
+          <AccountActivitiesTab accountId={accountId} account={account} />
+        </Box>
+      )}
+      {mountedTabs.has('contacts') && (
+        <Box sx={{ display: tab === 'contacts' ? 'block' : 'none' }}>
+          <AccountContactsTab accountId={accountId} account={account} />
+        </Box>
+      )}
+
+      {/* Lightweight tabs: conditional rendering (no SWR hooks) */}
+      {tab === 'summary' && (
+        <TabPlaceholder title="Summary" description="Account summary and key information will be displayed here." />
+      )}
+      {tab === 'qualification' && (
+        <TabPlaceholder title="Qualification" description="Account qualification data and signals will be displayed here." />
+      )}
+      {tab === 'signals' && (
+        <TabPlaceholder title="Signals" description="Account signals and alerts will be displayed here." />
+      )}
+    </>
+  );
 }
 
 // ==============================|| TAB PLACEHOLDER ||============================== //

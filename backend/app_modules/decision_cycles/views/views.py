@@ -21,7 +21,13 @@ from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
-from core.cache_utils import invalidate_tag
+from core.cache_utils import (
+    invalidate_tag,
+    build_drf_cache_key,
+    cache_get_set,
+    get_permissions_version,
+    _is_redis_backend,
+)
 
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from permissions.owner_scope import OwnerScopeMixin
@@ -364,9 +370,11 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
     @action(detail=False, methods=['get'], url_path='by-account/(?P<account_id>[^/.]+)')
     def by_account(self, request, account_id=None):
         """
-        Get all decision cycles for a specific account.
+        Get all decision cycles for a specific account with Redis caching.
         
         GET /decision-cycles/by-account/{account_id}/
+        
+        Cache: 60s, tag 'decision_cycles', keyed by account_id + user.
         
         Returns cycle data including steps with activities for timeline display.
         
@@ -390,6 +398,30 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             'account_id': account_id
         })
         
+        if not _is_redis_backend():
+            return Response(self._produce_by_account(request, account_id, ctx))
+        
+        client_id = self.get_client_id()
+        cache_key = build_drf_cache_key(
+            namespace='decision_cycles_by_account',
+            client_id=client_id,
+            user_id=request.user.id,
+            perm_version=get_permissions_version(),
+            extra=str(account_id),
+            tag_namespace='decision_cycles',
+        )
+        
+        cached_data = cache_get_set(
+            key=cache_key,
+            producer=lambda: self._produce_by_account(request, account_id, ctx),
+            ttl=60,
+            tag=(client_id, 'decision_cycles'),
+        )
+        
+        return Response(cached_data)
+    
+    def _produce_by_account(self, request, account_id, ctx):
+        """Produce by_account data dict (cache-friendly, no Response wrapper)."""
         # Import models for prefetch
         from app_modules.activities.models import Activity
         from ..models import DecisionStepContact, DecisionStepDepartment
@@ -509,13 +541,13 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             }
         )
 
-        return Response({
+        return {
             'success': True,
             'data': {
                 'results': serializer.data,
                 'count': len(cycles)
             }
-        })
+        }
 
 
 # ============================================================================

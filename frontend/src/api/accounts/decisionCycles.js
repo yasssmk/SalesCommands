@@ -384,6 +384,12 @@ export function useGetDecisionCyclesByAccount(accountId) {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     shouldRetryOnError: true,
+    // Performance: prevent redundant fetches on fast tab round-trips
+    // SWR deduplicates requests with the same key within this window
+    dedupingInterval: 10000,
+    // Show stale data instantly while revalidating in background
+    // Avoids loading skeleton flash on tab switch
+    keepPreviousData: true,
   });
 
   const memoizedValue = useMemo(
