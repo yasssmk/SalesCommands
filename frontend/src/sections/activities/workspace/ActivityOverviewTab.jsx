@@ -523,7 +523,8 @@ function EditableTextField({
   fieldKey, 
   onSave, 
   placeholder = 'Click to add...', 
-  emptyText = 'Click to add'
+  emptyText = 'Click to add',
+  disabled = false
 }) {
   const theme = useTheme();
   const inputRef = useRef(null);
@@ -545,9 +546,10 @@ function EditableTextField({
   }, [isEditing]);
 
   const handleStartEdit = useCallback(() => {
+    if (disabled) return;
     setEditValue(value || '');
     setIsEditing(true);
-  }, [value]);
+  }, [value, disabled]);
 
   const handleCancel = useCallback(() => {
     setEditValue(value || '');
@@ -584,7 +586,11 @@ function EditableTextField({
 
   if (isEditing) {
     return (
-      <Stack direction="row" spacing={1} alignItems="center">
+      <Stack 
+        direction="row" 
+        spacing={0.5} 
+        alignItems="center"
+      >
         <TextField
           inputRef={inputRef}
           value={editValue}
@@ -624,9 +630,9 @@ function EditableTextField({
       alignItems="center"
       onClick={handleStartEdit}
       sx={{ 
-        cursor: 'pointer',
+        cursor: disabled ? 'default' : 'pointer',
         py: 0.5,
-        '&:hover .edit-icon': { opacity: 1 }
+        '&:hover .edit-icon': { opacity: disabled ? 0 : 1 }
       }}
     >
       <Typography 
@@ -655,7 +661,8 @@ EditableTextField.propTypes = {
   fieldKey: PropTypes.string.isRequired,
   onSave: PropTypes.func.isRequired,
   placeholder: PropTypes.string,
-  emptyText: PropTypes.string
+  emptyText: PropTypes.string,
+  disabled: PropTypes.bool
 };
 
 // ==============================|| UNIFIED DATE SECTION (COMPACT) ||============================== //
@@ -667,7 +674,7 @@ EditableTextField.propTypes = {
  * Edit mode: [toggle + pickers] [✓] [✗] — standard inline row
  * Overdue detection on both scheduled_date and due_date
  */
-function UnifiedDateSection({ activity, onSaveBatch }) {
+function UnifiedDateSection({ activity, onSaveBatch, disabled = false }) {
   const theme = useTheme();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -698,6 +705,7 @@ function UnifiedDateSection({ activity, onSaveBatch }) {
     new Date(currentDate) < new Date();
 
   const handleStartEdit = () => {
+    if (disabled) return;
     setDraftMode(currentMode);
     setDraftDate(currentDate ? dayjs(currentDate) : null);
     setDraftTime(currentTime ? dayjs(`1970-01-01T${currentTime}`) : null);
@@ -815,8 +823,8 @@ function UnifiedDateSection({ activity, onSaveBatch }) {
     <Box
       onClick={handleStartEdit}
       sx={{
-        cursor: 'pointer',
-        '&:hover .edit-icon': { opacity: 1 }
+        cursor: disabled ? 'default' : 'pointer',
+        '&:hover .edit-icon': { opacity: disabled ? 0 : 1 }
       }}
     >
       {/* Label — identical to CTA: caption + gutterBottom + display:block, no wrapper padding */}
@@ -870,7 +878,8 @@ function UnifiedDateSection({ activity, onSaveBatch }) {
 
 UnifiedDateSection.propTypes = {
   activity: PropTypes.object,
-  onSaveBatch: PropTypes.func.isRequired
+  onSaveBatch: PropTypes.func.isRequired,
+  disabled: PropTypes.bool
 };
 
 // ==============================|| EDITABLE DESCRIPTION (SAVE/CANCEL) ||============================== //
@@ -880,7 +889,7 @@ UnifiedDateSection.propTypes = {
  * Same inline row pattern as EditableTextField and UnifiedDateSection.
  * No auto-save — changes are local until user confirms.
  */
-function EditableDescription({ value, fieldKey, onSave, placeholder, emptyText, minRows = 2, maxRows = 4 }) {
+function EditableDescription({ value, fieldKey, onSave, placeholder, emptyText, minRows = 2, maxRows = 4, disabled = false }) {
   const theme = useTheme();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || '');
@@ -891,6 +900,7 @@ function EditableDescription({ value, fieldKey, onSave, placeholder, emptyText, 
   }, [value, editing]);
 
   const handleStartEdit = () => {
+    if (disabled) return;
     setDraft(value || '');
     setEditing(true);
   };
@@ -965,9 +975,9 @@ function EditableDescription({ value, fieldKey, onSave, placeholder, emptyText, 
       alignItems="flex-start"
       onClick={handleStartEdit}
       sx={{
-        cursor: 'pointer',
+        cursor: disabled ? 'default' : 'pointer',
         py: 0.5,
-        '&:hover .edit-icon': { opacity: 1 }
+        '&:hover .edit-icon': { opacity: disabled ? 0 : 1 }
       }}
     >
       <Typography
@@ -999,12 +1009,13 @@ EditableDescription.propTypes = {
   placeholder: PropTypes.string,
   emptyText: PropTypes.string,
   minRows: PropTypes.number,
-  maxRows: PropTypes.number
+  maxRows: PropTypes.number,
+  disabled: PropTypes.bool
 };
 
 // ==============================|| SECTION 1: DETAILS (COMBINED) ||============================== //
 
-function DetailsSection({ activity, onSave, onSaveBatch }) {
+function DetailsSection({ activity, onSave, onSaveBatch, isLocked = false  }) {
   return (
     <Box>
       <SectionHeader icon={BulbOutlined} title="Details" />
@@ -1031,13 +1042,14 @@ function DetailsSection({ activity, onSave, onSaveBatch }) {
                 onSave={onSave}
                 placeholder="Main objective for this activity..."
                 emptyText="Click to define objective..."
+                disabled={isLocked}
               />
             </Box>
 
             <Divider orientation="vertical" flexItem />
 
             <Box sx={{ minWidth: 160, flexShrink: 0 }}>
-              <UnifiedDateSection activity={activity} onSaveBatch={onSaveBatch} />
+              <UnifiedDateSection activity={activity} onSaveBatch={onSaveBatch} disabled={isLocked} />
             </Box>
           </Stack>
 
@@ -1054,6 +1066,7 @@ function DetailsSection({ activity, onSave, onSaveBatch }) {
               emptyText="Click to add description..."
               minRows={2}
               maxRows={4}
+              disabled={isLocked}
             />
           </Box>
         </Stack>
@@ -1065,12 +1078,13 @@ function DetailsSection({ activity, onSave, onSaveBatch }) {
 DetailsSection.propTypes = {
   activity: PropTypes.object,
   onSave: PropTypes.func.isRequired,
-  onSaveBatch: PropTypes.func.isRequired
+  onSaveBatch: PropTypes.func.isRequired,
+  isLocked: PropTypes.bool
 };
 
 // ==============================|| SECTION 2: PEOPLE - INTERNAL TEAM ||============================== //
 
-function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
+function InternalTeamSubsection({ owner, invitedUsers = [], onSave, isLocked = false }) {
   const theme = useTheme();
   
   // Edit states
@@ -1165,7 +1179,7 @@ function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
           >
             Internal Team
           </Typography>
-          {!addingUser && (
+          {!addingUser && !isLocked && (
             <IconButton 
               size="small" 
               onClick={() => setAddingUser(true)} 
@@ -1253,7 +1267,7 @@ function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
             ) : (
               <UserCard
                 user={owner}
-                onEdit={() => setEditingOwner(true)}
+                onEdit={isLocked ? undefined : () => setEditingOwner(true)}
                 showEmail
                 size="small"
                 avatarColor="primary"
@@ -1275,7 +1289,7 @@ function InternalTeamSubsection({ owner, invitedUsers = [], onSave }) {
                 <UserCard
                   key={user.id}
                   user={user}
-                  onRemove={() => setConfirmRemoveUser(user)}
+                  onRemove={isLocked ? undefined : () => setConfirmRemoveUser(user)}
                   showEmail
                   size="small"
                   avatarColor="secondary"
@@ -1379,7 +1393,7 @@ InternalTeamSubsection.propTypes = {
 // ==============================|| SECTION 2: PEOPLE - EXTERNAL CONTACTS ||============================== //
 
 
-function ExternalContactsSubsection({ contacts = [], accountId, activityType, onSave }) {
+function ExternalContactsSubsection({ contacts = [], accountId, activityType, onSave, isLocked = false }) {
   const theme = useTheme();
   const router = useRouter();
   
@@ -1444,7 +1458,7 @@ function ExternalContactsSubsection({ contacts = [], accountId, activityType, on
           <Typography variant="caption" fontWeight={600} color="text.secondary" textTransform="uppercase">
             External Contacts
           </Typography>
-          {!addingContact && (
+          {!addingContact && !isLocked && (
             <IconButton 
               size="small" 
               onClick={() => setAddingContact(true)} 
@@ -1468,7 +1482,7 @@ function ExternalContactsSubsection({ contacts = [], accountId, activityType, on
             <ContactCard
               key={contact.id}
               contact={contact}
-              onRemove={() => setConfirmRemove(contact)}
+              onRemove={isLocked ? undefined : () => setConfirmRemove(contact)}
               onClick={() => handleContactClick(contact)}
               showPhone={showPhone}
               showEmail={showEmail}
@@ -1574,7 +1588,7 @@ ExternalContactsSubsection.propTypes = {
 
 // ==============================|| SECTION 2: PEOPLE (MAIN) ||============================== //
 
-function PeopleSection({ activity, onSave, clientId }) {
+function PeopleSection({ activity, onSave, clientId, isLocked = false }) {
   const owner = activity?.owner_detail;
   const invitedUsers = activity?.invited_users_detail || [];
   const contacts = activity?.contacts_detail || [];
@@ -1603,6 +1617,7 @@ function PeopleSection({ activity, onSave, clientId }) {
               invitedUsers={invitedUsers}
               onSave={onSave}
               clientId={clientId}
+              isLocked={isLocked}
             />
           </Box>
         </Grid>
@@ -1625,6 +1640,7 @@ function PeopleSection({ activity, onSave, clientId }) {
               accountId={accountId}
               activityType={activity?.activity_type}
               onSave={onSave}
+              isLocked={isLocked}
             />
           </Box>
         </Grid>
@@ -1641,7 +1657,7 @@ PeopleSection.propTypes = {
 
 // ==============================|| SECTION 3: LINKED CONTEXT - CYCLE/STEP ||============================== //
 
-function CycleStepSubsection({ activity, onSave }) {
+function CycleStepSubsection({ activity, onSave, isLocked = false }) {
   const theme = useTheme();
   const router = useRouter();
   
@@ -1701,7 +1717,7 @@ function CycleStepSubsection({ activity, onSave }) {
             options={cycleOptions}
             displayValue={activity?.decision_cycle_detail?.name}
             placeholder="No cycle"
-            disabled={cyclesLoading}
+            disabled={cyclesLoading || isLocked}
           />
       </Box>
 
@@ -1718,7 +1734,7 @@ function CycleStepSubsection({ activity, onSave }) {
               options={stepOptions}
               displayValue={activity?.decision_step_detail?.name}
               placeholder="Select a step"
-              disabled={stepsLoading}
+              disabled={stepsLoading || isLocked}
               allowEmpty={false}
             />
         </Box>
@@ -1841,7 +1857,7 @@ LinkedActivitiesSubsection.propTypes = {
 
 // ==============================|| SECTION 3: LINKED CONTEXT (MAIN) ||============================== //
 
-function LinkedContextSection({ activity, onSave }) {
+function LinkedContextSection({ activity, onSave, isLocked = false }) {
   return (
     <Box>
       <SectionHeader icon={ApartmentOutlined} title="Linked Context" />
@@ -1857,7 +1873,7 @@ function LinkedContextSection({ activity, onSave }) {
       >
         <Stack spacing={2.5}>
           {/* Row 1: Cycle & Step */}
-          <CycleStepSubsection activity={activity} onSave={onSave} />
+         <CycleStepSubsection activity={activity} onSave={onSave} isLocked={isLocked} />
 
           {/* Divider */}
           <Divider />
@@ -1904,7 +1920,7 @@ function ComingSoonBanner() {
 
 // ==============================|| ACTIVITY OVERVIEW TAB (MAIN COMPONENT) ||============================== //
 
-export default function ActivityOverviewTab({ activity, onUpdate, mutate }) {
+export default function ActivityOverviewTab({ activity, onUpdate, mutate, isLocked = false }) {
   const { client } = useAuth();
   const clientId = client?.id;
 
@@ -1916,6 +1932,7 @@ export default function ActivityOverviewTab({ activity, onUpdate, mutate }) {
    * @returns {Promise<boolean>} Success status
    */
   const handleSave = async (fieldKey, newValue) => {
+    if (isLocked) return false;
     try {
       const result = await updateActivity(activity.id, { [fieldKey]: newValue });
       
@@ -1942,6 +1959,7 @@ export default function ActivityOverviewTab({ activity, onUpdate, mutate }) {
    * @returns {Promise<boolean>} Success status
    */
   const handleSaveBatch = async (payload) => {
+    if (isLocked) return false;
     try {
       const result = await updateActivity(activity.id, payload);
 
@@ -1963,13 +1981,13 @@ export default function ActivityOverviewTab({ activity, onUpdate, mutate }) {
   return (
     <Stack spacing={3}>
       {/* Section 1: Details (CTA + Description + Schedule) */}
-      <DetailsSection activity={activity} onSave={handleSave} onSaveBatch={handleSaveBatch} />
+      <DetailsSection activity={activity} onSave={handleSave} onSaveBatch={handleSaveBatch} isLocked={isLocked} />
 
       {/* Section 2: People */}
-      <PeopleSection activity={activity} onSave={handleSave} clientId={clientId} />
+      <PeopleSection activity={activity} onSave={handleSave} clientId={clientId} isLocked={isLocked} />
 
       {/* Section 3: Linked Context */}
-      <LinkedContextSection activity={activity} onSave={handleSave} />
+      <LinkedContextSection activity={activity} onSave={handleSave} isLocked={isLocked} />
 
       {/* Section 4: Coming Soon */}
       <ComingSoonBanner />
@@ -1980,5 +1998,6 @@ export default function ActivityOverviewTab({ activity, onUpdate, mutate }) {
 ActivityOverviewTab.propTypes = {
   activity: PropTypes.object.isRequired,
   onUpdate: PropTypes.func,
-  mutate: PropTypes.func
+  mutate: PropTypes.func,
+  isLocked: PropTypes.bool
 };

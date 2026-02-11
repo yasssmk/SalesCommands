@@ -486,6 +486,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         cycle_summaries = CycleAggregationService().get_bulk_summaries(
             cycles,
             stalled_results=stalled_results,
+            step_derived_statuses=step_derived_statuses,
         )
 
         logger.debug("by_account_bulk_services_computed", extra={

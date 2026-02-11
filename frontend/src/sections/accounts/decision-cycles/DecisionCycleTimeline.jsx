@@ -436,7 +436,8 @@ function PipelineStepColumn({
   onStepClick, 
   onActivityClick,
   onAddActivity,
-  onLinkExisting
+  onLinkExisting,
+  isCycleClosed = false
 }) {
   const theme = useTheme();
   
@@ -700,52 +701,54 @@ function PipelineStepColumn({
         )}
       </Box>
       
-      {/* Action Buttons */}
-      <Box sx={{ p: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-        <Stack spacing={0.5}>
-          {/* Add New Activity */}
-          <Button
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={(e) => {
-              e.stopPropagation();
-              onAddActivity?.(step);
-            }}
-            fullWidth
-            sx={{
-              justifyContent: 'flex-start',
-              color: 'text.secondary',
-              '&:hover': {
-                bgcolor: 'primary.lighter',
-                color: 'primary.main'
-              }
-            }}
-          >
-            Add Activity
-          </Button>
-          
-          {/* Link Existing Activity */}
-          <Button
-            size="small"
-            startIcon={<LinkOutlined />}
-            onClick={(e) => {
-              e.stopPropagation();
-              onLinkExisting?.(step);
-            }}
-            fullWidth
-            sx={{
-              justifyContent: 'flex-start',
-              color: 'text.secondary',
-              '&:hover': {
-                bgcolor: 'secondary.lighter',
-                color: 'secondary.main'
-              }
-            }}
-          >
-            Link Existing
-          </Button>
-        </Stack>
-      </Box>
+      {/* Action Buttons (hidden when cycle is closed) */}
+      {!isCycleClosed && (
+        <Box sx={{ p: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Stack spacing={0.5}>
+            {/* Add New Activity */}
+            <Button
+              size="small"
+              startIcon={<PlusOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddActivity?.(step);
+              }}
+              fullWidth
+              sx={{
+                justifyContent: 'flex-start',
+                color: 'text.secondary',
+                '&:hover': {
+                  bgcolor: 'primary.lighter',
+                  color: 'primary.main'
+                }
+              }}
+            >
+              Add Activity
+            </Button>
+            
+            {/* Link Existing Activity */}
+            <Button
+              size="small"
+              startIcon={<LinkOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onLinkExisting?.(step);
+              }}
+              fullWidth
+              sx={{
+                justifyContent: 'flex-start',
+                color: 'text.secondary',
+                '&:hover': {
+                  bgcolor: 'secondary.lighter',
+                  color: 'secondary.main'
+                }
+              }}
+            >
+              Link Existing
+            </Button>
+          </Stack>
+        </Box>
+      )}
     </Paper>
   );
 }
@@ -756,7 +759,8 @@ PipelineStepColumn.propTypes = {
   onStepClick: PropTypes.func,
   onActivityClick: PropTypes.func,
   onAddActivity: PropTypes.func,
-  onLinkExisting: PropTypes.func
+  onLinkExisting: PropTypes.func,
+  isCycleClosed: PropTypes.bool
 };
 
 // ==============================|| COLUMN VISIBILITY MENU ||============================== //
@@ -988,6 +992,9 @@ export default function DecisionCycleTimeline({
     return grouped;
   }, [steps]);
   
+  // Derive cycle closed state (WON or LOST)
+  const isCycleClosed = cycle?.cycle_status === 'WON' || cycle?.cycle_status === 'LOST';
+
   // Calculate pipeline progress
   const pipelineProgress = useMemo(() => {
     if (!steps.length) return { validated: 0, total: 0, percent: 0 };
@@ -1090,6 +1097,15 @@ export default function DecisionCycleTimeline({
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Stack direction="row" alignItems="center" spacing={2}>
           <Typography variant="h6">{cycle.name}</Typography>
+          {isCycleClosed && (
+            <Chip
+              label={cycle.cycle_status === 'WON' ? 'Won' : 'Lost'}
+              size="small"
+              color={cycle.cycle_status === 'WON' ? 'success' : 'error'}
+              variant="filled"
+              icon={cycle.cycle_status === 'WON' ? <CheckCircleFilled /> : <CloseCircleFilled />}
+            />
+          )}
           <Chip 
             label={`${pipelineProgress.validated}/${pipelineProgress.total} validated`}
             size="small"
@@ -1171,6 +1187,7 @@ export default function DecisionCycleTimeline({
               onActivityClick={handleActivityClick}
               onAddActivity={onAddActivity}
               onLinkExisting={handleLinkExisting}
+              isCycleClosed={isCycleClosed}
             />
           ))}
         

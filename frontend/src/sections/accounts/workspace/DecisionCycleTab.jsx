@@ -99,6 +99,9 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   }, [currentCycleId, cycles]);
   
   const currentCycleLoading = cyclesLoading;
+
+  // Derive cycle closed state (WON or LOST) — blocks activity creation
+  const isCycleClosed = currentCycle?.cycle_status === 'WON' || currentCycle?.cycle_status === 'LOST';
   
   // ==============================|| CYCLE HANDLERS ||============================== //
   
@@ -192,10 +195,11 @@ export default function DecisionCycleTab({ accountId, accountName }) {
    * Handle "Add Activity" button click in a step column
    * Opens ActivityModal with step pre-selected
    */
-  const handleAddActivity = useCallback((step) => {
+   const handleAddActivity = useCallback((step) => {
+    if (isCycleClosed) return;
     setActivityTargetStep(step);
     setActivityModalOpen(true);
-  }, []);
+  }, [isCycleClosed]);
   
   /**
    * Handle Activity Modal close

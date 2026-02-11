@@ -104,7 +104,7 @@ SectionCard.propTypes = {
 
 // ==============================|| KEY TAKEAWAYS SECTION ||============================== //
 
-function KeyTakeawaysSection({ activity, onSave }) {
+function KeyTakeawaysSection({ activity, onSave, isLocked = false }){
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(activity?.outcome_notes || '');
   const [saving, setSaving] = useState(false);
@@ -178,15 +178,15 @@ function KeyTakeawaysSection({ activity, onSave }) {
         </Stack>
       ) : (
         <Box
-          onClick={() => setEditing(true)}
+          onClick={() => !isLocked && setEditing(true)}
           sx={{
             p: 2,
             borderRadius: 1,
             bgcolor: 'action.hover',
-            cursor: 'pointer',
+            cursor: isLocked ? 'default' : 'pointer',
             minHeight: 80,
             '&:hover': {
-              bgcolor: 'action.selected'
+              bgcolor: isLocked ? 'action.hover' : 'action.selected'
             }
           }}
         >
@@ -305,7 +305,7 @@ ActivityMiniCard.propTypes = {
 
 // ==============================|| NEXT STEPS SECTION ||============================== //
 
-function NextStepsSection({ activity, onCreateActivity, onUpdate }) {
+function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = false }) {
   const router = useRouter();
   const theme = useTheme();
   
@@ -413,51 +413,53 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate }) {
           </Box>
         )}
 
-        {/* Create follow-up buttons */}
-        <Box>
-          {hasNextActivity && (
-            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-              Create additional follow-up
-            </Typography>
-          )}
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<PlusOutlined />}
-              onClick={() => onCreateActivity('MEETING')}
-            >
-              Meeting
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<PlusOutlined />}
-              onClick={() => onCreateActivity('CALL')}
-            >
-              Call
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<PlusOutlined />}
-              onClick={() => onCreateActivity('EMAIL')}
-            >
-              Email
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<PlusOutlined />}
-              onClick={() => onCreateActivity('TASK')}
-            >
-              Task
-            </Button>
-          </Stack>
-        </Box>
+        {/* Create follow-up buttons (hidden when locked) */}
+        {!isLocked && (
+          <Box>
+            {hasNextActivity && (
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                Create additional follow-up
+              </Typography>
+            )}
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<PlusOutlined />}
+                onClick={() => onCreateActivity('MEETING')}
+              >
+                Meeting
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<PlusOutlined />}
+                onClick={() => onCreateActivity('CALL')}
+              >
+                Call
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<PlusOutlined />}
+                onClick={() => onCreateActivity('EMAIL')}
+              >
+                Email
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<PlusOutlined />}
+                onClick={() => onCreateActivity('TASK')}
+              >
+                Task
+              </Button>
+            </Stack>
+          </Box>
+        )}
 
         {/* Empty state hint - only if no next activities */}
-        {!hasNextActivity && (
+        {!hasNextActivity && !isLocked && (
           <Box
             sx={{
               p: 2,
@@ -794,7 +796,7 @@ ResultSection.propTypes = {
 
 // ==============================|| ACTIVITY OUTCOME TAB ||============================== //
 
-export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
+export default function ActivityOutcomeTab({ activity, onSave, onUpdate, isLocked = false }) {
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [activityModalType, setActivityModalType] = useState(null);
 
@@ -838,8 +840,9 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
               activity={activity}
               onCreateActivity={handleCreateActivity}
               onUpdate={onUpdate}
+              isLocked={isLocked}
             />
-            <KeyTakeawaysSection activity={activity} onSave={onSave} />
+            <KeyTakeawaysSection activity={activity} onSave={onSave} isLocked={isLocked} />
           </Stack>
         </Grid>
 
@@ -871,5 +874,6 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate }) {
 ActivityOutcomeTab.propTypes = {
   activity: PropTypes.object.isRequired,
   onSave: PropTypes.func.isRequired,
-  onUpdate: PropTypes.func
+  onUpdate: PropTypes.func,
+  isLocked: PropTypes.bool
 };

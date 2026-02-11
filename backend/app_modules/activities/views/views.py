@@ -42,6 +42,7 @@ from ..serializers import (
 from ..constants import ActivityType, ActivityStatus, ActivityOutcome
 from ..filters import ActivityFilter
 from ..services.activity_creation_service import ActivityCreationService
+from ..constants import NoNextStepReason
 
 logger = get_logger(__name__)
 
@@ -606,7 +607,6 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         
         # Validate no_next_step_reason format if provided
         if next_step_agreed is False and no_next_step_reason:
-            from ..constants import NoNextStepReason
             valid_codes = [choice[0] for choice in NoNextStepReason.choices]
             is_standard_code = no_next_step_reason in valid_codes
             is_other_format = no_next_step_reason.startswith('OTHER:') and len(no_next_step_reason) > 6
@@ -679,6 +679,53 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 }
             )
         
+        # ── Cycle-level locking: auto-cancel PLANNED activities on cycle close ──
+        cancelled_count = 0
+        if (
+            activity.decision_cycle_id
+            and no_next_step_reason in (
+                NoNextStepReason.CLOSE_WON,
+                NoNextStepReason.CLOSE_LOST,
+            )
+        ):
+            planned_in_cycle = Activity.objects.filter(
+                decision_cycle_id=activity.decision_cycle_id,
+                status=ActivityStatus.PLANNED,
+            ).exclude(id=activity.id)
+            
+            cancelled_count = planned_in_cycle.count()
+            
+            if cancelled_count > 0:
+                # Bulk cancel: set status + outcome_notes for traceability
+                close_label = 'Won' if no_next_step_reason == NoNextStepReason.CLOSE_WON else 'Lost'
+                planned_in_cycle.update(
+                    status=ActivityStatus.CANCELLED,
+                    outcome_notes=f'Auto-cancelled: cycle closed as {close_label}',
+                )
+                
+                logger.info("cycle_activities_auto_cancelled", extra={
+                    **ctx,
+                    'activity_id': str(activity.id),
+                    'cycle_id': str(activity.decision_cycle_id),
+                    'cancelled_count': cancelled_count,
+                    'reason': no_next_step_reason,
+                })
+                
+                audit_log(
+                    event='cycle_activities_auto_cancelled',
+                    action='update',
+                    actor_id=str(request.user.id),
+                    client_id=str(self.get_client_id()),
+                    target_type='decision_cycle',
+                    target_id=str(activity.decision_cycle_id),
+                    outcome='success',
+                    extra={
+                        'cancelled_count': cancelled_count,
+                        'trigger_activity_id': str(activity.id),
+                        'reason': no_next_step_reason,
+                    }
+                )
+        
         # Invalidate caches (activities + cross-module)
         self._invalidate_activity_caches(self.get_client_id())
         
@@ -691,7 +738,8 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         serializer = ActivitySerializer(activity, context={'request': request})
         return Response({
             'success': True,
-            'data': serializer.data
+            'data': serializer.data,
+            'cancelled_count': cancelled_count,
         })
     
     @action(detail=True, methods=['post'])

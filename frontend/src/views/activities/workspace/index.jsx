@@ -37,6 +37,9 @@ export default function ActivityWorkspacePage() {
 
   const { activity, activityLoading, activityError, mutateActivity } = useGetActivity(activityId);
 
+  // Activity is locked when completed or cancelled — workspace becomes read-only
+  const isLocked = activity?.status === 'COMPLETED' || activity?.status === 'CANCELLED';
+
   // Handle tab change via URL
   const handleTabChange = (newTab) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -44,8 +47,10 @@ export default function ActivityWorkspacePage() {
     router.push(`?${params.toString()}`, { scroll: false });
   };
 
-  // Handle inline field save
+  // Handle inline field save — blocked when activity is locked
   const handleSaveField = async (fieldKey, newValue) => {
+    if (isLocked) return false;
+
     try {
       const result = await updateActivity(activityId, { [fieldKey]: newValue });
       if (result.success) {
@@ -67,17 +72,17 @@ export default function ActivityWorkspacePage() {
   const renderTabContent = () => {
     switch (currentTab) {
       case 'overview':
-        return <ActivityOverviewTab activity={activity} onSave={handleSaveField} />;
+        return <ActivityOverviewTab activity={activity} onSave={handleSaveField} isLocked={isLocked} />;
       case 'preparation':
-        return <ActivityPreparationTab activity={activity} />;
+        return <ActivityPreparationTab activity={activity} isLocked={isLocked} />;
       case 'outcome':
-        return <ActivityOutcomeTab activity={activity} onSave={handleSaveField} onUpdate={mutateActivity} />;  
+        return <ActivityOutcomeTab activity={activity} onSave={handleSaveField} onUpdate={mutateActivity} isLocked={isLocked} />;  
       case 'transcript':
         return <ActivityTranscriptTab activity={activity} />;
       case 'signals':
       return <ActivitySignalsTab activity={activity} />;
       default:
-        return <ActivityOverviewTab activity={activity} onSave={handleSaveField} />;
+        return <ActivityOverviewTab activity={activity} onSave={handleSaveField} isLocked={isLocked} />;
     }
   };
 
@@ -152,11 +157,13 @@ export default function ActivityWorkspacePage() {
       </Box>
 
       {/* Header */}
+      {/* Header */}
       <ActivityHeader 
         activity={activity}
         loading={activityLoading}
         onSave={handleSaveField} 
         onUpdate={mutateActivity}
+        isLocked={isLocked}
       />
 
       {/* Tabs */}

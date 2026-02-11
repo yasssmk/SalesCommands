@@ -140,7 +140,7 @@ function ActivityHeaderSkeleton() {
 
 // ==============================|| ACTIVITY HEADER ||============================== //
 
-export default function ActivityHeader({ activity, loading, onSave, onUpdate }) {
+export default function ActivityHeader({ activity, loading, onSave, onUpdate, isLocked = false }) {
   const theme = useTheme();
   const router = useRouter();
 
@@ -364,6 +364,7 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
                 placeholder="Activity title..."
                 variant="h3"
                 typographyProps={{ component: 'h1', noWrap: true }}
+                disabled={isLocked}
               />
             </Box>
 
@@ -373,8 +374,8 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
             </IconButton>
             <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
               
-              {/* Complete - For PLANNED  */}
-              {canComplete && (
+              {/* Complete - For PLANNED (hidden when locked) */}
+              {canComplete && !isLocked && (
                 <MenuItem onClick={handleCompleteClick}>
                   <ListItemIcon>
                     <CheckCircleOutlined style={{ color: theme.palette.success.main }} />
@@ -383,8 +384,8 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
                 </MenuItem>
               )}
               
-              {/* Cancel - For PLANNED  */}
-              {canCancel && (
+              {/* Cancel - For PLANNED (hidden when locked) */}
+              {canCancel && !isLocked && (
                 <MenuItem onClick={handleCancelClick}>
                   <ListItemIcon>
                     <StopOutlined style={{ color: theme.palette.warning.main }} />
@@ -418,15 +419,15 @@ export default function ActivityHeader({ activity, loading, onSave, onUpdate }) 
 
           {/* Row 2: Type + Status + Outcome Chips */}
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-            {/* Type Chip - Clickable to change */}
-            <Tooltip title="Click to change type" arrow>
+            {/* Type Chip - Clickable to change (disabled when locked) */}
+            <Tooltip title={isLocked ? '' : 'Click to change type'} arrow>
               <Chip
                 label={ACTIVITY_TYPE_LABELS[activity.activity_type] || activity.activity_type}
                 color={typeChipColor}
                 size="small"
                 variant="filled"
-                onClick={handleTypeMenuOpen}
-                disabled={savingType}
+                onClick={isLocked ? undefined : handleTypeMenuOpen}
+                disabled={savingType || isLocked}
                 sx={{
                   cursor: 'pointer',
                   transition: 'all 0.2s',
@@ -638,5 +639,6 @@ ActivityHeader.propTypes = {
   }),
   loading: PropTypes.bool,
   onSave: PropTypes.func.isRequired,
-  onUpdate: PropTypes.func
+  onUpdate: PropTypes.func,
+  isLocked: PropTypes.bool
 };
