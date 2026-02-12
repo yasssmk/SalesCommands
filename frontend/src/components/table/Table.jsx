@@ -665,6 +665,7 @@ ReusableTable.propTypes = {
   expandedRowContent: PropTypes.func,
   enableExpanding: PropTypes.bool,
   enableImport: PropTypes.bool,
+  showAddButton: PropTypes.bool,
   filterConfig: PropTypes.object,
   // Advanced Filter Panel
   advancedFilterPanel: PropTypes.node,
