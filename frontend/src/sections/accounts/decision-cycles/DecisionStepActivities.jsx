@@ -12,7 +12,7 @@ import PropTypes from 'prop-types';
 import { useState, useCallback } from 'react';
 
 // material-ui
-import { alpha } from '@mui/material/styles';
+import { useTheme, alpha } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
@@ -64,6 +64,8 @@ const TYPE_ICONS = {
 // ==============================|| ACTIVITY ITEM ||============================== //
 
 function ActivityItem({ activity, onEdit, onDelete, onComplete, onCancel }) {
+  const theme = useTheme();
+  
   const TypeIcon = TYPE_ICONS[activity.activity_type] || QuestionCircleOutlined;
   const isCompleted = activity.status === 'COMPLETED';
   const isCancelled = activity.status === 'CANCELLED';
@@ -97,7 +99,7 @@ function ActivityItem({ activity, onEdit, onDelete, onComplete, onCancel }) {
               bgcolor: 'action.hover'
             }}
           >
-            <TypeIcon style={{ fontSize: 14 }} />
+            <TypeIcon style={{ fontSize: theme.iconSizes.sm }} />
           </Box>
         </Tooltip>
         
@@ -105,7 +107,7 @@ function ActivityItem({ activity, onEdit, onDelete, onComplete, onCancel }) {
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography 
             variant="body2" 
-            fontWeight={500} 
+            fontWeight={theme.typography.fontWeightMedium}  
             noWrap
             sx={{
               textDecoration: isCancelled ? 'line-through' : 'none',

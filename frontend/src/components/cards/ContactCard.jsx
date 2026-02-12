@@ -16,6 +16,7 @@
 import PropTypes from 'prop-types';
 
 // MUI
+import { useTheme } from '@mui/material/styles';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
@@ -74,6 +75,8 @@ function getContactDisplayName(contact) {
 // ==============================|| CONTACT INFO LINE ||============================== //
 
 function ContactInfoLine({ icon: Icon, value, type = 'text' }) {
+  const theme = useTheme();
+
   if (!value) return null;
 
   const handleClick = () => {
@@ -99,7 +102,7 @@ function ContactInfoLine({ icon: Icon, value, type = 'text' }) {
       }}
       onClick={type !== 'text' ? handleClick : undefined}
     >
-      <Icon style={{ fontSize: 12, color: '#8c8c8c' }} />
+      <Icon style={{ fontSize: theme.iconSizes.xs, color: theme.palette.text.secondary }} />
       <Typography 
         variant="caption" 
         color={type !== 'text' ? 'primary.main' : 'text.secondary'}

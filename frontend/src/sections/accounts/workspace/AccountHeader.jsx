@@ -5,15 +5,13 @@
 import PropTypes from 'prop-types';
 
 // material-ui
+import { useTheme } from '@mui/material/styles';
 import Avatar from '@mui/material/Avatar';
-import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
 // project imports
-import MainCard from 'components/MainCard';
 import EditableField from './EditableField';
 import EditableChip from './EditableChip';
 
@@ -96,259 +94,183 @@ const CLASSIFICATION_COLORS = {
   NONPROFIT: 'secondary'
 };
 
-// ==============================|| ACCOUNT HEADER - LOADING ||============================== //
-
-function AccountHeaderSkeleton() {
-  return (
-    <MainCard sx={{ mb: 2 }}>
-      <Stack spacing={2}>
-        {/* Company name skeleton */}
-        <Stack direction="row" alignItems="center" spacing={2}>
-          <Skeleton variant="circular" width={56} height={56} />
-          <Skeleton variant="text" width={280} height={40} />
-          <Skeleton variant="rectangular" width={80} height={32} sx={{ borderRadius: 1 }} />
-        </Stack>
-
-        {/* Chips skeleton */}
-        <Stack direction="row" spacing={1}>
-          <Skeleton variant="rectangular" width={70} height={24} sx={{ borderRadius: 4 }} />
-          <Skeleton variant="rectangular" width={90} height={24} sx={{ borderRadius: 4 }} />
-          <Skeleton variant="rectangular" width={100} height={24} sx={{ borderRadius: 4 }} />
-        </Stack>
-
-        {/* Info row skeleton */}
-        <Stack direction="row" spacing={3}>
-          <Skeleton variant="text" width={120} height={20} />
-          <Skeleton variant="text" width={140} height={20} />
-          <Skeleton variant="text" width={100} height={20} />
-        </Stack>
-
-        {/* Stats skeleton */}
-        <Stack direction="row" spacing={3} pt={1}>
-          <Skeleton variant="text" width={80} height={20} />
-          <Skeleton variant="text" width={80} height={20} />
-          <Skeleton variant="text" width={90} height={20} />
-          <Skeleton variant="text" width={70} height={20} />
-        </Stack>
-      </Stack>
-    </MainCard>
-  );
-}
-
-// ==============================|| ACCOUNT HEADER ||============================== //
+// ==============================|| ACCOUNT HEADER PROPS HOOK ||============================== //
 
 /**
- * Account Header Component
- * 
- * Displays account information in the workspace header with inline editing:
- * - Company logo (from Google Favicon) with fallback initials
- * - Company name (editable)
- * - Type, Classification, Industry badges (editable)
- * - Location, Owner, Team info (editable)
- * - Stats summary
- * 
- * @param {Object} props
- * @param {Object} props.account - Account data from workspace endpoint
- * @param {Object} props.stats - Stats data from workspace endpoint
- * @param {boolean} props.loading - Loading state
- * @param {Function} props.onSave - Callback when a field is saved (fieldKey, newValue) => Promise
- * @param {Array} props.industryOptions - Industry options for dropdown
+ * Hook that builds WorkspaceLayout-compatible header props from Account data.
+ *
+ * Maps Account header rows to WorkspaceLayout slots:
+ *   Row 1 → avatar, title (onTitleSave), headerActions (Website button)
+ *   Row 2 → chips (EditableChip: type, classification, industry)
+ *   Row 3 → infoItems (location, website, owner, team)
+ *   Stats → headerFooter (with own borderTop via WorkspaceLayout)
+ *
+ * @param {Object} params
+ * @param {Object} params.account - Account data
+ * @param {Object} params.stats - Stats data { contacts_count, activities_count, ... }
+ * @param {Function} params.onSave - (fieldKey, newValue) => Promise<boolean>
+ * @param {Array} params.industryOptions - [{ value, label }]
+ * @returns {Object} Props object spread into <WorkspaceLayout {...props} />
  */
-export default function AccountHeader({ 
-  account, 
-  stats, 
-  loading, 
+export default function useAccountHeaderProps({
+  account,
+  stats,
   onSave,
   industryOptions = []
 }) {
-  // ==============================|| LOADING STATE ||============================== //
-
-  if (loading) {
-    return <AccountHeaderSkeleton />;
-  }
-
-  // ==============================|| NO DATA STATE ||============================== //
+  const theme = useTheme();
 
   if (!account) {
-    return null;
+    return { avatar: null, title: '', chips: [], infoItems: [], headerFooter: null };
   }
 
-  // ==============================|| RENDER ||============================== //
+  // ==============================|| ROW 1: Avatar + Title + Actions ||============================== //
 
-  return (
-    <MainCard sx={{ mb: 2 }}>
-      <Stack spacing={2}>
-        {/* Row 1: Logo, Company Name, Website */}
-        <Stack
-          direction="row"
-          alignItems="center"
-          spacing={2}
-          sx={{ flexWrap: 'wrap' }}
-        >
-          {/* Company Logo/Avatar */}
-          <Avatar
-            src={getCompanyLogoUrl(account.website)}
-            alt={account.company_name}
-            sx={{
-              width: 56,
-              height: 56,
-              bgcolor: 'primary.main',
-              fontSize: '1.25rem',
-              fontWeight: 600
-            }}
-          >
-            {getCompanyInitials(account.company_name)}
-          </Avatar>
-
-          {/* Company Name - Editable */}
-          <Box sx={{ flexGrow: 1 }}>
-            <EditableField
-              value={account.company_name}
-              fieldKey="company_name"
-              onSave={onSave}
-              placeholder="Company name..."
-              variant="h3"
-              typographyProps={{ component: 'h1' }}
-            />
-          </Box>
-
-          {/* Website Button */}
-          {account.website && (
-            <Button
-              size="small"
-              variant="outlined"
-              color="secondary"
-              startIcon={<GlobalOutlined />}
-              href={account.website.startsWith('http') ? account.website : `https://${account.website}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              sx={{ flexShrink: 0 }}
-            >
-              Website
-            </Button>
-          )}
-        </Stack>
-
-        {/* Row 2: Type, Classification, Industry Badges - Editable */}
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-          <EditableChip
-            value={account.type}
-            fieldKey="type"
-            options={TYPE_OPTIONS}
-            onSave={onSave}
-            placeholder="Add type..."
-            color={TYPE_COLORS[account.type] || 'default'}
-            variant="filled"
-          />
-
-          <EditableChip
-            value={account.classification}
-            fieldKey="classification"
-            options={CLASSIFICATION_OPTIONS}
-            onSave={onSave}
-            placeholder="Add classification..."
-            color={CLASSIFICATION_COLORS[account.classification] || 'default'}
-            variant="outlined"
-          />
-
-          <EditableChip
-            value={account.industry}
-            fieldKey="industry"
-            options={industryOptions}
-            onSave={onSave}
-            placeholder="Add industry..."
-            color="default"
-            variant="outlined"
-          />
-        </Stack>
-
-        {/* Row 3: Location, Website URL, Owner, Team - Editable */}
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={{ xs: 1, sm: 3 }}
-          flexWrap="wrap"
-          useFlexGap
-        >
-          {/* Location - City, Country */}
-          <EditableField
-            value={[account.city, account.country].filter(Boolean).join(', ') || ''}
-            fieldKey="location"
-            onSave={async (key, value) => {
-              // Parse city, country from combined value
-              const parts = value.split(',').map(s => s.trim());
-              const city = parts[0] || '';
-              const country = parts[1] || '';
-              // Save both fields
-              if (onSave) {
-                await onSave('city', city);
-                if (country) {
-                  await onSave('country', country);
-                }
-              }
-            }}
-            placeholder="Add location..."
-            variant="body2"
-            typographyProps={{ color: 'text.secondary' }}
-            startIcon={<EnvironmentOutlined style={{ fontSize: 14 }} />}
-          />
-
-          {/* Website URL - Editable */}
-          <EditableField
-            value={account.website}
-            fieldKey="website"
-            onSave={onSave}
-            placeholder="Add website..."
-            variant="body2"
-            typographyProps={{ color: 'text.secondary' }}
-            startIcon={<GlobalOutlined style={{ fontSize: 14 }} />}
-          />
-
-          {/* Owner - Read only for now (would need user picker) */}
-          {account.account_owner && (
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              <UserOutlined style={{ fontSize: 14, color: 'inherit' }} />
-              <Typography variant="body2" color="text.secondary">
-                {account.account_owner.full_name}
-              </Typography>
-            </Stack>
-          )}
-
-          {/* Team - Read only (derived from owner) */}
-          {account.team && (
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              <TeamOutlined style={{ fontSize: 14, color: 'inherit' }} />
-              <Typography variant="body2" color="text.secondary">
-                {account.team.name}
-              </Typography>
-            </Stack>
-          )}
-        </Stack>
-
-        {/* Row 4: Stats Summary */}
-        {stats && (
-          <Box
-            sx={{
-              pt: 1,
-              borderTop: 1,
-              borderColor: 'divider'
-            }}
-          >
-            <Stack
-              direction="row"
-              spacing={{ xs: 2, sm: 4 }}
-              flexWrap="wrap"
-              useFlexGap
-            >
-              <StatItem label="Contacts" value={stats.contacts_count} />
-              <StatItem label="Activities" value={stats.activities_count} />
-              <StatItem label="Opportunities" value={stats.opportunities_count} />
-              <StatItem label="Signals" value={stats.signals_count} />
-            </Stack>
-          </Box>
-        )}
-      </Stack>
-    </MainCard>
+  const avatar = (
+    <Avatar
+      src={getCompanyLogoUrl(account.website)}
+      alt={account.company_name}
+      sx={{
+        width: 56,
+        height: 56,
+        bgcolor: 'primary.main',
+        fontSize: '1.25rem',
+        fontWeight: 600
+      }}
+    >
+      {getCompanyInitials(account.company_name)}
+    </Avatar>
   );
+
+  const title = account.company_name || '';
+
+  const onTitleSave = onSave
+    ? (fieldKey, value) => onSave('company_name', value)
+    : undefined;
+
+  const headerActions = account.website ? (
+    <Button
+      size="small"
+      variant="outlined"
+      color="secondary"
+      startIcon={<GlobalOutlined />}
+      href={account.website.startsWith('http') ? account.website : `https://${account.website}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      sx={{ flexShrink: 0 }}
+    >
+      Website
+    </Button>
+  ) : null;
+
+  // ==============================|| ROW 2: Chips ||============================== //
+
+  const chips = [
+    <EditableChip
+      key="type"
+      value={account.type}
+      fieldKey="type"
+      options={TYPE_OPTIONS}
+      onSave={onSave}
+      placeholder="Add type..."
+      color={TYPE_COLORS[account.type] || 'default'}
+      variant="filled"
+    />,
+    <EditableChip
+      key="classification"
+      value={account.classification}
+      fieldKey="classification"
+      options={CLASSIFICATION_OPTIONS}
+      onSave={onSave}
+      placeholder="Add classification..."
+      color={CLASSIFICATION_COLORS[account.classification] || 'default'}
+      variant="outlined"
+    />,
+    <EditableChip
+      key="industry"
+      value={account.industry}
+      fieldKey="industry"
+      options={industryOptions}
+      onSave={onSave}
+      placeholder="Add industry..."
+      color="default"
+      variant="outlined"
+    />
+  ];
+
+  // ==============================|| EXTRA ROWS (before divider) ||============================== //
+
+  const extraRows = [
+    <Stack
+      key="info-row"
+      direction={{ xs: 'column', sm: 'row' }}
+      spacing={{ xs: 1, sm: 3 }}
+      flexWrap="wrap"
+      useFlexGap
+    >
+      <EditableField
+        value={[account.city, account.country].filter(Boolean).join(', ') || ''}
+        fieldKey="location"
+        onSave={async (key, value) => {
+          const parts = value.split(',').map(s => s.trim());
+          const city = parts[0] || '';
+          const country = parts[1] || '';
+          if (onSave) {
+            await onSave('city', city);
+            if (country) await onSave('country', country);
+          }
+        }}
+        placeholder="Add location..."
+        variant="body2"
+        typographyProps={{ color: 'text.secondary' }}
+        startIcon={<EnvironmentOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+      />
+      <EditableField
+        value={account.website}
+        fieldKey="website"
+        onSave={onSave}
+        placeholder="Add website..."
+        variant="body2"
+        typographyProps={{ color: 'text.secondary' }}
+        startIcon={<GlobalOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+      />
+      {account.account_owner && (
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <UserOutlined style={{ fontSize: theme.iconSizes.sm, color: 'inherit' }} />
+          <Typography variant="body2" color="text.secondary">
+            {account.account_owner.full_name}
+          </Typography>
+        </Stack>
+      )}
+      {account.team && (
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <TeamOutlined style={{ fontSize: theme.iconSizes.sm, color: 'inherit' }} />
+          <Typography variant="body2" color="text.secondary">
+            {account.team.name}
+          </Typography>
+        </Stack>
+      )}
+    </Stack>
+  ];
+
+  // ==============================|| INFO ITEMS (after divider — stats) ||============================== //
+
+  const infoItems = stats ? [
+    <StatItem key="contacts" label="Contacts" value={stats.contacts_count} />,
+    <StatItem key="activities" label="Activities" value={stats.activities_count} />,
+    <StatItem key="opportunities" label="Opportunities" value={stats.opportunities_count} />,
+    <StatItem key="signals" label="Signals" value={stats.signals_count} />
+  ] : [];
+
+  return {
+    avatar,
+    title,
+    onTitleSave,
+    headerActions,
+    chips,
+    extraRows,
+    infoItems
+  };
 }
 
 // ==============================|| STAT ITEM ||============================== //
@@ -366,45 +288,3 @@ function StatItem({ label, value }) {
   );
 }
 
-// ==============================|| PROP TYPES ||============================== //
-
-AccountHeader.propTypes = {
-  account: PropTypes.shape({
-    id: PropTypes.string,
-    company_name: PropTypes.string,
-    industry: PropTypes.string,
-    type: PropTypes.string,
-    classification: PropTypes.string,
-    website: PropTypes.string,
-    city: PropTypes.string,
-    country: PropTypes.string,
-    account_owner: PropTypes.shape({
-      id: PropTypes.string,
-      full_name: PropTypes.string,
-      email: PropTypes.string
-    }),
-    team: PropTypes.shape({
-      id: PropTypes.string,
-      name: PropTypes.string
-    })
-  }),
-  stats: PropTypes.shape({
-    contacts_count: PropTypes.number,
-    activities_count: PropTypes.number,
-    opportunities_count: PropTypes.number,
-    signals_count: PropTypes.number
-  }),
-  loading: PropTypes.bool,
-  onSave: PropTypes.func,
-  industryOptions: PropTypes.arrayOf(
-    PropTypes.shape({
-      value: PropTypes.string.isRequired,
-      label: PropTypes.string.isRequired
-    })
-  )
-};
-
-StatItem.propTypes = {
-  label: PropTypes.string.isRequired,
-  value: PropTypes.number
-};

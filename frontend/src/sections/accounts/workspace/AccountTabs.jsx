@@ -13,7 +13,7 @@ import Skeleton from '@mui/material/Skeleton';
 // ==============================|| TAB CONFIGURATION ||============================== //
 
 export const WORKSPACE_TABS = [
-  { id: 'summary', label: 'Summary' },
+  { id: 'overview', label: 'Overview' },
   { id: 'qualification', label: 'Qualification' },
   { id: 'decision-cycle', label: 'Decision Cycle' },
   { id: 'activities', label: 'Activities' },
@@ -21,7 +21,7 @@ export const WORKSPACE_TABS = [
   { id: 'signals', label: 'Signals' }
 ];
 
-export const DEFAULT_TAB = 'summary';
+export const DEFAULT_TAB = 'overview';
 
 // ==============================|| ACCOUNT TABS - LOADING ||============================== //
 

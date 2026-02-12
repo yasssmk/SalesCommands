@@ -14,8 +14,9 @@ import Typography from '@mui/material/Typography';
 
 // project imports
 import MainCard from 'components/MainCard';
-import AccountHeader from 'sections/accounts/workspace/AccountHeader';
-import AccountTabs, { DEFAULT_TAB } from 'sections/accounts/workspace/AccountTabs';
+import WorkspaceLayout from 'components/WorkspaceLayout';
+import useAccountHeaderProps from 'sections/accounts/workspace/AccountHeader';
+import { WORKSPACE_TABS, DEFAULT_TAB } from 'sections/accounts/workspace/AccountTabs';
 import { useGetAccountWorkspace, useGetAccountChoices, updateAccount } from 'api/admin/accounts';
 import AccountContactsTab from 'sections/accounts/contacts/AccountContactsTab';
 import DecisionCycleTab from 'sections/accounts/workspace/DecisionCycleTab';
@@ -104,6 +105,15 @@ export default function AccountWorkspacePage() {
     }
   }, [accountId, mutateWorkspace]);
 
+  // ==============================|| HEADER PROPS (from hook) ||============================== //
+
+  const headerProps = useAccountHeaderProps({
+    account,
+    stats,
+    onSave: handleSaveField,
+    industryOptions
+  });
+
   // ==============================|| RENDER - ERROR ||============================== //
 
   if (workspaceError || (!workspaceLoading && !account)) {
@@ -148,26 +158,16 @@ export default function AccountWorkspacePage() {
         Back
       </Button>
 
-      {/* Account Header */}
-      <AccountHeader 
-        account={account} 
-        stats={stats} 
+      {/* Workspace Layout: Header + Tabs + Content */}
+      <WorkspaceLayout
+        {...headerProps}
+        tabs={WORKSPACE_TABS}
+        activeTab={currentTab}
+        onTabChange={handleTabChange}
         loading={workspaceLoading || choicesLoading}
-        onSave={handleSaveField}
-        industryOptions={industryOptions}
-      />
-
-      {/* Tabs Navigation */}
-      <AccountTabs 
-        activeTab={currentTab} 
-        onTabChange={handleTabChange} 
-        loading={workspaceLoading} 
-      />
-
-      {/* Tab Content */}
-      <MainCard>
+      >
         <TabContent tab={currentTab} accountId={accountId} account={account} />
-      </MainCard>
+      </WorkspaceLayout>
     </Box>
   );
 }
@@ -218,8 +218,8 @@ function TabContent({ tab, accountId, account }) {
       )}
 
       {/* Lightweight tabs: conditional rendering (no SWR hooks) */}
-      {tab === 'summary' && (
-        <TabPlaceholder title="Summary" description="Account summary and key information will be displayed here." />
+      {tab === 'overview' && (
+        <TabPlaceholder title="Overview" description="Account overview and key information will be displayed here." />
       )}
       {tab === 'qualification' && (
         <TabPlaceholder title="Qualification" description="Account qualification data and signals will be displayed here." />

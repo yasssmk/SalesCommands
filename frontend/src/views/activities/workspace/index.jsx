@@ -1,3 +1,5 @@
+// frontend/src/views/activities/workspace/index.jsx
+
 'use client';
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -10,14 +12,14 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
 // Project imports
-import MainCard from 'components/MainCard';
+import WorkspaceLayout from 'components/WorkspaceLayout';
+import { buildActivityBreadcrumbs } from 'components/WorkspaceBreadcrumb';
 import { useGetActivity, updateActivity } from 'api/accounts/activities';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
-import WorkspaceBreadcrumb, { buildActivityBreadcrumbs } from 'components/WorkspaceBreadcrumb';
 
 // Section imports
-import ActivityHeader from 'sections/activities/workspace/ActivityHeader';
-import ActivityTabs, { DEFAULT_TAB } from 'sections/activities/workspace/ActivityTabs';
+import useActivityHeaderProps from 'sections/activities/workspace/ActivityHeader';
+import { ACTIVITY_TABS, DEFAULT_TAB } from 'sections/activities/workspace/ActivityTabs';
 import ActivityOverviewTab from 'sections/activities/workspace/ActivityOverviewTab';
 import ActivityPreparationTab from 'sections/activities/workspace/ActivityPreparationTab';
 import ActivityOutcomeTab from 'sections/activities/workspace/ActivityOutcomeTab';
@@ -66,6 +68,17 @@ export default function ActivityWorkspacePage() {
       return false;
     }
   };
+
+  // ==============================|| HEADER PROPS (from hook) ||============================== //
+
+  const headerProps = useActivityHeaderProps({
+    activity,
+    onSave: handleSaveField,
+    onUpdate: mutateActivity,
+    isLocked
+  });
+
+  // ==============================|| RENDER - ERROR ||============================== //
 
 
   // Render tab content
@@ -140,42 +153,29 @@ export default function ActivityWorkspacePage() {
   }
 
   // Build breadcrumb items
-  const breadcrumbItems = buildActivityBreadcrumbs({
+  const breadcrumbItems = activity ? buildActivityBreadcrumbs({
     accountId: activity.account,
     accountName: activity.account_detail?.company_name,
     stepId: activity.decision_step || null,
     stepName: activity.decision_step_detail?.name || null,
     activityTitle: activity.title
-  });
-
+  }) : [];
 
   return (
-    <Box>
-      {/* Breadcrumb Navigation */}
-      <Box sx={{ mb: 2 }}>
-        <WorkspaceBreadcrumb items={breadcrumbItems} />
-      </Box>
-
-      {/* Header */}
-      {/* Header */}
-      <ActivityHeader 
-        activity={activity}
+    <>
+      <WorkspaceLayout
+        breadcrumbs={breadcrumbItems}
+        {...headerProps}
+        tabs={ACTIVITY_TABS}
+        activeTab={currentTab}
+        onTabChange={handleTabChange}
         loading={activityLoading}
-        onSave={handleSaveField} 
-        onUpdate={mutateActivity}
-        isLocked={isLocked}
-      />
-
-      {/* Tabs */}
-      <ActivityTabs 
-        activeTab={currentTab} 
-        onTabChange={handleTabChange} 
-      />
-
-      {/* Tab Content */}
-      <MainCard sx={{ mt: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+      >
         {renderTabContent()}
-      </MainCard>
-    </Box>
+      </WorkspaceLayout>
+
+      {/* Modals (Complete, Cancel, Reopen, Delete) */}
+      {headerProps.modals}
+    </>
   );
 }

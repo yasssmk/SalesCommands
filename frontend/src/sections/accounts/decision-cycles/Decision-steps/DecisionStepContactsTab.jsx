@@ -359,8 +359,8 @@ const handleRemoveContact = useCallback(async (contact) => {
       {step?.aggregated_contacts && step.aggregated_contacts.length > 0 && (
         <Box sx={{ mb: 3 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-            <ThunderboltOutlined style={{ fontSize: theme.iconSizes?.sm || 14, color: theme.palette.info.main }} />
-            <Typography variant="subtitle2" color="text.secondary" fontWeight={600}>
+            <ThunderboltOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.info.main }} />
+            <Typography variant="subtitle2" color="text.secondary" fontWeight={theme.typography.fontWeightBold}>
               Contacts from Activities
             </Typography>
             <Chip

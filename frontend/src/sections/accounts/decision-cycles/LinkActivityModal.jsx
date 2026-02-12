@@ -114,14 +114,14 @@ function ActivityListItem({ activity, selected, onToggle }) {
               justifyContent: 'center'
             }}
           >
-            <TypeIcon style={{ fontSize: 16, color: theme.palette.text.secondary }} />
+            <TypeIcon style={{ fontSize: theme.iconSizes.md, color: theme.palette.text.secondary }} />
           </Box>
         </ListItemIcon>
         
         <ListItemText
           primary={
             <Stack direction="row" alignItems="center" spacing={1}>
-              <Typography variant="body2" fontWeight={500} noWrap sx={{ flex: 1 }}>
+              <Typography variant="body2" fontWeight={theme.typography.fontWeightMedium} noWrap sx={{ flex: 1 }}>
                 {activity.title}
               </Typography>
               <Chip
@@ -173,6 +173,8 @@ ActivityListItem.propTypes = {
 // ==============================|| EMPTY STATE ||============================== //
 
 function EmptyState({ searchQuery }) {
+   const theme = useTheme();
+   
   return (
     <Box
       sx={{
@@ -183,7 +185,7 @@ function EmptyState({ searchQuery }) {
         justifyContent: 'center'
       }}
     >
-      <InboxOutlined style={{ fontSize: 48, color: '#bfbfbf' }} />
+      <InboxOutlined style={{ fontSize: 48, color: theme.palette.text.disabled }} />
       <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
         {searchQuery 
           ? 'No activities match your search'

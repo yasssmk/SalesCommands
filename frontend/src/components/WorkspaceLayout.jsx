@@ -122,7 +122,10 @@ export default function WorkspaceLayout({
   // Header — Row 2 (chips)
   chips,
 
-  // Header — Row 3 (info items)
+  // Header — Extra rows (between chips and divider)
+  extraRows,
+
+  // Header — Info items (after divider)
   infoItems,
 
   // Tabs
@@ -136,6 +139,7 @@ export default function WorkspaceLayout({
   // Content
   children
 }) {
+
   // ==============================|| TAB CHANGE HANDLER ||============================== //
 
   const handleTabChange = (event, newValue) => {
@@ -176,6 +180,7 @@ export default function WorkspaceLayout({
 
   // Filter out null/undefined info items and chips
   const validChips = (chips || []).filter(Boolean);
+  const validExtraRows = (extraRows || []).filter(Boolean);
   const validInfoItems = (infoItems || []).filter(Boolean);
 
   return (
@@ -192,10 +197,8 @@ export default function WorkspaceLayout({
         <Stack spacing={2}>
           {/* Row 1: Avatar + Title + Actions */}
           <Stack direction="row" alignItems="center" spacing={2} sx={{ flexWrap: 'wrap' }}>
-            {/* Avatar */}
             {avatar}
 
-            {/* Title — Editable or Read-only */}
             <Box sx={{ flexGrow: 1, minWidth: 0 }}>
               {onTitleSave ? (
                 <EditableField
@@ -214,7 +217,6 @@ export default function WorkspaceLayout({
               )}
             </Box>
 
-            {/* Actions slot (top-right) */}
             {headerActions}
           </Stack>
 
@@ -225,15 +227,21 @@ export default function WorkspaceLayout({
             </Stack>
           )}
 
+          {/* Extra rows (optional, between chips and divider) */}
+          {validExtraRows.map((row, index) => (
+            <Box key={index}>{row}</Box>
+          ))}
+
           {/* Divider */}
           <Divider />
 
-          {/* Row 3: Info items */}
+          {/* Info items (row after divider) */}
           {validInfoItems.length > 0 && (
             <Stack direction="row" spacing={3} alignItems="center" flexWrap="wrap" useFlexGap>
               {validInfoItems}
             </Stack>
           )}
+
         </Stack>
       </MainCard>
 
@@ -301,7 +309,10 @@ WorkspaceLayout.propTypes = {
   /** Array of Chip nodes for header Row 2 */
   chips: PropTypes.arrayOf(PropTypes.node),
 
-  /** Array of info item nodes for header Row 3 */
+  /** Extra row nodes rendered between chips and divider */
+  extraRows: PropTypes.arrayOf(PropTypes.node),
+
+  /** Array of info item nodes after divider */
   infoItems: PropTypes.arrayOf(PropTypes.node),
 
   /** Tab definitions */

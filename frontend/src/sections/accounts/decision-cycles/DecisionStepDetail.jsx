@@ -91,10 +91,12 @@ const STAGE_LABELS = PIPELINE_STEP_LABELS;
 // ==============================|| SECTION TITLE ||============================== //
 
 function SectionTitle({ icon: Icon, title }) {
+  const theme = useTheme();
+
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-      {Icon && <Icon style={{ fontSize: 16, color: '#8c8c8c' }} />}
-      <Typography variant="subtitle2" color="text.secondary" fontWeight={600}>
+      {Icon && <Icon style={{ fontSize: theme.iconSizes.md, color: theme.palette.text.secondary }} />}
+      <Typography variant="subtitle2" color="text.secondary" fontWeight={theme.typography.fontWeightBold}>
         {title}
       </Typography>
     </Stack>

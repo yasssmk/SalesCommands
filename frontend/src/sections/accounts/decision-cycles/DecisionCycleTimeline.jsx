@@ -324,14 +324,14 @@ function ActivityCard({ activity, onClick }) {
               }}
             >
               <TypeIcon style={{ 
-                fontSize: 14, 
+                fontSize: theme.iconSizes.sm, 
                 color: isOverdue ? theme.palette.error.main : theme.palette.text.secondary 
               }} />
             </Box>
           </Tooltip>
           <Typography 
             variant="body2" 
-            fontWeight={500}
+            fontWeight={theme.typography.fontWeightMedium}
             sx={{ 
               flex: 1,
               lineHeight: 1.3,
@@ -538,12 +538,12 @@ function PipelineStepColumn({
         <Stack spacing={0.75}>
           {/* Step name + Status icon */}
           <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="subtitle2" fontWeight={600} noWrap sx={{ flex: 1 }}>
+            <Typography variant="subtitle2" fontWeight={theme.typography.fontWeightBold} noWrap sx={{ flex: 1 }}>
               {step.name}
             </Typography>
             <Tooltip title={statusConfig.label}>
               <StatusIcon style={{ 
-                fontSize: 16, 
+                fontSize: theme.iconSizes.md, 
                 color: theme.palette[statusConfig.color]?.main || theme.palette.grey[500]
               }} />
             </Tooltip>

@@ -76,7 +76,7 @@ function CycleMenuItem({ cycle, isSelected, onSelect, onEdit, onDelete }) {
       <ListItemText
         primary={
           <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="body1" fontWeight={isSelected ? 600 : 400}>
+            <Typography variant="body1" fontWeight={isSelected ? theme.typography.fontWeightBold : theme.typography.fontWeightRegular}>
               {cycle.name}
             </Typography>
             {cycle.cycle_status && (
@@ -113,7 +113,7 @@ function CycleMenuItem({ cycle, isSelected, onSelect, onEdit, onDelete }) {
               }}
               sx={{ opacity: 0.7, '&:hover': { opacity: 1 } }}
             >
-              <EditOutlined style={{ fontSize: 14 }} />
+              <EditOutlined style={{ fontSize: theme.iconSizes.sm }} />
             </IconButton>
           </Tooltip>
           <Tooltip title="Delete">
@@ -126,7 +126,7 @@ function CycleMenuItem({ cycle, isSelected, onSelect, onEdit, onDelete }) {
               }}
               sx={{ opacity: 0.7, '&:hover': { opacity: 1 } }}
             >
-              <DeleteOutlined style={{ fontSize: 14 }} />
+              <DeleteOutlined style={{ fontSize: theme.iconSizes.sm }} />
             </IconButton>
           </Tooltip>
         </Stack>
@@ -251,9 +251,9 @@ export default function DecisionCycleSelector({
           }
         }}
       >
-        <Stack direction="row" spacing={1} alignItems="center">
-          <FolderOutlined style={{ fontSize: 16 }} />
-          <Typography variant="body2" fontWeight={600}>
+         <Stack direction="row" spacing={1} alignItems="center">
+          <FolderOutlined style={{ fontSize: theme.iconSizes.md }} />
+          <Typography variant="body2" fontWeight={theme.typography.fontWeightBold}>
             {currentCycle?.name || 'Select Cycle'}
           </Typography>
         </Stack>
@@ -304,7 +304,7 @@ export default function DecisionCycleSelector({
             primary="Create New Cycle"
             primaryTypographyProps={{
               color: 'primary',
-              fontWeight: 500
+              fontWeight: theme.typography.fontWeightMedium
             }}
           />
         </MenuItem>
