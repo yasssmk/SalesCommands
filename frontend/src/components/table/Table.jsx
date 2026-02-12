@@ -129,6 +129,7 @@ function ReusableTable({
   expandedRowContent = null,
   enableExpanding = false,
   enableImport = true,
+  showAddButton = true,
   filterConfig = null,
 
   // Advanced Filter Panel props
@@ -449,26 +450,28 @@ const FilterChips = ({
             disabled={loading || !!error} 
           />
           <Stack direction="row" spacing={2} alignItems="center">
-            {matchDownSM ? (
-              <Tooltip title={addButtonTooltip}>
-                <IconButton 
-                  color="primary" 
+            {showAddButton && (
+              matchDownSM ? (
+                <Tooltip title={addButtonTooltip}>
+                  <IconButton 
+                    color="primary" 
+                    variant="contained" 
+                    onClick={modalToggler} 
+                    disabled={loading || !!error}
+                  >
+                    <PlusOutlined />
+                  </IconButton>
+                </Tooltip>
+              ) : (
+                <Button 
                   variant="contained" 
+                  startIcon={<PlusOutlined />} 
                   onClick={modalToggler} 
                   disabled={loading || !!error}
                 >
-                  <PlusOutlined />
-                </IconButton>
-              </Tooltip>
-            ) : (
-              <Button 
-                variant="contained" 
-                startIcon={<PlusOutlined />} 
-                onClick={modalToggler} 
-                disabled={loading || !!error}
-              >
-                {addButtonLabel}
-              </Button>
+                  {addButtonLabel}
+                </Button>
+              )
             )}
             {/* Advanced Filter Button - only if panel provided */}
             {advancedFilterPanel && (

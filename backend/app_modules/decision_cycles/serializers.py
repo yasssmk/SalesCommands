@@ -995,7 +995,6 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
     Status is DERIVED automatically — not editable by user.
     """
     
-    previous_step_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
     contact_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
@@ -1020,25 +1019,6 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
         ]
     
     def validate(self, attrs):
-        # Validate previous_step if provided
-        previous_step_id = attrs.pop('previous_step_id', None)
-        if previous_step_id is not None:
-            if previous_step_id:
-                try:
-                    previous_step = DecisionStep.objects.get(id=previous_step_id)
-                    if previous_step.cycle_id != self.instance.cycle_id:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.INVALID_FIELD.format(
-                                field='Previous step must belong to the same cycle'
-                            )
-                        )
-                    attrs['previous_step'] = previous_step
-                except DecisionStep.DoesNotExist:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.OBJECT_NOT_FOUND
-                    )
-            else:
-                attrs['previous_step'] = None
         
         return attrs
     

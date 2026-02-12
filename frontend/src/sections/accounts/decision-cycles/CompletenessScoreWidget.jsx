@@ -140,7 +140,7 @@ function CircularScoreDisplay({ score }) {
           justifyContent: 'center'
         }}
       >
-        <Typography variant="h4" fontWeight={600} color="text.primary">
+        <Typography variant="h4" fontWeight={theme.typography.fontWeightBold} color="text.primary">
           {score}
         </Typography>
       </Box>
@@ -155,6 +155,7 @@ CircularScoreDisplay.propTypes = {
 // ==============================|| SUGGESTIONS LIST ||============================== //
 
 function SuggestionsList({ suggestions }) {
+  const theme = useTheme();
   if (!suggestions || suggestions.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
@@ -168,7 +169,7 @@ function SuggestionsList({ suggestions }) {
       {suggestions.map((suggestion, index) => (
         <ListItem key={index} disablePadding sx={{ py: 0.5 }}>
           <ListItemIcon sx={{ minWidth: 28 }}>
-            <RightOutlined style={{ fontSize: 12, color: 'inherit' }} />
+            <RightOutlined style={{ fontSize: theme.iconSizes.xs, color: 'inherit' }} />
           </ListItemIcon>
           <ListItemText
             primary={suggestion}
@@ -207,6 +208,7 @@ export default function CompletenessScoreWidget({
   defaultExpanded = false,
   title = 'Documentation Readiness'
 }) {
+  const theme = useTheme();
   const [expanded, setExpanded] = useState(defaultExpanded);
   
   // Compute category from score or use override
@@ -242,7 +244,7 @@ export default function CompletenessScoreWidget({
               justifyContent: 'center'
             }}
           >
-            <Typography variant="caption" fontWeight={600}>
+            <Typography variant="caption" fontWeight={theme.typography.fontWeightBold}>
               {score}
             </Typography>
           </Box>
@@ -270,14 +272,14 @@ export default function CompletenessScoreWidget({
           {/* Text Content */}
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
-              <Typography variant="subtitle1" fontWeight={600}>
+              <Typography variant="subtitle1" fontWeight={theme.typography.fontWeightBold}>
                 {title}
               </Typography>
               <Chip
                 size="small"
                 label={category.label}
                 color={category.color}
-                icon={<CategoryIcon style={{ fontSize: 14 }} />}
+                icon={<CategoryIcon style={{ fontSize: theme.iconSizes.sm }} />}
               />
             </Stack>
             
@@ -298,14 +300,14 @@ export default function CompletenessScoreWidget({
                   '&:hover': { textDecoration: 'underline' }
                 }}
               >
-                <Typography variant="body2" fontWeight={500}>
+                <Typography variant="body2" fontWeight={theme.typography.fontWeightMedium}>
                   {expanded ? 'Hide suggestions' : `View ${suggestions.length} suggestion${suggestions.length > 1 ? 's' : ''}`}
                 </Typography>
                 <IconButton size="small" sx={{ p: 0 }}>
                   {expanded ? (
-                    <DownOutlined style={{ fontSize: 12 }} />
+                    <DownOutlined style={{ fontSize: theme.iconSizes.xs }} />
                   ) : (
-                    <RightOutlined style={{ fontSize: 12 }} />
+                    <RightOutlined style={{ fontSize: theme.iconSizes.xs }} />
                   )}
                 </IconButton>
               </Stack>

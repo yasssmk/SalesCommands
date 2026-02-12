@@ -2,8 +2,8 @@
 /**
  * Decision Step Workspace Page
  *
- * Uses WorkspaceLayout for standardized header/tabs/content structure.
- * Header Row 3: Account name + Cycle name (same pattern as Activity header).
+ * Uses WorkspaceLayout with useDecisionStepHeaderProps hook.
+ * Same pattern as Account and Activity workspace pages.
  */
 
 'use client';
@@ -11,21 +11,19 @@
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
 // MUI
-import { useTheme } from '@mui/material/styles';
-import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
 // Project imports
 import WorkspaceLayout from 'components/WorkspaceLayout';
-import { useGetDecisionStep, PIPELINE_STEP_LABELS } from 'api/accounts/decisionCycles';
+import { useGetDecisionStep } from 'api/accounts/decisionCycles';
 import { useGetAccount } from 'api/admin/accounts';
 import { buildStepBreadcrumbs } from 'components/WorkspaceBreadcrumb';
 
-// Tab config (reuse existing constants)
+// Header hook + Tab config
+import useDecisionStepHeaderProps from 'sections/accounts/decision-cycles/Decision-steps/DecisionStepHeader';
 import { DECISION_STEP_TABS, DEFAULT_TAB } from 'sections/accounts/decision-cycles/Decision-steps/DecisionStepTabs';
 
 // Tab content components
@@ -35,56 +33,9 @@ import DecisionStepContactsTab from 'sections/accounts/decision-cycles/Decision-
 import DecisionStepSignalsTab from 'sections/accounts/decision-cycles/Decision-steps/DecisionStepSignalsTab';
 import DecisionStepAIPrepTab from 'sections/accounts/decision-cycles/Decision-steps/DecisionStepAIPrepTab';
 
-// Icons
-import {
-  SearchOutlined,
-  ToolOutlined,
-  SolutionOutlined,
-  DollarOutlined,
-  FileProtectOutlined,
-  SettingOutlined,
-  RocketOutlined,
-  BankOutlined,
-  ApartmentOutlined,
-} from '@ant-design/icons';
-
-// ==============================|| STAGE CONFIGURATION ||============================== //
-
-const STAGE_ICONS = {
-  QUALIFICATION: SearchOutlined,
-  TECHNICAL_FIT: ToolOutlined,
-  SOLUTION_VALIDATION: SolutionOutlined,
-  BUSINESS_CASE: DollarOutlined,
-  CLOSING: FileProtectOutlined,
-  IMPLEMENTATION: SettingOutlined,
-  GO_LIVE: RocketOutlined
-};
-
-const STAGE_AVATAR_COLORS = {
-  QUALIFICATION: 'info.main',
-  TECHNICAL_FIT: 'secondary.main',
-  SOLUTION_VALIDATION: 'success.main',
-  BUSINESS_CASE: 'warning.main',
-  CLOSING: 'primary.main',
-  IMPLEMENTATION: 'grey.500',
-  GO_LIVE: 'success.dark'
-};
-
-const STATUS_CONFIG = {
-  WON: { label: 'Won', color: 'primary' },
-  REJECTED: { label: 'Rejected', color: 'error' },
-  OVERDUE: { label: 'Overdue', color: 'error' },
-  VALIDATED: { label: 'Validated', color: 'primary' },
-  IN_PROGRESS: { label: 'In Progress', color: 'secondary' },
-  ON_HOLD: { label: 'On Hold', color: 'warning' },
-  IN_CHASING: { label: 'In Chasing', color: 'warning' },
-  NOT_STARTED: { label: 'Not Started', color: 'default' }
-};
-
 // ==============================|| DECISION STEP WORKSPACE PAGE ||============================== //
 
 export default function DecisionStepWorkspacePage() {
-  const theme = useTheme();
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -98,9 +49,6 @@ export default function DecisionStepWorkspacePage() {
   const { step, stepLoading, stepError, mutateStep } = useGetDecisionStep(stepId);
   const { account, accountLoading } = useGetAccount(accountId);
 
-  // Derived data
-  const cycleId = step?.cycle_id || step?.cycle;
-  const cycleName = step?.cycle_detail?.name || step?.cycle_name || null;
   const isLoading = stepLoading || accountLoading;
 
   // ==============================|| HANDLERS ||============================== //
@@ -138,89 +86,22 @@ export default function DecisionStepWorkspacePage() {
     );
   }
 
-  // ==============================|| HEADER PROPS (derived from step) ||============================== //
+  // ==============================|| HEADER PROPS (from hook) ||============================== //
 
-  const StageIcon = STAGE_ICONS[step?.stage] || SearchOutlined;
-  const avatarColor = STAGE_AVATAR_COLORS[step?.stage] || 'grey.500';
-  const statusConfig = STATUS_CONFIG[step?.derived_status] || STATUS_CONFIG.NOT_STARTED;
-  const stepName = step?.name || PIPELINE_STEP_LABELS?.[step?.stage] || step?.stage || '';
-  const accountName = account?.company_name;
+  const headerProps = useDecisionStepHeaderProps({
+    step,
+    account,
+    onAccountClick: handleAccountClick,
+    onCycleClick: handleCycleClick
+  });
 
   // Breadcrumbs
   const breadcrumbItems = step ? buildStepBreadcrumbs({
     accountId,
-    accountName,
-    cycleName,
-    stepName
+    accountName: account?.company_name,
+    cycleName: step?.cycle_detail?.name || step?.cycle_name || null,
+    stepName: headerProps.title
   }) : [];
-
-  // Avatar node
-  const avatarNode = (
-    <Avatar
-      sx={{
-        width: 56,
-        height: 56,
-        bgcolor: avatarColor,
-        fontSize: '1.5rem'
-      }}
-    >
-      <StageIcon />
-    </Avatar>
-  );
-
-  // Chips (Row 2)
-  const chips = [
-    <Chip
-      key="status"
-      label={step?.derived_status_display || statusConfig.label}
-      color={statusConfig.color}
-      size="small"
-      variant="filled"
-    />
-  ];
-
-  // Info items (Row 3): Account name + Cycle name only
-  const infoItems = [
-    // Account (clickable)
-    accountName && (
-      <Stack
-        key="account"
-        direction="row"
-        spacing={0.75}
-        alignItems="center"
-        onClick={handleAccountClick}
-        sx={{
-          cursor: 'pointer',
-          '&:hover .info-link': { textDecoration: 'underline' }
-        }}
-      >
-        <BankOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.secondary, display: 'flex' }} />
-        <Typography variant="body2" color="primary.main" className="info-link">
-          {accountName}
-        </Typography>
-      </Stack>
-    ),
-
-    // Cycle (clickable, with ApartmentOutlined — same as Activity header origin)
-    cycleName && (
-      <Stack
-        key="cycle"
-        direction="row"
-        spacing={0.75}
-        alignItems="center"
-        onClick={handleCycleClick}
-        sx={{
-          cursor: 'pointer',
-          '&:hover .info-link': { textDecoration: 'underline' }
-        }}
-      >
-        <ApartmentOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.secondary, display: 'flex' }} />
-        <Typography variant="body2" color="primary.main" className="info-link">
-          {cycleName}
-        </Typography>
-      </Stack>
-    )
-  ];
 
   // ==============================|| TAB CONTENT ||============================== //
 
@@ -269,10 +150,7 @@ export default function DecisionStepWorkspacePage() {
   return (
     <WorkspaceLayout
       breadcrumbs={breadcrumbItems}
-      avatar={avatarNode}
-      title={stepName}
-      chips={chips}
-      infoItems={infoItems}
+      {...headerProps}
       tabs={DECISION_STEP_TABS}
       activeTab={currentTab}
       onTabChange={handleTabChange}

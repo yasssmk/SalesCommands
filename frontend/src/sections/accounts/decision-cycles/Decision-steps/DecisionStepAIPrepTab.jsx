@@ -5,6 +5,7 @@
 import PropTypes from 'prop-types';
 
 // MUI
+import { useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -26,6 +27,8 @@ import { RobotOutlined } from '@ant-design/icons';
  * - Integration with campaign playbooks
  */
 export default function DecisionStepAIPrepTab({ step }) {
+  const theme = useTheme();
+
   return (
     <Box
       display="flex"
@@ -34,7 +37,7 @@ export default function DecisionStepAIPrepTab({ step }) {
       minHeight="300px"
     >
       <Stack spacing={2} alignItems="center" textAlign="center">
-        <RobotOutlined style={{ fontSize: 48, color: '#8c8c8c' }} />
+        <RobotOutlined style={{ fontSize: theme.iconSizes.xxl * 2, color: theme.palette.text.secondary }} />
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography variant="h5" color="text.secondary">
             AI Preparation

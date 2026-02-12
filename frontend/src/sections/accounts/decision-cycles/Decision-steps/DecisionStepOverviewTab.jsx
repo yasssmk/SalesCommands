@@ -53,7 +53,7 @@ import { useGetActivitiesByStep } from 'api/accounts/activities';
 function SectionHeader({ icon: Icon, title }) {
   const theme = useTheme();
 
-  rreturn (
+  return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
       {Icon && <Icon style={{ fontSize: theme.iconSizes.md, color: theme.palette.text.secondary }} />}
       <Typography variant="subtitle2" fontWeight={theme.typography.fontWeightBold} color="text.primary">

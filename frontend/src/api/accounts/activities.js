@@ -373,7 +373,7 @@ export function useGetActivitiesByAccount(accountId, options = {}) {
  */
 export function useGetActivitiesByStep(stepId, options = {}) {
   const { tenantId } = useAuth();
-  const { page = 1, pageSize = 50, ordering = '-scheduled_date' } = options;
+  const { page = 1, pageSize = 50, ordering = '-scheduled_date', search = '' } = options;
 
   const swrKey = useMemo(() => {
     if (!stepId || !isValidUUID(stepId)) return null;
@@ -382,8 +382,9 @@ export function useGetActivitiesByStep(stepId, options = {}) {
     if (page) queryParams.append('page', page);
     if (pageSize) queryParams.append('page_size', pageSize);
     if (ordering) queryParams.append('ordering', ordering);
+    if (search) queryParams.append('search', search);
     return tenantKey(`${endpoints.byStep}?${queryParams.toString()}`, tenantId);
-  }, [stepId, page, pageSize, ordering, tenantId]);
+  }, [stepId, page, pageSize, ordering, search, tenantId]);
 
   const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
     revalidateOnFocus: false,
