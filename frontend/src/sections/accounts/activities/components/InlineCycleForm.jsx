@@ -25,8 +25,6 @@ export const PIPELINE_STEPS = [
   { value: 'SOLUTION_VALIDATION', label: 'Solution Validation' },
   { value: 'BUSINESS_CASE', label: 'Business Case' },
   { value: 'CLOSING', label: 'Closing' },
-  { value: 'IMPLEMENTATION', label: 'Implementation' },
-  { value: 'GO_LIVE', label: 'Go Live' },
 ];
 
 // ==============================|| VALIDATION SCHEMA ||============================== //

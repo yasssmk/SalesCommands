@@ -63,6 +63,9 @@ ACTION_TO_CRUD: dict[str, CrudAction] = {
     'complete': 'update',       # POST /activities/{id}/complete/
     'reopen': 'update',         # POST /activities/{id}/reopen/
     'cancel': 'update',         # POST /activities/{id}/cancel/
+
+    # Decision Cycle module - close/reopen actions
+    'close': 'update',          # POST /decision-cycles/{id}/close/
 }
 
 

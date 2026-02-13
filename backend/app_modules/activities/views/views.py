@@ -689,6 +689,17 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 ActivityErrorMessages.CANNOT_REOPEN
             )
         
+        # Cannot reopen activity if parent cycle is closed
+        if (
+            hasattr(activity, 'decision_step')
+            and activity.decision_step_id
+            and activity.decision_step.cycle
+            and activity.decision_step.cycle.outcome is not None
+        ):
+            raise StandardizedValidationError(
+                ActivityErrorMessages.CANNOT_REOPEN_CLOSED_CYCLE
+            )
+        
         old_status = activity.status
         
         # Clear outcome fields and reopen as PLANNED

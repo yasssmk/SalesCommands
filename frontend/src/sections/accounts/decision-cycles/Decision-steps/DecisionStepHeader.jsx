@@ -28,8 +28,6 @@ import {
   SolutionOutlined,
   DollarOutlined,
   FileProtectOutlined,
-  SettingOutlined,
-  RocketOutlined,
   BankOutlined,
   ApartmentOutlined,
 } from '@ant-design/icons';
@@ -41,9 +39,7 @@ const STAGE_ICONS = {
   TECHNICAL_FIT: ToolOutlined,
   SOLUTION_VALIDATION: SolutionOutlined,
   BUSINESS_CASE: DollarOutlined,
-  CLOSING: FileProtectOutlined,
-  IMPLEMENTATION: SettingOutlined,
-  GO_LIVE: RocketOutlined
+  CLOSING: FileProtectOutlined
 };
 
 const STAGE_AVATAR_COLORS = {
@@ -51,18 +47,14 @@ const STAGE_AVATAR_COLORS = {
   TECHNICAL_FIT: 'secondary.main',
   SOLUTION_VALIDATION: 'success.main',
   BUSINESS_CASE: 'warning.main',
-  CLOSING: 'primary.main',
-  IMPLEMENTATION: 'grey.500',
-  GO_LIVE: 'success.dark'
+  CLOSING: 'primary.main'
 };
 
 const STATUS_CONFIG = {
-  WON: { label: 'Won', color: 'primary' },
-  REJECTED: { label: 'Rejected', color: 'error' },
   OVERDUE: { label: 'Overdue', color: 'error' },
   VALIDATED: { label: 'Validated', color: 'primary' },
   IN_PROGRESS: { label: 'In Progress', color: 'secondary' },
-  ON_HOLD: { label: 'On Hold', color: 'warning' },
+  STALLED: { label: 'Stalled', color: 'error' },
   IN_CHASING: { label: 'In Chasing', color: 'warning' },
   NOT_STARTED: { label: 'Not Started', color: 'default' }
 };

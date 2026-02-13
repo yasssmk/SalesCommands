@@ -100,8 +100,10 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   
   const currentCycleLoading = cyclesLoading;
 
-  // Derive cycle closed state (WON or LOST) — blocks activity creation
-  const isCycleClosed = currentCycle?.cycle_status === 'WON' || currentCycle?.cycle_status === 'LOST';
+  // Derive cycle closed state from explicit outcome (two-layer architecture)
+  // Terminal outcomes block activity creation; ON_HOLD keeps activities but pauses cycle
+  const cycleOutcome = currentCycle?.outcome || null;
+  const isCycleClosed = ['WON', 'LOST', 'NOT_QUALIFIED'].includes(cycleOutcome);
   
   // ==============================|| CYCLE HANDLERS ||============================== //
   
@@ -289,11 +291,11 @@ const handleActivitySuccess = useCallback(() => {
             borderColor: 'divider'
           }}
         >
-          {/* Derived Status Chip */}
-          {currentCycle.cycle_status && (
+          {/* Cycle Status — explicit outcome overrides derived status */}
+          {(currentCycle.outcome || currentCycle.cycle_status) && (
             <Chip
-              label={CYCLE_DERIVED_STATUS_LABELS[currentCycle.cycle_status] || currentCycle.cycle_status}
-              color={CYCLE_STATUS_COLORS[currentCycle.cycle_status] || 'default'}
+              label={CYCLE_DERIVED_STATUS_LABELS[currentCycle.outcome || currentCycle.cycle_status] || currentCycle.cycle_status}
+              color={CYCLE_STATUS_COLORS[currentCycle.outcome || currentCycle.cycle_status] || 'default'}
               size="small"
               variant="filled"
             />

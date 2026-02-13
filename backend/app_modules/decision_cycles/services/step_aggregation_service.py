@@ -160,7 +160,8 @@ class StepAggregationService:
 
     def get_effective_start_date(self, step):
         """
-        Date of first completed activity linked to this step.
+        Effective start date from activities (excludes CANCELLED).
+        Priority 1: first completed activity.
         Fallback: first activity by earliest date (scheduled_date or due_date).
 
         Returns date or None. Triggers 1-2 DB queries.
@@ -168,7 +169,10 @@ class StepAggregationService:
         from app_modules.activities.constants import ActivityStatus
         from django.db.models.functions import Coalesce
 
-        first_completed = step.activities.filter(
+        # Exclude cancelled from all queries
+        active_activities = step.activities.exclude(status=ActivityStatus.CANCELLED)
+
+        first_completed = active_activities.filter(
             status=ActivityStatus.COMPLETED
         ).order_by('completed_at').first()
 
@@ -178,7 +182,7 @@ class StepAggregationService:
             return first_completed.scheduled_date or first_completed.due_date
 
         # Fallback: first activity by earliest date (scheduled_date or due_date)
-        first_activity = step.activities.exclude(
+        first_activity = active_activities.exclude(
             scheduled_date__isnull=True, due_date__isnull=True
         ).order_by(
             Coalesce('scheduled_date', 'due_date')
@@ -283,9 +287,10 @@ class StepAggregationService:
                             'name': dept.get_name_display(),
                         }
 
-            # --- Effective dates ---
-            effective_start = self._bulk_effective_start(activities)
-            effective_end = self._bulk_effective_end(activities)
+            # --- Effective dates (exclude cancelled) ---
+            active_activities = [a for a in activities if a.status != 'CANCELLED']
+            effective_start = self._bulk_effective_start(active_activities)
+            effective_end = self._bulk_effective_end(active_activities)
 
             results[step.id] = {
                 'all_contacts_count': len(contact_ids),

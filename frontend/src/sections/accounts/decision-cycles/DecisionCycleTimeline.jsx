@@ -39,7 +39,6 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
 import Checkbox from '@mui/material/Checkbox';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
@@ -47,6 +46,15 @@ import Divider from '@mui/material/Divider';
 import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Badge from '@mui/material/Badge';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import TextField from '@mui/material/TextField';
 
 // icons
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
@@ -68,14 +76,22 @@ import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
 import UserOutlined from '@ant-design/icons/UserOutlined';
 import LinkOutlined from '@ant-design/icons/LinkOutlined';
+import FormHelperText from '@mui/material/FormHelperText';
 
-// project imports
+import { useFormik } from 'formik';
+import * as Yup from 'yup';
+
 import { 
   PIPELINE_STEPS_ORDER, 
   PIPELINE_STEP_LABELS, 
   PIPELINE_STEP_CONFIG,
-  ACTIVITY_OPTIONAL_STEPS
+  CYCLE_DERIVED_STATUS_LABELS,
+  CYCLE_STATUS_COLORS,
+  closeCycle,
+  reopenCycle
 } from 'api/accounts/decisionCycles';
+
+import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 import LinkActivityModal from './LinkActivityModal';
 
 // ==============================|| LOCALSTORAGE HELPERS ||============================== //
@@ -112,21 +128,11 @@ const saveHiddenColumns = (cycleId, hiddenColumns) => {
 /**
  * Step derived status config for timeline columns.
  * Status is 100% derived from activities by backend.
- * bgColor used for column header background.
+ * 
+ * WON/REJECTED/ON_HOLD removed — now handled at cycle level via CycleOutcome.
+ * STALLED added — deal dormant, no planned activities in last completed step.
  */
 const STATUS_CONFIG = {
-  WON: {
-    color: 'primary',
-    bgColor: 'primary.lighter',
-    icon: CheckCircleFilled,
-    label: 'Won'
-  },
-  REJECTED: {
-    color: 'error',
-    bgColor: 'error.lighter',
-    icon: CloseCircleFilled,
-    label: 'Rejected'
-  },
   OVERDUE: {
     color: 'error',
     bgColor: 'error.lighter',
@@ -145,11 +151,11 @@ const STATUS_CONFIG = {
     icon: SyncOutlined,
     label: 'In Progress'
   },
-  ON_HOLD: {
+  STALLED: {
     color: 'warning',
     bgColor: 'warning.lighter',
     icon: PauseCircleOutlined,
-    label: 'On Hold'
+    label: 'Stalled'
   },
   IN_CHASING: {
     color: 'warning',
@@ -449,17 +455,17 @@ function PipelineStepColumn({
   const isActivityOptional = stepConfig.activity_optional || step.is_activity_optional || false;
   
   // Determine column state from derived status
-  const isWon = step.derived_status === 'WON';
   const isValidated = step.derived_status === 'VALIDATED';
-  const isRejected = step.derived_status === 'REJECTED';
   const isOverdue = step.derived_status === 'OVERDUE';
-  const isOnHold = step.derived_status === 'ON_HOLD';
-  const hasActivities = activities && activities.length > 0;
+  const isStalled = step.derived_status === 'STALLED';
   
-  // Activity statistics (exclude cancelled from counts and progress)
-  const activeActivities = activities?.filter(a => a.status !== 'CANCELLED') || [];
-  const totalActivities = activeActivities.length;
-  const completedActivities = activeActivities.filter(a => a.status === 'COMPLETED').length;
+  // Filter out cancelled activities — not visible, not counted
+  const visibleActivities = activities?.filter(a => a.status !== 'CANCELLED') || [];
+  const hasActivities = visibleActivities.length > 0;
+  
+  // Activity statistics
+  const totalActivities = visibleActivities.length;
+  const completedActivities = visibleActivities.filter(a => a.status === 'COMPLETED').length;
   const progressPercent = totalActivities > 0 ? Math.round((completedActivities / totalActivities) * 100) : 0;
   
  // Short date formatter
@@ -469,8 +475,8 @@ function PipelineStepColumn({
   };
 
   // Step lifecycle states
-  const STARTED_STATUSES = ['IN_PROGRESS', 'OVERDUE', 'ON_HOLD', 'IN_CHASING', 'VALIDATED', 'WON', 'REJECTED'];
-  const CLOSED_STATUSES = ['VALIDATED', 'WON', 'REJECTED'];
+  const STARTED_STATUSES = ['IN_PROGRESS', 'OVERDUE', 'STALLED', 'IN_CHASING', 'VALIDATED'];
+  const CLOSED_STATUSES = ['VALIDATED'];
 
   const isStepStarted = STARTED_STATUSES.includes(step.derived_status);
   const isStepClosed = CLOSED_STATUSES.includes(step.derived_status);
@@ -480,23 +486,23 @@ function PipelineStepColumn({
   const isStartConfirmed = isStepStarted && !!startDateValue;
 
   // End date: completed_at (closed) > effective_end_date (last activity) > expected_end (manual fallback)
-  // ON_HOLD is treated as settled for date display (deal paused, not overdue)
-  const isEndSettled = isStepClosed || isOnHold;
-  const endDateValue = isEndSettled
-    ? (step.completed_at || step.effective_end_date || step.expected_end)
-    : (step.effective_end_date || step.expected_end || null);
+  // STALLED: no end date shown — step is stuck, not ended
+  const isEndSettled = isStepClosed;
+  const endDateValue = isStalled
+    ? null
+    : isEndSettled
+      ? (step.completed_at || step.effective_end_date || step.expected_end)
+      : (step.effective_end_date || step.expected_end || null);
   const isEndConfirmed = isStepClosed && !!endDateValue;
 
-  // Overdue: end date is past and step is NOT closed and NOT on hold
-  // ON_HOLD = deal paused, nothing is "overdue" — it's just waiting
-  const isEndOverdue = !isEndSettled && endDateValue && new Date(endDateValue) < new Date();
+  // Overdue: end date is past and step is NOT closed and NOT stalled
+  const isEndOverdue = !isEndSettled && !isStalled && endDateValue && new Date(endDateValue) < new Date();
   
   // Column border color — derived from step status
   const getBorderColor = () => {
-    if (isWon || isValidated) return theme.palette.primary.main;
-    if (isRejected) return theme.palette.error.main;
+    if (isValidated) return theme.palette.primary.main;
     if (isOverdue) return theme.palette.error.light;
-    if (isOnHold) return theme.palette.warning.main;
+    if (isStalled) return theme.palette.warning.light;
     if (step.derived_status === 'IN_PROGRESS') return theme.palette.secondary.main;
     return theme.palette.divider;
   };
@@ -523,7 +529,7 @@ function PipelineStepColumn({
         onClick={() => onStepClick?.(step)}
         sx={{
           p: 1.5,
-          bgcolor: (isWon || isValidated || isRejected || isOverdue)
+          bgcolor: (isValidated || isOverdue || isStalled)
             ? alpha(theme.palette[statusConfig.color]?.main || theme.palette.grey[500], 0.08)
             : alpha(theme.palette.background.default, 0.6),
           borderBottom: '1px solid',
@@ -629,11 +635,26 @@ function PipelineStepColumn({
                 <Box />
               )}
 
-              {/* End date — 3 visual states: Closed / On Hold / Projected (with overdue) */}
-              {endDateValue ? (
+             {/* End date — STALLED shows warning icon instead of date */}
+              {isStalled ? (
+                <Tooltip title="Stalled — no planned activities">
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: 'warning.main',
+                      fontWeight: theme.typography.fontWeightMedium,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.25
+                    }}
+                  >
+                    <PauseCircleOutlined style={{ fontSize: theme.iconSizes.xs, color: theme.palette.warning.main }} />
+                    Stalled
+                  </Typography>
+                </Tooltip>
+              ) : endDateValue ? (
                 <Tooltip title={
                   isEndConfirmed ? 'Closed'
-                    : isOnHold ? 'On Hold'
                     : isEndOverdue ? 'Overdue'
                     : 'Expected end'
                 }>
@@ -641,24 +662,21 @@ function PipelineStepColumn({
                     variant="caption"
                     sx={{
                       color: isEndConfirmed
-                        ? (isRejected ? 'error.main' : 'success.main')
-                        : isOnHold ? 'warning.main'
+                        ? 'success.main'
                         : isEndOverdue ? 'error.main'
                         : 'text.secondary',
-                      fontStyle: (isEndConfirmed || isOnHold) ? 'normal' : 'italic',
-                      fontWeight: (isEndConfirmed || isOnHold || isEndOverdue) ? theme.typography.fontWeightMedium : theme.typography.fontWeightRegular,
+                      fontStyle: isEndConfirmed ? 'normal' : 'italic',
+                      fontWeight: (isEndConfirmed || isEndOverdue) ? theme.typography.fontWeightMedium : theme.typography.fontWeightRegular,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 0.25
                     }}
                   >
                     {isEndConfirmed
-                      ? <CheckCircleFilled style={{ fontSize: theme.iconSizes.xs, color: theme.palette[isRejected ? 'error' : 'success'].main }} />
-                      : isOnHold
-                        ? <PauseCircleOutlined style={{ fontSize: theme.iconSizes.xs, color: theme.palette.warning.main }} />
-                        : <ClockCircleOutlined style={{ fontSize: theme.iconSizes.xs, color: isEndOverdue ? theme.palette.error.main : theme.palette.text.disabled }} />
+                      ? <CheckCircleFilled style={{ fontSize: theme.iconSizes.xs, color: theme.palette.success.main }} />
+                      : <ClockCircleOutlined style={{ fontSize: theme.iconSizes.xs, color: isEndOverdue ? theme.palette.error.main : theme.palette.text.disabled }} />
                     }
-                    {(isEndConfirmed || isOnHold)
+                    {isEndConfirmed
                       ? formatShortDate(endDateValue)
                       : `(${formatShortDate(endDateValue)})`
                     }
@@ -703,7 +721,7 @@ function PipelineStepColumn({
             </Typography>
           </Box>
         ) : (
-          activities.map((activity) => (
+          visibleActivities.map((activity) => (
             <ActivityCard
               key={activity.id}
               activity={activity}
@@ -990,11 +1008,6 @@ export default function DecisionCycleTimeline({
     return [...cycle.steps].sort((a, b) => (a.order || 0) - (b.order || 0));
   }, [cycle?.steps]);
   
-  // Visible steps (filtered by hidden)
-  const visibleSteps = useMemo(() => {
-    return steps.filter(s => !hiddenColumns.includes(s.id));
-  }, [steps, hiddenColumns]);
-  
   // Group activities by step
   const activitiesByStep = useMemo(() => {
     const grouped = {};
@@ -1004,19 +1017,112 @@ export default function DecisionCycleTimeline({
     return grouped;
   }, [steps]);
   
-  // Derive cycle closed state (WON or LOST)
-  const isCycleClosed = cycle?.cycle_status === 'WON' || cycle?.cycle_status === 'LOST';
+  // Derive cycle closed state from explicit outcome (two-layer architecture)
+  const cycleOutcome = cycle?.outcome || null;
+  const isCycleClosed = ['WON', 'LOST', 'NOT_QUALIFIED'].includes(cycleOutcome);
+  const isCyclePaused = cycleOutcome === 'ON_HOLD';
+
+  // When cycle is closed (terminal outcome), STALLED steps display as VALIDATED
+  const effectiveSteps = useMemo(() => {
+    if (!isCycleClosed) return steps;
+    return steps.map(s =>
+      s.derived_status === 'STALLED' ? { ...s, derived_status: 'VALIDATED' } : s
+    );
+  }, [steps, isCycleClosed]);
+
+  // Visible steps (filtered by hidden)
+  const visibleSteps = useMemo(() => {
+    return effectiveSteps.filter(s => !hiddenColumns.includes(s.id));
+  }, [effectiveSteps, hiddenColumns]);
 
   // Calculate pipeline progress
   const pipelineProgress = useMemo(() => {
-    if (!steps.length) return { validated: 0, total: 0, percent: 0 };
-    const validated = steps.filter(s => s.status === 'VALIDATED').length;
+    if (!effectiveSteps.length) return { validated: 0, total: 0, percent: 0 };
+    const validated = effectiveSteps.filter(s => s.derived_status === 'VALIDATED').length;
     return {
       validated,
-      total: steps.length,
-      percent: Math.round((validated / steps.length) * 100)
+      total: effectiveSteps.length,
+      percent: Math.round((validated / effectiveSteps.length) * 100)
     };
-  }, [steps]);
+  }, [effectiveSteps]);
+
+  // Cycle close/reopen state
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [reopenLoading, setReopenLoading] = useState(false);
+
+  // Close cycle — Formik + Yup validation
+  const closeFormik = useFormik({
+    initialValues: {
+      outcome: '',
+      outcome_notes: '',
+      hold_until: ''
+    },
+    validationSchema: Yup.object({
+      outcome: Yup.string().required('Please select an outcome'),
+      outcome_notes: Yup.string().when('outcome', {
+        is: 'ON_HOLD',
+        then: (schema) => schema.required('Notes are required for On Hold'),
+        otherwise: (schema) => schema.nullable()
+      }),
+      hold_until: Yup.string().when('outcome', {
+        is: 'ON_HOLD',
+        then: (schema) => schema.required('Hold until date is required for On Hold'),
+        otherwise: (schema) => schema.nullable()
+      })
+    }),
+    enableReinitialize: true,
+    onSubmit: async (values, { setSubmitting, resetForm }) => {
+      if (!cycle?.id) return;
+      try {
+        const payload = {
+          outcome: values.outcome,
+          outcome_notes: values.outcome_notes.trim() || null
+        };
+        if (values.outcome === 'ON_HOLD' && values.hold_until) {
+          payload.hold_until = values.hold_until;
+        }
+        const result = await closeCycle(cycle.id, payload);
+        if (result.success) {
+          displaySuccessSnackbar('Decision cycle closed successfully');
+          setCloseDialogOpen(false);
+          resetForm();
+          onRefresh?.();
+        } else {
+          displayErrorSnackbar(result);
+        }
+      } catch (err) {
+        displayErrorSnackbar(err);
+      } finally {
+        setSubmitting(false);
+      }
+    }
+  });
+
+  // Reset form when dialog closes
+  const handleCloseDialogDismiss = useCallback(() => {
+    setCloseDialogOpen(false);
+    closeFormik.resetForm();
+  }, [closeFormik]);
+
+
+  // Reopen cycle handler
+  const handleReopenCycle = useCallback(async () => {
+    if (!cycle?.id) return;
+    setReopenLoading(true);
+    try {
+      const result = await reopenCycle(cycle.id);
+      if (result.success) {
+        displaySuccessSnackbar('Decision cycle reopened successfully');
+        onRefresh?.();
+      } else {
+        displayErrorSnackbar(result);
+      }
+    } catch (err) {
+      displayErrorSnackbar(err);
+    } finally {
+      setReopenLoading(false);
+    }
+  }, [cycle?.id, onRefresh]);
   
   // Toggle column visibility
   const handleToggleColumn = useCallback((stepId) => {
@@ -1042,10 +1148,10 @@ export default function DecisionCycleTimeline({
     }
   }, [cycle?.id]);
   
-  // Hide optional columns (Implementation, Go Live)
+  // Hide optional columns (based on step-level flag from backend)
   const handleHideOptional = useCallback(() => {
     const optionalStepIds = steps
-      .filter(s => ACTIVITY_OPTIONAL_STEPS.includes(s.stage) || s.is_activity_optional)
+      .filter(s => s.is_activity_optional)
       .map(s => s.id);
     
     setHiddenColumns(optionalStepIds);
@@ -1109,13 +1215,16 @@ export default function DecisionCycleTimeline({
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Stack direction="row" alignItems="center" spacing={2}>
           <Typography variant="h6">{cycle.name}</Typography>
-          {isCycleClosed && (
-            <Chip
-              label={cycle.cycle_status === 'WON' ? 'Won' : 'Lost'}
+          {/* Cycle outcome chip (when explicitly closed/paused) */}
+          {cycleOutcome && (
+            <Chip 
+              label={CYCLE_DERIVED_STATUS_LABELS[cycleOutcome] || cycleOutcome}
               size="small"
-              color={cycle.cycle_status === 'WON' ? 'success' : 'error'}
+              color={CYCLE_STATUS_COLORS[cycleOutcome] || 'default'}
               variant="filled"
-              icon={cycle.cycle_status === 'WON' ? <CheckCircleFilled /> : <CloseCircleFilled />}
+              icon={cycleOutcome === 'WON' ? <CheckCircleFilled /> : 
+                    cycleOutcome === 'ON_HOLD' ? <PauseCircleOutlined /> : 
+                    <CloseCircleFilled />}
             />
           )}
           <Chip 
@@ -1139,6 +1248,27 @@ export default function DecisionCycleTimeline({
             </Typography>
           )}
           
+          {/* Close / Reopen cycle action */}
+          {(isCycleClosed || isCyclePaused) ? (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={handleReopenCycle}
+              disabled={reopenLoading}
+            >
+              {reopenLoading ? 'Reopening...' : 'Reopen Cycle'}
+            </Button>
+          ) : (
+            <Button
+              size="small"
+              variant="outlined"
+              color="warning"
+              onClick={() => setCloseDialogOpen(true)}
+            >
+              Close Cycle
+            </Button>
+          )}
+          
           {/* Column visibility settings */}
           <ColumnVisibilityMenu
             steps={steps}
@@ -1150,8 +1280,8 @@ export default function DecisionCycleTimeline({
         </Stack>
       </Stack>
       
-      {/* Cycle-Level Risk/Stalled Alert */}
-      {(cycle?.is_at_risk || cycle?.stalled_steps_count > 0) && (
+      {/* Cycle-Level Risk/Stalled Alert — hidden when cycle is closed or paused */}
+      {!isCycleClosed && !isCyclePaused && (cycle?.is_at_risk || cycle?.stalled_steps_count > 0) && (
         <Alert 
           severity={cycle?.is_at_risk ? 'error' : 'warning'}
           variant="outlined"
@@ -1237,6 +1367,93 @@ export default function DecisionCycleTimeline({
         step={linkModalStep}
         onSuccess={handleLinkSuccess}
       />
+
+      {/* Close Cycle Dialog */}
+      <Dialog open={closeDialogOpen} onClose={handleCloseDialogDismiss} maxWidth="xs" fullWidth>
+        <DialogTitle>Close Decision Cycle</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <FormControl fullWidth error={closeFormik.touched.outcome && Boolean(closeFormik.errors.outcome)}>
+              <InputLabel>Outcome</InputLabel>
+              <Select
+                name="outcome"
+                value={closeFormik.values.outcome}
+                onChange={closeFormik.handleChange}
+                onBlur={closeFormik.handleBlur}
+                label="Outcome"
+              >
+                <MenuItem value="WON">
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <CheckCircleFilled style={{ color: theme.palette.success.main }} />
+                    <span>Won</span>
+                  </Stack>
+                </MenuItem>
+                <MenuItem value="LOST">
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <CloseCircleFilled style={{ color: theme.palette.error.main }} />
+                    <span>Lost</span>
+                  </Stack>
+                </MenuItem>
+                <MenuItem value="ON_HOLD">
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <PauseCircleOutlined style={{ color: theme.palette.warning.main }} />
+                    <span>On Hold</span>
+                  </Stack>
+                </MenuItem>
+                <MenuItem value="NOT_QUALIFIED">
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <MinusCircleOutlined style={{ color: theme.palette.grey[500] }} />
+                    <span>Not Qualified</span>
+                  </Stack>
+                </MenuItem>
+              </Select>
+              {closeFormik.touched.outcome && closeFormik.errors.outcome && (
+                <FormHelperText error>{closeFormik.errors.outcome}</FormHelperText>
+              )}
+            </FormControl>
+            
+            {closeFormik.values.outcome === 'ON_HOLD' && (
+              <TextField
+                name="hold_until"
+                label="Hold until"
+                type="date"
+                fullWidth
+                required
+                value={closeFormik.values.hold_until}
+                onChange={closeFormik.handleChange}
+                onBlur={closeFormik.handleBlur}
+                error={closeFormik.touched.hold_until && Boolean(closeFormik.errors.hold_until)}
+                helperText={closeFormik.touched.hold_until && closeFormik.errors.hold_until}
+                InputLabelProps={{ shrink: true }}
+              />
+            )}
+            
+            <TextField
+              name="outcome_notes"
+              label={closeFormik.values.outcome === 'ON_HOLD' ? 'Notes' : 'Notes (optional)'}
+              fullWidth
+              multiline
+              rows={2}
+              required={closeFormik.values.outcome === 'ON_HOLD'}
+              value={closeFormik.values.outcome_notes}
+              onChange={closeFormik.handleChange}
+              onBlur={closeFormik.handleBlur}
+              error={closeFormik.touched.outcome_notes && Boolean(closeFormik.errors.outcome_notes)}
+              helperText={closeFormik.touched.outcome_notes && closeFormik.errors.outcome_notes}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialogDismiss} disabled={closeFormik.isSubmitting}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={closeFormik.handleSubmit}
+            disabled={closeFormik.isSubmitting}
+          >
+            {closeFormik.isSubmitting ? 'Closing...' : 'Confirm'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

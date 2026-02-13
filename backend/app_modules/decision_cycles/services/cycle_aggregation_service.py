@@ -292,22 +292,24 @@ class CycleAggregationService:
         derivation_service = StepStatusDerivationService()
         statuses = [derivation_service.derive(s)['status'] for s in steps]
 
+
         # 2. All NOT_STARTED → cycle not started
         if all(s == 'NOT_STARTED' for s in statuses):
             return self.STATUS_NOT_STARTED
 
-        # 3. Any step OVERDUE → cycle overdue (late but still has active work)
+        # 3. Any step OVERDUE → OVERDUE (late but active work exists)
         if any(s == 'OVERDUE' for s in statuses):
             return self.STATUS_OVERDUE
 
-        # 4. Any step with active work → in progress
+        # 4. Any step STALLED → cycle stalled (deal has dormant area needing attention)
+        # Checked BEFORE IN_PROGRESS: even if other steps are validated,
+        # a stalled step signals the deal needs action.
+        if any(s == 'STALLED' for s in statuses):
+            return self.STATUS_STALLED
+
+        # 5. Any step with active work → in progress
         if any(s in ('IN_PROGRESS', 'VALIDATED') for s in statuses):
             return self.STATUS_IN_PROGRESS
-
-        # 5. All active steps are STALLED → deal dormant
-        active_statuses = [s for s in statuses if s != 'NOT_STARTED']
-        if active_statuses and all(s == 'STALLED' for s in active_statuses):
-            return self.STATUS_STALLED
 
         # 6. Fallback
         return self.STATUS_IN_PROGRESS
@@ -350,18 +352,19 @@ class CycleAggregationService:
         if all(s == 'NOT_STARTED' for s in statuses):
             return self.STATUS_NOT_STARTED
 
-        # 3. Any step OVERDUE → cycle overdue
+        # 3. Any step OVERDUE → OVERDUE (late but active work exists)
         if any(s == 'OVERDUE' for s in statuses):
             return self.STATUS_OVERDUE
 
-        # 4. Any step with active work → in progress
+        # 4. Any step STALLED → cycle stalled (deal has dormant area needing attention)
+        # Checked BEFORE IN_PROGRESS: even if other steps are validated,
+        # a stalled step signals the deal needs action.
+        if any(s == 'STALLED' for s in statuses):
+            return self.STATUS_STALLED
+
+        # 5. Any step with active work → in progress
         if any(s in ('IN_PROGRESS', 'VALIDATED') for s in statuses):
             return self.STATUS_IN_PROGRESS
-
-        # 5. All active steps STALLED → deal dormant
-        active_statuses = [s for s in statuses if s != 'NOT_STARTED']
-        if active_statuses and all(s == 'STALLED' for s in active_statuses):
-            return self.STATUS_STALLED
 
         # 6. Fallback
         return self.STATUS_IN_PROGRESS

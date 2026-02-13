@@ -477,7 +477,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
 
         # --- Validate payload ---
         outcome = request.data.get('outcome')
-        outcome_notes = request.data.get('outcome_notes', '').strip() or None
+        outcome_notes = (request.data.get('outcome_notes') or '').strip() or None
         hold_until = request.data.get('hold_until')
 
         if not outcome:
@@ -537,7 +537,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             target_type='decision_cycle',
             target_id=str(instance.id),
             outcome='success',
-            details={
+             extra={
                 'cycle_outcome': outcome,
                 'cancelled_activities': cancelled_count,
             },
@@ -607,7 +607,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             target_type='decision_cycle',
             target_id=str(instance.id),
             outcome='success',
-            details={
+             extra={
                 'previous_outcome': previous_outcome,
             },
         )

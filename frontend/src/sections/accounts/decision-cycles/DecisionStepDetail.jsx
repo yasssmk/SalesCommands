@@ -58,31 +58,29 @@ import { useDecisionStepEdit } from './hooks/useDecisionStepEdit';
 // ==============================|| CONFIGURATION ||============================== //
 
 /**
- * Step derived status config — read-only display.
- * Status is 100% derived from activities by backend.
+ * Step derived status config.
+ * WON/REJECTED/ON_HOLD removed — now cycle-level outcomes.
+ * STALLED added — deal dormant, no planned activities.
  */
 const STATUS_CONFIG = {
-  WON: { color: 'primary', label: 'Won' },
-  REJECTED: { color: 'error', label: 'Rejected' },
   OVERDUE: { color: 'error', label: 'Overdue' },
   VALIDATED: { color: 'primary', label: 'Validated' },
   IN_PROGRESS: { color: 'secondary', label: 'In Progress' },
-  ON_HOLD: { color: 'warning', label: 'On Hold' },
+  STALLED: { color: 'error', label: 'Stalled' },
   IN_CHASING: { color: 'warning', label: 'In Chasing' },
   NOT_STARTED: { color: 'default', label: 'Not Started' }
 };
 
 /**
- * Pipeline Step Labels (7 fixed steps)
+ * Pipeline Step Labels (5 fixed steps)
+ * IMPLEMENTATION/GO_LIVE removed — pipeline reduced to 5 steps.
  */
 const PIPELINE_STEP_LABELS = {
   QUALIFICATION: 'Qualification',
   TECHNICAL_FIT: 'Technical Fit',
   SOLUTION_VALIDATION: 'Solution Validation',
   BUSINESS_CASE: 'Business Case',
-  CLOSING: 'Closing',
-  IMPLEMENTATION: 'Implementation',
-  GO_LIVE: 'Go Live'
+  CLOSING: 'Closing'
 };
 
 // Legacy alias

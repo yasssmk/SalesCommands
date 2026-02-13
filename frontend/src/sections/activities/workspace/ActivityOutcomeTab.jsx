@@ -11,7 +11,6 @@
  */
 
 
-// TO DO DELETE THIS FILE - DEAD CODE
 
 
 'use client';
@@ -39,16 +38,11 @@ import Alert from '@mui/material/Alert';
 import {
   completeActivity,
   updateActivity,
-  markNoNextStep,
-  markNextStepAgreed,
   ACTIVITY_OUTCOME_LABELS,
   ACTIVITY_OUTCOME_COLORS,
   ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
-  ACTIVITY_STATUS_COLORS,
-  NO_NEXT_STEP_REASONS,
-  NO_NEXT_STEP_REASON_LABELS,
-  NO_NEXT_STEP_REASON_COLORS
+  ACTIVITY_STATUS_COLORS
 } from 'api/accounts/activities';
 import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
 
@@ -495,35 +489,12 @@ function ResultSection({ activity, onUpdate }) {
   const [selectedOutcome, setSelectedOutcome] = useState(activity?.outcome || '');
   const [outcomeNotes, setOutcomeNotes] = useState(activity?.outcome_notes || '');
   const [completing, setCompleting] = useState(false);
-  
-  // No next step reason state
-  const [noNextStepReason, setNoNextStepReason] = useState('');
-  const [otherReasonText, setOtherReasonText] = useState('');
 
   const isCompleted = activity?.status === 'COMPLETED';
   const isCancelled = activity?.status === 'CANCELLED';
 
-  // Use effective_has_next_step from API (calculated field)
-  // true = has next step, false = explicitly no next step, null = unknown (ask user)
-  const effectiveHasNextStep = activity?.effective_has_next_step;
-  
-  // Show no next step reason selector when:
-  // - effectiveHasNextStep is null (unknown) or false (explicitly no next step)
-  // - activity is not completed/cancelled
-  const needsNoNextStepReason = effectiveHasNextStep !== true && !isCompleted && !isCancelled;
-  
-  // Check if form is valid for completion
-  const isReasonValid = noNextStepReason && (noNextStepReason !== 'OTHER' || otherReasonText.trim());
-  const canComplete = selectedOutcome && (!needsNoNextStepReason || isReasonValid);
-
-  // Build the reason string for API
-  const buildReasonString = () => {
-    if (!noNextStepReason) return null;
-    if (noNextStepReason === 'OTHER') {
-      return `OTHER: ${otherReasonText.trim()}`;
-    }
-    return noNextStepReason;
-  };
+  // Completion requires only an outcome selection
+  const canComplete = !!selectedOutcome;
 
   const handleComplete = async () => {
     if (!selectedOutcome) {
@@ -534,27 +505,12 @@ function ResultSection({ activity, onUpdate }) {
       return;
     }
     
-    if (needsNoNextStepReason && !isReasonValid) {
-      displayErrorSnackbar({
-        message: 'Please select a reason for no next step',
-        status: 400
-      });
-      return;
-    }
-    
     setCompleting(true);
     try {
-      // Build payload
       const payload = {
         outcome: selectedOutcome,
         outcome_notes: outcomeNotes.trim() || null
       };
-      
-      // If no next step, include reason
-      if (needsNoNextStepReason) {
-        payload.next_step_agreed = false;
-        payload.no_next_step_reason = buildReasonString();
-      }
       
       const result = await completeActivity(activity.id, payload);
       
@@ -575,32 +531,6 @@ function ResultSection({ activity, onUpdate }) {
     } finally {
       setCompleting(false);
     }
-  };
-
-  // Render completed state info for no_next_step_reason
-  const renderCompletedNoNextStepInfo = () => {
-    if (!activity?.no_next_step_reason) return null;
-    
-    const reason = activity.no_next_step_reason;
-    const isStandardReason = Object.keys(NO_NEXT_STEP_REASONS).includes(reason);
-    const displayLabel = isStandardReason 
-      ? NO_NEXT_STEP_REASON_LABELS[reason] 
-      : (reason.startsWith('OTHER:') ? reason.substring(6).trim() : reason);
-    const chipColor = isStandardReason ? NO_NEXT_STEP_REASON_COLORS[reason] : 'default';
-    
-    return (
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Typography variant="body2" color="text.secondary">
-          No next step:
-        </Typography>
-        <Chip
-          label={displayLabel}
-          color={chipColor}
-          size="small"
-          variant="outlined"
-        />
-      </Stack>
-    );
   };
 
   return (
@@ -630,8 +560,6 @@ function ResultSection({ activity, onUpdate }) {
               </Typography>
             </Box>
           )}
-          {/* Show no next step reason if applicable */}
-          {activity?.next_step_agreed === false && renderCompletedNoNextStepInfo()}
         </Stack>
       ) : isCancelled ? (
         <Alert severity="warning">
@@ -676,101 +604,7 @@ function ResultSection({ activity, onUpdate }) {
               value={outcomeNotes}
               onChange={(e) => setOutcomeNotes(e.target.value)}
             />
-          </Box>
-
-          {/* No Next Step Section - Only show if needed */}
-          {needsNoNextStepReason && (
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 1,
-                bgcolor: theme.palette.warning.lighter,
-                border: '1px solid',
-                borderColor: theme.palette.warning.light
-              }}
-            >
-              <Stack spacing={1.5}>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <WarningOutlined style={{ fontSize: theme.iconSizes.md, color: theme.palette.warning.main }} />
-                  <Typography variant="subtitle2" color="warning.dark">
-                    No follow-up activity planned
-                  </Typography>
-                </Stack>
-                
-                <Typography variant="caption" color="text.secondary">
-                  Select a reason to complete without scheduling a next step:
-                </Typography>
-                
-                <Select
-                  value={noNextStepReason}
-                  onChange={(e) => {
-                    setNoNextStepReason(e.target.value);
-                    if (e.target.value !== 'OTHER') {
-                      setOtherReasonText('');
-                    }
-                  }}
-                  fullWidth
-                  size="small"
-                  displayEmpty
-                >
-                  <MenuItem value="" disabled>
-                    <em>Select reason...</em>
-                  </MenuItem>
-                  <MenuItem value="CLOSE_WON">
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <TrophyOutlined style={{ color: theme.palette.success.main }} />
-                      <span>Close Won</span>
-                    </Stack>
-                  </MenuItem>
-                  <MenuItem value="CLOSE_LOST">
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <CloseCircleOutlined style={{ color: theme.palette.error.main }} />
-                      <span>Close Lost</span>
-                    </Stack>
-                  </MenuItem>
-                  <MenuItem value="ON_HOLD">
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <PauseCircleOutlined style={{ color: theme.palette.warning.main }} />
-                      <span>On Hold</span>
-                    </Stack>
-                  </MenuItem>
-                  <MenuItem value="NOT_QUALIFIED">
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <StopOutlined style={{ color: theme.palette.grey[500] }} />
-                      <span>Not Qualified</span>
-                    </Stack>
-                  </MenuItem>
-                  <MenuItem value="OTHER">
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <span>Other reason...</span>
-                    </Stack>
-                  </MenuItem>
-                </Select>
-                
-                {/* Other reason text input */}
-                {noNextStepReason === 'OTHER' && (
-                  <TextField
-                    fullWidth
-                    size="small"
-                    placeholder="Enter reason..."
-                    value={otherReasonText}
-                    onChange={(e) => setOtherReasonText(e.target.value)}
-                    error={noNextStepReason === 'OTHER' && !otherReasonText.trim()}
-                    helperText={noNextStepReason === 'OTHER' && !otherReasonText.trim() ? 'Please enter a reason' : ''}
-                  />
-                )}
-              </Stack>
-            </Box>
-          )}
-
-          {/* Success indicator if next step exists */}
-          {effectiveHasNextStep === true && (
-            <Alert severity="success" icon={<CheckOutlined />} sx={{ py: 0.5 }}>
-              <Typography variant="caption">
-                Next step agreed - follow-up activity is scheduled.
-              </Typography>
-            </Alert>
-          )}
+          </Box>        
 
           {/* Complete Button */}
           <Button
@@ -815,16 +649,6 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate, isLocke
   // Success handler for activity creation
   const handleActivitySuccess = async () => {
     handleActivityModalClose();
-    
-    // Auto-set next_step_agreed=true when creating follow-up
-    if (activity?.id && activity?.next_step_agreed !== true) {
-      try {
-        await markNextStepAgreed(activity.id);
-      } catch (error) {
-        console.error('Failed to mark next step agreed:', error);
-      }
-    }
-    
     onUpdate?.();
     displaySuccessSnackbar('Follow-up activity created');
   };

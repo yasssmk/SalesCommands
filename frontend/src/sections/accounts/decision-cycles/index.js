@@ -3,7 +3,7 @@
  * Decision Cycles Components Index
  * 
  * ARCHITECTURE (Pipeline Steps):
- * - Pipeline steps are FIXED and auto-created with each cycle (7 steps)
+ * - Pipeline steps are FIXED and auto-created with each cycle (5 steps)
  * - Users CANNOT create/delete/reorder steps
  * - Users add ACTIVITIES within steps
  */

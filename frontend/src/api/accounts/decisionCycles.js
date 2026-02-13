@@ -16,19 +16,19 @@ import { isValidUUID, sanitizeObject } from 'utils/validators';
 /**
  * Pipeline Steps (matching backend PipelineStep choices)
  * 
- * These are FIXED steps auto-created with each Decision Cycle.
+ * These are FIXED steps auto-created with each Decision Cycle (5 steps).
  * Users CANNOT create/delete steps - only add activities within them.
+ * 
+ * Note: IMPLEMENTATION and GO_LIVE still exist in backend enum for
+ * backward compatibility with existing cycles, but are NOT auto-created.
  */
 export const PIPELINE_STEPS = {
   QUALIFICATION: 'QUALIFICATION',
   TECHNICAL_FIT: 'TECHNICAL_FIT',
   SOLUTION_VALIDATION: 'SOLUTION_VALIDATION',
   BUSINESS_CASE: 'BUSINESS_CASE',
-  CLOSING: 'CLOSING',
-  IMPLEMENTATION: 'IMPLEMENTATION',
-  GO_LIVE: 'GO_LIVE'
+  CLOSING: 'CLOSING'
 };
-
 // Legacy alias for backward compatibility
 export const DECISION_STAGES = PIPELINE_STEPS;
 
@@ -39,70 +39,74 @@ export const DECISION_STAGES = PIPELINE_STEPS;
  * No manual status changes — status reflects observable reality.
  * 
  * Derivation priority (highest first):
- * 1. WON         — activity completed with no_next_step_reason=CLOSE_WON
- * 2. REJECTED    — activity completed with reason ∈ {CLOSE_LOST, NOT_QUALIFIED}
- * 3. OVERDUE     — expected_end < today OR any PLANNED activity past scheduled/due date
- * 4. VALIDATED   — ALL activities completed (0 PLANNED) + later step has activities
- * 5. IN_PROGRESS — PLANNED exists AND (some are current/past/undated OR completed exist)
- * 6. ON_HOLD     — completed exist, no PLANNED, no later step activity
- * 7. NOT_STARTED — no activities, all cancelled, OR only future-dated PLANNED with no completed
+ * 1. OVERDUE     — step deadline passed OR any PLANNED activity past scheduled/due date
+ * 2. VALIDATED   — ALL completed (0 PLANNED) + later step has activities
+ * 3. IN_PROGRESS — at least 1 PLANNED activity exists
+ * 4. STALLED     — completed exist, no PLANNED, no later step activity, last completed step
+ * 5. NOT_STARTED — no activities (or all cancelled)
  * 
  * IN_CHASING: Reserved for future Campaign/Sequence feature.
+ * 
+ * WON/REJECTED/ON_HOLD removed — now handled at cycle level via CycleOutcome.
  */
 export const DECISION_STEP_STATUSES = {
-  WON: 'WON',
-  REJECTED: 'REJECTED',
-  OVERDUE: 'OVERDUE',
-  VALIDATED: 'VALIDATED',
+  NOT_STARTED: 'NOT_STARTED',
   IN_PROGRESS: 'IN_PROGRESS',
-  ON_HOLD: 'ON_HOLD',
+  STALLED: 'STALLED',
   IN_CHASING: 'IN_CHASING',
-  NOT_STARTED: 'NOT_STARTED'
+  OVERDUE: 'OVERDUE',
+  VALIDATED: 'VALIDATED'
 };
 
 /**
  * Status colors for MUI Chip color prop (generic palette keys).
- * Used by components that render Chip with color="xxx".
  */
 export const STATUS_COLORS = {
-  WON: 'primary',
-  REJECTED: 'error',
   OVERDUE: 'error',
   VALIDATED: 'primary',
   IN_PROGRESS: 'secondary',
-  ON_HOLD: 'warning',
+  STALLED: 'error',
   IN_CHASING: 'warning',
   NOT_STARTED: 'default'
 };
 
 /**
- * Status → MUI theme token mapping (from StepStatusDerivationService.STATUS_COLORS).
+ * Status → MUI theme token mapping.
  * Used for fine-grained styling: borders, backgrounds, custom sx.
- * Access via theme.palette — e.g. theme.palette.primary.dark
  */
 export const STATUS_THEME_TOKENS = {
-  WON: 'primary.dark',
-  REJECTED: 'error.main',
   OVERDUE: 'error.light',
   VALIDATED: 'primary.dark',
   IN_PROGRESS: 'primary.light',
-  ON_HOLD: 'warning.light',
+  STALLED: 'warning.light',
   IN_CHASING: 'warning.dark',
   NOT_STARTED: 'secondary.light'
+};
+
+/**
+ * Step status labels for UI display.
+ * Backend also returns derived_status_display — prefer that when available.
+ */
+export const STATUS_LABELS = {
+  OVERDUE: 'Overdue',
+  VALIDATED: 'Validated',
+  IN_PROGRESS: 'In Progress',
+  STALLED: 'Stalled',
+  IN_CHASING: 'In Chasing',
+  NOT_STARTED: 'Not Started'
 };
 
 
 /**
  * Pipeline steps order for display (left to right)
+ * 5 auto-created steps: QUALIFICATION → CLOSING
  */
 export const PIPELINE_STEPS_ORDER = [
   'QUALIFICATION',
   'TECHNICAL_FIT',
   'SOLUTION_VALIDATION',
   'BUSINESS_CASE',
-  'CLOSING',
-  'IMPLEMENTATION',
-  'GO_LIVE'
+  'CLOSING'
 ];
 
 // Legacy alias for backward compatibility
@@ -116,9 +120,7 @@ export const PIPELINE_STEP_LABELS = {
   TECHNICAL_FIT: 'Technical Fit',
   SOLUTION_VALIDATION: 'Solution Validation',
   BUSINESS_CASE: 'Business Case',
-  CLOSING: 'Closing',
-  IMPLEMENTATION: 'Implementation',
-  GO_LIVE: 'Go Live'
+  CLOSING: 'Closing'
 };
 
 // Legacy alias for backward compatibility
@@ -127,7 +129,7 @@ export const STAGE_LABELS = PIPELINE_STEP_LABELS;
 /**
  * Pipeline step configuration
  * 
- * activity_optional: true = step can have no activities (e.g., client-side work)
+ * All 5 steps require activities (no activity_optional steps).
  * description: Short description of what happens in this step
  */
 export const PIPELINE_STEP_CONFIG = {
@@ -155,51 +157,25 @@ export const PIPELINE_STEP_CONFIG = {
     order: 5,
     activity_optional: false,
     description: 'Finalize contract and legal terms'
-  },
-  IMPLEMENTATION: {
-    order: 6,
-    activity_optional: true,
-    description: 'Deploy and configure solution'
-  },
-  GO_LIVE: {
-    order: 7,
-    activity_optional: true,
-    description: 'Launch and verify successful adoption'
   }
 };
 
 /**
- * Steps where no activity is expected (client-side work)
- */
-export const ACTIVITY_OPTIONAL_STEPS = ['IMPLEMENTATION', 'GO_LIVE'];
-
-/**
- * Step status labels for UI display.
- * Backend also returns derived_status_display — prefer that when available.
- */
-export const STATUS_LABELS = {
-  WON: 'Won',
-  REJECTED: 'Rejected',
-  OVERDUE: 'Overdue',
-  VALIDATED: 'Validated',
-  IN_PROGRESS: 'In Progress',
-  ON_HOLD: 'On Hold',
-  IN_CHASING: 'In Chasing',
-  NOT_STARTED: 'Not Started'
-};
-
-/**
  * Derived cycle statuses (from CycleAggregationService)
- * These are COMPUTED by backend, not user-settable.
+ * 
+ * Two-layer architecture:
+ * - cycle.outcome (explicit): WON / LOST / ON_HOLD / NOT_QUALIFIED → overrides all
+ * - cycle.cycle_status (derived): computed from step statuses when outcome is null
  */
 export const CYCLE_DERIVED_STATUS = {
   NOT_STARTED: 'NOT_STARTED',
   IN_PROGRESS: 'IN_PROGRESS',
+  OVERDUE: 'OVERDUE',
   STALLED: 'STALLED',
-  AT_RISK: 'AT_RISK',
-  ON_TRACK: 'ON_TRACK',
   WON: 'WON',
-  LOST: 'LOST'
+  LOST: 'LOST',
+  ON_HOLD: 'ON_HOLD',
+  NOT_QUALIFIED: 'NOT_QUALIFIED'
 };
 
 /**
@@ -208,11 +184,12 @@ export const CYCLE_DERIVED_STATUS = {
 export const CYCLE_DERIVED_STATUS_LABELS = {
   NOT_STARTED: 'Not Started',
   IN_PROGRESS: 'In Progress',
+  OVERDUE: 'Overdue',
   STALLED: 'Stalled',
-  AT_RISK: 'At Risk',
-  ON_TRACK: 'On Track',
   WON: 'Won',
-  LOST: 'Lost'
+  LOST: 'Lost',
+  ON_HOLD: 'On Hold',
+  NOT_QUALIFIED: 'Not Qualified'
 };
 
 /**
@@ -221,11 +198,12 @@ export const CYCLE_DERIVED_STATUS_LABELS = {
 export const CYCLE_STATUS_COLORS = {
   NOT_STARTED: 'default',
   IN_PROGRESS: 'info',
-  STALLED: 'error',
-  AT_RISK: 'warning',
-  ON_TRACK: 'success',
+  OVERDUE: 'error',
+  STALLED: 'warning',
   WON: 'success',
-  LOST: 'error'
+  LOST: 'error',
+  ON_HOLD: 'warning',
+  NOT_QUALIFIED: 'default'
 };
 
 // ==============================|| ENDPOINTS ||============================== //
@@ -236,6 +214,8 @@ const endpoints = {
   cycleDetail: (id) => `/decision_cycles/${id}/`,
   cyclesByAccount: (accountId) => `/decision_cycles/by-account/${accountId}/`,
   choices: '/decision_cycles/choices/',
+  closeCycle: (id) => `/decision_cycles/${id}/close/`,
+  reopenCycle: (id) => `/decision_cycles/${id}/reopen/`,
   
   // Decision Steps
   steps: '/decision_cycles/steps/',
@@ -809,6 +789,85 @@ export async function deleteDecisionCycle(cycleId) {
   
   return { 
     success: false, 
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null
+  };
+}
+
+/**
+ * CLOSE DECISION CYCLE
+ * 
+ * Sets explicit outcome on a cycle (WON / LOST / ON_HOLD / NOT_QUALIFIED).
+ * Terminal outcomes (WON/LOST/NOT_QUALIFIED) auto-cancel all PLANNED activities.
+ * ON_HOLD pauses the cycle (PLANNED activities kept).
+ * 
+ * @param {string} cycleId - UUID of the cycle
+ * @param {Object} payload - { outcome, outcome_notes?, hold_until? }
+ * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ */
+export async function closeCycle(cycleId, payload = {}) {
+  if (!cycleId || !isValidUUID(cycleId)) {
+    return {
+      success: false,
+      error: 'Invalid cycle ID format',
+      status: 400
+    };
+  }
+  
+  const result = await api.post(endpoints.closeCycle(cycleId), payload);
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.cycles,
+      endpoints.cycleDetail(cycleId),
+      '/decision_cycles/by-account/',
+      '/module-activities/'
+    ]);
+    const cycleData = result.data?.data || result.data;
+    return { success: true, data: cycleData };
+  }
+  
+  return {
+    success: false,
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null
+  };
+}
+
+/**
+ * REOPEN DECISION CYCLE
+ * 
+ * Clears outcome fields, returning cycle to derived status mode.
+ * 
+ * @param {string} cycleId - UUID of the cycle
+ * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ */
+export async function reopenCycle(cycleId) {
+  if (!cycleId || !isValidUUID(cycleId)) {
+    return {
+      success: false,
+      error: 'Invalid cycle ID format',
+      status: 400
+    };
+  }
+  
+  const result = await api.post(endpoints.reopenCycle(cycleId), {});
+  
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.cycles,
+      endpoints.cycleDetail(cycleId),
+      '/decision_cycles/by-account/',
+      '/module-activities/'
+    ]);
+    const cycleData = result.data?.data || result.data;
+    return { success: true, data: cycleData };
+  }
+  
+  return {
+    success: false,
     error: result.error,
     status: result.status || 0,
     response: result.response || null

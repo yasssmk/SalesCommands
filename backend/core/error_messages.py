@@ -159,6 +159,7 @@ class ActivityErrorMessages:
     CANNOT_CANCEL_COMPLETED = _("Cannot cancel a completed activity")
     ALREADY_CANCELLED = _("Activity is already cancelled")
     CANNOT_REOPEN = _("Only completed or cancelled activities can be reopened")
+    CANNOT_REOPEN_CLOSED_CYCLE = _("Cannot reopen activity while the decision cycle is closed. Reopen the cycle first. ")
     INVALID_TARGET_STATUS = _("Target status must be PLANNED")
     
     # Relation validation
