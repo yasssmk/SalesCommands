@@ -338,7 +338,6 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     progress = serializers.SerializerMethodField(read_only=True)
     stalled_steps_count = serializers.SerializerMethodField(read_only=True)
     is_at_risk = serializers.SerializerMethodField(read_only=True)
-    has_steps_needing_attention = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionCycle
@@ -346,11 +345,12 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
             'id', 'name', 'description',
             'account', 'account_name',
             'is_active',
+            # Cycle outcome (two-layer architecture)
+            'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'steps', 'steps_count', 'validated_steps_count',
             # Cycle-level insights
             'cycle_status', 'progress',
             'stalled_steps_count', 'is_at_risk',
-            'has_steps_needing_attention',
             'created_at', 'updated_at'
         ]
         read_only_fields = fields
@@ -375,18 +375,12 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
         # Fallback: compute directly (triggers DB queries)
         from .services import CycleAggregationService
         service = CycleAggregationService()
+        cycle_status = service.get_cycle_status(obj)
         return {
             'cycle_status': service.get_cycle_status(obj),
             'progress': service.get_progress(obj),
             'stalled_steps_count': len(service.get_stalled_steps(obj)),
-            'is_at_risk': service.get_cycle_status(obj) in (
-                CycleAggregationService.STATUS_AT_RISK,
-                CycleAggregationService.STATUS_STALLED,
-            ),
-            'has_steps_needing_attention': any(
-                service._stalled_detection.needs_next_step_attention(s)
-                for s in obj.steps.all()
-            ),
+            'is_at_risk': cycle_status == CycleAggregationService.STATUS_STALLED,
         }
 
     def get_cycle_status(self, obj):
@@ -410,9 +404,6 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
         """Whether cycle is at risk. Reads from bulk context."""
         return self._get_cycle_summary(obj).get('is_at_risk', False)
     
-    def get_has_steps_needing_attention(self, obj):
-        """Whether any step needs next step resolution. Reads from bulk context."""
-        return self._get_cycle_summary(obj).get('has_steps_needing_attention', False)
 
 # ============================================================================
 # DECISION STEP SERIALIZERS
@@ -1086,6 +1077,8 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
             'id', 'name', 'description',
             'account', 'account_name',
             'is_active',
+            # Cycle outcome (two-layer architecture)
+            'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'steps_count', 'validated_steps_count',
             'created_at', 'updated_at'
         ]
@@ -1115,6 +1108,8 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             'id', 'name', 'description',
             'account', 'account_name',
             'is_active',
+            # Cycle outcome (two-layer architecture)
+            'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'steps', 'steps_count', 'validated_steps_count',
             'estimated_timeline_days',
             'created_by', 'updated_by',
@@ -1123,23 +1118,13 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
         read_only_fields = [
             'id', 'account_name', 'steps', 'steps_count',
             'validated_steps_count', 'estimated_timeline_days',
+            'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
     
     def get_account_name(self, obj):
         return obj.account.company_name if obj.account else None
     
-    def get_has_steps_needing_attention(self, obj):
-        """
-        Check if any step in this cycle needs next step resolution.
-        
-        Uses model property on prefetched steps.
-        Same performance profile as is_stalled (already called per step).
-        """
-        for step in obj.steps.all():
-            if step.needs_next_step_attention:
-                return True
-        return False
 
 
 class DecisionCycleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):

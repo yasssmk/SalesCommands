@@ -11,7 +11,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
-from .constants import PipelineStep, DecisionStepStatus, StalledReason, PIPELINE_STEPS_CONFIG, ACTIVITY_OPTIONAL_STEPS
+from .constants import PipelineStep, DecisionStepStatus, CycleOutcome, PIPELINE_STEPS_CONFIG, ACTIVITY_OPTIONAL_STEPS
 
 
 class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -58,6 +58,45 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         default=True,
         verbose_name=_('Is Active'),
         help_text=_('Whether this is the currently displayed cycle for the account')
+    )
+    
+    # ==========================================================================
+    # CYCLE OUTCOME (two-layer architecture)
+    # ==========================================================================
+    
+    outcome = models.CharField(
+        max_length=20,
+        choices=CycleOutcome.choices,
+        blank=True,
+        null=True,
+        verbose_name=_('Outcome'),
+        help_text=_(
+            'Explicit cycle-level strategic decision. '
+            'WON/LOST/NOT_QUALIFIED = terminal (PLANNED cancelled). '
+            'ON_HOLD = paused (PLANNED kept). '
+            'null = cycle still open, status derived from steps.'
+        )
+    )
+    
+    outcome_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_('Outcome Date'),
+        help_text=_('Date when the outcome decision was made (auto-set on close)')
+    )
+    
+    outcome_notes = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_('Outcome Notes'),
+        help_text=_('Reason or context for the outcome. Required for ON_HOLD.')
+    )
+    
+    hold_until = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_('Hold Until'),
+        help_text=_('Resume date when cycle is ON_HOLD. Required for ON_HOLD only.')
     )
     
     # ==========================================================================

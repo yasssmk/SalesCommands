@@ -44,7 +44,7 @@ from ..serializers import (
     DecisionStepCreateSerializer,
     DecisionStepUpdateSerializer,
 )
-from ..constants import PipelineStep, DecisionStepStatus, PIPELINE_STEPS_CONFIG
+from ..constants import PipelineStep, DecisionStepStatus, CycleOutcome, TERMINAL_OUTCOMES, PIPELINE_STEPS_CONFIG
 
 logger = get_logger(__name__)
 
@@ -92,12 +92,38 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
     module = 'decision_cycles'
     
     # Action policies
+    # Action policies
     action_policies = {
         'by_account': {
             'crud': 'read',
             'scope': 'client'
-        },
+        }
     }
+
+    # ==========================================================================
+    # CACHE HELPERS
+    # ==========================================================================
+
+    def _invalidate_cycle_caches(self, client_id):
+        """
+        Invalidate all decision-cycle-related caches and cross-module dependencies.
+
+        When a cycle changes, we must invalidate:
+        - Decision cycle cache (list, detail, timeline views)
+        - Activity cache (activity status may change from auto-cancel)
+        - Account cache (workspace stats depend on cycle data)
+        """
+        client_id_str = str(client_id)
+        invalidate_tag(client_id_str, 'decision_cycles')
+        invalidate_tag(client_id_str, 'activities')
+        invalidate_tag(client_id_str, 'accounts')
+
+        logger.info('cache_invalidation_cycle', extra={
+            'event': 'cache_invalidation',
+            'client_id': client_id_str,
+            'tags': ['decision_cycles', 'activities', 'accounts'],
+        })
+
     
     def get_serializer_class(self):
         """Choose serializer based on action."""
@@ -208,15 +234,14 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         Create a new decision cycle with AUTO-CREATED pipeline steps.
         
         Pipeline steps are fixed and cannot be created manually by users.
-        All 7 steps are created automatically in order:
+        5 steps are created automatically in order:
         1. Qualification
         2. Technical Fit
         3. Solution Validation
         4. Business Case
         5. Closing
-        6. Implementation
-        7. Go Live
         """
+
         ctx = ctx_from_request(request)
         logger.info("decision_cycle_create_requested", extra=ctx)
         
@@ -255,9 +280,11 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
     
     def _create_pipeline_steps(self, cycle, user):
         """
-        Create all fixed pipeline steps for a new cycle.
+        Create fixed pipeline steps for a new cycle (5 steps).
         
         Steps are created in order with linked-list relationships.
+        IMPLEMENTATION and GO_LIVE kept in PipelineStep enum for backward
+        compatibility but are NOT auto-created for new cycles.
         """
         previous_step = None
         
@@ -420,6 +447,186 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         
         return Response(cached_data)
     
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def close(self, request, pk=None):
+        """
+        Close a decision cycle with an explicit outcome.
+
+        POST /decision-cycles/{id}/close/
+
+        Payload:
+            outcome: WON | LOST | ON_HOLD | NOT_QUALIFIED  (required)
+            outcome_notes: str  (required for ON_HOLD, optional otherwise)
+            hold_until: date    (required for ON_HOLD only)
+
+        Behavior:
+            WON / LOST / NOT_QUALIFIED → auto-cancel all PLANNED activities
+            ON_HOLD → keep PLANNED activities (deal paused, not dead)
+        """
+        from django.utils import timezone as tz
+        from app_modules.activities.constants import ActivityStatus
+
+        ctx = ctx_from_request(request)
+        instance = self.get_object()
+
+        logger.info("decision_cycle_close_requested", extra={
+            **ctx,
+            'cycle_id': str(instance.id),
+        })
+
+        # --- Validate payload ---
+        outcome = request.data.get('outcome')
+        outcome_notes = request.data.get('outcome_notes', '').strip() or None
+        hold_until = request.data.get('hold_until')
+
+        if not outcome:
+            raise StandardizedValidationError("outcome is required.")
+
+        valid_outcomes = [c.value for c in CycleOutcome]
+        if outcome not in valid_outcomes:
+            raise StandardizedValidationError(
+                f"outcome must be one of: {', '.join(valid_outcomes)}"
+            )
+
+        # Already closed guard
+        if instance.outcome is not None:
+            raise StandardizedValidationError(
+                f"Cycle is already closed as {instance.outcome}. Reopen it first."
+            )
+
+        # ON_HOLD specific validation
+        if outcome == CycleOutcome.ON_HOLD:
+            if not outcome_notes:
+                raise StandardizedValidationError(
+                    "outcome_notes is required when outcome is ON_HOLD."
+                )
+            if not hold_until:
+                raise StandardizedValidationError(
+                    "hold_until date is required when outcome is ON_HOLD."
+                )
+
+        # --- Apply outcome ---
+        instance.outcome = outcome
+        instance.outcome_date = tz.now().date()
+        instance.outcome_notes = outcome_notes
+        instance.hold_until = hold_until if outcome == CycleOutcome.ON_HOLD else None
+        instance.save(user=request.user)
+
+        # --- Terminal outcomes: auto-cancel PLANNED activities ---
+        cancelled_count = 0
+        if outcome in TERMINAL_OUTCOMES:
+            from app_modules.activities.models import Activity
+
+            planned_activities = Activity.objects.filter(
+                decision_step__cycle=instance,
+                status=ActivityStatus.PLANNED,
+            )
+            cancelled_count = planned_activities.count()
+            planned_activities.update(
+                status=ActivityStatus.CANCELLED,
+                updated_by=request.user,
+            )
+
+        # Audit log
+        audit_log(
+            event='decision_cycle_close_success',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='decision_cycle',
+            target_id=str(instance.id),
+            outcome='success',
+            details={
+                'cycle_outcome': outcome,
+                'cancelled_activities': cancelled_count,
+            },
+        )
+
+        # Invalidate caches (cycles + activities + accounts)
+        self._invalidate_cycle_caches(self.get_client_id())
+
+        logger.info("decision_cycle_closed", extra={
+            **ctx,
+            'cycle_id': str(instance.id),
+            'outcome': outcome,
+            'cancelled_activities': cancelled_count,
+        })
+
+        serializer = DecisionCycleSerializer(instance, context={'request': request})
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'meta': {
+                'cancelled_activities_count': cancelled_count,
+            },
+        })
+
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def reopen(self, request, pk=None):
+        """
+        Reopen a closed decision cycle.
+
+        POST /decision-cycles/{id}/reopen/
+
+        Behavior:
+            - Clears outcome, outcome_date, outcome_notes, hold_until
+            - Does NOT auto-restore cancelled activities
+            - Cycle status re-derives from step data
+        """
+        ctx = ctx_from_request(request)
+        instance = self.get_object()
+
+        logger.info("decision_cycle_reopen_requested", extra={
+            **ctx,
+            'cycle_id': str(instance.id),
+        })
+
+        # Guard: must be closed
+        if instance.outcome is None:
+            raise StandardizedValidationError(
+                "Cycle is not closed. Nothing to reopen."
+            )
+
+        previous_outcome = instance.outcome
+
+        # Clear outcome fields
+        instance.outcome = None
+        instance.outcome_date = None
+        instance.outcome_notes = None
+        instance.hold_until = None
+        instance.save(user=request.user)
+
+        # Audit log
+        audit_log(
+            event='decision_cycle_reopen_success',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='decision_cycle',
+            target_id=str(instance.id),
+            outcome='success',
+            details={
+                'previous_outcome': previous_outcome,
+            },
+        )
+
+        # Invalidate caches (cycles + activities + accounts)
+        self._invalidate_cycle_caches(self.get_client_id())
+
+        logger.info("decision_cycle_reopened", extra={
+            **ctx,
+            'cycle_id': str(instance.id),
+            'previous_outcome': previous_outcome,
+        })
+
+        serializer = DecisionCycleSerializer(instance, context={'request': request})
+        return Response({
+            'success': True,
+            'data': serializer.data,
+        })
+    
     def _produce_by_account(self, request, account_id, ctx):
         """Produce by_account data dict (cache-friendly, no Response wrapper)."""
         # Import models for prefetch
@@ -501,7 +708,6 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         # Bulk step aggregation (contacts count, departments, effective dates)
         from ..services import (
             StepAggregationService,
-            StalledDetectionService,
             StepStatusDerivationService,
             CycleAggregationService,
         )
@@ -511,13 +717,9 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         # Bulk status derivation (derived_status, color — replaces manual status)
         step_derived_statuses = StepStatusDerivationService().derive_bulk(all_steps)
 
-        # Bulk stalled detection (is_stalled, reason, needs_next_step_attention)
-        stalled_results = StalledDetectionService().detect_bulk(all_steps)
-
         # Bulk cycle summaries (cycle_status, progress, stalled_steps_count, is_at_risk)
         cycle_summaries = CycleAggregationService().get_bulk_summaries(
             cycles,
-            stalled_results=stalled_results,
             step_derived_statuses=step_derived_statuses,
         )
 
@@ -536,7 +738,6 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
                 'request': request,
                 'step_aggregations': step_aggregations,
                 'step_derived_statuses': step_derived_statuses,
-                'stalled_results': stalled_results,
                 'cycle_summaries': cycle_summaries,
             }
         )

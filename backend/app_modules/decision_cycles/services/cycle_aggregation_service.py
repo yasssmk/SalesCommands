@@ -4,11 +4,15 @@ Cycle Aggregation Service.
 
 Aggregates DecisionStep data into DecisionCycle-level insights.
 Composes StepAggregationService and StalledDetectionService to provide:
-- Derived cycle status (from steps)
+- Derived cycle status (explicit outcome first, then from steps)
 - Progress metrics (validated / total)
 - Stalled steps detection
 - All stakeholders across the cycle
 - Cycle-level timeline
+
+Two-layer architecture:
+    1. cycle.outcome (WON/LOST/ON_HOLD/NOT_QUALIFIED) → explicit, overrides all
+    2. else → derive from step statuses (NOT_STARTED / STALLED / IN_PROGRESS)
 
 Usage:
     service = CycleAggregationService()
@@ -25,7 +29,6 @@ from django.utils import timezone
 from core.logging import get_logger
 
 from .step_aggregation_service import StepAggregationService
-from .stalled_detection_service import StalledDetectionService
 
 logger = get_logger(__name__)
 
@@ -43,17 +46,18 @@ class CycleAggregationService:
     """
 
     # Derived cycle statuses (not stored in DB — computed on read)
-    STATUS_NOT_STARTED = 'NOT_STARTED'
-    STATUS_IN_PROGRESS = 'IN_PROGRESS'
-    STATUS_ON_TRACK = 'ON_TRACK'
-    STATUS_AT_RISK = 'AT_RISK'
-    STATUS_STALLED = 'STALLED'
+    # Explicit outcomes (from cycle.outcome field):
     STATUS_WON = 'WON'
     STATUS_LOST = 'LOST'
+    STATUS_ON_HOLD = 'ON_HOLD'
+    # Derived from steps (when cycle.outcome is null):
+    STATUS_NOT_STARTED = 'NOT_STARTED'
+    STATUS_OVERDUE = 'OVERDUE'
+    STATUS_IN_PROGRESS = 'IN_PROGRESS'
+    STATUS_STALLED = 'STALLED'
 
     def __init__(self):
         self._step_aggregation = StepAggregationService()
-        self._stalled_detection = StalledDetectionService()
 
     # ------------------------------------------------------------------
     # SINGLE-INSTANCE METHODS (detail view — DB queries acceptable)
@@ -73,7 +77,7 @@ class CycleAggregationService:
         Returns status string constant.
         """
         steps = list(cycle.steps.all())
-        return self._derive_status(steps)
+        return self._derive_status(steps, cycle=cycle)
 
     def get_progress(self, cycle):
         """
@@ -92,20 +96,23 @@ class CycleAggregationService:
 
     def get_stalled_steps(self, cycle):
         """
-        List of stalled steps with reasons.
+        List of stalled steps.
+
+        Uses StepStatusDerivationService to check derived_status == STALLED.
 
         Returns list of dicts:
-        [{'step_id': uuid, 'step_name': str, 'reason': str, 'reason_display': str}]
+        [{'step_id': uuid, 'step_name': str}]
         """
+        from .step_status_derivation_service import StepStatusDerivationService
+        derivation_service = StepStatusDerivationService()
+
         stalled = []
         for step in cycle.steps.all():
-            result = self._stalled_detection.detect(step)
-            if result['is_stalled']:
+            result = derivation_service.derive(step)
+            if result['status'] == 'STALLED':
                 stalled.append({
                     'step_id': str(step.id),
                     'step_name': step.name,
-                    'reason': result['reason'],
-                    'reason_display': result['reason_display'],
                 })
         return stalled
 
@@ -174,34 +181,32 @@ class CycleAggregationService:
 
         Returns dict with all sub-results.
         """
+        stalled_steps = self.get_stalled_steps(cycle)
+        cycle_status = self.get_cycle_status(cycle)
         return {
-            'cycle_status': self.get_cycle_status(cycle),
+            'cycle_status': cycle_status,
             'progress': self.get_progress(cycle),
-            'stalled_steps': self.get_stalled_steps(cycle),
-            'stalled_steps_count': len(self.get_stalled_steps(cycle)),
+            'stalled_steps': stalled_steps,
+            'stalled_steps_count': len(stalled_steps),
             'timeline': self.get_cycle_timeline(cycle),
-            'is_at_risk': self.get_cycle_status(cycle) in (
-                self.STATUS_AT_RISK, self.STATUS_STALLED
-            ),
+            'is_at_risk': cycle_status in (self.STATUS_STALLED, self.STATUS_OVERDUE),
         }
 
     # ------------------------------------------------------------------
     # BULK METHOD (by_account timeline — zero DB queries)
     # ------------------------------------------------------------------
 
-    def get_bulk_summaries(self, cycles, step_aggregations=None, stalled_results=None, step_derived_statuses=None,):
+    def get_bulk_summaries(self, cycles, step_derived_statuses=None):
         """
         Lightweight summaries for cycle list/timeline view.
 
-        Operates on prefetched data only. Optionally accepts pre-computed
-        step_aggregations and stalled_results to avoid recomputation.
+        Operates on prefetched data only. Uses step_derived_statuses
+        to count STALLED steps directly (no StalledDetectionService).
 
         Args:
             cycles: iterable of DecisionCycle with prefetched steps + activities
-            step_aggregations: dict from StepAggregationService.get_bulk_aggregation()
-                               (optional, computed internally if not provided)
-            stalled_results: dict from StalledDetectionService.detect_bulk()
-                             (optional, computed internally if not provided)
+            step_derived_statuses: dict from StepStatusDerivationService.derive_bulk()
+                                   (optional, computed internally if not provided)
 
         Returns dict keyed by cycle.id:
         {
@@ -210,56 +215,45 @@ class CycleAggregationService:
                 'progress': {total_steps, validated_steps, current_step_name, percentage},
                 'stalled_steps_count': int,
                 'is_at_risk': bool,
-                'has_steps_needing_attention': bool,
             }
         }
         """
         # Collect all steps across cycles for bulk computation
         all_steps = []
-        cycle_steps_map = {}  # cycle.id -> [steps]
+        cycle_steps_map = {}
 
         for cycle in cycles:
             steps = self._get_prefetched_steps(cycle)
             cycle_steps_map[cycle.id] = steps
             all_steps.extend(steps)
 
-        # Compute bulk stalled if not pre-provided
-        if stalled_results is None:
-            stalled_results = self._stalled_detection.detect_bulk(all_steps)
+        # Compute derived statuses if not pre-provided
+        if step_derived_statuses is None:
+            from .step_status_derivation_service import StepStatusDerivationService
+            step_derived_statuses = StepStatusDerivationService().derive_bulk(all_steps)
 
         results = {}
 
         for cycle in cycles:
             steps = cycle_steps_map.get(cycle.id, [])
 
-            # Derive status from derived step statuses + stalled results
-            cycle_status = self._derive_status_bulk(steps, stalled_results, step_derived_statuses)
+            # Derive cycle status: explicit outcome first, then from steps
+            cycle_status = self._derive_status_bulk(steps, step_derived_statuses, cycle=cycle)
 
             # Progress from derived step statuses
             progress = self._compute_progress(steps, step_derived_statuses)
 
-            # Count stalled steps
+            # Count stalled steps from derived statuses
             stalled_count = sum(
                 1 for s in steps
-                if stalled_results.get(s.id, {}).get('is_stalled', False)
-            )
-
-            # Any step needs attention
-            has_attention = any(
-                stalled_results.get(s.id, {}).get(
-                    'needs_next_step_attention', False
-                )
-                for s in steps
+                if step_derived_statuses.get(s.id, {}).get('status') == 'STALLED'
             )
 
             results[cycle.id] = {
                 'cycle_status': cycle_status,
                 'progress': progress,
                 'stalled_steps_count': stalled_count,
-                'is_at_risk': cycle_status in (
-                    self.STATUS_AT_RISK, self.STATUS_STALLED
-                ),
-                'has_steps_needing_attention': has_attention,
+                'is_at_risk': cycle_status in (self.STATUS_STALLED, self.STATUS_OVERDUE),
             }
 
         return results
@@ -268,12 +262,28 @@ class CycleAggregationService:
     # PRIVATE HELPERS
     # ------------------------------------------------------------------
 
-    def _derive_status(self, steps):
+    def _derive_status(self, steps, cycle=None):
         """
-        Derive cycle status from step list (single-instance path).
-        
-        Derives step statuses on the fly since s.status (DB field) is never updated.
+        Derive cycle status (single-instance path).
+
+        Priority:
+        1. cycle.outcome (explicit) → WON / LOST / ON_HOLD
+        2. All NOT_STARTED → NOT_STARTED
+        3. Any step OVERDUE → OVERDUE (late but active work exists)
+        4. Any step IN_PROGRESS or VALIDATED → IN_PROGRESS
+        5. All active steps STALLED → STALLED (deal dormant)
+        6. Fallback → IN_PROGRESS
         """
+        # 1. Explicit outcome overrides everything
+        if cycle and cycle.outcome:
+            outcome = cycle.outcome
+            if outcome in ('WON',):
+                return self.STATUS_WON
+            if outcome in ('LOST', 'NOT_QUALIFIED'):
+                return self.STATUS_LOST
+            if outcome == 'ON_HOLD':
+                return self.STATUS_ON_HOLD
+
         if not steps:
             return self.STATUS_NOT_STARTED
 
@@ -282,55 +292,48 @@ class CycleAggregationService:
         derivation_service = StepStatusDerivationService()
         statuses = [derivation_service.derive(s)['status'] for s in steps]
 
-        # 1. All NOT_STARTED → cycle not started
+        # 2. All NOT_STARTED → cycle not started
         if all(s == 'NOT_STARTED' for s in statuses):
             return self.STATUS_NOT_STARTED
 
-        # 2. Any step WON (CLOSE_WON is a deal-level signal) → cycle won
-        if any(s == 'WON' for s in statuses):
-            return self.STATUS_WON
+        # 3. Any step OVERDUE → cycle overdue (late but still has active work)
+        if any(s == 'OVERDUE' for s in statuses):
+            return self.STATUS_OVERDUE
 
-        # 3. Any REJECTED (CLOSE_LOST/NOT_QUALIFIED) → cycle lost
-        if any(s == 'REJECTED' for s in statuses):
-            return self.STATUS_LOST
+        # 4. Any step with active work → in progress
+        if any(s in ('IN_PROGRESS', 'VALIDATED') for s in statuses):
+            return self.STATUS_IN_PROGRESS
 
-        # 4. All active steps are ON_HOLD → cycle stalled
+        # 5. All active steps are STALLED → deal dormant
         active_statuses = [s for s in statuses if s != 'NOT_STARTED']
-        if active_statuses and all(s == 'ON_HOLD' for s in active_statuses):
+        if active_statuses and all(s == 'STALLED' for s in active_statuses):
             return self.STATUS_STALLED
 
-        # 5-6. Check for stalled steps
-        has_stalled = False
-        stalled_count = 0
-        for step in steps:
-            result = self._stalled_detection.detect(step)
-            if result['is_stalled']:
-                has_stalled = True
-                stalled_count += 1
-
-        if stalled_count > 1:
-            return self.STATUS_STALLED
-        if stalled_count == 1:
-            return self.STATUS_AT_RISK
-
+        # 6. Fallback
         return self.STATUS_IN_PROGRESS
 
-    def _derive_status_bulk(self, steps, stalled_results, step_derived_statuses=None):
+    def _derive_status_bulk(self, steps, step_derived_statuses=None, cycle=None):
         """
-        Derive cycle status using pre-computed stalled_results and derived step statuses.
-        
-        Uses step_derived_statuses (from StepStatusDerivationService) instead of
-        s.status (DB field) because step status is DERIVED, never written to DB.
-        
+        Derive cycle status from pre-computed data (bulk path).
+
         Priority:
-        1. All NOT_STARTED → NOT_STARTED
-        2. All terminal positive (VALIDATED/WON) → WON
-        3. Any REJECTED → LOST
-        4. All non-NOT_STARTED are ON_HOLD (no forward motion) → STALLED
-        5. Stalled count > 1 → STALLED
-        6. Stalled count == 1 → AT_RISK
-        7. Otherwise → IN_PROGRESS
+        1. cycle.outcome (explicit) → WON / LOST / ON_HOLD
+        2. All NOT_STARTED → NOT_STARTED
+        3. Any step OVERDUE → OVERDUE (late but active work exists)
+        4. Any step IN_PROGRESS or VALIDATED → IN_PROGRESS
+        5. All active steps STALLED → STALLED (deal dormant)
+        6. Fallback → IN_PROGRESS
         """
+        # 1. Explicit outcome overrides everything
+        if cycle and cycle.outcome:
+            outcome = cycle.outcome
+            if outcome in ('WON',):
+                return self.STATUS_WON
+            if outcome in ('LOST', 'NOT_QUALIFIED'):
+                return self.STATUS_LOST
+            if outcome == 'ON_HOLD':
+                return self.STATUS_ON_HOLD
+
         if not steps:
             return self.STATUS_NOT_STARTED
 
@@ -343,35 +346,24 @@ class CycleAggregationService:
         else:
             statuses = [s.status for s in steps]
 
-        # 1. All NOT_STARTED → cycle not started
+        # 2. All NOT_STARTED → cycle not started
         if all(s == 'NOT_STARTED' for s in statuses):
             return self.STATUS_NOT_STARTED
 
-        # 2. Any step WON (CLOSE_WON is a deal-level signal) → cycle won
-        #    Note: WON beats REJECTED — if somehow both exist, deal is won
-        if any(s == 'WON' for s in statuses):
-            return self.STATUS_WON
+        # 3. Any step OVERDUE → cycle overdue
+        if any(s == 'OVERDUE' for s in statuses):
+            return self.STATUS_OVERDUE
 
-        # 3. Any REJECTED (CLOSE_LOST/NOT_QUALIFIED) → cycle lost
-        if any(s == 'REJECTED' for s in statuses):
-            return self.STATUS_LOST
+        # 4. Any step with active work → in progress
+        if any(s in ('IN_PROGRESS', 'VALIDATED') for s in statuses):
+            return self.STATUS_IN_PROGRESS
 
-        # 4. All active steps are ON_HOLD (no forward motion anywhere)
+        # 5. All active steps STALLED → deal dormant
         active_statuses = [s for s in statuses if s != 'NOT_STARTED']
-        if active_statuses and all(s == 'ON_HOLD' for s in active_statuses):
+        if active_statuses and all(s == 'STALLED' for s in active_statuses):
             return self.STATUS_STALLED
 
-        # 5-6. Count stalled from pre-computed results
-        stalled_count = sum(
-            1 for s in steps
-            if stalled_results.get(s.id, {}).get('is_stalled', False)
-        )
-
-        if stalled_count > 1:
-            return self.STATUS_STALLED
-        if stalled_count == 1:
-            return self.STATUS_AT_RISK
-
+        # 6. Fallback
         return self.STATUS_IN_PROGRESS
 
     @staticmethod
@@ -396,14 +388,16 @@ class CycleAggregationService:
             return s.status
 
         total = len(steps)
-        # WON is also a terminal positive status (counts as validated)
-        validated = sum(1 for s in steps if _get_status(s) in ('VALIDATED', 'WON'))
 
-        # Current step: first non-terminal step in order
+        # VALIDATED is the only terminal positive step status now
+        # (WON/LOST are cycle-level outcomes, not step statuses)
+        validated = sum(1 for s in steps if _get_status(s) == 'VALIDATED')
+
+        # Current step: first non-validated step in order
         current_name = None
         sorted_steps = sorted(steps, key=lambda s: s.order)
         for s in sorted_steps:
-            if _get_status(s) not in ('VALIDATED', 'WON', 'REJECTED', 'CANCELLED'):
+            if _get_status(s) != 'VALIDATED':
                 current_name = s.name
                 break
 

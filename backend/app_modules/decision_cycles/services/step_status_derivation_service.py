@@ -6,15 +6,19 @@ Derives DecisionStep status automatically from activity data.
 Single source of truth for step status — replaces manual status changes.
 
 Derivation priority (highest first):
-1. WON         — activity completed with no_next_step_reason=CLOSE_WON
-2. REJECTED    — activity completed with reason ∈ {CLOSE_LOST, NOT_QUALIFIED}
-3. OVERDUE     — expected_end < today OR any PLANNED activity past scheduled/due date
-4. VALIDATED   — ALL activities completed (0 PLANNED) + later step has activities
-5. IN_PROGRESS — at least 1 PLANNED AND (some PLANNED are current/past/undated OR completed exist)
-6. ON_HOLD     — completed activities exist, no PLANNED, no activity in later steps
-7. NOT_STARTED — no activities, all cancelled, OR only future-dated PLANNED with no completed
+1. OVERDUE     — step deadline passed OR any PLANNED activity overdue
+2. VALIDATED   — all completed + PLANNED exists elsewhere in cycle (deal moving)
+   STALLED     — all completed + NO PLANNED in entire cycle + last completed step
+   VALIDATED   — all completed + NO PLANNED in cycle + not last completed step
+3. IN_PROGRESS — at least 1 PLANNED activity exists
+4. NOT_STARTED — no activities
 
-IN_CHASING: Reserved for future Campaign/Sequence feature (not auto-derived).
+STALLED only applies to the last step (by pipeline order) with completed
+activities when the entire cycle has zero PLANNED activities remaining.
+This signals a dormant deal to the sales rep.
+
+WON/LOST/ON_HOLD are cycle-level outcomes (CycleOutcome), not step statuses.
+IN_CHASING: Reserved for future Campaign/Sequence feature.
 
 Usage:
     service = StepStatusDerivationService()
@@ -46,18 +50,12 @@ class StepStatusDerivationService:
     - Returns plain dicts (serializable), not model instances.
     """
 
-    # Terminal no_next_step_reasons that determine WON/REJECTED
-    WON_REASONS = frozenset(['CLOSE_WON'])
-    REJECTED_REASONS = frozenset(['CLOSE_LOST', 'NOT_QUALIFIED'])
-
     # Status → MUI color token mapping
     STATUS_COLORS = {
-        'WON': 'primary.dark',
-        'REJECTED': 'error.main',
         'OVERDUE': 'error.light',
         'VALIDATED': 'primary.light',
         'IN_PROGRESS': 'secondary.main',
-        'ON_HOLD': 'warning.light',
+        'STALLED': 'warning.light',
         'IN_CHASING': 'warning.dark',
         'NOT_STARTED': 'secondary.light',
     }
@@ -87,11 +85,12 @@ class StepStatusDerivationService:
             step.activities.exclude(status=ActivityStatus.CANCELLED)
         )
 
-        # Check if a later step in the same cycle has activities
-        has_activity_in_later_step = self._has_activity_in_later_step_db(step)
+        today = timezone.now().date()
+        has_planned_in_cycle = self._has_planned_in_cycle_db(step)
+        is_last_completed_step = self._is_last_completed_step_db(step)
 
         status = self._compute_status(
-            step, activities, timezone.now().date(), has_activity_in_later_step
+            step, activities, today, has_planned_in_cycle, is_last_completed_step
         )
 
         return {
@@ -136,12 +135,15 @@ class StepStatusDerivationService:
 
         for step in steps:
             activities = self._get_non_cancelled_activities(step)
-            has_activity_in_later_step = self._has_activity_in_later_step_bulk(
+            has_planned_in_cycle = self._has_planned_in_cycle_bulk(
+                step, cycle_steps_map
+            )
+            is_last_completed_step = self._is_last_completed_step_bulk(
                 step, cycle_steps_map
             )
 
             status = self._compute_status(
-                step, activities, today, has_activity_in_later_step
+                step, activities, today, has_planned_in_cycle, is_last_completed_step
             )
 
             results[step.id] = {
@@ -152,76 +154,79 @@ class StepStatusDerivationService:
 
         return results
 
+    @staticmethod
+    def _has_planned_in_cycle_bulk(step, cycle_steps_map):
+        """Check if any PLANNED activity exists in any step of the same cycle (prefetched)."""
+        cycle_steps = cycle_steps_map.get(step.cycle_id, [])
+        for s in cycle_steps:
+            activities = getattr(s, '_prefetched_objects_cache', {}).get('activities', [])
+            if any(a.status == 'PLANNED' for a in activities):
+                return True
+        return False
+
+    @staticmethod
+    def _is_last_completed_step_bulk(step, cycle_steps_map):
+        """
+        Check if this step has the highest pipeline order among steps
+        with at least one COMPLETED activity (prefetched).
+        """
+        cycle_steps = cycle_steps_map.get(step.cycle_id, [])
+        max_order = None
+        for s in cycle_steps:
+            activities = getattr(s, '_prefetched_objects_cache', {}).get('activities', [])
+            has_completed = any(a.status == 'COMPLETED' for a in activities)
+            if has_completed:
+                if max_order is None or s.order > max_order:
+                    max_order = s.order
+        if max_order is None:
+            return False
+        return step.order == max_order
+
     # ------------------------------------------------------------------
     # CORE DERIVATION LOGIC (shared by single + bulk)
     # ------------------------------------------------------------------
 
-    def _compute_status(self, step, activities, today, has_activity_in_later_step):
+    def _compute_status(self, step, activities, today, has_planned_in_cycle, is_last_completed_step):
         """
-        Core derivation logic.
+        Core status derivation logic.
 
-        Works on in-memory activity list.
-
-        Args:
-            step: DecisionStep instance (reads expected_end only)
-            activities: list of Activity instances (non-cancelled)
-            today: date for overdue comparison
-            has_activity_in_later_step: bool — a step with higher order
-                in the same cycle has at least 1 non-cancelled activity
-
-        Returns: status string
+        Priority:
+        1. OVERDUE — step deadline passed OR any PLANNED activity overdue
+        2. VALIDATED / STALLED — all completed, no planned in this step:
+           a. PLANNED exists elsewhere in cycle → VALIDATED (cycle still moving)
+           b. No PLANNED in cycle + last completed step → STALLED (deal dormant)
+           c. No PLANNED in cycle + not last completed step → VALIDATED
+        3. IN_PROGRESS — at least 1 PLANNED activity exists
+        4. NOT_STARTED — no activities at all
         """
         from ..constants import DecisionStepStatus
 
-        # Rule 7 — NOT_STARTED: no activities
-        if not activities:
+        non_cancelled = [a for a in activities if a.status != 'CANCELLED']
+
+        if not non_cancelled:
             return DecisionStepStatus.NOT_STARTED
 
-        # Classify activities
-        completed = [a for a in activities if a.status == 'COMPLETED']
-        planned = [a for a in activities if a.status == 'PLANNED']
+        planned = [a for a in non_cancelled if a.status == 'PLANNED']
+        completed = [a for a in non_cancelled if a.status == 'COMPLETED']
 
-        # Rule 1 — WON: any completed activity has CLOSE_WON
-        for a in completed:
-            if a.no_next_step_reason in self.WON_REASONS:
-                return DecisionStepStatus.WON
-
-        # Rule 2 — REJECTED: any completed activity has CLOSE_LOST/NOT_QUALIFIED
-        for a in completed:
-            if a.no_next_step_reason in self.REJECTED_REASONS:
-                return DecisionStepStatus.REJECTED
-
-        # Rule 3 — OVERDUE: step deadline passed OR any PLANNED activity overdue
+        # Rule 1 — OVERDUE
         if self._is_step_overdue(step, planned, today):
             return DecisionStepStatus.OVERDUE
 
-        # Rule 4 — VALIDATED: ALL completed (0 PLANNED) + later step has activity
-        if completed and not planned and has_activity_in_later_step:
+        # Rule 2 — All completed, no planned in THIS step
+        if completed and not planned:
+            if has_planned_in_cycle:
+                return DecisionStepStatus.VALIDATED
+            # No PLANNED anywhere in cycle
+            if is_last_completed_step:
+                return DecisionStepStatus.STALLED
             return DecisionStepStatus.VALIDATED
 
-        # Rule 5 — IN_PROGRESS: at least 1 PLANNED that is actionable
-        # Actionable = PLANNED with current/past/no date, OR completed work exists
+        # Rule 3 — Has planned activities
         if planned:
-            if completed:
-                # Work already started + more planned = in progress
-                return DecisionStepStatus.IN_PROGRESS
+            return DecisionStepStatus.IN_PROGRESS
 
-            # No completed yet — check if any planned is current or past
-            has_actionable = any(
-                self._is_activity_current_or_past(a, today)
-                for a in planned
-            )
-            if has_actionable:
-                return DecisionStepStatus.IN_PROGRESS
-
-            # All planned are future-dated, no completed → not started yet
-            return DecisionStepStatus.NOT_STARTED
-
-        # Rule 6 — ON_HOLD: completed exist, no planned, no later activity
-        if completed:
-            return DecisionStepStatus.ON_HOLD
-
-        # Fallback (should never reach here)
+        # Rule 4 — Fallback
         return DecisionStepStatus.NOT_STARTED
 
     # ------------------------------------------------------------------
@@ -241,24 +246,6 @@ class StepStatusDerivationService:
         if activity.scheduled_date and activity.scheduled_date < today:
             return True
         if activity.due_date and activity.due_date < today:
-            return True
-        return False
-
-    @staticmethod
-    def _is_activity_current_or_past(activity, today):
-        """
-        Check if a PLANNED activity is current, past, or has no date.
-
-        Returns True when:
-        - No scheduled_date and no due_date (undated = actionable now)
-        - scheduled_date <= today
-        - due_date <= today
-        """
-        if not activity.scheduled_date and not activity.due_date:
-            return True
-        if activity.scheduled_date and activity.scheduled_date <= today:
-            return True
-        if activity.due_date and activity.due_date <= today:
             return True
         return False
 
@@ -285,31 +272,40 @@ class StepStatusDerivationService:
     # ------------------------------------------------------------------
     # PRIVATE — Single-instance helpers (DB queries)
     # ------------------------------------------------------------------
-
+    
     @staticmethod
-    def _has_activity_in_later_step_db(step):
-        """
-        Check if any step with higher order in the same cycle
-        has at least 1 non-cancelled activity.
-
-        Queries from Activity table to avoid Django's multi-valued
-        .exclude() gotcha (which would exclude entire steps if ANY
-        activity is cancelled, even if other activities are not).
-
-        Triggers 1 DB query.
-        """
-        from app_modules.activities.constants import ActivityStatus
-        from app_modules.activities.models import Activity
-
+    def _has_planned_in_cycle_db(step):
+        """Check if any PLANNED activity exists in the same cycle. Triggers 1 query."""
         if not step.cycle_id:
             return False
-
+        from app_modules.activities.models import Activity
         return Activity.objects.filter(
-            decision_step__cycle_id=step.cycle_id,
-            decision_step__order__gt=step.order,
-        ).exclude(
-            status=ActivityStatus.CANCELLED,
+            decision_cycle_id=step.cycle_id,
+            status='PLANNED',
         ).exists()
+
+    @staticmethod
+    def _is_last_completed_step_db(step):
+        """
+        Check if this step has the highest pipeline order among steps
+        with at least one COMPLETED activity in the same cycle.
+        Triggers 1 query.
+        """
+        if not step.cycle_id:
+            return True
+        from app_modules.activities.models import Activity
+        from django.db.models import Max
+
+        max_order_with_completed = Activity.objects.filter(
+            decision_cycle_id=step.cycle_id,
+            status='COMPLETED',
+        ).aggregate(
+            max_order=Max('decision_step__order')
+        )['max_order']
+
+        if max_order_with_completed is None:
+            return False
+        return step.order == max_order_with_completed
 
     # ------------------------------------------------------------------
     # PRIVATE — Bulk helpers (prefetched data only, zero queries)
@@ -344,25 +340,3 @@ class StepStatusDerivationService:
             cycle_map[cycle_id].sort(key=lambda s: s.order)
 
         return cycle_map
-
-    @classmethod
-    def _has_activity_in_later_step_bulk(cls, step, cycle_steps_map):
-        """
-        Check if any later step (higher order) in the same cycle
-        has at least 1 non-cancelled activity.
-
-        Uses prefetched data only — zero DB queries.
-        """
-        cycle_id = step.cycle_id
-        if not cycle_id or cycle_id not in cycle_steps_map:
-            return False
-
-        for sibling in cycle_steps_map[cycle_id]:
-            if sibling.order <= step.order:
-                continue
-            # Check if this later step has non-cancelled activities
-            sibling_activities = cls._get_non_cancelled_activities(sibling)
-            if sibling_activities:
-                return True
-
-        return False

@@ -308,35 +308,62 @@ class ActivitySequenceService:
     def _annotate_with_rank(cls, queryset: QuerySet) -> QuerySet:
         """
         Annotate queryset with sequence rank using SQL Window Functions.
-        
-        Uses:
-        - Coalesce(decision_step__order, 999) for step ordering
-        - Effective date based on status:
-          - COMPLETED: completed_at date (when the work actually happened)
-          - PLANNED/other: COALESCE(scheduled_date, due_date, MAX_DATE)
-        - Coalesce(scheduled_time, MAX_TIME) for time ordering
-        - ROW_NUMBER() for unique ranking
-        
+
         ORDER BY:
         1. decision_step__order (nulls last = 999)
-        2. effective_date (completed_at for COMPLETED, else scheduled/due)
-        3. scheduled_time (nulls last)
-        4. created_at
-        
-        This ensures a COMPLETED activity (completed Feb 4, scheduled Feb 19)
-        ranks before a PLANNED activity (scheduled Feb 10).
+        2. status_order: COMPLETED (0) → PLANNED (1) → other (2)
+        3. overdue_order: overdue PLANNED (0) → future PLANNED (1)
+        4. effective_date ASC (oldest first for overdue, closest first for future)
+        5. effective_time ASC (nulls last)
+        6. created_at ASC (tiebreaker)
+
+        Result for OPEN activities:
+        - Overdue PLANNED first, oldest date at top (most urgent)
+        - Then future PLANNED, closest date at top (soonest)
         """
         from ..constants import ActivityStatus
-        
-        # Annotate with effective values for ordering
+
+        today = datetime.date.today()
+
         annotated = queryset.annotate(
-            # Step order with nulls last
-            _step_order=Coalesce(
-                F('decision_step__order'),
-                Value(999),
+            # Status grouping: COMPLETED first, then PLANNED
+            _status_order=Case(
+                When(status=ActivityStatus.COMPLETED, then=Value(0)),
+                When(status=ActivityStatus.PLANNED, then=Value(1)),
+                default=Value(2),
                 output_field=IntegerField()
             ),
-            # Effective date: use completed_at for COMPLETED, else scheduled/due
+            # Step order: applies to COMPLETED only.
+            # PLANNED activities ignore step order (urgency > pipeline position)
+            _step_order=Case(
+                When(
+                    status=ActivityStatus.COMPLETED,
+                    then=Coalesce(
+                        F('decision_step__order'),
+                        Value(999),
+                        output_field=IntegerField()
+                    ),
+                ),
+                default=Value(0),
+                output_field=IntegerField()
+            ),
+            # Within PLANNED: overdue (0) before future (1)
+            _overdue_order=Case(
+                When(
+                    status=ActivityStatus.PLANNED,
+                    scheduled_date__lt=today,
+                    then=Value(0),
+                ),
+                When(
+                    status=ActivityStatus.PLANNED,
+                    scheduled_date__isnull=True,
+                    due_date__lt=today,
+                    then=Value(0),
+                ),
+                default=Value(1),
+                output_field=IntegerField()
+            ),
+            # Effective date: completed_at for COMPLETED, else scheduled/due
             _effective_date=Case(
                 When(
                     status=ActivityStatus.COMPLETED,
@@ -351,28 +378,29 @@ class ActivitySequenceService:
                 ),
                 output_field=DateField()
             ),
-            # Effective time: COALESCE(scheduled_time, MAX_TIME)
+            # Time ordering (nulls last)
             _effective_time=Coalesce(
                 F('scheduled_time'),
                 Value(cls._MAX_TIME),
                 output_field=TimeField()
             ),
         )
-        
-        # Add ROW_NUMBER window function for ranking
+
+        # ROW_NUMBER window function for unique ranking
         ranked = annotated.annotate(
             _rank=Window(
                 expression=RowNumber(),
                 order_by=[
                     F('_step_order').asc(),
+                    F('_status_order').asc(),
+                    F('_overdue_order').asc(),
                     F('_effective_date').asc(),
                     F('_effective_time').asc(),
                     F('created_at').asc(),
                 ]
             )
         )
-        
-        # Order by rank for consistent iteration
+
         return ranked.select_related(
             'decision_step',
             'owner'
@@ -415,11 +443,20 @@ class ActivitySequenceService:
         """
         Convert an activity object to a dict with all needed fields.
         """
+        today = datetime.date.today()
+        is_overdue = False
+        if activity.status == 'PLANNED':
+            if activity.scheduled_date and activity.scheduled_date < today:
+                is_overdue = True
+            elif activity.due_date and activity.due_date < today:
+                is_overdue = True
+
         return {
             'id': activity.id,
             'title': activity.title,
             'activity_type': activity.activity_type,
             'status': activity.status,
+            'is_overdue': is_overdue,
             'outcome': activity.outcome,
             'scheduled_date': activity.scheduled_date,
             'scheduled_time': activity.scheduled_time,
@@ -563,6 +600,7 @@ class ActivitySequenceService:
             'title': activity_dict['title'],
             'activity_type': activity_dict['activity_type'],
             'status': activity_dict['status'],
+            'is_overdue': activity_dict.get('is_overdue', False),
             'outcome': activity_dict.get('outcome'),
             'scheduled_date': (
                 activity_dict['scheduled_date'].isoformat() 

@@ -10,14 +10,12 @@ Service architecture:
 """
 from .completeness_score import CompletenessScoreService
 from .step_aggregation_service import StepAggregationService
-from .stalled_detection_service import StalledDetectionService
 from .step_status_derivation_service import StepStatusDerivationService
 from .cycle_aggregation_service import CycleAggregationService
 
 __all__ = [
     'CompletenessScoreService',
     'StepAggregationService',
-    'StalledDetectionService',
     'StepStatusDerivationService',
     'CycleAggregationService',
 ]

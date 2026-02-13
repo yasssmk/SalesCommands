@@ -567,7 +567,6 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     def complete(self, request, pk=None):
         """
         Mark activity as completed or update outcome if already completed.
-        
         POST /activities/{id}/complete/
         
         Body:
@@ -578,6 +577,9 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             - If not completed: completes the activity with outcome
             - If already completed: updates outcome and outcome_notes only
             - If cancelled: returns error
+        
+        Note: Cycle-level close (WON/LOST/ON_HOLD) is handled by
+        DecisionCycleViewSet.close(), not here.
         """
         ctx = ctx_from_request(request)
         activity = self.get_object()
@@ -595,50 +597,13 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             )
         
         outcome = request.data.get('outcome')
-        outcome_notes = request.data.get('outcome_notes') or request.data.get('notes')  # Support both field names
-        next_step_agreed = request.data.get('next_step_agreed')
-        no_next_step_reason = request.data.get('no_next_step_reason')
+        outcome_notes = request.data.get('outcome_notes') or request.data.get('notes')
         
         # Validate outcome if provided
         if outcome and outcome not in ActivityOutcome.values:
             raise StandardizedValidationError(
                 CoreErrorMessages.INVALID_FIELD.format(field='outcome')
             )
-        
-        # Validate no_next_step_reason format if provided
-        if next_step_agreed is False and no_next_step_reason:
-            valid_codes = [choice[0] for choice in NoNextStepReason.choices]
-            is_standard_code = no_next_step_reason in valid_codes
-            is_other_format = no_next_step_reason.startswith('OTHER:') and len(no_next_step_reason) > 6
-            if not is_standard_code and not is_other_format:
-                raise StandardizedValidationError(
-                    ActivityErrorMessages.INVALID_NO_NEXT_STEP_REASON
-                )
-        
-        # ── Enforce no_next_step_reason when in a cycle with no next step ──
-        # Dual-layer protection: backend mirrors frontend OutcomeTab logic.
-        # Only applies on first completion (not outcome updates).
-        if (
-            activity.status != ActivityStatus.COMPLETED
-            and activity.decision_cycle_id
-            and next_step_agreed is not True
-        ):
-            # Check if PLANNED activities exist after this one in the cycle
-            has_pending_next = Activity.objects.filter(
-                decision_cycle_id=activity.decision_cycle_id,
-                status=ActivityStatus.PLANNED,
-            ).exclude(id=activity.id).exists()
-            
-            if not has_pending_next:
-                # No next step in sequence → reason is mandatory
-                if not no_next_step_reason:
-                    raise StandardizedValidationError(
-                        ActivityErrorMessages.NO_NEXT_STEP_REASON_REQUIRED
-                    )
-                
-                # Auto-set next_step_agreed=False if not provided
-                if next_step_agreed is None:
-                    next_step_agreed = False
         
         # If already completed, just update outcome fields
         if activity.status == ActivityStatus.COMPLETED:
@@ -649,23 +614,13 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'new_outcome': outcome,
             })
             
-            # Update outcome fields only
             if outcome is not None:
                 activity.outcome = outcome
             if outcome_notes is not None:
                 activity.outcome_notes = outcome_notes
             
-            # Update next step agreement fields
-            if next_step_agreed is not None:
-                activity.next_step_agreed = next_step_agreed
-                if next_step_agreed is True:
-                    activity.no_next_step_reason = None
-                elif next_step_agreed is False:
-                    activity.no_next_step_reason = no_next_step_reason
-            
             activity.save(user=request.user)
             
-            # Audit log
             audit_log(
                 event='activity_outcome_updated',
                 action='update',
@@ -680,16 +635,6 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             # Complete the activity
             activity.complete(outcome=outcome, notes=outcome_notes, user=request.user)
             
-            # Save next step agreement fields after completion
-            if next_step_agreed is not None:
-                activity.next_step_agreed = next_step_agreed
-                if next_step_agreed is True:
-                    activity.no_next_step_reason = None
-                elif next_step_agreed is False:
-                    activity.no_next_step_reason = no_next_step_reason
-                activity.save(user=request.user)
-            
-            # Audit log
             audit_log(
                 event='activity_complete_success',
                 action='update',
@@ -698,58 +643,8 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 target_type='activity',
                 target_id=str(activity.id),
                 outcome='success',
-                extra={
-                    'activity_outcome': outcome,
-                    'next_step_agreed': next_step_agreed,
-                }
+                extra={'activity_outcome': outcome}
             )
-        
-        # ── Cycle-level locking: auto-cancel PLANNED activities on cycle close ──
-        cancelled_count = 0
-        if (
-            activity.decision_cycle_id
-            and no_next_step_reason in (
-                NoNextStepReason.CLOSE_WON,
-                NoNextStepReason.CLOSE_LOST,
-            )
-        ):
-            planned_in_cycle = Activity.objects.filter(
-                decision_cycle_id=activity.decision_cycle_id,
-                status=ActivityStatus.PLANNED,
-            ).exclude(id=activity.id)
-            
-            cancelled_count = planned_in_cycle.count()
-            
-            if cancelled_count > 0:
-                # Bulk cancel: set status + outcome_notes for traceability
-                close_label = 'Won' if no_next_step_reason == NoNextStepReason.CLOSE_WON else 'Lost'
-                planned_in_cycle.update(
-                    status=ActivityStatus.CANCELLED,
-                    outcome_notes=f'Auto-cancelled: cycle closed as {close_label}',
-                )
-                
-                logger.info("cycle_activities_auto_cancelled", extra={
-                    **ctx,
-                    'activity_id': str(activity.id),
-                    'cycle_id': str(activity.decision_cycle_id),
-                    'cancelled_count': cancelled_count,
-                    'reason': no_next_step_reason,
-                })
-                
-                audit_log(
-                    event='cycle_activities_auto_cancelled',
-                    action='update',
-                    actor_id=str(request.user.id),
-                    client_id=str(self.get_client_id()),
-                    target_type='decision_cycle',
-                    target_id=str(activity.decision_cycle_id),
-                    outcome='success',
-                    extra={
-                        'cancelled_count': cancelled_count,
-                        'trigger_activity_id': str(activity.id),
-                        'reason': no_next_step_reason,
-                    }
-                )
         
         # Invalidate caches (activities + cross-module)
         self._invalidate_activity_caches(self.get_client_id())
@@ -764,7 +659,6 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         return Response({
             'success': True,
             'data': serializer.data,
-            'cancelled_count': cancelled_count,
         })
     
     @action(detail=True, methods=['post'])

@@ -984,34 +984,6 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         )
                 else:
                     attrs['next_activity'] = None
-        
-            # =================================================================
-            # NEXT STEP AGREEMENT VALIDATION
-            # =================================================================
-            if 'next_step_agreed' in attrs:
-                next_step_agreed = attrs.get('next_step_agreed')
-                no_next_step_reason = attrs.get('no_next_step_reason')
-                
-                # Rule: If setting next_step_agreed to False, reason is REQUIRED
-                if next_step_agreed is False:
-                    if not no_next_step_reason:
-                        raise StandardizedValidationError(
-                            ActivityErrorMessages.NO_NEXT_STEP_REASON_REQUIRED
-                        )
-                    
-                    # Validate reason format: must be standard code or "OTHER: text"
-                    valid_codes = [choice[0] for choice in NoNextStepReason.choices]
-                    is_standard_code = no_next_step_reason in valid_codes
-                    is_other_format = no_next_step_reason.startswith('OTHER:') and len(no_next_step_reason) > 6
-                    
-                    if not is_standard_code and not is_other_format:
-                        raise StandardizedValidationError(
-                            ActivityErrorMessages.INVALID_NO_NEXT_STEP_REASON
-                        )
-                
-                # Rule: If setting next_step_agreed to True or None, clear no_next_step_reason
-                elif next_step_agreed is True or next_step_agreed is None:
-                    attrs['no_next_step_reason'] = None
             
             return attrs
             

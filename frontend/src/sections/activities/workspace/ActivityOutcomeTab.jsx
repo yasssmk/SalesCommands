@@ -285,9 +285,9 @@ function ActivityMiniCard({ activity: activityItem, onNavigate, onUnlink, showUn
             </Typography>
           )}
           <Chip
-            label={ACTIVITY_STATUS_LABELS[activityItem.status] || activityItem.status}
+            label={activityItem.is_overdue ? 'Overdue' : (ACTIVITY_STATUS_LABELS[activityItem.status] || activityItem.status)}
             size="small"
-            color={ACTIVITY_STATUS_COLORS[activityItem.status] || 'default'}
+            color={activityItem.is_overdue ? 'error' : (ACTIVITY_STATUS_COLORS[activityItem.status] || 'default')}
             sx={{ height: 20, fontSize: '0.7rem' }}
           />
         </Stack>

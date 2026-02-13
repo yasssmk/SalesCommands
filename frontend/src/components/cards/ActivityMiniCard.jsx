@@ -59,14 +59,16 @@ const STATUS_LABELS = {
   PLANNED: 'Planned',
   IN_PROGRESS: 'In Progress',
   COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled'
+  CANCELLED: 'Cancelled',
+  OVERDUE: 'Overdue'
 };
 
 const STATUS_COLORS = {
   PLANNED: 'default',
   IN_PROGRESS: 'info',
   COMPLETED: 'success',
-  CANCELLED: 'error'
+  CANCELLED: 'error',
+  OVERDUE: 'error'
 };
 
 // ==============================|| ACTIVITY MINI CARD ||============================== //
@@ -152,11 +154,15 @@ export default function ActivityMiniCard({
     }
   };
 
+   // Derive display status (backend sends is_overdue flag)
+  const displayStatus = activity.is_overdue ? 'OVERDUE' : activity.status;
+
   // Build metadata line
   const effectiveDate = activity.scheduled_date || activity.due_date;
+
   const metaParts = [
     TYPE_LABELS[activity.activity_type] || activity.activity_type,
-    showDate && effectiveDate && formatDate(effectiveDate)
+    showDate && effectiveDate && formatDate(effectiveDate),
   ].filter(Boolean);
 
   // ========== COMPACT VARIANT ==========
@@ -212,9 +218,10 @@ export default function ActivityMiniCard({
               width: 8,
               height: 8,
               borderRadius: '50%',
-              bgcolor: activity.status === 'COMPLETED' ? 'success.main' 
-                : activity.status === 'CANCELLED' ? 'error.main'
-                : activity.status === 'IN_PROGRESS' ? 'info.main'
+              bgcolor: displayStatus === 'COMPLETED' ? 'success.main' 
+                : displayStatus === 'CANCELLED' ? 'error.main'
+                : displayStatus === 'OVERDUE' ? 'error.main'
+                : displayStatus === 'IN_PROGRESS' ? 'info.main'
                 : 'grey.400',
               flexShrink: 0
             }}
@@ -283,8 +290,8 @@ export default function ActivityMiniCard({
         {/* Status chip */}
         {showStatus && activity.status && (
           <Chip
-            label={STATUS_LABELS[activity.status] || activity.status}
-            color={STATUS_COLORS[activity.status] || 'default'}
+            label={STATUS_LABELS[displayStatus] || displayStatus}
+            color={STATUS_COLORS[displayStatus] || 'default'}
             size={config.chipSize}
             variant="outlined"
           />

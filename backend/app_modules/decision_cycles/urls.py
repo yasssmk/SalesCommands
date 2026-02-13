@@ -46,6 +46,14 @@ def get_urlpatterns():
             'get': 'by_account'
         }), name='cycles-by-account'),
         
+        path('<uuid:pk>/close/', DecisionCycleViewSet.as_view({
+            'post': 'close'
+        }), name='cycle-close'),
+        
+        path('<uuid:pk>/reopen/', DecisionCycleViewSet.as_view({
+            'post': 'reopen'
+        }), name='cycle-reopen'),
+        
         # =====================================================================
         # DECISION STEPS - CRUD
         # =====================================================================

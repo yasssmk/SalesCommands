@@ -191,37 +191,17 @@ class StepAggregationService:
 
     def get_effective_end_date(self, step):
         """
-        Expected end derived from activities:
-        - Priority 1: Last planned activity's due_date or scheduled_date
-        - Priority 2: Last completed activity's completed_at
+        Effective end date from activities.
+        If overdue PLANNED exist, returns today (step still active).
 
-        Returns date or None. Triggers 1-2 DB queries.
+        Returns date or None. Triggers 1 DB query.
         """
         from app_modules.activities.constants import ActivityStatus
-        from django.db.models.functions import Coalesce
 
-        # Priority 1: last planned activity date
-        last_planned = step.activities.filter(
-            status=ActivityStatus.PLANNED
-        ).exclude(
-            scheduled_date__isnull=True, due_date__isnull=True
-        ).order_by(
-            Coalesce('due_date', 'scheduled_date').desc()
-        ).first()
-
-        if last_planned:
-            return last_planned.due_date or last_planned.scheduled_date
-
-        # Priority 2: last completed activity date
-        last_completed = step.activities.filter(
-            status=ActivityStatus.COMPLETED,
-            completed_at__isnull=False
-        ).order_by('-completed_at').first()
-
-        if last_completed:
-            return last_completed.completed_at.date()
-
-        return None
+        activities = list(
+            step.activities.exclude(status=ActivityStatus.CANCELLED)
+        )
+        return self._bulk_effective_end(activities)
 
     def get_timeline(self, step):
         """
@@ -371,7 +351,16 @@ class StepAggregationService:
 
     @staticmethod
     def _bulk_effective_end(activities):
-        """Compute effective end from prefetched activities list."""
+        """
+        Compute effective end from prefetched activities list.
+
+        If PLANNED activities exist and their latest date is in the past
+        (overdue), return today — the step is still active.
+        """
+        from django.utils import timezone
+
+        today = timezone.now().date()
+
         # Priority 1: last planned activity date
         planned_dates = []
         for a in activities:
@@ -380,7 +369,9 @@ class StepAggregationService:
                 if date:
                     planned_dates.append(date)
         if planned_dates:
-            return max(planned_dates)
+            latest_planned = max(planned_dates)
+            # If overdue, the step is still active → end = today
+            return max(latest_planned, today)
 
         # Priority 2: last completed activity date
         completed_dates = [
