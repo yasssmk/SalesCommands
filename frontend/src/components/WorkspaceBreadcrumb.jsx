@@ -172,15 +172,16 @@ WorkspaceBreadcrumb.propTypes = {
  * @param {string} params.stepName - Step name (current page)
  * @returns {Object[]} Breadcrumb items array
  */
-export function buildStepBreadcrumbs({ accountId, accountName, cycleName, stepName }) {
+export function buildStepBreadcrumbs({ accountId, accountName, cycleId, cycleName, stepName }) {
+  const cycleParam = cycleId ? `&cycle=${cycleId}` : '';
   return [
     {
       label: accountName || 'Account',
-      href: `/accounts/${accountId}?tab=decision-cycle`
+      href: `/accounts/${accountId}?tab=decision-cycle${cycleParam}`
     },
     {
       label: cycleName || 'Decision Cycle',
-      href: `/accounts/${accountId}?tab=decision-cycle`
+      href: `/accounts/${accountId}?tab=decision-cycle${cycleParam}`
     },
     {
       label: stepName || 'Step'
@@ -206,6 +207,7 @@ export function buildStepBreadcrumbs({ accountId, accountName, cycleName, stepNa
 export function buildActivityBreadcrumbs({
   accountId,
   accountName,
+  cycleId,
   stepId,
   stepName,
   activityTitle,
@@ -214,6 +216,7 @@ export function buildActivityBreadcrumbs({
   territoryName
 }) {
   const items = [];
+  const cycleParam = cycleId ? `&cycle=${cycleId}` : '';
 
   // Add territory if coming from territory context
   if (fromContext === 'territory' && territoryId) {
@@ -223,17 +226,17 @@ export function buildActivityBreadcrumbs({
     });
   }
 
-  // Always add account
+  // Always add account — link to decision-cycle tab with cycle context
   items.push({
     label: accountName || 'Account',
-    href: `/accounts/${accountId}?tab=activities`
+    href: `/accounts/${accountId}?tab=decision-cycle${cycleParam}`
   });
 
   // Add step if activity is linked to a step
   if (stepId && stepName) {
     items.push({
       label: stepName,
-      href: `/accounts/${accountId}/steps/${stepId}`
+      href: `/accounts/${accountId}/decisionSteps/${stepId}`
     });
   }
 

@@ -41,6 +41,7 @@ export default function AccountWorkspacePage() {
   
   const accountId = params?.id;
   const currentTab = searchParams.get('tab') || DEFAULT_TAB;
+  const currentCycleId = searchParams.get('cycle') || null;
 
   // ==============================|| DATA FETCHING ||============================== //
 
@@ -70,8 +71,23 @@ export default function AccountWorkspacePage() {
   // ==============================|| HANDLERS ||============================== //
 
   const handleTabChange = (newTab) => {
-    router.push(`/accounts/${accountId}?tab=${newTab}`, { scroll: false });
+    const params = new URLSearchParams();
+    params.set('tab', newTab);
+    // Preserve cycle selection when switching tabs
+    if (currentCycleId) {
+      params.set('cycle', currentCycleId);
+    }
+    router.push(`/accounts/${accountId}?${params.toString()}`, { scroll: false });
   };
+
+  const handleCycleChange = useCallback((cycleId) => {
+    const params = new URLSearchParams();
+    params.set('tab', 'decision-cycle');
+    if (cycleId) {
+      params.set('cycle', cycleId);
+    }
+    router.replace(`/accounts/${accountId}?${params.toString()}`, { scroll: false });
+  }, [router, accountId]);
 
   const handleBack = () => {
     router.back();
@@ -166,7 +182,13 @@ export default function AccountWorkspacePage() {
         onTabChange={handleTabChange}
         loading={workspaceLoading || choicesLoading}
       >
-        <TabContent tab={currentTab} accountId={accountId} account={account} />
+        <TabContent
+          tab={currentTab}
+          accountId={accountId}
+          account={account}
+          selectedCycleId={currentCycleId}
+          onCycleChange={handleCycleChange}
+        />
       </WorkspaceLayout>
     </Box>
   );
@@ -183,7 +205,7 @@ export default function AccountWorkspacePage() {
  * 
  * Lightweight tabs (placeholders) use conditional rendering as before.
  */
-function TabContent({ tab, accountId, account }) {
+function TabContent({ tab, accountId, account, selectedCycleId, onCycleChange })  {
   // Track which heavy tabs have been visited (lazy mount)
   const [mountedTabs, setMountedTabs] = useState(new Set());
 
@@ -203,7 +225,12 @@ function TabContent({ tab, accountId, account }) {
       {/* KeepAlive tabs: mounted once, hidden with CSS when inactive */}
       {mountedTabs.has('decision-cycle') && (
         <Box sx={{ display: tab === 'decision-cycle' ? 'block' : 'none' }}>
-          <DecisionCycleTab accountId={accountId} accountName={account?.company_name} />
+          <DecisionCycleTab
+            accountId={accountId}
+            accountName={account?.company_name}
+            selectedCycleId={selectedCycleId}
+            onCycleChange={onCycleChange}
+          />
         </Box>
       )}
       {mountedTabs.has('activities') && (

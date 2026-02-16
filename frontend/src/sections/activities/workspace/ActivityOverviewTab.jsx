@@ -428,16 +428,31 @@ function InlineSelectField({ label, value, fieldKey, onSave, options = [], displ
   const theme = useTheme();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pendingValue, setPendingValue] = useState(value || '');
 
-  const handleChange = async (newValue) => {
+  // Track if user changed the value (show confirm/cancel only when dirty)
+  const isDirty = pendingValue !== (value || '');
+
+  const handleOpen = () => {
+    setPendingValue(value || '');
+    setEditing(true);
+  };
+
+  const handleConfirm = async () => {
+    const newValue = pendingValue || null;
     if (newValue === value) {
       setEditing(false);
       return;
     }
     setSaving(true);
-    const success = await onSave(fieldKey, newValue || null);
+    const success = await onSave(fieldKey, newValue);
     setSaving(false);
     if (success) setEditing(false);
+  };
+
+  const handleCancel = () => {
+    setPendingValue(value || '');
+    setEditing(false);
   };
 
   return (
@@ -450,8 +465,8 @@ function InlineSelectField({ label, value, fieldKey, onSave, options = [], displ
       {editing ? (
         <Stack direction="row" spacing={0.5} alignItems="center">
           <Select
-            value={value || ''}
-            onChange={(e) => handleChange(e.target.value)}
+            value={pendingValue}
+            onChange={(e) => setPendingValue(e.target.value)}
             size="small"
             displayEmpty
             disabled={saving || disabled}
@@ -463,10 +478,21 @@ function InlineSelectField({ label, value, fieldKey, onSave, options = [], displ
               <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
             ))}
           </Select>
+          {isDirty && (
+            <IconButton
+              size="small"
+              color="success"
+              onClick={handleConfirm}
+              disabled={saving}
+            >
+              <CheckOutlined />
+            </IconButton>
+          )}
           <IconButton 
             size="small" 
-            onClick={() => setEditing(false)} 
+            onClick={handleCancel} 
             disabled={saving}
+            sx={{ color: theme.palette.error.main }}
           >
             <CloseOutlined />
           </IconButton>
@@ -476,7 +502,7 @@ function InlineSelectField({ label, value, fieldKey, onSave, options = [], displ
           direction="row" 
           spacing={0.5} 
           alignItems="center"
-          onClick={() => !disabled && setEditing(true)}
+          onClick={() => !disabled && handleOpen()}
           sx={{ 
             cursor: disabled ? 'default' : 'pointer',
             '&:hover .edit-icon': { opacity: disabled ? 0 : 1 }
@@ -1671,12 +1697,6 @@ function CycleStepSubsection({ activity, onSave, isLocked = false }) {
   // Fetch steps for selected cycle
   const { steps = [], stepsLoading } = useGetDecisionStepsByCycle(currentCycleId);
 
-  // Build options
-  const cycleOptions = cycles.map((c) => ({
-    value: c.id,
-    label: c.name
-  }));
-
   const stepOptions = steps.map((s) => ({
     value: s.id,
     label: s.name
@@ -1705,20 +1725,14 @@ function CycleStepSubsection({ activity, onSave, isLocked = false }) {
 
   return (
     <Stack direction="row" spacing={3} alignItems="flex-start" flexWrap="wrap" useFlexGap>
-      {/* Cycle */}
+      {/* Cycle (read-only — cycle is set at activity creation, only step is editable) */}
       <Box>
         <Typography variant="caption" color="text.secondary" gutterBottom display="block">
           Decision Cycle
         </Typography>
-          <InlineSelectField
-            value={currentCycleId}
-            fieldKey="decision_cycle_id"
-            onSave={handleCycleChange}
-            options={cycleOptions}
-            displayValue={activity?.decision_cycle_detail?.name}
-            placeholder="No cycle"
-            disabled={cyclesLoading || isLocked}
-          />
+        <Typography variant="body2" >
+          {activity?.decision_cycle_detail?.name || 'No cycle'}
+        </Typography>
       </Box>
 
       {/* Step - required when cycle is selected */}
@@ -1771,10 +1785,7 @@ function LinkedActivitiesSubsection({ activity }) {
   // Determine what to display (always max 1 item now)
   const previousActivity = previousActivities[0] || legacyPrevious || null;
   const nextActivity = nextActivities[0] || legacyNext || null;
-  
-  // Position indicator
-  const position = sequenceContext?.position;
-  const total = sequenceContext?.total;
+
 
   // No cycle = show message
   if (!hasCycle) {
@@ -1802,28 +1813,7 @@ function LinkedActivitiesSubsection({ activity }) {
   }
 
   return (
-    <Box>
-      {/* Position indicator */}
-      {position && total && (
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
-          <Typography variant="caption" color="text.secondary">
-            Activity Sequence
-          </Typography>
-          <Chip
-            label={`${position} of ${total}`}
-            size="small"
-            variant="outlined"
-            sx={{ 
-              height: 20, 
-              fontSize: '0.7rem',
-              bgcolor: theme.palette.primary.lighter,
-              borderColor: theme.palette.primary.light,
-              color: theme.palette.primary.dark
-            }}
-          />
-        </Stack>
-      )}
-      
+    <Box>      
       <Stack direction="row" spacing={3} alignItems="flex-start" flexWrap="wrap" useFlexGap>
         {/* Previous Activity (max 1) */}
         <Box sx={{ flex: 1, minWidth: 200 }}>

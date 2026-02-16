@@ -168,7 +168,25 @@ const STATUS_CONFIG = {
     bgColor: 'grey.200',
     icon: MinusCircleOutlined,
     label: 'Not Started'
-  }
+  },
+  CYCLE_LOST: {
+    color: 'error',
+    bgColor: 'error.lighter',
+    icon: CloseCircleFilled,
+    label: 'Lost'
+  },
+  CYCLE_ON_HOLD: {
+    color: 'warning',
+    bgColor: 'warning.lighter',
+    icon: PauseCircleOutlined,
+    label: 'On Hold'
+  },
+  CYCLE_NOT_QUALIFIED: {
+    color: 'error',
+    bgColor: 'error.lighter',
+    icon: CloseCircleFilled,
+    label: 'Not Qualified'
+  } 
 };
 
 // ==============================|| ACTIVITY TYPE ICONS ||============================== //
@@ -476,11 +494,10 @@ function PipelineStepColumn({
 
   // Step lifecycle states
   const STARTED_STATUSES = ['IN_PROGRESS', 'OVERDUE', 'STALLED', 'IN_CHASING', 'VALIDATED'];
-  const CLOSED_STATUSES = ['VALIDATED'];
+  const CLOSED_STATUSES = ['VALIDATED', 'CYCLE_LOST', 'CYCLE_NOT_QUALIFIED', 'CYCLE_ON_HOLD'];
 
-  const isStepStarted = STARTED_STATUSES.includes(step.derived_status);
+  const isStepStarted = STARTED_STATUSES.includes(step.derived_status) || CLOSED_STATUSES.includes(step.derived_status);
   const isStepClosed = CLOSED_STATUSES.includes(step.derived_status);
-
   // Start date: effective_start_date (observed) > start_date (manual)
   const startDateValue = step.effective_start_date || step.start_date || null;
   const isStartConfirmed = isStepStarted && !!startDateValue;
@@ -500,6 +517,8 @@ function PipelineStepColumn({
   
   // Column border color — derived from step status
   const getBorderColor = () => {
+    if (step.derived_status === 'CYCLE_LOST' || step.derived_status === 'CYCLE_NOT_QUALIFIED') return theme.palette.error.main;
+    if (step.derived_status === 'CYCLE_ON_HOLD') return theme.palette.warning.main;
     if (isValidated) return theme.palette.primary.main;
     if (isOverdue) return theme.palette.error.light;
     if (isStalled) return theme.palette.warning.light;
@@ -800,7 +819,7 @@ PipelineStepColumn.propTypes = {
  * 
  * Allows users to show/hide pipeline columns.
  */
-function ColumnVisibilityMenu({ steps, hiddenColumns, onToggleColumn, onShowAll, onHideOptional }) {
+function ColumnVisibilityMenu({ steps, hiddenColumns, onToggleColumn, onShowAll }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const open = Boolean(anchorEl);
   
@@ -820,7 +839,7 @@ function ColumnVisibilityMenu({ steps, hiddenColumns, onToggleColumn, onShowAll,
 
   return (
     <>
-      <Tooltip title="Configure visible columns">
+      <Tooltip title="Configure pipeline steps">
         <IconButton 
           onClick={handleClick}
           size="small"
@@ -848,7 +867,7 @@ function ColumnVisibilityMenu({ steps, hiddenColumns, onToggleColumn, onShowAll,
       >
         <Box sx={{ px: 2, py: 1 }}>
           <Typography variant="subtitle2" color="text.secondary">
-            Visible Columns
+            Pipeline Steps
           </Typography>
         </Box>
         
@@ -889,24 +908,14 @@ function ColumnVisibilityMenu({ steps, hiddenColumns, onToggleColumn, onShowAll,
         <Divider sx={{ my: 1 }} />
         
         <Box sx={{ px: 1, pb: 1 }}>
-          <Stack direction="row" spacing={1}>
-            <Button 
-              size="small" 
-              onClick={() => { onShowAll(); handleClose(); }}
-              disabled={hiddenCount === 0}
-              fullWidth
-            >
-              Show All
-            </Button>
-            <Button 
-              size="small" 
-              onClick={() => { onHideOptional(); handleClose(); }}
-              fullWidth
-              color="secondary"
-            >
-              Hide Optional
-            </Button>
-          </Stack>
+          <Button 
+            size="small" 
+            onClick={() => { onShowAll(); handleClose(); }}
+            disabled={hiddenCount === 0}
+            fullWidth
+          >
+            Show All Steps
+          </Button>
         </Box>
       </Menu>
     </>
@@ -917,8 +926,7 @@ ColumnVisibilityMenu.propTypes = {
   steps: PropTypes.array.isRequired,
   hiddenColumns: PropTypes.array.isRequired,
   onToggleColumn: PropTypes.func.isRequired,
-  onShowAll: PropTypes.func.isRequired,
-  onHideOptional: PropTypes.func.isRequired
+  onShowAll: PropTypes.func.isRequired
 };
 
 // ==============================|| HIDDEN COLUMNS INDICATOR ||============================== //
@@ -934,7 +942,7 @@ function HiddenColumnsIndicator({ steps, hiddenColumns, onToggleColumn }) {
   return (
     <Stack direction="row" spacing={0.5} alignItems="center" sx={{ ml: 2 }}>
       <Typography variant="caption" color="text.secondary">
-        Hidden:
+        Disabled:
       </Typography>
       {hiddenSteps.map((step) => (
         <Chip
@@ -1022,29 +1030,76 @@ export default function DecisionCycleTimeline({
   const isCycleClosed = ['WON', 'LOST', 'NOT_QUALIFIED'].includes(cycleOutcome);
   const isCyclePaused = cycleOutcome === 'ON_HOLD';
 
-  // When cycle is closed (terminal outcome), STALLED steps display as VALIDATED
+  // Override step statuses based on cycle outcome:
+  // WON → all STALLED become VALIDATED (deal completed, everything is past)
+  // LOST / NOT_QUALIFIED / ON_HOLD → only the last step with activities gets overridden,
+  //   all other steps keep their natural derived status from backend
   const effectiveSteps = useMemo(() => {
-    if (!isCycleClosed) return steps;
-    return steps.map(s =>
-      s.derived_status === 'STALLED' ? { ...s, derived_status: 'VALIDATED' } : s
-    );
-  }, [steps, isCycleClosed]);
+    if (!isCycleClosed && !isCyclePaused) return steps;
+
+    // WON: all STALLED → VALIDATED
+    if (cycleOutcome === 'WON') {
+      return steps.map(s =>
+        s.derived_status === 'STALLED' ? { ...s, derived_status: 'VALIDATED' } : s
+      );
+    }
+
+    // LOST / NOT_QUALIFIED / ON_HOLD: highlight only the last active step
+    const OUTCOME_TO_STATUS = {
+      LOST: 'CYCLE_LOST',
+      NOT_QUALIFIED: 'CYCLE_NOT_QUALIFIED',
+      ON_HOLD: 'CYCLE_ON_HOLD'
+    };
+    const overrideStatus = OUTCOME_TO_STATUS[cycleOutcome];
+    if (!overrideStatus) return steps;
+
+     // Find last step (highest order) that has visible (non-cancelled) activities
+    let lastActiveIndex = -1;
+    steps.forEach((s, i) => {
+      const visibleCount = (s.activities || []).filter(a => a.status !== 'CANCELLED').length;
+      if (visibleCount > 0) {
+        lastActiveIndex = i;
+      }
+    });
+
+    if (lastActiveIndex === -1) return steps;
+
+    return steps.map((s, i) => {
+      if (i === lastActiveIndex) return { ...s, derived_status: overrideStatus };
+      return s; // keep natural derived status from backend
+    });
+  }, [steps, isCycleClosed, isCyclePaused, cycleOutcome]);
 
   // Visible steps (filtered by hidden)
   const visibleSteps = useMemo(() => {
     return effectiveSteps.filter(s => !hiddenColumns.includes(s.id));
   }, [effectiveSteps, hiddenColumns]);
 
-  // Calculate pipeline progress
+ // Calculate pipeline progress (based on visible/selected steps only)
   const pipelineProgress = useMemo(() => {
-    if (!effectiveSteps.length) return { validated: 0, total: 0, percent: 0 };
-    const validated = effectiveSteps.filter(s => s.derived_status === 'VALIDATED').length;
+    if (!visibleSteps.length) return { validated: 0, total: 0, percent: 0 };
+    const validated = visibleSteps.filter(s => s.derived_status === 'VALIDATED').length;
     return {
       validated,
-      total: effectiveSteps.length,
-      percent: Math.round((validated / effectiveSteps.length) * 100)
+      total: visibleSteps.length,
+      percent: Math.round((validated / visibleSteps.length) * 100)
     };
-  }, [effectiveSteps]);
+  }, [visibleSteps]);
+
+  // Expected closing date = furthest end date among visible steps
+  // Same priority as step columns: completed_at > effective_end_date > expected_end
+  const expectedClosingDate = useMemo(() => {
+    let furthest = null;
+    visibleSteps.forEach(s => {
+      const endDate = s.completed_at || s.effective_end_date || s.expected_end;
+      if (endDate) {
+        if (!furthest || new Date(endDate) > new Date(furthest)) {
+          furthest = endDate;
+        }
+      }
+    });
+    return furthest;
+  }, [visibleSteps]);
 
   // Cycle close/reopen state
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
@@ -1211,73 +1266,117 @@ export default function DecisionCycleTimeline({
 
   return (
     <Box>
-      {/* Pipeline Header */}
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Stack direction="row" alignItems="center" spacing={2}>
-          <Typography variant="h6">{cycle.name}</Typography>
-          {/* Cycle outcome chip (when explicitly closed/paused) */}
-          {cycleOutcome && (
-            <Chip 
-              label={CYCLE_DERIVED_STATUS_LABELS[cycleOutcome] || cycleOutcome}
-              size="small"
-              color={CYCLE_STATUS_COLORS[cycleOutcome] || 'default'}
-              variant="filled"
-              icon={cycleOutcome === 'WON' ? <CheckCircleFilled /> : 
-                    cycleOutcome === 'ON_HOLD' ? <PauseCircleOutlined /> : 
-                    <CloseCircleFilled />}
+      {/* Pipeline Header — single line */}
+      <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
+        {/* Status chip */}
+        <Chip 
+          label={CYCLE_DERIVED_STATUS_LABELS[cycleOutcome || cycle.cycle_status] || cycle.cycle_status || 'Active'}
+          size="small"
+          color={CYCLE_STATUS_COLORS[cycleOutcome || cycle.cycle_status] || 'default'}
+          variant="filled"
+          icon={cycleOutcome === 'WON' ? <CheckCircleFilled /> : 
+                cycleOutcome === 'ON_HOLD' ? <PauseCircleOutlined /> : 
+                cycleOutcome ? <CloseCircleFilled /> : undefined}
+        />
+
+        {/* Start date (first activity) */}
+        <Typography variant="caption" color="text.secondary" noWrap>
+          {cycle.created_at
+            ? new Date(cycle.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            : '—'
+          }
+        </Typography>
+
+        {/* Progress bar: validated steps / visible steps */}
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 140 }}>
+          <Box sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: 'grey.200', overflow: 'hidden' }}>
+            <Box
+              sx={{
+                height: '100%',
+                width: `${pipelineProgress.percent}%`,
+                bgcolor: pipelineProgress.percent === 100 ? 'success.main' : 'primary.main',
+                borderRadius: 3,
+                transition: 'width 0.3s ease'
+              }}
             />
-          )}
-          <Chip 
-            label={`${pipelineProgress.validated}/${pipelineProgress.total} validated`}
+          </Box>
+          <Typography variant="caption" color="text.secondary" noWrap>
+            {pipelineProgress.validated}/{pipelineProgress.total}
+          </Typography>
+        </Stack>
+
+        {/* End date — same pattern as step columns */}
+        {(cycle.outcome_date || expectedClosingDate) ? (
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            {cycle.outcome_date ? (
+              <>
+                <CheckCircleFilled style={{ fontSize: 12, color: theme.palette.success.main }} />
+                <Typography variant="caption" color="success.main" fontWeight={500} noWrap>
+                  {new Date(cycle.outcome_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  {cycle.closed_by_name ? ` by ${cycle.closed_by_name}` : ''}
+                </Typography>
+              </>
+            ) : (() => {
+              const isOverdue = new Date(expectedClosingDate) < new Date();
+              return (
+                <>
+                  <ClockCircleOutlined style={{ fontSize: 12, color: isOverdue ? theme.palette.error.main : theme.palette.text.disabled }} />
+                  <Typography
+                    variant="caption"
+                    noWrap
+                    sx={{
+                      color: isOverdue ? 'error.main' : 'text.secondary',
+                      fontStyle: 'italic',
+                      fontWeight: isOverdue ? 500 : 400
+                    }}
+                  >
+                    ({new Date(expectedClosingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})
+                  </Typography>
+                </>
+              );})()}
+          </Stack>
+        ) : (
+          <Typography variant="caption" color="text.disabled">—</Typography>
+        )}
+
+        {/* Disabled steps indicator */}
+        <HiddenColumnsIndicator 
+          steps={steps}
+          hiddenColumns={hiddenColumns}
+          onToggleColumn={handleToggleColumn}
+        />
+
+        {/* Spacer */}
+        <Box sx={{ flex: 1 }} />
+
+        {/* Close / Reopen cycle action */}
+        {(isCycleClosed || isCyclePaused) ? (
+          <Button
             size="small"
-            color={pipelineProgress.percent === 100 ? 'success' : 'default'}
-          />
-          
-          {/* Hidden columns indicator */}
-          <HiddenColumnsIndicator 
-            steps={steps}
-            hiddenColumns={hiddenColumns}
-            onToggleColumn={handleToggleColumn}
-          />
-        </Stack>
+            variant="outlined"
+            onClick={handleReopenCycle}
+            disabled={reopenLoading}
+          >
+            {reopenLoading ? 'Reopening...' : 'Reopen Cycle'}
+          </Button>
+        ) : (
+          <Button
+            size="small"
+            variant="outlined"
+            color="warning"
+            onClick={() => setCloseDialogOpen(true)}
+          >
+            Close Cycle
+          </Button>
+        )}
         
-        <Stack direction="row" alignItems="center" spacing={2}>
-          {cycle.expected_closing_date && (
-            <Typography variant="body2" color="text.secondary">
-              Expected close: {new Date(cycle.expected_closing_date).toLocaleDateString()}
-            </Typography>
-          )}
-          
-          {/* Close / Reopen cycle action */}
-          {(isCycleClosed || isCyclePaused) ? (
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={handleReopenCycle}
-              disabled={reopenLoading}
-            >
-              {reopenLoading ? 'Reopening...' : 'Reopen Cycle'}
-            </Button>
-          ) : (
-            <Button
-              size="small"
-              variant="outlined"
-              color="warning"
-              onClick={() => setCloseDialogOpen(true)}
-            >
-              Close Cycle
-            </Button>
-          )}
-          
-          {/* Column visibility settings */}
-          <ColumnVisibilityMenu
-            steps={steps}
-            hiddenColumns={hiddenColumns}
-            onToggleColumn={handleToggleColumn}
-            onShowAll={handleShowAll}
-            onHideOptional={handleHideOptional}
-          />
-        </Stack>
+        {/* Pipeline steps settings */}
+        <ColumnVisibilityMenu
+          steps={steps}
+          hiddenColumns={hiddenColumns}
+          onToggleColumn={handleToggleColumn}
+          onShowAll={handleShowAll}
+        />
       </Stack>
       
       {/* Cycle-Level Risk/Stalled Alert — hidden when cycle is closed or paused */}
@@ -1305,9 +1404,10 @@ export default function DecisionCycleTimeline({
       )}
       
       {/* Pipeline Columns */}
-      <Box
+     <Box
         sx={{
           display: 'flex',
+          justifyContent: 'center',
           gap: 2,
           overflowX: 'auto',
           pb: 2,

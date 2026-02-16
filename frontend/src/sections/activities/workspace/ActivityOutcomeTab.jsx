@@ -313,9 +313,7 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
   const hasNextActivity = nextActivities.length > 0;
   
   // Sequence position info
-  const position = sequenceContext?.position;
-  const total = sequenceContext?.total;
-  const isLastInSequence = position === total;
+  const isLastInSequence = sequenceContext?.position === sequenceContext?.total;
   
   // Check effective next step status from API
   const effectiveHasNextStep = activity?.effective_has_next_step;
@@ -358,37 +356,6 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
   return (
     <SectionCard title="Next Steps" icon={RocketOutlined}>
       <Stack spacing={2}>
-        {/* Sequence position indicator */}
-        {position && total && (
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <Typography variant="caption" color="text.secondary">
-              Position in sequence
-            </Typography>
-            <Chip
-              label={`${position} of ${total}`}
-              size="small"
-              variant="outlined"
-              sx={{
-                height: 20,
-                fontSize: '0.7rem',
-                bgcolor: theme.palette.primary.lighter,
-                borderColor: theme.palette.primary.light,
-                color: theme.palette.primary.dark
-              }}
-            />
-            {effectiveHasNextStep === true && (
-              <Chip
-                icon={<CheckOutlined style={{ fontSize: 12 }} />}
-                label="Next step agreed"
-                size="small"
-                color="success"
-                variant="outlined"
-                sx={{ height: 20, fontSize: '0.7rem', ml: 'auto' }}
-              />
-            )}
-          </Stack>
-        )}
-
         {/* Next Activities List (ordered by sequence) */}
         {hasNextActivity && (
           <Box>

@@ -18,12 +18,6 @@ ModulePermissions = Dict[Action, Dict[Tier, Scope]]
 # ============================================================================
 
 DECISION_CYCLES_REGISTRY: Dict[str, ModulePermissions] = {
-    # ========================================================================
-    # DECISION CYCLES MODULE
-    # Ownership: linked to account ownership
-    # Read: all users can read (client scope) for collaboration
-    # Create/Update/Delete: follows account ownership pattern
-    # ========================================================================
     'decision_cycles': {
         'create': {
             'admin': 'client',
@@ -42,8 +36,8 @@ DECISION_CYCLES_REGISTRY: Dict[str, ModulePermissions] = {
         },
         'delete': {
             'admin': 'client',
-            'manager': 'team',
-            'individual': 'mine',
+            'manager': 'none',
+            'individual': 'none',
         },
     }
 }

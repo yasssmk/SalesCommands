@@ -148,28 +148,10 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     
     'decision_cycles': {
         'client_account_fk': 'client_id',           # DecisionCycle.client_id
-        'owner_user': 'account__account_owner_id',  # Via account → account_owner
-        'owner_team': 'account__account_owner__team_id',  # Via account → account_owner → team
-        'created_by': 'created_by_id',              # ModuleBaseModel.created_by
+        'owner_user': 'owner',                      # DecisionCycle.owner (direct FK)
+        'owner_team': 'owner__team_id',             # Via owner → team
+        'created_by': 'created_by',                 # ModuleBaseModel.created_by
         'assigned_to_user': '-',                    # Not applicable
-        'account_fk': 'account_id',                 # Related account
-    },
-    
-    'leads': {
-        'client_account_fk': 'client_id',           # Lead.client_id
-        'owner_user': 'assigned_to_id',             # Lead.assigned_to
-        'owner_team': 'team_id',                    # Lead.team
-        'created_by': 'created_by_id',              # BaseModelApp.created_by
-        'assigned_to_user': 'assigned_to_id',       # Lead.assigned_to
-        'account_fk': '-',                           # Leads don't have accounts yet
-    },
-    
-    'opportunities': {
-        'client_account_fk': 'client_id',           # Opportunity.client_id
-        'owner_user': 'deal_owner_id',              # Opportunity.deal_owner
-        'owner_team': 'team_id',                    # Opportunity.team
-        'created_by': 'created_by_id',              # BaseModelApp.created_by
-        'assigned_to_user': 'deal_owner_id',        # Same as owner
         'account_fk': 'account_id',                 # Related account
     },
     
@@ -223,7 +205,7 @@ OWNERSHIP_TYPES = {
     'territories': 'user',
     'contacts': 'account',        # Inherits from account
     'activities': 'user',         # owner_user, assigned_to_user
-    'decision_cycles': 'account', # Inherits from account
+    'decision_cycles': 'user',    # Inherits from account
     'leads': 'user',             # assigned_to_user, created_by
     'opportunities': 'user',      # deal_owner (mapped to owner_user)
     'campaign': 'user',           # owner_user

@@ -458,9 +458,9 @@ export async function linkActivityToStep(activityId, cycleId, stepId, accountId 
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
       endpoints.byStep,  // Prefix-based: revalidates all /module-activities/by-step/* queries
-      '/module-decision-cycles/',
-      `/module-decision-cycles/${cycleId}/`,
-      '/module-decision-cycles/by-account/'
+      '/decision_cycles/',
+      '/decision_cycles/${cycleId}/',
+      '/decision_cycles/by-account/'
     ];
     
     // Also revalidate unlinked activities list if accountId provided
@@ -509,7 +509,7 @@ export async function unlinkActivityFromStep(activityId) {
       endpoints.activities,
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
-      '/module-decision-cycles/'
+      '/decision_cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
@@ -686,7 +686,7 @@ export async function createActivity(payload) {
       endpoints.myActivities,
       endpoints.byAccount,
       '/company-accounts/',
-      '/module-decision-cycles/'
+      '/decision_cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
@@ -765,7 +765,7 @@ export async function createActivityWithEntities(payload) {
       endpoints.myActivities,
       '/company-accounts/',
       '/module-contacts/',
-      '/module-decision-cycles/',
+      '/decision_cycles/',
       '/module-activities/'
     ]);
     
@@ -810,7 +810,7 @@ export async function updateActivity(activityId, payload) {
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
       '/company-accounts/',
-      '/module-decision-cycles/'
+      '/decision_cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
@@ -857,7 +857,7 @@ export async function deleteActivity(activityId) {
       endpoints.overdue,
       endpoints.upcoming,
       '/company-accounts/',
-      '/module-decision-cycles/'
+      '/decision_cycles/'
     ]);
     return { success: true, status: result.status ?? 204 };
   }
@@ -897,7 +897,7 @@ export async function completeActivity(activityId, payload = {}) {
       endpoints.myActivities,
       endpoints.overdue,
       '/company-accounts/',
-      '/module-decision-cycles/'
+      '/decision_cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
@@ -937,7 +937,7 @@ export async function cancelActivity(activityId, payload = {}) {
       endpoints.myActivities,
       endpoints.overdue,
       '/company-accounts/',
-      '/module-decision-cycles/'
+      '/decision_cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
@@ -979,7 +979,7 @@ export async function reopenActivity(activityId, payload = {}) {
       endpoints.myActivities,
       endpoints.overdue,
       '/company-accounts/',
-      '/module-decision-cycles/'
+      '/decision_cycles/'
     ]);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };

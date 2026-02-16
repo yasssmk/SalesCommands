@@ -193,20 +193,22 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
 
   const handleCycleClick = () => {
     if (activity.account_detail?.id) {
-      router.push(`/accounts/${activity.account_detail.id}?tab=decision-cycle`);
+      const cycleId = activity.decision_cycle || null;
+      const cycleParam = cycleId ? `&cycle=${cycleId}` : '';
+      router.push(`/accounts/${activity.account_detail.id}?tab=decision-cycle${cycleParam}`);
     }
-  };
-
+  };   
   // ==============================|| DATE INFO HELPER ||============================== //
 
   const renderDateInfo = () => {
     if (isCompleted && activity.completed_at) {
       const dateText = format(new Date(activity.completed_at), 'MMM d, yyyy HH:mm');
+      const byName = activity.completed_by_name ? ` by ${activity.completed_by_name}` : '';
       return (
         <Stack key="date" direction="row" spacing={0.75} alignItems="center">
           <CheckCircleOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.success.main, display: 'flex' }} />
           <Typography variant="body2" color="success.main">
-            Completed: {dateText}
+            Completed: {dateText}{byName}
           </Typography>
         </Stack>
       );

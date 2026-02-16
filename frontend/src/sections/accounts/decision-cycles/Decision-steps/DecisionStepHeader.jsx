@@ -54,7 +54,7 @@ const STATUS_CONFIG = {
   OVERDUE: { label: 'Overdue', color: 'error' },
   VALIDATED: { label: 'Validated', color: 'primary' },
   IN_PROGRESS: { label: 'In Progress', color: 'secondary' },
-  STALLED: { label: 'Stalled', color: 'error' },
+  STALLED: { color: 'warning', label: 'Stalled' },
   IN_CHASING: { label: 'In Chasing', color: 'warning' },
   NOT_STARTED: { label: 'Not Started', color: 'default' }
 };

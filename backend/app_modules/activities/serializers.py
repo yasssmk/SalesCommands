@@ -244,6 +244,8 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     is_scheduled = serializers.BooleanField(read_only=True)
     has_previous = serializers.BooleanField(read_only=True)
     has_next = serializers.BooleanField(read_only=True)
+
+    completed_by_name = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Activity
@@ -259,7 +261,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             
             # Scheduling
             'scheduled_date', 'scheduled_time',
-            'due_date', 'completed_at',
+            'due_date', 'completed_at', 'completed_by_name',
             
             # Content
             'description', 'call_to_action',
@@ -475,6 +477,15 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         # Priority 3: Explicit value (only applies when no pending activities exist)
         if obj.next_step_agreed is not None:
             return obj.next_step_agreed
+        return None
+    
+    def get_completed_by_name(self, obj):
+        """Return name of user who completed/cancelled the activity (last updater at closure time)."""
+        if obj.status not in ('COMPLETED', 'CANCELLED'):
+            return None
+        if obj.updated_by:
+            name = f"{obj.updated_by.first_name or ''} {obj.updated_by.last_name or ''}".strip()
+            return name or obj.updated_by.email
         return None
     
     def _get_cached_sequence_context(self, obj):

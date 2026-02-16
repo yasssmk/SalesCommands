@@ -41,6 +41,11 @@ import { formatDistanceToNow, format } from 'date-fns';
 
 // ==============================|| STALLED REASON CONFIG ||============================== //
 
+/**
+ * Stalled reason config.
+ * NO_NEXT_STEP removed — next step tracking is now derived from
+ * activity sequence, not explicit agreement fields.
+ */
 const STALLED_REASON_CONFIG = {
   NO_ACTIVITY: {
     title: 'No Activities Linked',
@@ -51,11 +56,6 @@ const STALLED_REASON_CONFIG = {
     title: 'No Planned Activities',
     description: 'There are no future activities scheduled for this step.',
     severity: 'warning'
-  },
-  NO_NEXT_STEP: {
-    title: 'No Next Step Agreed',
-    description: 'The last activity ended without agreeing on a next step.',
-    severity: 'error'
   },
   EXPECTED_END_PASSED: {
     title: 'Expected End Date Passed',
@@ -226,7 +226,6 @@ StalledWarning.propTypes = {
     'NONE',
     'NO_ACTIVITY',
     'NO_FUTURE_ACTIVITY',
-    'NO_NEXT_STEP',
     'EXPECTED_END_PASSED',
     'WAITING_TOO_LONG'
   ]),

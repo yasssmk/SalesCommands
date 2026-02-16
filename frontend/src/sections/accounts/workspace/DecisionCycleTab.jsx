@@ -56,14 +56,11 @@ import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError
  * @param {string} accountId - Account UUID
  * @param {string} accountName - Account name (for display)
  */
-export default function DecisionCycleTab({ accountId, accountName }) {
+export default function DecisionCycleTab({ accountId, accountName, selectedCycleId: selectedCycleIdProp, onCycleChange }){
   
   const router = useRouter();
 
   // ==============================|| STATE ||============================== //
-  
-  // Selected cycle ID
-  const [selectedCycleId, setSelectedCycleId] = useState(null);
   
   // Cycle Modal state (Create/Edit)
   const [cycleModalOpen, setCycleModalOpen] = useState(false);
@@ -84,14 +81,14 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   
   // Determine current cycle (selected or first active)
   const currentCycleId = useMemo(() => {
-    if (selectedCycleId) return selectedCycleId;
+    if (selectedCycleIdProp) return selectedCycleIdProp;
     if (!cycles || cycles.length === 0) return null;
     
     // Find active cycle or first one
     const activeCycle = cycles.find(c => c.is_active);
     return activeCycle?.id || cycles[0]?.id;
-  }, [selectedCycleId, cycles]);
-  
+  }, [selectedCycleIdProp, cycles]);
+
   // Derive current cycle from by-account response (no extra request)
   const currentCycle = useMemo(() => {
     if (!currentCycleId || !cycles?.length) return null;
@@ -108,8 +105,8 @@ export default function DecisionCycleTab({ accountId, accountName }) {
   // ==============================|| CYCLE HANDLERS ||============================== //
   
   const handleCycleChange = useCallback((cycle) => {
-    setSelectedCycleId(cycle.id);
-  }, []);
+    onCycleChange?.(cycle.id);
+  }, [onCycleChange]);
   
   const handleCreateCycle = useCallback(() => {
     setCycleToEdit(null);
@@ -131,9 +128,9 @@ export default function DecisionCycleTab({ accountId, accountName }) {
     
     try {
       // IMPORTANT: Clear selection FIRST to prevent 404 refetch
-      const wasSelected = selectedCycleId === cycle.id;
+      const wasSelected = selectedCycleIdProp === cycle.id;
       if (wasSelected) {
-        setSelectedCycleId(null);
+        onCycleChange?.(null);
       }
       
       // Now delete (cache will be cleared, no auto-revalidation)
@@ -150,7 +147,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
         });
         // Restore selection if delete failed
         if (wasSelected) {
-          setSelectedCycleId(cycle.id);
+          onCycleChange?.(cycle.id);
         }
       }
     } catch (err) {
@@ -159,7 +156,7 @@ export default function DecisionCycleTab({ accountId, accountName }) {
         status: 500
       });
     }
-  }, [selectedCycleId, mutateCycles]);
+  }, [selectedCycleIdProp, mutateCycles, onCycleChange]);
   
   const handleCycleModalClose = useCallback(() => {
     setCycleModalOpen(false);
@@ -171,9 +168,9 @@ export default function DecisionCycleTab({ accountId, accountName }) {
     
     // Select newly created cycle
     if (!cycleToEdit && data?.id) {
-      setSelectedCycleId(data.id);
+      onCycleChange?.(data.id);
     }
-  }, [cycleToEdit, mutateCycles]);
+  }, [cycleToEdit, mutateCycles, onCycleChange]);
   
   // ==============================|| PIPELINE HANDLERS ||============================== //
   
@@ -274,67 +271,6 @@ const handleActivitySuccess = useCallback(() => {
           loading={currentCycleLoading}
         />
       </Stack>
-
-      {/* Cycle Summary Strip */}
-      {currentCycle && !currentCycleLoading && (
-        <Stack
-          direction="row"
-          spacing={2}
-          alignItems="center"
-          sx={{
-            mb: 2,
-            px: 2,
-            py: 1.5,
-            borderRadius: 1,
-            bgcolor: 'grey.50',
-            border: '1px solid',
-            borderColor: 'divider'
-          }}
-        >
-          {/* Cycle Status — explicit outcome overrides derived status */}
-          {(currentCycle.outcome || currentCycle.cycle_status) && (
-            <Chip
-              label={CYCLE_DERIVED_STATUS_LABELS[currentCycle.outcome || currentCycle.cycle_status] || currentCycle.cycle_status}
-              color={CYCLE_STATUS_COLORS[currentCycle.outcome || currentCycle.cycle_status] || 'default'}
-              size="small"
-              variant="filled"
-            />
-          )}
-
-          {/* Progress */}
-          {currentCycle.steps_count > 0 && (
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 160 }}>
-              <LinearProgress
-                variant="determinate"
-                value={((currentCycle.validated_steps_count || 0) / currentCycle.steps_count) * 100}
-                sx={{ flex: 1, height: 6, borderRadius: 3 }}
-              />
-              <Typography variant="caption" color="text.secondary" noWrap>
-                {currentCycle.validated_steps_count || 0}/{currentCycle.steps_count}
-              </Typography>
-            </Stack>
-          )}
-
-          {/* Stalled Count */}
-          {currentCycle.stalled_steps_count > 0 && (
-            <Chip
-              label={`${currentCycle.stalled_steps_count} stalled`}
-              color="error"
-              size="small"
-              variant="outlined"
-            />
-          )}
-
-          {/* Timeline Span */}
-          {(currentCycle.created_at || currentCycle.expected_closing_date) && (
-            <Typography variant="caption" color="text.secondary" noWrap sx={{ ml: 'auto' }}>
-              {currentCycle.created_at && new Date(currentCycle.created_at).toLocaleDateString()}
-              {currentCycle.created_at && currentCycle.expected_closing_date && ' → '}
-              {currentCycle.expected_closing_date && new Date(currentCycle.expected_closing_date).toLocaleDateString()}
-            </Typography>
-          )}
-        </Stack>
-      )}
       
       {/* Pipeline Timeline */}
       {currentCycleLoading ? (
@@ -385,5 +321,7 @@ const handleActivitySuccess = useCallback(() => {
 
 DecisionCycleTab.propTypes = {
   accountId: PropTypes.string.isRequired,
-  accountName: PropTypes.string
+  accountName: PropTypes.string,
+  selectedCycleId: PropTypes.string,
+  onCycleChange: PropTypes.func
 };

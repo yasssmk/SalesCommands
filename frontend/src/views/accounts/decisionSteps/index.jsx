@@ -59,15 +59,20 @@ export default function DecisionStepWorkspacePage() {
     router.push(`?${urlParams.toString()}`, { scroll: false });
   };
 
+  // Derive cycle ID from step data
+  const cycleId = step?.cycle_id || step?.cycle?.id || step?.cycle || null;
+
   const handleAccountClick = () => {
     if (accountId) {
-      router.push(`/accounts/${accountId}?tab=decision-cycle`);
+      const cycleParam = cycleId ? `&cycle=${cycleId}` : '';
+      router.push(`/accounts/${accountId}?tab=decision-cycle${cycleParam}`);
     }
   };
 
   const handleCycleClick = () => {
     if (accountId) {
-      router.push(`/accounts/${accountId}?tab=decision-cycle`);
+      const cycleParam = cycleId ? `&cycle=${cycleId}` : '';
+      router.push(`/accounts/${accountId}?tab=decision-cycle${cycleParam}`);
     }
   };
 
@@ -99,6 +104,7 @@ export default function DecisionStepWorkspacePage() {
   const breadcrumbItems = step ? buildStepBreadcrumbs({
     accountId,
     accountName: account?.company_name,
+    cycleId,
     cycleName: step?.cycle_detail?.name || step?.cycle_name || null,
     stepName: headerProps.title
   }) : [];

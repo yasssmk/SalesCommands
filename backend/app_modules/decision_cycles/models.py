@@ -26,6 +26,21 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         - is_active flag to track displayed cycle
         - Multi-tenant isolation via ClientScopeManager.ModelMixin
     """
+
+    # ==========================================================================
+    # OWNERSHIP
+    # ==========================================================================
+    
+    owner = models.ForeignKey(
+        'end_users.User',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='owned_decision_cycles',
+        verbose_name=_('Owner'),
+        help_text=_('User who owns this decision cycle (defaults to creator)')
+    )
+    
     
     # ==========================================================================
     # ACCOUNT RELATIONSHIP

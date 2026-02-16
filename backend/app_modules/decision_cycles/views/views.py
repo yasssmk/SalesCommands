@@ -146,7 +146,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         
         if self.action == 'list':
             # List: minimal data for table display (no activities, no deep nesting)
-            queryset = queryset.select_related('account').prefetch_related(
+            queryset = queryset.select_related('account', 'owner').prefetch_related(
                 Prefetch(
                     'steps',
                     queryset=DecisionStep.objects.only(
@@ -167,7 +167,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
                 ).order_by('-scheduled_date', '-created_at')[:15]
             )
             
-            queryset = queryset.select_related('account').prefetch_related(
+            queryset = queryset.select_related('account', 'owner').prefetch_related(
                 Prefetch(
                     'steps',
                     queryset=DecisionStep.objects.select_related('previous_step').order_by('order')
@@ -175,8 +175,8 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
                 activities_prefetch
             )
         else:
-            # Create/Update/Delete: minimal - just account
-            queryset = queryset.select_related('account')
+            # Create/Update/Delete: minimal - just account and owner
+            queryset = queryset.select_related('account', 'owner')
         
         # Apply owner scope filter (mine/team/all)
         queryset = self.apply_owner_scope_filter(queryset)
@@ -679,7 +679,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             client_id=self.get_client_id(),
             account_id=account_id
         ).select_related(
-            'account'
+            'account', 'owner', 'updated_by'
         ).annotate(
             _annotated_steps_count=Count('steps', distinct=True),
             _annotated_validated_steps_count=Count(

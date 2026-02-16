@@ -325,6 +325,7 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     """
     
     account_name = serializers.SerializerMethodField(read_only=True)
+    owner_name = serializers.SerializerMethodField(read_only=True)
     
     # Use timeline-optimized step serializer
     steps = DecisionStepTimelineSerializer(many=True, read_only=True)
@@ -338,15 +339,18 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     progress = serializers.SerializerMethodField(read_only=True)
     stalled_steps_count = serializers.SerializerMethodField(read_only=True)
     is_at_risk = serializers.SerializerMethodField(read_only=True)
+    closed_by_name = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionCycle
         fields = [
             'id', 'name', 'description',
             'account', 'account_name',
+            'owner', 'owner_name',
             'is_active',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
+            'closed_by_name',
             'steps', 'steps_count', 'validated_steps_count',
             # Cycle-level insights
             'cycle_status', 'progress',
@@ -358,6 +362,21 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     def get_account_name(self, obj):
         """Return account name from select_related (no extra query)."""
         return obj.account.company_name if obj.account else None
+    
+    def get_closed_by_name(self, obj):
+        """Return name of user who closed the cycle."""
+        if obj.outcome is None:
+            return None
+        if obj.updated_by:
+            name = f"{obj.updated_by.first_name or ''} {obj.updated_by.last_name or ''}".strip()
+            return name or obj.updated_by.email
+        return None
+    
+    def get_owner_name(self, obj):
+        """Return owner full name from select_related (no extra query)."""
+        if obj.owner:
+            return f"{obj.owner.first_name or ''} {obj.owner.last_name or ''}".strip()
+        return None
 
     # ==========================================================================
     # CYCLE-LEVEL INSIGHT GETTERS (reads from bulk context injected by view)
@@ -1066,8 +1085,8 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
     """
     Lightweight serializer for cycle lists.
     """
-    
     account_name = serializers.SerializerMethodField(read_only=True)
+    owner_name = serializers.SerializerMethodField(read_only=True)
     steps_count = serializers.IntegerField(read_only=True)
     validated_steps_count = serializers.IntegerField(read_only=True)
     
@@ -1076,6 +1095,7 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
         fields = [
             'id', 'name', 'description',
             'account', 'account_name',
+            'owner', 'owner_name',
             'is_active',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
@@ -1086,6 +1106,11 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
     
     def get_account_name(self, obj):
         return obj.account.company_name if obj.account else None
+    
+    def get_owner_name(self, obj):
+        if obj.owner:
+            return f"{obj.owner.first_name or ''} {obj.owner.last_name or ''}".strip()
+        return None
 
 
 class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -1097,6 +1122,7 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
     """
     
     account_name = serializers.SerializerMethodField(read_only=True)
+    owner_name = serializers.SerializerMethodField(read_only=True)
     steps = DecisionStepListSerializer(many=True, read_only=True)
     steps_count = serializers.IntegerField(read_only=True)
     validated_steps_count = serializers.IntegerField(read_only=True)
@@ -1107,6 +1133,7 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
         fields = [
             'id', 'name', 'description',
             'account', 'account_name',
+            'owner', 'owner_name',
             'is_active',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
@@ -1116,7 +1143,7 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'account_name', 'steps', 'steps_count',
+            'id', 'account_name', 'owner', 'owner_name', 'steps', 'steps_count',
             'validated_steps_count', 'estimated_timeline_days',
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'created_by', 'updated_by', 'created_at', 'updated_at'
@@ -1124,6 +1151,11 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
     
     def get_account_name(self, obj):
         return obj.account.company_name if obj.account else None
+    
+    def get_owner_name(self, obj):
+        if obj.owner:
+            return f"{obj.owner.first_name or ''} {obj.owner.last_name or ''}".strip()
+        return None
     
 
 
@@ -1180,6 +1212,10 @@ class DecisionCycleCreateSerializer(ClientScopeManager.SerializerMixin, serializ
         """Create decision cycle with proper audit fields."""
         # Get user from context (standard pattern)
         user = self.context.get('request').user if self.context.get('request') else None
+        
+        # Auto-set owner to current user if not provided
+        if 'owner' not in validated_data and user:
+            validated_data['owner'] = user
         
         # Create instance without saving
         instance = DecisionCycle(**validated_data)

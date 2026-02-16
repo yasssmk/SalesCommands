@@ -156,6 +156,7 @@ export default function ActivityWorkspacePage() {
   const breadcrumbItems = activity ? buildActivityBreadcrumbs({
     accountId: activity.account,
     accountName: activity.account_detail?.company_name,
+    cycleId: activity.decision_cycle || null,
     stepId: activity.decision_step || null,
     stepName: activity.decision_step_detail?.name || null,
     activityTitle: activity.title
