@@ -505,6 +505,21 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
                 raise StandardizedValidationError(
                     "hold_until date is required when outcome is ON_HOLD."
                 )
+            # hold_until must not be in the past
+            from datetime import date as date_type
+            try:
+                parsed_hold = (
+                    hold_until if isinstance(hold_until, date_type)
+                    else tz.datetime.strptime(hold_until, '%Y-%m-%d').date()
+                )
+            except (ValueError, TypeError):
+                raise StandardizedValidationError(
+                    "hold_until must be a valid date."
+                )
+            if parsed_hold < tz.now().date():
+                raise StandardizedValidationError(
+                    "hold_until date cannot be in the past."
+                )
 
         # --- Apply outcome ---
         instance.outcome = outcome

@@ -39,19 +39,107 @@ import PlusOutlined from '@ant-design/icons/PlusOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
+import CloseCircleFilled from '@ant-design/icons/CloseCircleFilled';
+import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined';
 import FolderOutlined from '@ant-design/icons/FolderOutlined';
 
-// project imports
-import {
-  CYCLE_DERIVED_STATUS_LABELS,
-  CYCLE_STATUS_COLORS
-} from 'api/accounts/decisionCycles';
+// ==============================|| CYCLE MENU ITEM - SECONDARY INFO ||============================== //
+
+/**
+ * Renders the secondary line of a cycle menu item:
+ * - Closed (WON/LOST/NOT_QUALIFIED) → outcome_date with icon
+ * - ON_HOLD → hold_until date with warning/error color
+ * - Open → mini progress bar (validated / total steps)
+ */
+function CycleMenuItemSecondary({ cycle }) {
+  const theme = useTheme();
+
+  const outcome = cycle.outcome || null;
+  const isClosed = ['WON', 'LOST', 'NOT_QUALIFIED'].includes(outcome);
+  const isOnHold = outcome === 'ON_HOLD';
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '—';
+    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  // Lightweight date typography style
+  const dateSx = { fontWeight: 400, fontSize: '0.7rem', letterSpacing: '0.01em' };
+
+  // --- Closed: show outcome_date ---
+  if (isClosed && cycle.outcome_date) {
+    const isWon = outcome === 'WON';
+    const color = isWon ? theme.palette.success.main : theme.palette.error.main;
+    return (
+      <Typography variant="caption" sx={{ color, ...dateSx, mt: 0.25 }}>
+        {formatDate(cycle.outcome_date)}
+      </Typography>
+    );
+  }
+
+  // --- ON_HOLD: show hold_until date ---
+  if (isOnHold) {
+    const holdDate = cycle.hold_until;
+    const isHoldOverdue = holdDate && new Date(holdDate) < new Date(new Date().toDateString());
+    const color = isHoldOverdue ? theme.palette.error.main : theme.palette.warning.main;
+    return (
+      <Tooltip title={cycle.outcome_notes || 'On Hold'} arrow>
+        <Typography variant="caption" sx={{ color, ...dateSx, mt: 0.25 }}>
+          {holdDate ? formatDate(holdDate) : '—'}
+        </Typography>
+      </Tooltip>
+    );
+  }
+
+  // --- Open: mini progress bar from derived_status (not DB annotation) ---
+  const steps = cycle.steps || [];
+  const stepsCount = steps.length;
+  const validatedCount = steps.filter(s => s.derived_status === 'VALIDATED').length;
+  const percent = stepsCount > 0 ? Math.round((validatedCount / stepsCount) * 100) : 0;
+
+  if (stepsCount === 0) return null;
+
+  return (
+    <Box sx={{ mt: 0.5, width: '100%', maxWidth: 160 }}>
+      <Box sx={{ height: 4, borderRadius: 2, bgcolor: 'grey.200', overflow: 'hidden' }}>
+        <Box
+          sx={{
+            height: '100%',
+            width: `${percent}%`,
+            bgcolor: percent === 100 ? 'success.main' : 'primary.main',
+            borderRadius: 2,
+            transition: 'width 0.3s ease'
+          }}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+CycleMenuItemSecondary.propTypes = {
+  cycle: PropTypes.object.isRequired
+};
 
 // ==============================|| CYCLE MENU ITEM ||============================== //
 
 function CycleMenuItem({ cycle, isSelected, onSelect, onEdit, onDelete }) {
   const theme = useTheme();
   const [isHovered, setIsHovered] = useState(false);
+
+  // Derive status chip label/color from outcome or cycle_status
+  const outcome = cycle.outcome || null;
+  const statusKey = outcome || cycle.cycle_status || null;
+  const STATUS_MAP = {
+    WON: { label: 'Won', color: 'success' },
+    LOST: { label: 'Lost', color: 'error' },
+    NOT_QUALIFIED: { label: 'Not Qualified', color: 'default' },
+    ON_HOLD: { label: 'On Hold', color: 'warning' },
+    OVERDUE: { label: 'Overdue', color: 'error' },
+    STALLED: { label: 'Stalled', color: 'warning' }
+  };
+  const statusInfo = STATUS_MAP[statusKey] || null;
+  const statusLabel = statusInfo?.label || null;
+  const statusColor = statusInfo?.color || 'default';
   
   return (
     <MenuItem
@@ -76,27 +164,24 @@ function CycleMenuItem({ cycle, isSelected, onSelect, onEdit, onDelete }) {
       <ListItemText
         primary={
           <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="body1" fontWeight={isSelected ? theme.typography.fontWeightBold : theme.typography.fontWeightRegular}>
+            <Typography variant="body1" fontWeight={isSelected ? 600 : 400} noWrap>
               {cycle.name}
             </Typography>
-            {cycle.cycle_status && (
+            {statusLabel && (
               <Chip
-                label={CYCLE_DERIVED_STATUS_LABELS[cycle.cycle_status] || cycle.cycle_status}
-                color={CYCLE_STATUS_COLORS[cycle.cycle_status] || 'default'}
+                label={statusLabel}
                 size="small"
-                variant="outlined"
-                sx={{ height: 20, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+                color={statusColor}
+                variant="filled"
+                sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
               />
             )}
           </Stack>
         }
-        secondary={
-          cycle.steps_count !== undefined
-            ? `${cycle.validated_steps_count || 0}/${cycle.steps_count} validated`
-            : null
-        }
+        secondary={<CycleMenuItemSecondary cycle={cycle} />}
         primaryTypographyProps={{ component: 'div' }}
         secondaryTypographyProps={{
+          component: 'div',
           variant: 'caption'
         }}
       />

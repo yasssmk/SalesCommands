@@ -876,32 +876,45 @@ function ColumnVisibilityMenu({ steps, hiddenColumns, onToggleColumn, onShowAll 
         {steps.map((step) => {
           const isHidden = hiddenColumns.includes(step.id);
           const stepConfig = PIPELINE_STEP_CONFIG[step.stage] || {};
+          const visibleActivities = (step.activities || []).filter(a => a.status !== 'CANCELLED');
+          const hasActivities = visibleActivities.length > 0;
+          // Cannot uncheck (hide) a step that has activities
+          const isLocked = !isHidden && hasActivities;
           
           return (
-            <MenuItem 
-              key={step.id} 
-              onClick={() => handleToggle(step.id)}
-              dense
+            <Tooltip
+              key={step.id}
+              title={isLocked ? 'Cannot hide — step has activities' : ''}
+              placement="left"
             >
-              <ListItemIcon>
-                <Checkbox
-                  checked={!isHidden}
-                  size="small"
-                  sx={{ p: 0 }}
-                />
-              </ListItemIcon>
-              <ListItemText 
-                primary={step.name}
-                secondary={stepConfig.activity_optional ? 'Optional' : null}
-                primaryTypographyProps={{ variant: 'body2' }}
-                secondaryTypographyProps={{ variant: 'caption' }}
-              />
-              {isHidden ? (
-                <EyeInvisibleOutlined style={{ fontSize: 14, color: 'grey' }} />
-              ) : (
-                <EyeOutlined style={{ fontSize: 14 }} />
-              )}
-            </MenuItem>
+              <span>
+                <MenuItem 
+                  onClick={() => !isLocked && handleToggle(step.id)}
+                  dense
+                  disabled={isLocked}
+                >
+                  <ListItemIcon>
+                    <Checkbox
+                      checked={!isHidden}
+                      size="small"
+                      disabled={isLocked}
+                      sx={{ p: 0 }}
+                    />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary={step.name}
+                    secondary={stepConfig.activity_optional ? 'Optional' : hasActivities ? `${visibleActivities.length} activit${visibleActivities.length > 1 ? 'ies' : 'y'}` : null}
+                    primaryTypographyProps={{ variant: 'body2' }}
+                    secondaryTypographyProps={{ variant: 'caption' }}
+                  />
+                  {isHidden ? (
+                    <EyeInvisibleOutlined style={{ fontSize: 14, color: 'grey' }} />
+                  ) : (
+                    <EyeOutlined style={{ fontSize: 14 }} />
+                  )}
+                </MenuItem>
+              </span>
+            </Tooltip>
           );
         })}
         
@@ -1121,7 +1134,18 @@ export default function DecisionCycleTimeline({
       }),
       hold_until: Yup.string().when('outcome', {
         is: 'ON_HOLD',
-        then: (schema) => schema.required('Hold until date is required for On Hold'),
+        then: (schema) => schema
+          .required('Hold until date is required for On Hold')
+          .test(
+            'not-in-past',
+            'Hold until date cannot be in the past',
+            (value) => {
+              if (!value) return true;
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              return new Date(value) >= today;
+            }
+          ),
         otherwise: (schema) => schema.nullable()
       })
     }),
@@ -1180,9 +1204,21 @@ export default function DecisionCycleTimeline({
   }, [cycle?.id, onRefresh]);
   
   // Toggle column visibility
+  // Rule: cannot hide a step that has visible (non-cancelled) activities
   const handleToggleColumn = useCallback((stepId) => {
     setHiddenColumns(prev => {
-      const newHidden = prev.includes(stepId)
+      const isCurrentlyHidden = prev.includes(stepId);
+      
+      // If trying to HIDE (not currently hidden → will become hidden)
+      if (!isCurrentlyHidden) {
+        const step = steps.find(s => s.id === stepId);
+        const visibleActivities = (step?.activities || []).filter(a => a.status !== 'CANCELLED');
+        if (visibleActivities.length > 0) {
+          return prev; // Block — step has activities
+        }
+      }
+      
+      const newHidden = isCurrentlyHidden
         ? prev.filter(id => id !== stepId)
         : [...prev, stepId];
       
@@ -1193,7 +1229,7 @@ export default function DecisionCycleTimeline({
       
       return newHidden;
     });
-  }, [cycle?.id]);
+  }, [cycle?.id, steps]);
   
   // Show all columns
   const handleShowAll = useCallback(() => {
@@ -1282,7 +1318,7 @@ export default function DecisionCycleTimeline({
         {/* Start date (first activity) */}
         <Typography variant="caption" color="text.secondary" noWrap>
           {cycle.created_at
-            ? new Date(cycle.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            ? new Date(cycle.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
             : '—'
           }
         </Typography>
@@ -1305,13 +1341,47 @@ export default function DecisionCycleTimeline({
           </Typography>
         </Stack>
 
-        {/* End date — same pattern as step columns */}
-        {(cycle.outcome_date || expectedClosingDate) ? (
+        {/* End date — outcome-aware display
+         * ON_HOLD  → hold_until in warning (or error if past)
+         * WON      → outcome_date in success
+         * LOST/NQ  → outcome_date in error
+         * Open     → expectedClosingDate in italic (overdue if past)
+         */}
+        {(cycle.outcome_date || cycle.hold_until || expectedClosingDate) ? (
           <Stack direction="row" spacing={0.5} alignItems="center">
-            {cycle.outcome_date ? (
+            {isCyclePaused ? (() => {
+              // ON_HOLD: show hold_until date + outcome_notes tooltip
+              const holdDate = cycle.hold_until;
+              const isHoldOverdue = holdDate && new Date(holdDate) < new Date(new Date().toDateString());
+              const holdColor = isHoldOverdue ? theme.palette.error.main : theme.palette.warning.main;
+              return (
+                <Tooltip title={cycle.outcome_notes || 'On Hold'} arrow>
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    <PauseCircleOutlined style={{ fontSize: 12, color: holdColor }} />
+                    <Typography variant="caption" noWrap sx={{ color: holdColor, fontWeight: 500 }}>
+                      On untill {holdDate
+                        ? new Date(holdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+                        : '—'
+                      }
+                    </Typography>
+                  </Stack>
+                </Tooltip>
+              );
+            })() : cycle.outcome_date ? (
               <>
-                <CheckCircleFilled style={{ fontSize: 12, color: theme.palette.success.main }} />
-                <Typography variant="caption" color="success.main" fontWeight={500} noWrap>
+                {cycleOutcome === 'WON' ? (
+                  <CheckCircleFilled style={{ fontSize: 12, color: theme.palette.success.main }} />
+                ) : (
+                  <CloseCircleFilled style={{ fontSize: 12, color: theme.palette.error.main }} />
+                )}
+                <Typography
+                  variant="caption"
+                  noWrap
+                  sx={{
+                    color: cycleOutcome === 'WON' ? 'success.main' : 'error.main',
+                    fontWeight: 500
+                  }}
+                >
                   {new Date(cycle.outcome_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   {cycle.closed_by_name ? ` by ${cycle.closed_by_name}` : ''}
                 </Typography>
@@ -1330,10 +1400,11 @@ export default function DecisionCycleTimeline({
                       fontWeight: isOverdue ? 500 : 400
                     }}
                   >
-                    ({new Date(expectedClosingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})
+                    ({new Date(expectedClosingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })})
                   </Typography>
                 </>
-              );})()}
+              );
+            })()}
           </Stack>
         ) : (
           <Typography variant="caption" color="text.disabled">—</Typography>
@@ -1525,6 +1596,7 @@ export default function DecisionCycleTimeline({
                 error={closeFormik.touched.hold_until && Boolean(closeFormik.errors.hold_until)}
                 helperText={closeFormik.touched.hold_until && closeFormik.errors.hold_until}
                 InputLabelProps={{ shrink: true }}
+                inputProps={{ min: new Date().toISOString().split('T')[0] }}
               />
             )}
             
