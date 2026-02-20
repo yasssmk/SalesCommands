@@ -18,6 +18,7 @@ import Typography from '@mui/material/Typography';
 import MainCard from 'components/MainCard';
 import { DebouncedInput } from 'components/third-party/react-table';
 import CampaignCard from 'sections/campaigns/CampaignCard';
+import CampaignCreateModal from 'sections/campaigns/create/CampaignCreateModal';
 import OwnerScopeTabs from 'components/filters/OwnerScopeTabs';
 
 // hooks
@@ -25,6 +26,9 @@ import useOwnerScope from 'hooks/useOwnerScope';
 
 // api
 import { useGetCampaigns } from 'api/campaigns/campaigns';
+
+// next
+import { useRouter } from 'next/navigation';
 
 // assets
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
@@ -45,8 +49,10 @@ export default function CampaignsListPage() {
 
   // ==============================|| STATE ||============================== //
 
+  const router = useRouter();
   const [globalFilter, setGlobalFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   // Owner scope filter
   const {
@@ -97,11 +103,11 @@ export default function CampaignsListPage() {
   };
 
   const handleNewCampaign = () => {
-    console.log('TODO: Open create campaign modal/wizard');
+    setCreateModalOpen(true);
   };
 
   const handleOpenCampaign = (campaign) => {
-    console.log('TODO: Navigate to campaign workspace', campaign.id);
+    router.push(`/campaigns/${campaign.id}`);
   };
 
   const handleEditCampaign = (campaign) => {
@@ -203,6 +209,12 @@ export default function CampaignsListPage() {
           />
         </Stack>
       )}
+
+      {/* ==================== CREATE CAMPAIGN MODAL ==================== */}
+      <CampaignCreateModal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+      />
     </>
   );
 }
