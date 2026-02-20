@@ -42,14 +42,14 @@ export const FEATURES = {
   // ============================================
   ACTION_CENTER: false,    // Workboard/Action center - Coming soon
   TERRITORIES: true,       // Territory management - Active
-  CAMPAIGNS: false,        // Campaign management - Coming soon
+  CAMPAIGNS: true,         // Campaign management - Active
   SALES_PLAN: false,       // Sales planning - Coming soon
   
   // ============================================
   // BUSINESS DATA FEATURES
   // ============================================
   ACCOUNT_MANAGEMENT: true,   // Account CRUD - Active
-  CONTACTS_MANAGEMENT: true, // Contact management 
+  CONTACTS_MANAGEMENT: false, // Contact management 
   PRODUCTS_MANAGEMENT: false, // Product catalog - Coming soon
   
   // ============================================
