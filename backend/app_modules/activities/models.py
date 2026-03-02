@@ -206,6 +206,38 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Decision Step'),
         help_text=_('Specific decision step this activity is linked to')
     )
+
+    # ==========================================================================
+    # RELATIONSHIPS - CAMPAIGN (OPTIONAL)
+    # ==========================================================================
+
+    campaign = models.ForeignKey(
+        'module_campaigns.Campaign',
+        on_delete=models.SET_NULL,
+        related_name='activities',
+        blank=True,
+        null=True,
+        verbose_name=_('Campaign'),
+        help_text=_('Campaign that generated this activity')
+    )
+
+    campaign_account = models.ForeignKey(
+        'module_campaigns.CampaignAccount',
+        on_delete=models.SET_NULL,
+        related_name='activities',
+        blank=True,
+        null=True,
+        verbose_name=_('Campaign Account'),
+        help_text=_('Specific campaign-account pivot this activity belongs to')
+    )
+
+    sequence_position = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        verbose_name=_('Sequence Position'),
+        help_text=_('Position in the campaign sequence (1-based)')
+    )
+
     
     # ==========================================================================
     # LINKED LIST (PREVIOUS/NEXT ACTIVITY)
@@ -291,6 +323,8 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
                 fields=['decision_cycle', 'decision_step', 'scheduled_date', 'scheduled_time', 'created_at'],
                 name='act_sequence_order_idx'
             ),
+            models.Index(fields=['campaign'], name='act_campaign_idx'),
+            models.Index(fields=['campaign_account'], name='act_camp_account_idx'),
         ]
     
     def __str__(self):

@@ -74,6 +74,19 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Is Active'),
         help_text=_('Whether this is the currently displayed cycle for the account')
     )
+
+    # ==========================================================================
+    # FINANCIAL
+    # ==========================================================================
+
+    estimated_value = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        verbose_name=_('Estimated Value'),
+        help_text=_('Estimated deal value for pipeline/revenue tracking in campaigns')
+    )
     
     # ==========================================================================
     # CYCLE OUTCOME (two-layer architecture)

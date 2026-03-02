@@ -217,6 +217,7 @@ INSTALLED_APPS = [
     'app_modules.decision_cycles',  # Decision Cycle module for sales execution
     'app_modules.activities',  # Activity module for sales execution
     'app_modules.core_modules',
+    'app_modules.campaigns',
     'apps.signals',
     'apps.campaign',
     'apps.opportunities',

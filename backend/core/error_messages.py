@@ -189,7 +189,7 @@ class ActivityErrorMessages:
     ACTIVITY_NOT_FOUND = _("Activity not found")
 
 
-class CampaignErrorMessages:
+class CampaignErrorMessages: #TO DELETE
     """Campaign specific error messages"""
     
     # Campaign State & Validation
@@ -287,6 +287,64 @@ class CampaignErrorMessages:
     TARGET_STATE_MACHINE_ERROR = _("State machine validation failed: {reason}")
     TARGET_STATUS_UPDATE_FAILED = _("Failed to update target status: {reason}")
     TARGET_STATUS_SYNC_FAILED = _("Failed to synchronize target status with activities: {reason}")
+
+class CampaignModuleErrorMessages:
+    """
+    Error messages for new Campaign module (app_modules/campaigns).
+
+    Separate from legacy CampaignErrorMessages (apps/campaign) to avoid
+    conflicts during migration.
+    """
+
+    # Campaign Lifecycle
+    CAMPAIGN_INVALID_STATE = _("Campaign is in an invalid state for this operation: {current_state}")
+    CAMPAIGN_TRANSITION_INVALID = _("Cannot transition campaign from '{from_state}' to '{to_state}'")
+    CAMPAIGN_ALREADY_ACTIVE = _("Campaign is already active")
+    CAMPAIGN_NOT_ACTIVE = _("Campaign must be active to perform this action")
+    CAMPAIGN_IN_FINAL_STATE = _("Cannot modify campaign in final state: {state}")
+
+    # Campaign Validation
+    CAMPAIGN_DATE_INVALID = _("Campaign end date must be after start date")
+    CAMPAIGN_DATE_PAST = _("Campaign dates cannot be in the past")
+    CAMPAIGN_TERRITORY_REQUIRED = _("Outbound campaigns require a territory")
+    CAMPAIGN_SEQUENCE_REQUIRED = _("Outbound campaigns require a sequence type")
+    CAMPAIGN_NO_ACCOUNTS = _("Campaign must have at least one account")
+
+    # CampaignAccount
+    ACCOUNT_ALREADY_IN_CAMPAIGN = _("Account is already in this campaign")
+    ACCOUNT_NOT_IN_CAMPAIGN = _("Account not found in this campaign")
+    ACCOUNT_INVALID_STATE = _("Campaign account is in an invalid state: {state}")
+    ACCOUNT_TRANSITION_INVALID = _(
+        "Cannot transition account from '{from_state}' to '{to_state}'. "
+        "Allowed: {allowed_transitions}"
+    )
+    ACCOUNT_FINAL_STATE = _("Cannot modify account in final state: {state}")
+    MAX_ACCOUNTS_EXCEEDED = _("Maximum accounts per campaign exceeded: {max}")
+
+    # CampaignMember
+    MEMBER_ALREADY_EXISTS = _("User already has role '{role}' in this campaign")
+    MEMBER_NOT_FOUND = _("Member not found in this campaign")
+    OWNER_REQUIRED = _("Campaign must have at least one owner")
+    CANNOT_REMOVE_PRIMARY_OWNER = _("Cannot remove the primary owner of a campaign")
+    MAX_MEMBERS_EXCEEDED = _("Maximum members per campaign exceeded: {max}")
+
+    # CampaignObjective
+    OBJECTIVE_NOT_FOUND = _("Objective not found for this campaign")
+    OBJECTIVE_PRIMARY_EXISTS = _("Campaign already has a primary objective")
+    OBJECTIVE_INVALID_TYPE = _("Invalid objective type: {objective_type}")
+    OBJECTIVE_TARGET_VALUE_INVALID = _("Target value must be greater than 0")
+    MAX_OBJECTIVES_EXCEEDED = _("Maximum objectives per campaign exceeded: {max}")
+
+    # Execution & Activities
+    ACTIVITY_GENERATION_FAILED = _("Failed to generate activities: {reason}")
+    PLAYLIST_EMPTY = _("No activities available in campaign playlist")
+    EXECUTION_FAILED = _("Campaign execution failed: {reason}")
+
+    # Analytics
+    ANALYTICS_CALCULATION_FAILED = _("Failed to calculate campaign analytics: {reason}")
+
+    # Bulk operations
+    BULK_OPERATION_FAILED = _("Bulk operation failed: {operation}")
 
 
 
