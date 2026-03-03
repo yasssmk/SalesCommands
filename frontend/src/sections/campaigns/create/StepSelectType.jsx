@@ -1,47 +1,49 @@
 // frontend/src/sections/campaigns/create/StepSelectType.jsx
 /**
- * Campaign Create Wizard — Step 0: Select Campaign Type
+ * Campaign Create Wizard
  *
- * Two clickable cards: Prospection vs Chasing.
+ * Two clickable cards: Outbound vs Targeted.
  * Click selects the family and auto-advances to next step.
  */
 
-'use client';
+"use client";
 
-import PropTypes from 'prop-types';
+import PropTypes from "prop-types";
 
 // material-ui
-import { alpha, useTheme } from '@mui/material/styles';
-import Box from '@mui/material/Box';
-import Card from '@mui/material/Card';
-import Grid from '@mui/material/Grid';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
+import { alpha, useTheme } from "@mui/material/styles";
+import Box from "@mui/material/Box";
+import Card from "@mui/material/Card";
+import Grid from "@mui/material/Grid";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 
 // api
-import { CAMPAIGN_FAMILIES } from 'api/campaigns/campaigns';
+import { CAMPAIGN_FAMILIES } from "api/campaigns/campaigns";
 
 // icons
-import AimOutlined from '@ant-design/icons/AimOutlined';
-import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined';
+import AimOutlined from "@ant-design/icons/AimOutlined";
+import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
 
 // ==============================|| TYPE OPTIONS ||============================== //
 
 const TYPE_OPTIONS = [
   {
-    family: CAMPAIGN_FAMILIES.PROSPECTION,
-    label: 'Prospection',
-    description: 'Target accounts from a territory segment. Generate automated activity sequences to reach new prospects.',
+    family: CAMPAIGN_FAMILIES.OUTBOUND,
+    label: "Outbound",
+    description:
+      "Launch outbound sequences on a territory segment. Auto-generate activities for every account in the segment.",
     Icon: AimOutlined,
-    colorKey: 'primary'
+    colorKey: "primary",
   },
   {
-    family: CAMPAIGN_FAMILIES.CHASING,
-    label: 'Chasing',
-    description: 'Chase contacts from specific accounts. Follow up on open decision cycles.',
+    family: CAMPAIGN_FAMILIES.TARGETED,
+    label: "Targeted",
+    description:
+      "Target specific accounts, departments or contacts with a tailored reason. Ideal for follow-ups, renewals and cross-sell.",
     Icon: ThunderboltOutlined,
-    colorKey: 'warning'
-  }
+    colorKey: "warning",
+  },
 ];
 
 // ==============================|| STEP SELECT TYPE ||============================== //
@@ -70,24 +72,26 @@ export default function StepSelectType({ selectedFamily, onSelect }) {
                 onClick={() => onSelect(family)}
                 sx={{
                   p: 3,
-                  cursor: 'pointer',
-                  border: '2px solid',
-                  borderColor: isSelected ? color.main : 'divider',
-                  bgcolor: isSelected ? alpha(color.main, 0.06) : 'background.paper',
+                  cursor: "pointer",
+                  border: "2px solid",
+                  borderColor: isSelected ? color.main : "divider",
+                  bgcolor: isSelected
+                    ? alpha(color.main, 0.06)
+                    : "background.paper",
                   borderRadius: 2,
-                  transition: 'all 0.2s ease-in-out',
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  '&:hover': {
+                  transition: "all 0.2s ease-in-out",
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  "&:hover": {
                     borderColor: color.main,
                     bgcolor: alpha(color.main, 0.04),
-                    transform: 'translateY(-2px)',
-                    boxShadow: `0 4px 16px ${alpha(color.main, 0.15)}`
+                    transform: "translateY(-2px)",
+                    boxShadow: `0 4px 16px ${alpha(color.main, 0.15)}`,
                   },
-                  '&:active': {
-                    transform: 'translateY(0)'
-                  }
+                  "&:active": {
+                    transform: "translateY(0)",
+                  },
                 }}
               >
                 <Stack spacing={2} alignItems="center" textAlign="center">
@@ -97,11 +101,13 @@ export default function StepSelectType({ selectedFamily, onSelect }) {
                       width: 64,
                       height: 64,
                       borderRadius: 2,
-                      bgcolor: isSelected ? alpha(color.main, 0.15) : alpha(color.main, 0.08),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'all 0.2s ease-in-out'
+                      bgcolor: isSelected
+                        ? alpha(color.main, 0.15)
+                        : alpha(color.main, 0.08),
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "all 0.2s ease-in-out",
                     }}
                   >
                     <Icon style={{ fontSize: 32, color: color.main }} />
@@ -110,13 +116,17 @@ export default function StepSelectType({ selectedFamily, onSelect }) {
                   {/* Label */}
                   <Typography
                     variant="h4"
-                    sx={{ color: isSelected ? color.dark : 'text.primary' }}
+                    sx={{ color: isSelected ? color.dark : "text.primary" }}
                   >
                     {label}
                   </Typography>
 
                   {/* Description */}
-                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ lineHeight: 1.6 }}
+                  >
                     {description}
                   </Typography>
                 </Stack>
@@ -135,5 +145,5 @@ StepSelectType.propTypes = {
   /** Currently selected family (or empty string) */
   selectedFamily: PropTypes.string,
   /** Callback when a type is selected: (family) => void */
-  onSelect: PropTypes.func.isRequired
+  onSelect: PropTypes.func.isRequired,
 };

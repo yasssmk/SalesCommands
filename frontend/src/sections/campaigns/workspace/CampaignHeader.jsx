@@ -12,50 +12,50 @@
  * Pattern: sections/activities/workspace/ActivityHeader.jsx
  */
 
-'use client';
+"use client";
 
 // MUI
-import { useTheme } from '@mui/material/styles';
-import Avatar from '@mui/material/Avatar';
-import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
+import { useTheme } from "@mui/material/styles";
+import Avatar from "@mui/material/Avatar";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 
 // project imports
-import CampaignStatusBadge from 'sections/campaigns/CampaignStatusBadge';
+import CampaignStatusBadge from "sections/campaigns/CampaignStatusBadge";
 import {
   CAMPAIGN_FAMILIES,
   CAMPAIGN_FAMILY_LABELS,
   SEQUENCE_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
-  getCampaignProgress
-} from 'api/campaigns/campaigns';
+  getCampaignProgress,
+} from "api/campaigns/campaigns";
 
 // icons
-import AimOutlined from '@ant-design/icons/AimOutlined';
-import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined';
-import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
-import TeamOutlined from '@ant-design/icons/TeamOutlined';
-import BankOutlined from '@ant-design/icons/BankOutlined';
-import GlobalOutlined from '@ant-design/icons/GlobalOutlined';
-import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined';
-import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined';
-import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
+import AimOutlined from "@ant-design/icons/AimOutlined";
+import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
+import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
+import TeamOutlined from "@ant-design/icons/TeamOutlined";
+import BankOutlined from "@ant-design/icons/BankOutlined";
+import GlobalOutlined from "@ant-design/icons/GlobalOutlined";
+import PlayCircleOutlined from "@ant-design/icons/PlayCircleOutlined";
+import PauseCircleOutlined from "@ant-design/icons/PauseCircleOutlined";
+import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
 
 // ==============================|| FAMILY CONFIG ||============================== //
 
 const FAMILY_CONFIG = {
-  PROSPECTION: {
+  OUTBOUND: {
     Icon: AimOutlined,
-    avatarColor: 'primary.main',
-    chipColor: 'primary'
+    avatarColor: "primary.main",
+    chipColor: "primary",
   },
-  CHASING: {
+  TARGETED: {
     Icon: ThunderboltOutlined,
-    avatarColor: 'warning.main',
-    chipColor: 'warning'
-  }
+    avatarColor: "warning.main",
+    chipColor: "warning",
+  },
 };
 
 // ==============================|| CAMPAIGN HEADER HOOK ||============================== //
@@ -70,13 +70,20 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
   const theme = useTheme();
 
   if (!campaign) {
-    return { avatar: null, title: '', chips: [], infoItems: [], headerActions: null };
+    return {
+      avatar: null,
+      title: "",
+      chips: [],
+      infoItems: [],
+      headerActions: null,
+    };
   }
 
   // ==============================|| DERIVED VALUES ||============================== //
 
-  const isProspection = campaign.family === CAMPAIGN_FAMILIES.PROSPECTION;
-  const familyConfig = FAMILY_CONFIG[campaign.family] || FAMILY_CONFIG.PROSPECTION;
+  const isOutbound = campaign.campaign_type === CAMPAIGN_FAMILIES.OUTBOUND;
+  const familyConfig =
+    FAMILY_CONFIG[campaign.campaign_type] || FAMILY_CONFIG.OUTBOUND;
   const FamilyIcon = familyConfig.Icon;
   const progress = stats?.completion_rate || getCampaignProgress(campaign);
 
@@ -88,48 +95,48 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
         width: 56,
         height: 56,
         bgcolor: familyConfig.avatarColor,
-        fontSize: '1.5rem'
+        fontSize: "1.5rem",
       }}
     >
       <FamilyIcon />
     </Avatar>
   );
 
-  const title = campaign.name || '';
+  const title = campaign.name || "";
 
   // Action buttons based on status
   const headerActions = (
     <Stack direction="row" spacing={1}>
-      {campaign.status === 'DRAFT' && (
+      {campaign.status === "DRAFT" && (
         <Button
           variant="contained"
           color="success"
           size="small"
           startIcon={<PlayCircleOutlined />}
-          onClick={() => console.log('TODO: startCampaign', campaign.id)}
+          onClick={() => console.log("TODO: startCampaign", campaign.id)}
         >
           Start
         </Button>
       )}
-      {campaign.status === 'ACTIVE' && (
+      {campaign.status === "ACTIVE" && (
         <Button
           variant="outlined"
           color="warning"
           size="small"
           startIcon={<PauseCircleOutlined />}
-          onClick={() => console.log('TODO: pauseCampaign', campaign.id)}
+          onClick={() => console.log("TODO: pauseCampaign", campaign.id)}
         >
           Pause
         </Button>
       )}
-      {campaign.status === 'PAUSED' && (
+      {campaign.status === "PAUSED" && (
         <>
           <Button
             variant="contained"
             color="success"
             size="small"
             startIcon={<PlayCircleOutlined />}
-            onClick={() => console.log('TODO: resumeCampaign', campaign.id)}
+            onClick={() => console.log("TODO: resumeCampaign", campaign.id)}
           >
             Resume
           </Button>
@@ -138,19 +145,19 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
             color="primary"
             size="small"
             startIcon={<CheckCircleOutlined />}
-            onClick={() => console.log('TODO: completeCampaign', campaign.id)}
+            onClick={() => console.log("TODO: completeCampaign", campaign.id)}
           >
             Complete
           </Button>
         </>
       )}
-      {campaign.status === 'ACTIVE' && (
+      {campaign.status === "ACTIVE" && (
         <Button
           variant="outlined"
           color="primary"
           size="small"
           startIcon={<CheckCircleOutlined />}
-          onClick={() => console.log('TODO: completeCampaign', campaign.id)}
+          onClick={() => console.log("TODO: completeCampaign", campaign.id)}
         >
           Complete
         </Button>
@@ -164,16 +171,18 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
     <CampaignStatusBadge key="status" status={campaign.status} />,
     <Chip
       key="family"
-      label={CAMPAIGN_FAMILY_LABELS[campaign.family] || campaign.family}
+      label={
+        CAMPAIGN_FAMILY_LABELS[campaign.campaign_type] || campaign.campaign_type
+      }
       color={familyConfig.chipColor}
       size="small"
       variant="outlined"
       icon={<FamilyIcon />}
-    />
+    />,
   ];
 
   // Territory chip (Prospection only)
-  if (isProspection && campaign.territory_name) {
+  if (isOutbound && campaign.territory_name) {
     chips.push(
       <Chip
         key="territory"
@@ -181,7 +190,7 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
         size="small"
         variant="outlined"
         icon={<GlobalOutlined />}
-      />
+      />,
     );
   }
 
@@ -193,7 +202,7 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
         label={SEQUENCE_TYPE_LABELS[campaign.sequence_type]}
         size="small"
         variant="outlined"
-      />
+      />,
     );
   }
 
@@ -202,18 +211,28 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
   const formatDate = (dateStr) => {
     if (!dateStr) return null;
     const d = new Date(dateStr);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   };
 
   const infoItems = [
     // Date range
     (campaign.start_date || campaign.end_date) && (
       <Stack key="dates" direction="row" spacing={0.75} alignItems="center">
-        <CalendarOutlined style={{ fontSize: theme.iconSizes?.sm || 14, color: theme.palette.text.secondary, display: 'flex' }} />
+        <CalendarOutlined
+          style={{
+            fontSize: theme.iconSizes?.sm || 14,
+            color: theme.palette.text.secondary,
+            display: "flex",
+          }}
+        />
         <Typography variant="body2" color="text.secondary">
-          {formatDate(campaign.start_date) || 'No start'}
-          {' → '}
-          {formatDate(campaign.end_date) || 'Ongoing'}
+          {formatDate(campaign.start_date) || "No start"}
+          {" → "}
+          {formatDate(campaign.end_date) || "Ongoing"}
         </Typography>
       </Stack>
     ),
@@ -221,7 +240,13 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
     // Owner
     campaign.members?.[0]?.user_name && (
       <Stack key="owner" direction="row" spacing={0.75} alignItems="center">
-        <TeamOutlined style={{ fontSize: theme.iconSizes?.sm || 14, color: theme.palette.text.secondary, display: 'flex' }} />
+        <TeamOutlined
+          style={{
+            fontSize: theme.iconSizes?.sm || 14,
+            color: theme.palette.text.secondary,
+            display: "flex",
+          }}
+        />
         <Typography variant="body2" color="text.secondary">
           {campaign.members[0].user_name}
         </Typography>
@@ -230,20 +255,30 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
 
     // Accounts count
     <Stack key="accounts" direction="row" spacing={0.75} alignItems="center">
-      <BankOutlined style={{ fontSize: theme.iconSizes?.sm || 14, color: theme.palette.text.secondary, display: 'flex' }} />
+      <BankOutlined
+        style={{
+          fontSize: theme.iconSizes?.sm || 14,
+          color: theme.palette.text.secondary,
+          display: "flex",
+        }}
+      />
       <Typography variant="body2" color="text.secondary">
         {stats?.accounts_count ?? campaign.accounts_count ?? 0} accounts
       </Typography>
     </Stack>,
 
     // Progress
-    typeof progress === 'number' && (
+    typeof progress === "number" && (
       <Stack key="progress" direction="row" spacing={0.75} alignItems="center">
-        <Typography variant="body2" color={progress >= 100 ? 'success.main' : 'text.secondary'} fontWeight={500}>
+        <Typography
+          variant="body2"
+          color={progress >= 100 ? "success.main" : "text.secondary"}
+          fontWeight={500}
+        >
           {progress}% complete
         </Typography>
       </Stack>
-    )
+    ),
   ];
 
   // ==============================|| RETURN ||============================== //
@@ -253,6 +288,6 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
     title,
     headerActions,
     chips,
-    infoItems
+    infoItems,
   };
 }

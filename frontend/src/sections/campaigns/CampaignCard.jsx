@@ -1,39 +1,39 @@
 // frontend/src/sections/campaigns/CampaignCard.jsx
 
-import PropTypes from 'prop-types';
-import { useRouter } from 'next/navigation';
+import PropTypes from "prop-types";
+import { useRouter } from "next/navigation";
 
 // material-ui
-import Box from '@mui/material/Box';
-import Card from '@mui/material/Card';
-import CardActions from '@mui/material/CardActions';
-import CardContent from '@mui/material/CardContent';
-import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
-import IconButton from '@mui/material/IconButton';
-import LinearProgress from '@mui/material/LinearProgress';
-import Stack from '@mui/material/Stack';
-import Tooltip from '@mui/material/Tooltip';
-import Typography from '@mui/material/Typography';
-import { useTheme } from '@mui/material/styles';
+import Box from "@mui/material/Box";
+import Card from "@mui/material/Card";
+import CardActions from "@mui/material/CardActions";
+import CardContent from "@mui/material/CardContent";
+import Chip from "@mui/material/Chip";
+import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
+import LinearProgress from "@mui/material/LinearProgress";
+import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 
 // project imports
-import CampaignStatusBadge from 'sections/campaigns/CampaignStatusBadge';
+import CampaignStatusBadge from "sections/campaigns/CampaignStatusBadge";
 import {
   CAMPAIGN_FAMILY_LABELS,
   SEQUENCE_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
   getCampaignProgress,
-  getObjectiveProgress
-} from 'api/campaigns/campaigns';
+  getObjectiveProgress,
+} from "api/campaigns/campaigns";
 
 // icons
-import EditOutlined from '@ant-design/icons/EditOutlined';
-import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
-import AimOutlined from '@ant-design/icons/AimOutlined';
-import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined';
-import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
-import TeamOutlined from '@ant-design/icons/TeamOutlined';
+import EditOutlined from "@ant-design/icons/EditOutlined";
+import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
+import AimOutlined from "@ant-design/icons/AimOutlined";
+import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
+import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
+import TeamOutlined from "@ant-design/icons/TeamOutlined";
 
 // ==============================|| CAMPAIGN CARD ||============================== //
 
@@ -41,25 +41,20 @@ import TeamOutlined from '@ant-design/icons/TeamOutlined';
  * Campaign Card Component
  *
  * Displays a campaign as a card with:
- * - Name and family type (Prospection/Chasing)
+ * - Name and campaign type (Outbound/Targeted)
  * - Status badge
  * - Activity progress bar
  * - Objective progress
  * - Date range
  * - Action buttons
  */
-export default function CampaignCard({
-  campaign,
-  onOpen,
-  onEdit,
-  onDelete
-}) {
+export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
   const router = useRouter();
   const theme = useTheme();
 
   // ==============================|| DERIVED VALUES ||============================== //
 
-  const isProspection = campaign.family === 'PROSPECTION';
+  const isOutbound = campaign.campaign_type === "OUTBOUND";
   const activityProgress = getCampaignProgress(campaign);
   const objectiveProgress = getObjectiveProgress(campaign);
 
@@ -85,12 +80,16 @@ export default function CampaignCard({
    * Format date range for display
    */
   const formatDateRange = () => {
-    if (!campaign.start_date && !campaign.end_date) return 'No dates set';
+    if (!campaign.start_date && !campaign.end_date) return "No dates set";
 
     const formatDate = (dateStr) => {
       if (!dateStr) return null;
       const date = new Date(dateStr);
-      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      return date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
     };
 
     const start = formatDate(campaign.start_date);
@@ -98,7 +97,7 @@ export default function CampaignCard({
 
     if (start && end) return `${start} → ${end}`;
     if (start) return `From ${start}`;
-    return '';
+    return "";
   };
 
   // ==============================|| RENDER ||============================== //
@@ -108,44 +107,58 @@ export default function CampaignCard({
       elevation={0}
       onClick={handleCardClick}
       sx={{
-        position: 'relative',
-        border: '1px solid',
-        borderColor: 'divider',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        transition: 'all 0.2s ease-in-out',
-        cursor: 'pointer',
-        '&:hover': {
-          borderColor: 'primary.main',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+        position: "relative",
+        border: "1px solid",
+        borderColor: "divider",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        transition: "all 0.2s ease-in-out",
+        cursor: "pointer",
+        "&:hover": {
+          borderColor: "primary.main",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
         },
-        '&:active': {
-          transform: 'scale(0.99)'
-        }
+        "&:active": {
+          transform: "scale(0.99)",
+        },
       }}
     >
       <CardContent sx={{ flexGrow: 1 }}>
         {/* Header: Icon + Name + Status */}
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={2}>
-          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="flex-start"
+          mb={2}
+        >
+          <Stack
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            sx={{ minWidth: 0 }}
+          >
             {/* Family Icon */}
             <Box
               sx={{
                 width: 40,
                 height: 40,
                 borderRadius: 1,
-                bgcolor: isProspection ? 'primary.lighter' : 'warning.lighter',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
+                bgcolor: isOutbound ? "primary.lighter" : "warning.lighter",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
               }}
             >
-              {isProspection ? (
-                <AimOutlined style={{ fontSize: 20, color: theme.palette.primary.main }} />
+              {isOutbound ? (
+                <AimOutlined
+                  style={{ fontSize: 20, color: theme.palette.primary.main }}
+                />
               ) : (
-                <ThunderboltOutlined style={{ fontSize: 20, color: theme.palette.warning.main }} />
+                <ThunderboltOutlined
+                  style={{ fontSize: 20, color: theme.palette.warning.main }}
+                />
               )}
             </Box>
 
@@ -155,11 +168,14 @@ export default function CampaignCard({
                 {campaign.name}
               </Typography>
               <Chip
-                label={CAMPAIGN_FAMILY_LABELS[campaign.family] || campaign.family}
+                label={
+                  CAMPAIGN_FAMILY_LABELS[campaign.campaign_type] ||
+                  campaign.campaign_type
+                }
                 size="small"
-                color={isProspection ? 'primary' : 'warning'}
+                color={isOutbound ? "primary" : "warning"}
                 variant="outlined"
-                sx={{ mt: 0.5, height: 20, fontSize: '0.7rem' }}
+                sx={{ mt: 0.5, height: 20, fontSize: "0.7rem" }}
               />
             </Box>
           </Stack>
@@ -175,10 +191,10 @@ export default function CampaignCard({
             color="text.secondary"
             mb={2}
             sx={{
-              display: '-webkit-box',
+              display: "-webkit-box",
               WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden'
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
             }}
           >
             {campaign.description}
@@ -199,12 +215,18 @@ export default function CampaignCard({
 
         {/* Activity Progress */}
         <Box sx={{ mb: 2 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+            mb={0.5}
+          >
             <Typography variant="caption" color="text.secondary">
               Activities
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {campaign.activities_completed}/{campaign.activities_total} ({activityProgress}%)
+              {campaign.activities_completed}/{campaign.activities_total} (
+              {activityProgress}%)
             </Typography>
           </Stack>
           <LinearProgress
@@ -214,9 +236,9 @@ export default function CampaignCard({
               height: 6,
               borderRadius: 3,
               bgcolor: theme.palette.grey[200],
-              '& .MuiLinearProgress-bar': {
-                borderRadius: 3
-              }
+              "& .MuiLinearProgress-bar": {
+                borderRadius: 3,
+              },
             }}
           />
         </Box>
@@ -224,25 +246,37 @@ export default function CampaignCard({
         {/* Objective Progress */}
         {campaign.objective_type && (
           <Box sx={{ mb: 1.5 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="center"
+              mb={0.5}
+            >
               <Typography variant="caption" color="text.secondary">
-                {OBJECTIVE_TYPE_LABELS[campaign.objective_type] || campaign.objective_type}
+                {OBJECTIVE_TYPE_LABELS[campaign.objective_type] ||
+                  campaign.objective_type}
               </Typography>
-              <Typography variant="caption" fontWeight={600} color={objectiveProgress >= 100 ? 'success.main' : 'text.primary'}>
+              <Typography
+                variant="caption"
+                fontWeight={600}
+                color={
+                  objectiveProgress >= 100 ? "success.main" : "text.primary"
+                }
+              >
                 {campaign.objective_current}/{campaign.objective_target}
               </Typography>
             </Stack>
             <LinearProgress
               variant="determinate"
               value={objectiveProgress}
-              color={objectiveProgress >= 100 ? 'success' : 'primary'}
+              color={objectiveProgress >= 100 ? "success" : "primary"}
               sx={{
                 height: 4,
                 borderRadius: 2,
                 bgcolor: theme.palette.grey[200],
-                '& .MuiLinearProgress-bar': {
-                  borderRadius: 2
-                }
+                "& .MuiLinearProgress-bar": {
+                  borderRadius: 2,
+                },
               }}
             />
           </Box>
@@ -252,7 +286,9 @@ export default function CampaignCard({
         <Stack spacing={0.5} mt={1.5}>
           {/* Dates */}
           <Stack direction="row" spacing={1} alignItems="center">
-            <CalendarOutlined style={{ fontSize: 12, color: theme.palette.text.secondary }} />
+            <CalendarOutlined
+              style={{ fontSize: 12, color: theme.palette.text.secondary }}
+            />
             <Typography variant="caption" color="text.secondary">
               {formatDateRange()}
             </Typography>
@@ -261,16 +297,21 @@ export default function CampaignCard({
           {/* Sequence type (prospection only) */}
           {campaign.sequence_type && (
             <Typography variant="caption" color="text.secondary">
-              Sequence: {SEQUENCE_TYPE_LABELS[campaign.sequence_type] || campaign.sequence_type}
+              Sequence:{" "}
+              {SEQUENCE_TYPE_LABELS[campaign.sequence_type] ||
+                campaign.sequence_type}
             </Typography>
           )}
 
           {/* Members count */}
           {campaign.members && campaign.members.length > 0 && (
             <Stack direction="row" spacing={1} alignItems="center">
-              <TeamOutlined style={{ fontSize: 12, color: theme.palette.text.secondary }} />
+              <TeamOutlined
+                style={{ fontSize: 12, color: theme.palette.text.secondary }}
+              />
               <Typography variant="caption" color="text.secondary">
-                {campaign.members.length} member{campaign.members.length > 1 ? 's' : ''}
+                {campaign.members.length} member
+                {campaign.members.length > 1 ? "s" : ""}
               </Typography>
             </Stack>
           )}
@@ -280,7 +321,7 @@ export default function CampaignCard({
       <Divider />
 
       {/* Actions */}
-      <CardActions sx={{ justifyContent: 'flex-end', px: 2, py: 1.5 }}>
+      <CardActions sx={{ justifyContent: "flex-end", px: 2, py: 1.5 }}>
         <Stack direction="row" spacing={0}>
           <Tooltip title="Edit">
             <span>
@@ -308,7 +349,7 @@ CampaignCard.propTypes = {
   campaign: PropTypes.shape({
     id: PropTypes.string.isRequired,
     name: PropTypes.string.isRequired,
-    family: PropTypes.oneOf(['PROSPECTION', 'CHASING']).isRequired,
+    campaign_type: PropTypes.oneOf(["OUTBOUND", "TARGETED"]).isRequired,
     status: PropTypes.string.isRequired,
     description: PropTypes.string,
     sequence_type: PropTypes.string,
@@ -320,9 +361,9 @@ CampaignCard.propTypes = {
     objective_type: PropTypes.string,
     objective_target: PropTypes.number,
     objective_current: PropTypes.number,
-    members: PropTypes.array
+    members: PropTypes.array,
   }).isRequired,
   onOpen: PropTypes.func,
   onEdit: PropTypes.func,
-  onDelete: PropTypes.func
+  onDelete: PropTypes.func,
 };

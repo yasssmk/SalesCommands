@@ -1,77 +1,70 @@
 // frontend/src/sections/campaigns/create/CampaignCreateModal.jsx
 /**
- * Campaign Create Wizard — Multi-step modal.
- *
- * Orchestrates 4 steps with centralized state:
- *   Step 0: Select Type (Prospection vs Chasing)
- *   Step 1: Configure Target (Territory or Accounts)
- *   Step 2: Objective & Members
- *   Step 3: Review & Create
- *
+ * Campaign Create Wizard
  * Pattern: TerritoryModal (modal wrapper) + MUI Stepper (wizard nav)
  */
 
-'use client';
+"use client";
 
-import PropTypes from 'prop-types';
-import { useState, useCallback } from 'react';
+import PropTypes from "prop-types";
+import { useState, useCallback } from "react";
 
 // material-ui
-import { useTheme } from '@mui/material/styles';
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import Divider from '@mui/material/Divider';
-import Modal from '@mui/material/Modal';
-import Stack from '@mui/material/Stack';
-import Step from '@mui/material/Step';
-import StepLabel from '@mui/material/StepLabel';
-import Stepper from '@mui/material/Stepper';
-import Typography from '@mui/material/Typography';
+import { useTheme } from "@mui/material/styles";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Divider from "@mui/material/Divider";
+import Modal from "@mui/material/Modal";
+import Stack from "@mui/material/Stack";
+import Step from "@mui/material/Step";
+import StepLabel from "@mui/material/StepLabel";
+import Stepper from "@mui/material/Stepper";
+import Typography from "@mui/material/Typography";
 
 // project imports
-import MainCard from 'components/MainCard';
-import StepSelectType from './StepSelectType';
-import StepConfigureTarget from './StepConfigureTarget';
-import StepObjectiveMembers from './StepObjectiveMembers';
-import StepReviewCreate from './StepReviewCreate';
+import MainCard from "components/MainCard";
+import StepSelectType from "./StepSelectType";
+import StepConfigureTarget from "./StepConfigureTarget";
+import StepObjectiveMembers from "./StepObjectiveMembers";
+import StepReviewCreate from "./StepReviewCreate";
 
 // api
-import { createCampaign, CAMPAIGN_FAMILIES } from 'api/campaigns/campaigns';
+import { createCampaign, CAMPAIGN_FAMILIES } from "api/campaigns/campaigns";
 
 // icons
-import ArrowLeftOutlined from '@ant-design/icons/ArrowLeftOutlined';
-import ArrowRightOutlined from '@ant-design/icons/ArrowRightOutlined';
-import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import ArrowLeftOutlined from "@ant-design/icons/ArrowLeftOutlined";
+import ArrowRightOutlined from "@ant-design/icons/ArrowRightOutlined";
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
 // ==============================|| STEP DEFINITIONS ||============================== //
 
 const STEPS = [
-  { label: 'Campaign Type' },
-  { label: 'Target' },
-  { label: 'Details' },
-  { label: 'Review' }
+  { label: "Campaign Type" },
+  { label: "Target" },
+  { label: "Details" },
+  { label: "Review" },
 ];
 
 // ==============================|| INITIAL WIZARD STATE ||============================== //
 
 const INITIAL_STATE = {
   // Step 0: Type
-  family: '',
+  family: "",
 
   // Step 1: Target
-  territory_id: '',
-  territory_name: '',
+  territory_id: "",
+  territory_name: "",
   account_ids: [],
 
   // Step 2: Details
-  name: '',
-  description: '',
-  sequence_type: '',
+  name: "",
+  description: "",
+  sequence_type: "",
   start_date: null,
   end_date: null,
-  objective_type: '',
-  objective_target: '',
-  member_ids: []
+  objective_type: "",
+  objective_target: "",
+  member_ids: [],
 };
 
 // ==============================|| CAMPAIGN CREATE MODAL ||============================== //
@@ -128,10 +121,10 @@ export default function CampaignCreateModal({ open, onClose }) {
       case 0:
         return Boolean(wizardData.family);
       case 1:
-        if (wizardData.family === CAMPAIGN_FAMILIES.PROSPECTION) {
+        if (wizardData.family === CAMPAIGN_FAMILIES.OUTBOUND) {
           return Boolean(wizardData.territory_id);
         }
-        // Chasing: at least 1 account selected
+        // Targeted: at least 1 account selected
         return wizardData.account_ids.length > 0;
       case 2:
         return Boolean(wizardData.name);
@@ -150,25 +143,32 @@ export default function CampaignCreateModal({ open, onClose }) {
       const payload = {
         name: wizardData.name,
         description: wizardData.description,
-        family: wizardData.family,
+        campaign_type: wizardData.family,
         sequence_type: wizardData.sequence_type || null,
         territory_id: wizardData.territory_id || null,
-        account_ids: wizardData.account_ids,
         start_date: wizardData.start_date,
         end_date: wizardData.end_date,
-        objective_type: wizardData.objective_type || null,
-        objective_target: wizardData.objective_target || null,
-        member_ids: wizardData.member_ids
+        // Nested objective (backend CampaignCreateSerializer accepts optional dict)
+        ...(wizardData.objective_type && {
+          objective: {
+            objective_type: wizardData.objective_type,
+            target_value: wizardData.objective_target || null,
+            is_primary: true,
+          },
+        }),
+        // Member assignment
+        owner_ids: [], // Current user auto-assigned by backend
+        executor_ids: wizardData.member_ids || [],
       };
 
       const result = await createCampaign(payload);
-      console.log('TODO: Campaign created', result);
+      console.log("TODO: Campaign created", result);
 
       // TODO: displaySuccessSnackbar('Campaign created');
       // TODO: navigate to campaign workspace or refresh list
       handleClose();
     } catch (err) {
-      console.error('TODO: handle create error', err);
+      console.error("TODO: handle create error", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -199,16 +199,9 @@ export default function CampaignCreateModal({ open, onClose }) {
           />
         );
       case 2:
-        return (
-          <StepObjectiveMembers
-            data={wizardData}
-            onUpdate={updateData}
-          />
-        );
+        return <StepObjectiveMembers data={wizardData} onUpdate={updateData} />;
       case 3:
-        return (
-          <StepReviewCreate data={wizardData} />
-        );
+        return <StepReviewCreate data={wizardData} />;
       default:
         return null;
     }
@@ -226,38 +219,36 @@ export default function CampaignCreateModal({ open, onClose }) {
           open={open}
           onClose={handleClose}
           aria-labelledby="modal-campaign-create"
-          sx={{ '& .MuiPaper-root:focus': { outline: 'none' } }}
+          sx={{ "& .MuiPaper-root:focus": { outline: "none" } }}
         >
           <MainCard
             sx={{
-              width: 'calc(100% - 48px)',
+              width: "calc(100% - 48px)",
               minWidth: 340,
               maxWidth: 720,
-              height: 'auto',
-              maxHeight: 'calc(100vh - 48px)'
+              height: "auto",
+              maxHeight: "calc(100vh - 48px)",
             }}
             modal
             content={false}
           >
             <Box
               sx={{
-                maxHeight: 'calc(100vh - 48px)',
-                overflowY: 'auto',
-                WebkitOverflowScrolling: 'touch',
-                overscrollBehavior: 'contain',
-                display: 'flex',
-                flexDirection: 'column'
+                maxHeight: "calc(100vh - 48px)",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
               }}
             >
               {/* ==================== HEADER ==================== */}
-              <Box sx={{ px: 3, pt: 3, pb: 2 }}>
+              <Box sx={{ px: 3, pt: 3, pb: 2, flexShrink: 0 }}>
                 <Typography variant="h4" component="h2">
                   Create Campaign
                 </Typography>
               </Box>
 
               {/* ==================== STEPPER ==================== */}
-              <Box sx={{ px: 3, pb: 2 }}>
+              <Box sx={{ px: 3, pb: 2, flexShrink: 0 }}>
                 <Stepper activeStep={activeStep} alternativeLabel>
                   {STEPS.map((step, index) => (
                     <Step key={step.label} completed={index < activeStep}>
@@ -267,18 +258,32 @@ export default function CampaignCreateModal({ open, onClose }) {
                 </Stepper>
               </Box>
 
-              <Divider />
+              <Divider sx={{ flexShrink: 0 }} />
 
-              {/* ==================== STEP CONTENT ==================== */}
-              <Box sx={{ px: 3, py: 3, flexGrow: 1, minHeight: 300 }}>
+              {/* ==================== STEP CONTENT (scrollable) ==================== */}
+              <Box
+                sx={{
+                  px: 3,
+                  py: 3,
+                  flexGrow: 1,
+                  minHeight: 300,
+                  overflowY: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  overscrollBehavior: "contain",
+                }}
+              >
                 {renderStepContent()}
               </Box>
 
-              <Divider />
+              <Divider sx={{ flexShrink: 0 }} />
 
-              {/* ==================== FOOTER NAVIGATION ==================== */}
-              <Box sx={{ px: 3, py: 2 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
+              {/* ==================== FOOTER NAVIGATION (sticky) ==================== */}
+              <Box sx={{ px: 3, py: 2, flexShrink: 0 }}>
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                >
                   {/* Left: Cancel / Back */}
                   <Stack direction="row" spacing={1}>
                     <Button color="error" onClick={handleClose}>
@@ -312,7 +317,7 @@ export default function CampaignCreateModal({ open, onClose }) {
                       onClick={handleCreate}
                       disabled={isSubmitting || !isStepValid()}
                     >
-                      {isSubmitting ? 'Creating...' : 'Create Campaign'}
+                      {isSubmitting ? "Creating..." : "Create Campaign"}
                     </Button>
                   )}
                 </Stack>
@@ -331,5 +336,5 @@ CampaignCreateModal.propTypes = {
   /** Whether the modal is open */
   open: PropTypes.bool.isRequired,
   /** Callback to close the modal */
-  onClose: PropTypes.func.isRequired
+  onClose: PropTypes.func.isRequired,
 };

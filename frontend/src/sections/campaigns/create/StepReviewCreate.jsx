@@ -6,34 +6,34 @@
  * User reviews before clicking "Create Campaign" in the footer.
  */
 
-'use client';
+"use client";
 
-import PropTypes from 'prop-types';
+import PropTypes from "prop-types";
 
 // material-ui
-import { alpha, useTheme } from '@mui/material/styles';
-import Box from '@mui/material/Box';
-import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
+import { alpha, useTheme } from "@mui/material/styles";
+import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
+import Divider from "@mui/material/Divider";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 
 // api
 import {
   CAMPAIGN_FAMILIES,
   CAMPAIGN_FAMILY_LABELS,
   SEQUENCE_TYPE_LABELS,
-  OBJECTIVE_TYPE_LABELS
-} from 'api/campaigns/campaigns';
+  OBJECTIVE_TYPE_LABELS,
+} from "api/campaigns/campaigns";
 
 // icons
-import AimOutlined from '@ant-design/icons/AimOutlined';
-import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined';
-import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
-import TrophyOutlined from '@ant-design/icons/TrophyOutlined';
-import TeamOutlined from '@ant-design/icons/TeamOutlined';
-import GlobalOutlined from '@ant-design/icons/GlobalOutlined';
-import BankOutlined from '@ant-design/icons/BankOutlined';
+import AimOutlined from "@ant-design/icons/AimOutlined";
+import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
+import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
+import TrophyOutlined from "@ant-design/icons/TrophyOutlined";
+import TeamOutlined from "@ant-design/icons/TeamOutlined";
+import GlobalOutlined from "@ant-design/icons/GlobalOutlined";
+import BankOutlined from "@ant-design/icons/BankOutlined";
 
 // ==============================|| REVIEW ROW ||============================== //
 
@@ -42,15 +42,25 @@ import BankOutlined from '@ant-design/icons/BankOutlined';
  */
 function ReviewRow({ label, value, muted = false }) {
   return (
-    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ py: 0.75 }}>
-      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 140, flexShrink: 0 }}>
+    <Stack
+      direction="row"
+      justifyContent="space-between"
+      alignItems="flex-start"
+      sx={{ py: 0.75 }}
+    >
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        sx={{ minWidth: 140, flexShrink: 0 }}
+      >
         {label}
       </Typography>
       <Typography
         variant="body2"
-        color={muted ? 'text.disabled' : 'text.primary'}
-        fontStyle={muted ? 'italic' : 'normal'}
-        sx={{ textAlign: 'right' }}
+        component="div"
+        color={muted ? "text.disabled" : "text.primary"}
+        fontStyle={muted ? "italic" : "normal"}
+        sx={{ textAlign: "right" }}
       >
         {value}
       </Typography>
@@ -61,7 +71,7 @@ function ReviewRow({ label, value, muted = false }) {
 ReviewRow.propTypes = {
   label: PropTypes.string.isRequired,
   value: PropTypes.node.isRequired,
-  muted: PropTypes.bool
+  muted: PropTypes.bool,
 };
 
 // ==============================|| REVIEW SECTION ||============================== //
@@ -77,9 +87,9 @@ function ReviewSection({ icon, title, children }) {
       sx={{
         p: 2,
         borderRadius: 1.5,
-        bgcolor: 'grey.50',
-        border: '1px solid',
-        borderColor: 'grey.200'
+        bgcolor: "grey.50",
+        border: "1px solid",
+        borderColor: "grey.200",
       }}
     >
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
@@ -96,26 +106,34 @@ function ReviewSection({ icon, title, children }) {
 ReviewSection.propTypes = {
   icon: PropTypes.node,
   title: PropTypes.string.isRequired,
-  children: PropTypes.node
+  children: PropTypes.node,
 };
 
 // ==============================|| STEP REVIEW CREATE ||============================== //
 
 export default function StepReviewCreate({ data }) {
   const theme = useTheme();
-  const isProspection = data.family === CAMPAIGN_FAMILIES.PROSPECTION;
+  const isOutbound = data.family === CAMPAIGN_FAMILIES.OUTBOUND;
 
   // ==============================|| FORMAT HELPERS ||============================== //
 
   const formatDate = (dateStr) => {
-    if (!dateStr) return 'Not set';
+    if (!dateStr) return "Not set";
     const d = new Date(dateStr);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   };
 
   const familyLabel = CAMPAIGN_FAMILY_LABELS[data.family] || data.family;
-  const sequenceLabel = data.sequence_type ? SEQUENCE_TYPE_LABELS[data.sequence_type] : null;
-  const objectiveLabel = data.objective_type ? OBJECTIVE_TYPE_LABELS[data.objective_type] : null;
+  const sequenceLabel = data.sequence_type
+    ? SEQUENCE_TYPE_LABELS[data.sequence_type]
+    : null;
+  const objectiveLabel = data.objective_type
+    ? OBJECTIVE_TYPE_LABELS[data.objective_type]
+    : null;
 
   // ==============================|| RENDER ||============================== //
 
@@ -129,35 +147,50 @@ export default function StepReviewCreate({ data }) {
       </Typography>
 
       <Stack spacing={2}>
-
         {/* ==================== TYPE & TARGET ==================== */}
         <ReviewSection
           icon={
-            isProspection
-              ? <AimOutlined style={{ fontSize: 18, color: theme.palette.primary.main }} />
-              : <ThunderboltOutlined style={{ fontSize: 18, color: theme.palette.warning.main }} />
+            isOutbound ? (
+              <AimOutlined
+                style={{ fontSize: 18, color: theme.palette.primary.main }}
+              />
+            ) : (
+              <ThunderboltOutlined
+                style={{ fontSize: 18, color: theme.palette.warning.main }}
+              />
+            )
           }
           title="Type & Target"
         >
-          <ReviewRow label="Family" value={
-            <Chip
-              label={familyLabel}
-              size="small"
-              color={isProspection ? 'primary' : 'warning'}
-              variant="outlined"
-            />
-          } />
+          <ReviewRow
+            label="Family"
+            value={
+              <Chip
+                label={familyLabel}
+                size="small"
+                color={isOutbound ? "primary" : "warning"}
+                variant="outlined"
+              />
+            }
+          />
 
-          {isProspection ? (
+          {isOutbound ? (
             <ReviewRow
               label="Territory"
               value={
                 data.territory_name ? (
                   <Stack direction="row" spacing={0.5} alignItems="center">
-                    <GlobalOutlined style={{ fontSize: 14, color: theme.palette.text.secondary }} />
+                    <GlobalOutlined
+                      style={{
+                        fontSize: 14,
+                        color: theme.palette.text.secondary,
+                      }}
+                    />
                     <span>{data.territory_name}</span>
                   </Stack>
-                ) : 'Not selected'
+                ) : (
+                  "Not selected"
+                )
               }
               muted={!data.territory_name}
             />
@@ -166,7 +199,14 @@ export default function StepReviewCreate({ data }) {
               label="Accounts"
               value={
                 (data.selectedAccounts || []).length > 0 ? (
-                  <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" justifyContent="flex-end" useFlexGap>
+                  <Stack
+                    direction="row"
+                    spacing={0.5}
+                    alignItems="center"
+                    flexWrap="wrap"
+                    justifyContent="flex-end"
+                    useFlexGap
+                  >
                     {data.selectedAccounts.slice(0, 3).map((a) => (
                       <Chip
                         key={a.id}
@@ -182,35 +222,57 @@ export default function StepReviewCreate({ data }) {
                       </Typography>
                     )}
                   </Stack>
-                ) : 'None selected'
+                ) : (
+                  "None selected"
+                )
               }
               muted={!(data.selectedAccounts || []).length}
             />
           )}
 
-          {isProspection && sequenceLabel && (
+          {isOutbound && sequenceLabel && (
             <ReviewRow label="Sequence" value={sequenceLabel} />
           )}
         </ReviewSection>
 
         {/* ==================== DETAILS ==================== */}
         <ReviewSection
-          icon={<CalendarOutlined style={{ fontSize: 18, color: theme.palette.info.main }} />}
+          icon={
+            <CalendarOutlined
+              style={{ fontSize: 18, color: theme.palette.info.main }}
+            />
+          }
           title="Details"
         >
-          <ReviewRow label="Name" value={data.name || 'Untitled'} muted={!data.name} />
+          <ReviewRow
+            label="Name"
+            value={data.name || "Untitled"}
+            muted={!data.name}
+          />
           <ReviewRow
             label="Description"
-            value={data.description || 'No description'}
+            value={data.description || "No description"}
             muted={!data.description}
           />
-          <ReviewRow label="Start Date" value={formatDate(data.start_date)} muted={!data.start_date} />
-          <ReviewRow label="End Date" value={formatDate(data.end_date)} muted={!data.end_date} />
+          <ReviewRow
+            label="Start Date"
+            value={formatDate(data.start_date)}
+            muted={!data.start_date}
+          />
+          <ReviewRow
+            label="End Date"
+            value={formatDate(data.end_date)}
+            muted={!data.end_date}
+          />
         </ReviewSection>
 
         {/* ==================== OBJECTIVE ==================== */}
         <ReviewSection
-          icon={<TrophyOutlined style={{ fontSize: 18, color: theme.palette.success.main }} />}
+          icon={
+            <TrophyOutlined
+              style={{ fontSize: 18, color: theme.palette.success.main }}
+            />
+          }
           title="Objective"
         >
           {objectiveLabel ? (
@@ -218,7 +280,7 @@ export default function StepReviewCreate({ data }) {
               <ReviewRow label="Type" value={objectiveLabel} />
               <ReviewRow
                 label="Target"
-                value={data.objective_target || 'Not set'}
+                value={data.objective_target || "Not set"}
                 muted={!data.objective_target}
               />
             </>
@@ -229,7 +291,11 @@ export default function StepReviewCreate({ data }) {
 
         {/* ==================== TEAM ==================== */}
         <ReviewSection
-          icon={<TeamOutlined style={{ fontSize: 18, color: theme.palette.secondary.main }} />}
+          icon={
+            <TeamOutlined
+              style={{ fontSize: 18, color: theme.palette.secondary.main }}
+            />
+          }
           title="Team"
         >
           <ReviewRow label="Owner" value="You (current user)" />
@@ -237,15 +303,18 @@ export default function StepReviewCreate({ data }) {
             label="Executors"
             value={
               (data.selectedExecutors || []).length > 0
-                ? data.selectedExecutors.map((u) =>
-                    `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email
-                  ).join(', ')
-                : 'None'
+                ? data.selectedExecutors
+                    .map(
+                      (u) =>
+                        `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
+                        u.email,
+                    )
+                    .join(", ")
+                : "None"
             }
             muted={!(data.selectedExecutors || []).length}
           />
         </ReviewSection>
-
       </Stack>
     </Box>
   );
@@ -255,5 +324,5 @@ export default function StepReviewCreate({ data }) {
 
 StepReviewCreate.propTypes = {
   /** Full wizard data object */
-  data: PropTypes.object.isRequired
+  data: PropTypes.object.isRequired,
 };

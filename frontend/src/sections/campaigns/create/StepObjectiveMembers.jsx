@@ -1,50 +1,50 @@
 // frontend/src/sections/campaigns/create/StepObjectiveMembers.jsx
 /**
- * Campaign Create Wizard — Step 2: Details
+ * Campaign Create Wizard
  *
  * Fields:
  * - Name (auto-generated but editable)
  * - Description (optional)
- * - Sequence type (Prospection only)
+ * - Sequence type (Outbound only)
  * - Start / End dates
  * - Objective: type + target value
  * - Members: owner (auto = current user) + executors
  */
 
-'use client';
+"use client";
 
-import PropTypes from 'prop-types';
-import { useEffect } from 'react';
+import PropTypes from "prop-types";
+import { useEffect } from "react";
 
 // material-ui
-import { useTheme } from '@mui/material/styles';
-import Box from '@mui/material/Box';
-import FormControl from '@mui/material/FormControl';
-import FormHelperText from '@mui/material/FormHelperText';
-import Grid from '@mui/material/Grid';
-import InputLabel from '@mui/material/InputLabel';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
-import Stack from '@mui/material/Stack';
-import TextField from '@mui/material/TextField';
-import Typography from '@mui/material/Typography';
+import { useTheme } from "@mui/material/styles";
+import Box from "@mui/material/Box";
+import FormControl from "@mui/material/FormControl";
+import FormHelperText from "@mui/material/FormHelperText";
+import Grid from "@mui/material/Grid";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 
 // date pickers
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import dayjs from 'dayjs';
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import dayjs from "dayjs";
 
 // project imports
-import AsyncUserSelect from 'components/AsyncSelection/AsyncUserSelect';
+import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
 import {
   CAMPAIGN_FAMILIES,
   SEQUENCE_TYPES,
   SEQUENCE_TYPE_LABELS,
   OBJECTIVE_TYPES,
-  OBJECTIVE_TYPE_LABELS
-} from 'api/campaigns/campaigns';
-import { useAuth } from 'hooks/useAuth';
+  OBJECTIVE_TYPE_LABELS,
+} from "api/campaigns/campaigns";
+import { useAuth } from "hooks/useAuth";
 
 // ==============================|| SECTION TITLE ||============================== //
 
@@ -56,10 +56,10 @@ const SectionTitle = ({ children }) => (
       sx={{
         mt: 2,
         mb: 1,
-        textTransform: 'uppercase',
-        fontSize: '0.75rem',
+        textTransform: "uppercase",
+        fontSize: "0.75rem",
         fontWeight: 600,
-        letterSpacing: '0.5px'
+        letterSpacing: "0.5px",
       }}
     >
       {children}
@@ -75,19 +75,19 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
   const theme = useTheme();
   const { user } = useAuth();
 
-  const isProspection = data.family === CAMPAIGN_FAMILIES.PROSPECTION;
+  const isOutbound = data.family === CAMPAIGN_FAMILIES.OUTBOUND;
 
   // ==============================|| AUTO-GENERATE NAME ||============================== //
 
   useEffect(() => {
     // Only auto-generate if name is empty
     if (!data.name) {
-      let autoName = '';
-      if (isProspection && data.territory_name) {
-        autoName = `Prospection — ${data.territory_name}`;
-      } else if (!isProspection && data.selectedAccounts?.length > 0) {
+      let autoName = "";
+      if (isOutbound && data.territory_name) {
+        autoName = `Outbound — ${data.territory_name}`;
+      } else if (!isOutbound && data.selectedAccounts?.length > 0) {
         const count = data.selectedAccounts.length;
-        autoName = `Chasing — ${count} account${count > 1 ? 's' : ''}`;
+        autoName = `Targeted — ${count} account${count > 1 ? "s" : ""}`;
       }
       if (autoName) {
         onUpdate({ name: autoName });
@@ -102,13 +102,18 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
   };
 
   const handleDateChange = (field) => (newValue) => {
-    onUpdate({ [field]: newValue ? dayjs(newValue).format('YYYY-MM-DD') : null });
+    onUpdate({
+      [field]: newValue ? dayjs(newValue).format("YYYY-MM-DD") : null,
+    });
   };
 
   const handleExecutorChange = (event, newValue) => {
     // newValue is a single user object from AsyncUserSelect
     if (newValue && !data.member_ids.includes(newValue.id)) {
-      onUpdate({ member_ids: [...data.member_ids, newValue.id], selectedExecutors: [...(data.selectedExecutors || []), newValue] });
+      onUpdate({
+        member_ids: [...data.member_ids, newValue.id],
+        selectedExecutors: [...(data.selectedExecutors || []), newValue],
+      });
     }
   };
 
@@ -124,7 +129,6 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
       </Typography>
 
       <Grid container spacing={2.5}>
-
         {/* ==================== IDENTITY ==================== */}
         <SectionTitle>Identity</SectionTitle>
 
@@ -135,8 +139,8 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
               fullWidth
               id="campaign-name"
               placeholder="Enter campaign name"
-              value={data.name || ''}
-              onChange={handleFieldChange('name')}
+              value={data.name || ""}
+              onChange={handleFieldChange("name")}
             />
           </Stack>
         </Grid>
@@ -150,36 +154,39 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
               placeholder="Brief description of the campaign"
               multiline
               rows={2}
-              value={data.description || ''}
-              onChange={handleFieldChange('description')}
+              value={data.description || ""}
+              onChange={handleFieldChange("description")}
             />
           </Stack>
         </Grid>
 
         {/* ==================== SEQUENCE TYPE (Prospection only) ==================== */}
-        {isProspection && (
+        {isOutbound && (
           <Grid item xs={12}>
             <Stack spacing={1}>
               <InputLabel htmlFor="sequence-type">Sequence Type</InputLabel>
               <FormControl fullWidth>
                 <Select
                   id="sequence-type"
-                  value={data.sequence_type || ''}
-                  onChange={handleFieldChange('sequence_type')}
+                  value={data.sequence_type || ""}
+                  onChange={handleFieldChange("sequence_type")}
                   displayEmpty
                 >
                   <MenuItem value="">
                     <em>Select a sequence type</em>
                   </MenuItem>
-                  {Object.entries(SEQUENCE_TYPE_LABELS).map(([value, label]) => (
-                    <MenuItem key={value} value={value}>
-                      {label}
-                    </MenuItem>
-                  ))}
+                  {Object.entries(SEQUENCE_TYPE_LABELS).map(
+                    ([value, label]) => (
+                      <MenuItem key={value} value={value}>
+                        {label}
+                      </MenuItem>
+                    ),
+                  )}
                 </Select>
               </FormControl>
               <FormHelperText>
-                Defines the automated activity sequence generated for each account.
+                Defines the automated activity sequence generated for each
+                account.
               </FormHelperText>
             </Stack>
           </Grid>
@@ -194,12 +201,12 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
             <LocalizationProvider dateAdapter={AdapterDayjs}>
               <DatePicker
                 value={data.start_date ? dayjs(data.start_date) : null}
-                onChange={handleDateChange('start_date')}
+                onChange={handleDateChange("start_date")}
                 slotProps={{
                   textField: {
                     fullWidth: true,
-                    placeholder: 'Select start date'
-                  }
+                    placeholder: "Select start date",
+                  },
                 }}
               />
             </LocalizationProvider>
@@ -212,13 +219,13 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
             <LocalizationProvider dateAdapter={AdapterDayjs}>
               <DatePicker
                 value={data.end_date ? dayjs(data.end_date) : null}
-                onChange={handleDateChange('end_date')}
+                onChange={handleDateChange("end_date")}
                 minDate={data.start_date ? dayjs(data.start_date) : undefined}
                 slotProps={{
                   textField: {
                     fullWidth: true,
-                    placeholder: 'Select end date'
-                  }
+                    placeholder: "Select end date",
+                  },
                 }}
               />
             </LocalizationProvider>
@@ -234,8 +241,8 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
             <FormControl fullWidth>
               <Select
                 id="objective-type"
-                value={data.objective_type || ''}
-                onChange={handleFieldChange('objective_type')}
+                value={data.objective_type || ""}
+                onChange={handleFieldChange("objective_type")}
                 displayEmpty
               >
                 <MenuItem value="">
@@ -259,8 +266,8 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
               id="objective-target"
               type="number"
               placeholder="e.g. 20"
-              value={data.objective_target || ''}
-              onChange={handleFieldChange('objective_target')}
+              value={data.objective_target || ""}
+              onChange={handleFieldChange("objective_target")}
               inputProps={{ min: 0 }}
               disabled={!data.objective_type}
             />
@@ -275,14 +282,21 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
             <InputLabel>Owner</InputLabel>
             <TextField
               fullWidth
-              value={user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email : 'Current user'}
+              value={
+                user
+                  ? `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+                    user.email
+                  : "Current user"
+              }
               disabled
               InputProps={{
                 readOnly: true,
-                sx: { bgcolor: 'action.hover' }
+                sx: { bgcolor: "action.hover" },
               }}
             />
-            <FormHelperText>You are automatically set as the campaign owner.</FormHelperText>
+            <FormHelperText>
+              You are automatically set as the campaign owner.
+            </FormHelperText>
           </Stack>
         </Grid>
 
@@ -297,12 +311,12 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
             />
             {(data.selectedExecutors || []).length > 0 && (
               <Typography variant="caption" color="text.secondary">
-                {data.selectedExecutors.length} executor{data.selectedExecutors.length > 1 ? 's' : ''} added
+                {data.selectedExecutors.length} executor
+                {data.selectedExecutors.length > 1 ? "s" : ""} added
               </Typography>
             )}
           </Stack>
         </Grid>
-
       </Grid>
     </Box>
   );
@@ -314,5 +328,5 @@ StepObjectiveMembers.propTypes = {
   /** Full wizard data object */
   data: PropTypes.object.isRequired,
   /** Callback to update wizard data: (updates) => void */
-  onUpdate: PropTypes.func.isRequired
+  onUpdate: PropTypes.func.isRequired,
 };

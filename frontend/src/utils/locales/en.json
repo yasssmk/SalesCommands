@@ -177,7 +177,7 @@
   "territory-coming-soon-desc": "Contact-based territories will be available once the Contacts API is implemented.",
   "territory-no-accounts": "No accounts found",
   "territory-search-placeholder": "Search accounts...",
-  
+
   "contacts": "Contacts",
   "signals": "Signals",
   "overview": "Overview",
@@ -278,5 +278,47 @@
 
   "territory-tab-summary": "Summary",
   "territory-tab-list": "List",
-  "territory-tab-activities": "Activities"
+  "territory-tab-activities": "Activities",
+
+  "campaign": "Campaign",
+  "create-campaign": "Create Campaign",
+  "edit-campaign": "Edit Campaign",
+  "delete-campaign": "Delete Campaign",
+  "no-campaigns": "No campaigns yet",
+
+  "campaign-type": "Campaign Type",
+  "campaign-status": "Status",
+  "campaign-name": "Campaign Name",
+  "campaign-description": "Description",
+  "campaign-start-date": "Start Date",
+  "campaign-end-date": "End Date",
+  "campaign-territory": "Territory",
+  "campaign-sequence": "Sequence",
+
+  "campaign-family-outbound": "Outbound",
+  "campaign-family-targeted": "Targeted",
+
+  "campaign-status-draft": "Draft",
+  "campaign-status-active": "Active",
+  "campaign-status-paused": "Paused",
+  "campaign-status-completed": "Completed",
+  "campaign-status-cancelled": "Cancelled",
+
+  "campaign-role-owner": "Owner",
+  "campaign-role-executor": "Executor",
+  "campaign-role-receiver": "Receiver",
+  "campaign-role-observer": "Observer",
+
+  "campaign-objective-meetings": "Meetings Booked",
+  "campaign-objective-decision-cycles": "Decision Cycles Created",
+  "campaign-objective-contacts-reached": "Contacts Reached",
+  "campaign-objective-pipeline-value": "Pipeline Value",
+  "campaign-objective-revenue-won": "Revenue Won",
+  "campaign-objective-new-logos": "New Logos",
+
+  "campaign-tab-overview": "Overview",
+  "campaign-tab-playlist": "Playlist",
+  "campaign-tab-accounts": "Accounts",
+  "campaign-tab-members": "Members",
+  "campaign-tab-analytics": "Analytics"
 }
