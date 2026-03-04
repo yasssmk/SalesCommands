@@ -165,6 +165,12 @@ const endpoints = {
   // Campaign Accounts
   campaignAccounts: "/campaigns/accounts/",
   campaignAccountDetail: (id) => `/campaigns/accounts/${id}/`,
+  accountsByCampaign: "/campaigns/accounts/by-campaign/",
+  accountsBulkAdd: "/campaigns/accounts/bulk-add/",
+  accountsBulkRemove: "/campaigns/accounts/bulk-remove/",
+
+  // Activities (cross-module)
+  activityComplete: (id) => `/module-activities/${id}/complete/`,
 
   // Bulk
   bulkDelete: "/campaigns/bulk-delete/",
@@ -432,7 +438,7 @@ export function useGetCampaignMembers(campaignId) {
 
   const swrKey = useMemo(() => {
     if (!campaignId || !isValidUUID(campaignId)) return null;
-    const url = `${endpoints.membersByCampaign}?campaign=${campaignId}`;
+    const url = `${endpoints.membersByCampaign}?campaign_id=${campaignId}`;
     return tenantKey(url, tenantId);
   }, [campaignId, tenantId]);
 
@@ -465,7 +471,7 @@ export function useGetCampaignObjectives(campaignId) {
 
   const swrKey = useMemo(() => {
     if (!campaignId || !isValidUUID(campaignId)) return null;
-    const url = `${endpoints.objectivesByCampaign}?campaign=${campaignId}`;
+    const url = `${endpoints.objectivesByCampaign}?campaign_id=${campaignId}`;
     return tenantKey(url, tenantId);
   }, [campaignId, tenantId]);
 
@@ -510,6 +516,90 @@ export function useGetObjectiveChoices() {
       choicesError: error,
     }),
     [data, isLoading, error],
+  );
+
+  return memoizedValue;
+}
+
+// ==============================|| READ HOOKS - PLAYLIST ||============================== //
+
+/**
+ * GET CAMPAIGN PLAYLIST - Prioritized activity list
+ *
+ * @param {string} campaignId - UUID of the campaign
+ * @param {Object} options - {executorId, limit}
+ * @returns {Object} {activities, totalCount, playlistLoading, playlistError, playlistValidating, mutatePlaylist}
+ */
+export function useGetPlaylist(campaignId, options = {}) {
+  const { tenantId } = useAuth();
+  const { executorId, limit } = options;
+
+  const swrKey = useMemo(() => {
+    if (!campaignId || !isValidUUID(campaignId)) return null;
+    const params = new URLSearchParams();
+    if (executorId) params.append("executor_id", executorId);
+    if (limit) params.append("limit", limit);
+    const queryString = params.toString();
+    const url = queryString
+      ? `${endpoints.campaignPlaylist(campaignId)}?${queryString}`
+      : endpoints.campaignPlaylist(campaignId);
+    return tenantKey(url, tenantId);
+  }, [campaignId, tenantId, executorId, limit]);
+
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  const memoizedValue = useMemo(
+    () => ({
+      activities: data?.data?.results || data?.results || [],
+      totalCount: data?.data?.total_count || data?.total_count || 0,
+      playlistLoading: isLoading,
+      playlistError: error,
+      playlistValidating: isValidating,
+      mutatePlaylist: mutate,
+    }),
+    [data, isLoading, error, isValidating, mutate],
+  );
+
+  return memoizedValue;
+}
+
+// ==============================|| READ HOOKS - CAMPAIGN ACCOUNTS ||============================== //
+
+/**
+ * GET CAMPAIGN ACCOUNTS - Accounts enrolled in a campaign
+ *
+ * @param {string} campaignId - UUID of the campaign
+ * @returns {Object} {accounts, accountsCount, accountsLoading, accountsError, mutateAccounts}
+ */
+export function useGetCampaignAccounts(campaignId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!campaignId || !isValidUUID(campaignId)) return null;
+    const url = `${endpoints.accountsByCampaign}?campaign_id=${campaignId}`;
+    return tenantKey(url, tenantId);
+  }, [campaignId, tenantId]);
+
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  const memoizedValue = useMemo(
+    () => ({
+      accounts: data?.data?.results || data?.results || data?.data || [],
+      accountsCount: data?.data?.count || data?.count || 0,
+      accountsLoading: isLoading,
+      accountsError: error,
+      accountsValidating: isValidating,
+      mutateAccounts: mutate,
+    }),
+    [data, isLoading, error, isValidating, mutate],
   );
 
   return memoizedValue;
@@ -755,6 +845,114 @@ export async function removeCampaignMember(memberId) {
   if (result.success || result.status === 204) {
     revalidateMultiple([endpoints.members, endpoints.membersByCampaign]);
     return { success: true };
+  }
+
+  return { success: false, error: result.error, status: result.status || 0 };
+}
+
+// ==============================|| MUTATION FUNCTIONS - PLAYLIST ||============================== //
+
+/**
+ * COMPLETE PLAYLIST ACTIVITY
+ *
+ * Completes an activity and revalidates campaign caches.
+ *
+ * @param {string} activityId - UUID of the activity
+ * @param {string} campaignId - UUID of the campaign (for cache revalidation)
+ * @param {Object} payload - {outcome, outcome_notes}
+ * @returns {Promise<Object>} {success, data?, error?}
+ */
+export async function completePlaylistActivity(
+  activityId,
+  campaignId,
+  payload,
+) {
+  if (!activityId) {
+    return { success: false, error: "Activity ID is required", status: 400 };
+  }
+
+  const result = await api.post(
+    endpoints.activityComplete(activityId),
+    payload,
+  );
+
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.campaignPlaylist(campaignId),
+      endpoints.campaignDashboard(campaignId),
+      endpoints.campaignDetail(campaignId),
+      `${endpoints.accountsByCampaign}?campaign_id=${campaignId}`,
+    ]);
+    return { success: true, data: result.data };
+  }
+
+  return { success: false, error: result.error, status: result.status || 0 };
+}
+
+// ==============================|| MUTATION FUNCTIONS - CAMPAIGN ACCOUNTS ||============================== //
+
+/**
+ * ADD ACCOUNTS TO CAMPAIGN - Bulk enroll
+ *
+ * @param {string} campaignId - UUID of the campaign
+ * @param {Array<string>} accountIds - Array of account UUIDs
+ * @returns {Promise<Object>} {success, data?, error?}
+ */
+export async function addAccountsToCampaign(campaignId, accountIds) {
+  if (!campaignId || !accountIds?.length) {
+    return {
+      success: false,
+      error: "Campaign ID and account IDs are required",
+      status: 400,
+    };
+  }
+
+  const result = await api.post(endpoints.accountsBulkAdd, {
+    campaign_id: campaignId,
+    account_ids: accountIds,
+  });
+
+  if (result.success) {
+    revalidateMultiple([
+      `${endpoints.accountsByCampaign}?campaign_id=${campaignId}`,
+      endpoints.campaignDashboard(campaignId),
+      endpoints.campaignDetail(campaignId),
+    ]);
+    return { success: true, data: result.data };
+  }
+
+  return { success: false, error: result.error, status: result.status || 0 };
+}
+
+/**
+ * REMOVE ACCOUNT FROM CAMPAIGN - Single delete
+ *
+ * Only PENDING accounts can be removed.
+ *
+ * @param {string} campaignAccountId - UUID of the CampaignAccount record
+ * @param {string} campaignId - UUID of the campaign (for cache revalidation)
+ * @returns {Promise<Object>} {success, error?}
+ */
+export async function removeAccountFromCampaign(campaignAccountId, campaignId) {
+  if (!campaignAccountId) {
+    return {
+      success: false,
+      error: "Campaign account ID is required",
+      status: 400,
+    };
+  }
+
+  const result = await api.delete(
+    endpoints.campaignAccountDetail(campaignAccountId),
+  );
+
+  if (result.success || result.status === 204) {
+    revalidateMultiple([
+      `${endpoints.accountsByCampaign}?campaign_id=${campaignId}`,
+      endpoints.campaignDashboard(campaignId),
+      endpoints.campaignDetail(campaignId),
+    ]);
+    return { success: true, status: result.status ?? 204 };
   }
 
   return { success: false, error: result.error, status: result.status || 0 };
