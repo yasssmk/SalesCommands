@@ -25,6 +25,7 @@ from core.error_messages import CampaignModuleErrorMessages
 from app_modules.activities.models import Activity
 from app_modules.activities.constants import ActivityType, ActivityStatus
 from app_modules.contacts.models import Contact
+from app_modules.sequences.sequence_dispatcher import SequenceDispatcher
 
 from ..models import (
     Campaign,
@@ -154,24 +155,23 @@ class CampaignExecutionService:
         """
         Get prioritized activity playlist for a campaign.
 
-        Priority scoring (from CONFIG.priorities):
-            - Activity type weight (CALL=20, MEETING=15, EMAIL=10...)
-            - Callback boost (+50 for callback-pending accounts)
-            - Overdue penalty (+15 per overdue day)
+        Gating rules (sequence campaigns):
+            - Step 1 activities (previous_activity IS NULL) are always visible.
+            - Steps 2..N are visible only when their previous activity is COMPLETED
+            AND the min_delay_days since its completion has elapsed.
 
-        Args:
-            campaign: Campaign instance
-            executor: Optional User to filter by owner
-            limit: Max activities to return (default: CONFIG playlist_limit)
-
-        Returns:
-            dict: {
-                'activities': queryset,
-                'total_count': int,
-            }
+        Priority scoring:
+            - Activity type weight
+            - Sequence position (earlier step → higher score)
+            - Callback boost
+            - Overdue penalty
         """
         limit = limit or CONFIG.limits.playlist_limit
+        today = timezone.now().date()
 
+        # ------------------------------------------------------------------
+        # Base queryset: PLANNED activities for this campaign
+        # ------------------------------------------------------------------
         queryset = Activity.objects.filter(
             campaign=campaign,
             status=ActivityStatus.PLANNED,
@@ -179,25 +179,69 @@ class CampaignExecutionService:
             'account',
             'owner',
             'campaign_account',
+            'previous_activity',          # needed for gating check
         ).prefetch_related(
             'contacts',
         )
 
-        # Filter by executor if provided
         if executor:
             queryset = queryset.filter(owner=executor)
 
+        # ------------------------------------------------------------------
+        # Gating filter — applies only to sequence campaigns.
+        # For non-sequence campaigns every PLANNED activity is visible.
+        # ------------------------------------------------------------------
+        if campaign.sequence_type:
+            queryset = queryset.filter(
+                # Step is the first in the chain …
+                Q(previous_activity__isnull=True)
+                # … or its predecessor has been completed
+                | Q(previous_activity__status=ActivityStatus.COMPLETED)
+            )
+
         total_count = queryset.count()
 
-        # Sort by priority (Python-side scoring for flexibility)
+        # ------------------------------------------------------------------
+        # Fetch batch for Python-side scoring
+        # ------------------------------------------------------------------
         activities = list(queryset[:CONFIG.limits.queue_batch_size])
+
+        # ------------------------------------------------------------------
+        # min_delay_days filtering (Python-side — completed_at not in DB query)
+        # Exclude activities whose previous step was completed too recently.
+        # ------------------------------------------------------------------
+        if campaign.sequence_type:
+            eligible = []
+            for activity in activities:
+                prev = activity.previous_activity
+                if prev is None:
+                    # First step — always eligible
+                    eligible.append(activity)
+                    continue
+
+                min_delay = activity.min_delay_days or 0
+                if min_delay == 0:
+                    eligible.append(activity)
+                    continue
+
+                completed_at = getattr(prev, 'completed_at', None)
+                if completed_at is None:
+                    # Safety: no completion timestamp → block
+                    continue
+
+                completed_date = completed_at.date() if hasattr(completed_at, 'date') else completed_at
+                if (today - completed_date).days >= min_delay:
+                    eligible.append(activity)
+            activities = eligible
+
+        # ------------------------------------------------------------------
+        # Score and sort
+        # ------------------------------------------------------------------
         scored = [(a, self._calculate_priority(a)) for a in activities]
         scored.sort(key=lambda x: x[1], reverse=True)
 
-        sorted_activities = [item[0] for item in scored[:limit]]
-
         return {
-            'activities': sorted_activities,
+            'activities': [item[0] for item in scored[:limit]],
             'total_count': total_count,
         }
 
@@ -276,44 +320,92 @@ class CampaignExecutionService:
         """
         Generate activities for a single CampaignAccount.
 
-        Logic:
-            - Extract contacts (from target_contacts M2M, or fallback to account contacts)
-            - Filter by target_departments if set
-            - Create one Activity per contact
-            - Assign to executor (round-robin from campaign executors)
-
-        Returns:
-            int: number of activities created
+        - No sequence_type (CALL_LIST): one activity per contact (legacy behavior).
+        - With sequence_type: generates all N steps per contact, chained via
+        previous_activity / next_activity FKs.
         """
         contacts = self._extract_contacts(campaign_account)
-
-        if not contacts:
-            # Create one account-level activity (no specific contact)
-            self._create_activity(
-                campaign=campaign,
-                campaign_account=campaign_account,
-                account=campaign_account.account,
-                contact=None,
-                activity_type=activity_type,
-                position=1,
-            )
-            return 1
-
-        # Determine executor
         executor = self._get_executor(campaign, campaign_account)
 
+        # ------------------------------------------------------------------
+        # No-sequence campaign (e.g. CALL_LIST): one flat activity per contact
+        # ------------------------------------------------------------------
+        if not campaign.sequence_type:
+            if not contacts:
+                self._create_activity(
+                    campaign=campaign,
+                    campaign_account=campaign_account,
+                    account=campaign_account.account,
+                    contact=None,
+                    activity_type=activity_type,
+                    position=1,
+                    owner=executor,
+                )
+                return 1
+
+            created = 0
+            for i, contact in enumerate(contacts, start=1):
+                self._create_activity(
+                    campaign=campaign,
+                    campaign_account=campaign_account,
+                    account=campaign_account.account,
+                    contact=contact,
+                    activity_type=activity_type,
+                    position=i,
+                    owner=executor,
+                )
+                created += 1
+            return created
+
+        # ------------------------------------------------------------------
+        # Sequence campaign: generate all steps per contact, chained
+        # ------------------------------------------------------------------
+        if not contacts:
+            # Cannot determine channel flags without a contact — skip silently.
+            return 0
+
         created = 0
-        for i, contact in enumerate(contacts, start=1):
-            self._create_activity(
-                campaign=campaign,
-                campaign_account=campaign_account,
-                account=campaign_account.account,
-                contact=contact,
-                activity_type=activity_type,
-                position=i,
-                owner=executor,
-            )
-            created += 1
+        for contact in contacts:
+            has_phone = bool(getattr(contact, 'phone_number', None))
+            has_email = bool(getattr(contact, 'email', None))
+            has_linkedin = bool(getattr(contact, 'linkedin_url', None))
+
+            try:
+                sequence_dict, variant_name = SequenceDispatcher.get_sequence_with_variant(
+                    sequence_type=campaign.sequence_type,
+                    has_phone=has_phone,
+                    has_email=has_email,
+                    has_linkedin=has_linkedin,
+                )
+            except ValueError:
+                logger.warning("sequence_type_invalid_skipping_contact", extra={
+                    'campaign_id': str(campaign.id),
+                    'sequence_type': campaign.sequence_type,
+                    'contact_id': str(contact.id),
+                })
+                continue
+
+            previous_activity = None
+            for step_number, step_config in sequence_dict.items():
+                activity = self._create_activity(
+                    campaign=campaign,
+                    campaign_account=campaign_account,
+                    account=campaign_account.account,
+                    contact=contact,
+                    activity_type=step_config['type'],
+                    position=step_number,
+                    owner=executor,
+                    step_config=step_config,
+                    sequence_variant=variant_name,
+                    previous_activity=previous_activity,
+                )
+                # Update the previous activity's next pointer now that we have the FK id.
+                if previous_activity is not None:
+                    previous_activity.next_activity = activity
+                    previous_activity.save(user=self.user, client_id=self.client_id)
+
+                previous_activity = activity
+                created += 1
 
         return created
 
@@ -358,16 +450,28 @@ class CampaignExecutionService:
         return list(queryset)
 
     def _create_activity(self, campaign, campaign_account, account, contact,
-                         activity_type, position, owner=None):
-        """Create a single Activity linked to campaign."""
+                     activity_type, position, owner=None,
+                     step_config=None, sequence_variant=None, previous_activity=None):
+        """
+        Create a single Activity linked to a campaign.
+
+        When step_config is provided (sequence campaigns), enriches the activity with:
+            - min_delay_days   from step_config['min_delay']
+            - sequence_variant
+            - previous_activity FK (for gating logic in get_playlist)
+            - description-based title prefix
+        """
         owner = owner or self.user
 
-        # Build title
         contact_name = ""
         if contact:
             contact_name = f"{contact.first_name or ''} {contact.last_name or ''}".strip()
 
-        title = f"{activity_type} - {account.company_name}"
+        step_description = step_config.get('description', '') if step_config else ''
+        if step_description:
+            title = f"Step {position}: {step_description} - {account.company_name}"
+        else:
+            title = f"{activity_type} - {account.company_name}"
         if contact_name:
             title += f" - {contact_name}"
 
@@ -382,10 +486,13 @@ class CampaignExecutionService:
             sequence_position=position,
             scheduled_date=campaign.start_date,
             due_date=campaign.end_date,
+            # Sequence enrichment (populated only for sequence campaigns)
+            min_delay_days=step_config.get('min_delay') if step_config else None,
+            sequence_variant=sequence_variant,
+            previous_activity=previous_activity,
         )
         activity.save(user=self.user, client_id=self.client_id)
 
-        # Link contact via M2M
         if contact:
             activity.contacts.add(contact)
 
@@ -438,60 +545,92 @@ class CampaignExecutionService:
         """
         Handle activity outcome and update CampaignAccount state.
 
+        Sequence-aware logic:
+            - Terminal outcomes (NOT_INTERESTED, WRONG_CONTACT…): cancel the entire
+            remaining chain via _cancel_chain(activity).
+            - Successful outcomes: let the gating in get_playlist() surface the next
+            chained activity automatically — no manual followup created.
+            - CALLBACK_REQUESTED: always creates a separate followup at the callback
+            date (out-of-sequence, scheduled explicitly).
+            - NO_ANSWER: increments counter and creates a retry followup if under
+            threshold — also out-of-sequence extras on top of the chain.
+            - next_activity_type (manual override on non-sequence campaigns): creates
+            a followup only when no chain exists.
+
         Returns:
-            Activity or None: next activity if one was created
+            Activity or None: the next activity to surface to the caller.
         """
         outcome = result_data.get('outcome', '')
         callback_date = result_data.get('callback_date')
         next_activity_type = result_data.get('next_activity_type')
 
-        # Callback requested
+        # ------------------------------------------------------------------
+        # CALLBACK REQUESTED — always an explicit out-of-sequence followup
+        # ------------------------------------------------------------------
         if callback_date:
             campaign_account.request_callback(
                 callback_date=callback_date,
                 user=self.user,
                 notes=f"Callback from activity: {activity.title}",
             )
-            # Create follow-up activity
             return self._create_followup(
                 activity,
                 activity_type=next_activity_type or activity.activity_type,
                 scheduled_date=callback_date,
             )
 
-        # No answer — increment counter
-        if outcome in CONFIG.validation.call_results and outcome == 'NO_ANSWER':
+        # ------------------------------------------------------------------
+        # NO ANSWER — increment counter, retry if under threshold
+        # ------------------------------------------------------------------
+        if outcome == 'NO_ANSWER':
             campaign_account.increment_no_answer(user=self.user)
 
-            # Auto-retry if under threshold (3 attempts)
-            if campaign_account.no_answer_count < 3:
+            if campaign_account.no_answer_count < CONFIG.limits.max_retry_attempts:
                 retry_date = timezone.now().date() + timedelta(days=1)
                 return self._create_followup(
                     activity,
                     activity_type=activity.activity_type,
                     scheduled_date=retry_date,
                 )
+            # Max retries reached — fall through, no more followup created
+            return None
 
-        # Not interested or terminal outcome → complete account
-        terminal_outcomes = {'NOT_INTERESTED', 'UNSUBSCRIBE_OPTOUT', 'WRONG_EMAIL', 'INVALID_PHONE_NUMBER'}
+        # ------------------------------------------------------------------
+        # TERMINAL OUTCOMES — stop the account and cancel remaining chain
+        # ------------------------------------------------------------------
+        terminal_outcomes = {
+            'NOT_INTERESTED',
+            'WRONG_CONTACT',
+            'UNSUBSCRIBE_OPTOUT',
+            'WRONG_EMAIL',
+            'INVALID_PHONE_NUMBER',
+        }
         if outcome in terminal_outcomes:
             campaign_account.mark_stopped(
                 reason=f"Contact outcome: {outcome}",
                 user=self.user,
             )
+            self._cancel_chain(activity)
             return None
 
-        # Successful outcome → complete account
-        successful_outcomes = {'SUCCESSFUL', 'POSITIVE_RESPONSE'}
+        # ------------------------------------------------------------------
+        # SUCCESSFUL OUTCOMES — complete account, chain surfaces via gating
+        # ------------------------------------------------------------------
+        successful_outcomes = {'SUCCESSFUL', 'POSITIVE_RESPONSE', 'MEETING_SCHEDULED'}
         if outcome in successful_outcomes:
             campaign_account.mark_completed(
                 notes=f"Successful: {outcome}",
                 user=self.user,
             )
-            return None
+            # Chain is pre-created — get_playlist() will surface next_activity
+            # automatically once previous_activity.status = COMPLETED.
+            # No manual followup needed.
+            return activity.next_activity if hasattr(activity, 'next_activity') else None
 
-        # Default: create next activity if next_activity_type specified
-        if next_activity_type:
+        # ------------------------------------------------------------------
+        # DEFAULT — manual next_activity_type only on non-sequence campaigns
+        # ------------------------------------------------------------------
+        if next_activity_type and not activity.campaign.sequence_type:
             next_date = timezone.now().date() + timedelta(days=1)
             return self._create_followup(
                 activity,
@@ -546,10 +685,11 @@ class CampaignExecutionService:
         """
         Calculate priority score for playlist ordering.
 
-        Factors (from CONFIG.priorities):
-            - Activity type weight (CALL=20, MEETING=15, EMAIL=10...)
-            - Callback boost (+50 if account is CALLBACK_PENDING)
-            - Overdue penalty (+15 per day overdue)
+        Factors:
+            - Activity type weight       (CALL=20, MEETING=15, EMAIL=10…)
+            - Sequence position bonus    (step 1 scores higher than step 5)
+            - Callback boost             (+50 if account is CALLBACK_PENDING)
+            - Overdue penalty            (+15 per day overdue)
         """
         score = 0
         weights = CONFIG.priorities.weights
@@ -559,19 +699,27 @@ class CampaignExecutionService:
         type_score = type_priorities.get(activity.activity_type, 1)
         score += type_score * weights.get('activity_type_weight', 0.5)
 
-        # Sequence position (lower position = higher priority)
+        # Sequence position: step 1 gets full bonus, later steps get proportionally less.
+        # Formula: bonus / position  →  position 1 = 5pts, position 5 = 1pt, position 10 = 0.5pt
         if activity.sequence_position:
             step_bonus = CONFIG.priorities.sequence_step_priority_bonus
             score += (step_bonus / activity.sequence_position) * weights.get('step_weight', 1.0)
 
-        # Callback boost
-        if activity.campaign_account and activity.campaign_account.status == CampaignAccountStatus.CALLBACK_PENDING:
+        # Callback boost — these accounts need attention first
+        if (
+            activity.campaign_account
+            and activity.campaign_account.status == CampaignAccountStatus.CALLBACK_PENDING
+        ):
             score += CONFIG.priorities.callback_priority_boost * weights.get('callback_weight', 2.0)
 
-        # Overdue penalty (positive = higher priority)
+        # Overdue penalty — longer overdue = higher urgency
         if activity.due_date:
             days_overdue = (timezone.now().date() - activity.due_date).days
             if days_overdue > 0:
-                score += days_overdue * CONFIG.priorities.overdue_penalty_per_day * weights.get('overdue_weight', 1.5)
+                score += (
+                    days_overdue
+                    * CONFIG.priorities.overdue_penalty_per_day
+                    * weights.get('overdue_weight', 1.5)
+                )
 
         return score
