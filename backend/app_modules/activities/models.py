@@ -238,6 +238,21 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Position in the campaign sequence (1-based)')
     )
 
+    min_delay_days = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        verbose_name=_('Minimum Delay Days'),
+        help_text=_('Minimum days to wait after previous activity completion before scheduling this one')
+    )
+
+    sequence_variant = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name=_('Sequence Variant'),
+        help_text=_('Variant used to generate this activity (STANDARD, WITHOUT_PHONE, etc.)')
+    )
+
     
     # ==========================================================================
     # LINKED LIST (PREVIOUS/NEXT ACTIVITY)
