@@ -6,19 +6,20 @@
  *   { avatar, title, chips, infoItems, headerActions }
  *
  * Usage in workspace/index.jsx:
- *   const headerProps = useCampaignHeaderProps({ campaign, stats });
+ *   const headerProps = useCampaignHeaderProps({ campaign, stats, onMutate });
  *   <WorkspaceLayout {...headerProps} />
  *
  * Pattern: sections/activities/workspace/ActivityHeader.jsx
  */
-
 "use client";
+import { useState } from "react";
 
 // MUI
 import { useTheme } from "@mui/material/styles";
 import Avatar from "@mui/material/Avatar";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -30,7 +31,18 @@ import {
   SEQUENCE_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
   getCampaignProgress,
+  startCampaign,
+  pauseCampaign,
+  resumeCampaign,
+  completeCampaign,
+  generateCampaignActivities,
 } from "api/campaigns/campaigns";
+
+// utils
+import {
+  displaySuccessSnackbar,
+  displayErrorSnackbar,
+} from "utils/displayError";
 
 // icons
 import AimOutlined from "@ant-design/icons/AimOutlined";
@@ -38,7 +50,6 @@ import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
 import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import TeamOutlined from "@ant-design/icons/TeamOutlined";
 import BankOutlined from "@ant-design/icons/BankOutlined";
-import GlobalOutlined from "@ant-design/icons/GlobalOutlined";
 import PlayCircleOutlined from "@ant-design/icons/PlayCircleOutlined";
 import PauseCircleOutlined from "@ant-design/icons/PauseCircleOutlined";
 import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
@@ -58,15 +69,151 @@ const FAMILY_CONFIG = {
   },
 };
 
+// ==============================|| ACTION BUTTONS COMPONENT ||============================== //
+
+/**
+ * Stateful sub-component so we can use useState for loading.
+ * After startCampaign succeeds, also calls generateCampaignActivities
+ * so the playlist is populated immediately.
+ */
+function CampaignActionButtons({ campaign, onMutate }) {
+  const [loading, setLoading] = useState(false);
+
+  const handleAction = async (actionFn, successMessage) => {
+    setLoading(true);
+    try {
+      const result = await actionFn(campaign.id);
+
+      if (!result.success) {
+        displayErrorSnackbar(result);
+        return;
+      }
+
+      // Generate activities right after start so the playlist is immediately populated
+      if (actionFn === startCampaign) {
+        const genResult = await generateCampaignActivities(campaign.id);
+        if (!genResult.success) {
+          displayErrorSnackbar(
+            "Campaign started but activity generation failed. Refresh to retry.",
+          );
+        }
+      }
+
+      displaySuccessSnackbar(successMessage);
+      if (onMutate) onMutate();
+    } catch {
+      displayErrorSnackbar("An error occurred");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Stack direction="row" spacing={1}>
+      {campaign.status === "DRAFT" && (
+        <Button
+          variant="contained"
+          color="success"
+          size="small"
+          startIcon={
+            loading ? (
+              <CircularProgress size={14} color="inherit" />
+            ) : (
+              <PlayCircleOutlined />
+            )
+          }
+          disabled={loading}
+          onClick={() => handleAction(startCampaign, "Campaign started")}
+        >
+          Start
+        </Button>
+      )}
+      {campaign.status === "ACTIVE" && (
+        <>
+          <Button
+            variant="outlined"
+            color="warning"
+            size="small"
+            startIcon={
+              loading ? (
+                <CircularProgress size={14} color="inherit" />
+              ) : (
+                <PauseCircleOutlined />
+              )
+            }
+            disabled={loading}
+            onClick={() => handleAction(pauseCampaign, "Campaign paused")}
+          >
+            Pause
+          </Button>
+          <Button
+            variant="outlined"
+            color="primary"
+            size="small"
+            startIcon={
+              loading ? (
+                <CircularProgress size={14} color="inherit" />
+              ) : (
+                <CheckCircleOutlined />
+              )
+            }
+            disabled={loading}
+            onClick={() => handleAction(completeCampaign, "Campaign completed")}
+          >
+            Complete
+          </Button>
+        </>
+      )}
+      {campaign.status === "PAUSED" && (
+        <>
+          <Button
+            variant="contained"
+            color="success"
+            size="small"
+            startIcon={
+              loading ? (
+                <CircularProgress size={14} color="inherit" />
+              ) : (
+                <PlayCircleOutlined />
+              )
+            }
+            disabled={loading}
+            onClick={() => handleAction(resumeCampaign, "Campaign resumed")}
+          >
+            Resume
+          </Button>
+          <Button
+            variant="outlined"
+            color="primary"
+            size="small"
+            startIcon={
+              loading ? (
+                <CircularProgress size={14} color="inherit" />
+              ) : (
+                <CheckCircleOutlined />
+              )
+            }
+            disabled={loading}
+            onClick={() => handleAction(completeCampaign, "Campaign completed")}
+          >
+            Complete
+          </Button>
+        </>
+      )}
+    </Stack>
+  );
+}
+
 // ==============================|| CAMPAIGN HEADER HOOK ||============================== //
 
 /**
  * @param {Object} params
- * @param {Object} params.campaign - Campaign data from API / mock
- * @param {Object} params.stats - Campaign stats { accounts_count, activities_total, activities_completed, completion_rate }
+ * @param {Object}   params.campaign  - Campaign data from API
+ * @param {Object}   params.stats     - Campaign stats
+ * @param {Function} params.onMutate  - Callback to revalidate campaign after lifecycle action
  * @returns {Object} Props object spread into <WorkspaceLayout {...props} />
  */
-export default function useCampaignHeaderProps({ campaign, stats }) {
+export default function useCampaignHeaderProps({ campaign, stats, onMutate }) {
   const theme = useTheme();
 
   if (!campaign) {
@@ -81,13 +228,12 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
 
   // ==============================|| DERIVED VALUES ||============================== //
 
-  const isOutbound = campaign.campaign_type === CAMPAIGN_FAMILIES.OUTBOUND;
   const familyConfig =
     FAMILY_CONFIG[campaign.campaign_type] || FAMILY_CONFIG.OUTBOUND;
   const FamilyIcon = familyConfig.Icon;
   const progress = stats?.completion_rate || getCampaignProgress(campaign);
 
-  // ==============================|| ROW 1: Avatar + Title + Actions ||============================== //
+  // ==============================|| AVATAR + TITLE ||============================== //
 
   const avatar = (
     <Avatar
@@ -104,65 +250,8 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
 
   const title = campaign.name || "";
 
-  // Action buttons based on status
   const headerActions = (
-    <Stack direction="row" spacing={1}>
-      {campaign.status === "DRAFT" && (
-        <Button
-          variant="contained"
-          color="success"
-          size="small"
-          startIcon={<PlayCircleOutlined />}
-          onClick={() => console.log("TODO: startCampaign", campaign.id)}
-        >
-          Start
-        </Button>
-      )}
-      {campaign.status === "ACTIVE" && (
-        <Button
-          variant="outlined"
-          color="warning"
-          size="small"
-          startIcon={<PauseCircleOutlined />}
-          onClick={() => console.log("TODO: pauseCampaign", campaign.id)}
-        >
-          Pause
-        </Button>
-      )}
-      {campaign.status === "PAUSED" && (
-        <>
-          <Button
-            variant="contained"
-            color="success"
-            size="small"
-            startIcon={<PlayCircleOutlined />}
-            onClick={() => console.log("TODO: resumeCampaign", campaign.id)}
-          >
-            Resume
-          </Button>
-          <Button
-            variant="outlined"
-            color="primary"
-            size="small"
-            startIcon={<CheckCircleOutlined />}
-            onClick={() => console.log("TODO: completeCampaign", campaign.id)}
-          >
-            Complete
-          </Button>
-        </>
-      )}
-      {campaign.status === "ACTIVE" && (
-        <Button
-          variant="outlined"
-          color="primary"
-          size="small"
-          startIcon={<CheckCircleOutlined />}
-          onClick={() => console.log("TODO: completeCampaign", campaign.id)}
-        >
-          Complete
-        </Button>
-      )}
-    </Stack>
+    <CampaignActionButtons campaign={campaign} onMutate={onMutate} />
   );
 
   // ==============================|| ROW 2: Chips ||============================== //
@@ -174,99 +263,78 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
       label={
         CAMPAIGN_FAMILY_LABELS[campaign.campaign_type] || campaign.campaign_type
       }
-      color={familyConfig.chipColor}
       size="small"
+      color={familyConfig.chipColor}
       variant="outlined"
-      icon={<FamilyIcon />}
     />,
-  ];
-
-  // Territory chip (Prospection only)
-  if (isOutbound && campaign.territory_name) {
-    chips.push(
-      <Chip
-        key="territory"
-        label={campaign.territory_name}
-        size="small"
-        variant="outlined"
-        icon={<GlobalOutlined />}
-      />,
-    );
-  }
-
-  // Sequence type chip
-  if (campaign.sequence_type && SEQUENCE_TYPE_LABELS[campaign.sequence_type]) {
-    chips.push(
+    campaign.sequence_type && (
       <Chip
         key="sequence"
-        label={SEQUENCE_TYPE_LABELS[campaign.sequence_type]}
+        label={
+          SEQUENCE_TYPE_LABELS[campaign.sequence_type] || campaign.sequence_type
+        }
         size="small"
         variant="outlined"
-      />,
-    );
-  }
+      />
+    ),
+  ].filter(Boolean);
 
-  // ==============================|| ROW 3: Info Items ||============================== //
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return null;
-    const d = new Date(dateStr);
-    return d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
+  // ==============================|| ROW 3: Info Items (JSX elements) ||============================== //
 
   const infoItems = [
-    // Date range
-    (campaign.start_date || campaign.end_date) && (
+    // Territory
+    campaign.territory_name && (
+      <Stack key="territory" direction="row" spacing={0.75} alignItems="center">
+        <BankOutlined
+          style={{ fontSize: 14, color: theme.palette.text.secondary }}
+        />
+        <Typography variant="body2" color="text.secondary">
+          {campaign.territory_name}
+        </Typography>
+      </Stack>
+    ),
+    // Objective
+    campaign.objective_type && (
+      <Stack key="objective" direction="row" spacing={0.75} alignItems="center">
+        <CheckCircleOutlined
+          style={{ fontSize: 14, color: theme.palette.text.secondary }}
+        />
+        <Typography variant="body2" color="text.secondary">
+          {OBJECTIVE_TYPE_LABELS[campaign.objective_type] ||
+            campaign.objective_type}
+        </Typography>
+      </Stack>
+    ),
+    // Dates
+    campaign.start_date && (
       <Stack key="dates" direction="row" spacing={0.75} alignItems="center">
         <CalendarOutlined
-          style={{
-            fontSize: theme.iconSizes?.sm || 14,
-            color: theme.palette.text.secondary,
-            display: "flex",
-          }}
+          style={{ fontSize: 14, color: theme.palette.text.secondary }}
         />
         <Typography variant="body2" color="text.secondary">
-          {formatDate(campaign.start_date) || "No start"}
-          {" → "}
-          {formatDate(campaign.end_date) || "Ongoing"}
+          {campaign.start_date}
+          {campaign.end_date ? ` → ${campaign.end_date}` : ""}
         </Typography>
       </Stack>
     ),
-
-    // Owner
-    campaign.members?.[0]?.user_name && (
-      <Stack key="owner" direction="row" spacing={0.75} alignItems="center">
-        <TeamOutlined
-          style={{
-            fontSize: theme.iconSizes?.sm || 14,
-            color: theme.palette.text.secondary,
-            display: "flex",
-          }}
-        />
-        <Typography variant="body2" color="text.secondary">
-          {campaign.members[0].user_name}
-        </Typography>
-      </Stack>
-    ),
-
-    // Accounts count
-    <Stack key="accounts" direction="row" spacing={0.75} alignItems="center">
-      <BankOutlined
-        style={{
-          fontSize: theme.iconSizes?.sm || 14,
-          color: theme.palette.text.secondary,
-          display: "flex",
-        }}
+    // Members
+    <Stack key="members" direction="row" spacing={0.75} alignItems="center">
+      <TeamOutlined
+        style={{ fontSize: 14, color: theme.palette.text.secondary }}
       />
       <Typography variant="body2" color="text.secondary">
-        {stats?.accounts_count ?? campaign.accounts_count ?? 0} accounts
+        {campaign.members?.length || stats?.total_members || 0} members
       </Typography>
     </Stack>,
-
+    // Accounts
+    <Stack key="accounts" direction="row" spacing={0.75} alignItems="center">
+      <BankOutlined
+        style={{ fontSize: 14, color: theme.palette.text.secondary }}
+      />
+      <Typography variant="body2" color="text.secondary">
+        {stats?.total_accounts ?? campaign.accounts_count ?? 0} accounts
+      </Typography>
+    </Stack>,
     // Progress
     typeof progress === "number" && (
       <Stack key="progress" direction="row" spacing={0.75} alignItems="center">
@@ -279,7 +347,7 @@ export default function useCampaignHeaderProps({ campaign, stats }) {
         </Typography>
       </Stack>
     ),
-  ];
+  ].filter(Boolean);
 
   // ==============================|| RETURN ||============================== //
 

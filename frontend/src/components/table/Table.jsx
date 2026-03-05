@@ -1,28 +1,34 @@
 // frontend/src/components/table/Table.jsx
 
-import PropTypes from 'prop-types';
-import React, { Fragment, useMemo, useState, useEffect, useCallback } from 'react';
-import { useSWRConfig } from 'swr';
-import { useSearchParams, useRouter } from 'next/navigation';
+import PropTypes from "prop-types";
+import React, {
+  Fragment,
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+} from "react";
+import { useSWRConfig } from "swr";
+import { useSearchParams, useRouter } from "next/navigation";
 
 // material-ui
-import { alpha, useTheme } from '@mui/material/styles';
-import useMediaQuery from '@mui/material/useMediaQuery';
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import Divider from '@mui/material/Divider';
-import Stack from '@mui/material/Stack';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
-import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
-import Tooltip from '@mui/material/Tooltip';
-import Typography from '@mui/material/Typography';
-import Skeleton from '@mui/material/Skeleton';
-import Chip from '@mui/material/Chip';
-import Badge from '@mui/material/Badge';
+import { alpha, useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Divider from "@mui/material/Divider";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
+import Skeleton from "@mui/material/Skeleton";
+import Chip from "@mui/material/Chip";
+import Badge from "@mui/material/Badge";
 
 // third-party
 import {
@@ -32,36 +38,34 @@ import {
   getPaginationRowModel,
   getFilteredRowModel,
   getExpandedRowModel,
-  useReactTable
-} from '@tanstack/react-table';
+  useReactTable,
+} from "@tanstack/react-table";
 
 // project-import
-import MainCard from 'components/MainCard';
-import ScrollX from 'components/ScrollX';
-import IconButton from 'components/@extended/IconButton';
-import ErrorDisplay from './ErrorDisplay';
+import MainCard from "components/MainCard";
+import ScrollX from "components/ScrollX";
+import IconButton from "components/@extended/IconButton";
+import ErrorDisplay from "./ErrorDisplay";
 
-import { 
-  TableHeaderActions, 
-  DebouncedInput, 
-  HeaderSort, 
-  RowSelection, 
-  SelectColumnSorting, 
-  TablePagination 
-} from 'components/third-party/react-table';
+import {
+  TableHeaderActions,
+  DebouncedInput,
+  HeaderSort,
+  RowSelection,
+  SelectColumnSorting,
+  TablePagination,
+} from "components/third-party/react-table";
 
 // assets
-import PlusOutlined from '@ant-design/icons/PlusOutlined';
-import CloseOutlined from '@ant-design/icons/CloseOutlined';
-import FilterOutlined from '@ant-design/icons/FilterOutlined';
-
-
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
+import CloseOutlined from "@ant-design/icons/CloseOutlined";
+import FilterOutlined from "@ant-design/icons/FilterOutlined";
 
 // ==============================|| REUSABLE TABLE COMPONENT ||============================== //
 
 /**
  * ✅ REUSABLE TABLE COMPONENT
- * 
+ *
  * Generic table component with:
  * - Server-side pagination
  * - Sorting
@@ -71,7 +75,7 @@ import FilterOutlined from '@ant-design/icons/FilterOutlined';
  * - Error handling with intelligent UI
  * - CSV export
  * - Bulk actions
- * 
+ *
  * @param {Object} props - Component props
  * @param {Array} props.data - Table data array
  * @param {Array} props.columns - Column definitions (TanStack Table format)
@@ -101,31 +105,31 @@ import FilterOutlined from '@ant-design/icons/FilterOutlined';
  * @param {boolean} props.enableExpanding - Enable row expansion (default: false)
  * @param {boolean} props.enableImport - Enable import CSV button (default: true)
  */
-function ReusableTable({ 
-  data, 
-  columns, 
-  loading, 
-  error, 
-  swrKey, 
-  modalToggler, 
+function ReusableTable({
+  data,
+  columns,
+  loading,
+  error,
+  swrKey,
+  modalToggler,
   totalCount = 0,
   currentPage = 1,
   onPaginationChange,
-  onSearchChange, 
-  selectedCount, 
-  selectedRows, 
+  onSearchChange,
+  selectedCount,
+  selectedRows,
   initialPageSize = 10,
   onImport,
   onEdit,
   onDelete,
   sorting,
   onSortingChange,
-  addButtonLabel = 'Add',
-  addButtonTooltip = 'Add New',
-  searchPlaceholder = 'Search records...',
-  exportFilename = 'export.csv',
-  emptyMessage = 'No data found',
-  emptyDescription = 'Start by adding your first item to the system',
+  addButtonLabel = "Add",
+  addButtonTooltip = "Add New",
+  searchPlaceholder = "Search records...",
+  exportFilename = "export.csv",
+  emptyMessage = "No data found",
+  emptyDescription = "Start by adding your first item to the system",
   expandedRowContent = null,
   enableExpanding = false,
   enableImport = true,
@@ -138,13 +142,13 @@ function ReusableTable({
   advancedFilterCount = 0,
   onAdvancedFilterOpen,
   onAdvancedFilterRemove,
-  onAdvancedFilterClear
+  onAdvancedFilterClear,
 }) {
   const theme = useTheme();
-  const matchDownSM = useMediaQuery(theme.breakpoints.down('sm'));
+  const matchDownSM = useMediaQuery(theme.breakpoints.down("sm"));
   const { mutate } = useSWRConfig();
 
-  const [globalFilter, setGlobalFilter] = useState('');
+  const [globalFilter, setGlobalFilter] = useState("");
   const [isRetrying, setIsRetrying] = useState(false);
 
   // ✅ Calculate pageIndex from currentPage (1-indexed → 0-indexed)
@@ -170,23 +174,29 @@ function ReusableTable({
   }, [globalFilter, onSearchChange]);
 
   // ✅ Custom handlers for pagination
-  const handlePageIndexChange = useCallback((newPageIndex) => {
-    if (onPaginationChange) {
-      onPaginationChange({
-        page: newPageIndex + 1,
-        pageSize: Number(initialPageSize) || 10
-      });
-    }
-  }, [onPaginationChange, initialPageSize]);
+  const handlePageIndexChange = useCallback(
+    (newPageIndex) => {
+      if (onPaginationChange) {
+        onPaginationChange({
+          page: newPageIndex + 1,
+          pageSize: Number(initialPageSize) || 10,
+        });
+      }
+    },
+    [onPaginationChange, initialPageSize],
+  );
 
-  const handlePageSizeChange = useCallback((newPageSize) => {
-    if (onPaginationChange) {
-      onPaginationChange({
-        page: 1,
-        pageSize: newPageSize
-      });
-    }
-  }, [onPaginationChange]);
+  const handlePageSizeChange = useCallback(
+    (newPageSize) => {
+      if (onPaginationChange) {
+        onPaginationChange({
+          page: 1,
+          pageSize: newPageSize,
+        });
+      }
+    },
+    [onPaginationChange],
+  );
 
   // ✅ TanStack Table instance
   const tableInstance = useReactTable({
@@ -198,8 +208,8 @@ function ReusableTable({
       globalFilter,
       pagination: {
         pageIndex: pageIndex,
-        pageSize: pageSize
-      }
+        pageSize: pageSize,
+      },
     },
     manualPagination: true,
     manualFiltering: true,
@@ -212,168 +222,175 @@ function ReusableTable({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getExpandedRowModel: enableExpanding ? getExpandedRowModel() : undefined,
-    debugTable: false
+    debugTable: false,
   });
 
   const backColor = alpha(theme.palette.primary.lighter, 0.1);
 
   // ==============================|| FILTER CHIPS COMPONENT ||============================== //
 
-/**
- * FilterChips - Display active filters as removable chips
- * 
- * Reads URL params and displays them as Material-UI Chips
- * Each chip can be removed to clear that filter from URL
- */
-const FilterChips = ({ 
-  filterConfig, 
-  globalFilter, 
-  onSearchChange,
-  // New props for external (state-based) filters
-  externalFilters = [],
-  onExternalFilterRemove,
-  onExternalFilterClear
-}) => {
-  const searchParams = useSearchParams();
-  const router = useRouter();
+  /**
+   * FilterChips - Display active filters as removable chips
+   *
+   * Reads URL params and displays them as Material-UI Chips
+   * Each chip can be removed to clear that filter from URL
+   */
+  const FilterChips = ({
+    filterConfig,
+    globalFilter,
+    onSearchChange,
+    // New props for external (state-based) filters
+    externalFilters = [],
+    onExternalFilterRemove,
+    onExternalFilterClear,
+  }) => {
+    const searchParams = useSearchParams();
+    const router = useRouter();
 
-  // Params to ignore (not display as chips)
-  const IGNORED_PARAMS = ['page', 'page_size', 'search', 'ordering', 'nonce'];
+    // Params to ignore (not display as chips)
+    const IGNORED_PARAMS = ["page", "page_size", "search", "ordering", "nonce"];
 
-  // Get active filters from URL
-  const urlFilters = useMemo(() => {
-    if (!filterConfig) return [];
+    // Get active filters from URL
+    const urlFilters = useMemo(() => {
+      if (!filterConfig) return [];
 
-    const filters = [];
-    const params = Array.from(searchParams.entries());
+      const filters = [];
+      const params = Array.from(searchParams.entries());
 
-    params.forEach(([key, value]) => {
-      if (IGNORED_PARAMS.includes(key)) return;
-      
-      const config = filterConfig[key];
-      if (!config) return;
+      params.forEach(([key, value]) => {
+        if (IGNORED_PARAMS.includes(key)) return;
 
-      // Resolve display value
-      let displayValue = value;
-      if (config.resolve) {
-        try {
-          displayValue = config.resolve(value, data);
-        } catch (err) {
-          console.warn(`Failed to resolve filter ${key}:`, err);
+        const config = filterConfig[key];
+        if (!config) return;
+
+        // Resolve display value
+        let displayValue = value;
+        if (config.resolve) {
+          try {
+            displayValue = config.resolve(value, data);
+          } catch (err) {
+            console.warn(`Failed to resolve filter ${key}:`, err);
+          }
         }
-      }
 
-      filters.push({
-        key,
-        value,
-        label: config.label || key,
-        displayValue,
-        source: 'url'
+        filters.push({
+          key,
+          value,
+          label: config.label || key,
+          displayValue,
+          source: "url",
+        });
       });
-    });
 
-    return filters;
-  }, [searchParams, filterConfig, data]);
+      return filters;
+    }, [searchParams, filterConfig, data]);
 
-  // Combine URL filters and external filters
-  const allFilters = useMemo(() => {
-    const external = externalFilters.map(f => ({
-      ...f,
-      displayValue: f.value,
-      source: 'external'
-    }));
-    return [...urlFilters, ...external];
-  }, [urlFilters, externalFilters]);
+    // Combine URL filters and external filters
+    const allFilters = useMemo(() => {
+      const external = externalFilters.map((f) => ({
+        ...f,
+        displayValue: f.value,
+        source: "external",
+      }));
+      return [...urlFilters, ...external];
+    }, [urlFilters, externalFilters]);
 
-  // Remove specific filter (URL-based)
-  const handleRemoveUrlFilter = useCallback((filterKey) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete(filterKey);
-    params.set('page', '1');
-    router.push(`?${params.toString()}`);
-  }, [searchParams, router]);
+    // Remove specific filter (URL-based)
+    const handleRemoveUrlFilter = useCallback(
+      (filterKey) => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete(filterKey);
+        params.set("page", "1");
+        router.push(`?${params.toString()}`);
+      },
+      [searchParams, router],
+    );
 
-  // Remove filter handler (dispatches to correct handler based on source)
-  const handleRemoveFilter = useCallback((filter) => {
-    if (filter.source === 'url') {
-      handleRemoveUrlFilter(filter.key);
-    } else if (onExternalFilterRemove) {
-      onExternalFilterRemove(filter.key);
-    }
-  }, [handleRemoveUrlFilter, onExternalFilterRemove]);
+    // Remove filter handler (dispatches to correct handler based on source)
+    const handleRemoveFilter = useCallback(
+      (filter) => {
+        if (filter.source === "url") {
+          handleRemoveUrlFilter(filter.key);
+        } else if (onExternalFilterRemove) {
+          onExternalFilterRemove(filter.key);
+        }
+      },
+      [handleRemoveUrlFilter, onExternalFilterRemove],
+    );
 
-  // Clear all filters + search
-  const handleClearAll = useCallback(() => {
-    // Clear URL filters
-    const params = new URLSearchParams(searchParams.toString());
-    Array.from(params.keys()).forEach(key => {
-      if (!['page_size', 'ordering', 'tab'].includes(key)) {
-        params.delete(key);
+    // Clear all filters + search
+    const handleClearAll = useCallback(() => {
+      // Clear URL filters
+      const params = new URLSearchParams(searchParams.toString());
+      Array.from(params.keys()).forEach((key) => {
+        if (!["page_size", "ordering", "tab"].includes(key)) {
+          params.delete(key);
+        }
+      });
+      params.set("page", "1");
+      router.push(`?${params.toString()}`);
+
+      // Clear search input
+      if (onSearchChange) {
+        onSearchChange("");
       }
-    });
-    params.set('page', '1');
-    router.push(`?${params.toString()}`);
-    
-    // Clear search input
-    if (onSearchChange) {
-      onSearchChange('');
+
+      // Clear external filters
+      if (onExternalFilterClear) {
+        onExternalFilterClear();
+      }
+    }, [searchParams, router, onSearchChange, onExternalFilterClear]);
+
+    // Don't render if no active filters
+    if (allFilters.length === 0 && !globalFilter) {
+      return null;
     }
 
-    // Clear external filters
-    if (onExternalFilterClear) {
-      onExternalFilterClear();
-    }
-  }, [searchParams, router, onSearchChange, onExternalFilterClear]);
+    return (
+      <Box sx={{ px: 2, pb: 2 }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          flexWrap="wrap"
+          useFlexGap
+        >
+          <Typography variant="body2" color="text.secondary">
+            Applied filters:
+          </Typography>
 
-  // Don't render if no active filters
-  if (allFilters.length === 0 && !globalFilter) {
-    return null;
-  }
+          {allFilters.map((filter) => (
+            <Chip
+              key={`${filter.source}-${filter.key}`}
+              label={`${filter.label}: ${filter.displayValue}`}
+              onDelete={() => handleRemoveFilter(filter)}
+              deleteIcon={<CloseOutlined />}
+              size="small"
+              variant="outlined"
+            />
+          ))}
 
-  return (
-    <Box sx={{ px: 2, pb: 2 }}>
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-        <Typography variant="body2" color="text.secondary">
-          Applied filters:
-        </Typography>
-        
-        {allFilters.map((filter) => (
-          <Chip
-            key={`${filter.source}-${filter.key}`}
-            label={`${filter.label}: ${filter.displayValue}`}
-            onDelete={() => handleRemoveFilter(filter)}
-            deleteIcon={<CloseOutlined />}
-            size="small"
-            variant="outlined"
-          />
-        ))}
+          {globalFilter && (
+            <Chip
+              label={`Search: "${globalFilter}"`}
+              onDelete={() => onSearchChange?.("")}
+              deleteIcon={<CloseOutlined />}
+              size="small"
+              variant="outlined"
+            />
+          )}
 
-        {globalFilter && (
-          <Chip
-            label={`Search: "${globalFilter}"`}
-            onDelete={() => onSearchChange?.('')}
-            deleteIcon={<CloseOutlined />}
-            size="small"
-            variant="outlined"
-          />
-        )}
+          {(allFilters.length > 0 || globalFilter) && (
+            <Button size="small" onClick={handleClearAll} sx={{ ml: 1 }}>
+              Clear All
+            </Button>
+          )}
+        </Stack>
+      </Box>
+    );
+  };
 
-        {(allFilters.length > 0 || globalFilter) && (
-          <Button
-            size="small"
-            onClick={handleClearAll}
-            sx={{ ml: 1 }}
-          >
-            Clear All
-          </Button>
-        )}
-      </Stack>
-    </Box>
-  );
-};
-
-
-// ==============================|| Handlers ||============================== //
+  // ==============================|| Handlers ||============================== //
 
   // ✅ Retry handler
   const handleRetry = async () => {
@@ -383,7 +400,7 @@ const FilterChips = ({
     try {
       await mutate(swrKey);
     } catch (err) {
-      console.error('Retry failed:', err);
+      console.error("Retry failed:", err);
     } finally {
       setTimeout(() => setIsRetrying(false), 500);
     }
@@ -394,7 +411,7 @@ const FilterChips = ({
     if (!selectedRows || selectedRows.size === 0) {
       return data;
     }
-    return data.filter(row => selectedRows.has(row.id));
+    return data.filter((row) => selectedRows.has(row.id));
   }, [data, selectedRows]);
 
   // ✅ Export headers
@@ -404,7 +421,7 @@ const FilterChips = ({
       if (column.columnDef.accessorKey) {
         headerList.push({
           label: column.columnDef.header,
-          key: column.columnDef.accessorKey
+          key: column.columnDef.accessorKey,
         });
       }
     });
@@ -413,70 +430,70 @@ const FilterChips = ({
 
   // Export Cached Data
 
-
   return (
     <MainCard content={false}>
       <Stack
-        direction={{ xs: 'column', sm: 'row' }}
+        direction={{ xs: "column", sm: "row" }}
         spacing={2}
         alignItems="center"
         justifyContent="space-between"
-        sx={{ 
-          padding: 2, 
-          ...(matchDownSM && { 
-            '& .MuiOutlinedInput-root, & .MuiFormControl-root': { width: '100%' } 
-          }) 
+        sx={{
+          padding: 2,
+          ...(matchDownSM && {
+            "& .MuiOutlinedInput-root, & .MuiFormControl-root": {
+              width: "100%",
+            },
+          }),
         }}
       >
         <DebouncedInput
-          value={globalFilter ?? ''}
+          value={globalFilter ?? ""}
           onFilterChange={(value) => setGlobalFilter(String(value))}
-          placeholder={loading ? 'Loading...' : searchPlaceholder}
+          placeholder={loading ? "Loading..." : searchPlaceholder}
           disabled={!!error}
         />
 
-        <Stack 
-          direction="row" 
-          alignItems="center" 
-          spacing={2} 
-          sx={{ width: { xs: '100%', sm: 'auto' } }}
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={2}
+          sx={{ width: { xs: "100%", sm: "auto" } }}
         >
-          <SelectColumnSorting 
-            {...{ 
-              getState: tableInstance.getState, 
-              getAllColumns: tableInstance.getAllColumns, 
-              setSorting: onSortingChange  
-            }} 
-            disabled={loading || !!error} 
+          <SelectColumnSorting
+            {...{
+              getState: tableInstance.getState,
+              getAllColumns: tableInstance.getAllColumns,
+              setSorting: onSortingChange,
+            }}
+            disabled={loading || !!error}
           />
           <Stack direction="row" spacing={2} alignItems="center">
-            {showAddButton && (
-              matchDownSM ? (
+            {showAddButton &&
+              (matchDownSM ? (
                 <Tooltip title={addButtonTooltip}>
-                  <IconButton 
-                    color="primary" 
-                    variant="contained" 
-                    onClick={modalToggler} 
+                  <IconButton
+                    color="primary"
+                    variant="contained"
+                    onClick={modalToggler}
                     disabled={loading || !!error}
                   >
                     <PlusOutlined />
                   </IconButton>
                 </Tooltip>
               ) : (
-                <Button 
-                  variant="contained" 
-                  startIcon={<PlusOutlined />} 
-                  onClick={modalToggler} 
+                <Button
+                  variant="contained"
+                  startIcon={<PlusOutlined />}
+                  onClick={modalToggler}
                   disabled={loading || !!error}
                 >
                   {addButtonLabel}
                 </Button>
-              )
-            )}
+              ))}
             {/* Advanced Filter Button - only if panel provided */}
             {advancedFilterPanel && (
-              <Badge 
-                badgeContent={advancedFilterCount} 
+              <Badge
+                badgeContent={advancedFilterCount}
                 color="primary"
                 invisible={advancedFilterCount === 0 || selectedCount > 0}
               >
@@ -489,13 +506,17 @@ const FilterChips = ({
                 </IconButton>
               </Badge>
             )}
-            <TableHeaderActions 
-              selectedRowCount={selectedCount || 0}    
-              onEdit={() => { if (onEdit) onEdit(); }} 
-              onDelete={() => { if (onDelete) onDelete(); }} 
+            <TableHeaderActions
+              selectedRowCount={selectedCount || 0}
+              onEdit={() => {
+                if (onEdit) onEdit();
+              }}
+              onDelete={() => {
+                if (onDelete) onDelete();
+              }}
               onImport={onImport}
-              exportData={exportData}                  
-              exportHeaders={headers}                  
+              exportData={exportData}
+              exportHeaders={headers}
               exportFilename={exportFilename}
               enableImport={enableImport}
             />
@@ -503,7 +524,7 @@ const FilterChips = ({
         </Stack>
       </Stack>
 
-      <FilterChips 
+      <FilterChips
         filterConfig={filterConfig}
         globalFilter={globalFilter}
         onSearchChange={(value) => setGlobalFilter(String(value))}
@@ -527,9 +548,14 @@ const FilterChips = ({
                   {tableInstance.getHeaderGroups().map((headerGroup) => (
                     <TableRow key={headerGroup.id}>
                       {headerGroup.headers.map((header) => {
-                        if (header.column.columnDef.meta !== undefined && header.column.getCanSort()) {
+                        if (
+                          header.column.columnDef.meta !== undefined &&
+                          header.column.getCanSort()
+                        ) {
                           Object.assign(header.column.columnDef.meta, {
-                            className: header.column.columnDef.meta.className + ' cursor-pointer prevent-select'
+                            className:
+                              header.column.columnDef.meta.className +
+                              " cursor-pointer prevent-select",
                           });
                         }
                         return (
@@ -539,13 +565,24 @@ const FilterChips = ({
                             onClick={header.column.getToggleSortingHandler()}
                             {...(header.column.getCanSort() &&
                               header.column.columnDef.meta === undefined && {
-                                className: 'cursor-pointer prevent-select'
+                                className: "cursor-pointer prevent-select",
                               })}
                           >
                             {header.isPlaceholder ? null : (
-                              <Stack direction="row" spacing={1} alignItems="center">
-                                <Box>{flexRender(header.column.columnDef.header, header.getContext())}</Box>
-                                {header.column.getCanSort() && <HeaderSort column={header.column} />}
+                              <Stack
+                                direction="row"
+                                spacing={1}
+                                alignItems="center"
+                              >
+                                <Box>
+                                  {flexRender(
+                                    header.column.columnDef.header,
+                                    header.getContext(),
+                                  )}
+                                </Box>
+                                {header.column.getCanSort() && (
+                                  <HeaderSort column={header.column} />
+                                )}
                               </Stack>
                             )}
                           </TableCell>
@@ -556,7 +593,9 @@ const FilterChips = ({
                 </TableHead>
                 <TableBody>
                   {loading ? (
-                    Array.from({ length: Math.max(1, Math.min(initialPageSize ?? 10, 100)) }).map((_, index) => (
+                    Array.from({
+                      length: Math.max(1, Math.min(initialPageSize ?? 10, 100)),
+                    }).map((_, index) => (
                       <TableRow key={index}>
                         {columns.map((_, colIndex) => (
                           <TableCell key={colIndex}>
@@ -565,10 +604,10 @@ const FilterChips = ({
                         ))}
                       </TableRow>
                     ))
-                  ) : error ?  (
-                    <ErrorDisplay 
-                      error={error} 
-                      onRetry={handleRetry} 
+                  ) : error ? (
+                    <ErrorDisplay
+                      error={error}
+                      onRetry={handleRetry}
                       isRetrying={isRetrying}
                       columns={columns}
                       globalFilter={globalFilter}
@@ -578,37 +617,55 @@ const FilterChips = ({
                     />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={columns.length} align="center" sx={{ py: 6 }}>
+                      <TableCell
+                        colSpan={columns.length}
+                        align="center"
+                        sx={{ py: 6 }}
+                      >
                         <Stack spacing={1} alignItems="center">
                           <Typography variant="h6" color="text.secondary">
                             {emptyMessage}
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
-                            {globalFilter 
+                            {globalFilter
                               ? `No results for "${globalFilter}"`
-                              : emptyDescription
-                            }
+                              : emptyDescription}
                           </Typography>
                         </Stack>
                       </TableCell>
                     </TableRow>
-                  ) :  (
+                  ) : (
                     tableInstance.getRowModel().rows.map((row) => (
                       <Fragment key={row.id}>
                         <TableRow>
                           {row.getVisibleCells().map((cell) => (
-                            <TableCell key={cell.id} {...cell.column.columnDef.meta}>
-                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            <TableCell
+                              key={cell.id}
+                              {...cell.column.columnDef.meta}
+                            >
+                              {flexRender(
+                                cell.column.columnDef.cell,
+                                cell.getContext(),
+                              )}
                             </TableCell>
                           ))}
                         </TableRow>
-                        {enableExpanding && row.getIsExpanded() && expandedRowContent && (
-                          <TableRow sx={{ bgcolor: backColor, '&:hover': { bgcolor: `${backColor} !important` } }}>
-                            <TableCell colSpan={row.getVisibleCells().length}>
-                              {expandedRowContent(row)}
-                            </TableCell>
-                          </TableRow>
-                        )}
+                        {enableExpanding &&
+                          row.getIsExpanded() &&
+                          expandedRowContent && (
+                            <TableRow
+                              sx={{
+                                bgcolor: backColor,
+                                "&:hover": {
+                                  bgcolor: `${backColor} !important`,
+                                },
+                              }}
+                            >
+                              <TableCell colSpan={row.getVisibleCells().length}>
+                                {expandedRowContent(row)}
+                              </TableCell>
+                            </TableRow>
+                          )}
                       </Fragment>
                     ))
                   )}
@@ -625,7 +682,7 @@ const FilterChips = ({
                     getState: tableInstance.getState,
                     getPageCount: tableInstance.getPageCount,
                     initialPageSize,
-                    disabled: loading || !!error
+                    disabled: loading || !!error,
                   }}
                 />
               </Box>
@@ -669,15 +726,17 @@ ReusableTable.propTypes = {
   filterConfig: PropTypes.object,
   // Advanced Filter Panel
   advancedFilterPanel: PropTypes.node,
-  advancedFilters: PropTypes.arrayOf(PropTypes.shape({
-    key: PropTypes.string.isRequired,
-    label: PropTypes.string.isRequired,
-    value: PropTypes.string.isRequired
-  })),
+  advancedFilters: PropTypes.arrayOf(
+    PropTypes.shape({
+      key: PropTypes.string.isRequired,
+      label: PropTypes.string.isRequired,
+      value: PropTypes.string.isRequired,
+    }),
+  ),
   advancedFilterCount: PropTypes.number,
   onAdvancedFilterOpen: PropTypes.func,
   onAdvancedFilterRemove: PropTypes.func,
-  onAdvancedFilterClear: PropTypes.func
+  onAdvancedFilterClear: PropTypes.func,
 };
 
 export default ReusableTable;

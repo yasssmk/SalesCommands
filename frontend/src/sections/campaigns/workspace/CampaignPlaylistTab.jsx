@@ -94,10 +94,10 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
           displaySuccessSnackbar("Activity completed");
           mutatePlaylist();
         } else {
-          displayErrorSnackbar(result.error || "Failed to complete activity");
+          displayErrorSnackbar(result);
         }
       } catch (err) {
-        displayErrorSnackbar("An error occurred");
+        displayErrorSnackbar(err);
       } finally {
         setCompletingId(null);
       }

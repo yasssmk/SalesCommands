@@ -1,43 +1,39 @@
 // frontend/src/sections/campaigns/workspace/CampaignAccountsTab.jsx
 /**
- * Campaign Accounts Tab — Table of enrolled accounts with Add/Remove.
+ * Campaign Accounts Tab — Enrolled accounts with Add/Remove.
  *
- * Real API: useGetCampaignAccounts, addAccountsToCampaign, removeAccountFromCampaign.
- * Backend serializer: CampaignAccountListSerializer fields:
+ * Pattern: sections/territories/workspace/TerritoryAccountsTab.jsx
+ * Uses ReusableTable with server-side pagination + search + sorting.
+ * "Add Accounts" button is the native ReusableTable toolbar button (modalToggler).
+ *
+ * Backend serializer fields (CampaignAccountListSerializer):
  *   id, campaign, account (UUID), account_name, status, status_display,
- *   callback_date, activities_generated, no_answer_count, contacts_count,
- *   created_at, updated_at
- *
- * Pattern: Simple MUI Table (not full ReusableTable).
+ *   callback_date, activities_generated, no_answer_count, contacts_count
  */
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useMemo } from "react";
+import { useMemo, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 
 // material-ui
-import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Collapse from "@mui/material/Collapse";
-import IconButton from "@mui/material/IconButton";
-import LinearProgress from "@mui/material/LinearProgress";
-import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // project imports
+import IconButton from "components/@extended/IconButton";
+import ReusableTable from "components/table/Table";
 import AsyncAccountSelect from "components/AsyncSelection/AsyncAccountSelect";
+
+// hooks
+import useLocalStorage from "hooks/useLocalStorage";
+import { useAuth } from "hooks/useAuth";
 
 // api
 import {
@@ -45,6 +41,7 @@ import {
   addAccountsToCampaign,
   removeAccountFromCampaign,
 } from "api/campaigns/campaigns";
+import { tenantKey } from "api/_swr";
 
 // utils
 import {
@@ -53,12 +50,8 @@ import {
 } from "utils/displayError";
 
 // icons
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import ArrowRightOutlined from "@ant-design/icons/ArrowRightOutlined";
-
-// next
-import { useRouter } from "next/navigation";
 
 // ==============================|| STATUS CONFIG ||============================== //
 
@@ -70,34 +63,50 @@ const CAMPAIGN_ACCOUNT_STATUS_CONFIG = {
   STOPPED: { label: "Stopped", color: "error" },
 };
 
-// ==============================|| LOADING SKELETON ||============================== //
-
-function AccountsTableSkeleton() {
-  return (
-    <Stack spacing={1}>
-      {[1, 2, 3, 4].map((i) => (
-        <Skeleton
-          key={i}
-          variant="rectangular"
-          height={48}
-          sx={{ borderRadius: 1 }}
-        />
-      ))}
-    </Stack>
-  );
-}
+const COLUMN_TO_BACKEND_FIELD = {
+  account_name: "account__company_name",
+  status: "status",
+  contacts_count: "contacts_count",
+  activities_generated: "activities_generated",
+};
 
 // ==============================|| CAMPAIGN ACCOUNTS TAB ||============================== //
 
 export default function CampaignAccountsTab({ campaignId, campaign }) {
-  const theme = useTheme();
+  const { tenantId } = useAuth();
   const router = useRouter();
 
   // ==============================|| STATE ||============================== //
 
+  const [pageSize, setPageSize] = useLocalStorage(
+    "campaignAccountsPageSize",
+    25,
+  );
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [sorting, setSorting] = useState([]);
+
+  // Controls the AsyncAccountSelect panel — opened by ReusableTable's add button
   const [addOpen, setAddOpen] = useState(false);
   const [addingAccount, setAddingAccount] = useState(false);
   const [removingId, setRemovingId] = useState(null);
+
+  // ==============================|| DERIVED STATE ||============================== //
+
+  const validPageSize = useMemo(() => {
+    const size = Number(pageSize);
+    return [10, 25, 50, 100].includes(size) ? size : 25;
+  }, [pageSize]);
+
+  const ordering = useMemo(() => {
+    if (!sorting.length) return "";
+    const sort = sorting[0];
+    const backendField = COLUMN_TO_BACKEND_FIELD[sort.id] || sort.id;
+    return sort.desc ? `-${backendField}` : backendField;
+  }, [sorting]);
+
+  const isFinalStatus =
+    campaign?.status === "COMPLETED" || campaign?.status === "CANCELLED";
 
   // ==============================|| DATA ||============================== //
 
@@ -107,121 +116,238 @@ export default function CampaignAccountsTab({ campaignId, campaign }) {
     accountsLoading,
     accountsError,
     mutateAccounts,
-  } = useGetCampaignAccounts(campaignId);
+  } = useGetCampaignAccounts(campaignId, {
+    page,
+    pageSize: validPageSize,
+  });
 
-  // Exclude already-enrolled account IDs from the add selector
+  const swrKey = tenantKey(
+    `/campaigns/accounts/by-campaign/?campaign_id=${campaignId}&page=${page}&page_size=${validPageSize}`,
+    tenantId,
+  );
+
+  // Exclude already-enrolled accounts from the selector
   const enrolledAccountIds = useMemo(
     () => accounts.map((a) => a.account),
     [accounts],
   );
 
-  // Campaign is in a final state — disable add/remove
-  const isFinalStatus =
-    campaign?.status === "COMPLETED" || campaign?.status === "CANCELLED";
-
   // ==============================|| HANDLERS ||============================== //
 
-  const handleAddAccount = async (event, account) => {
-    if (!account?.id) return;
-    setAddingAccount(true);
-    try {
-      const result = await addAccountsToCampaign(campaignId, [account.id]);
-      if (result.success) {
-        displaySuccessSnackbar(`${account.company_name} added to campaign`);
-        mutateAccounts();
-      } else {
-        displayErrorSnackbar(result.error || "Failed to add account");
-      }
-    } catch (err) {
-      displayErrorSnackbar("An error occurred");
-    } finally {
-      setAddingAccount(false);
-    }
-  };
+  const handlePaginationChange = useCallback(
+    ({ page: newPage, pageSize: newPageSize }) => {
+      setPage(newPage);
+      if (newPageSize !== validPageSize) setPageSize(newPageSize);
+    },
+    [validPageSize, setPageSize],
+  );
 
-  const handleRemoveAccount = async (campaignAccount) => {
-    const name = campaignAccount.account_name || "this account";
-    if (!window.confirm(`Remove ${name} from campaign?`)) return;
+  const handleSearchChange = useCallback((value) => {
+    setSearch(value);
+    setPage(1);
+  }, []);
 
-    setRemovingId(campaignAccount.id);
-    try {
-      const result = await removeAccountFromCampaign(
-        campaignAccount.id,
-        campaignId,
-      );
-      if (result.success) {
-        displaySuccessSnackbar(`${name} removed from campaign`);
-        mutateAccounts();
-      } else {
-        displayErrorSnackbar(result.error || "Failed to remove account");
-      }
-    } catch (err) {
-      displayErrorSnackbar("An error occurred");
-    } finally {
-      setRemovingId(null);
-    }
-  };
-
-  const handleNavigateAccount = (accountId) => {
-    if (accountId) {
-      router.push(`/accounts/${accountId}`);
-    }
-  };
-
-  // ==============================|| LOADING STATE ||============================== //
-
-  if (accountsLoading) {
-    return (
-      <Box>
-        <Skeleton variant="text" width={200} height={24} sx={{ mb: 2 }} />
-        <AccountsTableSkeleton />
-      </Box>
+  const handleSortingChange = useCallback((updaterOrValue) => {
+    setSorting((prev) =>
+      typeof updaterOrValue === "function"
+        ? updaterOrValue(prev)
+        : updaterOrValue,
     );
-  }
+  }, []);
 
-  // ==============================|| ERROR STATE ||============================== //
+  const handleRowClick = useCallback(
+    (row) => {
+      if (row?.account) router.push(`/accounts/${row.account}`);
+    },
+    [router],
+  );
 
-  if (accountsError) {
-    return (
-      <Box sx={{ py: 6, textAlign: "center" }}>
-        <Typography variant="h5" color="error">
-          Failed to load accounts
-        </Typography>
-        <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
-          Please try refreshing the page.
-        </Typography>
-      </Box>
-    );
-  }
+  /**
+   * Called by ReusableTable's native "Add" button (modalToggler).
+   * Toggles the AsyncAccountSelect panel.
+   */
+  const handleOpenAddPanel = useCallback(() => {
+    setAddOpen((prev) => !prev);
+  }, []);
+
+  /**
+   * AsyncAccountSelect onChange fires inside MUI Autocomplete render cycle.
+   * Defer setAddingAccount(true) to avoid the "setState during render" warning.
+   */
+  const handleAddAccount = useCallback(
+    (event, account) => {
+      if (!account?.id) return;
+      // Defer entire handler outside Autocomplete's render cycle
+      setTimeout(async () => {
+        setAddingAccount(true);
+        try {
+          const result = await addAccountsToCampaign(campaignId, [account.id]);
+          if (result.success) {
+            displaySuccessSnackbar(
+              `${account.company_name || "Account"} added to campaign`,
+            );
+            setPage(1);
+            mutateAccounts();
+          } else {
+            displayErrorSnackbar(result);
+          }
+        } catch (err) {
+          displayErrorSnackbar(err);
+        } finally {
+          setAddingAccount(false);
+        }
+      }, 0);
+    },
+    [campaignId, mutateAccounts],
+  );
+
+  const handleRemoveAccount = useCallback(
+    async (campaignAccount) => {
+      const name = campaignAccount.account_name || "this account";
+      if (!window.confirm(`Remove ${name} from campaign?`)) return;
+      setRemovingId(campaignAccount.id);
+      try {
+        const result = await removeAccountFromCampaign(
+          campaignAccount.id,
+          campaignId,
+        );
+        if (result.success) {
+          displaySuccessSnackbar(`${name} removed from campaign`);
+          mutateAccounts();
+        } else {
+          displayErrorSnackbar(result);
+        }
+      } catch (err) {
+        displayErrorSnackbar(err);
+      } finally {
+        setRemovingId(null);
+      }
+    },
+    [campaignId, mutateAccounts],
+  );
+
+  // ==============================|| COLUMNS ||============================== //
+
+  const columns = useMemo(
+    () => [
+      // Company Name
+      {
+        header: "Company",
+        id: "account_name",
+        accessorKey: "account_name",
+        cell: ({ getValue }) => (
+          <Typography variant="subtitle2" fontWeight={600}>
+            {getValue() || "—"}
+          </Typography>
+        ),
+      },
+      // Enrollment Status
+      {
+        header: "Status",
+        id: "status",
+        accessorKey: "status",
+        cell: ({ row }) => {
+          const cfg =
+            CAMPAIGN_ACCOUNT_STATUS_CONFIG[row.original.status] ||
+            CAMPAIGN_ACCOUNT_STATUS_CONFIG.PENDING;
+          return (
+            <Chip
+              label={cfg.label}
+              size="small"
+              color={cfg.color}
+              variant="filled"
+            />
+          );
+        },
+      },
+      // Activities generated
+      {
+        header: "Activities",
+        id: "activities_generated",
+        accessorKey: "activities_generated",
+        enableSorting: false,
+        cell: ({ getValue }) => (
+          <Typography variant="body2">
+            {getValue() ? "Generated" : "Pending"}
+          </Typography>
+        ),
+      },
+      // Contacts count
+      {
+        header: "Contacts",
+        id: "contacts_count",
+        accessorKey: "contacts_count",
+        enableSorting: false,
+        cell: ({ getValue }) => (
+          <Typography variant="body2">{getValue() || 0}</Typography>
+        ),
+      },
+      // Actions
+      {
+        header: "",
+        id: "actions",
+        meta: { className: "cell-center" },
+        enableSorting: false,
+        cell: ({ row }) => {
+          const ca = row.original;
+          const canRemove = ca.status === "PENDING" && !isFinalStatus;
+          const isRemoving = removingId === ca.id;
+
+          return (
+            <Stack direction="row" justifyContent="center" spacing={0.5}>
+              <Tooltip title="Open Account">
+                <IconButton
+                  size="small"
+                  color="primary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRowClick(ca);
+                  }}
+                >
+                  <ArrowRightOutlined />
+                </IconButton>
+              </Tooltip>
+
+              {canRemove ? (
+                <Tooltip title="Remove from campaign">
+                  <IconButton
+                    size="small"
+                    color="error"
+                    disabled={isRemoving}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveAccount(ca);
+                    }}
+                  >
+                    {isRemoving ? (
+                      <CircularProgress size={14} color="error" />
+                    ) : (
+                      <DeleteOutlined />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              ) : !isFinalStatus ? (
+                <Tooltip title="Only pending accounts can be removed">
+                  <span>
+                    <IconButton size="small" disabled>
+                      <DeleteOutlined />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              ) : null}
+            </Stack>
+          );
+        },
+      },
+    ],
+    [isFinalStatus, removingId, handleRowClick, handleRemoveAccount],
+  );
 
   // ==============================|| RENDER ||============================== //
 
   return (
     <Box>
-      {/* Header: Count + Add button */}
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="center"
-        sx={{ mb: 2 }}
-      >
-        <Typography variant="body2" color="text.secondary">
-          {accounts.length} account{accounts.length !== 1 ? "s" : ""} in this
-          campaign
-        </Typography>
-        {!isFinalStatus && (
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={() => setAddOpen((prev) => !prev)}
-          >
-            {addOpen ? "Cancel" : "Add Accounts"}
-          </Button>
-        )}
-      </Stack>
-
-      {/* Add accounts section (collapsible) */}
+      {/* AsyncAccountSelect panel — toggled by ReusableTable's add button */}
       <Collapse in={addOpen}>
         <Box
           sx={{
@@ -256,122 +382,34 @@ export default function CampaignAccountsTab({ campaignId, campaign }) {
         </Box>
       </Collapse>
 
-      {/* Empty state */}
-      {accounts.length === 0 ? (
-        <Box sx={{ py: 6, textAlign: "center" }}>
-          <Typography variant="h5" color="text.secondary">
-            No accounts in this campaign
-          </Typography>
-          <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
-            {isFinalStatus
-              ? "This campaign has ended."
-              : 'Use the "Add Accounts" button above to enroll accounts.'}
-          </Typography>
-        </Box>
-      ) : (
-        /* Table */
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Company</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Activities</TableCell>
-                <TableCell>Contacts</TableCell>
-                <TableCell align="center">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {accounts.map((ca) => {
-                const statusConfig =
-                  CAMPAIGN_ACCOUNT_STATUS_CONFIG[ca.status] ||
-                  CAMPAIGN_ACCOUNT_STATUS_CONFIG.PENDING;
-                const canRemove = ca.status === "PENDING" && !isFinalStatus;
-                const isRemoving = removingId === ca.id;
-
-                return (
-                  <TableRow key={ca.id} hover>
-                    {/* Company Name */}
-                    <TableCell>
-                      <Typography variant="subtitle2">
-                        {ca.account_name || "—"}
-                      </Typography>
-                    </TableCell>
-
-                    {/* Status */}
-                    <TableCell>
-                      <Chip
-                        label={statusConfig.label}
-                        size="small"
-                        color={statusConfig.color}
-                        variant="filled"
-                      />
-                    </TableCell>
-
-                    {/* Activities generated */}
-                    <TableCell>
-                      <Typography variant="body2">
-                        {ca.activities_generated ? "Yes" : "No"}
-                      </Typography>
-                    </TableCell>
-
-                    {/* Contacts count */}
-                    <TableCell>
-                      <Typography variant="body2">
-                        {ca.contacts_count || 0}
-                      </Typography>
-                    </TableCell>
-
-                    {/* Actions: Navigate + Remove */}
-                    <TableCell align="center">
-                      <Stack
-                        direction="row"
-                        justifyContent="center"
-                        spacing={0.5}
-                      >
-                        <Tooltip title="Open Account">
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            onClick={() => handleNavigateAccount(ca.account)}
-                          >
-                            <ArrowRightOutlined style={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Tooltip>
-
-                        {canRemove ? (
-                          <Tooltip title="Remove from campaign">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => handleRemoveAccount(ca)}
-                              disabled={isRemoving}
-                            >
-                              {isRemoving ? (
-                                <CircularProgress size={14} color="error" />
-                              ) : (
-                                <DeleteOutlined style={{ fontSize: 16 }} />
-                              )}
-                            </IconButton>
-                          </Tooltip>
-                        ) : !isFinalStatus ? (
-                          <Tooltip title="Only pending accounts can be removed">
-                            <span>
-                              <IconButton size="small" disabled>
-                                <DeleteOutlined style={{ fontSize: 16 }} />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        ) : null}
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+      <ReusableTable
+        data={accounts}
+        columns={columns}
+        loading={accountsLoading}
+        error={accountsError}
+        swrKey={swrKey}
+        totalCount={accountsCount}
+        currentPage={page}
+        onPaginationChange={handlePaginationChange}
+        onSearchChange={handleSearchChange}
+        initialPageSize={validPageSize}
+        sorting={sorting}
+        onSortingChange={handleSortingChange}
+        onRowClick={handleRowClick}
+        searchPlaceholder={`Search ${accountsCount || 0} accounts...`}
+        emptyMessage="No accounts in this campaign"
+        emptyDescription={
+          isFinalStatus
+            ? "This campaign has ended."
+            : 'Click "Add Accounts" to enroll accounts.'
+        }
+        // Native ReusableTable add button → opens AsyncAccountSelect panel
+        modalToggler={isFinalStatus ? null : handleOpenAddPanel}
+        addButtonLabel="Add Accounts"
+        addButtonTooltip="Enroll accounts in this campaign"
+        showAddButton={!isFinalStatus}
+        enableImport={false}
+      />
     </Box>
   );
 }

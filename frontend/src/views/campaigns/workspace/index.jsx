@@ -73,7 +73,11 @@ export default function CampaignWorkspacePage() {
 
   // ==============================|| HEADER PROPS ||============================== //
 
-  const headerProps = useCampaignHeaderProps({ campaign, stats });
+  const headerProps = useCampaignHeaderProps({
+    campaign,
+    stats,
+    onMutate: mutateCampaign,
+  });
 
   const breadcrumbItems = campaign
     ? buildCampaignBreadcrumbs({ campaignName: campaign.name })
