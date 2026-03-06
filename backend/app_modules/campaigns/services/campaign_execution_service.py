@@ -148,6 +148,115 @@ class CampaignExecutionService:
         }
 
     # ======================================================================
+    # PUBLIC — PER-CONTACT ACTIVITY MANAGEMENT
+    # ======================================================================
+
+    @transaction.atomic
+    def generate_activities_for_contact(self, campaign, campaign_account, contact):
+        """
+        Generate activities for a single contact added to a CampaignAccount.
+
+        For non-sequence campaigns: creates one CALL activity.
+        For sequence campaigns: creates the full step chain.
+
+        Only runs when campaign is ACTIVE and activities already generated.
+        """
+        if campaign.status != CampaignStatus.ACTIVE:
+            raise StandardizedValidationError(
+                CampaignModuleErrorMessages.CAMPAIGN_NOT_ACTIVE
+            )
+
+        executor = self._get_executor(campaign, campaign_account)
+        activity_type = ActivityType.CALL
+
+        if not campaign.sequence_type:
+            position = Activity.objects.filter(
+                campaign_account=campaign_account,
+            ).count() + 1
+            self._create_activity(
+                campaign=campaign,
+                campaign_account=campaign_account,
+                account=campaign_account.account,
+                contact=contact,
+                activity_type=activity_type,
+                position=position,
+                owner=executor,
+            )
+            return 1
+
+        # Sequence campaign — generate full chain
+        has_phone = bool(getattr(contact, 'phone_number', None))
+        has_email = bool(getattr(contact, 'email', None))
+        has_linkedin = bool(getattr(contact, 'linkedin_url', None))
+
+        try:
+            sequence_dict, variant_name = SequenceDispatcher.get_sequence_with_variant(
+                sequence_type=campaign.sequence_type,
+                has_phone=has_phone,
+                has_email=has_email,
+                has_linkedin=has_linkedin,
+            )
+        except ValueError:
+            logger.warning("sequence_type_invalid_for_contact", extra={
+                'campaign_id': str(campaign.id),
+                'contact_id': str(contact.id),
+            })
+            return 0
+
+        created = 0
+        previous_activity = None
+        for step_number, step_config in sequence_dict.items():
+            activity = self._create_activity(
+                campaign=campaign,
+                campaign_account=campaign_account,
+                account=campaign_account.account,
+                contact=contact,
+                activity_type=step_config['type'],
+                position=step_number,
+                owner=executor,
+                step_config=step_config,
+                sequence_variant=variant_name,
+                previous_activity=previous_activity,
+            )
+            if previous_activity is not None:
+                previous_activity.next_activity = activity
+                previous_activity.save(user=self.user, client_id=self.client_id)
+            previous_activity = activity
+            created += 1
+
+        logger.info("contact_activities_generated", extra={
+            'campaign_id': str(campaign.id),
+            'campaign_account_id': str(campaign_account.id),
+            'contact_id': str(contact.id),
+            'activities_created': created,
+        })
+
+        return created
+
+    @transaction.atomic
+    def delete_activities_for_contact(self, campaign, campaign_account, contact):
+        """
+        Delete all PLANNED activities for a contact removed from a CampaignAccount.
+
+        Only deletes activities in PLANNED status — completed/in-progress are preserved.
+        """
+        deleted_count, _ = Activity.objects.filter(
+            campaign=campaign,
+            campaign_account=campaign_account,
+            contacts=contact,
+            status=ActivityStatus.PLANNED,
+        ).delete()
+
+        logger.info("contact_activities_deleted", extra={
+            'campaign_id': str(campaign.id),
+            'campaign_account_id': str(campaign_account.id),
+            'contact_id': str(contact.id),
+            'activities_deleted': deleted_count,
+        })
+
+        return deleted_count
+
+    # ======================================================================
     # PUBLIC — PLAYLIST (PRIORITIZED QUEUE)
     # ======================================================================
 
