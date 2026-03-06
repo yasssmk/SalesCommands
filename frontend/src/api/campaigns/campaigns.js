@@ -160,6 +160,7 @@ const endpoints = {
   accountsByCampaign: "/campaigns/accounts/by-campaign/",
   accountsBulkAdd: "/campaigns/accounts/bulk-add/",
   accountsBulkRemove: "/campaigns/accounts/bulk-remove/",
+  accountToggleContact: (id) => `/campaigns/accounts/${id}/toggle-contact/`,
 
   // Cross-module: Activities
   activityComplete: (id) => `/module-activities/${id}/complete/`,
@@ -216,7 +217,7 @@ export function useGetCampaigns(options = {}) {
 
   const swrKey = tenantKey(urlWithParams, tenantId);
 
-  const { data, isLoading, error, isValidating } = useSWR(swrKey, {
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     shouldRetryOnError: true,
@@ -231,8 +232,9 @@ export function useGetCampaigns(options = {}) {
       campaignsValidating: isValidating,
       campaignsEmpty:
         !isLoading && !(data?.data?.results?.length || data?.results?.length),
+      mutateCampaigns: mutate,
     }),
-    [data, isLoading, error, isValidating],
+    [data, isLoading, error, isValidating, mutate],
   );
 }
 
@@ -897,4 +899,31 @@ export async function removeAccountFromCampaign(campaignAccountId, campaignId) {
   }
 
   return { success: false, error: result.error, status: result.status || 0 };
+}
+
+/**
+ * TOGGLE CONTACT on a CampaignAccount
+ *
+ * POST /campaigns/accounts/{campaignAccountId}/toggle-contact/
+ * Body: { contact_id }
+ *
+ * Adds or removes a contact from target_contacts. When adding to an ACTIVE
+ * campaign with activities already generated, activities are auto-created.
+ * When removing, PLANNED activities for that contact are deleted.
+ */
+export async function toggleAccountContact(campaignAccountId, contactId) {
+  if (!campaignAccountId || !contactId) {
+    return { success: false, error: "campaignAccountId and contactId are required", status: 400 };
+  }
+
+  const result = await api.post(
+    endpoints.accountToggleContact(campaignAccountId),
+    { contact_id: contactId },
+  );
+
+  if (result.success) {
+    return { success: true, data: result.data };
+  }
+
+  return { success: false, error: result.error, status: result.status ?? 0 };
 }

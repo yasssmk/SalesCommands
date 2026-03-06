@@ -57,6 +57,10 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
   const isOutbound = campaign.campaign_type === "OUTBOUND";
   const activityProgress = getCampaignProgress(campaign);
   const objectiveProgress = getObjectiveProgress(campaign);
+  const isOverdue =
+    campaign.status === "ACTIVE" &&
+    campaign.end_date &&
+    new Date(campaign.end_date) < new Date();
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -180,8 +184,18 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
             </Box>
           </Stack>
 
-          {/* Status Badge */}
-          <CampaignStatusBadge status={campaign.status} />
+          {/* Status Badge + Overdue */}
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <CampaignStatusBadge status={campaign.status} />
+            {isOverdue && (
+              <Chip
+                label="Overdue"
+                size="small"
+                color="error"
+                sx={{ height: 20, fontSize: "0.7rem", fontWeight: 600 }}
+              />
+            )}
+          </Stack>
         </Stack>
 
         {/* Description */}

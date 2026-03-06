@@ -30,16 +30,20 @@ from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 
 from app_modules.accounts.models import CompanyAccount
 
+from app_modules.contacts.models import Contact
+
 from ..models import (
     Campaign,
     CampaignAccount,
     CampaignAccountStatus,
+    CampaignStatus,
 )
 from ..serializers import (
     CampaignAccountListSerializer,
     CampaignAccountDetailSerializer,
     CampaignAccountSerializer,
 )
+from ..services.campaign_execution_service import CampaignExecutionService
 from ..config.settings import CONFIG
 
 logger = get_logger(__name__)
@@ -99,6 +103,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         'bulk_add': {'crud': 'create', 'scope': 'client'},
         'bulk_remove': {'crud': 'delete', 'scope': 'client'},
         'by_campaign': {'crud': 'read', 'scope': 'client'},
+        'toggle_contact': {'crud': 'update', 'scope': 'client'},
     }
 
     # ==========================================================================
@@ -460,6 +465,100 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             'data': {
                 'campaign_account': output.data,
                 'transition': result,
+            },
+        })
+
+    # ==========================================================================
+    # CONTACT TARGETING
+    # ==========================================================================
+
+    @action(detail=True, methods=['post'], url_path='toggle-contact')
+    @transaction.atomic
+    def toggle_contact(self, request, pk=None):
+        """
+        Add or remove a contact from target_contacts.
+        POST /campaign-accounts/{id}/toggle-contact/
+
+        Body:
+            - contact_id: UUID
+
+        When adding a contact to an ACTIVE campaign with activities_generated=True,
+        activities are automatically generated for that contact.
+        When removing, PLANNED activities for that contact are deleted.
+        """
+        instance = self.get_object()
+        contact_id = request.data.get('contact_id')
+
+        if not contact_id:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='contact_id')
+            )
+
+        client_id = self.get_client_id()
+
+        try:
+            contact = Contact.objects.get(id=contact_id, client_id=client_id)
+        except Contact.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+        campaign = instance.campaign
+        is_targeted = instance.target_contacts.filter(id=contact.id).exists()
+
+        if is_targeted:
+            # Remove contact
+            instance.target_contacts.remove(contact)
+            action_taken = 'removed'
+
+            # Delete PLANNED activities for this contact
+            if instance.activities_generated:
+                service = CampaignExecutionService(
+                    user=request.user, client_id=client_id,
+                )
+                service.delete_activities_for_contact(campaign, instance, contact)
+        else:
+            # Add contact
+            instance.target_contacts.add(contact)
+            action_taken = 'added'
+
+            # Generate activities if campaign is active and already generated
+            if (
+                campaign.status == CampaignStatus.ACTIVE
+                and instance.activities_generated
+            ):
+                service = CampaignExecutionService(
+                    user=request.user, client_id=client_id,
+                )
+                service.generate_activities_for_contact(campaign, instance, contact)
+
+        audit_log(
+            event='campaign_account_contact_toggled',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(client_id),
+            target_type='campaign_account',
+            target_id=str(instance.id),
+            outcome='success',
+            extra={
+                'contact_id': str(contact.id),
+                'action': action_taken,
+            },
+        )
+
+        self._invalidate_caches(client_id)
+
+        logger.info("campaign_account_contact_toggled", extra={
+            'campaign_account_id': str(instance.id),
+            'contact_id': str(contact.id),
+            'action': action_taken,
+        })
+
+        output = CampaignAccountDetailSerializer(instance, context={'request': request})
+        return Response({
+            'success': True,
+            'data': {
+                'campaign_account': output.data,
+                'contact_id': str(contact.id),
+                'action': action_taken,
             },
         })
 

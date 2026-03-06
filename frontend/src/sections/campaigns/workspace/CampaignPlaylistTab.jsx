@@ -4,6 +4,8 @@
  *
  * Displays: PlaylistProgressBar + list of PlaylistActivityCard.
  * Accordion pattern: only one card expanded at a time.
+ * Executor filter: optional dropdown to filter by a single team member.
+ * Optimistic removal: completed activities are hidden immediately from the UI.
  *
  * Pattern: CampaignAccountsTab (tab structure, loading/empty states)
  * Data: useGetPlaylist (real API), completePlaylistActivity (real mutation)
@@ -12,10 +14,14 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 
 // material-ui
 import Box from "@mui/material/Box";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -27,6 +33,7 @@ import PlaylistActivityCard from "components/cards/PlaylistActivityCard";
 // api
 import {
   useGetPlaylist,
+  useGetCampaignMembers,
   completePlaylistActivity,
 } from "api/campaigns/campaigns";
 
@@ -61,21 +68,46 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
   const [expandedCardId, setExpandedCardId] = useState(null);
   const [completingId, setCompletingId] = useState(null);
   const [completedToday, setCompletedToday] = useState(0);
+  const [executorId, setExecutorId] = useState("");
+
+  // Track optimistically removed activity IDs
+  const [removedIds, setRemovedIds] = useState(new Set());
 
   // ==============================|| DATA ||============================== //
 
   const {
-    activities,
+    activities: rawActivities,
     totalCount,
     playlistLoading,
     playlistError,
     mutatePlaylist,
-  } = useGetPlaylist(campaignId);
+  } = useGetPlaylist(campaignId, {
+    executorId: executorId || undefined,
+  });
+
+  const { members } = useGetCampaignMembers(campaignId);
+
+  // Executors = members with role EXECUTOR or RECEIVER
+  const executors = useMemo(
+    () => members.filter((m) => m.role === "EXECUTOR" || m.role === "RECEIVER"),
+    [members],
+  );
+
+  // Filter out optimistically removed activities
+  const activities = useMemo(
+    () => rawActivities.filter((a) => !removedIds.has(a.id)),
+    [rawActivities, removedIds],
+  );
 
   // ==============================|| HANDLERS ||============================== //
 
   const handleExpand = useCallback((activityId) => {
     setExpandedCardId((prev) => (prev === activityId ? null : activityId));
+  }, []);
+
+  const handleExecutorChange = useCallback((event) => {
+    setExecutorId(event.target.value);
+    setRemovedIds(new Set());
   }, []);
 
   // Outcome category map — mirrors ACTIVITY_OUTCOME_CONFIG in PlaylistActivityCard
@@ -101,6 +133,8 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         );
 
         if (result.success) {
+          // Optimistic removal — hide the card immediately
+          setRemovedIds((prev) => new Set([...prev, activityId]));
           setCompletedToday((prev) => prev + 1);
           setExpandedCardId(null);
 
@@ -116,6 +150,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
             displaySuccessSnackbar("Activity completed");
           }
 
+          // Background revalidate (non-blocking)
           mutatePlaylist();
         } else {
           displayErrorSnackbar(result);
@@ -132,7 +167,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
   // ==============================|| DERIVED VALUES ||============================== //
 
   const completedCount =
-    totalCount > 0 ? Math.max(0, totalCount - activities.length) : 0;
+    totalCount > 0 ? Math.max(0, totalCount - rawActivities.length) : 0;
 
   // ==============================|| EMPTY STATE — Campaign not active ||============================== //
 
@@ -207,6 +242,28 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         completed={completedCount + completedToday}
         completedToday={completedToday}
       />
+
+      {/* Executor filter */}
+      {executors.length > 1 && (
+        <FormControl size="small" sx={{ minWidth: 200, maxWidth: 300 }}>
+          <InputLabel id="executor-filter-label">Filter by executor</InputLabel>
+          <Select
+            labelId="executor-filter-label"
+            value={executorId}
+            label="Filter by executor"
+            onChange={handleExecutorChange}
+          >
+            <MenuItem value="">
+              <em>All executors</em>
+            </MenuItem>
+            {executors.map((m) => (
+              <MenuItem key={m.user} value={m.user}>
+                {m.user_name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      )}
 
       {/* Activity cards */}
       <Stack spacing={1.5}>
