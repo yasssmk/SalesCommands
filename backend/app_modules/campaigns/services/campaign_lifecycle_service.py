@@ -73,16 +73,40 @@ class CampaignLifecycleService:
             to_status=CampaignAccountStatus.IN_PROGRESS,
         )
 
-        # Generate activities atomically — playlist is ready immediately after start
+        # Generate activities — surface errors instead of swallowing them
         from .campaign_execution_service import CampaignExecutionService
         execution_service = CampaignExecutionService(user=self.user, client_id=self.client_id)
-        gen_result = execution_service.generate_activities(campaign)
+
+        try:
+            gen_result = execution_service.generate_activities(campaign)
+        except Exception as e:
+            logger.error("campaign_start_activity_generation_failed", extra={
+                'campaign_id': str(campaign.id),
+                'error': str(e),
+            })
+            gen_result = {
+                'activities_created': 0,
+                'accounts_processed': 0,
+                'accounts_skipped': 0,
+                'errors': [str(e)],
+            }
+
         activities_created = gen_result.get('activities_created', 0)
+        generation_errors = gen_result.get('errors', [])
+
+        if generation_errors:
+            logger.warning("campaign_start_partial_errors", extra={
+                'campaign_id': str(campaign.id),
+                'activities_created': activities_created,
+                'errors_count': len(generation_errors),
+                'errors': generation_errors[:5],
+            })
 
         self._audit('campaign_started', campaign, extra={
             'accounts_activated': accounts_activated,
             'accounts_enrolled': accounts_enrolled,
             'activities_created': activities_created,
+            'generation_errors': len(generation_errors),
         })
 
         logger.info("campaign_started", extra={
@@ -97,7 +121,9 @@ class CampaignLifecycleService:
             'accounts_activated': accounts_activated,
             'accounts_enrolled': accounts_enrolled,
             'activities_created': activities_created,
+            'generation_errors': generation_errors,
         }
+
 
     @transaction.atomic
     def pause(self, campaign):
