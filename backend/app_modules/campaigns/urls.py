@@ -137,6 +137,10 @@ def get_urlpatterns():
             'post': 'mark_stopped'
         }), name='accounts-mark-stopped'),
 
+        path('accounts/<uuid:pk>/toggle-contact/', CampaignAccountViewSet.as_view({
+            'post': 'toggle_contact'
+        }), name='accounts-toggle-contact'),
+
         # =================================================================
         # CAMPAIGN MEMBERS — LIST ACTIONS
         # =================================================================

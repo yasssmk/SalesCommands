@@ -2,17 +2,12 @@
 
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 
 // material-ui
 import useMediaQuery from "@mui/material/useMediaQuery";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Dialog from "@mui/material/Dialog";
-import DialogTitle from "@mui/material/DialogTitle";
-import DialogContent from "@mui/material/DialogContent";
-import DialogContentText from "@mui/material/DialogContentText";
-import DialogActions from "@mui/material/DialogActions";
 import Grid from "@mui/material/Grid";
 import Pagination from "@mui/material/Pagination";
 import Slide from "@mui/material/Slide";
@@ -30,10 +25,7 @@ import OwnerScopeTabs from "components/filters/OwnerScopeTabs";
 import useOwnerScope from "hooks/useOwnerScope";
 
 // api
-import { useGetCampaigns, deleteCampaign } from "api/campaigns/campaigns";
-
-// third-party
-import { enqueueSnackbar } from "notistack";
+import { useGetCampaigns } from "api/campaigns/campaigns";
 
 // next
 import { useRouter } from "next/navigation";
@@ -48,9 +40,6 @@ import PlusOutlined from "@ant-design/icons/PlusOutlined";
  *
  * Displays campaigns as cards for easy navigation.
  * Each card shows type, status, progress, and key metrics.
- *
- * Phase A: Mock data, buttons log to console.
- * Future: Real API, create/edit modals, bulk actions.
  */
 export default function CampaignsListPage() {
   const matchDownSM = useMediaQuery((theme) => theme.breakpoints.down("sm"));
@@ -61,6 +50,10 @@ export default function CampaignsListPage() {
   const [globalFilter, setGlobalFilter] = useState("");
   const [page, setPage] = useState(1);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Owner scope filter
   const {
@@ -82,7 +75,6 @@ export default function CampaignsListPage() {
     campaignsLoading,
     campaignsError,
     campaignsEmpty,
-    mutateCampaigns,
   } = useGetCampaigns({
     page: 1,
     pageSize: 100,
@@ -128,30 +120,8 @@ export default function CampaignsListPage() {
   };
 
   const handleDeleteCampaign = (campaign) => {
-    setDeleteTarget(campaign);
+    console.log("TODO: Open delete campaign confirmation", campaign.id);
   };
-
-  const handleConfirmDelete = useCallback(async () => {
-    if (!deleteTarget) return;
-
-    setDeleteLoading(true);
-    try {
-      const result = await deleteCampaign(deleteTarget.id);
-      if (result.success !== false) {
-        enqueueSnackbar("Campaign deleted", { variant: "success" });
-        mutateCampaigns();
-      } else {
-        enqueueSnackbar(result.error || "Failed to delete campaign", {
-          variant: "error",
-        });
-      }
-    } catch (err) {
-      enqueueSnackbar("Failed to delete campaign", { variant: "error" });
-    } finally {
-      setDeleteLoading(false);
-      setDeleteTarget(null);
-    }
-  }, [deleteTarget, mutateCampaigns]);
 
   // ==============================|| RENDER ||============================== //
 
@@ -263,33 +233,6 @@ export default function CampaignsListPage() {
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
       />
-
-      {/* ==================== DELETE CONFIRMATION DIALOG ==================== */}
-      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
-        <DialogTitle>Delete Campaign</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete &quot;{deleteTarget?.name}&quot;?
-            This action cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => setDeleteTarget(null)}
-            disabled={deleteLoading}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleConfirmDelete}
-            color="error"
-            variant="contained"
-            disabled={deleteLoading}
-          >
-            {deleteLoading ? "Deleting..." : "Delete"}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </>
   );
 }

@@ -1,6 +1,6 @@
 // frontend/src/sections/campaigns/workspace/CampaignAccountsTab.jsx
 /**
- * Campaign Accounts Tab — Enrolled accounts with Add/Remove.
+ * Campaign Accounts Tab — Enrolled accounts with Add/Remove + Contact targeting.
  *
  * Pattern: sections/territories/workspace/TerritoryAccountsTab.jsx
  * Uses ReusableTable with server-side pagination + search + sorting.
@@ -14,14 +14,25 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 // material-ui
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Collapse from "@mui/material/Collapse";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
@@ -40,7 +51,10 @@ import {
   useGetCampaignAccounts,
   addAccountsToCampaign,
   removeAccountFromCampaign,
+  toggleAccountContact,
 } from "api/campaigns/campaigns";
+import { useGetContacts } from "api/businessData/contacts";
+import { api } from "utils/axiosClient";
 import { tenantKey } from "api/_swr";
 
 // utils
@@ -52,6 +66,7 @@ import {
 // icons
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import ArrowRightOutlined from "@ant-design/icons/ArrowRightOutlined";
+import TeamOutlined from "@ant-design/icons/TeamOutlined";
 
 // ==============================|| STATUS CONFIG ||============================== //
 
@@ -68,6 +83,145 @@ const COLUMN_TO_BACKEND_FIELD = {
   status: "status",
   contacts_count: "contacts_count",
   activities_generated: "activities_generated",
+};
+
+// ==============================|| CONTACT TARGETING DIALOG ||============================== //
+
+function ContactTargetingDialog({ open, onClose, campaignAccount, onToggled }) {
+  const [targetContactIds, setTargetContactIds] = useState(new Set());
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [togglingId, setTogglingId] = useState(null);
+
+  // Load contacts for this account
+  const { contacts, contactsLoading } = useGetContacts(
+    open && campaignAccount
+      ? { page: 1, pageSize: 100, filters: { account_id: campaignAccount.account } }
+      : null,
+  );
+
+  // Load CampaignAccount detail to get current target_contacts
+  useEffect(() => {
+    if (!open || !campaignAccount) return;
+    let cancelled = false;
+
+    setLoadingDetail(true);
+    api.get(`/campaigns/accounts/${campaignAccount.id}/`).then((result) => {
+      if (cancelled) return;
+      setLoadingDetail(false);
+      if (result.success && result.data) {
+        const data = result.data?.data || result.data;
+        const ids = (data.target_contacts || []).map((c) => c.id);
+        setTargetContactIds(new Set(ids));
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [open, campaignAccount]);
+
+  const handleToggle = useCallback(
+    async (contactId) => {
+      if (togglingId) return;
+      setTogglingId(contactId);
+
+      try {
+        const result = await toggleAccountContact(campaignAccount.id, contactId);
+        if (result.success) {
+          const action = result.data?.action;
+          setTargetContactIds((prev) => {
+            const next = new Set(prev);
+            if (action === "removed") {
+              next.delete(contactId);
+            } else {
+              next.add(contactId);
+            }
+            return next;
+          });
+          onToggled?.();
+        } else {
+          displayErrorSnackbar(result);
+        }
+      } catch (err) {
+        displayErrorSnackbar(err);
+      } finally {
+        setTogglingId(null);
+      }
+    },
+    [campaignAccount, togglingId, onToggled],
+  );
+
+  const loading = contactsLoading || loadingDetail;
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>
+        Target Contacts — {campaignAccount?.account_name || "Account"}
+      </DialogTitle>
+      <DialogContent dividers>
+        {loading ? (
+          <Stack alignItems="center" py={3}>
+            <CircularProgress size={28} />
+          </Stack>
+        ) : contacts.length === 0 ? (
+          <Typography color="text.secondary" py={2} textAlign="center">
+            No contacts found for this account.
+          </Typography>
+        ) : (
+          <>
+            <Typography variant="caption" color="text.secondary" mb={1} display="block">
+              Check contacts to include in this campaign. Unchecked contacts will be excluded.
+            </Typography>
+            <List dense>
+              {contacts.map((contact) => {
+                const isTarget = targetContactIds.has(contact.id);
+                const isToggling = togglingId === contact.id;
+                const fullName =
+                  `${contact.first_name || ""} ${contact.last_name || ""}`.trim() || "—";
+
+                return (
+                  <ListItem key={contact.id} disablePadding>
+                    <ListItemButton
+                      onClick={() => handleToggle(contact.id)}
+                      disabled={isToggling}
+                      dense
+                    >
+                      <ListItemIcon sx={{ minWidth: 36 }}>
+                        {isToggling ? (
+                          <CircularProgress size={20} />
+                        ) : (
+                          <Checkbox
+                            edge="start"
+                            checked={isTarget}
+                            tabIndex={-1}
+                            disableRipple
+                          />
+                        )}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={fullName}
+                        secondary={
+                          [contact.job_title, contact.email].filter(Boolean).join(" · ") || null
+                        }
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                );
+              })}
+            </List>
+          </>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+ContactTargetingDialog.propTypes = {
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  campaignAccount: PropTypes.object,
+  onToggled: PropTypes.func,
 };
 
 // ==============================|| CAMPAIGN ACCOUNTS TAB ||============================== //
@@ -90,6 +244,9 @@ export default function CampaignAccountsTab({ campaignId, campaign }) {
   const [addOpen, setAddOpen] = useState(false);
   const [addingAccount, setAddingAccount] = useState(false);
   const [removingId, setRemovingId] = useState(null);
+
+  // Contact targeting dialog
+  const [contactTarget, setContactTarget] = useState(null);
 
   // ==============================|| DERIVED STATE ||============================== //
 
@@ -226,6 +383,15 @@ export default function CampaignAccountsTab({ campaignId, campaign }) {
     [campaignId, mutateAccounts],
   );
 
+  const handleOpenContactDialog = useCallback((ca, e) => {
+    if (e) e.stopPropagation();
+    setContactTarget(ca);
+  }, []);
+
+  const handleContactToggled = useCallback(() => {
+    mutateAccounts();
+  }, [mutateAccounts]);
+
   // ==============================|| COLUMNS ||============================== //
 
   const columns = useMemo(
@@ -272,15 +438,29 @@ export default function CampaignAccountsTab({ campaignId, campaign }) {
           </Typography>
         ),
       },
-      // Contacts count
+      // Contacts count — clickable to open targeting dialog
       {
         header: "Contacts",
         id: "contacts_count",
         accessorKey: "contacts_count",
         enableSorting: false,
-        cell: ({ getValue }) => (
-          <Typography variant="body2">{getValue() || 0}</Typography>
-        ),
+        cell: ({ row }) => {
+          const ca = row.original;
+          const count = ca.contacts_count || 0;
+          return (
+            <Tooltip title="Manage target contacts">
+              <Button
+                size="small"
+                variant="text"
+                startIcon={<TeamOutlined />}
+                onClick={(e) => handleOpenContactDialog(ca, e)}
+                sx={{ textTransform: "none", minWidth: 0 }}
+              >
+                {count}
+              </Button>
+            </Tooltip>
+          );
+        },
       },
       // Actions
       {
@@ -340,7 +520,7 @@ export default function CampaignAccountsTab({ campaignId, campaign }) {
         },
       },
     ],
-    [isFinalStatus, removingId, handleRowClick, handleRemoveAccount],
+    [isFinalStatus, removingId, handleRowClick, handleRemoveAccount, handleOpenContactDialog],
   );
 
   // ==============================|| RENDER ||============================== //
@@ -409,6 +589,14 @@ export default function CampaignAccountsTab({ campaignId, campaign }) {
         addButtonTooltip="Enroll accounts in this campaign"
         showAddButton={!isFinalStatus}
         enableImport={false}
+      />
+
+      {/* Contact Targeting Dialog */}
+      <ContactTargetingDialog
+        open={!!contactTarget}
+        onClose={() => setContactTarget(null)}
+        campaignAccount={contactTarget}
+        onToggled={handleContactToggled}
       />
     </Box>
   );
