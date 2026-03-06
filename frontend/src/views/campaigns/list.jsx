@@ -1,37 +1,45 @@
 // frontend/src/views/campaigns/list.jsx
 
-'use client';
+"use client";
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from "react";
 
 // material-ui
-import useMediaQuery from '@mui/material/useMediaQuery';
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import Grid from '@mui/material/Grid';
-import Pagination from '@mui/material/Pagination';
-import Slide from '@mui/material/Slide';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
+import useMediaQuery from "@mui/material/useMediaQuery";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogActions from "@mui/material/DialogActions";
+import Grid from "@mui/material/Grid";
+import Pagination from "@mui/material/Pagination";
+import Slide from "@mui/material/Slide";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 
 // project imports
-import MainCard from 'components/MainCard';
-import { DebouncedInput } from 'components/third-party/react-table';
-import CampaignCard from 'sections/campaigns/CampaignCard';
-import CampaignCreateModal from 'sections/campaigns/create/CampaignCreateModal';
-import OwnerScopeTabs from 'components/filters/OwnerScopeTabs';
+import MainCard from "components/MainCard";
+import { DebouncedInput } from "components/third-party/react-table";
+import CampaignCard from "sections/campaigns/CampaignCard";
+import CampaignCreateModal from "sections/campaigns/create/CampaignCreateModal";
+import OwnerScopeTabs from "components/filters/OwnerScopeTabs";
 
 // hooks
-import useOwnerScope from 'hooks/useOwnerScope';
+import useOwnerScope from "hooks/useOwnerScope";
 
 // api
-import { useGetCampaigns } from 'api/campaigns/campaigns';
+import { useGetCampaigns, deleteCampaign } from "api/campaigns/campaigns";
+
+// third-party
+import { enqueueSnackbar } from "notistack";
 
 // next
-import { useRouter } from 'next/navigation';
+import { useRouter } from "next/navigation";
 
 // assets
-import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
 // ==============================|| CAMPAIGNS LIST PAGE ||============================== //
 
@@ -45,12 +53,12 @@ import PlusOutlined from '@ant-design/icons/PlusOutlined';
  * Future: Real API, create/edit modals, bulk actions.
  */
 export default function CampaignsListPage() {
-  const matchDownSM = useMediaQuery((theme) => theme.breakpoints.down('sm'));
+  const matchDownSM = useMediaQuery((theme) => theme.breakpoints.down("sm"));
 
   // ==============================|| STATE ||============================== //
 
   const router = useRouter();
-  const [globalFilter, setGlobalFilter] = useState('');
+  const [globalFilter, setGlobalFilter] = useState("");
   const [page, setPage] = useState(1);
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
@@ -59,8 +67,8 @@ export default function CampaignsListPage() {
     scope: ownerScope,
     setScope: setOwnerScope,
     visibleOptions: ownerScopeOptions,
-    apiParams: ownerScopeParams
-  } = useOwnerScope({ storageKey: 'campaigns' });
+    apiParams: ownerScopeParams,
+  } = useOwnerScope({ storageKey: "campaigns" });
 
   // ==============================|| PAGINATION CONFIG ||============================== //
 
@@ -73,12 +81,13 @@ export default function CampaignsListPage() {
     campaignsCount = 0,
     campaignsLoading,
     campaignsError,
-    campaignsEmpty
+    campaignsEmpty,
+    mutateCampaigns,
   } = useGetCampaigns({
     page: 1,
     pageSize: 100,
     search: globalFilter,
-    filters: ownerScopeParams
+    filters: ownerScopeParams,
   });
 
   // ==============================|| PAGINATION ||============================== //
@@ -110,13 +119,39 @@ export default function CampaignsListPage() {
     router.push(`/campaigns/${campaign.id}`);
   };
 
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const handleEditCampaign = (campaign) => {
-    console.log('TODO: Open edit campaign modal', campaign.id);
+    router.push(`/campaigns/${campaign.id}`);
   };
 
   const handleDeleteCampaign = (campaign) => {
-    console.log('TODO: Open delete campaign confirmation', campaign.id);
+    setDeleteTarget(campaign);
   };
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+
+    setDeleteLoading(true);
+    try {
+      const result = await deleteCampaign(deleteTarget.id);
+      if (result.success !== false) {
+        enqueueSnackbar("Campaign deleted", { variant: "success" });
+        mutateCampaigns();
+      } else {
+        enqueueSnackbar(result.error || "Failed to delete campaign", {
+          variant: "error",
+        });
+      }
+    } catch (err) {
+      enqueueSnackbar("Failed to delete campaign", { variant: "error" });
+    } finally {
+      setDeleteLoading(false);
+      setDeleteTarget(null);
+    }
+  }, [deleteTarget, mutateCampaigns]);
 
   // ==============================|| RENDER ||============================== //
 
@@ -130,24 +165,28 @@ export default function CampaignsListPage() {
       />
 
       {/* ==================== HEADER ==================== */}
-      <Box sx={{ position: 'relative', marginBottom: 3 }}>
+      <Box sx={{ position: "relative", marginBottom: 3 }}>
         <Stack direction="row" alignItems="center">
           <Stack
-            direction={matchDownSM ? 'column' : 'row'}
-            sx={{ width: '100%' }}
+            direction={matchDownSM ? "column" : "row"}
+            sx={{ width: "100%" }}
             spacing={1}
             justifyContent="space-between"
             alignItems="center"
           >
             {/* Search */}
             <DebouncedInput
-              value={globalFilter ?? ''}
+              value={globalFilter ?? ""}
               onFilterChange={handleSearchChange}
               placeholder={`Search ${campaignsCount} campaigns...`}
             />
 
             {/* Actions */}
-            <Stack direction={matchDownSM ? 'column' : 'row'} alignItems="center" spacing={1}>
+            <Stack
+              direction={matchDownSM ? "column" : "row"}
+              alignItems="center"
+              spacing={1}
+            >
               <Button
                 variant="contained"
                 startIcon={<PlusOutlined />}
@@ -164,7 +203,12 @@ export default function CampaignsListPage() {
       <Grid container spacing={3}>
         {paginatedCampaigns.length > 0 ? (
           paginatedCampaigns.map((campaign, index) => (
-            <Slide key={campaign.id} direction="up" in={true} timeout={50 + index * 50}>
+            <Slide
+              key={campaign.id}
+              direction="up"
+              in={true}
+              timeout={50 + index * 50}
+            >
               <Grid item xs={12} sm={6} lg={4}>
                 <CampaignCard
                   campaign={campaign}
@@ -178,14 +222,18 @@ export default function CampaignsListPage() {
         ) : (
           <Grid item xs={12}>
             <MainCard>
-              <Box sx={{ p: 4, textAlign: 'center' }}>
+              <Box sx={{ p: 4, textAlign: "center" }}>
                 <Typography variant="h5" color="text.secondary">
                   No campaigns found
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mt: 1 }}
+                >
                   {globalFilter
                     ? `No campaigns match "${globalFilter}"`
-                    : 'Create your first campaign to get started'}
+                    : "Create your first campaign to get started"}
                 </Typography>
               </Box>
             </MainCard>
@@ -197,7 +245,7 @@ export default function CampaignsListPage() {
       {totalPages > 1 && (
         <Stack spacing={2} sx={{ p: 2.5 }} alignItems="flex-end">
           <Pagination
-            sx={{ '& .MuiPaginationItem-root': { my: 0.5 } }}
+            sx={{ "& .MuiPaginationItem-root": { my: 0.5 } }}
             count={totalPages}
             size="medium"
             page={page}
@@ -215,6 +263,33 @@ export default function CampaignsListPage() {
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
       />
+
+      {/* ==================== DELETE CONFIRMATION DIALOG ==================== */}
+      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
+        <DialogTitle>Delete Campaign</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete &quot;{deleteTarget?.name}&quot;?
+            This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setDeleteTarget(null)}
+            disabled={deleteLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmDelete}
+            color="error"
+            variant="contained"
+            disabled={deleteLoading}
+          >
+            {deleteLoading ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }

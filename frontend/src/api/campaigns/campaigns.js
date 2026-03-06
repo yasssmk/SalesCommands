@@ -216,7 +216,7 @@ export function useGetCampaigns(options = {}) {
 
   const swrKey = tenantKey(urlWithParams, tenantId);
 
-  const { data, isLoading, error, isValidating } = useSWR(swrKey, {
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     shouldRetryOnError: true,
@@ -231,8 +231,9 @@ export function useGetCampaigns(options = {}) {
       campaignsValidating: isValidating,
       campaignsEmpty:
         !isLoading && !(data?.data?.results?.length || data?.results?.length),
+      mutateCampaigns: mutate,
     }),
-    [data, isLoading, error, isValidating],
+    [data, isLoading, error, isValidating, mutate],
   );
 }
 

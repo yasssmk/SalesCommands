@@ -472,8 +472,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'campaign': output.data,
                 'accounts_activated': result['accounts_activated'],
                 'accounts_enrolled': result['accounts_enrolled'],
+                'activities_created': result.get('activities_created', 0),
+                'generation_errors': result.get('generation_errors', []),
             },
         })
+
 
     @action(detail=True, methods=['post'])
     @transaction.atomic

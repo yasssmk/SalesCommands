@@ -292,23 +292,40 @@ class CampaignCreationService:
         """
         Pull accounts from Territory filter_definition and enroll them.
 
-        Applies the same filter logic as Territory._count_accounts_for_territory().
+        Applies the same filter logic as TerritoryViewSet._count_accounts_for_territory().
         """
         territory = campaign.territory
         if not territory:
             return 0
 
-        queryset = CompanyAccount.objects.filter(client_id=self.client_id)
+        queryset = CompanyAccount.objects.filter(client_id=campaign.client_id)
 
         if territory.filter_definition:
             queryset = self._apply_territory_filters(queryset, territory.filter_definition)
 
+        queryset = queryset.distinct()
+
+        total_matching = queryset.count()
+
         # Respect max accounts limit
         max_accounts = CONFIG.limits.max_accounts_per_campaign
-        accounts = queryset[:max_accounts]
+        accounts = list(queryset[:max_accounts])
+
+        logger.info("campaign_territory_enrollment_debug", extra={
+            'campaign_id': str(campaign.id),
+            'territory_id': str(territory.id),
+            'client_id': str(campaign.client_id),
+            'filter_definition': territory.filter_definition,
+            'total_matching_accounts': total_matching,
+            'accounts_to_enroll': len(accounts),
+            'max_accounts_limit': max_accounts,
+        })
 
         enrolled = 0
         for account in accounts:
+            if CampaignAccount.objects.filter(campaign=campaign, account=account).exists():
+                continue
+
             CampaignAccount(
                 campaign=campaign,
                 account=account,
@@ -320,9 +337,11 @@ class CampaignCreationService:
             'campaign_id': str(campaign.id),
             'territory_id': str(territory.id),
             'accounts_enrolled': enrolled,
+            'accounts_skipped_duplicate': len(accounts) - enrolled,
         })
 
         return enrolled
+
 
     def _enroll_from_ids(self, campaign, account_ids):
         """Enroll accounts from explicit ID list (TARGETED campaigns)."""
