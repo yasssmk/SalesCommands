@@ -15,16 +15,6 @@ import { isValidUUID, sanitizeObject } from "utils/validators";
 
 // ==============================|| CONSTANTS ||============================== //
 
-export const CAMPAIGN_FAMILIES = {
-  OUTBOUND: "OUTBOUND",
-  TARGETED: "TARGETED",
-};
-
-export const CAMPAIGN_FAMILY_LABELS = {
-  OUTBOUND: "Outbound",
-  TARGETED: "Targeted",
-};
-
 export const CAMPAIGN_STATUSES = {
   DRAFT: "DRAFT",
   ACTIVE: "ACTIVE",
@@ -50,17 +40,13 @@ export const CAMPAIGN_STATUS_COLORS = {
 };
 
 export const SEQUENCE_TYPES = {
-  CALL_EMAIL_CALL: "CALL_EMAIL_CALL",
-  EMAIL_CALL_EMAIL: "EMAIL_CALL_EMAIL",
-  CALL_ONLY: "CALL_ONLY",
-  EMAIL_ONLY: "EMAIL_ONLY",
+  OUTBOUND: "OUTBOUND",
+  TARGETED: "TARGETED",
 };
 
 export const SEQUENCE_TYPE_LABELS = {
-  CALL_EMAIL_CALL: "Call → Email → Call",
-  EMAIL_CALL_EMAIL: "Email → Call → Email",
-  CALL_ONLY: "Call Only",
-  EMAIL_ONLY: "Email Only",
+  OUTBOUND: "Outbound Sequence",
+  TARGETED: "Targeted Sequence",
 };
 
 export const MEMBER_ROLES = {
@@ -913,7 +899,11 @@ export async function removeAccountFromCampaign(campaignAccountId, campaignId) {
  */
 export async function toggleAccountContact(campaignAccountId, contactId) {
   if (!campaignAccountId || !contactId) {
-    return { success: false, error: "campaignAccountId and contactId are required", status: 400 };
+    return {
+      success: false,
+      error: "campaignAccountId and contactId are required",
+      status: 400,
+    };
   }
 
   const result = await api.post(

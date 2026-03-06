@@ -240,6 +240,7 @@ export default function CampaignsListPage() {
       <CampaignCreateModal
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
+        onSuccess={mutateCampaigns}
       />
 
       {/* ==================== DELETE CAMPAIGN DIALOG ==================== */}

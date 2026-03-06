@@ -20,8 +20,7 @@ import Typography from "@mui/material/Typography";
 
 // api
 import {
-  CAMPAIGN_FAMILIES,
-  CAMPAIGN_FAMILY_LABELS,
+  SEQUENCE_TYPES,
   SEQUENCE_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
 } from "api/campaigns/campaigns";
@@ -113,7 +112,7 @@ ReviewSection.propTypes = {
 
 export default function StepReviewCreate({ data }) {
   const theme = useTheme();
-  const isOutbound = data.family === CAMPAIGN_FAMILIES.OUTBOUND;
+  const isOutbound = data.family === SEQUENCE_TYPES.OUTBOUND;
 
   // ==============================|| FORMAT HELPERS ||============================== //
 
@@ -127,10 +126,7 @@ export default function StepReviewCreate({ data }) {
     });
   };
 
-  const familyLabel = CAMPAIGN_FAMILY_LABELS[data.family] || data.family;
-  const sequenceLabel = data.sequence_type
-    ? SEQUENCE_TYPE_LABELS[data.sequence_type]
-    : null;
+  const familyLabel = SEQUENCE_TYPE_LABELS[data.family] || data.family;
   const objectiveLabel = data.objective_type
     ? OBJECTIVE_TYPE_LABELS[data.objective_type]
     : null;
@@ -176,23 +172,32 @@ export default function StepReviewCreate({ data }) {
 
           {isOutbound ? (
             <ReviewRow
-              label="Territory"
+              label="Territories"
               value={
-                data.territory_name ? (
-                  <Stack direction="row" spacing={0.5} alignItems="center">
-                    <GlobalOutlined
-                      style={{
-                        fontSize: 14,
-                        color: theme.palette.text.secondary,
-                      }}
-                    />
-                    <span>{data.territory_name}</span>
+                (data.selectedTerritories || []).length > 0 ? (
+                  <Stack
+                    direction="row"
+                    spacing={0.5}
+                    alignItems="center"
+                    flexWrap="wrap"
+                    justifyContent="flex-end"
+                    useFlexGap
+                  >
+                    {data.selectedTerritories.map((t) => (
+                      <Chip
+                        key={t.id}
+                        label={t.name}
+                        size="small"
+                        variant="outlined"
+                        icon={<GlobalOutlined style={{ fontSize: 12 }} />}
+                      />
+                    ))}
                   </Stack>
                 ) : (
                   "Not selected"
                 )
               }
-              muted={!data.territory_name}
+              muted={!(data.selectedTerritories || []).length}
             />
           ) : (
             <ReviewRow
@@ -228,10 +233,6 @@ export default function StepReviewCreate({ data }) {
               }
               muted={!(data.selectedAccounts || []).length}
             />
-          )}
-
-          {isOutbound && sequenceLabel && (
-            <ReviewRow label="Sequence" value={sequenceLabel} />
           )}
         </ReviewSection>
 

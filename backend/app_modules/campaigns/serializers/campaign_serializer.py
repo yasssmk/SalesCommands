@@ -538,13 +538,13 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         owner_ids = validated_data.pop('owner_ids', [])
         executor_ids = validated_data.pop('executor_ids', [])
         receiver_ids = validated_data.pop('receiver_ids', [])
-        client_id = validated_data.pop('client_id', None)
+        client_id = validated_data.get('client_id', None)
 
         #  Extract territory IDs (M2M — set after instance creation)
         territory_ids = validated_data.pop('territory_ids', [])
 
         # Create campaign instance
-        instance = Campaign(**validated_data)
+        instance = Campaign.objects.create(**validated_data)
 
         # Set territories M2M
         if territory_ids:

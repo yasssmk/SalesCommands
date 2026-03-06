@@ -38,7 +38,6 @@ import dayjs from "dayjs";
 // project imports
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
 import {
-  CAMPAIGN_FAMILIES,
   SEQUENCE_TYPES,
   SEQUENCE_TYPE_LABELS,
   OBJECTIVE_TYPES,
@@ -75,7 +74,7 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
   const theme = useTheme();
   const { user } = useAuth();
 
-  const isOutbound = data.family === CAMPAIGN_FAMILIES.OUTBOUND;
+  const isOutbound = data.family === SEQUENCE_TYPES.OUTBOUND;
 
   // ==============================|| AUTO-GENERATE NAME ||============================== //
 
@@ -83,8 +82,9 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
     // Only auto-generate if name is empty
     if (!data.name) {
       let autoName = "";
-      if (isOutbound && data.territory_name) {
-        autoName = `Outbound — ${data.territory_name}`;
+      if (isOutbound && data.selectedTerritories?.length > 0) {
+        const names = data.selectedTerritories.map((t) => t.name).join(", ");
+        autoName = `Outbound — ${names}`;
       } else if (!isOutbound && data.selectedAccounts?.length > 0) {
         const count = data.selectedAccounts.length;
         autoName = `Targeted — ${count} account${count > 1 ? "s" : ""}`;
@@ -159,38 +159,6 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
             />
           </Stack>
         </Grid>
-
-        {/* ==================== SEQUENCE TYPE (Prospection only) ==================== */}
-        {isOutbound && (
-          <Grid item xs={12}>
-            <Stack spacing={1}>
-              <InputLabel htmlFor="sequence-type">Sequence Type</InputLabel>
-              <FormControl fullWidth>
-                <Select
-                  id="sequence-type"
-                  value={data.sequence_type || ""}
-                  onChange={handleFieldChange("sequence_type")}
-                  displayEmpty
-                >
-                  <MenuItem value="">
-                    <em>Select a sequence type</em>
-                  </MenuItem>
-                  {Object.entries(SEQUENCE_TYPE_LABELS).map(
-                    ([value, label]) => (
-                      <MenuItem key={value} value={value}>
-                        {label}
-                      </MenuItem>
-                    ),
-                  )}
-                </Select>
-              </FormControl>
-              <FormHelperText>
-                Defines the automated activity sequence generated for each
-                account.
-              </FormHelperText>
-            </Stack>
-          </Grid>
-        )}
 
         {/* ==================== SCHEDULE ==================== */}
         <SectionTitle>Schedule</SectionTitle>

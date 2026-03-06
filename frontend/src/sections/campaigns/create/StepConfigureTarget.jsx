@@ -16,6 +16,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
+import Checkbox from "@mui/material/Checkbox";
 import FormControl from "@mui/material/FormControl";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
@@ -25,7 +26,7 @@ import Typography from "@mui/material/Typography";
 
 // project imports
 import AsyncAccountSelect from "components/AsyncSelection/AsyncAccountSelect";
-import { CAMPAIGN_FAMILIES } from "api/campaigns/campaigns";
+import { SEQUENCE_TYPES } from "api/campaigns/campaigns";
 import { useGetTerritories } from "api/territories/territories";
 
 // icons
@@ -38,14 +39,14 @@ import GlobalOutlined from "@ant-design/icons/GlobalOutlined";
 
 export default function StepConfigureTarget({
   family,
-  territoryId,
-  territoryName,
+  territoryIds,
+  selectedTerritories,
   accountIds,
   selectedAccounts,
   onUpdate,
 }) {
   const theme = useTheme();
-  const isOutbound = family === CAMPAIGN_FAMILIES.OUTBOUND;
+  const isOutbound = family === SEQUENCE_TYPES.OUTBOUND;
 
   // ==============================|| PROSPECTION: TERRITORIES ||============================== //
 
@@ -54,19 +55,20 @@ export default function StepConfigureTarget({
     pageSize: 100,
   });
 
-  // Find selected territory for preview
-  const selectedTerritory = useMemo(() => {
-    return territories.find((t) => t.id === territoryId) || null;
-  }, [territories, territoryId]);
+  // Find selected territories for preview
+  const resolvedTerritories = useMemo(() => {
+    if (!territoryIds?.length) return [];
+    return territories.filter((t) => territoryIds.includes(t.id));
+  }, [territories, territoryIds]);
 
   // ==============================|| HANDLERS ||============================== //
 
   const handleTerritoryChange = (event) => {
-    const id = event.target.value;
-    const territory = territories.find((t) => t.id === id);
+    const ids = event.target.value; // MUI Select multiple returns array
+    const selected = territories.filter((t) => ids.includes(t.id));
     onUpdate({
-      territory_id: id,
-      territory_name: territory?.name || "",
+      territory_ids: ids,
+      selectedTerritories: selected,
     });
   };
 
@@ -93,49 +95,62 @@ export default function StepConfigureTarget({
     return (
       <Box>
         <Typography variant="h5" sx={{ mb: 1 }}>
-          Select a territory
+          Select territories
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          The territory defines which accounts will be targeted in this
+          The territories define which accounts will be targeted in this
           campaign.
         </Typography>
 
         {/* Territory Dropdown */}
         <Stack spacing={1} sx={{ mb: 3 }}>
-          <InputLabel htmlFor="territory-select">Territory *</InputLabel>
+          <InputLabel htmlFor="territory-select">Territories *</InputLabel>
           <FormControl fullWidth>
             <Select
               id="territory-select"
-              value={territoryId || ""}
+              multiple
+              value={territoryIds || []}
               onChange={handleTerritoryChange}
               displayEmpty
               disabled={territoriesLoading}
-              renderValue={(value) => {
-                if (!value) {
+              renderValue={(selected) => {
+                if (!selected || selected.length === 0) {
                   return (
                     <Typography color="text.secondary">
                       {territoriesLoading
                         ? "Loading territories..."
-                        : "Select a territory"}
+                        : "Select territories"}
                     </Typography>
                   );
                 }
-                const t = territories.find((t) => t.id === value);
                 return (
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <GlobalOutlined
-                      style={{
-                        fontSize: 16,
-                        color: theme.palette.primary.main,
-                      }}
-                    />
-                    <Typography>{t?.name || value}</Typography>
+                  <Stack
+                    direction="row"
+                    spacing={0.5}
+                    flexWrap="wrap"
+                    useFlexGap
+                  >
+                    {selected.map((id) => {
+                      const t = territories.find((t) => t.id === id);
+                      return (
+                        <Chip
+                          key={id}
+                          icon={<GlobalOutlined style={{ fontSize: 14 }} />}
+                          label={t?.name || id}
+                          size="small"
+                          variant="outlined"
+                        />
+                      );
+                    })}
                   </Stack>
                 );
               }}
             >
               {territories.map((territory) => (
                 <MenuItem key={territory.id} value={territory.id}>
+                  <Checkbox
+                    checked={(territoryIds || []).includes(territory.id)}
+                  />
                   <Stack direction="row" spacing={1.5} alignItems="center">
                     <GlobalOutlined
                       style={{
@@ -159,7 +174,7 @@ export default function StepConfigureTarget({
         </Stack>
 
         {/* Preview */}
-        {selectedTerritory && (
+        {resolvedTerritories.length > 0 && (
           <Box
             sx={{
               p: 2,
@@ -175,11 +190,12 @@ export default function StepConfigureTarget({
               />
               <Box>
                 <Typography variant="subtitle2">
-                  {selectedTerritory.name}
+                  {resolvedTerritories.map((t) => t.name).join(", ")}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Accounts from this territory will be targeted when the
-                  campaign starts.
+                  Accounts from {resolvedTerritories.length} territor
+                  {resolvedTerritories.length > 1 ? "ies" : "y"} will be
+                  targeted when the campaign starts.
                 </Typography>
               </Box>
             </Stack>
@@ -295,10 +311,10 @@ export default function StepConfigureTarget({
 StepConfigureTarget.propTypes = {
   /** Campaign family: OUTBOUND or TARGETED */
   family: PropTypes.string.isRequired,
-  /** Selected territory ID (Outbound) */
-  territoryId: PropTypes.string,
-  /** Selected territory name (Outbound) */
-  territoryName: PropTypes.string,
+  /** Selected territory IDs (Outbound) */
+  territoryIds: PropTypes.array,
+  /** Selected territory objects (Outbound) — kept for display */
+  selectedTerritories: PropTypes.array,
   /** Selected account IDs (Targeted) */
   accountIds: PropTypes.array,
   /** Selected account objects (Targeted) — kept for chips display */

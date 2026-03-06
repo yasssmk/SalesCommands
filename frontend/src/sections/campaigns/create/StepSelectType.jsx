@@ -19,7 +19,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // api
-import { CAMPAIGN_FAMILIES } from "api/campaigns/campaigns";
+import { SEQUENCE_TYPES } from "api/campaigns/campaigns";
 
 // icons
 import AimOutlined from "@ant-design/icons/AimOutlined";
@@ -29,7 +29,7 @@ import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
 
 const TYPE_OPTIONS = [
   {
-    family: CAMPAIGN_FAMILIES.OUTBOUND,
+    family: SEQUENCE_TYPES.OUTBOUND,
     label: "Outbound",
     description:
       "Launch outbound sequences on a territory segment. Auto-generate activities for every account in the segment.",
@@ -37,7 +37,7 @@ const TYPE_OPTIONS = [
     colorKey: "primary",
   },
   {
-    family: CAMPAIGN_FAMILIES.TARGETED,
+    family: SEQUENCE_TYPES.TARGETED,
     label: "Targeted",
     description:
       "Target specific accounts, departments or contacts with a tailored reason. Ideal for follow-ups, renewals and cross-sell.",

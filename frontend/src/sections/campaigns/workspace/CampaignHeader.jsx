@@ -26,8 +26,6 @@ import Typography from "@mui/material/Typography";
 // project imports
 import CampaignStatusBadge from "sections/campaigns/CampaignStatusBadge";
 import {
-  CAMPAIGN_FAMILIES,
-  CAMPAIGN_FAMILY_LABELS,
   SEQUENCE_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
   getCampaignProgress,
@@ -250,7 +248,7 @@ export default function useCampaignHeaderProps({ campaign, stats, onMutate }) {
     <Chip
       key="family"
       label={
-        CAMPAIGN_FAMILY_LABELS[campaign.campaign_type] || campaign.campaign_type
+        SEQUENCE_TYPE_LABELS[campaign.campaign_type] || campaign.campaign_type
       }
       size="small"
       color={familyConfig.chipColor}
@@ -272,16 +270,17 @@ export default function useCampaignHeaderProps({ campaign, stats, onMutate }) {
 
   const infoItems = [
     // Territory
-    campaign.territory_name && (
+    campaign.territory_names?.length > 0 && (
       <Stack key="territory" direction="row" spacing={0.75} alignItems="center">
         <BankOutlined
           style={{ fontSize: 14, color: theme.palette.text.secondary }}
         />
         <Typography variant="body2" color="text.secondary">
-          {campaign.territory_name}
+          {campaign.territory_names.join(", ")}
         </Typography>
       </Stack>
     ),
+
     // Objective
     campaign.objective_type && (
       <Stack key="objective" direction="row" spacing={0.75} alignItems="center">

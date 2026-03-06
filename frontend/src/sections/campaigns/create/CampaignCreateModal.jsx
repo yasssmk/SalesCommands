@@ -29,7 +29,11 @@ import StepObjectiveMembers from "./StepObjectiveMembers";
 import StepReviewCreate from "./StepReviewCreate";
 
 // api
-import { createCampaign, CAMPAIGN_FAMILIES } from "api/campaigns/campaigns";
+import { createCampaign, SEQUENCE_TYPES } from "api/campaigns/campaigns";
+import {
+  displaySuccessSnackbar,
+  displayErrorSnackbar,
+} from "utils/displayError";
 
 // icons
 import ArrowLeftOutlined from "@ant-design/icons/ArrowLeftOutlined";
@@ -52,8 +56,8 @@ const INITIAL_STATE = {
   family: "",
 
   // Step 1: Target
-  territory_id: "",
-  territory_name: "",
+  territory_ids: [],
+  selectedTerritories: [],
   account_ids: [],
 
   // Step 2: Details
@@ -69,7 +73,7 @@ const INITIAL_STATE = {
 
 // ==============================|| CAMPAIGN CREATE MODAL ||============================== //
 
-export default function CampaignCreateModal({ open, onClose }) {
+export default function CampaignCreateModal({ open, onClose, onSuccess }) {
   const theme = useTheme();
 
   // ==============================|| STATE ||============================== //
@@ -121,8 +125,8 @@ export default function CampaignCreateModal({ open, onClose }) {
       case 0:
         return Boolean(wizardData.family);
       case 1:
-        if (wizardData.family === CAMPAIGN_FAMILIES.OUTBOUND) {
-          return Boolean(wizardData.territory_id);
+        if (wizardData.family === SEQUENCE_TYPES.OUTBOUND) {
+          return wizardData.territory_ids.length > 0;
         }
         // Targeted: at least 1 account selected
         return wizardData.account_ids.length > 0;
@@ -144,8 +148,8 @@ export default function CampaignCreateModal({ open, onClose }) {
         name: wizardData.name,
         description: wizardData.description,
         campaign_type: wizardData.family,
-        sequence_type: wizardData.sequence_type || null,
-        territory_id: wizardData.territory_id || null,
+        sequence_type: wizardData.family || null,
+        territory_ids: wizardData.territory_ids || [],
         start_date: wizardData.start_date,
         end_date: wizardData.end_date,
         // Nested objective (backend CampaignCreateSerializer accepts optional dict)
@@ -162,13 +166,19 @@ export default function CampaignCreateModal({ open, onClose }) {
       };
 
       const result = await createCampaign(payload);
-      console.log("TODO: Campaign created", result);
 
-      // TODO: displaySuccessSnackbar('Campaign created');
-      // TODO: navigate to campaign workspace or refresh list
-      handleClose();
+      if (result.success) {
+        displaySuccessSnackbar("Campaign created successfully");
+        handleClose();
+        if (onSuccess) onSuccess();
+      } else {
+        displayErrorSnackbar(result);
+      }
     } catch (err) {
-      console.error("TODO: handle create error", err);
+      displayErrorSnackbar({
+        message: err?.message || "An unexpected error occurred",
+        status: 500,
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -192,8 +202,8 @@ export default function CampaignCreateModal({ open, onClose }) {
         return (
           <StepConfigureTarget
             family={wizardData.family}
-            territoryId={wizardData.territory_id}
-            territoryName={wizardData.territory_name}
+            territoryIds={wizardData.territory_ids}
+            selectedTerritories={wizardData.selectedTerritories}
             accountIds={wizardData.account_ids}
             onUpdate={updateData}
           />
@@ -337,4 +347,6 @@ CampaignCreateModal.propTypes = {
   open: PropTypes.bool.isRequired,
   /** Callback to close the modal */
   onClose: PropTypes.func.isRequired,
+  /** Callback after successful creation (e.g. refresh list) */
+  onSuccess: PropTypes.func,
 };

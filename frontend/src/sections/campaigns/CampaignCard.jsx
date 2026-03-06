@@ -20,7 +20,6 @@ import { useTheme } from "@mui/material/styles";
 // project imports
 import CampaignStatusBadge from "sections/campaigns/CampaignStatusBadge";
 import {
-  CAMPAIGN_FAMILY_LABELS,
   SEQUENCE_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
   getCampaignProgress,
@@ -58,7 +57,7 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
   const activityProgress = getCampaignProgress(campaign);
   const objectiveProgress = getObjectiveProgress(campaign);
   const isOverdue =
-    campaign.status === "ACTIVE" &&
+    ["ACTIVE", "PAUSED"].includes(campaign.status) &&
     campaign.end_date &&
     new Date(campaign.end_date) < new Date();
 
@@ -173,7 +172,7 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
               </Typography>
               <Chip
                 label={
-                  CAMPAIGN_FAMILY_LABELS[campaign.campaign_type] ||
+                  SEQUENCE_TYPE_LABELS[campaign.campaign_type] ||
                   campaign.campaign_type
                 }
                 size="small"
@@ -303,7 +302,13 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
             <CalendarOutlined
               style={{ fontSize: 12, color: theme.palette.text.secondary }}
             />
-            <Typography variant="caption" color="text.secondary">
+            <Typography
+              variant="caption"
+              sx={{
+                color: isOverdue ? "error.main" : "text.secondary",
+                fontWeight: isOverdue ? 500 : 400,
+              }}
+            >
               {formatDateRange()}
             </Typography>
           </Stack>
