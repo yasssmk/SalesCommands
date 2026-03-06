@@ -8,6 +8,11 @@ import { useState, useMemo } from "react";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogActions from "@mui/material/DialogActions";
 import Grid from "@mui/material/Grid";
 import Pagination from "@mui/material/Pagination";
 import Slide from "@mui/material/Slide";
@@ -20,12 +25,13 @@ import { DebouncedInput } from "components/third-party/react-table";
 import CampaignCard from "sections/campaigns/CampaignCard";
 import CampaignCreateModal from "sections/campaigns/create/CampaignCreateModal";
 import OwnerScopeTabs from "components/filters/OwnerScopeTabs";
+import AlertCampaignDelete from "sections/campaigns/AlertCampaignDelete";
 
 // hooks
 import useOwnerScope from "hooks/useOwnerScope";
 
 // api
-import { useGetCampaigns } from "api/campaigns/campaigns";
+import { useGetCampaigns, deleteCampaign } from "api/campaigns/campaigns";
 
 // next
 import { useRouter } from "next/navigation";
@@ -75,6 +81,7 @@ export default function CampaignsListPage() {
     campaignsLoading,
     campaignsError,
     campaignsEmpty,
+    mutateCampaigns,
   } = useGetCampaigns({
     page: 1,
     pageSize: 100,
@@ -116,7 +123,12 @@ export default function CampaignsListPage() {
   };
 
   const handleDeleteCampaign = (campaign) => {
-    console.log("TODO: Open delete campaign confirmation", campaign.id);
+    setDeleteTarget(campaign);
+  };
+
+  const handleDeleteSuccess = () => {
+    setDeleteTarget(null);
+    mutateCampaigns();
   };
 
   // ==============================|| RENDER ||============================== //
@@ -228,6 +240,14 @@ export default function CampaignsListPage() {
       <CampaignCreateModal
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
+      />
+
+      {/* ==================== DELETE CAMPAIGN DIALOG ==================== */}
+      <AlertCampaignDelete
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        campaign={deleteTarget}
+        onSuccess={handleDeleteSuccess}
       />
     </>
   );

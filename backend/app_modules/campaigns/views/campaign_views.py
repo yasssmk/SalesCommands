@@ -54,6 +54,7 @@ from ..services import (
     CampaignExecutionService,
     CampaignAnalyticsService,
 )
+from app_modules.activities.models import Activity
 from ..config.settings import CONFIG
 
 logger = get_logger(__name__)
@@ -92,7 +93,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     filterset_fields = {
         'status': ['exact', 'in'],
         'campaign_type': ['exact'],
-        'territory': ['exact'],
+        'territories': ['exact'],
     }
     search_fields = CONFIG.filters.campaign_search
     ordering_fields = ['name', 'status', 'campaign_type', 'start_date', 'end_date', 'created_at']
@@ -161,9 +162,8 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         queryset = super().get_queryset()
 
         if self.action == 'list':
-            queryset = queryset.select_related(
-                'territory',
-            ).prefetch_related(
+            queryset = queryset.prefetch_related(
+                'territories',
                 'objectives',
                 'members',
             ).annotate(
@@ -172,10 +172,10 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             )
         elif self.action == 'retrieve':
             queryset = queryset.select_related(
-                'territory',
                 'created_by',
                 'updated_by',
             ).prefetch_related(
+                'territories',
                 'objectives',
                 'members__user',
                 'members__added_by',
@@ -184,7 +184,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 _accounts_count=Count('campaign_accounts', distinct=True),
             )
         else:
-            queryset = queryset.select_related('territory')
+            queryset = queryset.prefetch_related('territories')
 
         # Apply owner scope filter (mine/team/all)
         queryset = self.apply_owner_scope_filter(queryset)
@@ -393,17 +393,10 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         Delete a campaign.
         DELETE /campaigns/{id}/
 
-        Only DRAFT campaigns can be deleted.
+        Any campaign can be deleted. All linked activities are cascade-deleted.
         """
         ctx = ctx_from_request(request)
         instance = self.get_object()
-
-        if instance.status != CampaignStatus.DRAFT:
-            raise StandardizedValidationError(
-                CampaignModuleErrorMessages.CAMPAIGN_IN_FINAL_STATE.format(
-                    state=instance.get_status_display()
-                )
-            )
 
         campaign_id = str(instance.id)
         campaign_name = instance.name
@@ -412,6 +405,10 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             **ctx,
             'campaign_id': campaign_id,
         })
+
+        # Cascade-delete all activities linked to this campaign
+        # (Activity.campaign FK is SET_NULL, so we must delete explicitly)
+        deleted_activities_count, _ = Activity.objects.filter(campaign=instance).delete()
 
         instance.delete()
 
@@ -423,7 +420,10 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             target_type='campaign',
             target_id=campaign_id,
             outcome='success',
-            extra={'campaign_name': campaign_name},
+            extra={
+                'campaign_name': campaign_name,
+                'activities_deleted': deleted_activities_count,
+            },
         )
 
         client_id = self.get_client_id()
@@ -432,12 +432,14 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         logger.info("campaign_delete_success", extra={
             **ctx,
             'campaign_id': campaign_id,
+            'activities_deleted': deleted_activities_count,
         })
 
         return Response({
             'success': True,
             'data': None,
         }, status=status.HTTP_204_NO_CONTENT)
+
 
     # ==========================================================================
     # LIFECYCLE ACTIONS

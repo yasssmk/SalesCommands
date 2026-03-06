@@ -58,7 +58,8 @@ class CampaignLifecycleService:
         if campaign.campaign_type == 'OUTBOUND' and campaign.campaign_accounts.count() == 0:
             from .campaign_creation_service import CampaignCreationService
             creation_service = CampaignCreationService(user=self.user, client_id=self.client_id)
-            accounts_enrolled = creation_service._enroll_from_territory(campaign)
+            accounts_enrolled = creation_service._enroll_from_territories(campaign)
+
 
         if campaign.campaign_accounts.count() == 0:
             raise StandardizedValidationError(

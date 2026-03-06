@@ -189,8 +189,8 @@ class FieldConfig:
     account: str = 'account'
     contact_id: str = 'contact_id'
     contact: str = 'contact'
-    territory_id: str = 'territory_id'
-    territory: str = 'territory'
+    territory_ids: str = 'territory_ids'
+    territories: str = 'territories'
 
     # User and role
     user_id: str = 'user_id'
@@ -258,7 +258,7 @@ class SerializerConfig:
     campaign_fields: List[str] = field(default_factory=lambda: [
         'id', 'name', 'description', 'campaign_type', 'campaign_type_display',
         'sequence_type', 'sequence_type_display', 'has_sequence',
-        'territory', 'territory_name',
+        'territories', 'territory_name',
         'status', 'status_display',
         'start_date', 'end_date',
         'accounts_count', 'members_summary', 'primary_objective',
@@ -319,7 +319,7 @@ class FilterConfig:
 
     # Filter fields
     campaign_filters: List[str] = field(default_factory=lambda: [
-        'status', 'campaign_type', 'sequence_type', 'territory',
+        'status', 'campaign_type', 'sequence_type', 'territories',
     ])
     campaign_account_filters: List[str] = field(default_factory=lambda: [
         'campaign', 'account', 'status', 'activities_generated',

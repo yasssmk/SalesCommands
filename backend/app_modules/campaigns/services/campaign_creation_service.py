@@ -71,7 +71,7 @@ class CampaignCreationService:
                 # Optional
                 'description': str,
                 'sequence_type': str,
-                'territory_id': UUID,
+                'territory_ids': [UUID],
 
                 # Nested (optional)
                 'objective': {name, objective_type, target_value, is_primary},
@@ -144,18 +144,19 @@ class CampaignCreationService:
 
     def _create_campaign(self, data):
         """Create the Campaign instance."""
-        # Resolve territory FK
-        territory = None
-        territory_id = data.get('territory_id')
-        if territory_id:
+        # Resolve territories (M2M)
+        territory_ids = data.get('territory_ids', [])
+        territories = []
+        for tid in territory_ids:
             try:
-                territory = Territory.objects.get(id=territory_id, client_id=self.client_id)
+                territory = Territory.objects.get(id=tid, client_id=self.client_id)
+                territories.append(territory)
             except Territory.DoesNotExist:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
-        # OUTBOUND requires territory
+        # OUTBOUND requires at least one territory
         campaign_type = data.get('campaign_type')
-        if campaign_type == CampaignType.OUTBOUND and not territory:
+        if campaign_type == CampaignType.OUTBOUND and not territories:
             raise StandardizedValidationError(
                 CampaignModuleErrorMessages.CAMPAIGN_TERRITORY_REQUIRED
             )
@@ -165,14 +166,18 @@ class CampaignCreationService:
             description=data.get('description', ''),
             campaign_type=campaign_type,
             sequence_type=data.get('sequence_type'),
-            territory=territory,
             start_date=data['start_date'],
             end_date=data['end_date'],
             status=CampaignStatus.DRAFT,
         )
         campaign.save(user=self.user, client_id=self.client_id)
 
+        # Set M2M territories
+        if territories:
+            campaign.territories.set(territories)
+
         return campaign
+
 
     # ======================================================================
     # PRIVATE — OBJECTIVE
@@ -278,44 +283,47 @@ class CampaignCreationService:
         """
         Enroll accounts into campaign.
 
-        - OUTBOUND: pull accounts from Territory filter_definition
+        - OUTBOUND: pull accounts from all campaign territories
         - TARGETED: enroll from explicit account_ids list
         """
         if campaign.campaign_type == CampaignType.OUTBOUND:
-            return self._enroll_from_territory(campaign)
+            return self._enroll_from_territories(campaign)
         else:
             # TARGETED: manual account_ids
             account_ids = data.get('account_ids', [])
             return self._enroll_from_ids(campaign, account_ids)
 
-    def _enroll_from_territory(self, campaign):
-        """
-        Pull accounts from Territory filter_definition and enroll them.
 
-        Applies the same filter logic as TerritoryViewSet._count_accounts_for_territory().
+    def _enroll_from_territories(self, campaign):
         """
-        territory = campaign.territory
-        if not territory:
+        Pull accounts from all campaign territories and enroll them.
+
+        Applies filter logic from each territory, unions the results,
+        then enrolls up to max_accounts_per_campaign.
+        """
+        territories = campaign.territories.all()
+        if not territories:
             return 0
 
-        queryset = CompanyAccount.objects.filter(client_id=campaign.client_id)
+        # Union accounts from all territories
+        combined_qs = CompanyAccount.objects.none()
+        for territory in territories:
+            qs = CompanyAccount.objects.filter(client_id=campaign.client_id)
+            if territory.filter_definition:
+                qs = self._apply_territory_filters(qs, territory.filter_definition)
+            combined_qs = combined_qs | qs
 
-        if territory.filter_definition:
-            queryset = self._apply_territory_filters(queryset, territory.filter_definition)
-
-        queryset = queryset.distinct()
-
-        total_matching = queryset.count()
+        combined_qs = combined_qs.distinct()
+        total_matching = combined_qs.count()
 
         # Respect max accounts limit
         max_accounts = CONFIG.limits.max_accounts_per_campaign
-        accounts = list(queryset[:max_accounts])
+        accounts = list(combined_qs[:max_accounts])
 
         logger.info("campaign_territory_enrollment_debug", extra={
             'campaign_id': str(campaign.id),
-            'territory_id': str(territory.id),
+            'territory_count': territories.count(),
             'client_id': str(campaign.client_id),
-            'filter_definition': territory.filter_definition,
             'total_matching_accounts': total_matching,
             'accounts_to_enroll': len(accounts),
             'max_accounts_limit': max_accounts,
@@ -333,14 +341,15 @@ class CampaignCreationService:
             ).save(user=self.user, client_id=self.client_id)
             enrolled += 1
 
-        logger.info("campaign_accounts_enrolled_from_territory", extra={
+        logger.info("campaign_accounts_enrolled_from_territories", extra={
             'campaign_id': str(campaign.id),
-            'territory_id': str(territory.id),
+            'territory_count': territories.count(),
             'accounts_enrolled': enrolled,
             'accounts_skipped_duplicate': len(accounts) - enrolled,
         })
 
         return enrolled
+
 
 
     def _enroll_from_ids(self, campaign, account_ids):

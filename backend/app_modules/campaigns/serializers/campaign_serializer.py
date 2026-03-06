@@ -130,10 +130,12 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         return obj.has_sequence
 
     def get_territory_name(self, obj):
-        """Return territory name without extra query (select_related)."""
-        if obj.territory:
-            return obj.territory.name
-        return None
+        """Return territory names (M2M)."""
+        territories = obj.territories.all()
+        if not territories:
+            return None
+        return ', '.join(t.name for t in territories)
+
 
     def get_accounts_count(self, obj):
         """Return number of accounts enrolled in campaign."""
@@ -183,7 +185,8 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
     has_sequence = serializers.SerializerMethodField(read_only=True)
 
     # Nested relations (read-only)
-    territory = CampaignTerritorySerializer(read_only=True)
+    territories = CampaignTerritorySerializer(many=True, read_only=True)
+
 
     # Members nested (inline to avoid circular import)
     members = serializers.SerializerMethodField(read_only=True)
@@ -205,7 +208,7 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'sequence_type', 'sequence_type_display', 'has_sequence',
 
             # Territory
-            'territory',
+            'territories',
 
             # Status
             'status', 'status_display',
@@ -300,11 +303,9 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         - Client-scoped name uniqueness
     """
 
-    # FK write fields
-    territory_id = serializers.UUIDField(
-        source='territory',
+    territory_ids = serializers.ListField(
+        child=serializers.UUIDField(),
         required=False,
-        allow_null=True,
         write_only=True,
     )
 
@@ -337,7 +338,7 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         fields = [
             'name', 'description',
             'campaign_type', 'sequence_type',
-            'territory_id',
+            'territory_ids',
             'start_date', 'end_date',
             'objective',
             'owner_ids', 'executor_ids', 'receiver_ids',
@@ -416,17 +417,18 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     CampaignModuleErrorMessages.CAMPAIGN_DATE_INVALID
                 )
 
-            # OUTBOUND → territory required
+            # OUTBOUND → at least one territory required
             campaign_type = attrs.get('campaign_type')
-            territory_id = attrs.get('territory')
-            if campaign_type == CampaignType.OUTBOUND and not territory_id:
+            territory_ids = attrs.get('territory_ids', [])
+            if campaign_type == CampaignType.OUTBOUND and not territory_ids:
                 raise StandardizedValidationError(
                     CampaignModuleErrorMessages.CAMPAIGN_TERRITORY_REQUIRED
                 )
 
-            # Validate territory belongs to same client
-            if territory_id:
-                self._validate_territory(territory_id, client_id)
+            # Validate all territories belong to same client
+            for tid in territory_ids:
+                self._validate_territory(tid, client_id)
+
 
             # Name uniqueness within client
             self.validate_client_scoped_uniqueness(
@@ -538,14 +540,16 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         receiver_ids = validated_data.pop('receiver_ids', [])
         client_id = validated_data.pop('client_id', None)
 
-        # Resolve territory FK (territory_id → territory instance)
-        territory_id = validated_data.pop('territory', None)
-        if territory_id:
-            validated_data['territory'] = Territory.objects.get(id=territory_id)
+        #  Extract territory IDs (M2M — set after instance creation)
+        territory_ids = validated_data.pop('territory_ids', [])
 
         # Create campaign instance
         instance = Campaign(**validated_data)
-        instance.save(user=user, client_id=client_id)
+
+        # Set territories M2M
+        if territory_ids:
+            territories = Territory.objects.filter(id__in=territory_ids)
+            instance.territories.set(territories)
 
         # Create objective (if provided)
         if objective_data:
@@ -601,10 +605,9 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         - Name uniqueness check (exclude current instance)
     """
 
-    territory_id = serializers.UUIDField(
-        source='territory',
+    territory_ids = serializers.ListField(
+        child=serializers.UUIDField(),
         required=False,
-        allow_null=True,
         write_only=True,
     )
 
@@ -613,7 +616,7 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         fields = [
             'name', 'description',
             'sequence_type',
-            'territory_id',
+            'territory_ids',
             'start_date', 'end_date',
         ]
         extra_kwargs = {
@@ -673,15 +676,16 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     ),
                 )
 
-            # Validate territory if provided
-            territory_id = attrs.get('territory')
-            if territory_id:
-                try:
-                    territory = Territory.objects.get(id=territory_id)
-                    if str(territory.client_id) != str(client_id):
-                        raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
-                except Territory.DoesNotExist:
-                    raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+                # Validate territories if provided
+                territory_ids = attrs.get('territory_ids', [])
+                for tid in territory_ids:
+                    try:
+                        territory = Territory.objects.get(id=tid)
+                        if str(territory.client_id) != str(client_id):
+                            raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+                    except Territory.DoesNotExist:
+                        raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
 
             return attrs
 
@@ -696,17 +700,18 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         """Update campaign with proper audit fields."""
         user = self.context.get('request').user if self.context.get('request') else None
 
-        # Resolve territory FK
-        territory_id = validated_data.pop('territory', None)
-        if territory_id:
-            validated_data['territory'] = Territory.objects.get(id=territory_id)
-        elif territory_id is None and 'territory' in self.initial_data:
-            # Explicit null → clear territory
-            validated_data['territory'] = None
+                # Resolve territories M2M
+        territory_ids = validated_data.pop('territory_ids', None)
 
         # Update fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
         instance.save(user=user)
+
+        # Set territories M2M (after save)
+        if territory_ids is not None:
+            territories = Territory.objects.filter(id__in=territory_ids)
+            instance.territories.set(territories)
+
         return instance

@@ -94,14 +94,12 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # TERRITORY RELATIONSHIP (source of accounts for OUTBOUND)
     # ==========================================================================
 
-    territory = models.ForeignKey(
+    territories = models.ManyToManyField(
         'module_territories.Territory',
-        on_delete=models.SET_NULL,
         related_name='campaigns',
         blank=True,
-        null=True,
-        verbose_name=_('Territory'),
-        help_text=_('Source territory for OUTBOUND campaigns')
+        verbose_name=_('Territories'),
+        help_text=_('Source territories for OUTBOUND campaigns')
     )
 
     # ==========================================================================
@@ -141,7 +139,6 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['campaign_type'], name='mod_camp_type_idx'),
-            models.Index(fields=['territory'], name='mod_camp_territory_idx'),
             models.Index(fields=['start_date', 'end_date'], name='mod_camp_dates_idx'),
         ]
 
@@ -247,11 +244,12 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
                 CampaignModuleErrorMessages.CAMPAIGN_DATE_INVALID
             )
 
-        # OUTBOUND requires territory
-        if self.campaign_type == CampaignType.OUTBOUND and not self.territory_id:
+        # OUTBOUND requires at least one territory
+        if self.campaign_type == CampaignType.OUTBOUND and self.pk and not self.territories.exists():
             raise StandardizedValidationError(
                 CampaignModuleErrorMessages.CAMPAIGN_TERRITORY_REQUIRED
             )
+
 
     # ==========================================================================
     # MEMBER HELPERS (delegates to CampaignMember)
