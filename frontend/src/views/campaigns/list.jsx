@@ -111,10 +111,6 @@ export default function CampaignsListPage() {
     router.push(`/campaigns/${campaign.id}`);
   };
 
-  // Delete confirmation state
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-
   const handleEditCampaign = (campaign) => {
     router.push(`/campaigns/${campaign.id}`);
   };
