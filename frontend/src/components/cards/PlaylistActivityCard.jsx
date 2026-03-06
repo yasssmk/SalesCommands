@@ -4,10 +4,13 @@
  *
  * 2 states:
  * - Collapsed: compact card with type, account, date, "Log Result" button
- * - Expanded: adds outcome chips + notes + Complete button
+ * - Expanded: outcome chips + notes + optional callback date + complete button
  *
- * Pattern: DecisionCycleTimeline ActivityCard (getBorderColor, getBgColor, OUTCOME_CONFIG, formatDate)
- * Pattern: ActivityOutcomeTab ResultSection (outcome selection + complete flow)
+ * Gaps fixed:
+ * - sequence_position badge in header ("Step X")
+ * - callback_date DatePicker when outcome = CALLBACK_REQUESTED
+ * - Confirmation Dialog for terminal outcomes (NOT_INTERESTED, WRONG_CONTACT)
+ * - handleComplete passes full payload {outcome, outcome_notes, callback_date?}
  */
 
 "use client";
@@ -20,11 +23,19 @@ import { useTheme, alpha } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+
+// date picker
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 
 // icons
 import PhoneOutlined from "@ant-design/icons/PhoneOutlined";
@@ -35,8 +46,9 @@ import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import ClockCircleOutlined from "@ant-design/icons/ClockCircleOutlined";
 import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
+import WarningOutlined from "@ant-design/icons/WarningOutlined";
 
-// ==============================|| ACTIVITY TYPE ICONS ||============================== //
+// ==============================|| ACTIVITY TYPE CONFIG ||============================== //
 
 const ACTIVITY_TYPE_ICONS = {
   CALL: PhoneOutlined,
@@ -60,7 +72,6 @@ const ACTIVITY_TYPE_COLORS = {
 
 /**
  * Activity Outcome Configuration — matches backend ActivityOutcome choices.
- * Copied from DecisionCycleTimeline.jsx for consistency.
  */
 const ACTIVITY_OUTCOME_CONFIG = {
   SUCCESSFUL: { color: "success", label: "Successful", category: "positive" },
@@ -93,7 +104,7 @@ const ACTIVITY_OUTCOME_CONFIG = {
   },
 };
 
-// Ordered for display: positive first, then neutral, then negative
+// Ordered: positive first, then neutral, then negative
 const OUTCOME_KEYS_ORDERED = [
   "SUCCESSFUL",
   "MEETING_SCHEDULED",
@@ -105,12 +116,11 @@ const OUTCOME_KEYS_ORDERED = [
   "WRONG_CONTACT",
 ];
 
+// Outcomes that require a confirmation dialog (cancel entire sequence chain)
+const TERMINAL_OUTCOMES = ["NOT_INTERESTED", "WRONG_CONTACT"];
+
 // ==============================|| DATE HELPERS ||============================== //
 
-/**
- * Format date with relative display.
- * Pattern: DecisionCycleTimeline ActivityCard formatDate.
- */
 function formatRelativeDate(dateStr) {
   if (!dateStr) return null;
   const date = new Date(dateStr);
@@ -133,13 +143,62 @@ function formatRelativeDate(dateStr) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-/**
- * Format time (HH:MM)
- */
 function formatTime(timeStr) {
   if (!timeStr) return null;
   return timeStr.slice(0, 5);
 }
+
+// ==============================|| CONFIRMATION DIALOG ||============================== //
+
+/**
+ * Confirmation dialog for terminal outcomes (NOT_INTERESTED, WRONG_CONTACT).
+ * Warns the user that all remaining sequence activities for this contact will be cancelled.
+ */
+function TerminalOutcomeDialog({ open, outcome, onConfirm, onCancel }) {
+  const theme = useTheme();
+  const config = outcome ? ACTIVITY_OUTCOME_CONFIG[outcome] : null;
+
+  return (
+    <Dialog open={open} onClose={onCancel} maxWidth="xs" fullWidth>
+      <DialogTitle>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <WarningOutlined
+            style={{ color: theme.palette.error.main, fontSize: 20 }}
+          />
+          <span>Cancel sequence?</span>
+        </Stack>
+      </DialogTitle>
+      <DialogContent>
+        <DialogContentText>
+          Marking this activity as <strong>{config?.label}</strong> will cancel
+          all remaining sequence activities for this contact. This cannot be
+          undone.
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onCancel} color="inherit" size="small">
+          Go back
+        </Button>
+        <Button
+          onClick={onConfirm}
+          color="error"
+          variant="contained"
+          size="small"
+          sx={{ textTransform: "none" }}
+        >
+          Confirm &amp; cancel sequence
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+TerminalOutcomeDialog.propTypes = {
+  open: PropTypes.bool.isRequired,
+  outcome: PropTypes.string,
+  onConfirm: PropTypes.func.isRequired,
+  onCancel: PropTypes.func.isRequired,
+};
 
 // ==============================|| PLAYLIST ACTIVITY CARD ||============================== //
 
@@ -156,6 +215,8 @@ export default function PlaylistActivityCard({
 
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [notes, setNotes] = useState("");
+  const [callbackDate, setCallbackDate] = useState(null);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
 
   // ==============================|| DERIVED VALUES ||============================== //
 
@@ -172,11 +233,17 @@ export default function PlaylistActivityCard({
       !isCompleted &&
       !isCancelled);
 
-  // Outcome category (for completed activities)
   const outcomeConfig = activity.outcome
     ? ACTIVITY_OUTCOME_CONFIG[activity.outcome]
     : null;
   const outcomeCategory = outcomeConfig?.category || "neutral";
+
+  const isCallbackOutcome = selectedOutcome === "CALLBACK_REQUESTED";
+  const isTerminalOutcome = TERMINAL_OUTCOMES.includes(selectedOutcome);
+
+  // Callback date is required when outcome = CALLBACK_REQUESTED
+  const isCompleteDisabled =
+    !selectedOutcome || completing || (isCallbackOutcome && !callbackDate);
 
   // ==============================|| STYLE HELPERS ||============================== //
 
@@ -209,265 +276,375 @@ export default function PlaylistActivityCard({
   const handleToggleExpand = () => {
     if (isCompleted || isCancelled) return;
     onExpand?.(expanded ? null : activity.id);
-    // Reset form when collapsing
     if (expanded) {
       setSelectedOutcome(null);
       setNotes("");
+      setCallbackDate(null);
     }
   };
 
   const handleOutcomeSelect = (outcomeKey) => {
     setSelectedOutcome(outcomeKey === selectedOutcome ? null : outcomeKey);
+    // Reset callback date when switching away from CALLBACK_REQUESTED
+    if (outcomeKey !== "CALLBACK_REQUESTED") {
+      setCallbackDate(null);
+    }
   };
 
-  const handleComplete = () => {
+  const handleCompleteClick = () => {
     if (!selectedOutcome) return;
-    onComplete?.(activity.id, {
+    // Terminal outcomes require confirmation before submitting
+    if (isTerminalOutcome) {
+      setConfirmDialogOpen(true);
+      return;
+    }
+    submitComplete();
+  };
+
+  const submitComplete = () => {
+    const payload = {
       outcome: selectedOutcome,
       outcome_notes: notes || undefined,
-    });
+    };
+    // Include callback_date only when relevant
+    if (isCallbackOutcome && callbackDate) {
+      // Send as ISO date string (YYYY-MM-DD)
+      payload.callback_date = callbackDate.toISOString().split("T")[0];
+    }
+    onComplete?.(activity.id, payload);
+  };
+
+  const handleConfirmTerminal = () => {
+    setConfirmDialogOpen(false);
+    submitComplete();
+  };
+
+  const handleCancelConfirm = () => {
+    setConfirmDialogOpen(false);
   };
 
   // ==============================|| RENDER ||============================== //
 
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        border: "1px solid",
-        borderColor: getBorderColor(),
-        borderRadius: 1.5,
-        bgcolor: getBgColor(),
-        overflow: "hidden",
-        transition: "all 0.2s ease",
-        opacity: isCancelled ? 0.6 : 1,
-      }}
-    >
-      {/* ==================== COLLAPSED CONTENT ==================== */}
-      <Box
+    <>
+      <Paper
+        elevation={0}
         sx={{
-          p: 2,
-          cursor: isCompleted || isCancelled ? "default" : "pointer",
-          "&:hover": {
-            bgcolor:
-              isCompleted || isCancelled ? "transparent" : "action.hover",
-          },
+          border: "1px solid",
+          borderColor: getBorderColor(),
+          borderRadius: 1.5,
+          bgcolor: getBgColor(),
+          overflow: "hidden",
+          transition: "all 0.2s ease",
+          opacity: isCancelled ? 0.6 : 1,
         }}
-        onClick={handleToggleExpand}
       >
-        {/* Row 1: Type chip + Date + Action button */}
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          spacing={1}
+        {/* ==================== COLLAPSED CONTENT ==================== */}
+        <Box
+          sx={{
+            p: 2,
+            cursor: isCompleted || isCancelled ? "default" : "pointer",
+            "&:hover": {
+              bgcolor:
+                isCompleted || isCancelled ? "transparent" : "action.hover",
+            },
+          }}
+          onClick={handleToggleExpand}
         >
+          {/* Row 1: Type chip + Step badge + Title + Date + Action button */}
           <Stack
             direction="row"
             alignItems="center"
+            justifyContent="space-between"
             spacing={1}
-            sx={{ flex: 1, minWidth: 0 }}
           >
-            {/* Type chip */}
-            <Chip
-              icon={<TypeIcon style={{ fontSize: 14 }} />}
-              label={activity.activity_type_display || activity.activity_type}
-              size="small"
-              color={typeColor}
-              variant="outlined"
-              sx={{
-                height: 24,
-                "& .MuiChip-label": { px: 0.75, fontSize: "0.75rem" },
-              }}
-            />
-
-            {/* Title (truncated) */}
-            <Typography
-              variant="body2"
-              fontWeight={500}
-              noWrap
-              sx={{ flex: 1 }}
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={1}
+              sx={{ flex: 1, minWidth: 0 }}
             >
-              {activity.title}
-            </Typography>
-          </Stack>
+              {/* Activity type chip */}
+              <Chip
+                icon={<TypeIcon style={{ fontSize: 14 }} />}
+                label={activity.activity_type_display || activity.activity_type}
+                size="small"
+                color={typeColor}
+                variant="outlined"
+                sx={{
+                  height: 24,
+                  flexShrink: 0,
+                  "& .MuiChip-label": { px: 0.75, fontSize: "0.75rem" },
+                }}
+              />
 
-          {/* Date + Button */}
-          <Stack
-            direction="row"
-            alignItems="center"
-            spacing={1.5}
-            sx={{ flexShrink: 0 }}
-          >
-            {activityDate && (
-              <Stack direction="row" alignItems="center" spacing={0.5}>
-                <ClockCircleOutlined
-                  style={{
-                    fontSize: 12,
-                    color: isOverdue
-                      ? theme.palette.error.main
-                      : theme.palette.text.disabled,
+              {/* Sequence step badge — shown only when sequence_position is set */}
+              {activity.sequence_position != null && (
+                <Chip
+                  label={`Step ${activity.sequence_position}`}
+                  size="small"
+                  variant="outlined"
+                  color="default"
+                  sx={{
+                    height: 20,
+                    flexShrink: 0,
+                    "& .MuiChip-label": {
+                      px: 0.75,
+                      fontSize: "0.7rem",
+                      color: "text.secondary",
+                    },
                   }}
                 />
-                <Typography
-                  variant="caption"
+              )}
+
+              {/* Title (truncated) */}
+              <Typography
+                variant="body2"
+                fontWeight={500}
+                noWrap
+                sx={{ flex: 1 }}
+              >
+                {activity.title}
+              </Typography>
+            </Stack>
+
+            {/* Date + Action button */}
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={1.5}
+              sx={{ flexShrink: 0 }}
+            >
+              {activityDate && (
+                <Stack direction="row" alignItems="center" spacing={0.5}>
+                  <ClockCircleOutlined
+                    style={{
+                      fontSize: 12,
+                      color: isOverdue
+                        ? theme.palette.error.main
+                        : theme.palette.text.disabled,
+                    }}
+                  />
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: isOverdue ? "error.main" : "text.secondary",
+                      fontWeight: isOverdue ? 600 : 400,
+                    }}
+                  >
+                    {formatRelativeDate(activityDate)}
+                  </Typography>
+                  {activity.scheduled_time && (
+                    <Typography variant="caption" color="text.disabled">
+                      {formatTime(activity.scheduled_time)}
+                    </Typography>
+                  )}
+                </Stack>
+              )}
+
+              {/* Completed badge or Log Result button */}
+              {isCompleted && outcomeConfig ? (
+                <Chip
+                  label={outcomeConfig.label}
+                  size="small"
+                  color={outcomeConfig.color}
+                  variant="filled"
+                  sx={{ height: 22, fontSize: "0.7rem" }}
+                />
+              ) : !isCompleted && !isCancelled ? (
+                <Button
+                  size="small"
+                  variant={expanded ? "text" : "outlined"}
+                  color={expanded ? "inherit" : "primary"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleExpand();
+                  }}
+                  startIcon={expanded ? <CloseOutlined /> : undefined}
                   sx={{
-                    color: isOverdue ? "error.main" : "text.secondary",
-                    fontWeight: isOverdue ? 600 : 400,
+                    minWidth: expanded ? "auto" : 90,
+                    height: 28,
+                    fontSize: "0.75rem",
+                    textTransform: "none",
                   }}
                 >
-                  {formatRelativeDate(activityDate)}
-                </Typography>
-                {activity.scheduled_time && (
-                  <Typography variant="caption" color="text.disabled">
-                    {formatTime(activity.scheduled_time)}
-                  </Typography>
-                )}
-              </Stack>
-            )}
-
-            {/* Action button or completed badge */}
-            {isCompleted && outcomeConfig ? (
-              <Chip
-                label={outcomeConfig.label}
-                size="small"
-                color={outcomeConfig.color}
-                variant="filled"
-                sx={{ height: 22, fontSize: "0.7rem" }}
-              />
-            ) : !isCompleted && !isCancelled ? (
-              <Button
-                size="small"
-                variant={expanded ? "text" : "outlined"}
-                color={expanded ? "inherit" : "primary"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleToggleExpand();
-                }}
-                startIcon={expanded ? <CloseOutlined /> : undefined}
-                sx={{
-                  minWidth: expanded ? "auto" : 90,
-                  height: 28,
-                  fontSize: "0.75rem",
-                  textTransform: "none",
-                }}
-              >
-                {expanded ? "Close" : "Log Result"}
-              </Button>
-            ) : null}
+                  {expanded ? "Close" : "Log Result"}
+                </Button>
+              ) : null}
+            </Stack>
           </Stack>
-        </Stack>
 
-        {/* Row 2: Account + Contacts count */}
-        <Stack
-          direction="row"
-          alignItems="center"
-          spacing={0.5}
-          sx={{ mt: 0.75 }}
-        >
-          {activity.account && (
-            <Typography variant="body2" color="text.primary" fontWeight={500}>
-              {activity.account.company_name}
-            </Typography>
-          )}
-          {activity.contacts_count > 0 && (
-            <Typography variant="caption" color="text.disabled">
-              · {activity.contacts_count} contact
-              {activity.contacts_count > 1 ? "s" : ""}
-            </Typography>
-          )}
-        </Stack>
-
-        {/* Row 3: Call to action (if available) */}
-        {activity.call_to_action && (
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            noWrap
-            sx={{ mt: 0.5, display: "block" }}
+          {/* Row 2: Account + Contacts count */}
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={0.5}
+            sx={{ mt: 0.75 }}
           >
-            {activity.call_to_action}
-          </Typography>
-        )}
-      </Box>
+            {activity.account && (
+              <Typography variant="body2" color="text.primary" fontWeight={500}>
+                {activity.account.company_name}
+              </Typography>
+            )}
+            {activity.contacts_count > 0 && (
+              <Typography variant="caption" color="text.disabled">
+                · {activity.contacts_count} contact
+                {activity.contacts_count > 1 ? "s" : ""}
+              </Typography>
+            )}
+          </Stack>
 
-      {/* ==================== EXPANDED CONTENT ==================== */}
-      {expanded && !isCompleted && !isCancelled && (
-        <>
-          <Divider />
-          <Box sx={{ p: 2 }}>
-            {/* Outcome chips */}
+          {/* Row 3: Call to action */}
+          {activity.call_to_action && (
             <Typography
               variant="caption"
               color="text.secondary"
-              sx={{ mb: 1, display: "block" }}
+              noWrap
+              sx={{ mt: 0.5, display: "block" }}
             >
-              Select outcome
+              {activity.call_to_action}
             </Typography>
-            <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mb: 2 }}>
-              {OUTCOME_KEYS_ORDERED.map((key) => {
-                const config = ACTIVITY_OUTCOME_CONFIG[key];
-                const isSelected = selectedOutcome === key;
-                return (
-                  <Chip
-                    key={key}
-                    label={config.label}
-                    size="small"
-                    color={config.color}
-                    variant={isSelected ? "filled" : "outlined"}
-                    onClick={() => handleOutcomeSelect(key)}
-                    sx={{
-                      cursor: "pointer",
-                      fontWeight: isSelected ? 600 : 400,
-                      height: 28,
-                      "& .MuiChip-label": { px: 1 },
+          )}
+        </Box>
+
+        {/* ==================== EXPANDED CONTENT ==================== */}
+        {expanded && !isCompleted && !isCancelled && (
+          <>
+            <Divider />
+            <Box sx={{ p: 2 }}>
+              {/* Outcome chips */}
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ mb: 1, display: "block" }}
+              >
+                Select outcome
+              </Typography>
+              <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mb: 2 }}>
+                {OUTCOME_KEYS_ORDERED.map((key) => {
+                  const config = ACTIVITY_OUTCOME_CONFIG[key];
+                  const isSelected = selectedOutcome === key;
+                  return (
+                    <Chip
+                      key={key}
+                      label={config.label}
+                      size="small"
+                      color={config.color}
+                      variant={isSelected ? "filled" : "outlined"}
+                      onClick={() => handleOutcomeSelect(key)}
+                      sx={{
+                        cursor: "pointer",
+                        fontWeight: isSelected ? 600 : 400,
+                        height: 28,
+                        "& .MuiChip-label": { px: 1 },
+                      }}
+                    />
+                  );
+                })}
+              </Stack>
+
+              {/* Callback date — only when CALLBACK_REQUESTED */}
+              {isCallbackOutcome && (
+                <Box sx={{ mb: 2 }}>
+                  <DatePicker
+                    label="Callback date *"
+                    value={callbackDate}
+                    onChange={(newValue) => setCallbackDate(newValue)}
+                    disablePast
+                    slotProps={{
+                      textField: {
+                        size: "small",
+                        fullWidth: true,
+                        error: !callbackDate,
+                        helperText: !callbackDate
+                          ? "Callback date is required"
+                          : undefined,
+                      },
                     }}
                   />
-                );
-              })}
-            </Stack>
+                </Box>
+              )}
 
-            {/* Notes field */}
-            <TextField
-              placeholder="Add notes (optional)..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              size="small"
-              fullWidth
-              multiline
-              rows={2}
-              sx={{ mb: 1.5 }}
-            />
+              {/* Terminal outcome warning banner */}
+              {isTerminalOutcome && (
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="flex-start"
+                  sx={{
+                    mb: 2,
+                    p: 1.5,
+                    borderRadius: 1,
+                    bgcolor: alpha(theme.palette.error.main, 0.06),
+                    border: "1px solid",
+                    borderColor: alpha(theme.palette.error.main, 0.2),
+                  }}
+                >
+                  <WarningOutlined
+                    style={{
+                      fontSize: 14,
+                      color: theme.palette.error.main,
+                      marginTop: 2,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <Typography variant="caption" color="error.main">
+                    This will cancel all remaining sequence activities for this
+                    contact.
+                  </Typography>
+                </Stack>
+              )}
 
-            {/* Complete button */}
-            <Stack direction="row" justifyContent="flex-end">
-              <Button
-                variant="contained"
-                color="success"
+              {/* Notes field */}
+              <TextField
+                placeholder="Add notes (optional)..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
                 size="small"
-                disabled={!selectedOutcome || completing}
-                onClick={handleComplete}
-                startIcon={<CheckCircleOutlined />}
-                sx={{ textTransform: "none" }}
-              >
-                {completing ? "Completing..." : "Complete"}
-              </Button>
-            </Stack>
-          </Box>
-        </>
-      )}
-    </Paper>
+                fullWidth
+                multiline
+                rows={2}
+                sx={{ mb: 1.5 }}
+              />
+
+              {/* Complete button */}
+              <Stack direction="row" justifyContent="flex-end">
+                <Button
+                  variant="contained"
+                  color={isTerminalOutcome ? "error" : "success"}
+                  size="small"
+                  disabled={isCompleteDisabled}
+                  onClick={handleCompleteClick}
+                  startIcon={<CheckCircleOutlined />}
+                  sx={{ textTransform: "none" }}
+                >
+                  {completing ? "Completing..." : "Complete"}
+                </Button>
+              </Stack>
+            </Box>
+          </>
+        )}
+      </Paper>
+
+      {/* Confirmation dialog for terminal outcomes */}
+      <TerminalOutcomeDialog
+        open={confirmDialogOpen}
+        outcome={selectedOutcome}
+        onConfirm={handleConfirmTerminal}
+        onCancel={handleCancelConfirm}
+      />
+    </>
   );
 }
 
 PlaylistActivityCard.propTypes = {
-  /** Activity object from playlist API (ActivityListSerializer shape) */
+  /** Activity object from playlist API */
   activity: PropTypes.object.isRequired,
   /** Whether this card is currently expanded */
   expanded: PropTypes.bool,
   /** Callback to toggle expand — receives activityId or null */
   onExpand: PropTypes.func,
-  /** Callback to complete activity — receives (activityId, {outcome, outcome_notes}) */
+  /** Callback to complete — receives (activityId, {outcome, outcome_notes, callback_date?}) */
   onComplete: PropTypes.func,
   /** Whether a complete mutation is in progress */
   completing: PropTypes.bool,

@@ -78,6 +78,18 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
     setExpandedCardId((prev) => (prev === activityId ? null : activityId));
   }, []);
 
+  // Outcome category map — mirrors ACTIVITY_OUTCOME_CONFIG in PlaylistActivityCard
+  const OUTCOME_CATEGORIES = {
+    SUCCESSFUL: "positive",
+    MEETING_SCHEDULED: "positive",
+    NO_ANSWER: "neutral",
+    CALLBACK_REQUESTED: "neutral",
+    FOLLOW_UP_NEEDED: "neutral",
+    OTHER: "neutral",
+    NOT_INTERESTED: "negative",
+    WRONG_CONTACT: "negative",
+  };
+
   const handleComplete = useCallback(
     async (activityId, payload) => {
       setCompletingId(activityId);
@@ -91,7 +103,19 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         if (result.success) {
           setCompletedToday((prev) => prev + 1);
           setExpandedCardId(null);
-          displaySuccessSnackbar("Activity completed");
+
+          // Differentiate toast message based on outcome category
+          const category = OUTCOME_CATEGORIES[payload.outcome] || "neutral";
+          if (category === "negative") {
+            displaySuccessSnackbar(
+              "Activity completed — remaining sequence cancelled for this contact",
+            );
+          } else if (category === "positive") {
+            displaySuccessSnackbar("Activity completed successfully");
+          } else {
+            displaySuccessSnackbar("Activity completed");
+          }
+
           mutatePlaylist();
         } else {
           displayErrorSnackbar(result);

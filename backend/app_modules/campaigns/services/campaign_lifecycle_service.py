@@ -52,57 +52,51 @@ class CampaignLifecycleService:
 
     @transaction.atomic
     def start(self, campaign):
-        """
-        Start a campaign: DRAFT → ACTIVE.
-
-        Side effects:
-            - Validates campaign has at least one account enrolled
-            - Transitions PENDING accounts to IN_PROGRESS
-            - Enrolls accounts from Territory if none enrolled yet (OUTBOUND)
-
-        Returns:
-            dict: {campaign, accounts_activated, accounts_enrolled}
-        """
         self._validate_ownership(campaign)
 
-        # Enroll from territory if OUTBOUND and no accounts yet
         accounts_enrolled = 0
         if campaign.campaign_type == 'OUTBOUND' and campaign.campaign_accounts.count() == 0:
             from .campaign_creation_service import CampaignCreationService
             creation_service = CampaignCreationService(user=self.user, client_id=self.client_id)
             accounts_enrolled = creation_service._enroll_from_territory(campaign)
 
-        # Must have at least one account
         if campaign.campaign_accounts.count() == 0:
             raise StandardizedValidationError(
                 CampaignModuleErrorMessages.CAMPAIGN_NO_ACCOUNTS
             )
 
-        # Transition campaign
         campaign.start(user=self.user)
 
-        # Activate pending accounts
         accounts_activated = self._cascade_accounts(
             campaign,
             from_status=CampaignAccountStatus.PENDING,
             to_status=CampaignAccountStatus.IN_PROGRESS,
         )
 
+        # Generate activities atomically — playlist is ready immediately after start
+        from .campaign_execution_service import CampaignExecutionService
+        execution_service = CampaignExecutionService(user=self.user, client_id=self.client_id)
+        gen_result = execution_service.generate_activities(campaign)
+        activities_created = gen_result.get('activities_created', 0)
+
         self._audit('campaign_started', campaign, extra={
             'accounts_activated': accounts_activated,
             'accounts_enrolled': accounts_enrolled,
+            'activities_created': activities_created,
         })
 
         logger.info("campaign_started", extra={
             'campaign_id': str(campaign.id),
             'accounts_activated': accounts_activated,
             'accounts_enrolled': accounts_enrolled,
+            'activities_created': activities_created,
         })
 
         return {
             'campaign': campaign,
             'accounts_activated': accounts_activated,
             'accounts_enrolled': accounts_enrolled,
+            'activities_created': activities_created,
         }
 
     @transaction.atomic

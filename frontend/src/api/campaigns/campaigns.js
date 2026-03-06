@@ -624,6 +624,7 @@ export async function startCampaign(campaignId) {
       endpoints.campaigns,
       endpoints.campaignDetail(campaignId),
       endpoints.campaignDashboard(campaignId),
+      endpoints.campaignPlaylist(campaignId),
       `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
     ]);
     return { success: true, data: result.data };

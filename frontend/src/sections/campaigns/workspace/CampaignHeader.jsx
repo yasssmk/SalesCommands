@@ -35,7 +35,6 @@ import {
   pauseCampaign,
   resumeCampaign,
   completeCampaign,
-  generateCampaignActivities,
 } from "api/campaigns/campaigns";
 
 // utils
@@ -87,16 +86,6 @@ function CampaignActionButtons({ campaign, onMutate }) {
       if (!result.success) {
         displayErrorSnackbar(result);
         return;
-      }
-
-      // Generate activities right after start so the playlist is immediately populated
-      if (actionFn === startCampaign) {
-        const genResult = await generateCampaignActivities(campaign.id);
-        if (!genResult.success) {
-          displayErrorSnackbar(
-            "Campaign started but activity generation failed. Refresh to retry.",
-          );
-        }
       }
 
       displaySuccessSnackbar(successMessage);
