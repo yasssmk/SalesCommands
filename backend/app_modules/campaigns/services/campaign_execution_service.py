@@ -313,6 +313,150 @@ class CampaignExecutionService:
             'campaign_account': campaign_account,
             'next_activity': next_activity,
         }
+    
+    def generate_activities_for_contact(self, campaign, campaign_account, contact):
+        """
+        Generate activities for a single contact added to an active campaign account.
+
+        Handles both campaign types:
+        - No sequence (CALL_LIST): creates one flat activity.
+        - With sequence: creates all N chained steps, identical to
+          the per-contact loop in _generate_for_account().
+
+        Args:
+            campaign: Campaign instance.
+            campaign_account: CampaignAccount the contact was added to.
+            contact: Contact to generate activities for.
+
+        Returns:
+            int: Number of activities created.
+        """
+        executor = self._get_executor(campaign, campaign_account)
+
+        # --------------------------------------------------------------
+        # No-sequence campaign: one flat activity
+        # --------------------------------------------------------------
+        if not campaign.sequence_type:
+            self._create_activity(
+                campaign=campaign,
+                campaign_account=campaign_account,
+                account=campaign_account.account,
+                contact=contact,
+                activity_type=ActivityType.CALL,
+                position=1,
+                owner=executor,
+            )
+            logger.info("campaign_activity_generated_for_contact", extra={
+                'campaign_id': str(campaign.id),
+                'campaign_account_id': str(campaign_account.id),
+                'contact_id': str(contact.id),
+                'created_count': 1,
+            })
+            return 1
+
+        # --------------------------------------------------------------
+        # Sequence campaign: generate all steps, chained
+        # --------------------------------------------------------------
+        has_phone = bool(getattr(contact, 'phone_number', None))
+        has_email = bool(getattr(contact, 'email', None))
+        has_linkedin = bool(getattr(contact, 'linkedin_url', None))
+
+        try:
+            sequence_dict, variant_name = SequenceDispatcher.get_sequence_with_variant(
+                sequence_type=campaign.sequence_type,
+                has_phone=has_phone,
+                has_email=has_email,
+                has_linkedin=has_linkedin,
+            )
+        except ValueError:
+            logger.warning("sequence_type_invalid_for_contact", extra={
+                'campaign_id': str(campaign.id),
+                'sequence_type': campaign.sequence_type,
+                'contact_id': str(contact.id),
+            })
+            return 0
+
+        created = 0
+        previous_activity = None
+        for step_number, step_config in sequence_dict.items():
+            activity = self._create_activity(
+                campaign=campaign,
+                campaign_account=campaign_account,
+                account=campaign_account.account,
+                contact=contact,
+                activity_type=step_config['type'],
+                position=step_number,
+                owner=executor,
+                step_config=step_config,
+                sequence_variant=variant_name,
+                previous_activity=previous_activity,
+            )
+            if previous_activity is not None:
+                previous_activity.next_activity = activity
+                previous_activity.save(user=self.user, client_id=self.client_id)
+
+            previous_activity = activity
+            created += 1
+
+        logger.info("campaign_activities_generated_for_contact", extra={
+            'campaign_id': str(campaign.id),
+            'campaign_account_id': str(campaign_account.id),
+            'contact_id': str(contact.id),
+            'created_count': created,
+            'variant': variant_name,
+        })
+
+        return created
+    
+    def delete_activities_for_contact(self, campaign, campaign_account, contact):
+        """
+        Delete all PLANNED activities for a specific contact within a campaign account.
+
+        Called when a contact is removed from a CampaignAccount's target_contacts.
+        Repairs the previous_activity/next_activity chain before deletion so that
+        remaining activities stay correctly linked.
+
+        Activities that are COMPLETED or IN_PROGRESS are left untouched.
+
+        Args:
+            campaign: Campaign instance (kept for API symmetry with generate_).
+            campaign_account: CampaignAccount the contact is being removed from.
+            contact: Contact being removed.
+        """
+        planned_activities = Activity.objects.filter(
+            campaign_account=campaign_account,
+            contacts=contact,
+            status=ActivityStatus.PLANNED,
+        ).select_related('previous_activity', 'next_activity')
+
+        if not planned_activities.exists():
+            return
+
+        activity_ids = []
+
+        for activity in planned_activities:
+            prev_act = activity.previous_activity
+            next_act = activity.next_activity
+
+            # Reconnect the chain around this activity
+            if prev_act and prev_act.id not in activity_ids:
+                prev_act.next_activity = next_act
+                prev_act.save(user=self.user, client_id=self.client_id)
+
+            if next_act and next_act.id not in activity_ids:
+                next_act.previous_activity = prev_act
+                next_act.save(user=self.user, client_id=self.client_id)
+
+            activity_ids.append(activity.id)
+
+        deleted_count, _ = Activity.objects.filter(id__in=activity_ids).delete()
+
+        logger.info("campaign_activities_deleted_for_contact", extra={
+            'campaign_id': str(campaign.id),
+            'campaign_account_id': str(campaign_account.id),
+            'contact_id': str(contact.id),
+            'deleted_count': deleted_count,
+        })
 
     # ======================================================================
     # PRIVATE — ACTIVITY GENERATION PER ACCOUNT
@@ -641,6 +785,43 @@ class CampaignExecutionService:
             )
 
         return None
+    
+    def _cancel_chain(self, activity):
+        """
+        Cancel all remaining PLANNED activities in the chain after *activity*.
+
+        Walks the next_activity linked list, collects IDs of PLANNED activities,
+        and performs a single bulk update.  Activities already COMPLETED or
+        CANCELLED are left untouched.
+
+        Args:
+            activity: The activity whose chain should be cancelled downstream.
+        """
+        ids_to_cancel = []
+        current = getattr(activity, 'next_activity', None)
+
+        while current is not None:
+            if current.status == ActivityStatus.PLANNED:
+                ids_to_cancel.append(current.id)
+            current = getattr(current, 'next_activity', None)
+
+        if not ids_to_cancel:
+            return
+
+        cancelled_count = Activity.objects.filter(
+            id__in=ids_to_cancel,
+        ).update(
+            status=ActivityStatus.CANCELLED,
+            outcome_notes="Chain cancelled: terminal outcome on predecessor",
+            updated_at=timezone.now(),
+        )
+
+        logger.info("campaign_chain_cancelled", extra={
+            'source_activity_id': str(activity.id),
+            'cancelled_count': cancelled_count,
+            'cancelled_ids': [str(aid) for aid in ids_to_cancel],
+        })
+
 
     def _create_followup(self, source_activity, activity_type, scheduled_date):
         """
