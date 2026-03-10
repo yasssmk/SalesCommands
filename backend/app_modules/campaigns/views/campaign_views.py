@@ -16,6 +16,7 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.db.models import Count
+from django.utils import timezone
 
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
@@ -115,6 +116,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         'summary': {'crud': 'read', 'scope': 'client'},
         'playlist': {'crud': 'read', 'scope': 'client'},
         'generate_activities': {'crud': 'update', 'scope': 'client'},
+        'log_response': {'crud': 'create', 'scope': 'client'},
         'my_campaigns': {'crud': 'read', 'scope': 'mine'},
     }
 
@@ -761,6 +763,190 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         return Response({
             'success': True,
             'data': result,
+        })
+    
+    @action(detail=True, methods=['post'], url_path='log-response')
+    @transaction.atomic
+    def log_response(self, request, pk=None):
+        """
+        Log an async response received from a contact (email reply, callback, LinkedIn, etc.).
+        POST /campaigns/{id}/log-response/
+        Body:
+            - activity_id:     UUID  (required) — completed activity that triggered the response
+            - response:        str   (required) — POSITIVE | NEGATIVE | MEETING_BOOKED |
+                                                  CALLBACK_REQUESTED | NO_RESPONSE
+            - response_date:   date  (optional) — required when response is MEETING_BOOKED
+                                                  or CALLBACK_REQUESTED (YYYY-MM-DD)
+            - notes:           str   (optional)
+        Delegates entirely to CampaignExecutionService.process_result():
+        updates activity outcome, CampaignAccount state, and cancels downstream
+        sequence activities when the outcome is terminal.
+        """
+        ctx = ctx_from_request(request)
+        campaign = self.get_object()
+        client_id = self.get_client_id()
+
+        # --- Validate required fields ---
+        activity_id = request.data.get('activity_id')
+        response = request.data.get('response')
+        response_date = request.data.get('response_date')
+        notes = request.data.get('notes', '')
+
+        if not activity_id:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='activity_id')
+            )
+        if not response:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='response')
+            )
+
+        # --- Resolve activity (must belong to this campaign + client) ---
+        from app_modules.activities.models import Activity
+        try:
+            activity = Activity.objects.get(
+                id=activity_id,
+                campaign=campaign,
+                client_id=client_id,
+            )
+        except Activity.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+        # --- Map response → outcome ---
+        RESPONSE_TO_OUTCOME = {
+            'POSITIVE': 'SUCCESSFUL',
+            'MEETING_BOOKED': 'MEETING_SCHEDULED',
+            'CALLBACK_REQUESTED': 'CALLBACK_REQUESTED',
+            'NO_RESPONSE': 'NO_ANSWER',
+            'NEGATIVE': 'NOT_INTERESTED',
+        }
+        outcome = RESPONSE_TO_OUTCOME.get(response, 'OTHER')
+
+        # --- Process result via service (handles outcome + CampaignAccount + sequence cancellation) ---
+        service = CampaignExecutionService(
+            user=request.user,
+            client_id=str(client_id),
+        )
+        service.process_result(activity, {
+            'outcome': outcome,
+            'outcome_notes': notes or None,
+            'callback_date': response_date if response == 'CALLBACK_REQUESTED' else None,
+        })
+
+        self._invalidate_campaign_caches(client_id)
+
+        audit_log(
+            event='campaign_response_logged',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(client_id),
+            target_type='activity',
+            target_id=str(activity.id),
+            outcome='success',
+            extra={
+                'campaign_id': str(campaign.id),
+                'response': response,
+                'outcome': outcome,
+            },
+        )
+
+        logger.info("campaign_response_logged", extra={
+            **ctx,
+            'campaign_id': str(campaign.id),
+            'activity_id': str(activity.id),
+            'response': response,
+        })
+
+        return Response({
+            'success': True,
+            'data': {
+                'activity_id': str(activity.id),
+                'response': response,
+                'outcome': outcome,
+            },
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['delete'], url_path='cancel-planned')
+    @transaction.atomic
+    def cancel_planned(self, request, pk=None):
+        """
+        Cancel all PLANNED activities for a contact or an entire account in this campaign.
+        DELETE /campaigns/{id}/cancel-planned/
+        Body:
+            - scope:      str  'contact' | 'account'  (required)
+            - contact_id: UUID (required when scope = 'contact')
+            - account_id: UUID (required)
+        """
+        ctx = ctx_from_request(request)
+        campaign = self.get_object()
+        client_id = self.get_client_id()
+
+        scope = request.data.get('scope')
+        account_id = request.data.get('account_id')
+        contact_id = request.data.get('contact_id')
+
+        if scope not in ('contact', 'account'):
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='scope (contact|account)')
+            )
+        if not account_id:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='account_id')
+            )
+        if scope == 'contact' and not contact_id:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='contact_id')
+            )
+
+        from app_modules.activities.models import Activity, ActivityStatus
+
+        qs = Activity.objects.filter(
+            campaign=campaign,
+            account_id=account_id,
+            client_id=client_id,
+            status=ActivityStatus.PLANNED,
+        )
+
+        if scope == 'contact':
+            qs = qs.filter(contacts__id=contact_id)
+
+        cancelled_count = qs.update(
+            status=ActivityStatus.CANCELLED,
+            outcome_notes='Manually cancelled after terminal response',
+            updated_at=timezone.now(),
+        )
+
+        self._invalidate_campaign_caches(client_id)
+
+        audit_log(
+            event='campaign_planned_activities_cancelled',
+            action='delete',
+            actor_id=str(request.user.id),
+            client_id=str(client_id),
+            target_type='campaign',
+            target_id=str(campaign.id),
+            outcome='success',
+            extra={
+                'scope': scope,
+                'account_id': str(account_id),
+                'contact_id': str(contact_id) if contact_id else None,
+                'cancelled_count': cancelled_count,
+            },
+        )
+
+        logger.info("campaign_planned_activities_cancelled", extra={
+            **ctx,
+            'campaign_id': str(campaign.id),
+            'scope': scope,
+            'cancelled_count': cancelled_count,
+        })
+
+        return Response({
+            'success': True,
+            'data': {
+                'cancelled_count': cancelled_count,
+                'scope': scope,
+            },
         })
 
     # ==========================================================================

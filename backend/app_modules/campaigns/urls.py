@@ -85,6 +85,10 @@ def get_urlpatterns():
             'post': 'generate_activities'
         }), name='generate-activities'),
 
+        path('<uuid:pk>/log-response/', CampaignViewSet.as_view({
+            'post': 'log_response'
+        }), name='log-response'),
+
         # =================================================================
         # CAMPAIGN ACCOUNTS — LIST ACTIONS
         # =================================================================

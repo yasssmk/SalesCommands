@@ -12,7 +12,7 @@
  * Pattern: sections/activities/workspace/ActivityHeader.jsx
  */
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 // MUI
 import { useTheme } from "@mui/material/styles";
@@ -22,6 +22,17 @@ import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import ButtonGroup from "@mui/material/ButtonGroup";
+import ClickAwayListener from "@mui/material/ClickAwayListener";
+import Divider from "@mui/material/Divider";
+import Grow from "@mui/material/Grow";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import MenuItem from "@mui/material/MenuItem";
+import MenuList from "@mui/material/MenuList";
+import Paper from "@mui/material/Paper";
+import Popper from "@mui/material/Popper";
+import DownOutlined from "@ant-design/icons/DownOutlined";
+import MessageOutlined from "@ant-design/icons/MessageOutlined";
 
 // project imports
 import CampaignStatusBadge from "sections/campaigns/CampaignStatusBadge";
@@ -66,26 +77,30 @@ const FAMILY_CONFIG = {
   },
 };
 
-// ==============================|| ACTION BUTTONS COMPONENT ||============================== //
+// ==============================|| CAMPAIGN ACTION SPLIT BUTTON ||============================== //
 
 /**
- * Stateful sub-component so we can use useState for loading.
- * After startCampaign succeeds, also calls generateCampaignActivities
- * so the playlist is populated immediately.
+ * Single action button that adapts to campaign status.
+ *
+ * DRAFT     → [Start]  (single contained button)
+ * ACTIVE    → [Pause ▾]  dropdown: Complete · Log Response
+ * PAUSED    → [Resume ▾] dropdown: Complete · Log Response
+ * COMPLETED / CANCELLED → nothing
  */
-function CampaignActionButtons({ campaign, onMutate }) {
+function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef(null);
 
   const handleAction = async (actionFn, successMessage) => {
     setLoading(true);
+    setOpen(false);
     try {
       const result = await actionFn(campaign.id);
-
       if (!result.success) {
         displayErrorSnackbar(result);
         return;
       }
-
       displaySuccessSnackbar(successMessage);
       if (onMutate) onMutate();
     } catch {
@@ -95,99 +110,124 @@ function CampaignActionButtons({ campaign, onMutate }) {
     }
   };
 
+  const handleToggle = () => setOpen((prev) => !prev);
+  const handleClose = (e) => {
+    if (anchorRef.current?.contains(e.target)) return;
+    setOpen(false);
+  };
+
+  // DRAFT — single Start button
+  if (campaign.status === "DRAFT") {
+    return (
+      <Button
+        variant="contained"
+        color="success"
+        size="small"
+        startIcon={
+          loading ? (
+            <CircularProgress size={14} color="inherit" />
+          ) : (
+            <PlayCircleOutlined />
+          )
+        }
+        disabled={loading}
+        onClick={() => handleAction(startCampaign, "Campaign started")}
+      >
+        Start
+      </Button>
+    );
+  }
+
+  // COMPLETED / CANCELLED — nothing
+  if (["COMPLETED", "CANCELLED"].includes(campaign.status)) return null;
+
+  // ACTIVE or PAUSED — split button
+  const isActive = campaign.status === "ACTIVE";
+  const primaryLabel = isActive ? "Pause" : "Resume";
+  const primaryAction = isActive ? pauseCampaign : resumeCampaign;
+  const primaryMessage = isActive ? "Campaign paused" : "Campaign resumed";
+  const primaryIcon = isActive ? (
+    <PauseCircleOutlined />
+  ) : (
+    <PlayCircleOutlined />
+  );
+  const primaryColor = isActive ? "warning" : "success";
+
   return (
-    <Stack direction="row" spacing={1}>
-      {campaign.status === "DRAFT" && (
+    <>
+      <ButtonGroup
+        ref={anchorRef}
+        variant="contained"
+        color={primaryColor}
+        size="small"
+        disabled={loading}
+      >
+        {/* Primary action */}
         <Button
-          variant="contained"
-          color="success"
-          size="small"
           startIcon={
             loading ? (
               <CircularProgress size={14} color="inherit" />
             ) : (
-              <PlayCircleOutlined />
+              primaryIcon
             )
           }
-          disabled={loading}
-          onClick={() => handleAction(startCampaign, "Campaign started")}
+          onClick={() => handleAction(primaryAction, primaryMessage)}
         >
-          Start
+          {primaryLabel}
         </Button>
-      )}
-      {campaign.status === "ACTIVE" && (
-        <>
-          <Button
-            variant="outlined"
-            color="warning"
-            size="small"
-            startIcon={
-              loading ? (
-                <CircularProgress size={14} color="inherit" />
-              ) : (
-                <PauseCircleOutlined />
-              )
-            }
-            disabled={loading}
-            onClick={() => handleAction(pauseCampaign, "Campaign paused")}
-          >
-            Pause
-          </Button>
-          <Button
-            variant="outlined"
-            color="primary"
-            size="small"
-            startIcon={
-              loading ? (
-                <CircularProgress size={14} color="inherit" />
-              ) : (
-                <CheckCircleOutlined />
-              )
-            }
-            disabled={loading}
-            onClick={() => handleAction(completeCampaign, "Campaign completed")}
-          >
-            Complete
-          </Button>
-        </>
-      )}
-      {campaign.status === "PAUSED" && (
-        <>
-          <Button
-            variant="contained"
-            color="success"
-            size="small"
-            startIcon={
-              loading ? (
-                <CircularProgress size={14} color="inherit" />
-              ) : (
-                <PlayCircleOutlined />
-              )
-            }
-            disabled={loading}
-            onClick={() => handleAction(resumeCampaign, "Campaign resumed")}
-          >
-            Resume
-          </Button>
-          <Button
-            variant="outlined"
-            color="primary"
-            size="small"
-            startIcon={
-              loading ? (
-                <CircularProgress size={14} color="inherit" />
-              ) : (
-                <CheckCircleOutlined />
-              )
-            }
-            disabled={loading}
-            onClick={() => handleAction(completeCampaign, "Campaign completed")}
-          >
-            Complete
-          </Button>
-        </>
-      )}
-    </Stack>
+
+        {/* Dropdown arrow */}
+        <Button
+          size="small"
+          onClick={handleToggle}
+          sx={{ px: 0.75, minWidth: 28 }}
+        >
+          <DownOutlined style={{ fontSize: 10 }} />
+        </Button>
+      </ButtonGroup>
+
+      <Popper
+        open={open}
+        anchorEl={anchorRef.current}
+        transition
+        disablePortal
+        placement="bottom-end"
+        style={{ zIndex: 1300 }}
+      >
+        {({ TransitionProps }) => (
+          <Grow {...TransitionProps}>
+            <Paper elevation={3} sx={{ mt: 0.5, minWidth: 160 }}>
+              <ClickAwayListener onClickAway={handleClose}>
+                <MenuList dense>
+                  <MenuItem
+                    onClick={() =>
+                      handleAction(completeCampaign, "Campaign completed")
+                    }
+                  >
+                    <ListItemIcon>
+                      <CheckCircleOutlined />
+                    </ListItemIcon>
+                    Complete
+                  </MenuItem>
+                  <Divider />
+                  <MenuItem
+                    onClick={() => {
+                      setOpen(false);
+                      onLogResponse?.();
+                    }}
+                  >
+                    <ListItemIcon>
+                      <MessageOutlined />
+                    </ListItemIcon>
+                    Log Response
+                  </MenuItem>
+                </MenuList>
+              </ClickAwayListener>
+            </Paper>
+          </Grow>
+        )}
+      </Popper>
+    </>
   );
 }
 
@@ -200,7 +240,12 @@ function CampaignActionButtons({ campaign, onMutate }) {
  * @param {Function} params.onMutate  - Callback to revalidate campaign after lifecycle action
  * @returns {Object} Props object spread into <WorkspaceLayout {...props} />
  */
-export default function useCampaignHeaderProps({ campaign, stats, onMutate }) {
+export default function useCampaignHeaderProps({
+  campaign,
+  stats,
+  onMutate,
+  onLogResponse,
+}) {
   const theme = useTheme();
 
   if (!campaign) {
@@ -238,7 +283,11 @@ export default function useCampaignHeaderProps({ campaign, stats, onMutate }) {
   const title = campaign.name || "";
 
   const headerActions = (
-    <CampaignActionButtons campaign={campaign} onMutate={onMutate} />
+    <CampaignActionButtons
+      campaign={campaign}
+      onMutate={onMutate}
+      onLogResponse={onLogResponse}
+    />
   );
 
   // ==============================|| ROW 2: Chips ||============================== //
@@ -254,42 +303,33 @@ export default function useCampaignHeaderProps({ campaign, stats, onMutate }) {
       color={familyConfig.chipColor}
       variant="outlined"
     />,
-    campaign.sequence_type && (
-      <Chip
-        key="sequence"
-        label={
-          SEQUENCE_TYPE_LABELS[campaign.sequence_type] || campaign.sequence_type
-        }
-        size="small"
-        variant="outlined"
-      />
-    ),
   ].filter(Boolean);
 
   // ==============================|| ROW 3: Info Items (JSX elements) ||============================== //
 
   const infoItems = [
-    // Territory
-    campaign.territory_names?.length > 0 && (
+    // Territory — DetailSerializer returns territories[] ({id, name, type})
+    campaign.territories?.length > 0 && (
       <Stack key="territory" direction="row" spacing={0.75} alignItems="center">
         <BankOutlined
           style={{ fontSize: 14, color: theme.palette.text.secondary }}
         />
         <Typography variant="body2" color="text.secondary">
-          {campaign.territory_names.join(", ")}
+          {campaign.territories.map((t) => t.name).join(", ")}
         </Typography>
       </Stack>
     ),
 
-    // Objective
-    campaign.objective_type && (
+    // Objective — DetailSerializer returns primary_objective ({objective_type, ...})
+    // ListSerializer returns primary_objective as well — same path works for both
+    campaign.primary_objective?.objective_type && (
       <Stack key="objective" direction="row" spacing={0.75} alignItems="center">
         <CheckCircleOutlined
           style={{ fontSize: 14, color: theme.palette.text.secondary }}
         />
         <Typography variant="body2" color="text.secondary">
-          {OBJECTIVE_TYPE_LABELS[campaign.objective_type] ||
-            campaign.objective_type}
+          {OBJECTIVE_TYPE_LABELS[campaign.primary_objective.objective_type] ||
+            campaign.primary_objective.objective_type}
         </Typography>
       </Stack>
     ),

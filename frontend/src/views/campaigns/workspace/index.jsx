@@ -35,6 +35,7 @@ import CampaignMembersTab from "sections/campaigns/workspace/CampaignMembersTab"
 
 // api
 import { useGetCampaignWorkspace } from "api/campaigns/campaigns";
+import LogResponseModal from "sections/campaigns/workspace/LogResponseModal";
 
 // icons
 import ArrowLeftOutlined from "@ant-design/icons/ArrowLeftOutlined";
@@ -73,10 +74,13 @@ export default function CampaignWorkspacePage() {
 
   // ==============================|| HEADER PROPS ||============================== //
 
+  const [logResponseOpen, setLogResponseOpen] = useState(false);
+
   const headerProps = useCampaignHeaderProps({
     campaign,
     stats,
     onMutate: mutateCampaign,
+    onLogResponse: () => setLogResponseOpen(true),
   });
 
   const breadcrumbItems = campaign
@@ -115,6 +119,15 @@ export default function CampaignWorkspacePage() {
 
   return (
     <Box>
+      {/* Log Response Modal */}
+      {campaign && (
+        <LogResponseModal
+          open={logResponseOpen}
+          onClose={() => setLogResponseOpen(false)}
+          campaign={campaign}
+          onSuccess={mutateCampaign}
+        />
+      )}
       {/* Back Navigation */}
       <Button
         startIcon={<ArrowLeftOutlined />}

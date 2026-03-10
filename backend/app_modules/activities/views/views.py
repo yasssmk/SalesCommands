@@ -632,9 +632,23 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 extra={'activity_outcome': outcome}
             )
         else:
-            # Complete the activity
-            activity.complete(outcome=outcome, notes=outcome_notes, user=request.user)
-            
+            # If linked to a campaign, delegate to the execution service
+            # so it can handle chain cancellation and CampaignAccount state updates.
+            if activity.campaign_id:
+                from app_modules.campaigns.services.campaign_execution_service import CampaignExecutionService
+                exec_service = CampaignExecutionService(
+                    user=request.user,
+                    client_id=self.get_client_id(),
+                )
+                exec_service.process_result(activity, {
+                    'outcome': outcome,
+                    'outcome_notes': outcome_notes,
+                    'callback_date': request.data.get('callback_date'),
+                })
+            else:
+                # Standalone activity — complete directly
+                activity.complete(outcome=outcome, notes=outcome_notes, user=request.user)
+
             audit_log(
                 event='activity_complete_success',
                 action='update',

@@ -14,4 +14,4 @@ export const CAMPAIGN_TABS = [
   { id: "members", label: "Members" },
 ];
 
-export const DEFAULT_TAB = "overview";
+export const DEFAULT_TAB = "playlist";

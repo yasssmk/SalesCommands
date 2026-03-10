@@ -40,6 +40,7 @@ class ActivityFilter(django_filters.FilterSet):
     owner = UUIDFilter(field_name='owner_id')
     decision_cycle = UUIDFilter(field_name='decision_cycle_id')
     decision_step = UUIDFilter(field_name='decision_step_id')
+    campaign = UUIDFilter(field_name='campaign_id')
     
     # Date filters
     scheduled_date = DateFilter(field_name='scheduled_date')
@@ -61,7 +62,7 @@ class ActivityFilter(django_filters.FilterSet):
         model = Activity
         fields = [
             'activity_type', 'status', 'outcome',
-            'account', 'owner', 'decision_cycle', 'decision_step',
+            'account', 'owner', 'decision_cycle', 'decision_step', 'campaign',
             'scheduled_date', 'scheduled_date_from', 'scheduled_date_to',
             'due_date', 'due_date_from', 'due_date_to',
             'completed_at_from', 'completed_at_to',

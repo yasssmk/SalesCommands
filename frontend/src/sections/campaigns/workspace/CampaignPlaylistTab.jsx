@@ -17,7 +17,20 @@ import PropTypes from "prop-types";
 import { useState, useCallback, useMemo } from "react";
 
 // material-ui
+import Accordion from "@mui/material/Accordion";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import AccordionSummary from "@mui/material/AccordionSummary";
+import Button from "@mui/material/Button";
 import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
+import Radio from "@mui/material/Radio";
+import RadioGroup from "@mui/material/RadioGroup";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import FormControl from "@mui/material/FormControl";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
@@ -25,6 +38,8 @@ import Select from "@mui/material/Select";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+
+import DownOutlined from "@ant-design/icons/DownOutlined";
 
 // project imports
 import PlaylistProgressBar from "./PlaylistProgressBar";
@@ -34,7 +49,9 @@ import PlaylistActivityCard from "components/cards/PlaylistActivityCard";
 import {
   useGetPlaylist,
   useGetCampaignMembers,
+  useGetCompletedActivities,
   completePlaylistActivity,
+  cancelPlannedActivities,
 } from "api/campaigns/campaigns";
 
 // utils
@@ -68,6 +85,10 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
   const [expandedCardId, setExpandedCardId] = useState(null);
   const [completingId, setCompletingId] = useState(null);
   const [completedToday, setCompletedToday] = useState(0);
+  // Scope dialog — shown after a terminal outcome when account has multiple contacts
+  const [scopeDialog, setScopeDialog] = useState(null);
+  // { activityId, accountId, contactId, contacts: [] }
+  const [scopeChoice, setScopeChoice] = useState("contact");
   const [executorId, setExecutorId] = useState("");
 
   // Track optimistically removed activity IDs
@@ -122,6 +143,14 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
     WRONG_CONTACT: "negative",
   };
 
+  // Outcomes that require cancelling remaining planned activities
+  const TERMINAL_OUTCOMES = [
+    "SUCCESSFUL",
+    "MEETING_SCHEDULED",
+    "NOT_INTERESTED",
+    "WRONG_CONTACT",
+  ];
+
   const handleComplete = useCallback(
     async (activityId, payload) => {
       setCompletingId(activityId);
@@ -133,25 +162,47 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         );
 
         if (result.success) {
-          // Optimistic removal — hide the card immediately
+          // Optimistic removal
           setRemovedIds((prev) => new Set([...prev, activityId]));
           setCompletedToday((prev) => prev + 1);
           setExpandedCardId(null);
 
-          // Differentiate toast message based on outcome category
           const category = OUTCOME_CATEGORIES[payload.outcome] || "neutral";
           if (category === "negative") {
-            displaySuccessSnackbar(
-              "Activity completed — remaining sequence cancelled for this contact",
-            );
+            displaySuccessSnackbar("Activity completed — sequence cancelled");
           } else if (category === "positive") {
             displaySuccessSnackbar("Activity completed successfully");
           } else {
             displaySuccessSnackbar("Activity completed");
           }
 
-          // Background revalidate (non-blocking)
           mutatePlaylist();
+
+          // After terminal outcome — cancel remaining PLANNED activities
+          if (TERMINAL_OUTCOMES.includes(payload.outcome)) {
+            const activity = rawActivities.find((a) => a.id === activityId);
+            const accountId = activity?.account?.id;
+            const contacts = activity?.contacts || [];
+
+            if (accountId) {
+              if (contacts.length > 1) {
+                // Multiple contacts — ask scope
+                setScopeChoice("contact");
+                setScopeDialog({
+                  activityId,
+                  accountId,
+                  contactId: contacts[0]?.id,
+                  contacts,
+                });
+              } else {
+                // Single contact or no contact — cancel entire account
+                await cancelPlannedActivities(campaignId, {
+                  scope: "account",
+                  account_id: accountId,
+                });
+              }
+            }
+          }
         } else {
           displayErrorSnackbar(result);
         }
@@ -161,28 +212,88 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         setCompletingId(null);
       }
     },
-    [campaignId, mutatePlaylist],
+    [campaignId, mutatePlaylist, rawActivities],
   );
 
+  const handleScopeConfirm = useCallback(async () => {
+    if (!scopeDialog) return;
+    const { accountId, contactId } = scopeDialog;
+
+    const payload =
+      scopeChoice === "contact"
+        ? { scope: "contact", account_id: accountId, contact_id: contactId }
+        : { scope: "account", account_id: accountId };
+
+    try {
+      const result = await cancelPlannedActivities(campaignId, payload);
+      if (!result.success) displayErrorSnackbar(result);
+    } catch (err) {
+      displayErrorSnackbar(err);
+    } finally {
+      setScopeDialog(null);
+    }
+  }, [campaignId, scopeDialog, scopeChoice]);
+
   // ==============================|| DERIVED VALUES ||============================== //
+
+  // ── Completed activities (separate fetch, collapsed by default) ──
+  const { activities: completedActivities, completedActivitiesLoading } =
+    useGetCompletedActivities(campaignId);
+
+  // ── Split PLANNED into Today vs Upcoming ──
+  const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, timezone-safe
+
+  const { todayActivities, upcomingActivities } = useMemo(() => {
+    const today = [];
+    const upcoming = [];
+    activities.forEach((a) => {
+      const d = a.scheduled_date || a.due_date;
+      if (!d || d <= todayStr) {
+        today.push(a);
+      } else {
+        upcoming.push(a);
+      }
+    });
+    return { todayActivities: today, upcomingActivities: upcoming };
+  }, [activities, todayStr]);
 
   const completedCount =
     totalCount > 0 ? Math.max(0, totalCount - rawActivities.length) : 0;
 
   // ==============================|| EMPTY STATE — Campaign not active ||============================== //
 
-  if (!playlistLoading && campaign && campaign.status !== "ACTIVE") {
+  const BLOCKED_STATUSES = {
+    DRAFT: {
+      title: "Campaign not started",
+      body: "Start the campaign to activate the activity playlist.",
+    },
+    COMPLETED: {
+      title: "Campaign completed",
+      body: "This campaign has ended. The playlist is now read-only.",
+    },
+    CANCELLED: {
+      title: "Campaign cancelled",
+      body: "This campaign was cancelled. No activities are available.",
+    },
+  };
+
+  if (!playlistLoading && campaign && BLOCKED_STATUSES[campaign.status]) {
+    const { title, body } = BLOCKED_STATUSES[campaign.status];
     return (
       <Box sx={{ py: 6, textAlign: "center" }}>
         <Typography variant="h5" color="text.secondary">
-          Campaign is not active
+          {title}
         </Typography>
         <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
-          Start the campaign to generate the activity playlist.
+          {body}
         </Typography>
       </Box>
     );
   }
+
+  // ==============================|| PAUSED BANNER ||============================== //
+
+  const isPaused = campaign?.status === "PAUSED";
 
   // ==============================|| LOADING STATE ||============================== //
 
@@ -236,6 +347,73 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
 
   return (
     <Stack spacing={2}>
+      {/* ==================== SCOPE DIALOG ==================== */}
+      {scopeDialog && (
+        <Dialog
+          open={Boolean(scopeDialog)}
+          onClose={() => setScopeDialog(null)}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle>Cancel remaining activities</DialogTitle>
+          <DialogContent>
+            <DialogContentText sx={{ mb: 2 }}>
+              This account has multiple contacts. Which activities should be
+              cancelled?
+            </DialogContentText>
+            <RadioGroup
+              value={scopeChoice}
+              onChange={(e) => setScopeChoice(e.target.value)}
+            >
+              <FormControlLabel
+                value="contact"
+                control={<Radio size="small" />}
+                label={
+                  <Typography variant="body2">
+                    This contact only —{" "}
+                    <Typography
+                      component="span"
+                      variant="body2"
+                      color="text.secondary"
+                    >
+                      {scopeDialog.contacts.find(
+                        (c) => c.id === scopeDialog.contactId,
+                      )?.first_name || "selected contact"}
+                    </Typography>
+                  </Typography>
+                }
+              />
+              <FormControlLabel
+                value="account"
+                control={<Radio size="small" />}
+                label={
+                  <Typography variant="body2">
+                    Entire account — cancel all remaining activities
+                  </Typography>
+                }
+              />
+            </RadioGroup>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button
+              onClick={() => setScopeDialog(null)}
+              color="inherit"
+              size="small"
+            >
+              Skip
+            </Button>
+            <Button
+              onClick={handleScopeConfirm}
+              variant="contained"
+              color="error"
+              size="small"
+            >
+              Confirm
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
       {/* Progress bar */}
       <PlaylistProgressBar
         total={totalCount}
@@ -243,41 +421,152 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         completedToday={completedToday}
       />
 
-      {/* Executor filter */}
-      {executors.length > 1 && (
-        <FormControl size="small" sx={{ minWidth: 200, maxWidth: 300 }}>
-          <InputLabel id="executor-filter-label">Filter by executor</InputLabel>
-          <Select
-            labelId="executor-filter-label"
-            value={executorId}
-            label="Filter by executor"
-            onChange={handleExecutorChange}
-          >
-            <MenuItem value="">
-              <em>All executors</em>
-            </MenuItem>
-            {executors.map((m) => (
-              <MenuItem key={m.user} value={m.user}>
-                {m.user_name}
-              </MenuItem>
+      {/* ── Section: To Do Today ── */}
+      <Box>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
+          <Typography variant="subtitle2" fontWeight={600}>
+            To do today
+          </Typography>
+          <Chip
+            label={todayActivities.length}
+            size="small"
+            color="primary"
+            variant="filled"
+          />
+        </Stack>
+
+        {todayActivities.length === 0 ? (
+          <Box sx={{ py: 3, textAlign: "center" }}>
+            <Typography variant="body2" color="text.secondary">
+              Nothing to do today 🎉
+            </Typography>
+          </Box>
+        ) : (
+          <Stack spacing={1.5}>
+            {todayActivities.map((activity) => (
+              <PlaylistActivityCard
+                key={activity.id}
+                activity={activity}
+                expanded={expandedCardId === activity.id}
+                onExpand={handleExpand}
+                onComplete={handleComplete}
+                completing={completingId === activity.id}
+              />
             ))}
-          </Select>
-        </FormControl>
+          </Stack>
+        )}
+      </Box>
+
+      {/* ── Section: Upcoming (collapsible) ── */}
+      {upcomingActivities.length > 0 && (
+        <Accordion
+          disableGutters
+          elevation={0}
+          sx={{
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1.5,
+            "&:before": { display: "none" },
+            "&.Mui-expanded": { borderColor: "divider" },
+          }}
+        >
+          <AccordionSummary
+            expandIcon={<DownOutlined style={{ fontSize: 12 }} />}
+            sx={{
+              minHeight: 48,
+              "& .MuiAccordionSummary-content": {
+                alignItems: "center",
+                gap: 1,
+              },
+            }}
+          >
+            <Typography variant="subtitle2" fontWeight={600}>
+              Upcoming
+            </Typography>
+            <Chip
+              label={upcomingActivities.length}
+              size="small"
+              variant="outlined"
+            />
+          </AccordionSummary>
+          <AccordionDetails sx={{ pt: 0, pb: 1.5 }}>
+            <Stack spacing={1.5}>
+              {upcomingActivities.map((activity) => (
+                <PlaylistActivityCard
+                  key={activity.id}
+                  activity={activity}
+                  expanded={false}
+                  onExpand={() => {}}
+                  onComplete={handleComplete}
+                  completing={completingId === activity.id}
+                  isGreyedOut
+                />
+              ))}
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
       )}
 
-      {/* Activity cards */}
-      <Stack spacing={1.5}>
-        {activities.map((activity) => (
-          <PlaylistActivityCard
-            key={activity.id}
-            activity={activity}
-            expanded={expandedCardId === activity.id}
-            onExpand={handleExpand}
-            onComplete={handleComplete}
-            completing={completingId === activity.id}
+      {/* ── Section: Completed (collapsible) ── */}
+      <Accordion
+        disableGutters
+        elevation={0}
+        sx={{
+          border: "1px solid",
+          borderColor: "divider",
+          borderRadius: 1.5,
+          "&:before": { display: "none" },
+        }}
+      >
+        <AccordionSummary
+          expandIcon={<DownOutlined style={{ fontSize: 12 }} />}
+          sx={{
+            minHeight: 48,
+            "& .MuiAccordionSummary-content": { alignItems: "center", gap: 1 },
+          }}
+        >
+          <Typography variant="subtitle2" fontWeight={600}>
+            Completed
+          </Typography>
+          <Chip
+            label={completedActivities.length || completedCount}
+            size="small"
+            variant="outlined"
+            color="success"
           />
-        ))}
-      </Stack>
+        </AccordionSummary>
+        <AccordionDetails sx={{ pt: 0, pb: 1.5 }}>
+          {completedActivitiesLoading ? (
+            <Stack spacing={1}>
+              {[1, 2].map((i) => (
+                <Skeleton key={i} height={60} sx={{ borderRadius: 1 }} />
+              ))}
+            </Stack>
+          ) : completedActivities.length === 0 ? (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ py: 2, textAlign: "center" }}
+            >
+              No completed activities yet
+            </Typography>
+          ) : (
+            <Stack spacing={1.5}>
+              {completedActivities.map((activity) => (
+                <PlaylistActivityCard
+                  key={activity.id}
+                  activity={activity}
+                  expanded={false}
+                  onExpand={() => {}}
+                  onComplete={() => {}}
+                  completing={false}
+                  isGreyedOut
+                />
+              ))}
+            </Stack>
+          )}
+        </AccordionDetails>
+      </Accordion>
     </Stack>
   );
 }

@@ -491,8 +491,8 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 )
 
     def _validate_objective_data(self, objective_data):
-        """Validate objective dict structure."""
-        required_keys = {'name', 'objective_type', 'target_value'}
+        """Validate objective dict structure. 'name' is optional — auto-generated if absent."""
+        required_keys = {'objective_type', 'target_value'}
         missing = required_keys - set(objective_data.keys())
         if missing:
             raise StandardizedValidationError(
@@ -551,12 +551,26 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             territories = Territory.objects.filter(id__in=territory_ids)
             instance.territories.set(territories)
 
+        # Enroll accounts from territories immediately (OUTBOUND campaigns only)
+        # This ensures the Accounts tab is populated in DRAFT state.
+        # The fallback in CampaignLifecycleService.start() remains as a safety net.
+        if territory_ids and instance.campaign_type == 'OUTBOUND':
+            from ..services.campaign_creation_service import CampaignCreationService
+            creation_service = CampaignCreationService(
+                user=user,
+                client_id=instance.client_id,
+            )
+            creation_service._enroll_from_territories(instance)
+
         # Create objective (if provided)
         if objective_data:
+            objective_type = objective_data['objective_type']
+            # Auto-generate name if frontend does not send one
+            objective_name = objective_data.get('name') or f"{objective_type.replace('_', ' ').title()} Goal"
             CampaignObjective.objects.create(
                 campaign=instance,
-                name=objective_data['name'],
-                objective_type=objective_data['objective_type'],
+                name=objective_name,
+                objective_type=objective_type,
                 target_value=objective_data['target_value'],
                 is_primary=objective_data.get('is_primary', True),
                 client_id=instance.client_id,

@@ -68,6 +68,9 @@ const ACTIVITY_TYPE_COLORS = {
   OTHER: "default",
 };
 
+// Activity types that complete in 1 click ("sent" semantics — no outcome picker needed)
+const ONE_CLICK_TYPES = ["EMAIL", "LINKEDIN"];
+
 // ==============================|| OUTCOME CONFIG ||============================== //
 
 /**
@@ -208,17 +211,14 @@ export default function PlaylistActivityCard({
   onExpand,
   onComplete,
   completing,
+  isGreyedOut = false,
 }) {
   const theme = useTheme();
-
-  // ==============================|| LOCAL STATE ||============================== //
 
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [notes, setNotes] = useState("");
   const [callbackDate, setCallbackDate] = useState(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-
-  // ==============================|| DERIVED VALUES ||============================== //
 
   const TypeIcon =
     ACTIVITY_TYPE_ICONS[activity.activity_type] || CalendarOutlined;
@@ -226,12 +226,14 @@ export default function PlaylistActivityCard({
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
   const activityDate = activity.scheduled_date || activity.due_date;
+  // Compare date strings (YYYY-MM-DD) to avoid UTC timezone drift.
+  const todayStr = new Date().toLocaleDateString("en-CA");
   const isOverdue =
-    activity.is_overdue ||
-    (activityDate &&
-      new Date(activityDate) < new Date() &&
-      !isCompleted &&
-      !isCancelled);
+    !isGreyedOut &&
+    activityDate &&
+    activityDate < todayStr &&
+    !isCompleted &&
+    !isCancelled;
 
   const outcomeConfig = activity.outcome
     ? ACTIVITY_OUTCOME_CONFIG[activity.outcome]
@@ -248,6 +250,7 @@ export default function PlaylistActivityCard({
   // ==============================|| STYLE HELPERS ||============================== //
 
   const getBorderColor = () => {
+    if (isGreyedOut) return theme.palette.divider;
     if (isCancelled) return theme.palette.grey[300];
     if (isCompleted) {
       if (outcomeCategory === "positive") return theme.palette.success.light;
@@ -259,6 +262,7 @@ export default function PlaylistActivityCard({
   };
 
   const getBgColor = () => {
+    if (isGreyedOut) return alpha(theme.palette.grey[500], 0.03);
     if (isCancelled) return alpha(theme.palette.grey[500], 0.04);
     if (isCompleted) {
       if (outcomeCategory === "positive")
@@ -336,17 +340,21 @@ export default function PlaylistActivityCard({
           bgcolor: getBgColor(),
           overflow: "hidden",
           transition: "all 0.2s ease",
-          opacity: isCancelled ? 0.6 : 1,
+          opacity: isGreyedOut ? 0.55 : isCancelled ? 0.6 : 1,
+          // Greyed out cards are display-only — no pointer interaction
+          pointerEvents: isGreyedOut ? "none" : "auto",
         }}
       >
-        {/* ==================== COLLAPSED CONTENT ==================== */}
         <Box
           sx={{
             p: 2,
-            cursor: isCompleted || isCancelled ? "default" : "pointer",
+            cursor:
+              isCompleted || isCancelled || isGreyedOut ? "default" : "pointer",
             "&:hover": {
               bgcolor:
-                isCompleted || isCancelled ? "transparent" : "action.hover",
+                isCompleted || isCancelled || isGreyedOut
+                  ? "transparent"
+                  : "action.hover",
             },
           }}
           onClick={handleToggleExpand}
@@ -452,24 +460,50 @@ export default function PlaylistActivityCard({
                   sx={{ height: 22, fontSize: "0.7rem" }}
                 />
               ) : !isCompleted && !isCancelled ? (
-                <Button
-                  size="small"
-                  variant={expanded ? "text" : "outlined"}
-                  color={expanded ? "inherit" : "primary"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleExpand();
-                  }}
-                  startIcon={expanded ? <CloseOutlined /> : undefined}
-                  sx={{
-                    minWidth: expanded ? "auto" : 90,
-                    height: 28,
-                    fontSize: "0.75rem",
-                    textTransform: "none",
-                  }}
-                >
-                  {expanded ? "Close" : "Log Result"}
-                </Button>
+                ONE_CLICK_TYPES.includes(activity.activity_type) ? (
+                  // 1-click complete for EMAIL / LINKEDIN — no outcome picker
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="success"
+                    disabled={completing}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onComplete?.(activity.id, { outcome: "NO_ANSWER" });
+                    }}
+                    startIcon={<CheckCircleOutlined />}
+                    sx={{
+                      height: 28,
+                      fontSize: "0.75rem",
+                      textTransform: "none",
+                    }}
+                  >
+                    {completing
+                      ? "..."
+                      : activity.activity_type === "LINKEDIN"
+                        ? "Message Sent"
+                        : "Email Sent"}
+                  </Button>
+                ) : (
+                  <Button
+                    size="small"
+                    variant={expanded ? "text" : "outlined"}
+                    color={expanded ? "inherit" : "primary"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleExpand();
+                    }}
+                    startIcon={expanded ? <CloseOutlined /> : undefined}
+                    sx={{
+                      minWidth: expanded ? "auto" : 90,
+                      height: 28,
+                      fontSize: "0.75rem",
+                      textTransform: "none",
+                    }}
+                  >
+                    {expanded ? "Close" : "Log Result"}
+                  </Button>
+                )
               ) : null}
             </Stack>
           </Stack>
@@ -638,14 +672,11 @@ export default function PlaylistActivityCard({
 }
 
 PlaylistActivityCard.propTypes = {
-  /** Activity object from playlist API */
   activity: PropTypes.object.isRequired,
-  /** Whether this card is currently expanded */
   expanded: PropTypes.bool,
-  /** Callback to toggle expand — receives activityId or null */
   onExpand: PropTypes.func,
-  /** Callback to complete — receives (activityId, {outcome, outcome_notes, callback_date?}) */
   onComplete: PropTypes.func,
-  /** Whether a complete mutation is in progress */
   completing: PropTypes.bool,
+  /** When true: card is display-only (greyed out, non-interactive). Used for future/upcoming activities. */
+  isGreyedOut: PropTypes.bool,
 };

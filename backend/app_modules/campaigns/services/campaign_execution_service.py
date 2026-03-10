@@ -189,17 +189,10 @@ class CampaignExecutionService:
         if executor:
             queryset = queryset.filter(owner=executor)
 
-        # ------------------------------------------------------------------
-        # Gating filter — applies only to sequence campaigns.
-        # For non-sequence campaigns every PLANNED activity is visible.
-        # ------------------------------------------------------------------
-        if campaign.sequence_type:
-            queryset = queryset.filter(
-                # Step is the first in the chain …
-                Q(previous_activity__isnull=True)
-                # … or its predecessor has been completed
-                | Q(previous_activity__status=ActivityStatus.COMPLETED)
-            )
+        # No gating filter — all PLANNED activities are returned.
+        # The frontend splits them into "due now" vs "upcoming" sections.
+        # Gating (previous step must be COMPLETED + min_delay elapsed) is
+        # enforced separately when an activity is actually opened/executed.
 
         total_count = queryset.count()
 
@@ -209,32 +202,18 @@ class CampaignExecutionService:
         activities = list(queryset[:CONFIG.limits.queue_batch_size])
 
         # ------------------------------------------------------------------
-        # min_delay_days filtering (Python-side — completed_at not in DB query)
-        # Exclude activities whose previous step was completed too recently.
+        # Dynamic date recalculation — sequence campaigns only.
+        #
+        # Stored scheduled_date is stale the moment a rep doesn't complete
+        # a step on time. We recompute from today forward:
+        #
+        #   Step 1 → always today  (never overdue by design)
+        #   Step N → next_business_day(today + cumulative min_delay_days)
+        #            where cumulative is the sum of delays from step 1 to N,
+        #            assuming every prior step is completed today.
         # ------------------------------------------------------------------
         if campaign.sequence_type:
-            eligible = []
-            for activity in activities:
-                prev = activity.previous_activity
-                if prev is None:
-                    # First step — always eligible
-                    eligible.append(activity)
-                    continue
-
-                min_delay = activity.min_delay_days or 0
-                if min_delay == 0:
-                    eligible.append(activity)
-                    continue
-
-                completed_at = getattr(prev, 'completed_at', None)
-                if completed_at is None:
-                    # Safety: no completion timestamp → block
-                    continue
-
-                completed_date = completed_at.date() if hasattr(completed_at, 'date') else completed_at
-                if (today - completed_date).days >= min_delay:
-                    eligible.append(activity)
-            activities = eligible
+            activities = self._recalculate_scheduled_dates(activities, today)
 
         # ------------------------------------------------------------------
         # Score and sort
@@ -378,7 +357,12 @@ class CampaignExecutionService:
 
         created = 0
         previous_activity = None
+        cumulative_delay = 0
         for step_number, step_config in sequence_dict.items():
+            cumulative_delay += step_config.get('min_delay', 0)
+            step_date = self._next_business_day(
+                    campaign.start_date + timedelta(days=cumulative_delay)
+                )
             activity = self._create_activity(
                 campaign=campaign,
                 campaign_account=campaign_account,
@@ -390,6 +374,7 @@ class CampaignExecutionService:
                 step_config=step_config,
                 sequence_variant=variant_name,
                 previous_activity=previous_activity,
+                scheduled_date=step_date,
             )
             if previous_activity is not None:
                 previous_activity.next_activity = activity
@@ -532,7 +517,14 @@ class CampaignExecutionService:
                 continue
 
             previous_activity = None
+            cumulative_delay = 0
+            # Ensure the base date is itself a business day
+            base_date = self._next_business_day(campaign.start_date)
             for step_number, step_config in sequence_dict.items():
+                cumulative_delay += step_config.get('min_delay', 0)
+                step_date = self._next_business_day(
+                    base_date + timedelta(days=cumulative_delay)
+                )
                 activity = self._create_activity(
                     campaign=campaign,
                     campaign_account=campaign_account,
@@ -544,6 +536,7 @@ class CampaignExecutionService:
                     step_config=step_config,
                     sequence_variant=variant_name,
                     previous_activity=previous_activity,
+                    scheduled_date=step_date,
                 )
                 # Update the previous activity's next pointer now that we have the FK id.
                 if previous_activity is not None:
@@ -570,7 +563,7 @@ class CampaignExecutionService:
         if campaign_account.target_contacts.exists():
             return list(
                 campaign_account.target_contacts
-                .filter(is_active=True)
+                .filter(opted_out=False)
                 .select_related('standard_department')
             )
 
@@ -578,7 +571,7 @@ class CampaignExecutionService:
         queryset = Contact.objects.filter(
             account=campaign_account.account,
             client_id=self.client_id,
-            is_active=True,
+            opted_out=False,
         ).select_related('standard_department')
 
         # 2. Filter by target departments if set
@@ -596,8 +589,9 @@ class CampaignExecutionService:
         return list(queryset)
 
     def _create_activity(self, campaign, campaign_account, account, contact,
-                     activity_type, position, owner=None,
-                     step_config=None, sequence_variant=None, previous_activity=None):
+                         activity_type, position, owner=None,
+                         step_config=None, sequence_variant=None,
+                         previous_activity=None, scheduled_date=None):
         """
         Create a single Activity linked to a campaign.
 
@@ -613,13 +607,19 @@ class CampaignExecutionService:
         if contact:
             contact_name = f"{contact.first_name or ''} {contact.last_name or ''}".strip()
 
-        step_description = step_config.get('description', '') if step_config else ''
-        if step_description:
-            title = f"Step {position}: {step_description} - {account.company_name}"
-        else:
-            title = f"{activity_type} - {account.company_name}"
+        # Title format: {campaign name} - {contact name} - Step {N} - {scheduled date}
+        # Gives the rep full context at a glance without opening the activity.
+        campaign_name = campaign.name if campaign else ''
+        step_date = scheduled_date or campaign.start_date if campaign else None
+        date_str = step_date.strftime('%b %d') if step_date else ''
+
         if contact_name:
-            title += f" - {contact_name}"
+            title = f"{campaign_name} - {contact_name} - Step {position}"
+        else:
+            title = f"{campaign_name} - {account.company_name} - Step {position}"
+
+        if date_str:
+            title += f" - {date_str}"
 
         activity = Activity(
             title=title,
@@ -630,7 +630,7 @@ class CampaignExecutionService:
             campaign=campaign,
             campaign_account=campaign_account,
             sequence_position=position,
-            scheduled_date=campaign.start_date,
+            scheduled_date=scheduled_date if scheduled_date is not None else campaign.start_date,
             due_date=campaign.end_date,
             # Sequence enrichment (populated only for sequence campaigns)
             min_delay_days=step_config.get('min_delay') if step_config else None,
@@ -643,6 +643,16 @@ class CampaignExecutionService:
             activity.contacts.add(contact)
 
         return activity
+    
+    def _next_business_day(self, date):
+        """
+        Shift a date forward to the nearest business day if it falls on a weekend.
+        Handles chains: Saturday → Monday, Sunday → Monday.
+        Applied to both start_date and each computed step_date.
+        """
+        while date.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            date += timedelta(days=1)
+        return date
 
     # ======================================================================
     # PRIVATE — EXECUTOR ASSIGNMENT
@@ -682,6 +692,65 @@ class CampaignExecutionService:
         # Fallback: primary owner
         primary_owner = campaign.get_primary_owner()
         return primary_owner or self.user
+    
+    def _recalculate_scheduled_dates(self, activities, today):
+        """
+        Recompute scheduled_date for all PLANNED activities in a sequence.
+
+        Rules:
+            - Step 1 (previous_activity is None): always today. Never overdue.
+            - Step N: next_business_day(today + cumulative min_delay_days)
+              where cumulative = sum of min_delay_days from step 1 to step N,
+              assuming all prior steps are completed today.
+
+        Modifies scheduled_date in-place on each activity object (not saved to DB —
+        display-only adjustment for playlist ordering and frontend rendering).
+        """
+        # Build a lookup: activity.id → activity
+        by_id = {a.id: a for a in activities}
+
+        # Walk each activity's chain upward to compute cumulative delay
+        for activity in activities:
+            cumulative_delay = self._cumulative_delay_from_root(activity, by_id)
+
+            if cumulative_delay == 0:
+                # Step 1 — always today, never overdue
+                activity.scheduled_date = today
+            else:
+                activity.scheduled_date = self._next_business_day(
+                    today + timedelta(days=cumulative_delay)
+                )
+
+        return activities
+
+    def _cumulative_delay_from_root(self, activity, by_id, _visited=None):
+        """
+        Walk the previous_activity chain to sum min_delay_days from root to this step.
+
+        Uses the in-memory by_id map (no extra DB queries).
+        _visited guards against circular references.
+        """
+        if _visited is None:
+            _visited = set()
+
+        if activity.id in _visited:
+            return 0
+        _visited.add(activity.id)
+
+        prev = activity.previous_activity
+        if prev is None:
+            # This is step 1 — own delay not counted (it starts at today)
+            return 0
+
+        # Try to resolve previous from in-memory map first
+        prev_in_memory = by_id.get(prev.id)
+        if prev_in_memory:
+            return (activity.min_delay_days or 0) + self._cumulative_delay_from_root(
+                prev_in_memory, by_id, _visited
+            )
+
+        # Previous step already completed (not in PLANNED list) — use its min_delay
+        return activity.min_delay_days or 0
 
     # ======================================================================
     # PRIVATE — OUTCOME HANDLING
@@ -865,18 +934,48 @@ class CampaignExecutionService:
     # ======================================================================
 
     def _calculate_priority(self, activity):
+
         """
         Calculate priority score for playlist ordering.
 
-        Factors:
-            - Activity type weight       (CALL=20, MEETING=15, EMAIL=10…)
-            - Sequence position bonus    (step 1 scores higher than step 5)
-            - Callback boost             (+50 if account is CALLBACK_PENDING)
-            - Overdue penalty            (+15 per day overdue)
+        Scoring is additive. Higher score = appears earlier in playlist.
+
+        Tiers (in order of dominance):
+            1. Scheduled date gate:
+               - Future activities (scheduled_date > today) receive a -10000 base penalty,
+                 ensuring they always appear after every activity due today or overdue.
+               - Within future activities, each additional day adds -10 pts
+                 (tomorrow ranks above next week).
+
+            2. Activity type weight:
+               - CALL=20, MEETING=15, EMAIL=10, etc. (configured in CONFIG.priorities)
+               - Multiplied by activity_type_weight factor.
+
+            3. Sequence position bonus:
+               - step_bonus / position → step 1 = full bonus, step 5 = 1/5 bonus.
+               - Ensures earlier steps in a sequence surface before later ones.
+
+            4. Callback boost:
+               - +50 (× callback_weight) if the account is CALLBACK_PENDING.
+               - These accounts have a committed follow-up date and take priority.
+
+            5. Overdue bonus:
+               - +overdue_penalty_per_day × days_overdue × overdue_weight.
+               - Longer overdue = higher urgency.
         """
+
         score = 0
+        today = timezone.now().date()
         weights = CONFIG.priorities.weights
         type_priorities = CONFIG.priorities.activity_type_priorities
+
+        # Future activities are deprioritized below all activities due today.
+        # A large penalty pushes them behind everything else regardless of type/position.
+        if activity.scheduled_date and activity.scheduled_date > today:
+            score -= 10000
+            # Still score within future activities so same-day futures are ordered sensibly.
+            days_future = (activity.scheduled_date - today).days
+            score -= days_future * 10
 
         # Activity type score
         type_score = type_priorities.get(activity.activity_type, 1)
@@ -895,9 +994,9 @@ class CampaignExecutionService:
         ):
             score += CONFIG.priorities.callback_priority_boost * weights.get('callback_weight', 2.0)
 
-        # Overdue penalty — longer overdue = higher urgency
+        # Overdue bonus — longer overdue = higher urgency
         if activity.due_date:
-            days_overdue = (timezone.now().date() - activity.due_date).days
+            days_overdue = (today - activity.due_date).days
             if days_overdue > 0:
                 score += (
                     days_overdue

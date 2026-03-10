@@ -125,6 +125,8 @@ const endpoints = {
   campaignSummary: (id) => `/campaigns/${id}/summary/`,
   campaignPlaylist: (id) => `/campaigns/${id}/playlist/`,
   campaignGenerateActivities: (id) => `/campaigns/${id}/generate-activities/`,
+  campaignLogResponse: (id) => `/campaigns/${id}/log-response/`,
+  campaignCancelPlanned: (id) => `/campaigns/${id}/cancel-planned/`,
 
   // Scoped list
   myCampaigns: "/campaigns/my-campaigns/",
@@ -174,7 +176,99 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;
 };
 
-// ==============================|| READ HOOKS - CAMPAIGNS ||============================== //
+// ==============================|| SWR HOOK - COMPLETED ACTIVITIES ||============================== //
+
+/**
+ * GET COMPLETED ACTIVITIES FOR A CAMPAIGN
+ * Fetches all COMPLETED activities scoped to a campaign (for LogResponseModal).
+ *
+ * @param {string|null} campaignId
+ * @returns {{ activities, completedActivitiesLoading, mutateCompleted }}
+ */
+export function useGetCompletedActivities(campaignId) {
+  const { tenantId } = useAuth();
+
+  const url =
+    campaignId && isValidUUID(campaignId)
+      ? `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`
+      : null;
+
+  const { data, isLoading, mutate } = useSWR(
+    url ? tenantKey(url, tenantId) : null,
+  );
+
+  return useMemo(
+    () => ({
+      activities: data?.data?.results || data?.results || [],
+      completedActivitiesLoading: isLoading,
+      mutateCompleted: mutate,
+    }),
+    [data, isLoading, mutate],
+  );
+}
+
+// ==============================|| MUTATION - LOG RESPONSE ||============================== //
+
+/**
+ * LOG ASYNC RESPONSE
+ * POST /campaigns/{id}/log-response/
+ *
+ * @param {string} campaignId
+ * @param {{ activity_id, response, notes?, response_date? }} payload
+ */
+export async function logCampaignResponse(campaignId, payload) {
+  if (!campaignId || !isValidUUID(campaignId)) {
+    return { success: false, error: "Invalid campaign ID format", status: 400 };
+  }
+
+  const result = await api.post(
+    endpoints.campaignLogResponse(campaignId),
+    payload,
+  );
+
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.campaignPlaylist(campaignId),
+      endpoints.campaignDashboard(campaignId),
+      endpoints.campaignDetail(campaignId),
+      `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`,
+      `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
+    ]);
+    return { success: true, data: result.data };
+  }
+
+  return { success: false, error: result.error, status: result.status || 0 };
+}
+
+// ==============================|| MUTATION - CANCEL PLANNED ACTIVITIES ||============================== //
+
+/**
+ * CANCEL PLANNED ACTIVITIES
+ * DELETE /campaigns/{id}/cancel-planned/
+ *
+ * @param {string} campaignId
+ * @param {{ scope: 'contact'|'account', account_id: string, contact_id?: string }} payload
+ */
+export async function cancelPlannedActivities(campaignId, payload) {
+  if (!campaignId || !isValidUUID(campaignId)) {
+    return { success: false, error: "Invalid campaign ID format", status: 400 };
+  }
+
+  const result = await api.delete(endpoints.campaignCancelPlanned(campaignId), {
+    data: payload,
+  });
+
+  if (result.success || result.status === 200) {
+    revalidateMultiple([
+      endpoints.campaignPlaylist(campaignId),
+      endpoints.campaignDashboard(campaignId),
+      `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
+    ]);
+    return { success: true, data: result.data };
+  }
+
+  return { success: false, error: result.error, status: result.status || 0 };
+}
 
 /**
  * GET CAMPAIGNS - Paginated list with filters

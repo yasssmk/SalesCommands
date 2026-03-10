@@ -11,26 +11,26 @@
  *   {headerProps.modals}
  */
 
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 // MUI
-import { useTheme } from '@mui/material/styles';
-import Avatar from '@mui/material/Avatar';
-import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
-import IconButton from '@mui/material/IconButton';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
-import Stack from '@mui/material/Stack';
-import Tooltip from '@mui/material/Tooltip';
-import Typography from '@mui/material/Typography';
+import { useTheme } from "@mui/material/styles";
+import Avatar from "@mui/material/Avatar";
+import Chip from "@mui/material/Chip";
+import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
 
 // Date formatting
-import { format } from 'date-fns';
+import { format } from "date-fns";
 
 // API
 import {
@@ -39,15 +39,18 @@ import {
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_COLORS,
   ACTIVITY_OUTCOME_LABELS,
-  ACTIVITY_OUTCOME_COLORS
-} from 'api/accounts/activities';
-import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
+  ACTIVITY_OUTCOME_COLORS,
+} from "api/accounts/activities";
+import {
+  displaySuccessSnackbar,
+  displayErrorSnackbar,
+} from "utils/displayError";
 
 // Modals
-import ActivityCompleteModal from 'sections/accounts/activities/ActivityCompleteModal';
-import AlertActivityDelete from 'sections/accounts/activities/AlertActivityDelete';
-import AlertActivityCancel from 'sections/accounts/activities/AlertActivityCancel';
-import AlertActivityReopen from 'sections/accounts/activities/AlertActivityReopen';
+import ActivityCompleteModal from "sections/accounts/activities/ActivityCompleteModal";
+import AlertActivityDelete from "sections/accounts/activities/AlertActivityDelete";
+import AlertActivityCancel from "sections/accounts/activities/AlertActivityCancel";
+import AlertActivityReopen from "sections/accounts/activities/AlertActivityReopen";
 
 // Icons
 import {
@@ -66,8 +69,9 @@ import {
   BankOutlined,
   ApartmentOutlined,
   RightOutlined,
-  UndoOutlined
-} from '@ant-design/icons';
+  UndoOutlined,
+  AimOutlined,
+} from "@ant-design/icons";
 
 // ==============================|| TYPE CONFIGURATION ||============================== //
 
@@ -77,30 +81,35 @@ const TYPE_ICONS = {
   MEETING: TeamOutlined,
   TASK: CheckSquareOutlined,
   LINKEDIN: LinkedinOutlined,
-  OTHER: QuestionCircleOutlined
+  OTHER: QuestionCircleOutlined,
 };
 
 const TYPE_AVATAR_COLORS = {
-  CALL: 'info.main',
-  EMAIL: 'warning.main',
-  MEETING: 'success.main',
-  TASK: 'secondary.main',
-  LINKEDIN: 'primary.main',
-  OTHER: 'grey.500'
+  CALL: "info.main",
+  EMAIL: "warning.main",
+  MEETING: "success.main",
+  TASK: "secondary.main",
+  LINKEDIN: "primary.main",
+  OTHER: "grey.500",
 };
 
 const TYPE_CHIP_COLORS = {
-  CALL: 'info',
-  EMAIL: 'warning',
-  MEETING: 'success',
-  TASK: 'secondary',
-  LINKEDIN: 'primary',
-  OTHER: 'default'
+  CALL: "info",
+  EMAIL: "warning",
+  MEETING: "success",
+  TASK: "secondary",
+  LINKEDIN: "primary",
+  OTHER: "default",
 };
 
 // ==============================|| ACTIVITY HEADER PROPS HOOK ||============================== //
 
-export default function useActivityHeaderProps({ activity, onSave, onUpdate, isLocked = false }) {
+export default function useActivityHeaderProps({
+  activity,
+  onSave,
+  onUpdate,
+  isLocked = false,
+}) {
   const theme = useTheme();
   const router = useRouter();
 
@@ -124,18 +133,18 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
   // ==============================|| EARLY RETURN (no data) ||============================== //
 
   if (!activity) {
-    return { avatar: null, title: '', chips: [], infoItems: [], modals: null };
+    return { avatar: null, title: "", chips: [], infoItems: [], modals: null };
   }
 
   // ==============================|| DERIVED VALUES ||============================== //
 
   const TypeIcon = TYPE_ICONS[activity.activity_type] || QuestionCircleOutlined;
-  const avatarColor = TYPE_AVATAR_COLORS[activity.activity_type] || 'grey.500';
-  const typeChipColor = TYPE_CHIP_COLORS[activity.activity_type] || 'default';
+  const avatarColor = TYPE_AVATAR_COLORS[activity.activity_type] || "grey.500";
+  const typeChipColor = TYPE_CHIP_COLORS[activity.activity_type] || "default";
 
-  const isCompleted = activity.status === 'COMPLETED';
-  const isCancelled = activity.status === 'CANCELLED';
-  const isPlanned = activity.status === 'PLANNED';
+  const isCompleted = activity.status === "COMPLETED";
+  const isCancelled = activity.status === "CANCELLED";
+  const isPlanned = activity.status === "PLANNED";
   const canComplete = !isCompleted && !isCancelled;
   const canCancel = isPlanned;
   const canReopen = isCompleted || isCancelled;
@@ -145,16 +154,37 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
   const handleMenuOpen = (event) => setAnchorEl(event.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
 
-  const handleCompleteClick = () => { handleMenuClose(); setCompleteModalOpen(true); };
-  const handleCompleteSuccess = () => { setCompleteModalOpen(false); onUpdate?.(); };
+  const handleCompleteClick = () => {
+    handleMenuClose();
+    setCompleteModalOpen(true);
+  };
+  const handleCompleteSuccess = () => {
+    setCompleteModalOpen(false);
+    onUpdate?.();
+  };
 
-  const handleCancelClick = () => { handleMenuClose(); setCancelDialogOpen(true); };
-  const handleCancelSuccess = () => { setCancelDialogOpen(false); onUpdate?.(); };
+  const handleCancelClick = () => {
+    handleMenuClose();
+    setCancelDialogOpen(true);
+  };
+  const handleCancelSuccess = () => {
+    setCancelDialogOpen(false);
+    onUpdate?.();
+  };
 
-  const handleReopenClick = () => { handleMenuClose(); setReopenDialogOpen(true); };
-  const handleReopenSuccess = () => { setReopenDialogOpen(false); onUpdate?.(); };
+  const handleReopenClick = () => {
+    handleMenuClose();
+    setReopenDialogOpen(true);
+  };
+  const handleReopenSuccess = () => {
+    setReopenDialogOpen(false);
+    onUpdate?.();
+  };
 
-  const handleDeleteClick = () => { handleMenuClose(); setDeleteDialogOpen(true); };
+  const handleDeleteClick = () => {
+    handleMenuClose();
+    setDeleteDialogOpen(true);
+  };
 
   // ==============================|| HANDLERS — Type change ||============================== //
 
@@ -168,9 +198,11 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
     }
     setSavingType(true);
     try {
-      const result = await updateActivity(activity.id, { activity_type: newType });
+      const result = await updateActivity(activity.id, {
+        activity_type: newType,
+      });
       if (result.success) {
-        displaySuccessSnackbar('Activity type updated');
+        displaySuccessSnackbar("Activity type updated");
         onUpdate?.();
       } else {
         displayErrorSnackbar(result);
@@ -194,21 +226,35 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
   const handleCycleClick = () => {
     if (activity.account_detail?.id) {
       const cycleId = activity.decision_cycle || null;
-      const cycleParam = cycleId ? `&cycle=${cycleId}` : '';
-      router.push(`/accounts/${activity.account_detail.id}?tab=decision-cycle${cycleParam}`);
+      const cycleParam = cycleId ? `&cycle=${cycleId}` : "";
+      router.push(
+        `/accounts/${activity.account_detail.id}?tab=decision-cycle${cycleParam}`,
+      );
     }
-  };   
+  };
   // ==============================|| DATE INFO HELPER ||============================== //
 
   const renderDateInfo = () => {
     if (isCompleted && activity.completed_at) {
-      const dateText = format(new Date(activity.completed_at), 'MMM d, yyyy HH:mm');
-      const byName = activity.completed_by_name ? ` by ${activity.completed_by_name}` : '';
+      const dateText = format(
+        new Date(activity.completed_at),
+        "MMM d, yyyy HH:mm",
+      );
+      const byName = activity.completed_by_name
+        ? ` by ${activity.completed_by_name}`
+        : "";
       return (
         <Stack key="date" direction="row" spacing={0.75} alignItems="center">
-          <CheckCircleOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.success.main, display: 'flex' }} />
+          <CheckCircleOutlined
+            style={{
+              fontSize: theme.iconSizes.sm,
+              color: theme.palette.success.main,
+              display: "flex",
+            }}
+          />
           <Typography variant="body2" color="success.main">
-            Completed: {dateText}{byName}
+            Completed: {dateText}
+            {byName}
           </Typography>
         </Stack>
       );
@@ -217,8 +263,16 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
     if (isCancelled) {
       return (
         <Stack key="date" direction="row" spacing={0.75} alignItems="center">
-          <ClockCircleOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.disabled, display: 'flex' }} />
-          <Typography variant="body2" color="text.disabled">Cancelled</Typography>
+          <ClockCircleOutlined
+            style={{
+              fontSize: theme.iconSizes.sm,
+              color: theme.palette.text.disabled,
+              display: "flex",
+            }}
+          />
+          <Typography variant="body2" color="text.disabled">
+            Cancelled
+          </Typography>
         </Stack>
       );
     }
@@ -227,20 +281,30 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
     const dateField = activity.due_date || activity.scheduled_date;
     if (!dateField) return null;
 
-    const label = activity.due_date ? 'Due' : 'Scheduled';
-    const dateText = format(new Date(dateField), 'MMM d, yyyy');
-    const isOverdue = activity.due_date && new Date(activity.due_date) < new Date() && isPlanned;
+    const label = activity.due_date ? "Due" : "Scheduled";
+    const dateText = format(new Date(dateField), "MMM d, yyyy");
+    const isOverdue =
+      activity.due_date &&
+      new Date(activity.due_date) < new Date() &&
+      isPlanned;
 
     return (
       <Stack key="date" direction="row" spacing={0.75} alignItems="center">
-        <CalendarOutlined style={{
-          fontSize: theme.iconSizes.sm,
-          color: isOverdue ? theme.palette.error.main : theme.palette.text.secondary,
-          display: 'flex'
-        }} />
-        <Typography variant="body2" color={isOverdue ? 'error.main' : 'text.secondary'}>
+        <CalendarOutlined
+          style={{
+            fontSize: theme.iconSizes.sm,
+            color: isOverdue
+              ? theme.palette.error.main
+              : theme.palette.text.secondary,
+            display: "flex",
+          }}
+        />
+        <Typography
+          variant="body2"
+          color={isOverdue ? "error.main" : "text.secondary"}
+        >
           {label}: {dateText}
-          {isOverdue && ' (Overdue)'}
+          {isOverdue && " (Overdue)"}
         </Typography>
       </Stack>
     );
@@ -249,14 +313,16 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
   // ==============================|| ROW 1: Avatar ||============================== //
 
   const avatar = (
-    <Avatar sx={{ width: 56, height: 56, bgcolor: avatarColor, fontSize: '1.5rem' }}>
+    <Avatar
+      sx={{ width: 56, height: 56, bgcolor: avatarColor, fontSize: "1.5rem" }}
+    >
       <TypeIcon />
     </Avatar>
   );
 
   // ==============================|| ROW 1: Title ||============================== //
 
-  const title = activity.title || '';
+  const title = activity.title || "";
   const onTitleSave = onSave;
   const titleDisabled = isLocked;
 
@@ -270,25 +336,35 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
       <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
         {canComplete && !isLocked && (
           <MenuItem onClick={handleCompleteClick}>
-            <ListItemIcon><CheckCircleOutlined style={{ color: theme.palette.success.main }} /></ListItemIcon>
+            <ListItemIcon>
+              <CheckCircleOutlined
+                style={{ color: theme.palette.success.main }}
+              />
+            </ListItemIcon>
             <Typography>Complete</Typography>
           </MenuItem>
         )}
         {canCancel && !isLocked && (
           <MenuItem onClick={handleCancelClick}>
-            <ListItemIcon><StopOutlined style={{ color: theme.palette.warning.main }} /></ListItemIcon>
+            <ListItemIcon>
+              <StopOutlined style={{ color: theme.palette.warning.main }} />
+            </ListItemIcon>
             <Typography>Cancel</Typography>
           </MenuItem>
         )}
         {canReopen && (
           <MenuItem onClick={handleReopenClick}>
-            <ListItemIcon><UndoOutlined style={{ color: theme.palette.primary.main }} /></ListItemIcon>
+            <ListItemIcon>
+              <UndoOutlined style={{ color: theme.palette.primary.main }} />
+            </ListItemIcon>
             <Typography>Reopen</Typography>
           </MenuItem>
         )}
         <Divider />
         <MenuItem onClick={handleDeleteClick}>
-          <ListItemIcon><DeleteOutlined style={{ color: theme.palette.error.main }} /></ListItemIcon>
+          <ListItemIcon>
+            <DeleteOutlined style={{ color: theme.palette.error.main }} />
+          </ListItemIcon>
           <Typography color="error.main">Delete</Typography>
         </MenuItem>
       </Menu>
@@ -299,28 +375,50 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
 
   const chips = [
     // Type chip (clickable → type change menu)
-    <Tooltip key="type" title={isLocked ? '' : 'Click to change type'} arrow>
+    <Tooltip key="type" title={isLocked ? "" : "Click to change type"} arrow>
       <Chip
-        label={ACTIVITY_TYPE_LABELS[activity.activity_type] || activity.activity_type}
+        label={
+          ACTIVITY_TYPE_LABELS[activity.activity_type] || activity.activity_type
+        }
         color={typeChipColor}
         size="small"
         variant="filled"
         onClick={isLocked ? undefined : handleTypeMenuOpen}
-        sx={isLocked ? {} : { cursor: 'pointer' }}
+        sx={isLocked ? {} : { cursor: "pointer" }}
       />
     </Tooltip>,
 
     // Type change menu (anchored to chip)
-    <Menu key="type-menu" anchorEl={typeAnchorEl} open={typeMenuOpen} onClose={handleTypeMenuClose}>
+    <Menu
+      key="type-menu"
+      anchorEl={typeAnchorEl}
+      open={typeMenuOpen}
+      onClose={handleTypeMenuClose}
+    >
       {Object.entries(ACTIVITY_TYPE_LABELS).map(([typeValue, typeLabel]) => {
         const isSelected = activity.activity_type === typeValue;
         const TypeOptionIcon = TYPE_ICONS[typeValue] || QuestionCircleOutlined;
         return (
-          <MenuItem key={typeValue} selected={isSelected} onClick={() => handleTypeChange(typeValue)} disabled={savingType}>
+          <MenuItem
+            key={typeValue}
+            selected={isSelected}
+            onClick={() => handleTypeChange(typeValue)}
+            disabled={savingType}
+          >
             <ListItemIcon>
-              <TypeOptionIcon style={{ color: isSelected ? theme.palette.primary.main : theme.palette.text.secondary }} />
+              <TypeOptionIcon
+                style={{
+                  color: isSelected
+                    ? theme.palette.primary.main
+                    : theme.palette.text.secondary,
+                }}
+              />
             </ListItemIcon>
-            <Typography variant="body2" fontWeight={isSelected ? 600 : 400} color={isSelected ? 'primary.main' : 'text.primary'}>
+            <Typography
+              variant="body2"
+              fontWeight={isSelected ? 600 : 400}
+              color={isSelected ? "primary.main" : "text.primary"}
+            >
               {typeLabel}
             </Typography>
           </MenuItem>
@@ -332,7 +430,7 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
     <Chip
       key="status"
       label={ACTIVITY_STATUS_LABELS[activity.status] || activity.status}
-      color={ACTIVITY_STATUS_COLORS[activity.status] || 'default'}
+      color={ACTIVITY_STATUS_COLORS[activity.status] || "default"}
       size="small"
       variant="filled"
     />,
@@ -342,11 +440,11 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
       <Chip
         key="outcome"
         label={ACTIVITY_OUTCOME_LABELS[activity.outcome] || activity.outcome}
-        color={ACTIVITY_OUTCOME_COLORS[activity.outcome] || 'default'}
+        color={ACTIVITY_OUTCOME_COLORS[activity.outcome] || "default"}
         size="small"
         variant="outlined"
       />
-    )
+    ),
   ];
 
   // ==============================|| INFO ITEMS (after divider) ||============================== //
@@ -360,9 +458,18 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
         spacing={0.75}
         alignItems="center"
         onClick={handleAccountClick}
-        sx={{ cursor: 'pointer', '&:hover .info-link': { textDecoration: 'underline' } }}
+        sx={{
+          cursor: "pointer",
+          "&:hover .info-link": { textDecoration: "underline" },
+        }}
       >
-        <BankOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.secondary, display: 'flex' }} />
+        <BankOutlined
+          style={{
+            fontSize: theme.iconSizes.sm,
+            color: theme.palette.text.secondary,
+            display: "flex",
+          }}
+        />
         <Typography variant="body2" color="primary.main" className="info-link">
           {activity.account_detail.company_name}
         </Typography>
@@ -372,19 +479,33 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
     // Origin: Cycle > Step
     activity.decision_cycle_detail && (
       <Stack key="origin" direction="row" spacing={0.75} alignItems="center">
-        <ApartmentOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.secondary, display: 'flex' }} />
+        <ApartmentOutlined
+          style={{
+            fontSize: theme.iconSizes.sm,
+            color: theme.palette.text.secondary,
+            display: "flex",
+          }}
+        />
         <Stack direction="row" spacing={0.5} alignItems="center">
           <Typography
             variant="body2"
             color="primary.main"
             onClick={handleCycleClick}
-            sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+            sx={{
+              cursor: "pointer",
+              "&:hover": { textDecoration: "underline" },
+            }}
           >
             {activity.decision_cycle_detail.name}
           </Typography>
           {activity.decision_step_detail && (
             <>
-              <RightOutlined style={{ fontSize: theme.iconSizes.xs - 2, color: theme.palette.text.disabled }} />
+              <RightOutlined
+                style={{
+                  fontSize: theme.iconSizes.xs - 2,
+                  color: theme.palette.text.disabled,
+                }}
+              />
               <Typography variant="body2" color="text.secondary">
                 {activity.decision_step_detail.name}
               </Typography>
@@ -394,8 +515,49 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
       </Stack>
     ),
 
+    // Campaign context (when activity was generated by a campaign)
+    activity.campaign_detail && (
+      <Stack key="campaign" direction="row" spacing={0.75} alignItems="center">
+        <AimOutlined
+          style={{
+            fontSize: theme.iconSizes.sm,
+            color: theme.palette.text.secondary,
+            display: "flex",
+          }}
+        />
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Typography
+            variant="body2"
+            color="primary.main"
+            onClick={() =>
+              router.push(`/campaigns/${activity.campaign_detail.id}`)
+            }
+            sx={{
+              cursor: "pointer",
+              "&:hover": { textDecoration: "underline" },
+            }}
+          >
+            {activity.campaign_detail.name}
+          </Typography>
+          {activity.campaign_detail.sequence_position && (
+            <>
+              <RightOutlined
+                style={{
+                  fontSize: theme.iconSizes.xs - 2,
+                  color: theme.palette.text.disabled,
+                }}
+              />
+              <Typography variant="body2" color="text.secondary">
+                Step {activity.campaign_detail.sequence_position}
+              </Typography>
+            </>
+          )}
+        </Stack>
+      </Stack>
+    ),
+
     // Date info
-    renderDateInfo()
+    renderDateInfo(),
   ];
 
   // ==============================|| MODALS ||============================== //
@@ -429,7 +591,7 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
           if (activity?.account_detail?.id) {
             router.push(`/accounts/${activity.account_detail.id}`);
           } else {
-            router.push('/territories');
+            router.push("/territories");
           }
         }}
       />
@@ -446,6 +608,6 @@ export default function useActivityHeaderProps({ activity, onSave, onUpdate, isL
     headerActions,
     chips,
     infoItems,
-    modals
+    modals,
   };
 }
