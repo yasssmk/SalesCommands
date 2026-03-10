@@ -132,36 +132,40 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     is_scheduled = serializers.BooleanField(read_only=True)
     contacts_count = serializers.SerializerMethodField(read_only=True)
     contacts = serializers.SerializerMethodField(read_only=True)
-    
+    no_answer_count = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Activity
         fields = [
             # Identity
             'id', 'title',
-            
+
             # Type & Status
             'activity_type', 'activity_type_display',
             'status', 'status_display',
             'outcome', 'outcome_display',
-            
+
             # Scheduling
             'scheduled_date', 'scheduled_time',
             'due_date', 'completed_at',
-            
+
             # Call to action
             'call_to_action',
-            
+
             # Next Step Agreement
             'next_step_agreed',
-            
+
             # Relations (simple objects)
             'account', 'owner', 'decision_step',
-            
+
             # Computed
             'is_overdue', 'is_scheduled', 'contacts_count', 'contacts',
-            
+
+            # Campaign retry tracking (CALL type)
+            'no_answer_count',
+
             # Timestamps
-            'created_at', 'updated_at'
+            'created_at', 'updated_at',
         ]
 
         read_only_fields = fields
@@ -217,6 +221,16 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             }
             for c in obj.contacts.prefetch_related('standard_department').all()
         ]
+    
+    def get_no_answer_count(self, obj):
+        """
+        Return no_answer_count from the linked CampaignAccount.
+        campaign_account must be in select_related for N+1 safety.
+        Returns None for non-campaign activities.
+        """
+        if obj.campaign_account_id and obj.campaign_account:
+            return obj.campaign_account.no_answer_count
+        return None
 
 
 # ============================================================================

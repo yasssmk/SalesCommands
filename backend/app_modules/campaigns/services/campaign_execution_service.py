@@ -268,12 +268,12 @@ class CampaignExecutionService:
         outcome = result_data.get('outcome')
         outcome_notes = result_data.get('outcome_notes')
 
-        # Complete the activity
-        activity.complete(outcome=outcome, notes=outcome_notes, user=self.user)
-
-        # Update CampaignAccount based on outcome
+        # Assign campaign_account FIRST — used in all branches below.
         campaign_account = activity.campaign_account
         next_activity = None
+
+        # Complete the activity before handling outcome side-effects.
+        activity.complete(outcome=outcome, notes=outcome_notes, user=self.user)
 
         if campaign_account:
             next_activity = self._handle_outcome(
@@ -794,20 +794,8 @@ class CampaignExecutionService:
                 scheduled_date=callback_date,
             )
 
-        # ------------------------------------------------------------------
-        # NO ANSWER — increment counter, retry if under threshold
-        # ------------------------------------------------------------------
         if outcome == 'NO_ANSWER':
             campaign_account.increment_no_answer(user=self.user)
-
-            if campaign_account.no_answer_count < CONFIG.limits.max_retry_attempts:
-                retry_date = timezone.now().date() + timedelta(days=1)
-                return self._create_followup(
-                    activity,
-                    activity_type=activity.activity_type,
-                    scheduled_date=retry_date,
-                )
-            # Max retries reached — fall through, no more followup created
             return None
 
         # ------------------------------------------------------------------
@@ -993,6 +981,16 @@ class CampaignExecutionService:
             and activity.campaign_account.status == CampaignAccountStatus.CALLBACK_PENDING
         ):
             score += CONFIG.priorities.callback_priority_boost * weights.get('callback_weight', 2.0)
+        
+        # No-answer penalty — demotes CALL activities after failed attempts.
+        # Each unanswered attempt pushes the activity further down the queue.
+        # Uses no_answer_count from CampaignAccount (shared across all steps of the account).
+        if (
+            activity.activity_type == ActivityType.CALL
+            and activity.campaign_account
+            and activity.campaign_account.no_answer_count > 0
+        ):
+            score -= activity.campaign_account.no_answer_count * 50
 
         # Overdue bonus — longer overdue = higher urgency
         if activity.due_date:

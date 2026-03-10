@@ -55,7 +55,7 @@ from ..services import (
     CampaignExecutionService,
     CampaignAnalyticsService,
 )
-from app_modules.activities.models import Activity
+from app_modules.activities.models import Activity, ActivityStatus
 from ..config.settings import CONFIG
 
 logger = get_logger(__name__)
@@ -801,16 +801,23 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 CoreErrorMessages.REQUIRED_FIELD.format(field='response')
             )
 
-        # --- Resolve activity (must belong to this campaign + client) ---
-        from app_modules.activities.models import Activity
         try:
-            activity = Activity.objects.get(
+            activity = Activity.objects.select_related(
+                'campaign_account'
+            ).get(
                 id=activity_id,
                 campaign=campaign,
                 client_id=client_id,
             )
         except Activity.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+        if activity.status == ActivityStatus.CANCELLED:
+            raise StandardizedValidationError(
+                CampaignModuleErrorMessages.EXECUTION_FAILED.format(
+                    reason="Cannot log a response on a cancelled activity"
+                )
+            )
 
         # --- Map response → outcome ---
         RESPONSE_TO_OUTCOME = {
@@ -898,7 +905,6 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 CoreErrorMessages.REQUIRED_FIELD.format(field='contact_id')
             )
 
-        from app_modules.activities.models import Activity, ActivityStatus
 
         qs = Activity.objects.filter(
             campaign=campaign,

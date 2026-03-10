@@ -80,6 +80,10 @@ def get_urlpatterns():
         path('<uuid:pk>/cancel/', ActivityViewSet.as_view({
             'post': 'cancel'
         }), name='cancel'),
+
+        path('<uuid:pk>/record-no-answer/', ActivityViewSet.as_view({
+            'post': 'record_no_answer'
+        }), name='record-no-answer'),
     ]
 
 

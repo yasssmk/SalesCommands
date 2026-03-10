@@ -70,6 +70,7 @@ const ACTIVITY_TYPE_COLORS = {
 
 // Activity types that complete in 1 click ("sent" semantics — no outcome picker needed)
 const ONE_CLICK_TYPES = ["EMAIL", "LINKEDIN"];
+const MAX_CALL_ATTEMPTS = 3;
 
 // ==============================|| OUTCOME CONFIG ||============================== //
 
@@ -243,6 +244,16 @@ export default function PlaylistActivityCard({
   const isCallbackOutcome = selectedOutcome === "CALLBACK_REQUESTED";
   const isTerminalOutcome = TERMINAL_OUTCOMES.includes(selectedOutcome);
 
+  // CALL retry tracking — derived from CampaignAccount.no_answer_count via serializer.
+  const isCall = activity.activity_type === "CALL";
+  const noAnswerCount = activity.no_answer_count || 0;
+  const attemptsLeft = isCall
+    ? Math.max(0, MAX_CALL_ATTEMPTS - noAnswerCount)
+    : null;
+  // True when this NO_ANSWER click is a retry (activity stays PLANNED after submit).
+  const isCallNoAnswerRetry =
+    isCall && selectedOutcome === "NO_ANSWER" && attemptsLeft > 1;
+
   // Callback date is required when outcome = CALLBACK_REQUESTED
   const isCompleteDisabled =
     !selectedOutcome || completing || (isCallbackOutcome && !callbackDate);
@@ -310,10 +321,13 @@ export default function PlaylistActivityCard({
       outcome: selectedOutcome,
       outcome_notes: notes || undefined,
     };
-    // Include callback_date only when relevant
     if (isCallbackOutcome && callbackDate) {
-      // Send as ISO date string (YYYY-MM-DD)
       payload.callback_date = callbackDate.toISOString().split("T")[0];
+    }
+    // CALL+NO_ANSWER below threshold — use dedicated endpoint via _is_no_answer_retry flag.
+    // CampaignPlaylistTab intercepts this and calls recordCallNoAnswer instead of complete.
+    if (isCall && selectedOutcome === "NO_ANSWER" && attemptsLeft > 0) {
+      payload._is_no_answer_retry = true;
     }
     onComplete?.(activity.id, payload);
   };
@@ -450,7 +464,17 @@ export default function PlaylistActivityCard({
                 </Stack>
               )}
 
-              {/* Completed badge or Log Result button */}
+              {/* CALL retry badge — shown when at least one attempt has been made */}
+              {isCall && !isCompleted && !isCancelled && noAnswerCount > 0 && (
+                <Chip
+                  label={`${attemptsLeft} attempt${attemptsLeft !== 1 ? "s" : ""} left`}
+                  size="small"
+                  color={attemptsLeft === 1 ? "error" : "warning"}
+                  variant="outlined"
+                  sx={{ height: 20, fontSize: "0.65rem", mr: 0.5 }}
+                />
+              )}
+
               {isCompleted && outcomeConfig ? (
                 <Chip
                   label={outcomeConfig.label}

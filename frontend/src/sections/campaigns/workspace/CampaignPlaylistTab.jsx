@@ -52,6 +52,7 @@ import {
   useGetCompletedActivities,
   completePlaylistActivity,
   cancelPlannedActivities,
+  recordCallNoAnswer,
 } from "api/campaigns/campaigns";
 
 // utils
@@ -154,6 +155,29 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
   const handleComplete = useCallback(
     async (activityId, payload) => {
       setCompletingId(activityId);
+
+      // CALL + NO_ANSWER below threshold — intercept BEFORE calling complete.
+      // Activity must stay PLANNED; dedicated endpoint handles the attempt counter.
+      if (payload._is_no_answer_retry) {
+        try {
+          const result = await recordCallNoAnswer(
+            activityId,
+            payload.outcome_notes,
+          );
+          if (result.success) {
+            mutatePlaylist();
+            displaySuccessSnackbar("Attempt recorded");
+          } else {
+            displayErrorSnackbar(result);
+          }
+        } catch (err) {
+          displayErrorSnackbar(err);
+        } finally {
+          setCompletingId(null);
+        }
+        return;
+      }
+
       try {
         const result = await completePlaylistActivity(
           activityId,
@@ -162,10 +186,11 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         );
 
         if (result.success) {
-          // Optimistic removal
+          setExpandedCardId(null);
+
+          // Standard completion — remove optimistically from playlist.
           setRemovedIds((prev) => new Set([...prev, activityId]));
           setCompletedToday((prev) => prev + 1);
-          setExpandedCardId(null);
 
           const category = OUTCOME_CATEGORIES[payload.outcome] || "neutral";
           if (category === "negative") {
@@ -438,7 +463,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         {todayActivities.length === 0 ? (
           <Box sx={{ py: 3, textAlign: "center" }}>
             <Typography variant="body2" color="text.secondary">
-              Nothing to do today 🎉
+              Nothing to do today. Great job!
             </Typography>
           </Box>
         ) : (
@@ -529,7 +554,10 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
             Completed
           </Typography>
           <Chip
-            label={completedActivities.length || completedCount}
+            label={
+              completedActivities.filter((a) => a.status === "COMPLETED")
+                .length || completedCount
+            }
             size="small"
             variant="outlined"
             color="success"
@@ -552,17 +580,19 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
             </Typography>
           ) : (
             <Stack spacing={1.5}>
-              {completedActivities.map((activity) => (
-                <PlaylistActivityCard
-                  key={activity.id}
-                  activity={activity}
-                  expanded={false}
-                  onExpand={() => {}}
-                  onComplete={() => {}}
-                  completing={false}
-                  isGreyedOut
-                />
-              ))}
+              {completedActivities
+                .filter((a) => a.status === "COMPLETED")
+                .map((activity) => (
+                  <PlaylistActivityCard
+                    key={activity.id}
+                    activity={activity}
+                    expanded={false}
+                    onExpand={() => {}}
+                    onComplete={() => {}}
+                    completing={false}
+                    isGreyedOut
+                  />
+                ))}
             </Stack>
           )}
         </AccordionDetails>

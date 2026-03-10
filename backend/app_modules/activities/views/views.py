@@ -13,10 +13,11 @@ from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.utils import timezone
+from datetime import timedelta
 
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages, ActivityErrorMessages
+from core.error_messages import CoreErrorMessages, ActivityErrorMessages, CampaignModuleErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
 from core.logging import get_logger, ctx_from_request
@@ -670,6 +671,95 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         })
         
         serializer = ActivitySerializer(activity, context={'request': request})
+        return Response({
+            'success': True,
+            'data': serializer.data,
+        })
+    
+    @action(detail=True, methods=['post'], url_path='record-no-answer')
+    @transaction.atomic
+    def record_no_answer(self, request, pk=None):
+        """
+        Record a no-answer attempt on a CALL activity without completing it.
+
+        POST /activities/{id}/record-no-answer/
+
+        Increments CampaignAccount.no_answer_count.
+        - Below threshold: pushes scheduled_date to tomorrow (priority demotion).
+        - At threshold: completes the activity with NO_ANSWER outcome.
+
+        Only valid for CALL activities linked to a campaign.
+        """
+        from app_modules.campaigns.config.settings import CONFIG
+
+        ctx = ctx_from_request(request)
+        activity = self.get_object()
+
+        logger.info("activity_record_no_answer_requested", extra={
+            **ctx,
+            'activity_id': str(activity.id),
+        })
+
+        if activity.activity_type != 'CALL':
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field='activity_type')
+            )
+
+        if activity.status != ActivityStatus.PLANNED:
+            raise StandardizedValidationError(
+                ActivityErrorMessages.CANNOT_COMPLETE_CANCELLED
+            )
+
+        if not activity.campaign_account_id:
+            raise StandardizedValidationError(
+                CampaignModuleErrorMessages.EXECUTION_FAILED.format(
+                    reason="Activity is not linked to a campaign account"
+                )
+            )
+
+        campaign_account = activity.campaign_account
+        campaign_account.increment_no_answer(user=request.user)
+
+        max_attempts = CONFIG.limits.max_retry_attempts
+
+        if campaign_account.no_answer_count >= max_attempts:
+            # Threshold reached — complete the activity.
+            outcome_notes = request.data.get('outcome_notes')
+            activity.complete(
+                outcome=ActivityOutcome.NO_ANSWER,
+                notes=outcome_notes,
+                user=request.user,
+            )
+            logger.info("activity_call_no_answer_exhausted", extra={
+                **ctx,
+                'activity_id': str(activity.id),
+                'no_answer_count': campaign_account.no_answer_count,
+            })
+        else:
+
+            logger.info("activity_call_no_answer_retry", extra={
+                **ctx,
+                'activity_id': str(activity.id),
+                'no_answer_count': campaign_account.no_answer_count,
+            })
+
+        audit_log(
+            event='activity_no_answer_recorded',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type='activity',
+            target_id=str(activity.id),
+            outcome='success',
+            extra={
+                'no_answer_count': campaign_account.no_answer_count,
+                'completed': activity.status == ActivityStatus.COMPLETED,
+            }
+        )
+
+        self._invalidate_activity_caches(self.get_client_id())
+
+        serializer = ActivityListSerializer(activity, context={'request': request})
         return Response({
             'success': True,
             'data': serializer.data,

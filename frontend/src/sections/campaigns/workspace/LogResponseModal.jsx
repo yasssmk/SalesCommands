@@ -111,7 +111,8 @@ function StepWhoAnswered({ completedActivities, selectedContactId, onSelect }) {
     return (
       <Box sx={{ py: 4, textAlign: "center" }}>
         <Typography variant="body2" color="text.secondary">
-          No contacts found in completed activities.
+          No contacts found. Complete at least one activity or make a call
+          attempt first.
         </Typography>
       </Box>
     );
@@ -189,7 +190,7 @@ function StepWhichActivity({
     return (
       <Box sx={{ py: 4, textAlign: "center" }}>
         <Typography variant="body2" color="text.secondary">
-          No completed activities found for this contact.
+          No activities found for this contact.
         </Typography>
       </Box>
     );
@@ -207,6 +208,8 @@ function StepWhichActivity({
             ACTIVITY_TYPE_ICONS[activity.activity_type] || CalendarOutlined;
           const typeColor =
             ACTIVITY_TYPE_COLORS[activity.activity_type] || "default";
+          // PLANNED = call in progress (contact called back before retries exhausted)
+          const isPending = activity.status === "PLANNED";
 
           return (
             <Paper
@@ -233,33 +236,29 @@ function StepWhichActivity({
                   <Stack
                     direction="row"
                     alignItems="center"
-                    spacing={1.5}
-                    sx={{ flex: 1, minWidth: 0 }}
+                    spacing={1}
+                    sx={{ width: "100%" }}
                   >
-                    <Chip
-                      icon={<TypeIcon style={{ fontSize: 12 }} />}
-                      label={
-                        activity.activity_type_display || activity.activity_type
-                      }
-                      size="small"
-                      color={typeColor}
-                      variant="outlined"
-                      sx={{
-                        height: 22,
-                        flexShrink: 0,
-                        "& .MuiChip-label": { fontSize: "0.7rem" },
-                      }}
-                    />
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="body2" fontWeight={500} noWrap>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="body2" fontWeight={600}>
                         {activity.title}
                       </Typography>
-                      {activity.scheduled_date && (
-                        <Typography variant="caption" color="text.secondary">
-                          {activity.scheduled_date}
-                        </Typography>
-                      )}
+                      <Typography variant="caption" color="text.secondary">
+                        {activity.activity_type}
+                        {activity.scheduled_date
+                          ? ` · ${activity.scheduled_date}`
+                          : ""}
+                      </Typography>
                     </Box>
+                    {isPending && (
+                      <Chip
+                        label="In progress"
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        sx={{ height: 20, fontSize: "0.65rem" }}
+                      />
+                    )}
                   </Stack>
                 }
                 sx={{ m: 0, width: "100%" }}
