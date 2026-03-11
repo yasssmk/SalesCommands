@@ -190,9 +190,13 @@ class CampaignExecutionService:
             queryset = queryset.filter(owner=executor)
 
         # No gating filter — all PLANNED activities are returned.
-        # The frontend splits them into "due now" vs "upcoming" sections.
-        # Gating (previous step must be COMPLETED + min_delay elapsed) is
-        # enforced separately when an activity is actually opened/executed.
+        # The frontend is responsible for routing each activity into the correct
+        # section (today / paused / upcoming) based on:
+        #   - is_callback_followup + campaign_account_status → PAUSED section
+        #   - campaign_account_status = CALLBACK_PENDING (non-followup) → UPCOMING greyed
+        #   - scheduled_date <= today → TODAY section
+        #   - scheduled_date > today → UPCOMING section
+
 
         total_count = queryset.count()
 
@@ -698,27 +702,37 @@ class CampaignExecutionService:
         Recompute scheduled_date for all PLANNED activities in a sequence.
 
         Rules:
-            - Step 1 (previous_activity is None): always today. Never overdue.
-            - Step N: next_business_day(today + cumulative min_delay_days)
-              where cumulative = sum of min_delay_days from step 1 to step N,
-              assuming all prior steps are completed today.
+            - CALLBACK_PENDING account: base date = callback_date (the contact is
+              intentionally unreachable until then). Step 1 of that sub-sequence
+              (the callback followup) is pinned to callback_date; subsequent steps
+              are offset forward from it.
+            - All other accounts: base date = today.
+            - Step 1 (previous_activity is None): pinned to base date.
+            - Step N: next_business_day(base_date + cumulative min_delay_days).
 
-        Modifies scheduled_date in-place on each activity object (not saved to DB —
-        display-only adjustment for playlist ordering and frontend rendering).
+        Modifies scheduled_date in-place (display-only, not saved to DB).
         """
-        # Build a lookup: activity.id → activity
         by_id = {a.id: a for a in activities}
 
-        # Walk each activity's chain upward to compute cumulative delay
         for activity in activities:
+            # Determine base date for this activity's account
+            ca = activity.campaign_account
+            if (
+                ca is not None
+                and getattr(ca, 'status', None) == 'CALLBACK_PENDING'
+                and ca.callback_date is not None
+            ):
+                base_date = ca.callback_date
+            else:
+                base_date = today
+
             cumulative_delay = self._cumulative_delay_from_root(activity, by_id)
 
             if cumulative_delay == 0:
-                # Step 1 — always today, never overdue
-                activity.scheduled_date = today
+                activity.scheduled_date = base_date
             else:
                 activity.scheduled_date = self._next_business_day(
-                    today + timedelta(days=cumulative_delay)
+                    base_date + timedelta(days=cumulative_delay)
                 )
 
         return activities
@@ -777,12 +791,32 @@ class CampaignExecutionService:
         """
         outcome = result_data.get('outcome', '')
         callback_date = result_data.get('callback_date')
+        callback_time = result_data.get('callback_time')  # optional HH:MM
         next_activity_type = result_data.get('next_activity_type')
 
         # ------------------------------------------------------------------
         # CALLBACK REQUESTED — always an explicit out-of-sequence followup
         # ------------------------------------------------------------------
         if callback_date:
+            # Guard: callback date must not exceed campaign end date.
+            # If it does, the prospect is beyond the campaign window — close
+            # the sequence as if the result were terminal (no follow-up created).
+            campaign = activity.campaign
+            if campaign and campaign.end_date:
+                from datetime import date as date_type
+                cb = (
+                    callback_date
+                    if isinstance(callback_date, date_type)
+                    else date_type.fromisoformat(str(callback_date))
+                )
+                if cb > campaign.end_date:
+                    campaign_account.mark_stopped(
+                        reason="Callback date exceeds campaign end date",
+                        user=self.user,
+                    )
+                    self._cancel_chain(activity)
+                    return None
+
             campaign_account.request_callback(
                 callback_date=callback_date,
                 user=self.user,
@@ -792,7 +826,13 @@ class CampaignExecutionService:
                 activity,
                 activity_type=next_activity_type or activity.activity_type,
                 scheduled_date=callback_date,
+                scheduled_time=callback_time,
+                is_callback_followup=True,
             )
+        
+        # ------------------------------------------------------------------
+        # No answer - 3 tentatives / step if call
+        # ------------------------------------------------------------------
 
         if outcome == 'NO_ANSWER':
             campaign_account.increment_no_answer(user=self.user)
@@ -880,12 +920,20 @@ class CampaignExecutionService:
         })
 
 
-    def _create_followup(self, source_activity, activity_type, scheduled_date):
+    def _create_followup(self, source_activity, activity_type, scheduled_date,
+                         scheduled_time=None, is_callback_followup=False):
         """
         Create a follow-up activity from a completed one.
 
         Copies campaign context (campaign, campaign_account, account, contacts)
         and increments sequence_position.
+
+        Args:
+            scheduled_time: Optional HH:MM string. Set on callback followups so
+                            the Action Center can surface a time-based reminder.
+            is_callback_followup: True when created from a CALLBACK_REQUESTED outcome.
+                                  Allows get_playlist() to surface only this activity
+                                  in the PAUSED section while the account is CALLBACK_PENDING.
         """
         position = (source_activity.sequence_position or 0) + 1
 
@@ -899,7 +947,9 @@ class CampaignExecutionService:
             campaign_account=source_activity.campaign_account,
             sequence_position=position,
             scheduled_date=scheduled_date,
+            scheduled_time=scheduled_time,
             due_date=source_activity.campaign.end_date if source_activity.campaign else None,
+            is_callback_followup=is_callback_followup,
         )
         followup.save(user=self.user, client_id=self.client_id)
 

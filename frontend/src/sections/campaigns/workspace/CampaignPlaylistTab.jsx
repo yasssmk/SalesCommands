@@ -188,20 +188,30 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         if (result.success) {
           setExpandedCardId(null);
 
-          // Standard completion — remove optimistically from playlist.
-          setRemovedIds((prev) => new Set([...prev, activityId]));
-          setCompletedToday((prev) => prev + 1);
-
           const category = OUTCOME_CATEGORIES[payload.outcome] || "neutral";
+          const isCallback = payload.outcome === "CALLBACK_REQUESTED";
+
+          if (isCallback) {
+            // Callback: do NOT optimistically remove — the completed activity
+            // disappears and the new followup appears only after the server
+            // response. Let SWR revalidate before updating UI.
+            await mutatePlaylist();
+          } else {
+            // All other outcomes: optimistic removal is safe
+            setRemovedIds((prev) => new Set([...prev, activityId]));
+            setCompletedToday((prev) => prev + 1);
+            mutatePlaylist();
+          }
+
           if (category === "negative") {
             displaySuccessSnackbar("Activity completed — sequence cancelled");
           } else if (category === "positive") {
             displaySuccessSnackbar("Activity completed successfully");
+          } else if (isCallback) {
+            displaySuccessSnackbar("Callback scheduled — sequence paused");
           } else {
             displaySuccessSnackbar("Activity completed");
           }
-
-          mutatePlaylist();
 
           // After terminal outcome — cancel remaining PLANNED activities
           if (TERMINAL_OUTCOMES.includes(payload.outcome)) {
@@ -268,10 +278,39 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
   // ── Split PLANNED into Today vs Upcoming ──
   const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, timezone-safe
 
-  const { todayActivities, upcomingActivities } = useMemo(() => {
+  const {
+    todayActivities,
+    pausedActivities,
+    upcomingActivities,
+    pausedContactIds,
+  } = useMemo(() => {
     const today = [];
+    const paused = [];
     const upcoming = [];
+    // Collect the contact IDs that are explicitly paused (from callback followup activities).
+    // Only activities sharing one of these contacts should be greyed in UPCOMING —
+    // not all activities of the same CampaignAccount (which may have other active contacts).
+    const pausedContacts = new Set();
+
+    // First pass: identify paused followups and collect their contact IDs
     activities.forEach((a) => {
+      if (
+        a.is_callback_followup &&
+        a.campaign_account_status === "CALLBACK_PENDING"
+      ) {
+        (a.contacts || []).forEach((c) => pausedContacts.add(c.id));
+      }
+    });
+
+    // Second pass: route each activity to the correct bucket
+    activities.forEach((a) => {
+      if (
+        a.is_callback_followup &&
+        a.campaign_account_status === "CALLBACK_PENDING"
+      ) {
+        paused.push(a);
+        return;
+      }
       const d = a.scheduled_date || a.due_date;
       if (!d || d <= todayStr) {
         today.push(a);
@@ -279,7 +318,13 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         upcoming.push(a);
       }
     });
-    return { todayActivities: today, upcomingActivities: upcoming };
+
+    return {
+      todayActivities: today,
+      pausedActivities: paused,
+      upcomingActivities: upcoming,
+      pausedContactIds: pausedContacts,
+    };
   }, [activities, todayStr]);
 
   const completedCount =
@@ -463,7 +508,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         {todayActivities.length === 0 ? (
           <Box sx={{ py: 3, textAlign: "center" }}>
             <Typography variant="body2" color="text.secondary">
-              Nothing to do today. Great job!
+              Nothing to do today 🎉
             </Typography>
           </Box>
         ) : (
@@ -476,11 +521,68 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
                 onExpand={handleExpand}
                 onComplete={handleComplete}
                 completing={completingId === activity.id}
+                campaignEndDate={campaign?.end_date}
               />
             ))}
           </Stack>
         )}
       </Box>
+
+      {/* ── Section: Paused — CALLBACK_PENDING accounts (collapsible) ── */}
+      {pausedActivities.length > 0 && (
+        <Accordion
+          disableGutters
+          elevation={0}
+          defaultExpanded
+          sx={{
+            border: "1px solid",
+            borderColor: "warning.light",
+            borderRadius: 1.5,
+            "&:before": { display: "none" },
+            "&.Mui-expanded": { borderColor: "warning.light" },
+          }}
+        >
+          <AccordionSummary
+            expandIcon={<DownOutlined style={{ fontSize: 12 }} />}
+            sx={{
+              minHeight: 48,
+              "& .MuiAccordionSummary-content": {
+                alignItems: "center",
+                gap: 1,
+              },
+            }}
+          >
+            <Typography
+              variant="subtitle2"
+              fontWeight={600}
+              color="warning.dark"
+            >
+              Paused — awaiting callback
+            </Typography>
+            <Chip
+              label={pausedActivities.length}
+              size="small"
+              variant="outlined"
+              color="warning"
+            />
+          </AccordionSummary>
+          <AccordionDetails sx={{ pt: 0, pb: 1.5 }}>
+            <Stack spacing={1.5}>
+              {pausedActivities.map((activity) => (
+                <PlaylistActivityCard
+                  key={activity.id}
+                  activity={activity}
+                  expanded={expandedCardId === activity.id}
+                  onExpand={handleExpand}
+                  onComplete={handleComplete}
+                  completing={completingId === activity.id}
+                  campaignEndDate={campaign?.end_date}
+                />
+              ))}
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
+      )}
 
       {/* ── Section: Upcoming (collapsible) ── */}
       {upcomingActivities.length > 0 && (
@@ -524,7 +626,8 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
                   onExpand={() => {}}
                   onComplete={handleComplete}
                   completing={completingId === activity.id}
-                  isGreyedOut
+                  isGreyedOut={true}
+                  campaignEndDate={campaign?.end_date}
                 />
               ))}
             </Stack>

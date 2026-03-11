@@ -36,6 +36,10 @@ import Typography from "@mui/material/Typography";
 
 // date picker
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import dayjs from "dayjs";
 
 // icons
 import PhoneOutlined from "@ant-design/icons/PhoneOutlined";
@@ -213,12 +217,14 @@ export default function PlaylistActivityCard({
   onComplete,
   completing,
   isGreyedOut = false,
+  campaignEndDate = null,
 }) {
   const theme = useTheme();
 
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [notes, setNotes] = useState("");
   const [callbackDate, setCallbackDate] = useState(null);
+  const [callbackTime, setCallbackTime] = useState(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
 
   const TypeIcon =
@@ -295,14 +301,16 @@ export default function PlaylistActivityCard({
       setSelectedOutcome(null);
       setNotes("");
       setCallbackDate(null);
+      setCallbackTime(null);
     }
   };
 
   const handleOutcomeSelect = (outcomeKey) => {
     setSelectedOutcome(outcomeKey === selectedOutcome ? null : outcomeKey);
-    // Reset callback date when switching away from CALLBACK_REQUESTED
+    // Reset callback fields when switching away from CALLBACK_REQUESTED
     if (outcomeKey !== "CALLBACK_REQUESTED") {
       setCallbackDate(null);
+      setCallbackTime(null);
     }
   };
 
@@ -321,13 +329,13 @@ export default function PlaylistActivityCard({
       outcome: selectedOutcome,
       outcome_notes: notes || undefined,
     };
+    // Include callback fields only when relevant
     if (isCallbackOutcome && callbackDate) {
       payload.callback_date = callbackDate.toISOString().split("T")[0];
-    }
-    // CALL+NO_ANSWER below threshold — use dedicated endpoint via _is_no_answer_retry flag.
-    // CampaignPlaylistTab intercepts this and calls recordCallNoAnswer instead of complete.
-    if (isCall && selectedOutcome === "NO_ANSWER" && attemptsLeft > 0) {
-      payload._is_no_answer_retry = true;
+      if (callbackTime) {
+        // Format HH:MM — backend stores in Activity.scheduled_time
+        payload.callback_time = dayjs(callbackTime).format("HH:mm");
+      }
     }
     onComplete?.(activity.id, payload);
   };
@@ -601,26 +609,44 @@ export default function PlaylistActivityCard({
                 })}
               </Stack>
 
-              {/* Callback date — only when CALLBACK_REQUESTED */}
+              {/* Callback date + time — only when CALLBACK_REQUESTED */}
               {isCallbackOutcome && (
-                <Box sx={{ mb: 2 }}>
-                  <DatePicker
-                    label="Callback date *"
-                    value={callbackDate}
-                    onChange={(newValue) => setCallbackDate(newValue)}
-                    disablePast
-                    slotProps={{
-                      textField: {
-                        size: "small",
-                        fullWidth: true,
-                        error: !callbackDate,
-                        helperText: !callbackDate
-                          ? "Callback date is required"
-                          : undefined,
-                      },
-                    }}
-                  />
-                </Box>
+                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                  <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+                    <DatePicker
+                      label="Callback date *"
+                      value={callbackDate}
+                      onChange={(newValue) => setCallbackDate(newValue)}
+                      disablePast
+                      maxDate={
+                        campaignEndDate ? dayjs(campaignEndDate) : undefined
+                      }
+                      slotProps={{
+                        textField: {
+                          size: "small",
+                          fullWidth: true,
+                          error: !callbackDate,
+                          helperText: !callbackDate
+                            ? "Required"
+                            : campaignEndDate
+                              ? `Max: ${dayjs(campaignEndDate).format("MMM D")}`
+                              : undefined,
+                        },
+                      }}
+                    />
+                    <TimePicker
+                      label="Time (optional)"
+                      value={callbackTime}
+                      onChange={(newValue) => setCallbackTime(newValue)}
+                      slotProps={{
+                        textField: {
+                          size: "small",
+                          fullWidth: true,
+                        },
+                      }}
+                    />
+                  </Stack>
+                </LocalizationProvider>
               )}
 
               {/* Terminal outcome warning banner */}

@@ -253,6 +253,16 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Variant used to generate this activity (STANDARD, WITHOUT_PHONE, etc.)')
     )
 
+    is_callback_followup = models.BooleanField(
+        default=False,
+        verbose_name=_('Is Callback Follow-up'),
+        help_text=_(
+            'True when this activity was created in response to a CALLBACK_REQUESTED outcome. '
+            'Used to surface only this activity in the PAUSED playlist section while the '
+            'campaign account is in CALLBACK_PENDING status.'
+        )
+    )
+
     
     # ==========================================================================
     # LINKED LIST (PREVIOUS/NEXT ACTIVITY)

@@ -133,6 +133,7 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     contacts_count = serializers.SerializerMethodField(read_only=True)
     contacts = serializers.SerializerMethodField(read_only=True)
     no_answer_count = serializers.SerializerMethodField(read_only=True)
+    campaign_account_status = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Activity
@@ -163,6 +164,10 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
 
             # Campaign retry tracking (CALL type)
             'no_answer_count',
+
+            # Campaign callback context
+            'is_callback_followup',
+            'campaign_account_status',
 
             # Timestamps
             'created_at', 'updated_at',
@@ -230,6 +235,17 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         """
         if obj.campaign_account_id and obj.campaign_account:
             return obj.campaign_account.no_answer_count
+        return None
+    
+    def get_campaign_account_status(self, obj):
+        """
+        Return CampaignAccount status string.
+        Used by the frontend to route the activity into the correct playlist
+        section (PAUSED when CALLBACK_PENDING, TODAY/UPCOMING otherwise).
+        campaign_account must be in select_related for N+1 safety.
+        """
+        if obj.campaign_account_id and obj.campaign_account:
+            return obj.campaign_account.status
         return None
 
 
