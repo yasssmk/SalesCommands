@@ -144,6 +144,10 @@ const endpoints = {
 
   // Campaign Accounts  (prefix: /campaigns/accounts/)
   campaignAccounts: "/campaigns/accounts/",
+
+  // Campaign Accounts  (prefix: /campaigns/accounts/)
+  campaignAccounts: "/campaigns/accounts/",
+
   campaignAccountDetail: (id) => `/campaigns/accounts/${id}/`,
   accountsByCampaign: "/campaigns/accounts/by-campaign/",
   accountsBulkAdd: "/campaigns/accounts/bulk-add/",
@@ -153,6 +157,10 @@ const endpoints = {
   // Cross-module: Activities
   activityComplete: (id) => `/module-activities/${id}/complete/`,
   activityRecordNoAnswer: (id) => `/module-activities/${id}/record-no-answer/`,
+
+  // Campaign Contacts
+  campaignContactResumeCallback: (id) =>
+    `/campaigns/contacts/${id}/resume-callback/`,
 };
 
 // ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
@@ -297,6 +305,39 @@ export async function cancelPlannedActivities(campaignId, payload) {
   });
 
   if (result.success || result.status === 200) {
+    revalidateMultiple([
+      endpoints.campaignPlaylist(campaignId),
+      endpoints.campaignDashboard(campaignId),
+      `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
+    ]);
+    return { success: true, data: result.data };
+  }
+
+  return { success: false, error: result.error, status: result.status || 0 };
+}
+
+// ==============================|| MUTATION - RESUME CONTACT CALLBACK ||============================== //
+
+/**
+ * RESUME CONTACT CALLBACK
+ * POST /campaigns/contacts/{contactId}/resume-callback/
+ *
+ * Transitions CampaignContact from CALLBACK_PENDING → IN_PROGRESS.
+ * Used by the PAUSED section "Cancel Pause" button in the playlist.
+ *
+ * @param {string} campaignContactId - UUID of the CampaignContact record
+ * @param {string} campaignId - For cache revalidation
+ */
+export async function resumeContactCallback(campaignContactId, campaignId) {
+  if (!campaignContactId || !isValidUUID(campaignContactId)) {
+    return { success: false, error: "Invalid contact ID format", status: 400 };
+  }
+
+  const result = await api.post(
+    endpoints.campaignContactResumeCallback(campaignContactId),
+  );
+
+  if (result.success) {
     revalidateMultiple([
       endpoints.campaignPlaylist(campaignId),
       endpoints.campaignDashboard(campaignId),

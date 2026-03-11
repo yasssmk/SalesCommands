@@ -258,7 +258,6 @@ class CampaignAnalyticsService:
         completed = status_agg.get(CampaignAccountStatus.COMPLETED, 0)
         stopped = status_agg.get(CampaignAccountStatus.STOPPED, 0)
         in_progress = status_agg.get(CampaignAccountStatus.IN_PROGRESS, 0)
-        callback = status_agg.get(CampaignAccountStatus.CALLBACK_PENDING, 0)
         pending = status_agg.get(CampaignAccountStatus.PENDING, 0)
 
         # Conversion: completed / (completed + stopped) — accounts that went through
@@ -270,7 +269,7 @@ class CampaignAnalyticsService:
             'totals': {
                 'total': total,
                 'pending': pending,
-                'active': in_progress + callback,
+                'active': in_progress,
                 'completed': completed,
                 'stopped': stopped,
             },

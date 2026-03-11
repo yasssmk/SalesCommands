@@ -329,6 +329,10 @@ export default function PlaylistActivityCard({
       outcome: selectedOutcome,
       outcome_notes: notes || undefined,
     };
+    // Flag for NO_ANSWER retry — tab intercepts to call record-no-answer instead of complete
+    if (isCallNoAnswerRetry) {
+      payload._is_no_answer_retry = true;
+    }
     // Include callback fields only when relevant
     if (isCallbackOutcome && callbackDate) {
       payload.callback_date = callbackDate.toISOString().split("T")[0];

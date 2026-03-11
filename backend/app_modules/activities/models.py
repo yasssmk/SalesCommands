@@ -231,6 +231,16 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Specific campaign-account pivot this activity belongs to')
     )
 
+    campaign_contact = models.ForeignKey(
+        'module_campaigns.CampaignContact',
+        on_delete=models.SET_NULL,
+        related_name='activities',
+        blank=True,
+        null=True,
+        verbose_name=_('Campaign Contact'),
+        help_text=_('Contact-scoped campaign pivot this activity belongs to')
+    )
+
     sequence_position = models.PositiveSmallIntegerField(
         blank=True,
         null=True,

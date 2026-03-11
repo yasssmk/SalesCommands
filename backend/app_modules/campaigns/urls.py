@@ -16,6 +16,7 @@ def get_urlpatterns():
     from .views import (
         CampaignViewSet,
         CampaignAccountViewSet,
+        CampaignContactViewSet,
         CampaignMemberViewSet,
         CampaignObjectiveViewSet,
     )
@@ -151,6 +152,41 @@ def get_urlpatterns():
         path('members/by-campaign/', CampaignMemberViewSet.as_view({
             'get': 'by_campaign'
         }), name='members-by-campaign'),
+
+        # =================================================================
+        # CAMPAIGN CONTACTS — CRUD + STATE ACTIONS
+        # =================================================================
+        path('contacts/', CampaignContactViewSet.as_view({
+            'get': 'list',
+            'post': 'create'
+        }), name='contacts-list'),
+
+        path('contacts/<uuid:pk>/', CampaignContactViewSet.as_view({
+            'get': 'retrieve',
+            'patch': 'partial_update',
+            'delete': 'destroy'
+        }), name='contacts-detail'),
+
+        path('contacts/<uuid:pk>/start-progress/', CampaignContactViewSet.as_view({
+            'post': 'start_progress'
+        }), name='contacts-start-progress'),
+
+        path('contacts/<uuid:pk>/request-callback/', CampaignContactViewSet.as_view({
+            'post': 'request_callback'
+        }), name='contacts-request-callback'),
+
+        path('contacts/<uuid:pk>/resume-callback/', CampaignContactViewSet.as_view({
+            'post': 'resume_callback'
+        }), name='contacts-resume-callback'),
+
+        path('contacts/<uuid:pk>/mark-completed/', CampaignContactViewSet.as_view({
+            'post': 'mark_completed'
+        }), name='contacts-mark-completed'),
+
+        path('contacts/<uuid:pk>/mark-stopped/', CampaignContactViewSet.as_view({
+            'post': 'mark_stopped'
+        }), name='contacts-mark-stopped'),
+
 
         # =================================================================
         # CAMPAIGN MEMBERS — CRUD

@@ -45,7 +45,6 @@ import DownOutlined from "@ant-design/icons/DownOutlined";
 import PlaylistProgressBar from "./PlaylistProgressBar";
 import PlaylistActivityCard from "components/cards/PlaylistActivityCard";
 
-// api
 import {
   useGetPlaylist,
   useGetCampaignMembers,
@@ -53,6 +52,7 @@ import {
   completePlaylistActivity,
   cancelPlannedActivities,
   recordCallNoAnswer,
+  resumeContactCallback,
 } from "api/campaigns/campaigns";
 
 // utils
@@ -269,6 +269,28 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
     }
   }, [campaignId, scopeDialog, scopeChoice]);
 
+  const handleResumeCallback = useCallback(
+    async (activity) => {
+      const campaignContactId = activity.campaign_contact_id;
+      if (!campaignContactId) return;
+      try {
+        const result = await resumeContactCallback(
+          campaignContactId,
+          campaignId,
+        );
+        if (result.success) {
+          displaySuccessSnackbar("Callback cancelled — contact resumed");
+          mutatePlaylist();
+        } else {
+          displayErrorSnackbar(result);
+        }
+      } catch (err) {
+        displayErrorSnackbar(err);
+      }
+    },
+    [campaignId, mutatePlaylist],
+  );
+
   // ==============================|| DERIVED VALUES ||============================== //
 
   // ── Completed activities (separate fetch, collapsed by default) ──
@@ -296,7 +318,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
     activities.forEach((a) => {
       if (
         a.is_callback_followup &&
-        a.campaign_account_status === "CALLBACK_PENDING"
+        a.campaign_contact_status === "CALLBACK_PENDING"
       ) {
         (a.contacts || []).forEach((c) => pausedContacts.add(c.id));
       }
@@ -306,7 +328,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
     activities.forEach((a) => {
       if (
         a.is_callback_followup &&
-        a.campaign_account_status === "CALLBACK_PENDING"
+        a.campaign_contact_status === "CALLBACK_PENDING"
       ) {
         paused.push(a);
         return;
@@ -569,15 +591,32 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
           <AccordionDetails sx={{ pt: 0, pb: 1.5 }}>
             <Stack spacing={1.5}>
               {pausedActivities.map((activity) => (
-                <PlaylistActivityCard
-                  key={activity.id}
-                  activity={activity}
-                  expanded={expandedCardId === activity.id}
-                  onExpand={handleExpand}
-                  onComplete={handleComplete}
-                  completing={completingId === activity.id}
-                  campaignEndDate={campaign?.end_date}
-                />
+                <Box key={activity.id}>
+                  <PlaylistActivityCard
+                    activity={activity}
+                    expanded={expandedCardId === activity.id}
+                    onExpand={handleExpand}
+                    onComplete={handleComplete}
+                    completing={completingId === activity.id}
+                    campaignEndDate={campaign?.end_date}
+                  />
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      mt: 0.5,
+                    }}
+                  >
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="warning"
+                      onClick={() => handleResumeCallback(activity)}
+                    >
+                      Cancel Pause
+                    </Button>
+                  </Box>
+                </Box>
               ))}
             </Stack>
           </AccordionDetails>

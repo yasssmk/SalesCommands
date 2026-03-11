@@ -97,9 +97,6 @@ class CampaignAccountListSerializer(ClientScopeManager.SerializerMixin, serializ
             # Status
             'status', 'status_display',
 
-            # Tracking
-            'callback_date', 'activities_generated', 'no_answer_count',
-
             # Aggregate
             'contacts_count',
 
@@ -133,7 +130,7 @@ class CampaignAccountDetailSerializer(ClientScopeManager.SerializerMixin, serial
     """
     Complete serializer for campaign account detail view.
 
-    Includes nested account details, departments, and contacts.
+    Includes nested account, targeting filters, and per-contact progress rows.
     """
 
     # Display fields
@@ -144,6 +141,9 @@ class CampaignAccountDetailSerializer(ClientScopeManager.SerializerMixin, serial
     account = CampaignAccountAccountSerializer(read_only=True)
     target_departments = StandardDepartmentSerializer(many=True, read_only=True)
     target_contacts = CampaignAccountContactSerializer(many=True, read_only=True)
+
+    # Per-contact progress rows (lazy import to avoid circular)
+    campaign_contacts = serializers.SerializerMethodField(read_only=True)
 
     # Computed
     contacts_count = serializers.SerializerMethodField(read_only=True)
@@ -165,9 +165,11 @@ class CampaignAccountDetailSerializer(ClientScopeManager.SerializerMixin, serial
             'target_departments', 'target_contacts',
             'contacts_count',
 
+            # Per-contact progress
+            'campaign_contacts',
+
             # Details
-            'notes', 'callback_date',
-            'activities_generated', 'no_answer_count',
+            'notes',
 
             # Audit
             'created_by', 'updated_by',
@@ -185,6 +187,14 @@ class CampaignAccountDetailSerializer(ClientScopeManager.SerializerMixin, serial
 
     def get_contacts_count(self, obj):
         return obj.target_contacts.count()
+
+    def get_campaign_contacts(self, obj):
+        """Return per-contact progress rows (lazy import avoids circular)."""
+        from .campaign_contact_serializer import CampaignContactListSerializer
+        qs = obj.campaign_contacts.select_related('contact').all()
+        return CampaignContactListSerializer(
+            qs, many=True, context=self.context
+        ).data
 
 
 # ============================================================================
@@ -248,18 +258,16 @@ class CampaignAccountSerializer(ClientScopeManager.SerializerMixin, serializers.
             'department_ids', 'contact_ids',
 
             # Scalar write
-            'notes', 'callback_date',
+            'notes',
 
             # Read-only display
             'id', 'account_name', 'campaign_name',
             'status', 'status_display',
-            'activities_generated', 'no_answer_count',
             'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'account_name', 'campaign_name',
             'status', 'status_display',
-            'activities_generated', 'no_answer_count',
             'created_at', 'updated_at',
         ]
 

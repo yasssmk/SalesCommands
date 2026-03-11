@@ -710,19 +710,19 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 ActivityErrorMessages.CANNOT_COMPLETE_CANCELLED
             )
 
-        if not activity.campaign_account_id:
+        if not activity.campaign_contact_id:
             raise StandardizedValidationError(
                 CampaignModuleErrorMessages.EXECUTION_FAILED.format(
-                    reason="Activity is not linked to a campaign account"
+                    reason="Activity is not linked to a campaign contact"
                 )
             )
 
-        campaign_account = activity.campaign_account
-        campaign_account.increment_no_answer(user=request.user)
+        campaign_contact = activity.campaign_contact
+        campaign_contact.increment_no_answer(user=request.user)
 
         max_attempts = CONFIG.limits.max_retry_attempts
 
-        if campaign_account.no_answer_count >= max_attempts:
+        if campaign_contact.no_answer_count >= max_attempts:
             # Threshold reached — complete the activity.
             outcome_notes = request.data.get('outcome_notes')
             activity.complete(
@@ -733,14 +733,13 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             logger.info("activity_call_no_answer_exhausted", extra={
                 **ctx,
                 'activity_id': str(activity.id),
-                'no_answer_count': campaign_account.no_answer_count,
+                'no_answer_count': campaign_contact.no_answer_count,
             })
         else:
-
             logger.info("activity_call_no_answer_retry", extra={
                 **ctx,
                 'activity_id': str(activity.id),
-                'no_answer_count': campaign_account.no_answer_count,
+                'no_answer_count': campaign_contact.no_answer_count,
             })
 
         audit_log(
@@ -752,7 +751,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             target_id=str(activity.id),
             outcome='success',
             extra={
-                'no_answer_count': campaign_account.no_answer_count,
+                'no_answer_count': campaign_contact.no_answer_count,
                 'completed': activity.status == ActivityStatus.COMPLETED,
             }
         )

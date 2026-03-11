@@ -133,7 +133,8 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     contacts_count = serializers.SerializerMethodField(read_only=True)
     contacts = serializers.SerializerMethodField(read_only=True)
     no_answer_count = serializers.SerializerMethodField(read_only=True)
-    campaign_account_status = serializers.SerializerMethodField(read_only=True)
+    campaign_contact_id = serializers.SerializerMethodField(read_only=True)
+    campaign_contact_status = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Activity
@@ -167,7 +168,8 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
 
             # Campaign callback context
             'is_callback_followup',
-            'campaign_account_status',
+            'campaign_contact_id',
+            'campaign_contact_status',
 
             # Timestamps
             'created_at', 'updated_at',
@@ -229,23 +231,29 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     
     def get_no_answer_count(self, obj):
         """
-        Return no_answer_count from the linked CampaignAccount.
-        campaign_account must be in select_related for N+1 safety.
+        Return no_answer_count from the linked CampaignContact.
+        campaign_contact must be in select_related for N+1 safety.
         Returns None for non-campaign activities.
         """
-        if obj.campaign_account_id and obj.campaign_account:
-            return obj.campaign_account.no_answer_count
+        if obj.campaign_contact_id and obj.campaign_contact:
+            return obj.campaign_contact.no_answer_count
         return None
-    
-    def get_campaign_account_status(self, obj):
+
+    def get_campaign_contact_id(self, obj):
+        """Return campaign_contact UUID for frontend state machine actions."""
+        if obj.campaign_contact_id:
+            return str(obj.campaign_contact_id)
+        return None
+
+    def get_campaign_contact_status(self, obj):
         """
-        Return CampaignAccount status string.
+        Return CampaignContact status string.
         Used by the frontend to route the activity into the correct playlist
         section (PAUSED when CALLBACK_PENDING, TODAY/UPCOMING otherwise).
-        campaign_account must be in select_related for N+1 safety.
+        campaign_contact must be in select_related for N+1 safety.
         """
-        if obj.campaign_account_id and obj.campaign_account:
-            return obj.campaign_account.status
+        if obj.campaign_contact_id and obj.campaign_contact:
+            return obj.campaign_contact.status
         return None
 
 

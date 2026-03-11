@@ -20,6 +20,12 @@ from .campaign_account_serializer import (
     CampaignAccountSerializer,
 )
 
+from .campaign_contact_serializer import (
+    CampaignContactListSerializer,
+    CampaignContactDetailSerializer,
+    CampaignContactSerializer,
+)
+
 # CampaignMember serializers
 from .campaign_member_serializer import (
     CampaignMemberListSerializer,
@@ -43,6 +49,11 @@ __all__ = [
     'CampaignAccountListSerializer',
     'CampaignAccountDetailSerializer',
     'CampaignAccountSerializer',
+
+    # CampaignContact
+    'CampaignContactListSerializer',
+    'CampaignContactDetailSerializer',
+    'CampaignContactSerializer',
 
     # CampaignMember
     'CampaignMemberListSerializer',
