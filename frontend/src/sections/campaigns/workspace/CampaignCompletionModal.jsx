@@ -13,7 +13,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 // material-ui
 import Box from "@mui/material/Box";
@@ -47,9 +47,14 @@ export default function CampaignCompletionModal({
   openContacts,
   onCompleteWithoutFollowup,
 }) {
-  const [selectedIds, setSelectedIds] = useState(() =>
-    openContacts.map((c) => c.campaign_contact_id),
-  );
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  useEffect(() => {
+    if (open) {
+      setSelectedIds(openContacts.map((c) => c.campaign_contact_id));
+    }
+  }, [open, openContacts]);
+
   const [submitting, setSubmitting] = useState(false);
 
   const allSelected =

@@ -20,6 +20,11 @@ import Avatar from "@mui/material/Avatar";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import ButtonGroup from "@mui/material/ButtonGroup";
@@ -94,6 +99,7 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
   const anchorRef = useRef(null);
 
   // Completion modal state
+  const [confirmDialog, setConfirmDialog] = useState(false);
   const [completionModal, setCompletionModal] = useState(false);
   const [openContacts, setOpenContacts] = useState([]);
 
@@ -116,20 +122,28 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
   };
 
   // Complete — intercept if open contacts exist
-  const handleComplete = async () => {
-    setLoading(true);
+  // Step 1 — open confirmation dialog
+  const handleCompleteClick = () => {
     setOpen(false);
+    setConfirmDialog(true);
+  };
+
+  // Step 2 — confirmed: call API
+  const handleComplete = async () => {
+    setConfirmDialog(false);
+    setLoading(true);
     try {
       const result = await completeCampaign(campaign.id);
-      console.log("[complete] result:", result);
       if (!result.success) {
         displayErrorSnackbar(result);
         return;
       }
-      if (result.requiresConfirmation) {
-        setOpenContacts(result.openContacts);
+      const data = result.data?.data ?? result.data;
+      console.log(data);
+      if (data?.requires_confirmation && data?.open_contacts?.length > 0) {
+        setOpenContacts(data.open_contacts);
         setCompletionModal(true);
-        // Campaign is already COMPLETED on backend — just revalidate after modal
+        // Campaign already COMPLETED on backend — modal offers transfer only
       } else {
         displaySuccessSnackbar("Campaign completed");
         if (onMutate) onMutate();
@@ -175,7 +189,8 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
   }
 
   // COMPLETED / CANCELLED — nothing
-  if (["COMPLETED", "CANCELLED"].includes(campaign.status)) return null;
+  if (["COMPLETED", "CANCELLED"].includes(campaign.status) && !completionModal)
+    return null;
 
   // ACTIVE or PAUSED — split button
   const isActive = campaign.status === "ACTIVE";
@@ -235,7 +250,7 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
             <Paper elevation={3} sx={{ mt: 0.5, minWidth: 160 }}>
               <ClickAwayListener onClickAway={handleClose}>
                 <MenuList dense>
-                  <MenuItem onClick={handleComplete}>
+                  <MenuItem onClick={handleCompleteClick}>
                     <ListItemIcon>
                       <CheckCircleOutlined />
                     </ListItemIcon>
@@ -259,6 +274,40 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
           </Grow>
         )}
       </Popper>
+
+      {/* Confirmation dialog */}
+      <Dialog
+        open={confirmDialog}
+        onClose={() => setConfirmDialog(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Complete campaign?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will mark <strong>{campaign.name}</strong> as completed. This
+            action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setConfirmDialog(false)}
+            color="inherit"
+            size="small"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleComplete}
+            variant="contained"
+            color="success"
+            size="small"
+            startIcon={<CheckCircleOutlined />}
+          >
+            Complete
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <CampaignCompletionModal
         open={completionModal}
