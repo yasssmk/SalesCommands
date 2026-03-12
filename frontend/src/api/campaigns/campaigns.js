@@ -832,17 +832,34 @@ export async function resumeCampaign(campaignId) {
 
 /**
  * COMPLETE CAMPAIGN - ACTIVE/PAUSED → COMPLETED
+ *
+ * If open contacts exist (PLANNED activities remaining), the backend returns
+ * requires_confirmation=true and open_contacts=[...] so the frontend can
+ * offer a transfer to the TARGETED campaign before finalising.
+ *
+ * @param {string} campaignId
+ * @returns {{ success, data: { campaign, requires_confirmation, open_contacts } }}
  */
 export async function completeCampaign(campaignId) {
   const result = await api.post(endpoints.campaignComplete(campaignId));
 
   if (result.success) {
-    revalidateMultiple([
-      endpoints.campaigns,
-      endpoints.campaignDetail(campaignId),
-      endpoints.campaignDashboard(campaignId),
-    ]);
-    return { success: true, data: result.data };
+    // Only revalidate if truly finalised (no confirmation pending)
+    const requiresConfirmation = result.data?.requires_confirmation === true;
+    if (!requiresConfirmation) {
+      revalidateMultiple([
+        endpoints.campaigns,
+        endpoints.campaignDetail(campaignId),
+        endpoints.campaignDashboard(campaignId),
+        endpoints.campaignPlaylist(campaignId),
+      ]);
+    }
+    return {
+      success: true,
+      data: result.data,
+      requiresConfirmation,
+      openContacts: result.data?.open_contacts || [],
+    };
   }
 
   return { success: false, error: result.error, status: result.status || 0 };

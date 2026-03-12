@@ -112,9 +112,10 @@ class CampaignAnalyticsService:
 
         # Timeline
         today = timezone.now().date()
-        days_elapsed = max(0, (today - campaign.start_date).days) if campaign.start_date else 0
-        days_remaining = max(0, (campaign.end_date - today).days) if campaign.end_date else 0
-        total_days = max(1, (campaign.end_date - campaign.start_date).days) if campaign.start_date and campaign.end_date else 1
+        days_elapsed = max(0, (today - campaign.planned_start_date).days) if campaign.planned_start_date else 0
+        days_remaining = max(0, (campaign.planned_end_date - today).days) if campaign.planned_end_date else 0
+        total_days = max(1, (campaign.planned_end_date - campaign.planned_start_date).days) if campaign.planned_start_date and campaign.planned_end_date else 1
+        
 
         return {
             'campaign_id': str(campaign.id),
@@ -295,8 +296,8 @@ class CampaignAnalyticsService:
         """
         today = timezone.now().date()
 
-        start = campaign.start_date
-        end = campaign.end_date
+        start = campaign.planned_start_date
+        end = campaign.planned_end_date
         total_days = max(1, (end - start).days) if start and end else 1
         days_elapsed = max(0, (today - start).days) if start else 0
         days_remaining = max(0, (end - today).days) if end else 0
@@ -315,8 +316,10 @@ class CampaignAnalyticsService:
         on_track = work_progress >= (time_progress - 10)
 
         return {
-            'start_date': start.isoformat() if start else None,
-            'end_date': end.isoformat() if end else None,
+            'planned_start_date': start.isoformat() if start else None,
+            'planned_end_date': end.isoformat() if end else None,
+            'actual_start_date': campaign.actual_start_date.isoformat() if campaign.actual_start_date else None,
+            'actual_end_date': campaign.actual_end_date.isoformat() if campaign.actual_end_date else None,
             'days_elapsed': days_elapsed,
             'days_remaining': days_remaining,
             'total_days': total_days,

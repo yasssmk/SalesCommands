@@ -106,12 +106,28 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # DATES
     # ==========================================================================
 
-    start_date = models.DateField(
-        verbose_name=_('Start Date')
+    planned_start_date = models.DateField(
+        verbose_name=_('Planned Start Date'),
+        help_text=_('User-defined campaign start date')
     )
 
-    end_date = models.DateField(
-        verbose_name=_('End Date')
+    planned_end_date = models.DateField(
+        verbose_name=_('Planned End Date'),
+        help_text=_('User-defined campaign end date')
+    )
+
+    actual_start_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_('Actual Start Date'),
+        help_text=_('Auto-set when campaign is started')
+    )
+
+    actual_end_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_('Actual End Date'),
+        help_text=_('Auto-set when campaign is completed or last activity is done')
     )
 
     # ==========================================================================
@@ -139,7 +155,7 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['campaign_type'], name='mod_camp_type_idx'),
-            models.Index(fields=['start_date', 'end_date'], name='mod_camp_dates_idx'),
+            models.Index(fields=['planned_start_date', 'planned_end_date'], name='mod_camp_dates_idx'),
         ]
 
     def __str__(self):
@@ -238,8 +254,7 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         """Validate campaign data."""
         super().clean()
 
-        # Date range validation
-        if self.end_date and self.start_date and self.end_date < self.start_date:
+        if self.planned_end_date and self.planned_start_date and self.planned_end_date < self.planned_start_date:
             raise StandardizedValidationError(
                 CampaignModuleErrorMessages.CAMPAIGN_DATE_INVALID
             )

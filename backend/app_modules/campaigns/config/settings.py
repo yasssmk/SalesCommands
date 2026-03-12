@@ -50,6 +50,9 @@ class LimitsConfig:
     summary_activities: int = 5
     queue_batch_size: int = 50
 
+    # Inactivity detection
+    inactivity_threshold_days: int = 30
+
     # Performance
     cache_timeout_seconds: int = 300
     max_prefetch_depth: int = 3

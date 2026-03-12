@@ -20,6 +20,7 @@ import { useState, useCallback, useMemo } from "react";
 import Accordion from "@mui/material/Accordion";
 import AccordionDetails from "@mui/material/AccordionDetails";
 import AccordionSummary from "@mui/material/AccordionSummary";
+import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
@@ -52,7 +53,6 @@ import {
   completePlaylistActivity,
   cancelPlannedActivities,
   recordCallNoAnswer,
-  resumeContactCallback,
 } from "api/campaigns/campaigns";
 
 // utils
@@ -269,28 +269,6 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
     }
   }, [campaignId, scopeDialog, scopeChoice]);
 
-  const handleResumeCallback = useCallback(
-    async (activity) => {
-      const campaignContactId = activity.campaign_contact_id;
-      if (!campaignContactId) return;
-      try {
-        const result = await resumeContactCallback(
-          campaignContactId,
-          campaignId,
-        );
-        if (result.success) {
-          displaySuccessSnackbar("Callback cancelled — contact resumed");
-          mutatePlaylist();
-        } else {
-          displayErrorSnackbar(result);
-        }
-      } catch (err) {
-        displayErrorSnackbar(err);
-      }
-    },
-    [campaignId, mutatePlaylist],
-  );
-
   // ==============================|| DERIVED VALUES ||============================== //
 
   // ── Completed activities (separate fetch, collapsed by default) ──
@@ -300,39 +278,11 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
   // ── Split PLANNED into Today vs Upcoming ──
   const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, timezone-safe
 
-  const {
-    todayActivities,
-    pausedActivities,
-    upcomingActivities,
-    pausedContactIds,
-  } = useMemo(() => {
+  const { todayActivities, upcomingActivities } = useMemo(() => {
     const today = [];
-    const paused = [];
     const upcoming = [];
-    // Collect the contact IDs that are explicitly paused (from callback followup activities).
-    // Only activities sharing one of these contacts should be greyed in UPCOMING —
-    // not all activities of the same CampaignAccount (which may have other active contacts).
-    const pausedContacts = new Set();
 
-    // First pass: identify paused followups and collect their contact IDs
     activities.forEach((a) => {
-      if (
-        a.is_callback_followup &&
-        a.campaign_contact_status === "CALLBACK_PENDING"
-      ) {
-        (a.contacts || []).forEach((c) => pausedContacts.add(c.id));
-      }
-    });
-
-    // Second pass: route each activity to the correct bucket
-    activities.forEach((a) => {
-      if (
-        a.is_callback_followup &&
-        a.campaign_contact_status === "CALLBACK_PENDING"
-      ) {
-        paused.push(a);
-        return;
-      }
       const d = a.scheduled_date || a.due_date;
       if (!d || d <= todayStr) {
         today.push(a);
@@ -341,12 +291,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
       }
     });
 
-    return {
-      todayActivities: today,
-      pausedActivities: paused,
-      upcomingActivities: upcoming,
-      pausedContactIds: pausedContacts,
-    };
+    return { todayActivities: today, upcomingActivities: upcoming };
   }, [activities, todayStr]);
 
   const completedCount =
@@ -382,10 +327,6 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
       </Box>
     );
   }
-
-  // ==============================|| PAUSED BANNER ||============================== //
-
-  const isPaused = campaign?.status === "PAUSED";
 
   // ==============================|| LOADING STATE ||============================== //
 
@@ -513,6 +454,14 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         completedToday={completedToday}
       />
 
+      {/* ── Inactivity warning ── */}
+      {campaign?.is_inactive && (
+        <Alert severity="warning" variant="outlined">
+          No activity completed in the last {30} days — this campaign may need
+          attention.
+        </Alert>
+      )}
+
       {/* ── Section: To Do Today ── */}
       <Box>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
@@ -543,85 +492,12 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
                 onExpand={handleExpand}
                 onComplete={handleComplete}
                 completing={completingId === activity.id}
-                campaignEndDate={campaign?.end_date}
+                campaignEndDate={campaign?.planned_end_date}
               />
             ))}
           </Stack>
         )}
       </Box>
-
-      {/* ── Section: Paused — CALLBACK_PENDING accounts (collapsible) ── */}
-      {pausedActivities.length > 0 && (
-        <Accordion
-          disableGutters
-          elevation={0}
-          defaultExpanded
-          sx={{
-            border: "1px solid",
-            borderColor: "warning.light",
-            borderRadius: 1.5,
-            "&:before": { display: "none" },
-            "&.Mui-expanded": { borderColor: "warning.light" },
-          }}
-        >
-          <AccordionSummary
-            expandIcon={<DownOutlined style={{ fontSize: 12 }} />}
-            sx={{
-              minHeight: 48,
-              "& .MuiAccordionSummary-content": {
-                alignItems: "center",
-                gap: 1,
-              },
-            }}
-          >
-            <Typography
-              variant="subtitle2"
-              fontWeight={600}
-              color="warning.dark"
-            >
-              Paused — awaiting callback
-            </Typography>
-            <Chip
-              label={pausedActivities.length}
-              size="small"
-              variant="outlined"
-              color="warning"
-            />
-          </AccordionSummary>
-          <AccordionDetails sx={{ pt: 0, pb: 1.5 }}>
-            <Stack spacing={1.5}>
-              {pausedActivities.map((activity) => (
-                <Box key={activity.id}>
-                  <PlaylistActivityCard
-                    activity={activity}
-                    expanded={expandedCardId === activity.id}
-                    onExpand={handleExpand}
-                    onComplete={handleComplete}
-                    completing={completingId === activity.id}
-                    campaignEndDate={campaign?.end_date}
-                  />
-                  <Box
-                    sx={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      mt: 0.5,
-                    }}
-                  >
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      color="warning"
-                      onClick={() => handleResumeCallback(activity)}
-                    >
-                      Cancel Pause
-                    </Button>
-                  </Box>
-                </Box>
-              ))}
-            </Stack>
-          </AccordionDetails>
-        </Accordion>
-      )}
 
       {/* ── Section: Upcoming (collapsible) ── */}
       {upcomingActivities.length > 0 && (
@@ -666,7 +542,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
                   onComplete={handleComplete}
                   completing={completingId === activity.id}
                   isGreyedOut={true}
-                  campaignEndDate={campaign?.end_date}
+                  campaignEndDate={campaign?.planned_end_date}
                 />
               ))}
             </Stack>

@@ -54,6 +54,10 @@ class CampaignLifecycleService:
     def start(self, campaign):
         self._validate_ownership(campaign)
 
+        # Record actual start date
+        campaign.actual_start_date = timezone.now().date()
+        campaign.save(update_fields=['actual_start_date', 'updated_at'])
+
         accounts_enrolled = 0
         if campaign.campaign_type == 'OUTBOUND' and campaign.campaign_accounts.count() == 0:
             from .campaign_creation_service import CampaignCreationService
@@ -187,33 +191,38 @@ class CampaignLifecycleService:
         """
         Complete a campaign: ACTIVE/PAUSED → COMPLETED.
 
-        Side effects:
-            - All non-final accounts → STOPPED (with reason)
+        Does NOT auto-cancel remaining PLANNED activities.
+        Returns open contacts so the caller can offer a follow-up transfer
+        to the TARGETED campaign.
 
         Returns:
-            dict: {campaign, accounts_stopped}
+            dict: {campaign, open_contacts}
+                open_contacts: list of dicts {
+                    campaign_contact_id, contact_id, contact_name,
+                    account_id, account_name, callback_date
+                }
         """
         self._validate_ownership(campaign)
         campaign.complete(user=self.user)
 
-        # Stop remaining accounts
-        accounts_stopped = self._stop_remaining_accounts(
-            campaign,
-            reason="Campaign completed",
-        )
+        # Record actual end date
+        campaign.actual_end_date = timezone.now().date()
+        campaign.save(update_fields=['actual_end_date', 'updated_at'])
+
+        open_contacts = self._collect_open_contacts(campaign)
 
         self._audit('campaign_completed', campaign, extra={
-            'accounts_stopped': accounts_stopped,
+            'open_contacts_count': len(open_contacts),
         })
 
         logger.info("campaign_completed", extra={
             'campaign_id': str(campaign.id),
-            'accounts_stopped': accounts_stopped,
+            'open_contacts_count': len(open_contacts),
         })
 
         return {
             'campaign': campaign,
-            'accounts_stopped': accounts_stopped,
+            'open_contacts': open_contacts,
         }
 
     @transaction.atomic
@@ -317,6 +326,71 @@ class CampaignLifecycleService:
             updated_at=timezone.now(),
         )
         return count
+    
+    def _collect_open_contacts(self, campaign):
+        """
+        Return contacts that still have PLANNED activities in this campaign.
+
+        Used after completion to offer transfer to the TARGETED campaign.
+
+        Returns:
+            list[dict]: each dict has keys:
+                campaign_contact_id, contact_id, contact_name,
+                account_id, account_name, callback_date
+        """
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
+
+        planned_qs = (
+            Activity.objects
+            .filter(campaign=campaign, status=ActivityStatus.PLANNED, client_id=self.client_id)
+            .select_related(
+                'campaign_contact',
+                'campaign_contact__contact',
+                'account',
+            )
+            .values(
+                'campaign_contact_id',
+                'campaign_contact__contact_id',
+                'campaign_contact__contact__first_name',
+                'campaign_contact__contact__last_name',
+                'campaign_contact__callback_date',
+                'account_id',
+                'account__company_name',
+            )
+            .distinct()
+        )
+
+        # Deduplicate by (campaign_contact_id, account_id) pair
+        seen = set()
+        result = []
+        for row in planned_qs:
+            cc_id = row['campaign_contact_id']
+            account_id = row['account_id']
+
+            # Dedup key: prefer campaign_contact_id, fallback to account_id
+            dedup_key = cc_id if cc_id else account_id
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
+            first = row['campaign_contact__contact__first_name'] or ''
+            last = row['campaign_contact__contact__last_name'] or ''
+            contact_name = f"{first} {last}".strip()
+
+            result.append({
+                'campaign_contact_id': str(cc_id) if cc_id else None,
+                'contact_id': str(row['campaign_contact__contact_id']) if row['campaign_contact__contact_id'] else None,
+                'contact_name': contact_name or row['account__company_name'] or 'Unknown',
+                'account_id': str(account_id) if account_id else None,
+                'account_name': row['account__company_name'] or '',
+                'callback_date': (
+                    row['campaign_contact__callback_date'].isoformat()
+                    if row['campaign_contact__callback_date'] else None
+                ),
+            })
+
+        return result
 
     # ======================================================================
     # PRIVATE — ACTIVITY CASCADE

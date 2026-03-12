@@ -192,7 +192,7 @@ class CampaignExecutionService:
         created = 0
         previous_activity = None
         cumulative_delay = 0
-        base_date = self._next_business_day(campaign.start_date)
+        base_date = self._next_business_day(campaign.planned_start_date)
 
         for step_number, step_config in sequence_dict.items():
             cumulative_delay += step_config.get('min_delay', 0)
@@ -449,7 +449,7 @@ class CampaignExecutionService:
 
             previous_activity = None
             cumulative_delay = 0
-            base_date = self._next_business_day(campaign.start_date)
+            base_date = self._next_business_day(campaign.planned_start_date)
 
             for step_number, step_config in sequence_dict.items():
                 cumulative_delay += step_config.get('min_delay', 0)
@@ -546,8 +546,8 @@ class CampaignExecutionService:
             campaign_account=campaign_account,
             campaign_contact=campaign_contact,
             sequence_position=position,
-            scheduled_date=scheduled_date or campaign.start_date,
-            due_date=campaign.end_date,
+            scheduled_date=scheduled_date or campaign.planned_start_date,
+            due_date=campaign.planned_end_date,
             previous_activity=previous_activity,
             min_delay_days=step_config.get('min_delay') if step_config else None,
             sequence_variant=sequence_variant,
@@ -582,22 +582,6 @@ class CampaignExecutionService:
         # CALLBACK REQUESTED
         # ------------------------------------------------------------------
         if callback_date:
-            campaign = activity.campaign
-            if campaign and campaign.end_date:
-                from datetime import date as date_type
-                cb = (
-                    callback_date if isinstance(callback_date, date_type)
-                    else date_type.fromisoformat(str(callback_date))
-                )
-                if cb > campaign.end_date:
-                    campaign_contact.mark_stopped(
-                        user=self.user,
-                        notes="Callback date exceeds campaign end date",
-                    )
-                    self._cancel_chain_for_contact(campaign_contact)
-                    self._check_account_completion(campaign_account)
-                    return None
-
             contact = activity.contacts.first()
             contact_name = (
                 f"{contact.first_name or ''} {contact.last_name or ''}".strip()
@@ -787,7 +771,7 @@ class CampaignExecutionService:
             scheduled_date=scheduled_date,
             scheduled_time=scheduled_time,
             due_date=(
-                source_activity.campaign.end_date
+                source_activity.campaign.planned_end_date
                 if source_activity.campaign else None
             ),
             is_callback_followup=is_callback_followup,

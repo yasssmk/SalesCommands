@@ -36,6 +36,7 @@ import MessageOutlined from "@ant-design/icons/MessageOutlined";
 
 // project imports
 import CampaignStatusBadge from "sections/campaigns/CampaignStatusBadge";
+import CampaignCompletionModal from "./CampaignCompletionModal";
 import {
   SEQUENCE_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
@@ -92,6 +93,10 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef(null);
 
+  // Completion modal state
+  const [completionModal, setCompletionModal] = useState(false);
+  const [openContacts, setOpenContacts] = useState([]);
+
   const handleAction = async (actionFn, successMessage) => {
     setLoading(true);
     setOpen(false);
@@ -108,6 +113,37 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Complete — intercept if open contacts exist
+  const handleComplete = async () => {
+    setLoading(true);
+    setOpen(false);
+    try {
+      const result = await completeCampaign(campaign.id);
+      console.log("[complete] result:", result);
+      if (!result.success) {
+        displayErrorSnackbar(result);
+        return;
+      }
+      if (result.requiresConfirmation) {
+        setOpenContacts(result.openContacts);
+        setCompletionModal(true);
+        // Campaign is already COMPLETED on backend — just revalidate after modal
+      } else {
+        displaySuccessSnackbar("Campaign completed");
+        if (onMutate) onMutate();
+      }
+    } catch {
+      displayErrorSnackbar("An error occurred");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompleteWithoutFollowup = async () => {
+    // Campaign is already COMPLETED — just close modal and revalidate
+    if (onMutate) await onMutate();
   };
 
   const handleToggle = () => setOpen((prev) => !prev);
@@ -199,11 +235,7 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
             <Paper elevation={3} sx={{ mt: 0.5, minWidth: 160 }}>
               <ClickAwayListener onClickAway={handleClose}>
                 <MenuList dense>
-                  <MenuItem
-                    onClick={() =>
-                      handleAction(completeCampaign, "Campaign completed")
-                    }
-                  >
+                  <MenuItem onClick={handleComplete}>
                     <ListItemIcon>
                       <CheckCircleOutlined />
                     </ListItemIcon>
@@ -227,6 +259,16 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
           </Grow>
         )}
       </Popper>
+
+      <CampaignCompletionModal
+        open={completionModal}
+        onClose={() => {
+          setCompletionModal(false);
+          if (onMutate) onMutate();
+        }}
+        openContacts={openContacts}
+        onCompleteWithoutFollowup={handleCompleteWithoutFollowup}
+      />
     </>
   );
 }

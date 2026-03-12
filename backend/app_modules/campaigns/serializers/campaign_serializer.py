@@ -103,7 +103,8 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'status', 'status_display',
 
             # Dates
-            'start_date', 'end_date',
+            'planned_start_date', 'planned_end_date',
+            'actual_start_date', 'actual_end_date',
 
             # Aggregates
             'accounts_count', 'members_summary', 'primary_objective',
@@ -196,6 +197,8 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
 
     # Aggregates
     accounts_count = serializers.SerializerMethodField(read_only=True)
+    expected_end_date = serializers.SerializerMethodField(read_only=True)
+    is_inactive = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Campaign
@@ -214,13 +217,14 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'status', 'status_display',
 
             # Dates
-            'start_date', 'end_date',
+            'planned_start_date', 'planned_end_date',
+            'actual_start_date', 'actual_end_date',
 
             # Nested relations
             'members', 'objectives',
 
             # Aggregates
-            'accounts_count',
+            'accounts_count', 'expected_end_date', 'is_inactive',
 
             # Audit
             'created_by', 'updated_by',
@@ -286,7 +290,42 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
             }
             for o in objectives
         ]
+    
+    def get_expected_end_date(self, obj):
+        """Date of the last scheduled PLANNED activity linked to this campaign."""
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
+        last = (
+            Activity.objects
+            .filter(campaign=obj, status=ActivityStatus.PLANNED)
+            .order_by('-scheduled_date')
+            .values_list('scheduled_date', flat=True)
+            .first()
+        )
+        return last.isoformat() if last else None
+    
+    def get_is_inactive(self, obj):
+        """
+        True if campaign is ACTIVE but has had no completed activity
+        in the last inactivity_threshold_days days.
+        """
+        from django.utils import timezone
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
 
+        if obj.status != 'ACTIVE':
+            return False
+
+        threshold = timezone.now().date() - timezone.timedelta(
+            days=CONFIG.limits.inactivity_threshold_days
+        )
+        has_recent = Activity.objects.filter(
+            campaign=obj,
+            status=ActivityStatus.COMPLETED,
+            completed_at__date__gte=threshold,
+        ).exists()
+
+        return not has_recent
 
 # ============================================================================
 # CREATE SERIALIZER
@@ -314,6 +353,24 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         write_only=True,
         required=False,
         help_text='Objective data: {name, objective_type, target_value, is_primary}',
+    )
+
+
+    start_date = serializers.DateField(
+        source='planned_start_date',
+        required=True,
+        error_messages={
+            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Start Date'),
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Start Date (format: YYYY-MM-DD)'),
+        },
+    )
+    end_date = serializers.DateField(
+        source='planned_end_date',
+        required=True,
+        error_messages={
+            'required': CoreErrorMessages.REQUIRED_FIELD.format(field='End Date'),
+            'invalid': CoreErrorMessages.INVALID_FIELD.format(field='End Date (format: YYYY-MM-DD)'),
+        },
     )
 
     # Member assignment (write-only)
@@ -353,18 +410,6 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'campaign_type': {
                 'error_messages': {
                     'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Campaign Type'),
-                }
-            },
-            'start_date': {
-                'error_messages': {
-                    'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Start Date'),
-                    'invalid': CoreErrorMessages.INVALID_FIELD.format(field='Start Date (format: YYYY-MM-DD)'),
-                }
-            },
-            'end_date': {
-                'error_messages': {
-                    'required': CoreErrorMessages.REQUIRED_FIELD.format(field='End Date'),
-                    'invalid': CoreErrorMessages.INVALID_FIELD.format(field='End Date (format: YYYY-MM-DD)'),
                 }
             },
         }
@@ -410,8 +455,8 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             attrs['client_id'] = client_id
 
             # Date validation
-            start_date = attrs.get('start_date')
-            end_date = attrs.get('end_date')
+            start_date = attrs.get('planned_start_date')
+            end_date = attrs.get('planned_end_date')
             if start_date and end_date and end_date < start_date:
                 raise StandardizedValidationError(
                     CampaignModuleErrorMessages.CAMPAIGN_DATE_INVALID
@@ -625,6 +670,16 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         write_only=True,
     )
 
+    # Map frontend keys start_date/end_date → model fields planned_start_date/planned_end_date
+    start_date = serializers.DateField(
+        source='planned_start_date',
+        required=False,
+    )
+    end_date = serializers.DateField(
+        source='planned_end_date',
+        required=False,
+    )
+
     class Meta:
         model = Campaign
         fields = [
@@ -637,8 +692,6 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'name': {'required': False},
             'description': {'required': False},
             'sequence_type': {'required': False},
-            'start_date': {'required': False},
-            'end_date': {'required': False},
         }
 
     def validate_name(self, value):
@@ -672,8 +725,8 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 )
 
             # Date validation (merge with existing values)
-            start_date = attrs.get('start_date', instance.start_date)
-            end_date = attrs.get('end_date', instance.end_date)
+            start_date = attrs.get('planned_start_date', instance.planned_start_date)
+            end_date = attrs.get('planned_end_date', instance.planned_end_date)
             if start_date and end_date and end_date < start_date:
                 raise StandardizedValidationError(
                     CampaignModuleErrorMessages.CAMPAIGN_DATE_INVALID

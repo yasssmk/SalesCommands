@@ -233,14 +233,25 @@ export default function PlaylistActivityCard({
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
   const activityDate = activity.scheduled_date || activity.due_date;
+
   // Compare date strings (YYYY-MM-DD) to avoid UTC timezone drift.
   const todayStr = new Date().toLocaleDateString("en-CA");
+
   const isOverdue =
     !isGreyedOut &&
     activityDate &&
     activityDate < todayStr &&
     !isCompleted &&
     !isCancelled;
+
+  // Activity scheduled beyond campaign planned end date — soft warning only
+  const isBeyondEndDate =
+    !isCompleted &&
+    !isCancelled &&
+    !isOverdue &&
+    campaignEndDate &&
+    activityDate &&
+    activityDate > campaignEndDate;
 
   const outcomeConfig = activity.outcome
     ? ACTIVITY_OUTCOME_CONFIG[activity.outcome]
@@ -275,6 +286,7 @@ export default function PlaylistActivityCard({
       return theme.palette.warning.light;
     }
     if (isOverdue) return theme.palette.error.light;
+    if (isBeyondEndDate) return theme.palette.warning.light;
     return theme.palette.divider;
   };
 
@@ -456,14 +468,20 @@ export default function PlaylistActivityCard({
                       fontSize: 12,
                       color: isOverdue
                         ? theme.palette.error.main
-                        : theme.palette.text.disabled,
+                        : isBeyondEndDate
+                          ? theme.palette.warning.main
+                          : theme.palette.text.disabled,
                     }}
                   />
                   <Typography
                     variant="caption"
                     sx={{
-                      color: isOverdue ? "error.main" : "text.secondary",
-                      fontWeight: isOverdue ? 600 : 400,
+                      color: isOverdue
+                        ? "error.main"
+                        : isBeyondEndDate
+                          ? "warning.main"
+                          : "text.secondary",
+                      fontWeight: isOverdue || isBeyondEndDate ? 600 : 400,
                     }}
                   >
                     {formatRelativeDate(activityDate)}
@@ -621,19 +639,18 @@ export default function PlaylistActivityCard({
                       label="Callback date *"
                       value={callbackDate}
                       onChange={(newValue) => setCallbackDate(newValue)}
-                      disablePast
-                      maxDate={
-                        campaignEndDate ? dayjs(campaignEndDate) : undefined
-                      }
+                      minDate={dayjs()}
                       slotProps={{
                         textField: {
                           size: "small",
                           fullWidth: true,
                           error: !callbackDate,
                           helperText: !callbackDate
-                            ? "Required"
-                            : campaignEndDate
-                              ? `Max: ${dayjs(campaignEndDate).format("MMM D")}`
+                            ? "Callback date is required"
+                            : campaignEndDate &&
+                                callbackDate &&
+                                callbackDate.isAfter(dayjs(campaignEndDate))
+                              ? "Beyond campaign planned end date"
                               : undefined,
                         },
                       }}
@@ -731,6 +748,6 @@ PlaylistActivityCard.propTypes = {
   onExpand: PropTypes.func,
   onComplete: PropTypes.func,
   completing: PropTypes.bool,
-  /** When true: card is display-only (greyed out, non-interactive). Used for future/upcoming activities. */
   isGreyedOut: PropTypes.bool,
+  campaignEndDate: PropTypes.string, // YYYY-MM-DD
 };

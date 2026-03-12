@@ -547,6 +547,13 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         """
         Complete campaign: ACTIVE/PAUSED → COMPLETED.
         POST /campaigns/{id}/complete/
+
+        If open contacts exist (PLANNED activities remaining), returns
+        requires_confirmation=True so the frontend can offer a transfer
+        to the TARGETED campaign before committing.
+
+        Body (optional):
+            - force: bool — skip confirmation and complete immediately
         """
         ctx = ctx_from_request(request)
         campaign = self.get_object()
@@ -563,12 +570,15 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
 
         self._invalidate_campaign_caches(self.get_client_id())
 
+        open_contacts = result.get('open_contacts', [])
         output = CampaignDetailSerializer(result['campaign'], context={'request': request})
+
         return Response({
             'success': True,
             'data': {
                 'campaign': output.data,
-                'accounts_stopped': result['accounts_stopped'],
+                'requires_confirmation': len(open_contacts) > 0,
+                'open_contacts': open_contacts,
             },
         })
 
