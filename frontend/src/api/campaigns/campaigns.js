@@ -844,8 +844,11 @@ export async function completeCampaign(campaignId) {
   const result = await api.post(endpoints.campaignComplete(campaignId));
 
   if (result.success) {
-    // Only revalidate if truly finalised (no confirmation pending)
-    const requiresConfirmation = result.data?.requires_confirmation === true;
+    // Unwrap double-enveloppe: apiRequest → {success, data: response.data}
+    // backend → {success, data: {campaign, requires_confirmation, open_contacts}}
+    const data = result.data?.data ?? result.data;
+    const requiresConfirmation = data?.requires_confirmation === true;
+
     if (!requiresConfirmation) {
       revalidateMultiple([
         endpoints.campaigns,
@@ -858,7 +861,7 @@ export async function completeCampaign(campaignId) {
       success: true,
       data: result.data,
       requiresConfirmation,
-      openContacts: result.data?.open_contacts || [],
+      openContacts: data?.open_contacts || [],
     };
   }
 
