@@ -217,6 +217,7 @@ class CampaignAnalyticsService:
         total = base_qs.count()
         completed = status_agg.get(ActivityStatus.COMPLETED, 0)
         planned = status_agg.get(ActivityStatus.PLANNED, 0)
+        on_hold = status_agg.get(ActivityStatus.ON_HOLD, 0)
         cancelled = status_agg.get(ActivityStatus.CANCELLED, 0)
 
         return {
@@ -227,10 +228,12 @@ class CampaignAnalyticsService:
                 'total': total,
                 'completed': completed,
                 'planned': planned,
+                'on_hold': on_hold,
                 'cancelled': cancelled,
                 'completion_rate': round((completed / total) * 100, 1) if total > 0 else 0.0,
             },
         }
+
 
     # ======================================================================
     # PUBLIC — ACCOUNTS BREAKDOWN
@@ -361,6 +364,8 @@ class CampaignAnalyticsService:
             total = user_activities.count()
             completed = user_activities.filter(status=ActivityStatus.COMPLETED).count()
             planned = user_activities.filter(status=ActivityStatus.PLANNED).count()
+            on_hold = user_activities.filter(status=ActivityStatus.ON_HOLD).count()
+
 
             # Accounts assigned to this user
             accounts_count = Activity.objects.filter(
@@ -379,8 +384,10 @@ class CampaignAnalyticsService:
                 'total_activities': total,
                 'completed': completed,
                 'planned': planned,
+                'on_hold': on_hold,
                 'completion_rate': round((completed / total) * 100, 1) if total > 0 else 0.0,
                 'accounts_count': accounts_count,
+
             })
 
         return results

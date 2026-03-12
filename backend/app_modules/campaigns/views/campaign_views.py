@@ -507,8 +507,12 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         output = CampaignDetailSerializer(result['campaign'], context={'request': request})
         return Response({
             'success': True,
-            'data': output.data,
+            'data': {
+                'campaign': output.data,
+                'activities_paused': result['activities_paused'],
+            },
         })
+
 
     @action(detail=True, methods=['post'])
     @transaction.atomic
@@ -537,9 +541,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'success': True,
             'data': {
                 'campaign': output.data,
+                'activities_resumed': result['activities_resumed'],
                 'callbacks_resumed': result['callbacks_resumed'],
             },
         })
+
 
     @action(detail=True, methods=['post'])
     @transaction.atomic

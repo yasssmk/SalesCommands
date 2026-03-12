@@ -3,15 +3,16 @@
 CampaignLifecycleService — state machine transitions for campaigns.
 
 Responsibilities:
-    - start: DRAFT → ACTIVE (+ enroll accounts from Territory if not done)
-    - pause: ACTIVE → PAUSED (+ pause in-progress accounts)
-    - resume: PAUSED → ACTIVE (+ resume paused accounts)
-    - complete: ACTIVE/PAUSED → COMPLETED (+ stop remaining accounts)
-    - cancel: any non-final → CANCELLED (+ stop all accounts)
+    - start: DRAFT → ACTIVE (+ enroll accounts, generate activities)
+    - pause: ACTIVE → PAUSED (+ PLANNED activities → ON_HOLD)
+    - resume: PAUSED → ACTIVE (+ ON_HOLD → PLANNED with recalculated dates)
+    - complete: ACTIVE/PAUSED → COMPLETED (+ collect open contacts)
+    - cancel: any non-final → CANCELLED (+ stop accounts, cancel activities)
 
 Each method validates the transition, updates Campaign status,
-and cascades status changes to CampaignAccount entries.
+and cascades status changes to CampaignAccount and Activity entries.
 """
+
 
 from django.db import transaction
 from django.utils import timezone
@@ -136,24 +137,42 @@ class CampaignLifecycleService:
         Pause a campaign: ACTIVE → PAUSED.
 
         Side effects:
-            - No cascade on accounts (they keep their current state)
+            - PLANNED activities → ON_HOLD
             - Activity generation is halted (checked by execution service)
 
         Returns:
-            dict: {campaign}
+            dict: {campaign, activities_paused}
         """
         self._validate_ownership(campaign)
         campaign.pause(user=self.user)
 
-        self._audit('campaign_paused', campaign)
+        # Put PLANNED activities on hold
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
+
+        activities_paused = Activity.objects.filter(
+            campaign=campaign,
+            status=ActivityStatus.PLANNED,
+            client_id=self.client_id,
+        ).update(
+            status=ActivityStatus.ON_HOLD,
+            updated_at=timezone.now(),
+        )
+
+        self._audit('campaign_paused', campaign, extra={
+            'activities_paused': activities_paused,
+        })
 
         logger.info("campaign_paused", extra={
             'campaign_id': str(campaign.id),
+            'activities_paused': activities_paused,
         })
 
         return {
             'campaign': campaign,
+            'activities_paused': activities_paused,
         }
+
 
     @transaction.atomic
     def resume(self, campaign):
@@ -161,30 +180,38 @@ class CampaignLifecycleService:
         Resume a campaign: PAUSED → ACTIVE.
 
         Side effects:
+            - ON_HOLD activities → PLANNED with recalculated scheduled_dates
             - Callback-pending accounts with past callback_date → IN_PROGRESS
 
         Returns:
-            dict: {campaign, callbacks_resumed}
+            dict: {campaign, activities_resumed, callbacks_resumed}
         """
         self._validate_ownership(campaign)
         campaign.resume(user=self.user)
+
+        # Resume ON_HOLD activities with recalculated dates
+        activities_resumed = self._resume_on_hold_activities(campaign)
 
         # Resume callbacks that are due
         callbacks_resumed = self._resume_due_callbacks(campaign)
 
         self._audit('campaign_resumed', campaign, extra={
+            'activities_resumed': activities_resumed,
             'callbacks_resumed': callbacks_resumed,
         })
 
         logger.info("campaign_resumed", extra={
             'campaign_id': str(campaign.id),
+            'activities_resumed': activities_resumed,
             'callbacks_resumed': callbacks_resumed,
         })
 
         return {
             'campaign': campaign,
+            'activities_resumed': activities_resumed,
             'callbacks_resumed': callbacks_resumed,
         }
+
 
     @transaction.atomic
     def complete(self, campaign):
@@ -265,6 +292,75 @@ class CampaignLifecycleService:
             'accounts_stopped': accounts_stopped,
             'activities_cancelled': activities_cancelled,
         }
+    
+    def _resume_on_hold_activities(self, campaign):
+        """
+        Resume ON_HOLD activities → PLANNED with recalculated scheduled_dates.
+
+        Date recalculation uses base_date = today, then applies cumulative
+        min_delay_days from the sequence chain (same logic as playlist).
+
+        Returns:
+            int: number of activities resumed
+        """
+        from datetime import timedelta
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
+
+        today = timezone.now().date()
+
+        on_hold_activities = list(
+            Activity.objects.filter(
+                campaign=campaign,
+                status=ActivityStatus.ON_HOLD,
+                client_id=self.client_id,
+            ).select_related('campaign_contact', 'previous_activity')
+        )
+
+        if not on_hold_activities:
+            return 0
+
+        by_id = {a.id: a for a in on_hold_activities}
+
+        for activity in on_hold_activities:
+            base_date = today
+            cumulative_delay = self._cumulative_delay_from_root(activity, by_id)
+
+            if cumulative_delay > 0:
+                scheduled = self._next_business_day(base_date + timedelta(days=cumulative_delay))
+            else:
+                scheduled = self._next_business_day(base_date)
+
+            activity.status = ActivityStatus.PLANNED
+            activity.scheduled_date = scheduled
+            activity.save(update_fields=['status', 'scheduled_date', 'updated_at'])
+
+        return len(on_hold_activities)
+
+    def _cumulative_delay_from_root(self, activity, by_id, _visited=None):
+        """Walk previous_activity chain, summing min_delay_days."""
+        if _visited is None:
+            _visited = set()
+        if activity.id in _visited:
+            return 0
+        _visited.add(activity.id)
+
+        prev = activity.previous_activity
+        if prev is None:
+            return 0
+
+        prev_delay = self._cumulative_delay_from_root(prev, by_id, _visited)
+        own_delay = activity.min_delay_days or 0
+        return prev_delay + own_delay
+
+    def _next_business_day(self, date):
+        """Advance date past weekends (Mon-Fri only)."""
+        from datetime import timedelta
+        while date.weekday() >= 5:
+            date += timedelta(days=1)
+        return date
+
+
 
     # ======================================================================
     # PRIVATE — ACCOUNT CASCADE
@@ -308,24 +404,27 @@ class CampaignLifecycleService:
 
     def _resume_due_callbacks(self, campaign):
         """
-        Resume CALLBACK_PENDING accounts where callback_date <= today.
+        Resume CALLBACK_PENDING contacts where callback_date <= today.
 
         Returns:
-            int: number of accounts resumed
+            int: number of contacts resumed
         """
+        from ..models.campaign_contact import CampaignContact, CampaignContactStatus
+
         today = timezone.now().date()
-        due_callbacks = CampaignAccount.objects.filter(
-            campaign=campaign,
-            status=CampaignAccountStatus.CALLBACK_PENDING,
+        due_callbacks = CampaignContact.objects.filter(
+            campaign_account__campaign=campaign,
+            status=CampaignContactStatus.CALLBACK_PENDING,
             callback_date__lte=today,
         )
         count = due_callbacks.update(
-            status=CampaignAccountStatus.IN_PROGRESS,
+            status=CampaignContactStatus.IN_PROGRESS,
             callback_date=None,
             notes="Resumed from callback (campaign resumed)",
             updated_at=timezone.now(),
         )
         return count
+
     
     def _collect_open_contacts(self, campaign):
         """
@@ -396,26 +495,27 @@ class CampaignLifecycleService:
     # PRIVATE — ACTIVITY CASCADE
     # ======================================================================
 
-    def _cancel_planned_activities(self, campaign):
-        """
-        Cancel all PLANNED activities linked to this campaign.
+        def _cancel_planned_activities(self, campaign):
+            """
+            Cancel all PLANNED and ON_HOLD activities linked to this campaign.
 
-        Returns:
-            int: number of activities cancelled
-        """
-        from app_modules.activities.models import Activity
-        from app_modules.activities.constants import ActivityStatus
+            Returns:
+                int: number of activities cancelled
+            """
+            from app_modules.activities.models import Activity
+            from app_modules.activities.constants import ActivityStatus
 
-        planned = Activity.objects.filter(
-            campaign=campaign,
-            status=ActivityStatus.PLANNED,
-        )
-        count = planned.update(
-            status=ActivityStatus.CANCELLED,
-            outcome_notes="Campaign cancelled",
-            updated_at=timezone.now(),
-        )
-        return count
+            pending = Activity.objects.filter(
+                campaign=campaign,
+                status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+            )
+            count = pending.update(
+                status=ActivityStatus.CANCELLED,
+                outcome_notes="Campaign cancelled",
+                updated_at=timezone.now(),
+            )
+            return count
+
 
     # ======================================================================
     # PRIVATE — VALIDATION

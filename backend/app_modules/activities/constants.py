@@ -27,9 +27,11 @@ class ActivityStatus(models.TextChoices):
     """
     Status of an activity.
     
-    Lifecycle: PLANNED → COMPLETED/CANCELLED
+    Lifecycle: PLANNED → ON_HOLD (campaign pause) → PLANNED (campaign resume) → COMPLETED/CANCELLED
     """
+
     PLANNED = 'PLANNED', _('Planned')
+    ON_HOLD = 'ON_HOLD', _('On Hold') 
     COMPLETED = 'COMPLETED', _('Completed')
     CANCELLED = 'CANCELLED', _('Cancelled')
 

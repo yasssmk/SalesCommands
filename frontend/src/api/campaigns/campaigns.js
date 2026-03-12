@@ -805,6 +805,7 @@ export async function pauseCampaign(campaignId) {
       endpoints.campaigns,
       endpoints.campaignDetail(campaignId),
       endpoints.campaignDashboard(campaignId),
+      endpoints.campaignPlaylist(campaignId),
     ]);
     return { success: true, data: result.data };
   }
@@ -823,6 +824,7 @@ export async function resumeCampaign(campaignId) {
       endpoints.campaigns,
       endpoints.campaignDetail(campaignId),
       endpoints.campaignDashboard(campaignId),
+      endpoints.campaignPlaylist(campaignId),
     ]);
     return { success: true, data: result.data };
   }

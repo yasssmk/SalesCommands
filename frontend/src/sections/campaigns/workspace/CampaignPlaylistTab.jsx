@@ -304,6 +304,10 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
       title: "Campaign not started",
       body: "Start the campaign to activate the activity playlist.",
     },
+    PAUSED: {
+      title: "Campaign paused",
+      body: "Activities are on hold. Resume the campaign to continue.",
+    },
     COMPLETED: {
       title: "Campaign completed",
       body: "This campaign has ended. The playlist is now read-only.",
