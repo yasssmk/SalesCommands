@@ -232,14 +232,8 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         ]
     
     def get_no_answer_count(self, obj):
-        """
-        Return no_answer_count from the linked CampaignContact.
-        campaign_contact must be in select_related for N+1 safety.
-        Returns None for non-campaign activities.
-        """
-        if obj.campaign_contact_id and obj.campaign_contact:
-            return obj.campaign_contact.no_answer_count
-        return None
+        """Return no_answer_count directly from the activity."""
+        return obj.no_answer_count
 
     def get_campaign_contact_id(self, obj):
         """Return campaign_contact UUID for frontend state machine actions."""
@@ -302,6 +296,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
     completed_by_name = serializers.SerializerMethodField(read_only=True)
     campaign_detail = serializers.SerializerMethodField(read_only=True)
+    no_answer_count = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Activity
@@ -348,6 +343,9 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             
             # Future fields (stubs)
             'transcript', 'preparation_notes',
+
+            # Campaign retry tracking
+            'no_answer_count',
             
             # Computed
             'is_overdue', 'is_scheduled', 'has_previous', 'has_next',
@@ -579,6 +577,10 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 setattr(obj, cache_attr, None)
         
         return getattr(obj, cache_attr)
+    
+    def get_no_answer_count(self, obj):
+        """Return no_answer_count directly from the activity."""
+        return obj.no_answer_count
 
 
 # ============================================================================

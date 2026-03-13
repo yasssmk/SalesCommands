@@ -88,6 +88,12 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Notes about the activity result')
     )
 
+    no_answer_count = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name=_('No Answer Count'),
+        help_text=_('Number of no-answer attempts recorded on this specific activity.')
+    )
+
     # ==========================================================================
     # NEXT STEP AGREEMENT (Post-Activity)
     # ==========================================================================

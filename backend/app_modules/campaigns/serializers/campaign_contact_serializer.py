@@ -70,7 +70,6 @@ class CampaignContactListSerializer(ClientScopeManager.SerializerMixin, serializ
             'contact', 'contact_name',
             'status', 'status_display',
             'callback_date',
-            'no_answer_count',
             'activities_generated',
             'activities_count',
             'created_at', 'updated_at',
@@ -114,7 +113,6 @@ class CampaignContactDetailSerializer(ClientScopeManager.SerializerMixin, serial
             'contact',
             'status', 'status_display',
             'callback_date',
-            'no_answer_count',
             'activities_generated',
             'notes',
             'created_by', 'updated_by',
@@ -177,13 +175,13 @@ class CampaignContactSerializer(ClientScopeManager.SerializerMixin, serializers.
             # Read-only
             'id', 'status', 'status_display',
             'contact_name',
-            'callback_date', 'no_answer_count', 'activities_generated',
+            'callback_date', 'activities_generated',
             'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'status', 'status_display',
             'contact_name',
-            'callback_date', 'no_answer_count', 'activities_generated',
+            'callback_date', 'activities_generated',
             'created_at', 'updated_at',
         ]
 

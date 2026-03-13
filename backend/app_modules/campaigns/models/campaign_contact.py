@@ -102,12 +102,6 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Scheduled callback date when status is CALLBACK_PENDING'),
     )
 
-    no_answer_count = models.PositiveSmallIntegerField(
-        default=0,
-        verbose_name=_('No Answer Count'),
-        help_text=_('Number of consecutive no-answer outcomes for this contact'),
-    )
-
     activities_generated = models.BooleanField(
         default=False,
         verbose_name=_('Activities Generated'),
@@ -200,12 +194,6 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
         return self._transition_to(
             CampaignContactStatus.STOPPED, user=user, notes=notes
         )
-
-    def increment_no_answer(self, user=None):
-        """Increment no_answer_count. Returns updated count."""
-        self.no_answer_count += 1
-        self.save(user=user)
-        return self.no_answer_count
 
     def mark_activities_generated(self, user=None):
         """Set activities_generated = True."""

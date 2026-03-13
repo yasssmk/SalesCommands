@@ -717,12 +717,12 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 )
             )
 
-        campaign_contact = activity.campaign_contact
-        campaign_contact.increment_no_answer(user=request.user)
+        activity.no_answer_count += 1
+        activity.save(user=request.user)
 
         max_attempts = CONFIG.limits.max_retry_attempts
 
-        if campaign_contact.no_answer_count >= max_attempts:
+        if activity.no_answer_count >= max_attempts:
             # Threshold reached — complete the activity.
             outcome_notes = request.data.get('outcome_notes')
             activity.complete(
@@ -733,13 +733,13 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             logger.info("activity_call_no_answer_exhausted", extra={
                 **ctx,
                 'activity_id': str(activity.id),
-                'no_answer_count': campaign_contact.no_answer_count,
+                'no_answer_count': activity.no_answer_count,
             })
         else:
             logger.info("activity_call_no_answer_retry", extra={
                 **ctx,
                 'activity_id': str(activity.id),
-                'no_answer_count': campaign_contact.no_answer_count,
+                'no_answer_count': activity.no_answer_count,
             })
 
         audit_log(
@@ -751,7 +751,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             target_id=str(activity.id),
             outcome='success',
             extra={
-                'no_answer_count': campaign_contact.no_answer_count,
+                'no_answer_count': activity.no_answer_count,
                 'completed': activity.status == ActivityStatus.COMPLETED,
             }
         )
