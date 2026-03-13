@@ -612,12 +612,6 @@ class CampaignExecutionService:
                 is_callback_followup=True,
             )
 
-        # ------------------------------------------------------------------
-        # NO ANSWER
-        # ------------------------------------------------------------------
-        if outcome == 'NO_ANSWER':
-            campaign_contact.increment_no_answer(user=self.user)
-            return None
 
         # ------------------------------------------------------------------
         # TERMINAL OUTCOMES — stop contact, cancel its chain
@@ -647,6 +641,8 @@ class CampaignExecutionService:
                 user=self.user,
                 notes=f"Successful: {outcome}",
             )
+            # Cancel remaining PLANNED activities for this contact
+            self._cancel_chain_for_contact(campaign_contact)
             # Cancel remaining contacts on the same account
             self._cancel_all_contacts_for_account(campaign_account, exclude=campaign_contact)
             self._check_account_completion(campaign_account)
@@ -808,13 +804,34 @@ class CampaignExecutionService:
         """
         Recompute scheduled_date dynamically (in-memory, not saved to DB).
 
-        Base date per contact:
+        Gating (sequence campaigns):
+            - Step 1 (no previous_activity): always eligible.
+            - Steps 2..N: eligible only when the immediate previous activity
+            is COMPLETED. If not yet eligible, scheduled_date is pushed to
+            tomorrow so the activity surfaces in UPCOMING, not TODAY.
+
+        Base date per eligible activity:
             - CALLBACK_PENDING contact → base = campaign_contact.callback_date
             - Otherwise → base = today
         """
         by_id = {a.id: a for a in activities}
 
         for activity in activities:
+            prev = activity.previous_activity
+
+            # --- Sequence gate: immediate predecessor must be COMPLETED ---
+            if prev is not None:
+                # Prefer the in-memory instance (already fetched) over the
+                # select_related stub to get the freshest status.
+                prev_resolved = by_id.get(prev.id, prev)
+                if prev_resolved.status != ActivityStatus.COMPLETED:
+                    # Not yet eligible — ensure date is future so the frontend
+                    # places this activity in UPCOMING, not TODAY.
+                    if not activity.scheduled_date or activity.scheduled_date <= today:
+                        activity.scheduled_date = today + timedelta(days=1)
+                    continue
+
+            # --- Eligible: compute base date ---
             cc = activity.campaign_contact
             if (
                 cc is not None

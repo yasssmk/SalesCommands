@@ -14,6 +14,9 @@ import { useState, useMemo } from "react";
 
 // material-ui
 import { useTheme, alpha } from "@mui/material/styles";
+import Accordion from "@mui/material/Accordion";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import AccordionSummary from "@mui/material/AccordionSummary";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -55,6 +58,7 @@ import LinkedinOutlined from "@ant-design/icons/LinkedinOutlined";
 import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import ArrowLeftOutlined from "@ant-design/icons/ArrowLeftOutlined";
 import ArrowRightOutlined from "@ant-design/icons/ArrowRightOutlined";
+import DownOutlined from "@ant-design/icons/DownOutlined";
 
 // ==============================|| CONSTANTS ||============================== //
 
@@ -91,28 +95,41 @@ const RESPONSES_WITH_DATE = ["MEETING_BOOKED", "CALLBACK_REQUESTED"];
 function StepWhoAnswered({ completedActivities, selectedContactId, onSelect }) {
   const theme = useTheme();
 
-  // Extract unique contacts from completed activities
-  const contacts = useMemo(() => {
-    const seen = new Set();
-    const result = [];
+  // Group contacts by account
+  const accountGroups = useMemo(() => {
+    const groups = {}; // { accountId: { name, contacts: [] } }
     completedActivities.forEach((a) => {
       if (!a.contacts || a.contacts.length === 0) return;
+      const accountId = a.account?.id || "__no_account__";
+      const accountName = a.account?.company_name || "No account";
+      if (!groups[accountId]) {
+        groups[accountId] = { name: accountName, contacts: [] };
+      }
       a.contacts.forEach((c) => {
-        if (!seen.has(c.id)) {
-          seen.add(c.id);
-          result.push({ ...c, account_name: a.account?.company_name });
+        if (!groups[accountId].contacts.find((x) => x.id === c.id)) {
+          groups[accountId].contacts.push(c);
         }
       });
     });
-    return result;
+    return Object.entries(groups); // [[accountId, { name, contacts }], ...]
   }, [completedActivities]);
 
-  if (contacts.length === 0) {
+  // Auto-expand the account that contains the selected contact
+  const defaultExpanded = useMemo(() => {
+    if (!selectedContactId) return accountGroups[0]?.[0] || null;
+    const found = accountGroups.find(([, g]) =>
+      g.contacts.some((c) => c.id === selectedContactId),
+    );
+    return found?.[0] || accountGroups[0]?.[0] || null;
+  }, [selectedContactId, accountGroups]);
+
+  const [expandedAccount, setExpandedAccount] = useState(defaultExpanded);
+
+  if (accountGroups.length === 0) {
     return (
       <Box sx={{ py: 4, textAlign: "center" }}>
         <Typography variant="body2" color="text.secondary">
-          No contacts found. Complete at least one activity or make a call
-          attempt first.
+          No contacts found. Complete at least one activity first.
         </Typography>
       </Box>
     );
@@ -124,43 +141,95 @@ function StepWhoAnswered({ completedActivities, selectedContactId, onSelect }) {
       onChange={(e) => onSelect(e.target.value)}
     >
       <Stack spacing={1}>
-        {contacts.map((contact) => {
-          const isSelected = selectedContactId === contact.id;
+        {accountGroups.map(([accountId, group]) => {
+          const hasSelected = group.contacts.some(
+            (c) => c.id === selectedContactId,
+          );
           return (
-            <Paper
-              key={contact.id}
+            <Accordion
+              key={accountId}
+              disableGutters
               elevation={0}
-              onClick={() => onSelect(contact.id)}
+              expanded={expandedAccount === accountId}
+              onChange={(_, isExpanded) =>
+                setExpandedAccount(isExpanded ? accountId : null)
+              }
               sx={{
-                p: 1.5,
                 border: "1px solid",
-                borderColor: isSelected ? "primary.main" : "divider",
-                borderRadius: 1.5,
-                cursor: "pointer",
-                bgcolor: isSelected
-                  ? alpha(theme.palette.primary.main, 0.05)
-                  : "background.paper",
-                transition: "all 0.15s ease",
-                "&:hover": { borderColor: "primary.light" },
+                borderColor: hasSelected ? "primary.main" : "divider",
+                borderRadius: "8px !important",
+                "&:before": { display: "none" },
+                overflow: "hidden",
               }}
             >
-              <FormControlLabel
-                value={contact.id}
-                control={<Radio size="small" />}
-                label={
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>
-                      {contact.first_name} {contact.last_name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {contact.job_title || contact.email || "—"}
-                      {contact.account_name ? ` · ${contact.account_name}` : ""}
-                    </Typography>
-                  </Box>
-                }
-                sx={{ m: 0, width: "100%" }}
-              />
-            </Paper>
+              <AccordionSummary
+                expandIcon={<DownOutlined style={{ fontSize: 11 }} />}
+                sx={{ minHeight: 44, px: 1.5 }}
+              >
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <Typography variant="body2" fontWeight={600}>
+                    {group.name}
+                  </Typography>
+                  <Chip
+                    label={group.contacts.length}
+                    size="small"
+                    color={hasSelected ? "primary" : "default"}
+                    variant={hasSelected ? "filled" : "outlined"}
+                    sx={{ height: 18, fontSize: "0.65rem" }}
+                  />
+                </Stack>
+              </AccordionSummary>
+              <AccordionDetails sx={{ pt: 0, pb: 1, px: 1.5 }}>
+                <Stack spacing={0.75}>
+                  {group.contacts.map((contact) => {
+                    const isSelected = selectedContactId === contact.id;
+                    return (
+                      <Paper
+                        key={contact.id}
+                        elevation={0}
+                        onClick={() => onSelect(contact.id)}
+                        sx={{
+                          p: 1.25,
+                          border: "1px solid",
+                          borderColor: isSelected ? "primary.main" : "divider",
+                          borderRadius: 1.5,
+                          cursor: "pointer",
+                          bgcolor: isSelected
+                            ? alpha(theme.palette.primary.main, 0.05)
+                            : "transparent",
+                          transition: "all 0.15s ease",
+                          "&:hover": { borderColor: "primary.light" },
+                        }}
+                      >
+                        <FormControlLabel
+                          value={contact.id}
+                          control={<Radio size="small" />}
+                          label={
+                            <Box>
+                              <Typography
+                                variant="body2"
+                                fontWeight={isSelected ? 600 : 400}
+                              >
+                                {contact.first_name} {contact.last_name}
+                              </Typography>
+                              {(contact.job_title || contact.email) && (
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                >
+                                  {contact.job_title || contact.email}
+                                </Typography>
+                              )}
+                            </Box>
+                          }
+                          sx={{ m: 0, width: "100%" }}
+                        />
+                      </Paper>
+                    );
+                  })}
+                </Stack>
+              </AccordionDetails>
+            </Accordion>
           );
         })}
       </Stack>

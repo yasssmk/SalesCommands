@@ -242,6 +242,8 @@ export async function logCampaignResponse(campaignId, payload) {
 
   if (result.success) {
     revalidateMultiple([
+      endpoints.campaignPlaylist(campaignId),
+      endpoints.campaignDashboard(campaignId),
       `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`,
       `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
     ]);
