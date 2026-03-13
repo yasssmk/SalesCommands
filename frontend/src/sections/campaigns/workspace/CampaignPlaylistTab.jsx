@@ -90,12 +90,34 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
   const [scopeDialog, setScopeDialog] = useState(null);
   // { activityId, accountId, contactId, contacts: [] }
   const [scopeChoice, setScopeChoice] = useState("contact");
-  const [executorId, setExecutorId] = useState("");
+  const [executorId, setExecutorId] = useState(null);
+  const [showCompleted, setShowCompleted] = useState(false);
 
   // Track optimistically removed activity IDs
   const [removedIds, setRemovedIds] = useState(new Set());
 
   // ==============================|| DATA ||============================== //
+
+  const BLOCKED_STATUSES = {
+    DRAFT: {
+      title: "Campaign not started",
+      body: "Start the campaign to activate the activity playlist.",
+    },
+    PAUSED: {
+      title: "Campaign paused",
+      body: "Activities are on hold. Resume the campaign to continue.",
+    },
+    COMPLETED: {
+      title: "Campaign completed",
+      body: "This campaign has ended. The playlist is now read-only.",
+    },
+    CANCELLED: {
+      title: "Campaign cancelled",
+      body: "This campaign was cancelled. No activities are available.",
+    },
+  };
+
+  const isBlocked = campaign && BLOCKED_STATUSES[campaign?.status];
 
   const {
     activities: rawActivities,
@@ -103,7 +125,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
     playlistLoading,
     playlistError,
     mutatePlaylist,
-  } = useGetPlaylist(campaignId, {
+  } = useGetPlaylist(isBlocked ? null : campaignId, {
     executorId: executorId || undefined,
   });
 
@@ -271,9 +293,9 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
 
   // ==============================|| DERIVED VALUES ||============================== //
 
-  // ── Completed activities (separate fetch, collapsed by default) ──
+  // ── Completed activities (lazy-loaded on expand) ──
   const { activities: completedActivities, completedActivitiesLoading } =
-    useGetCompletedActivities(campaignId);
+    useGetCompletedActivities(showCompleted ? campaignId : null);
 
   // ── Split PLANNED into Today vs Upcoming ──
   const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, timezone-safe
@@ -298,25 +320,6 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
     totalCount > 0 ? Math.max(0, totalCount - rawActivities.length) : 0;
 
   // ==============================|| EMPTY STATE — Campaign not active ||============================== //
-
-  const BLOCKED_STATUSES = {
-    DRAFT: {
-      title: "Campaign not started",
-      body: "Start the campaign to activate the activity playlist.",
-    },
-    PAUSED: {
-      title: "Campaign paused",
-      body: "Activities are on hold. Resume the campaign to continue.",
-    },
-    COMPLETED: {
-      title: "Campaign completed",
-      body: "This campaign has ended. The playlist is now read-only.",
-    },
-    CANCELLED: {
-      title: "Campaign cancelled",
-      body: "This campaign was cancelled. No activities are available.",
-    },
-  };
 
   if (!playlistLoading && campaign && BLOCKED_STATUSES[campaign.status]) {
     const { title, body } = BLOCKED_STATUSES[campaign.status];
@@ -529,11 +532,6 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
             <Typography variant="subtitle2" fontWeight={600}>
               Upcoming
             </Typography>
-            <Chip
-              label={upcomingActivities.length}
-              size="small"
-              variant="outlined"
-            />
           </AccordionSummary>
           <AccordionDetails sx={{ pt: 0, pb: 1.5 }}>
             <Stack spacing={1.5}>
@@ -554,10 +552,13 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         </Accordion>
       )}
 
-      {/* ── Section: Completed (collapsible) ── */}
+      {/* ── Section: Completed (collapsible, lazy-load) ── */}
       <Accordion
         disableGutters
         elevation={0}
+        onChange={(_e, expanded) => {
+          if (expanded) setShowCompleted(true);
+        }}
         sx={{
           border: "1px solid",
           borderColor: "divider",
@@ -575,15 +576,6 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
           <Typography variant="subtitle2" fontWeight={600}>
             Completed
           </Typography>
-          <Chip
-            label={
-              completedActivities.filter((a) => a.status === "COMPLETED")
-                .length || completedCount
-            }
-            size="small"
-            variant="outlined"
-            color="success"
-          />
         </AccordionSummary>
         <AccordionDetails sx={{ pt: 0, pb: 1.5 }}>
           {completedActivitiesLoading ? (

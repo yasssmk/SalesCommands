@@ -213,6 +213,8 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         return None
     
     def get_contacts_count(self, obj):
+        if hasattr(obj, '_contacts_count'):
+            return obj._contacts_count
         return obj.contacts.count()
     
     def get_contacts(self, obj):
@@ -226,7 +228,7 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
                 'email': c.email or '',
                 'department': c.standard_department.get_name_display() if c.standard_department else '',
             }
-            for c in obj.contacts.prefetch_related('standard_department').all()
+            for c in obj.contacts.all()
         ]
     
     def get_no_answer_count(self, obj):

@@ -380,6 +380,7 @@ export function useGetCampaigns(options = {}) {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     shouldRetryOnError: true,
+    dedupingInterval: 5000,
   });
 
   return useMemo(

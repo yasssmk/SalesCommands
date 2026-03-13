@@ -354,6 +354,7 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
             models.Index(fields=['decision_step'], name='act_step_idx'),
             models.Index(fields=['previous_activity'], name='act_prev_idx'),
             models.Index(fields=['next_activity'], name='act_next_idx'),
+            models.Index(fields=['campaign', 'status', 'scheduled_date'], name='act_camp_status_sched_idx'),
             models.Index(
                 fields=['decision_cycle', 'decision_step', 'scheduled_date', 'scheduled_time', 'created_at'],
                 name='act_sequence_order_idx'

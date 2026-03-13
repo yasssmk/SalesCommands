@@ -13,7 +13,7 @@ Architecture:
 """
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from datetime import timedelta
 
@@ -270,7 +270,15 @@ class CampaignExecutionService:
             'campaign_contact',
             'campaign_contact__campaign_account',
             'previous_activity',
-        ).prefetch_related('contacts')
+            'decision_step',
+        ).prefetch_related(
+            Prefetch(
+                'contacts',
+                queryset=Contact.objects.select_related('standard_department'),
+            ),
+        ).annotate(
+            _contacts_count=Count('contacts'),
+        )
 
         if executor:
             queryset = queryset.filter(owner=executor)
