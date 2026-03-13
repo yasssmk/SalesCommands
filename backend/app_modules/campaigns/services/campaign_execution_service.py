@@ -283,9 +283,10 @@ class CampaignExecutionService:
         if executor:
             queryset = queryset.filter(owner=executor)
 
-        total_count = queryset.count()
-
+        # Single query — fetch batch then derive total from len to avoid
+        # a separate COUNT(*) round-trip.
         activities = list(queryset[:CONFIG.limits.queue_batch_size])
+        total_count = len(activities)
 
         if campaign.sequence_type:
             activities = self._recalculate_scheduled_dates(activities, today)
@@ -890,14 +891,12 @@ class CampaignExecutionService:
         if activity.is_callback_followup:
             score += CONFIG.priorities.callback_priority_boost * weights.get('callback_weight', 2.0)
 
-        # No-answer penalty — demotes CALL after failed attempts
-        cc = activity.campaign_contact
+        # No-answer penalty — demotes CALL after failed attempts (per-activity counter)
         if (
             activity.activity_type == ActivityType.CALL
-            and cc is not None
-            and getattr(cc, 'no_answer_count', 0) > 0
+            and activity.no_answer_count > 0
         ):
-            score -= cc.no_answer_count * 50
+            score -= activity.no_answer_count * 50
 
         return score
 

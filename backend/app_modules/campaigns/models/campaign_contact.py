@@ -145,9 +145,8 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
         allowed = CAMPAIGN_CONTACT_TRANSITIONS.get(self.status, [])
         if new_status not in allowed:
             raise StandardizedValidationError(
-                CampaignModuleErrorMessages.INVALID_STATUS_TRANSITION.format(
-                    current=self.status,
-                    new=new_status,
+                CampaignModuleErrorMessages.EXECUTION_FAILED.format(
+                    reason=f"Cannot transition contact from '{self.status}' to '{new_status}'"
                 )
             )
         self.status = new_status

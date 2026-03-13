@@ -819,7 +819,8 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
 
         try:
             activity = Activity.objects.select_related(
-                'campaign_account'
+                'campaign_account',
+                'campaign_contact',
             ).get(
                 id=activity_id,
                 campaign=campaign,

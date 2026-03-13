@@ -197,60 +197,28 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
 export function useGetCompletedActivities(campaignId) {
   const { tenantId } = useAuth();
 
-  const isValid = campaignId && isValidUUID(campaignId);
+  const url =
+    campaignId && isValidUUID(campaignId)
+      ? `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`
+      : null;
 
-  // Fetch 1 — completed activities (all types)
-  const completedUrl = isValid
-    ? `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`
-    : null;
+  const { data, isLoading, mutate } = useSWR(
+    url ? tenantKey(url, tenantId) : null,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: 30000,
+    },
+  );
 
-  // Fetch 2 — PLANNED call activities that have at least one no-answer attempt.
-  // The contact may call back before all retries are exhausted, so they must
-  // be selectable in LogResponseModal even though they are still PLANNED.
-  const plannedCallUrl = isValid
-    ? `/module-activities/?campaign=${campaignId}&status=PLANNED&activity_type=CALL&page_size=200`
-    : null;
-
-  const {
-    data: completedData,
-    isLoading: completedLoading,
-    mutate: mutateCompleted,
-  } = useSWR(completedUrl ? tenantKey(completedUrl, tenantId) : null);
-
-  const {
-    data: plannedData,
-    isLoading: plannedLoading,
-    mutate: mutatePlanned,
-  } = useSWR(plannedCallUrl ? tenantKey(plannedCallUrl, tenantId) : null);
-
-  return useMemo(() => {
-    const completed =
-      completedData?.data?.results || completedData?.results || [];
-
-    // Only surface PLANNED calls that have had at least one unanswered attempt.
-    // no_answer_count comes from CampaignAccount via ActivityListSerializer.
-    const plannedCalls = (
-      plannedData?.data?.results ||
-      plannedData?.results ||
-      []
-    ).filter((a) => (a.no_answer_count || 0) > 0);
-
-    return {
-      activities: [...completed, ...plannedCalls],
-      completedActivitiesLoading: completedLoading || plannedLoading,
-      mutateCompleted: () => {
-        mutateCompleted();
-        mutatePlanned();
-      },
-    };
-  }, [
-    completedData,
-    plannedData,
-    completedLoading,
-    plannedLoading,
-    mutateCompleted,
-    mutatePlanned,
-  ]);
+  return useMemo(
+    () => ({
+      activities: data?.data?.results || data?.results || [],
+      completedActivitiesLoading: isLoading,
+      mutateCompleted: mutate,
+    }),
+    [data, isLoading, mutate],
+  );
 }
 
 // ==============================|| MUTATION - LOG RESPONSE ||============================== //
@@ -274,9 +242,6 @@ export async function logCampaignResponse(campaignId, payload) {
 
   if (result.success) {
     revalidateMultiple([
-      endpoints.campaignPlaylist(campaignId),
-      endpoints.campaignDashboard(campaignId),
-      endpoints.campaignDetail(campaignId),
       `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`,
       `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
     ]);
