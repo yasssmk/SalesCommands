@@ -166,8 +166,8 @@ class CampaignCreationService:
             description=data.get('description', ''),
             campaign_type=campaign_type,
             sequence_type=data.get('sequence_type'),
-            start_date=data['start_date'],
-            end_date=data['end_date'],
+            planned_start_date=data['start_date'],
+            planned_end_date=data['end_date'],
             status=CampaignStatus.DRAFT,
         )
         campaign.save(user=self.user, client_id=self.client_id)
@@ -177,6 +177,81 @@ class CampaignCreationService:
             campaign.territories.set(territories)
 
         return campaign
+    
+    # ======================================================================
+    # PUBLIC API — TARGETED SINGLETON
+    # ======================================================================
+
+    @transaction.atomic
+    def get_or_create_targeted(self, sequence_type, name=None):
+        """
+        Get or create the TARGETED singleton campaign for this client.
+
+        A TARGETED campaign is unique per (client_id, campaign_type=TARGETED).
+        It is created directly in ACTIVE status — no lifecycle transition needed.
+        sequence_type is stored on the campaign and used when generating
+        activities at enrollment time.
+
+        Args:
+            sequence_type (str): e.g. 'TARGETED' from SequenceDispatcher
+            name (str): optional campaign name override
+
+        Returns:
+            tuple: (Campaign, created: bool)
+        """
+        from django.utils import timezone
+
+        existing = Campaign.objects.filter(
+            client_id=self.client_id,
+            campaign_type=CampaignType.TARGETED,
+            members__user=self.user,
+            members__is_primary_owner=True,
+        ).first()
+
+        if existing:
+            return existing, False
+
+        today = timezone.now().date()
+        # Far-future end date — TARGETED campaigns have no end date concept.
+        far_future = today.replace(year=today.year + 10)
+
+        campaign = Campaign(
+            name=name or "Targeted Campaign",
+            campaign_type=CampaignType.TARGETED,
+            sequence_type=sequence_type,
+            planned_start_date=today,
+            planned_end_date=far_future,
+            actual_start_date=today,
+            status=CampaignStatus.ACTIVE,
+        )
+        campaign.save(user=self.user, client_id=self.client_id)
+
+        # Auto-assign creator as primary owner
+        campaign.add_member(
+            user=self.user,
+            role=CampaignMember.MemberRole.OWNER,
+            added_by=self.user,
+            is_primary_owner=True,
+        )
+
+        audit_log(
+            event='targeted_campaign_created',
+            action='create',
+            actor_id=str(self.user.id),
+            client_id=self.client_id,
+            target_type='campaign',
+            target_id=str(campaign.id),
+            outcome='success',
+            extra={'sequence_type': sequence_type},
+        )
+
+        logger.info("targeted_campaign_created", extra={
+            'client_id': self.client_id,
+            'campaign_id': str(campaign.id),
+            'sequence_type': sequence_type,
+        })
+
+        return campaign, True
 
 
     # ======================================================================

@@ -62,16 +62,20 @@ class CampaignContactListSerializer(ClientScopeManager.SerializerMixin, serializ
     status_display = serializers.SerializerMethodField(read_only=True)
     contact_name = serializers.SerializerMethodField(read_only=True)
     activities_count = serializers.SerializerMethodField(read_only=True)
+    account_name = serializers.SerializerMethodField(read_only=True)
+    has_on_hold = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = CampaignContact
         fields = [
             'id',
             'contact', 'contact_name',
+            'account_name',
             'status', 'status_display',
             'callback_date',
             'activities_generated',
             'activities_count',
+            'has_on_hold',
             'created_at', 'updated_at',
         ]
         read_only_fields = fields
@@ -88,6 +92,15 @@ class CampaignContactListSerializer(ClientScopeManager.SerializerMixin, serializ
         if hasattr(obj, '_activities_count'):
             return obj._activities_count
         return obj.activities.count()
+    
+    def get_account_name(self, obj):
+        try:
+            return obj.campaign_account.account.company_name
+        except Exception:
+            return None
+    
+    def get_has_on_hold(self, obj):
+        return obj.activities.filter(status='ON_HOLD').exists()
 
 
 # ============================================================================

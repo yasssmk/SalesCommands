@@ -192,7 +192,12 @@ class CampaignExecutionService:
         created = 0
         previous_activity = None
         cumulative_delay = 0
-        base_date = self._next_business_day(campaign.planned_start_date)
+        # TARGETED: sequence starts from today (enrollment date).
+        # OUTBOUND: sequence starts from campaign planned start date.
+        if campaign.is_targeted:
+            base_date = self._next_business_day(timezone.now().date())
+        else:
+            base_date = self._next_business_day(campaign.planned_start_date)
 
         for step_number, step_config in sequence_dict.items():
             cumulative_delay += step_config.get('min_delay', 0)
@@ -263,7 +268,7 @@ class CampaignExecutionService:
 
         queryset = Activity.objects.filter(
             campaign=campaign,
-            status=ActivityStatus.PLANNED,
+            status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
         ).select_related(
             'account',
             'owner',
@@ -289,7 +294,11 @@ class CampaignExecutionService:
         total_count = len(activities)
 
         if campaign.sequence_type:
-            activities = self._recalculate_scheduled_dates(activities, today)
+            # Exclude ON_HOLD from date recalculation — their date is irrelevant
+            planned_only = [a for a in activities if a.status == ActivityStatus.PLANNED]
+            on_hold = [a for a in activities if a.status == ActivityStatus.ON_HOLD]
+            planned_only = self._recalculate_scheduled_dates(planned_only, today)
+            activities = planned_only + on_hold
 
         scored = [(a, self._calculate_priority(a)) for a in activities]
         scored.sort(key=lambda x: x[1], reverse=True)
@@ -458,7 +467,13 @@ class CampaignExecutionService:
 
             previous_activity = None
             cumulative_delay = 0
-            base_date = self._next_business_day(campaign.planned_start_date)
+            
+            # TARGETED: sequence starts from enrollment date (today).
+            # OUTBOUND: sequence starts from campaign planned start date.
+            if campaign.is_targeted:
+                base_date = self._next_business_day(timezone.now().date())
+            else:
+                base_date = self._next_business_day(campaign.planned_start_date)
 
             for step_number, step_config in sequence_dict.items():
                 cumulative_delay += step_config.get('min_delay', 0)

@@ -166,6 +166,20 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
     setOpen(false);
   };
 
+  // TARGETED — only Log Response button, no lifecycle actions
+  if (campaign.campaign_type === "TARGETED") {
+    return (
+      <Button
+        variant="outlined"
+        size="small"
+        startIcon={<MessageOutlined />}
+        onClick={() => onLogResponse?.()}
+      >
+        Log Response
+      </Button>
+    );
+  }
+
   // DRAFT — single Start button
   if (campaign.status === "DRAFT") {
     return (

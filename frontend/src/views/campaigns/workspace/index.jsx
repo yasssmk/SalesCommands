@@ -30,7 +30,7 @@ import {
 } from "sections/campaigns/workspace/CampaignTabs";
 import CampaignOverviewTab from "sections/campaigns/workspace/CampaignOverviewTab";
 import CampaignPlaylistTab from "sections/campaigns/workspace/CampaignPlaylistTab";
-import CampaignAccountsTab from "sections/campaigns/workspace/CampaignAccountsTab";
+import TargetsTab from "sections/campaigns/workspace/TargetsTab";
 import CampaignMembersTab from "sections/campaigns/workspace/CampaignMembersTab";
 
 // api
@@ -169,7 +169,7 @@ function TabContent({ tab, campaignId, campaign }) {
   const [mountedTabs, setMountedTabs] = useState(new Set());
 
   useEffect(() => {
-    if (["playlist", "accounts", "members"].includes(tab)) {
+    if (["playlist", "targets", "members"].includes(tab)) {
       setMountedTabs((prev) => {
         if (prev.has(tab)) return prev;
         const next = new Set(prev);
@@ -191,10 +191,9 @@ function TabContent({ tab, campaignId, campaign }) {
         </Box>
       )}
 
-      {/* Accounts — KeepAlive */}
-      {mountedTabs.has("accounts") && (
-        <Box sx={{ display: tab === "accounts" ? "block" : "none" }}>
-          <CampaignAccountsTab campaignId={campaignId} campaign={campaign} />
+      {mountedTabs.has("targets") && (
+        <Box sx={{ display: tab === "targets" ? "block" : "none" }}>
+          <TargetsTab campaignId={campaignId} campaign={campaign} />
         </Box>
       )}
 

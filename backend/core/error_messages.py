@@ -339,6 +339,10 @@ class CampaignModuleErrorMessages:
     ACTIVITY_GENERATION_FAILED = _("Failed to generate activities: {reason}")
     PLAYLIST_EMPTY = _("No activities available in campaign playlist")
     EXECUTION_FAILED = _("Campaign execution failed: {reason}")
+    TARGETED_CAMPAIGN_LIFECYCLE_FORBIDDEN = (
+    "Lifecycle actions (start/pause/resume/complete) are not available "
+    "for Targeted campaigns."
+)
 
     # Analytics
     ANALYTICS_CALCULATION_FAILED = _("Failed to calculate campaign analytics: {reason}")

@@ -157,6 +157,14 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
             models.Index(fields=['campaign_type'], name='mod_camp_type_idx'),
             models.Index(fields=['planned_start_date', 'planned_end_date'], name='mod_camp_dates_idx'),
         ]
+        constraints = [
+            # Enforce one TARGETED campaign per client (singleton)
+            models.UniqueConstraint(
+                fields=['client_id', 'campaign_type'],
+                condition=models.Q(campaign_type='TARGETED'),
+                name='unique_targeted_campaign_per_client',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.get_campaign_type_display()})"
@@ -169,6 +177,11 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
     def has_sequence(self):
         """Check if this campaign uses automated sequences."""
         return self.sequence_type is not None
+
+    @property
+    def is_targeted(self):
+        """Check if this campaign is a TARGETED singleton campaign."""
+        return self.campaign_type == CampaignType.TARGETED
 
     @property
     def is_in_final_state(self):
@@ -190,7 +203,7 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
             return "No Sequence"
 
         try:
-            from apps.sequence.sequences.sequence_dispatcher import SequenceDispatcher
+            from app_modules.sequences.sequence_dispatcher import SequenceDispatcher
             for choice in SequenceDispatcher.SEQUENCE_CHOICES:
                 if choice[0] == self.sequence_type:
                     return choice[1]

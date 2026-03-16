@@ -75,6 +75,8 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         'resume_callback':  'write',
         'mark_completed':   'write',
         'mark_stopped':     'write',
+        'pause':            'write',
+        'resume':           'write',
     }
 
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
@@ -83,13 +85,28 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
     ordering = ['created_at']
 
     def get_queryset(self):
-        return CampaignContact.objects.filter(
+        from django.db.models import Prefetch
+        from app_modules.activities.models import Activity
+
+        qs = CampaignContact.objects.filter(
             client_id=self.get_client_id(),
         ).select_related(
             'contact',
+            'contact__standard_department',
             'campaign_account',
             'campaign_account__account',
+        ).prefetch_related(
+            Prefetch(
+                'activities',
+                queryset=Activity.objects.filter(status='ON_HOLD').only('id', 'status', 'campaign_contact_id'),
+            )
         )
+
+        campaign_id = self.request.query_params.get('campaign')
+        if campaign_id:
+            qs = qs.filter(campaign_account__campaign_id=campaign_id)
+
+        return qs
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -141,20 +158,38 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         )
 
     def destroy(self, request, *args, **kwargs):
+        from django.utils import timezone
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
+
         instance = self.get_object()
         instance_id = str(instance.id)
+        client_id = self.get_client_id()
+
+        # Cancel PLANNED + ON_HOLD activities — keep COMPLETED/CANCELLED untouched
+        cancelled_count = Activity.objects.filter(
+            campaign_contact=instance,
+            status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+            client_id=client_id,
+        ).update(
+            status=ActivityStatus.CANCELLED,
+            outcome_notes='Target removed from campaign',
+            updated_at=timezone.now(),
+        )
+
         instance.delete()
 
         audit_log(
             event='campaign_contact_deleted',
             action='delete',
             actor_id=str(request.user.id),
-            client_id=str(self.get_client_id()),
+            client_id=str(client_id),
             target_type='campaign_contact',
             target_id=instance_id,
             outcome='success',
+            extra={'activities_cancelled': cancelled_count},
         )
-        self._invalidate_caches(self.get_client_id())
+        self._invalidate_caches(client_id)
         return Response({'success': True, 'data': None}, status=status.HTTP_204_NO_CONTENT)
 
     # ==========================================================================
@@ -279,10 +314,157 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             'campaign_contact': output.data,
             'transition': result,
         }})
+    
+    @action(detail=True, methods=['post'], url_path='pause')
+    @transaction.atomic
+    def pause(self, request, pk=None):
+        """
+        Pause a contact's sequence: PLANNED activities → ON_HOLD.
+        Contact remains visible in playlist (Upcoming section, end of list).
+
+        POST /campaigns/contacts/{id}/pause/
+        """
+        from datetime import timedelta
+        from django.utils import timezone
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
+
+        instance = self.get_object()
+        client_id = self.get_client_id()
+
+        activities_paused = Activity.objects.filter(
+            campaign_contact=instance,
+            status=ActivityStatus.PLANNED,
+            client_id=client_id,
+        ).update(
+            status=ActivityStatus.ON_HOLD,
+            updated_at=timezone.now(),
+        )
+
+        audit_log(
+            event='campaign_contact_paused',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(client_id),
+            target_type='campaign_contact',
+            target_id=str(instance.id),
+            outcome='success',
+            extra={'activities_paused': activities_paused},
+        )
+
+        logger.info("campaign_contact_paused", extra={
+            'campaign_contact_id': str(instance.id),
+            'activities_paused': activities_paused,
+        })
+
+        self._invalidate_caches(self.get_client_id())
+        output = CampaignContactDetailSerializer(instance, context={'request': request})
+
+        return Response({
+            'success': True,
+            'data': {
+                'campaign_contact': output.data,
+                'activities_paused': activities_paused,
+            },
+        })
+
+    @action(detail=True, methods=['post'], url_path='resume')
+    @transaction.atomic
+    def resume(self, request, pk=None):
+        """
+        Resume a contact's sequence: ON_HOLD activities → PLANNED.
+        Dates recalculated from today using cumulative min_delay_days.
+
+        POST /campaigns/contacts/{id}/resume/
+        """
+        from datetime import timedelta
+        from django.utils import timezone
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
+
+        instance = self.get_object()
+        client_id = self.get_client_id()
+        today = timezone.now().date()
+
+        on_hold = list(
+            Activity.objects.filter(
+                campaign_contact=instance,
+                status=ActivityStatus.ON_HOLD,
+                client_id=client_id,
+            ).select_related('previous_activity').order_by('sequence_position')
+        )
+
+        if not on_hold:
+            return Response({
+                'success': True,
+                'data': {'activities_resumed': 0},
+            })
+
+        by_id = {a.id: a for a in on_hold}
+
+        for activity in on_hold:
+            cumulative_delay = self._cumulative_delay_from_root(activity, by_id)
+            if cumulative_delay > 0:
+                scheduled = self._next_business_day(
+                    today + timedelta(days=cumulative_delay)
+                )
+            else:
+                scheduled = self._next_business_day(today)
+
+            activity.status = ActivityStatus.PLANNED
+            activity.scheduled_date = scheduled
+            activity.save(update_fields=['status', 'scheduled_date', 'updated_at'])
+
+        audit_log(
+            event='campaign_contact_resumed',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(client_id),
+            target_type='campaign_contact',
+            target_id=str(instance.id),
+            outcome='success',
+            extra={'activities_resumed': len(on_hold)},
+        )
+
+        logger.info("campaign_contact_resumed", extra={
+            'campaign_contact_id': str(instance.id),
+            'activities_resumed': len(on_hold),
+        })
+
+        self._invalidate_caches(self.get_client_id())
+        output = CampaignContactDetailSerializer(instance, context={'request': request})
+        
+        return Response({
+            'success': True,
+            'data': {
+                'campaign_contact': output.data,
+                'activities_resumed': len(on_hold),
+            },
+        })
 
     # ==========================================================================
     # PRIVATE HELPERS
     # ==========================================================================
+
+    def _next_business_day(self, date):
+        """Advance date past weekends."""
+        from datetime import timedelta
+        while date.weekday() >= 5:
+            date += timedelta(days=1)
+        return date
+
+    def _cumulative_delay_from_root(self, activity, by_id, _visited=None):
+        """Walk previous_activity chain summing min_delay_days."""
+        if _visited is None:
+            _visited = set()
+        if activity.id in _visited:
+            return 0
+        _visited.add(activity.id)
+        prev = activity.previous_activity
+        if prev is None:
+            return 0
+        prev_delay = self._cumulative_delay_from_root(prev, by_id, _visited)
+        return prev_delay + (activity.min_delay_days or 0)
 
     def _audit_status_change(self, request, instance, result):
         audit_log(

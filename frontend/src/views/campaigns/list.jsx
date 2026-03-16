@@ -99,6 +99,15 @@ export default function CampaignsListPage() {
     return campaigns.slice(startIndex, endIndex);
   }, [campaigns, page]);
 
+  const sortedCampaigns = useMemo(() => {
+    // TARGETED campaign always first (singleton, always present)
+    return [...campaigns].sort((a, b) => {
+      if (a.campaign_type === "TARGETED") return -1;
+      if (b.campaign_type === "TARGETED") return 1;
+      return 0;
+    });
+  }, [campaigns]);
+
   // ==============================|| HANDLERS ||============================== //
 
   const handlePageChange = (event, newPage) => {

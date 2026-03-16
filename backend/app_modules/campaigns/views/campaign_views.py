@@ -118,11 +118,19 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         'generate_activities': {'crud': 'update', 'scope': 'client'},
         'log_response': {'crud': 'create', 'scope': 'client'},
         'my_campaigns': {'crud': 'read', 'scope': 'mine'},
+        'get_or_create_targeted': {'crud': 'read', 'scope': 'client'},
     }
 
     # ==========================================================================
     # CACHE HELPERS
     # ==========================================================================
+
+    def _assert_not_targeted(self, campaign):
+        """Raise 403 if campaign is TARGETED — lifecycle actions are not allowed."""
+        if campaign.is_targeted:
+            raise StandardizedValidationError(
+                CampaignModuleErrorMessages.TARGETED_CAMPAIGN_LIFECYCLE_FORBIDDEN
+            )
 
     def _invalidate_campaign_caches(self, client_id):
         """Invalidate campaign and cross-module caches."""
@@ -456,6 +464,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         """
         ctx = ctx_from_request(request)
         campaign = self.get_object()
+        self._assert_not_targeted(campaign)
 
         logger.info("campaign_start_requested", extra={
             **ctx, 'campaign_id': str(campaign.id),
@@ -491,6 +500,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         """
         ctx = ctx_from_request(request)
         campaign = self.get_object()
+        self._assert_not_targeted(campaign)
 
         logger.info("campaign_pause_requested", extra={
             **ctx, 'campaign_id': str(campaign.id),
@@ -523,6 +533,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         """
         ctx = ctx_from_request(request)
         campaign = self.get_object()
+        self._assert_not_targeted(campaign)
 
         logger.info("campaign_resume_requested", extra={
             **ctx, 'campaign_id': str(campaign.id),
@@ -563,6 +574,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         """
         ctx = ctx_from_request(request)
         campaign = self.get_object()
+        self._assert_not_targeted(campaign)
 
         logger.info("campaign_complete_requested", extra={
             **ctx, 'campaign_id': str(campaign.id),
@@ -619,6 +631,38 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'activities_cancelled': result['activities_cancelled'],
             },
         })
+    
+    @action(detail=False, methods=['get'], url_path='targeted')
+    def get_or_create_targeted(self, request):
+        """
+        Get or create the TARGETED singleton campaign for this client.
+
+        GET /campaigns/targeted/?sequence_type=TARGETED
+
+        Returns the campaign (existing or newly created) always in ACTIVE status.
+        The frontend uses this to navigate directly to the TARGETED workspace.
+        """
+        ctx = ctx_from_request(request)
+        sequence_type = request.query_params.get('sequence_type', 'TARGETED')
+
+        logger.info("targeted_campaign_requested", extra={
+            **ctx, 'sequence_type': sequence_type,
+        })
+
+        service = CampaignCreationService(
+            user=request.user,
+            client_id=self.get_client_id(),
+        )
+        campaign, created = service.get_or_create_targeted(sequence_type=sequence_type)
+
+        if created:
+            self._invalidate_campaign_caches(self.get_client_id())
+
+        output = CampaignDetailSerializer(campaign, context={'request': request})
+        return Response({
+            'success': True,
+            'data': output.data,
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
     # ==========================================================================
     # DASHBOARD & ANALYTICS ACTIONS

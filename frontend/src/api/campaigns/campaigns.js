@@ -152,7 +152,15 @@ const endpoints = {
   accountsByCampaign: "/campaigns/accounts/by-campaign/",
   accountsBulkAdd: "/campaigns/accounts/bulk-add/",
   accountsBulkRemove: "/campaigns/accounts/bulk-remove/",
-  accountToggleContact: (id) => `/campaigns/accounts/${id}/toggle-contact/`,
+  // Targeted campaign singleton
+  campaignTargeted: "/campaigns/targeted/",
+
+  // Campaign contacts — pause/resume sequence
+  campaignContactPause: (id) => `/campaigns/contacts/${id}/pause/`,
+  campaignContactResume: (id) => `/campaigns/contacts/${id}/resume/`,
+
+  // Campaign contacts — list by campaign
+  contactsByCampaign: "/campaigns/contacts/",
 
   // Cross-module: Activities
   activityComplete: (id) => `/module-activities/${id}/complete/`,
@@ -607,6 +615,71 @@ export function useGetCampaignMembers(campaignId) {
       membersLoading: isLoading,
       membersError: error,
       mutateMembers: mutate,
+    }),
+    [data, isLoading, error, mutate],
+  );
+}
+
+// ==============================|| READ HOOKS - TARGETED CAMPAIGN ||============================== //
+
+/**
+ * GET OR CREATE TARGETED CAMPAIGN — singleton per user.
+ * GET /campaigns/targeted/?sequence_type=TARGETED
+ *
+ * Always returns an ACTIVE campaign. Creates it on first call.
+ */
+export function useGetTargetedCampaign(sequenceType = "TARGETED") {
+  const { tenantId } = useAuth();
+
+  const url = `${endpoints.campaignTargeted}?sequence_type=${sequenceType}`;
+  const swrKey = tenantKey(url, tenantId);
+
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  return useMemo(
+    () => ({
+      targetedCampaign: data?.data || null,
+      targetedLoading: isLoading,
+      targetedError: error,
+      targetedValidating: isValidating,
+      mutateTargeted: mutate,
+    }),
+    [data, isLoading, error, isValidating, mutate],
+  );
+}
+
+/**
+ * GET CAMPAIGN CONTACTS — contacts enrolled in a campaign.
+ * Used by TargetsTab to list all CampaignContact rows.
+ *
+ * @param {string} campaignId
+ */
+export function useGetCampaignContacts(campaignId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!campaignId || !isValidUUID(campaignId)) return null;
+    const url = `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`;
+    return tenantKey(url, tenantId);
+  }, [campaignId, tenantId]);
+
+  const { data, isLoading, error, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  return useMemo(
+    () => ({
+      campaignContacts:
+        data?.data?.results || data?.data || data?.results || [],
+      campaignContactsLoading: isLoading,
+      campaignContactsError: error,
+      mutateCampaignContacts: mutate,
     }),
     [data, isLoading, error, mutate],
   );
@@ -1099,4 +1172,153 @@ export async function toggleAccountContact(campaignAccountId, contactId) {
   }
 
   return { success: false, error: result.error, status: result.status ?? 0 };
+}
+
+// ==============================|| MUTATION FUNCTIONS - TARGETED CAMPAIGN ||============================== //
+
+/**
+ * ENROLL TARGET — add a contact/account/department to the targeted campaign.
+ * POST /campaigns/accounts/bulk-add/  (account enrollment)
+ * then toggle-contact for specific contacts.
+ *
+ * @param {string} campaignId
+ * @param {{ type: 'CONTACT'|'ACCOUNT'|'DEPARTMENT', account_id, contact_ids?, department_id? }} payload
+ */
+export async function enrollTarget(campaignId, payload) {
+  if (!campaignId || !isValidUUID(campaignId)) {
+    return { success: false, error: "Invalid campaign ID format", status: 400 };
+  }
+
+  const { account_id, contact_ids = [], type } = payload;
+
+  if (!account_id) {
+    return { success: false, error: "account_id is required", status: 400 };
+  }
+
+  // Step 1 — ensure account is enrolled (idempotent bulk-add)
+  const enrollResult = await api.post(endpoints.accountsBulkAdd, {
+    campaign_id: campaignId,
+    account_ids: [account_id],
+  });
+
+  if (!enrollResult.success) {
+    return {
+      success: false,
+      error: enrollResult.error,
+      status: enrollResult.status || 0,
+    };
+  }
+
+  const campaignAccount =
+    enrollResult.data?.data?.enrolled?.[0] || enrollResult.data?.enrolled?.[0];
+
+  // Step 2 — if specific contacts, toggle each one
+  if (type === "CONTACT" && contact_ids.length > 0 && campaignAccount?.id) {
+    for (const contactId of contact_ids) {
+      await api.post(endpoints.accountToggleContact(campaignAccount.id), {
+        contact_id: contactId,
+      });
+    }
+  }
+
+  revalidateMultiple([
+    endpoints.campaignTargeted,
+    endpoints.campaignPlaylist(campaignId),
+    endpoints.campaignDashboard(campaignId),
+    `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`,
+    `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
+  ]);
+
+  return { success: true, data: enrollResult.data };
+}
+
+/**
+ * REMOVE TARGETS — bulk remove CampaignContact rows.
+ * Cancels PLANNED activities and removes from playlist.
+ *
+ * @param {string} campaignId - For cache revalidation
+ * @param {string[]} campaignContactIds - UUIDs of CampaignContact records
+ */
+export async function removeTargets(campaignId, campaignContactIds) {
+  if (!campaignContactIds?.length) {
+    return { success: false, error: "No targets selected", status: 400 };
+  }
+
+  const results = await Promise.allSettled(
+    campaignContactIds.map((id) => api.delete(`/campaigns/contacts/${id}/`)),
+  );
+
+  const failed = results.filter(
+    (r) => r.status === "rejected" || !r.value?.success,
+  );
+
+  revalidateMultiple([
+    endpoints.campaignPlaylist(campaignId),
+    endpoints.campaignDashboard(campaignId),
+    `${endpoints.contactsByCampaign}?campaign_account__campaign=${campaignId}&page_size=200`,
+    `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
+  ]);
+
+  if (failed.length > 0) {
+    return {
+      success: false,
+      error: `${failed.length} target(s) could not be removed`,
+      status: 207,
+    };
+  }
+
+  return { success: true };
+}
+
+/**
+ * PAUSE TARGET — PUT contact's PLANNED activities ON_HOLD.
+ * Activities remain in playlist (Upcoming, end of list, warning style).
+ *
+ * @param {string} campaignContactId - UUID of CampaignContact
+ * @param {string} campaignId - For cache revalidation
+ */
+export async function pauseTarget(campaignContactId, campaignId) {
+  if (!campaignContactId || !isValidUUID(campaignContactId)) {
+    return { success: false, error: "Invalid contact ID format", status: 400 };
+  }
+
+  const result = await api.post(
+    endpoints.campaignContactPause(campaignContactId),
+  );
+
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.campaignPlaylist(campaignId),
+      `${endpoints.contactsByCampaign}?campaign_account__campaign=${campaignId}&page_size=200`,
+    ]);
+    return { success: true, data: result.data };
+  }
+
+  return { success: false, error: result.error, status: result.status || 0 };
+}
+
+/**
+ * RESUME TARGET — restore ON_HOLD activities to PLANNED with recalculated dates.
+ *
+ * @param {string} campaignContactId - UUID of CampaignContact
+ * @param {string} campaignId - For cache revalidation
+ */
+export async function resumeTarget(campaignContactId, campaignId) {
+  if (!campaignContactId || !isValidUUID(campaignContactId)) {
+    return { success: false, error: "Invalid contact ID format", status: 400 };
+  }
+
+  const result = await api.post(
+    endpoints.campaignContactResume(campaignContactId),
+  );
+
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.campaignPlaylist(campaignId),
+      `${endpoints.contactsByCampaign}?campaign_account__campaign=${campaignId}&page_size=200`,
+    ]);
+    return { success: true, data: result.data };
+  }
+
+  return { success: false, error: result.error, status: result.status || 0 };
 }

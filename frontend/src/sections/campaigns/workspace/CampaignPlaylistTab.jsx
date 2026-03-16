@@ -300,21 +300,30 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
   // ── Split PLANNED into Today vs Upcoming ──
   const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, timezone-safe
 
-  const { todayActivities, upcomingActivities } = useMemo(() => {
-    const today = [];
-    const upcoming = [];
-
-    activities.forEach((a) => {
-      const d = a.scheduled_date || a.due_date;
-      if (!d || d <= todayStr) {
-        today.push(a);
-      } else {
-        upcoming.push(a);
-      }
-    });
-
-    return { todayActivities: today, upcomingActivities: upcoming };
-  }, [activities, todayStr]);
+  const { todayActivities, upcomingActivities, onHoldActivities } =
+    useMemo(() => {
+      const today = [];
+      const upcoming = [];
+      const onHold = [];
+      activities.forEach((a) => {
+        // ON_HOLD activities go to end of Upcoming with warning style
+        if (a.status === "ON_HOLD") {
+          onHold.push(a);
+          return;
+        }
+        const d = a.scheduled_date || a.due_date;
+        if (!d || d <= todayStr) {
+          today.push(a);
+        } else {
+          upcoming.push(a);
+        }
+      });
+      return {
+        todayActivities: today,
+        upcomingActivities: upcoming,
+        onHoldActivities: onHold,
+      };
+    }, [activities, todayStr]);
 
   const completedCount =
     totalCount > 0 ? Math.max(0, totalCount - rawActivities.length) : 0;
@@ -507,7 +516,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
       </Box>
 
       {/* ── Section: Upcoming (collapsible) ── */}
-      {upcomingActivities.length > 0 && (
+      {(upcomingActivities.length > 0 || onHoldActivities.length > 0) && (
         <Accordion
           disableGutters
           elevation={0}
@@ -546,6 +555,29 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
                   isGreyedOut={true}
                   campaignEndDate={campaign?.planned_end_date}
                 />
+              ))}
+
+              {/* ON_HOLD activities — end of list, warning background */}
+              {onHoldActivities.map((activity) => (
+                <Box
+                  key={activity.id}
+                  sx={{
+                    borderRadius: 1.5,
+                    bgcolor: "warning.lighter",
+                    border: "1px solid",
+                    borderColor: "warning.light",
+                  }}
+                >
+                  <PlaylistActivityCard
+                    activity={activity}
+                    expanded={false}
+                    onExpand={() => {}}
+                    onComplete={() => {}}
+                    completing={false}
+                    isGreyedOut={true}
+                    campaignEndDate={campaign?.planned_end_date}
+                  />
+                </Box>
               ))}
             </Stack>
           </AccordionDetails>

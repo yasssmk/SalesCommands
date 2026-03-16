@@ -232,6 +232,7 @@ export default function PlaylistActivityCard({
   const typeColor = ACTIVITY_TYPE_COLORS[activity.activity_type] || "default";
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
+  const isOnHold = activity.status === "ON_HOLD";
   const activityDate = activity.scheduled_date || activity.due_date;
 
   // Compare date strings (YYYY-MM-DD) to avoid UTC timezone drift.
@@ -278,6 +279,7 @@ export default function PlaylistActivityCard({
   // ==============================|| STYLE HELPERS ||============================== //
 
   const getBorderColor = () => {
+    if (isOnHold) return theme.palette.warning.light;
     if (isGreyedOut) return theme.palette.divider;
     if (isCancelled) return theme.palette.grey[300];
     if (isCompleted) {
@@ -291,6 +293,7 @@ export default function PlaylistActivityCard({
   };
 
   const getBgColor = () => {
+    if (isOnHold) return alpha(theme.palette.warning.main, 0.06);
     if (isGreyedOut) return alpha(theme.palette.grey[500], 0.03);
     if (isCancelled) return alpha(theme.palette.grey[500], 0.04);
     if (isCompleted) {
@@ -461,7 +464,15 @@ export default function PlaylistActivityCard({
               spacing={1.5}
               sx={{ flexShrink: 0 }}
             >
-              {activityDate && (
+              {isOnHold ? (
+                <Chip
+                  label="On Hold"
+                  size="small"
+                  color="warning"
+                  variant="filled"
+                  sx={{ height: 22, fontSize: "0.7rem" }}
+                />
+              ) : activityDate ? (
                 <Stack direction="row" alignItems="center" spacing={0.5}>
                   <ClockCircleOutlined
                     style={{
@@ -492,7 +503,7 @@ export default function PlaylistActivityCard({
                     </Typography>
                   )}
                 </Stack>
-              )}
+              ) : null}
 
               {/* CALL retry badge — shown when at least one attempt has been made */}
               {isCall && !isCompleted && !isCancelled && noAnswerCount > 0 && (
@@ -513,7 +524,7 @@ export default function PlaylistActivityCard({
                   variant="filled"
                   sx={{ height: 22, fontSize: "0.7rem" }}
                 />
-              ) : !isCompleted && !isCancelled ? (
+              ) : !isCompleted && !isCancelled && !isOnHold ? (
                 ONE_CLICK_TYPES.includes(activity.activity_type) ? (
                   // 1-click complete for EMAIL / LINKEDIN — no outcome picker
                   <Button

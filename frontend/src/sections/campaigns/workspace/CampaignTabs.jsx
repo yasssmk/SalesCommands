@@ -10,7 +10,7 @@
 export const CAMPAIGN_TABS = [
   { id: "overview", label: "Overview", disabled: true },
   { id: "playlist", label: "Playlist" },
-  { id: "accounts", label: "Accounts" },
+  { id: "targets", label: "Targets" },
   { id: "members", label: "Members" },
 ];
 

@@ -90,6 +90,10 @@ def get_urlpatterns():
             'post': 'log_response'
         }), name='log-response'),
 
+        path('<uuid:pk>/cancel-planned/', CampaignViewSet.as_view({
+            'delete': 'cancel_planned'
+        }), name='cancel-planned'),
+
         # =================================================================
         # CAMPAIGN ACCOUNTS — LIST ACTIONS
         # =================================================================
@@ -187,6 +191,13 @@ def get_urlpatterns():
             'post': 'mark_stopped'
         }), name='contacts-mark-stopped'),
 
+        path('contacts/<uuid:pk>/pause/', CampaignContactViewSet.as_view({
+            'post': 'pause'
+        }), name='contacts-pause'),
+
+        path('contacts/<uuid:pk>/resume/', CampaignContactViewSet.as_view({
+            'post': 'resume'
+        }), name='contacts-resume'),
 
         # =================================================================
         # CAMPAIGN MEMBERS — CRUD
