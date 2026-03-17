@@ -54,12 +54,10 @@ const STEPS = [
 const INITIAL_STATE = {
   // Step 0: Type
   family: "",
-
   // Step 1: Target
   territory_ids: [],
   selectedTerritories: [],
   account_ids: [],
-
   // Step 2: Details
   name: "",
   description: "",
@@ -69,6 +67,7 @@ const INITIAL_STATE = {
   objective_type: "",
   objective_target: "",
   executor_id: null,
+  selectedExecutor: null,
 };
 
 // ==============================|| CAMPAIGN CREATE MODAL ||============================== //

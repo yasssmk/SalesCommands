@@ -108,13 +108,11 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
   };
 
   const handleExecutorChange = (event, newValue) => {
-    // newValue is a single user object from AsyncUserSelect
-    if (newValue && !data.member_ids.includes(newValue.id)) {
-      onUpdate({
-        member_ids: [...data.member_ids, newValue.id],
-        selectedExecutors: [...(data.selectedExecutors || []), newValue],
-      });
-    }
+    // Single executor — store id + full object for display
+    onUpdate({
+      executor_id: newValue?.id || null,
+      selectedExecutor: newValue || null,
+    });
   };
 
   // ==============================|| RENDER ||============================== //
@@ -270,19 +268,17 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
 
         <Grid item xs={12} sm={6}>
           <Stack spacing={1}>
-            <InputLabel>Add Executors</InputLabel>
+            <InputLabel>Executor (optional)</InputLabel>
             <AsyncUserSelect
-              value={null}
+              value={data.selectedExecutor || null}
               onChange={handleExecutorChange}
               label=""
               placeholder="Search team members..."
+              filters={{ is_active: true }}
             />
-            {(data.selectedExecutors || []).length > 0 && (
-              <Typography variant="caption" color="text.secondary">
-                {data.selectedExecutors.length} executor
-                {data.selectedExecutors.length > 1 ? "s" : ""} added
-              </Typography>
-            )}
+            <FormHelperText>
+              If not set, you will execute the activities as owner.
+            </FormHelperText>
           </Stack>
         </Grid>
       </Grid>
