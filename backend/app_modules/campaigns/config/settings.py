@@ -341,7 +341,16 @@ class FilterConfig:
     default_objective_ordering: List[str] = field(default_factory=lambda: ['campaign', '-is_primary', 'created_at'])
 
     # Search fields
-    campaign_search: List[str] = field(default_factory=lambda: ['name', 'description'])
+    campaign_search: List[str] = field(default_factory=lambda: [
+        'name',
+        'description',
+        'owner__first_name',
+        'owner__last_name',
+        'owner__email',
+        'executor__first_name',
+        'executor__last_name',
+        'executor__email',
+    ])
     campaign_account_search: List[str] = field(default_factory=lambda: ['account__company_name', 'notes'])
     member_search: List[str] = field(default_factory=lambda: [
         'user__first_name', 'user__last_name', 'user__email',

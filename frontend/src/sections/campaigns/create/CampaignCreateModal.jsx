@@ -68,7 +68,7 @@ const INITIAL_STATE = {
   end_date: null,
   objective_type: "",
   objective_target: "",
-  member_ids: [],
+  executor_id: null,
 };
 
 // ==============================|| CAMPAIGN CREATE MODAL ||============================== //
@@ -160,9 +160,8 @@ export default function CampaignCreateModal({ open, onClose, onSuccess }) {
             is_primary: true,
           },
         }),
-        // Member assignment
-        owner_ids: [], // Current user auto-assigned by backend
-        executor_ids: wizardData.member_ids || [],
+        // Executor assignment — single optional user
+        executor_id: wizardData.executor_id || null,
       };
 
       const result = await createCampaign(payload);

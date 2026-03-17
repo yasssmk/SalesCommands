@@ -1,34 +1,25 @@
 // frontend/src/sections/campaigns/workspace/CampaignMembersTab.jsx
 /**
- * Campaign Members Tab — Members grouped by role.
+ * Campaign Members Tab — Owner + Executor display and management.
  *
- * API: useGetCampaignMembers → GET /campaigns/members/by-campaign/?campaign_id=
- * Mutation: addCampaignMember → POST /campaigns/members/
- *           payload: { campaign_id, user_id, role }
- *
- * ListSerializer returns flat fields: user_name, user_email (no nested user object).
+ * Data comes directly from the campaign object (no separate API call).
+ * Only the executor can be changed via PATCH /campaigns/{id}/.
  */
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 
 // material-ui
-import { useTheme } from "@mui/material/styles";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
-import FormControl from "@mui/material/FormControl";
-import Grid from "@mui/material/Grid";
 import InputLabel from "@mui/material/InputLabel";
-import MenuItem from "@mui/material/MenuItem";
 import Modal from "@mui/material/Modal";
-import Select from "@mui/material/Select";
-import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -37,11 +28,7 @@ import MainCard from "components/MainCard";
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
 
 // api
-import {
-  useGetCampaignMembers,
-  addCampaignMember,
-  MEMBER_ROLE_LABELS,
-} from "api/campaigns/campaigns";
+import { updateCampaign } from "api/campaigns/campaigns";
 
 // utils
 import {
@@ -50,54 +37,39 @@ import {
 } from "utils/displayError";
 
 // icons
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import CrownOutlined from "@ant-design/icons/CrownOutlined";
 import UserOutlined from "@ant-design/icons/UserOutlined";
-import EyeOutlined from "@ant-design/icons/EyeOutlined";
+import EditOutlined from "@ant-design/icons/EditOutlined";
+import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 
-// ==============================|| ROLE CONFIG ||============================== //
+// ==============================|| HELPERS ||============================== //
 
-const ROLE_CONFIG = {
-  OWNER: { Icon: CrownOutlined, color: "warning", avatarBg: "warning.main" },
-  EXECUTOR: { Icon: UserOutlined, color: "primary", avatarBg: "primary.main" },
-  OBSERVER: { Icon: EyeOutlined, color: "default", avatarBg: "grey.500" },
-};
-
-const ROLE_ORDER = ["OWNER", "EXECUTOR", "OBSERVER"];
-
-// ==============================|| LOADING SKELETON ||============================== //
-
-function MembersSkeleton() {
+function getInitials(user) {
+  if (!user) return "?";
+  const name =
+    `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+    user.email ||
+    "";
   return (
-    <Stack spacing={1}>
-      {[1, 2, 3].map((i) => (
-        <Skeleton
-          key={i}
-          variant="rectangular"
-          height={64}
-          sx={{ borderRadius: 1.5 }}
-        />
-      ))}
-    </Stack>
-  );
-}
-
-// ==============================|| MEMBER CARD ||============================== //
-
-function MemberCard({ member }) {
-  const config = ROLE_CONFIG[member.role] || ROLE_CONFIG.OBSERVER;
-
-  // ListSerializer returns flat fields: user_name, user_email (not nested user object)
-  const fullName = member.user_name || member.user_email || "Unknown";
-  const email = member.user_email || "—";
-  const initials =
-    fullName
+    name
       .split(" ")
       .map((n) => n[0] || "")
       .slice(0, 2)
       .join("")
-      .toUpperCase() || "?";
+      .toUpperCase() || "?"
+  );
+}
 
+function getDisplayName(user) {
+  if (!user) return "—";
+  return (
+    `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.email
+  );
+}
+
+// ==============================|| MEMBER ROW ||============================== //
+
+function MemberRow({ icon: Icon, label, user, isPrimary, action }) {
   return (
     <Box
       sx={{
@@ -106,8 +78,6 @@ function MemberCard({ member }) {
         border: "1px solid",
         borderColor: "grey.200",
         bgcolor: "background.paper",
-        transition: "all 0.2s ease",
-        "&:hover": { borderColor: "grey.300", bgcolor: "grey.50" },
       }}
     >
       <Stack direction="row" spacing={2} alignItems="center">
@@ -115,113 +85,73 @@ function MemberCard({ member }) {
           sx={{
             width: 40,
             height: 40,
-            bgcolor: config.avatarBg,
+            bgcolor: isPrimary ? "warning.main" : "primary.main",
             fontSize: "0.875rem",
             fontWeight: 600,
           }}
         >
-          {initials}
+          {user ? getInitials(user) : <Icon style={{ fontSize: 18 }} />}
         </Avatar>
 
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="subtitle2" noWrap>
-              {fullName}
+              {user ? (
+                getDisplayName(user)
+              ) : (
+                <Typography
+                  component="span"
+                  variant="subtitle2"
+                  color="text.disabled"
+                >
+                  Not assigned
+                </Typography>
+              )}
             </Typography>
-            {member.is_primary_owner && (
-              <Chip
-                label="Primary"
-                size="small"
-                color="warning"
-                variant="outlined"
-                sx={{ height: 20, fontSize: "0.675rem" }}
-              />
-            )}
+            <Chip
+              label={label}
+              size="small"
+              color={isPrimary ? "warning" : "primary"}
+              variant="outlined"
+              sx={{ height: 20, fontSize: "0.675rem" }}
+            />
           </Stack>
-          <Typography variant="caption" color="text.secondary" noWrap>
-            {email}
-          </Typography>
+          {user?.email && (
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {user.email}
+            </Typography>
+          )}
         </Box>
 
-        <Chip
-          label={MEMBER_ROLE_LABELS[member.role] || member.role}
-          size="small"
-          color={config.color}
-          variant="outlined"
-        />
+        {action}
       </Stack>
     </Box>
   );
 }
 
-MemberCard.propTypes = {
-  member: PropTypes.object.isRequired,
+MemberRow.propTypes = {
+  icon: PropTypes.elementType.isRequired,
+  label: PropTypes.string.isRequired,
+  user: PropTypes.object,
+  isPrimary: PropTypes.bool,
+  action: PropTypes.node,
 };
 
-// ==============================|| ROLE GROUP ||============================== //
+// ==============================|| ASSIGN EXECUTOR MODAL ||============================== //
 
-function RoleGroup({ role, members }) {
-  const theme = useTheme();
-  const config = ROLE_CONFIG[role] || ROLE_CONFIG.OBSERVER;
-  const RoleIcon = config.Icon;
-
-  if (members.length === 0) return null;
-
-  return (
-    <Box>
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-        <RoleIcon
-          style={{ fontSize: 16, color: theme.palette.text.secondary }}
-        />
-        <Typography
-          variant="subtitle2"
-          color="text.secondary"
-          sx={{
-            textTransform: "uppercase",
-            fontSize: "0.75rem",
-            fontWeight: 600,
-            letterSpacing: "0.5px",
-          }}
-        >
-          {MEMBER_ROLE_LABELS[role] || role}s ({members.length})
-        </Typography>
-      </Stack>
-      <Grid container spacing={1.5}>
-        {members.map((member) => (
-          <Grid item xs={12} sm={6} key={member.id}>
-            <MemberCard member={member} />
-          </Grid>
-        ))}
-      </Grid>
-    </Box>
-  );
-}
-
-RoleGroup.propTypes = {
-  role: PropTypes.string.isRequired,
-  members: PropTypes.array.isRequired,
-};
-
-// ==============================|| ADD MEMBER MODAL ||============================== //
-
-/**
- * Inline modal: AsyncUserSelect + role Select + submit.
- * Pattern: DecisionCycleModal (simple Modal + MainCard, no Formik).
- */
-function AddMemberModal({
+function AssignExecutorModal({
   open,
   onClose,
   campaignId,
-  enrolledUserIds,
+  currentExecutor,
+  ownerId,
   onSuccess,
 }) {
   const [selectedUser, setSelectedUser] = useState(null);
-  const [role, setRole] = useState("EXECUTOR");
   const [submitting, setSubmitting] = useState(false);
 
   const handleClose = useCallback(() => {
     setSelectedUser(null);
-    setRole("EXECUTOR");
     onClose();
   }, [onClose]);
 
@@ -233,90 +163,54 @@ function AddMemberModal({
 
     setSubmitting(true);
     try {
-      const result = await addCampaignMember({
-        campaign_id: campaignId,
-        user_id: selectedUser.id,
-        role,
+      const result = await updateCampaign(campaignId, {
+        executor_id: selectedUser.id,
       });
 
       if (result.success) {
         displaySuccessSnackbar(
-          `${selectedUser.first_name || selectedUser.email} added as ${MEMBER_ROLE_LABELS[role]}`,
+          `Executor updated to ${getDisplayName(selectedUser)}`,
         );
         onSuccess();
         handleClose();
       } else {
         displayErrorSnackbar(result);
       }
-    } catch (err) {
-      displayErrorSnackbar(err);
     } finally {
       setSubmitting(false);
     }
-  }, [selectedUser, role, campaignId, onSuccess, handleClose]);
-
-  if (!open) return null;
+  }, [selectedUser, campaignId, onSuccess, handleClose]);
 
   return (
-    <Modal
-      open={open}
-      onClose={handleClose}
-      aria-labelledby="add-member-modal"
-      sx={{ "& .MuiPaper-root:focus": { outline: "none" } }}
-    >
+    <Modal open={open} onClose={handleClose}>
       <MainCard
-        title="Add Member"
+        title={currentExecutor ? "Change Executor" : "Assign Executor"}
         sx={{
           position: "absolute",
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          width: { xs: "calc(100% - 32px)", sm: 480 },
-          maxHeight: "calc(100vh - 48px)",
-          overflowY: "auto",
+          width: { xs: "calc(100% - 32px)", sm: 440 },
         }}
         modal
       >
         <Stack spacing={3}>
-          {/* User search */}
           <Box>
-            <InputLabel sx={{ mb: 1 }}>User *</InputLabel>
+            <InputLabel sx={{ mb: 1 }}>Select Executor *</InputLabel>
             <AsyncUserSelect
               value={selectedUser}
-              onChange={(event, user) => setSelectedUser(user)}
-              label=""
+              onChange={(_, user) => setSelectedUser(user)}
               placeholder="Search by name or email..."
               disabled={submitting}
               filters={{ is_active: true }}
               filterOptions={(options) =>
-                enrolledUserIds?.length
-                  ? options.filter((u) => !enrolledUserIds.includes(u.id))
-                  : options
+                options.filter((u) => u.id !== ownerId)
               }
             />
           </Box>
 
-          {/* Role select */}
-          <Box>
-            <InputLabel sx={{ mb: 1 }}>Role *</InputLabel>
-            <FormControl fullWidth size="small">
-              <Select
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                disabled={submitting}
-              >
-                {ROLE_ORDER.map((r) => (
-                  <MenuItem key={r} value={r}>
-                    {MEMBER_ROLE_LABELS[r] || r}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-
           <Divider />
 
-          {/* Actions */}
           <Stack direction="row" justifyContent="flex-end" spacing={1.5}>
             <Button
               variant="outlined"
@@ -336,7 +230,7 @@ function AddMemberModal({
                 ) : null
               }
             >
-              {submitting ? "Adding..." : "Add Member"}
+              {submitting ? "Saving..." : "Confirm"}
             </Button>
           </Stack>
         </Stack>
@@ -345,145 +239,116 @@ function AddMemberModal({
   );
 }
 
-AddMemberModal.propTypes = {
+AssignExecutorModal.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   campaignId: PropTypes.string.isRequired,
-  enrolledUserIds: PropTypes.array,
+  currentExecutor: PropTypes.object,
+  ownerId: PropTypes.string,
   onSuccess: PropTypes.func.isRequired,
 };
 
 // ==============================|| CAMPAIGN MEMBERS TAB ||============================== //
 
-export default function CampaignMembersTab({ campaignId, campaign }) {
+export default function CampaignMembersTab({
+  campaignId,
+  campaign,
+  onCampaignUpdate,
+}) {
   const [modalOpen, setModalOpen] = useState(false);
-
-  // ==============================|| DATA ||============================== //
-
-  const { members, membersLoading, membersError, mutateMembers } =
-    useGetCampaignMembers(campaignId);
-
-  // Group by role
-  const groupedMembers = useMemo(
-    () =>
-      ROLE_ORDER.reduce((acc, role) => {
-        acc[role] = members.filter((m) => m.role === role);
-        return acc;
-      }, {}),
-    [members],
-  );
-
-  // Exclude already-enrolled users from the selector
-  // ListSerializer exposes `user` field (UUID)
-  const enrolledUserIds = useMemo(
-    () => members.map((m) => m.user).filter(Boolean),
-    [members],
-  );
+  const [removingExecutor, setRemovingExecutor] = useState(false);
 
   const isFinalStatus =
     campaign?.status === "COMPLETED" || campaign?.status === "CANCELLED";
+  const isTargeted = campaign?.campaign_type === "TARGETED";
 
-  // ==============================|| LOADING STATE ||============================== //
-
-  if (membersLoading) return <MembersSkeleton />;
-
-  // ==============================|| ERROR STATE ||============================== //
-
-  if (membersError) {
-    return (
-      <Box sx={{ py: 6, textAlign: "center" }}>
-        <Typography variant="h5" color="error">
-          Failed to load members
-        </Typography>
-        <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
-          Please try refreshing the page.
-        </Typography>
-      </Box>
-    );
-  }
-
-  // ==============================|| EMPTY STATE ||============================== //
-
-  if (members.length === 0) {
-    return (
-      <>
-        <Box sx={{ py: 6, textAlign: "center" }}>
-          <Typography variant="h5" color="text.secondary">
-            No members in this campaign
-          </Typography>
-          <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
-            Add team members to collaborate on this campaign.
-          </Typography>
-          {!isFinalStatus && (
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<PlusOutlined />}
-              onClick={() => setModalOpen(true)}
-              sx={{ mt: 2 }}
-            >
-              Add First Member
-            </Button>
-          )}
-        </Box>
-
-        <AddMemberModal
-          open={modalOpen}
-          onClose={() => setModalOpen(false)}
-          campaignId={campaignId}
-          enrolledUserIds={enrolledUserIds}
-          onSuccess={mutateMembers}
-        />
-      </>
-    );
-  }
-
-  // ==============================|| RENDER ||============================== //
+  const handleRemoveExecutor = useCallback(async () => {
+    setRemovingExecutor(true);
+    try {
+      const result = await updateCampaign(campaignId, { executor_id: null });
+      if (result.success) {
+        displaySuccessSnackbar("Executor removed");
+        onCampaignUpdate?.();
+      } else {
+        displayErrorSnackbar(result);
+      }
+    } finally {
+      setRemovingExecutor(false);
+    }
+  }, [campaignId, onCampaignUpdate]);
 
   return (
     <>
-      <Box>
+      <Stack spacing={2}>
         {/* Header */}
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="center"
-          sx={{ mb: 3 }}
-        >
-          <Typography variant="body2" color="text.secondary">
-            {members.length} member{members.length !== 1 ? "s" : ""} in this
-            campaign
+        <Typography variant="body2" color="text.secondary">
+          Campaign ownership and execution assignment.
+        </Typography>
+
+        {/* Owner — always read-only */}
+        <MemberRow
+          icon={CrownOutlined}
+          label="Owner"
+          user={campaign?.owner}
+          isPrimary
+        />
+
+        {/* Executor — editable (except TARGETED or final status) */}
+        <MemberRow
+          icon={UserOutlined}
+          label="Executor"
+          user={campaign?.executor}
+          action={
+            !isFinalStatus && !isTargeted ? (
+              <Stack direction="row" spacing={1}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<EditOutlined />}
+                  onClick={() => setModalOpen(true)}
+                >
+                  {campaign?.executor ? "Change" : "Assign"}
+                </Button>
+                {campaign?.executor && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    onClick={handleRemoveExecutor}
+                    disabled={removingExecutor}
+                    startIcon={
+                      removingExecutor ? (
+                        <CircularProgress size={12} color="inherit" />
+                      ) : (
+                        <DeleteOutlined />
+                      )
+                    }
+                  >
+                    Remove
+                  </Button>
+                )}
+              </Stack>
+            ) : null
+          }
+        />
+
+        {!campaign?.executor && !isFinalStatus && !isTargeted && (
+          <Typography variant="caption" color="text.secondary">
+            If no executor is assigned, the owner executes the activities.
           </Typography>
-          {!isFinalStatus && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<PlusOutlined />}
-              onClick={() => setModalOpen(true)}
-            >
-              Add Member
-            </Button>
-          )}
-        </Stack>
+        )}
+      </Stack>
 
-        {/* Role Groups */}
-        <Stack spacing={3}>
-          {ROLE_ORDER.map((role) => (
-            <RoleGroup
-              key={role}
-              role={role}
-              members={groupedMembers[role] || []}
-            />
-          ))}
-        </Stack>
-      </Box>
-
-      <AddMemberModal
+      <AssignExecutorModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         campaignId={campaignId}
-        enrolledUserIds={enrolledUserIds}
-        onSuccess={mutateMembers}
+        currentExecutor={campaign?.executor}
+        ownerId={campaign?.owner?.id}
+        onSuccess={() => {
+          setModalOpen(false);
+          onCampaignUpdate?.();
+        }}
       />
     </>
   );
@@ -492,4 +357,5 @@ export default function CampaignMembersTab({ campaignId, campaign }) {
 CampaignMembersTab.propTypes = {
   campaignId: PropTypes.string,
   campaign: PropTypes.object,
+  onCampaignUpdate: PropTypes.func,
 };

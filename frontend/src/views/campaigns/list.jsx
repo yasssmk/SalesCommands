@@ -91,22 +91,23 @@ export default function CampaignsListPage() {
 
   // ==============================|| PAGINATION ||============================== //
 
-  const totalPages = Math.ceil(campaignsCount / PER_PAGE);
-
-  const paginatedCampaigns = useMemo(() => {
-    const startIndex = (page - 1) * PER_PAGE;
-    const endIndex = startIndex + PER_PAGE;
-    return campaigns.slice(startIndex, endIndex);
-  }, [campaigns, page]);
-
+  // TARGETED campaign is always present (created by signal on user creation)
+  // Sort it to position 0
   const sortedCampaigns = useMemo(() => {
-    // TARGETED campaign always first (singleton, always present)
     return [...campaigns].sort((a, b) => {
       if (a.campaign_type === "TARGETED") return -1;
       if (b.campaign_type === "TARGETED") return 1;
       return 0;
     });
   }, [campaigns]);
+
+  const totalPages = Math.ceil(sortedCampaigns.length / PER_PAGE);
+
+  const paginatedCampaigns = useMemo(() => {
+    const startIndex = (page - 1) * PER_PAGE;
+    const endIndex = startIndex + PER_PAGE;
+    return sortedCampaigns.slice(startIndex, endIndex);
+  }, [sortedCampaigns, page]);
 
   // ==============================|| HANDLERS ||============================== //
 

@@ -48,7 +48,6 @@ import PlaylistActivityCard from "components/cards/PlaylistActivityCard";
 
 import {
   useGetPlaylist,
-  useGetCampaignMembers,
   useGetCompletedActivities,
   completePlaylistActivity,
   cancelPlannedActivities,
@@ -129,13 +128,14 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
     executorId: executorId || undefined,
   });
 
-  const { members } = useGetCampaignMembers(campaignId);
-
-  // Executors = members with role EXECUTOR or RECEIVER
-  const executors = useMemo(
-    () => members.filter((m) => m.role === "EXECUTOR" || m.role === "RECEIVER"),
-    [members],
-  );
+  // Executors — derived from campaign object (owner + executor if set)
+  const executors = useMemo(() => {
+    const result = [];
+    if (campaign?.owner) result.push({ ...campaign.owner, role: "OWNER" });
+    if (campaign?.executor)
+      result.push({ ...campaign.executor, role: "EXECUTOR" });
+    return result;
+  }, [campaign]);
 
   // Filter out optimistically removed activities
   const activities = useMemo(

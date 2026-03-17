@@ -1,7 +1,6 @@
 from .campaign import Campaign, CampaignType, CampaignStatus, CAMPAIGN_STATUS_TRANSITIONS
 from .campaign_account import CampaignAccount, CampaignAccountStatus, CAMPAIGN_ACCOUNT_TRANSITIONS
 from .campaign_contact import CampaignContact, CampaignContactStatus, CAMPAIGN_CONTACT_TRANSITIONS, FINAL_CONTACT_STATES
-from .campaign_member import CampaignMember
 from .campaign_objective import CampaignObjective, ObjectiveType
 
 __all__ = [
@@ -16,7 +15,6 @@ __all__ = [
     'CampaignContactStatus',
     'CAMPAIGN_CONTACT_TRANSITIONS',
     'FINAL_CONTACT_STATES',
-    'CampaignMember',
     'CampaignObjective',
     'ObjectiveType',
 ]

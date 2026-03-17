@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from core.client_scope import ClientScopeManager
@@ -41,7 +41,6 @@ from ..models import (
     CampaignStatus,
     CampaignType,
     CampaignAccount,
-    CampaignMember,
 )
 from ..serializers import (
     CampaignListSerializer,
@@ -172,32 +171,39 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         queryset = super().get_queryset()
 
         if self.action == 'list':
-            queryset = queryset.prefetch_related(
-                'territories',
-                'objectives',
-                'members',
-            ).annotate(
-                _accounts_count=Count('campaign_accounts', distinct=True),
-                _members_count=Count('members', distinct=True),
-            )
-        elif self.action == 'retrieve':
             queryset = queryset.select_related(
-                'created_by',
-                'updated_by',
+                'owner', 'executor',
             ).prefetch_related(
                 'territories',
                 'objectives',
-                'members__user',
-                'members__added_by',
+            ).annotate(
+                _accounts_count=Count('campaign_accounts', distinct=True),
+            )
+        elif self.action == 'retrieve':
+            queryset = queryset.select_related(
+                'owner', 'executor',
+                'created_by', 'updated_by',
+            ).prefetch_related(
+                'territories',
+                'objectives',
                 'campaign_accounts',
             ).annotate(
                 _accounts_count=Count('campaign_accounts', distinct=True),
             )
         else:
-            queryset = queryset.prefetch_related('territories')
+            queryset = queryset.select_related(
+                'owner', 'executor',
+            ).prefetch_related('territories')
 
         # Apply owner scope filter (mine/team/all)
         queryset = self.apply_owner_scope_filter(queryset)
+
+        queryset = queryset.exclude(
+            campaign_type=CampaignType.TARGETED,
+        ) | queryset.filter(
+            campaign_type=CampaignType.TARGETED,
+            owner=self.request.user,
+        )
 
         return queryset
 
@@ -407,6 +413,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         """
         ctx = ctx_from_request(request)
         instance = self.get_object()
+        self._assert_not_targeted(instance)
 
         campaign_id = str(instance.id)
         campaign_name = instance.name
@@ -1029,12 +1036,9 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         ctx = ctx_from_request(request)
         logger.info("my_campaigns_requested", extra=ctx)
 
-        member_campaign_ids = CampaignMember.objects.filter(
-            user=request.user,
-            client_id=self.get_client_id(),
-        ).values_list('campaign_id', flat=True)
-
-        queryset = self.get_queryset().filter(id__in=member_campaign_ids)
+        queryset = self.get_queryset().filter(
+            Q(owner=request.user) | Q(executor=request.user)
+        )
         queryset = self.filter_queryset(queryset)
 
         page = self.paginate_queryset(queryset)

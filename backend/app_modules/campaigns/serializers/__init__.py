@@ -25,13 +25,6 @@ from .campaign_contact_serializer import (
     CampaignContactDetailSerializer,
     CampaignContactSerializer,
 )
-
-# CampaignMember serializers
-from .campaign_member_serializer import (
-    CampaignMemberListSerializer,
-    CampaignMemberSerializer,
-)
-
 # CampaignObjective serializers
 from .campaign_objective_serializer import (
     CampaignObjectiveListSerializer,
@@ -44,21 +37,14 @@ __all__ = [
     'CampaignDetailSerializer',
     'CampaignCreateSerializer',
     'CampaignUpdateSerializer',
-
     # CampaignAccount
     'CampaignAccountListSerializer',
     'CampaignAccountDetailSerializer',
     'CampaignAccountSerializer',
-
     # CampaignContact
     'CampaignContactListSerializer',
     'CampaignContactDetailSerializer',
     'CampaignContactSerializer',
-
-    # CampaignMember
-    'CampaignMemberListSerializer',
-    'CampaignMemberSerializer',
-
     # CampaignObjective
     'CampaignObjectiveListSerializer',
     'CampaignObjectiveSerializer',

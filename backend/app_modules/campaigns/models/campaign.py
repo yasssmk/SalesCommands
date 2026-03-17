@@ -131,6 +131,28 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
     )
 
     # ==========================================================================
+    # OWNERSHIP
+    # ==========================================================================
+
+    owner = models.ForeignKey(
+        'end_users.User',
+        on_delete=models.PROTECT,
+        related_name='module_owned_campaigns',
+        verbose_name=_('Owner'),
+        help_text=_('User who created and manages this campaign'),
+    )
+
+    executor = models.ForeignKey(
+        'end_users.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='module_executing_campaigns',
+        verbose_name=_('Executor'),
+        help_text=_('User who executes activities. Defaults to owner if not set.'),
+    )
+
+    # ==========================================================================
     # STATUS
     # ==========================================================================
 
@@ -146,7 +168,6 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # ==========================================================================
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
-        unique_fields=['name'],
         index_fields=['status']
     )):
         db_table = 'module_campaigns'
@@ -158,11 +179,11 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
             models.Index(fields=['planned_start_date', 'planned_end_date'], name='mod_camp_dates_idx'),
         ]
         constraints = [
-            # Enforce one TARGETED campaign per client (singleton)
+            # One TARGETED campaign per user per client
             models.UniqueConstraint(
-                fields=['client_id', 'campaign_type'],
+                fields=['client_id', 'campaign_type', 'owner'],
                 condition=models.Q(campaign_type='TARGETED'),
-                name='unique_targeted_campaign_per_client',
+                name='unique_targeted_campaign_per_user',
             ),
         ]
 
@@ -192,6 +213,11 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
     def is_modifiable(self):
         """Check if campaign can be modified."""
         return self.status in (CampaignStatus.DRAFT, CampaignStatus.ACTIVE, CampaignStatus.PAUSED)
+    
+    @property
+    def active_executor(self):
+        """Return executor if set, otherwise owner."""
+        return self.executor or self.owner
 
     # ==========================================================================
     # DISPLAY HELPERS
@@ -304,14 +330,15 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         if existing:
             return existing
 
-        return CampaignMember.objects.create(
+        member = CampaignMember(
             campaign=self,
             user=user,
             role=role,
             is_primary_owner=is_primary_owner,
             added_by=added_by,
-            client_id=self.client_id,
         )
+        member.save(user=added_by, client_id=self.client_id)
+        return member
 
     def remove_member(self, user, role=None):
         """

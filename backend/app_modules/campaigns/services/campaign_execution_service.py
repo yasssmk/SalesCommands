@@ -35,7 +35,6 @@ from ..models import (
     CampaignContact,
     CampaignContactStatus,
     FINAL_CONTACT_STATES,
-    CampaignMember,
 )
 from ..config.settings import CONFIG
 
@@ -937,12 +936,8 @@ class CampaignExecutionService:
     # ======================================================================
 
     def _get_executor(self, campaign, campaign_account):
-        """Return the first EXECUTOR member, falling back to campaign creator."""
-        executor = CampaignMember.objects.filter(
-            campaign=campaign,
-            role='EXECUTOR',
-        ).select_related('user').first()
-        return executor.user if executor else self.user
+        """Return campaign executor if set, otherwise fall back to current user."""
+        return campaign.executor or self.user
 
     def _next_business_day(self, date):
         """Advance date past weekends (Mon–Fri only)."""

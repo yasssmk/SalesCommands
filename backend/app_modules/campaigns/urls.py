@@ -17,7 +17,6 @@ def get_urlpatterns():
         CampaignViewSet,
         CampaignAccountViewSet,
         CampaignContactViewSet,
-        CampaignMemberViewSet,
         CampaignObjectiveViewSet,
     )
 
@@ -28,6 +27,10 @@ def get_urlpatterns():
         path('my-campaigns/', CampaignViewSet.as_view({
             'get': 'my_campaigns'
         }), name='my-campaigns'),
+
+        path('targeted/', CampaignViewSet.as_view({
+            'get': 'get_or_create_targeted'
+        }), name='targeted'),
 
         # =================================================================
         # CAMPAIGN — CRUD
@@ -150,12 +153,6 @@ def get_urlpatterns():
             'post': 'toggle_contact'
         }), name='accounts-toggle-contact'),
 
-        # =================================================================
-        # CAMPAIGN MEMBERS — LIST ACTIONS
-        # =================================================================
-        path('members/by-campaign/', CampaignMemberViewSet.as_view({
-            'get': 'by_campaign'
-        }), name='members-by-campaign'),
 
         # =================================================================
         # CAMPAIGN CONTACTS — CRUD + STATE ACTIONS
@@ -198,20 +195,6 @@ def get_urlpatterns():
         path('contacts/<uuid:pk>/resume/', CampaignContactViewSet.as_view({
             'post': 'resume'
         }), name='contacts-resume'),
-
-        # =================================================================
-        # CAMPAIGN MEMBERS — CRUD
-        # =================================================================
-        path('members/', CampaignMemberViewSet.as_view({
-            'get': 'list',
-            'post': 'create'
-        }), name='members-list'),
-
-        path('members/<uuid:pk>/', CampaignMemberViewSet.as_view({
-            'get': 'retrieve',
-            'patch': 'partial_update',
-            'delete': 'destroy'
-        }), name='members-detail'),
 
         # =================================================================
         # CAMPAIGN OBJECTIVES — LIST ACTIONS

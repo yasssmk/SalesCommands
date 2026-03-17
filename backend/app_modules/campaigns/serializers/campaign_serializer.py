@@ -24,7 +24,6 @@ from ..models import (
     Campaign,
     CampaignType,
     CampaignStatus,
-    CampaignMember,
     CampaignObjective,
     ObjectiveType,
 )
@@ -83,7 +82,7 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
 
     # Computed aggregates
     accounts_count = serializers.SerializerMethodField(read_only=True)
-    members_summary = serializers.SerializerMethodField(read_only=True)
+    owner_name = serializers.SerializerMethodField(read_only=True)
     primary_objective = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -107,7 +106,7 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'actual_start_date', 'actual_end_date',
 
             # Aggregates
-            'accounts_count', 'members_summary', 'primary_objective',
+            'accounts_count', 'owner_name', 'primary_objective',
 
             # Timestamps
             'created_at', 'updated_at',
@@ -145,11 +144,10 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             return obj._accounts_count
         return obj.campaign_accounts.count()
 
-    def get_members_summary(self, obj):
-        """Return summary of members by role."""
-        if hasattr(obj, '_members_count'):
-            return {'total': obj._members_count}
-        return {'total': obj.members.count()}
+    def get_owner_name(self, obj):
+        if not obj.owner:
+            return None
+        return f"{obj.owner.first_name or ''} {obj.owner.last_name or ''}".strip() or obj.owner.email
 
     def get_primary_objective(self, obj):
         """Return primary objective as minimal object."""
@@ -189,8 +187,9 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
     territories = CampaignTerritorySerializer(many=True, read_only=True)
 
 
-    # Members nested (inline to avoid circular import)
-    members = serializers.SerializerMethodField(read_only=True)
+    # Ownership
+    owner = CampaignUserSerializer(read_only=True)
+    executor = CampaignUserSerializer(read_only=True)
 
     # Objectives nested (inline to avoid circular import)
     objectives = serializers.SerializerMethodField(read_only=True)
@@ -220,8 +219,10 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'planned_start_date', 'planned_end_date',
             'actual_start_date', 'actual_end_date',
 
+            # Ownership
+            'owner', 'executor',
             # Nested relations
-            'members', 'objectives',
+            'objectives',
 
             # Aggregates
             'accounts_count', 'expected_end_date', 'is_inactive',
@@ -248,31 +249,6 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
         if hasattr(obj, '_accounts_count'):
             return obj._accounts_count
         return obj.campaign_accounts.count()
-
-    def get_members(self, obj):
-        """Return members grouped with user info."""
-        members = obj.members.select_related('user', 'added_by').all()
-        return [
-            {
-                'id': str(m.id),
-                'user': {
-                    'id': str(m.user_id),
-                    'email': m.user.email,
-                    'first_name': m.user.first_name,
-                    'last_name': m.user.last_name,
-                    'full_name': f"{m.user.first_name or ''} {m.user.last_name or ''}".strip() or m.user.email,
-                },
-                'role': m.role,
-                'role_display': m.get_role_display(),
-                'is_primary_owner': m.is_primary_owner,
-                'added_at': m.added_at.isoformat() if m.added_at else None,
-                'added_by_name': (
-                    f"{m.added_by.first_name or ''} {m.added_by.last_name or ''}".strip()
-                    if m.added_by else None
-                ),
-            }
-            for m in members
-        ]
 
     def get_objectives(self, obj):
         """Return objectives with computed progress."""
@@ -373,21 +349,11 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         },
     )
 
-    # Member assignment (write-only)
-    owner_ids = serializers.ListField(
-        child=serializers.UUIDField(),
+    # Executor assignment (write-only, optional)
+    executor_id = serializers.UUIDField(
         required=False,
         write_only=True,
-    )
-    executor_ids = serializers.ListField(
-        child=serializers.UUIDField(),
-        required=False,
-        write_only=True,
-    )
-    receiver_ids = serializers.ListField(
-        child=serializers.UUIDField(),
-        required=False,
-        write_only=True,
+        allow_null=True,
     )
 
     class Meta:
@@ -398,7 +364,7 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'territory_ids',
             'start_date', 'end_date',
             'objective',
-            'owner_ids', 'executor_ids', 'receiver_ids',
+            'executor_id',
         ]
         extra_kwargs = {
             'name': {
@@ -485,11 +451,10 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 ),
             )
 
-            # Validate member IDs (if provided)
-            for field_name in ('owner_ids', 'executor_ids', 'receiver_ids'):
-                user_ids = attrs.get(field_name, [])
-                if user_ids:
-                    self._validate_user_ids(user_ids, client_id, field_name)
+            # Validate executor (if provided)
+            executor_id = attrs.get('executor_id')
+            if executor_id:
+                self._validate_executor(executor_id, client_id)
 
             # Validate objective structure (if provided)
             objective_data = attrs.get('objective')
@@ -534,6 +499,15 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 raise StandardizedValidationError(
                     CoreErrorMessages.CLIENT_MISMATCH
                 )
+    
+    def _validate_executor(self, executor_id, client_id):
+        """Validate executor exists and belongs to same client."""
+        try:
+            user = User.objects.get(id=executor_id, is_active=True)
+            if str(user.client_account_id) != str(client_id):
+                raise StandardizedValidationError(CoreErrorMessages.CLIENT_MISMATCH)
+        except User.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
     def _validate_objective_data(self, objective_data):
         """Validate objective dict structure. 'name' is optional — auto-generated if absent."""
@@ -566,87 +540,52 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     # ------------------------------------------------------------------
 
     def create(self, validated_data):
-        """
-        Create campaign with optional nested objective and members.
-
-        Flow:
-            1. Extract nested data (objective, member IDs)
-            2. Resolve territory FK
-            3. Create Campaign instance
-            4. Create CampaignObjective (if provided)
-            5. Create CampaignMember entries
-        """
+        """Create campaign with owner, optional executor and objective."""
         user = self.context.get('request').user if self.context.get('request') else None
 
-        # Extract nested data before model creation
         objective_data = validated_data.pop('objective', None)
-        owner_ids = validated_data.pop('owner_ids', [])
-        executor_ids = validated_data.pop('executor_ids', [])
-        receiver_ids = validated_data.pop('receiver_ids', [])
-        client_id = validated_data.get('client_id', None)
-
-        #  Extract territory IDs (M2M — set after instance creation)
+        executor_id = validated_data.pop('executor_id', None)
         territory_ids = validated_data.pop('territory_ids', [])
 
+        # Resolve executor
+        executor = None
+        if executor_id:
+            executor = User.objects.get(id=executor_id)
+
         # Create campaign instance
-        instance = Campaign.objects.create(**validated_data)
+        instance = Campaign(
+            **validated_data,
+            owner=user,
+            executor=executor,
+        )
+        instance.save(user=user)
 
         # Set territories M2M
         if territory_ids:
             territories = Territory.objects.filter(id__in=territory_ids)
             instance.territories.set(territories)
 
-        # Enroll accounts from territories immediately (OUTBOUND campaigns only)
-        # This ensures the Accounts tab is populated in DRAFT state.
-        # The fallback in CampaignLifecycleService.start() remains as a safety net.
-        if territory_ids and instance.campaign_type == 'OUTBOUND':
+        # Enroll accounts from territories (OUTBOUND)
+        if territory_ids and instance.campaign_type == CampaignType.OUTBOUND:
             from ..services.campaign_creation_service import CampaignCreationService
-            creation_service = CampaignCreationService(
+            CampaignCreationService(
                 user=user,
                 client_id=instance.client_id,
-            )
-            creation_service._enroll_from_territories(instance)
+            )._enroll_from_territories(instance)
 
         # Create objective (if provided)
         if objective_data:
             objective_type = objective_data['objective_type']
-            # Auto-generate name if frontend does not send one
-            objective_name = objective_data.get('name') or f"{objective_type.replace('_', ' ').title()} Goal"
-            CampaignObjective.objects.create(
+            obj = CampaignObjective(
                 campaign=instance,
-                name=objective_name,
+                name=objective_data.get('name') or f"{objective_type.replace('_', ' ').title()} Goal",
                 objective_type=objective_type,
                 target_value=objective_data['target_value'],
                 is_primary=objective_data.get('is_primary', True),
-                client_id=instance.client_id,
             )
-
-        # Create members
-        self._create_members(instance, owner_ids, CampaignMember.MemberRole.OWNER, user)
-        self._create_members(instance, executor_ids, CampaignMember.MemberRole.EXECUTOR, user)
-        self._create_members(instance, receiver_ids, CampaignMember.MemberRole.RECEIVER, user)
-
-        # If no owner provided, set current user as primary owner
-        if not owner_ids and user:
-            instance.add_member(
-                user=user,
-                role=CampaignMember.MemberRole.OWNER,
-                added_by=user,
-                is_primary_owner=True,
-            )
+            obj.save(user=user, client_id=instance.client_id)
 
         return instance
-
-    def _create_members(self, campaign, user_ids, role, added_by):
-        """Create CampaignMember entries for a given role."""
-        for i, uid in enumerate(user_ids):
-            campaign.add_member(
-                user=User.objects.get(id=uid),
-                role=role,
-                added_by=added_by,
-                is_primary_owner=(role == CampaignMember.MemberRole.OWNER and i == 0),
-            )
-
 
 # ============================================================================
 # UPDATE SERIALIZER
@@ -670,6 +609,12 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         write_only=True,
     )
 
+    executor_id = serializers.UUIDField(
+        required=False,
+        write_only=True,
+        allow_null=True,
+    )
+
     # Map frontend keys start_date/end_date → model fields planned_start_date/planned_end_date
     start_date = serializers.DateField(
         source='planned_start_date',
@@ -687,6 +632,7 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'sequence_type',
             'territory_ids',
             'start_date', 'end_date',
+            'executor_id',
         ]
         extra_kwargs = {
             'name': {'required': False},
@@ -715,6 +661,12 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         try:
             instance = self.instance
             client_id = self._get_client_id_from_context()
+
+            # TARGETED campaign name is immutable
+            if instance.is_targeted and 'name' in attrs:
+                raise StandardizedValidationError(
+                    CampaignModuleErrorMessages.TARGETED_CAMPAIGN_LIFECYCLE_FORBIDDEN
+                )
 
             # Cannot modify campaigns in final state
             if instance.is_in_final_state:
@@ -764,13 +716,23 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             )
 
     def update(self, instance, validated_data):
-        """Update campaign with proper audit fields."""
         user = self.context.get('request').user if self.context.get('request') else None
-
-                # Resolve territories M2M
         territory_ids = validated_data.pop('territory_ids', None)
+        executor_id = validated_data.pop('executor_id', ...)  # sentinel to detect presence
 
-        # Update fields
+        # Handle executor update (supports null to remove)
+        if executor_id is not ...:
+            if executor_id is None:
+                instance.executor = None
+            else:
+                from end_users.models import User
+                try:
+                    instance.executor = User.objects.get(id=executor_id, is_active=True)
+                except User.DoesNotExist:
+                    from core.exceptions import StandardizedValidationError
+                    from core.error_messages import CoreErrorMessages
+                    raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 

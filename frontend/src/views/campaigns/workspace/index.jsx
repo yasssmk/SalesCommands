@@ -151,6 +151,7 @@ export default function CampaignWorkspacePage() {
           tab={currentTab}
           campaignId={campaignId}
           campaign={campaign}
+          onCampaignUpdate={mutateCampaign}
         />
       </WorkspaceLayout>
     </Box>
@@ -165,7 +166,7 @@ export default function CampaignWorkspacePage() {
  * Accounts and Activities tabs are kept mounted but hidden via CSS display:none
  * when inactive. This prevents unmount/remount cycles on tab switch.
  */
-function TabContent({ tab, campaignId, campaign }) {
+function TabContent({ tab, campaignId, campaign, onCampaignUpdate }) {
   const [mountedTabs, setMountedTabs] = useState(new Set());
 
   useEffect(() => {
@@ -197,10 +198,13 @@ function TabContent({ tab, campaignId, campaign }) {
         </Box>
       )}
 
-      {/* Members — KeepAlive */}
       {mountedTabs.has("members") && (
         <Box sx={{ display: tab === "members" ? "block" : "none" }}>
-          <CampaignMembersTab campaignId={campaignId} campaign={campaign} />
+          <CampaignMembersTab
+            campaignId={campaignId}
+            campaign={campaign}
+            onCampaignUpdate={onCampaignUpdate}
+          />
         </Box>
       )}
     </>

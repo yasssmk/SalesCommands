@@ -155,13 +155,13 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
         'account_fk': 'account_id',                 # Related account
     },
     
-    'campaign': {
-        'client_account_fk': 'client_id',           # Campaign.client_id
-        'owner_user': 'owner_id',                   # Campaign.owner
-        'owner_team': 'team_id',                    # Campaign.team
-        'created_by': 'created_by_id',              # BaseModelApp.created_by
-        'assigned_to_user': '-',                    # Use owner
-        'account_fk': '-',                           # Campaigns are not account-specific
+    'campaigns': {
+        'client_account_fk': 'client_id',
+        'owner_user': 'owner',
+        'owner_team': 'owner__team_id',
+        'created_by': 'created_by',
+        'assigned_to_user': 'executor',
+        'account_fk': '-',
     },
     
     'pipelines': {
@@ -208,7 +208,7 @@ OWNERSHIP_TYPES = {
     'decision_cycles': 'user',    # Inherits from account
     'leads': 'user',             # assigned_to_user, created_by
     'opportunities': 'user',      # deal_owner (mapped to owner_user)
-    'campaign': 'user',           # owner_user
+    'campaigns': 'user',           # owner_user
     'pipelines': 'opportunity',   # Inherits from opportunity (buying process)
     'templates': 'none',          # No ownership
     'products': 'none',          # No ownership

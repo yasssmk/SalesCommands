@@ -29,7 +29,6 @@ from ..models import (
     Campaign,
     CampaignAccount,
     CampaignAccountStatus,
-    CampaignMember,
     CampaignObjective,
     ObjectiveType,
 )
@@ -87,21 +86,10 @@ class CampaignAnalyticsService:
     # ======================================================================
 
     def get_summary(self, campaign):
-        """
-        Get high-level campaign summary.
-
-        Returns:
-            dict: {
-                'campaign_id', 'name', 'status', 'campaign_type',
-                'total_accounts', 'total_activities', 'total_members',
-                'completion_rate', 'days_elapsed', 'days_remaining',
-            }
-        """
+        """Get high-level campaign summary."""
         total_accounts = CampaignAccount.objects.filter(campaign=campaign).count()
         total_activities = Activity.objects.filter(campaign=campaign).count()
-        total_members = CampaignMember.objects.filter(campaign=campaign).count()
 
-        # Completion rate: completed accounts / total accounts
         completed_accounts = CampaignAccount.objects.filter(
             campaign=campaign,
             status=CampaignAccountStatus.COMPLETED,
@@ -110,12 +98,13 @@ class CampaignAnalyticsService:
         if total_accounts > 0:
             completion_rate = round((completed_accounts / total_accounts) * 100, 1)
 
-        # Timeline
         today = timezone.now().date()
         days_elapsed = max(0, (today - campaign.planned_start_date).days) if campaign.planned_start_date else 0
         days_remaining = max(0, (campaign.planned_end_date - today).days) if campaign.planned_end_date else 0
         total_days = max(1, (campaign.planned_end_date - campaign.planned_start_date).days) if campaign.planned_start_date and campaign.planned_end_date else 1
-        
+
+        owner = campaign.owner
+        executor = campaign.executor
 
         return {
             'campaign_id': str(campaign.id),
@@ -126,14 +115,24 @@ class CampaignAnalyticsService:
             'campaign_type_display': campaign.get_campaign_type_display(),
             'total_accounts': total_accounts,
             'total_activities': total_activities,
-            'total_members': total_members,
+            'total_members': 2 if executor else 1,
             'completed_accounts': completed_accounts,
             'completion_rate': completion_rate,
             'days_elapsed': days_elapsed,
             'days_remaining': days_remaining,
             'total_days': total_days,
             'time_progress': round((days_elapsed / total_days) * 100, 1),
+            'owner': {
+                'id': str(owner.id),
+                'full_name': f"{owner.first_name or ''} {owner.last_name or ''}".strip() or owner.email,
+            } if owner else None,
+            'executor': {
+                'id': str(executor.id),
+                'full_name': f"{executor.first_name or ''} {executor.last_name or ''}".strip() or executor.email,
+            } if executor else None,
         }
+
+    
 
     # ======================================================================
     # PUBLIC — OBJECTIVES PROGRESS
@@ -336,58 +335,33 @@ class CampaignAnalyticsService:
     # ======================================================================
 
     def get_executor_performance(self, campaign):
-        """
-        Per-executor activity stats.
-
-        Returns:
-            list[dict]: [{
-                'user_id', 'user_name', 'role',
-                'total_activities', 'completed', 'planned',
-                'completion_rate', 'accounts_count',
-            }]
-        """
-        # Get all executors and receivers
-        members = CampaignMember.objects.filter(
-            campaign=campaign,
-            role__in=[CampaignMember.MemberRole.EXECUTOR, CampaignMember.MemberRole.RECEIVER],
-        ).select_related('user')
-
+        """Per-executor activity stats — owner and executor only."""
         results = []
-        for member in members:
-            user = member.user
-
-            # Activity stats for this user
-            user_activities = Activity.objects.filter(
-                campaign=campaign,
-                owner=user,
-            )
+        users = [
+            (campaign.owner, 'OWNER'),
+            (campaign.executor, 'EXECUTOR'),
+        ]
+        for user, role in users:
+            if not user:
+                continue
+            user_activities = Activity.objects.filter(campaign=campaign, owner=user)
             total = user_activities.count()
             completed = user_activities.filter(status=ActivityStatus.COMPLETED).count()
             planned = user_activities.filter(status=ActivityStatus.PLANNED).count()
             on_hold = user_activities.filter(status=ActivityStatus.ON_HOLD).count()
-
-
-            # Accounts assigned to this user
-            accounts_count = Activity.objects.filter(
-                campaign=campaign,
-                owner=user,
-            ).values('account').distinct().count()
-
-            full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email
+            accounts_count = user_activities.values('account').distinct().count()
 
             results.append({
                 'user_id': str(user.id),
-                'user_name': full_name,
+                'user_name': f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email,
                 'user_email': user.email,
-                'role': member.role,
-                'role_display': member.get_role_display(),
+                'role': role,
                 'total_activities': total,
                 'completed': completed,
                 'planned': planned,
                 'on_hold': on_hold,
                 'completion_rate': round((completed / total) * 100, 1) if total > 0 else 0.0,
                 'accounts_count': accounts_count,
-
             })
 
         return results
