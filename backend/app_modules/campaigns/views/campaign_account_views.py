@@ -500,6 +500,12 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             contact = Contact.objects.get(id=contact_id, client_id=client_id)
         except Contact.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        
+        if str(contact.account_id) != str(instance.account_id):
+            raise StandardizedValidationError(
+                CoreErrorMessages.OBJECT_NOT_FOUND
+            )
+            
 
         campaign = instance.campaign
         is_targeted = instance.target_contacts.filter(id=contact.id).exists()
@@ -641,19 +647,29 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             ).values_list('account_id', flat=True)
         )
 
-        enrolled = 0
+        # Status depends on campaign state: active campaigns enroll directly IN_PROGRESS
+        initial_status = (
+            CampaignAccountStatus.IN_PROGRESS
+            if campaign.status == CampaignStatus.ACTIVE
+            else CampaignAccountStatus.PENDING
+        )
+
+        created_accounts = []
         skipped = 0
         for account in accounts:
             if account.id in existing:
                 skipped += 1
                 continue
 
-            CampaignAccount(
+            ca = CampaignAccount(
                 campaign=campaign,
                 account=account,
-                status=CampaignAccountStatus.PENDING,
-            ).save(user=request.user, client_id=client_id)
-            enrolled += 1
+                status=initial_status,
+            )
+            ca.save(user=request.user, client_id=client_id)
+            created_accounts.append(ca)
+
+        enrolled = len(created_accounts)
 
         audit_log(
             event='campaign_accounts_bulk_added',
@@ -678,7 +694,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         return Response({
             'success': True,
             'data': {
-                'enrolled': enrolled,
+                'enrolled': CampaignAccountListSerializer(created_accounts, many=True).data,
                 'skipped': skipped,
                 'total_requested': len(account_ids),
             },

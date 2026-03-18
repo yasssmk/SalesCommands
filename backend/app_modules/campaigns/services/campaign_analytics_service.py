@@ -106,6 +106,17 @@ class CampaignAnalyticsService:
         owner = campaign.owner
         executor = campaign.executor
 
+        # Count distinct users: CampaignMember rows + owner + executor (deduplicated)
+        from ..models.campaign_member import CampaignMember
+        member_ids = set(
+            CampaignMember.objects.filter(campaign=campaign)
+            .values_list('user_id', flat=True)
+        )
+        if owner:
+            member_ids.add(owner.id)
+        if executor:
+            member_ids.add(executor.id)
+
         return {
             'campaign_id': str(campaign.id),
             'name': campaign.name,
@@ -115,7 +126,7 @@ class CampaignAnalyticsService:
             'campaign_type_display': campaign.get_campaign_type_display(),
             'total_accounts': total_accounts,
             'total_activities': total_activities,
-            'total_members': 2 if executor else 1,
+            'total_members': len(member_ids),
             'completed_accounts': completed_accounts,
             'completion_rate': completion_rate,
             'days_elapsed': days_elapsed,

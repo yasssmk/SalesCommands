@@ -145,14 +145,12 @@ const endpoints = {
   // Campaign Accounts  (prefix: /campaigns/accounts/)
   campaignAccounts: "/campaigns/accounts/",
 
-  // Campaign Accounts  (prefix: /campaigns/accounts/)
-  campaignAccounts: "/campaigns/accounts/",
-
   campaignAccountDetail: (id) => `/campaigns/accounts/${id}/`,
   accountsByCampaign: "/campaigns/accounts/by-campaign/",
   accountsBulkAdd: "/campaigns/accounts/bulk-add/",
   accountsBulkRemove: "/campaigns/accounts/bulk-remove/",
   accountsEnrollTarget: "/campaigns/accounts/enroll-target/",
+  accountToggleContact: (id) => `/campaigns/accounts/${id}/toggle-contact/`,
 
   // Targeted campaign singleton
   campaignTargeted: "/campaigns/targeted/",
@@ -167,6 +165,7 @@ const endpoints = {
   // Cross-module: Activities
   activityComplete: (id) => `/module-activities/${id}/complete/`,
   activityRecordNoAnswer: (id) => `/module-activities/${id}/record-no-answer/`,
+  moduleActivities: "/module-activities/",
 
   // Campaign Contacts
   campaignContactResumeCallback: (id) =>
@@ -228,6 +227,38 @@ export function useGetCompletedActivities(campaignId) {
       mutateCompleted: mutate,
     }),
     [data, isLoading, mutate],
+  );
+}
+
+// ==============================|| SWR HOOK - CAMPAIGN ACTIVITIES ||============================== //
+
+/**
+ * GET ALL ACTIVITIES FOR A CAMPAIGN (table view).
+ * Uses cross-module activities endpoint with campaign filter.
+ *
+ * @param {string|null} campaignId
+ * @returns {{ activities, activitiesLoading, activitiesError }}
+ */
+export function useGetCampaignActivities(campaignId) {
+  const { tenantId } = useAuth();
+
+  const url =
+    campaignId && isValidUUID(campaignId)
+      ? `${endpoints.moduleActivities}?campaign=${campaignId}&page_size=100`
+      : null;
+
+  const { data, isLoading, error } = useSWR(
+    url ? tenantKey(url, tenantId) : null,
+    { revalidateOnFocus: false, dedupingInterval: 30000 },
+  );
+
+  return useMemo(
+    () => ({
+      activities: data?.data?.results || data?.results || [],
+      activitiesLoading: isLoading,
+      activitiesError: error,
+    }),
+    [data, isLoading, error],
   );
 }
 

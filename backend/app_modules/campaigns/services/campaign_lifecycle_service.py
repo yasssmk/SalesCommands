@@ -170,18 +170,32 @@ class CampaignLifecycleService:
             updated_at=timezone.now(),
         )
 
+        # Pause IN_PROGRESS contacts — they will resume when campaign resumes
+        from ..models.campaign_contact import CampaignContact, CampaignContactStatus
+        contacts_paused = CampaignContact.objects.filter(
+            campaign_account__campaign=campaign,
+            status=CampaignContactStatus.IN_PROGRESS,
+        ).update(
+            status=CampaignContactStatus.ON_HOLD,
+            notes="Campaign paused",
+            updated_at=timezone.now(),
+        )
+
         self._audit('campaign_paused', campaign, extra={
             'activities_paused': activities_paused,
+            'contacts_paused': contacts_paused,
         })
 
         logger.info("campaign_paused", extra={
             'campaign_id': str(campaign.id),
             'activities_paused': activities_paused,
+            'contacts_paused': contacts_paused,
         })
 
         return {
             'campaign': campaign,
             'activities_paused': activities_paused,
+            'contacts_paused': contacts_paused,
         }
 
 
@@ -206,21 +220,35 @@ class CampaignLifecycleService:
         # Resume callbacks that are due
         callbacks_resumed = self._resume_due_callbacks(campaign)
 
+        # Restore ON_HOLD contacts → IN_PROGRESS (CALLBACK_PENDING untouched)
+        from ..models.campaign_contact import CampaignContact, CampaignContactStatus
+        contacts_resumed = CampaignContact.objects.filter(
+            campaign_account__campaign=campaign,
+            status=CampaignContactStatus.ON_HOLD,
+        ).update(
+            status=CampaignContactStatus.IN_PROGRESS,
+            notes="Campaign resumed",
+            updated_at=timezone.now(),
+        )
+
         self._audit('campaign_resumed', campaign, extra={
             'activities_resumed': activities_resumed,
             'callbacks_resumed': callbacks_resumed,
+            'contacts_resumed': contacts_resumed,
         })
 
         logger.info("campaign_resumed", extra={
             'campaign_id': str(campaign.id),
             'activities_resumed': activities_resumed,
             'callbacks_resumed': callbacks_resumed,
+            'contacts_resumed': contacts_resumed,
         })
 
         return {
             'campaign': campaign,
             'activities_resumed': activities_resumed,
             'callbacks_resumed': callbacks_resumed,
+            'contacts_resumed': contacts_resumed,
         }
 
 
@@ -479,7 +507,7 @@ class CampaignLifecycleService:
             account_id = row['account_id']
 
             # Dedup key: prefer campaign_contact_id, fallback to account_id
-            dedup_key = cc_id if cc_id else account_id
+            dedup_key = (str(cc_id) if cc_id else None, str(account_id) if account_id else None)
             if dedup_key in seen:
                 continue
             seen.add(dedup_key)
@@ -506,26 +534,26 @@ class CampaignLifecycleService:
     # PRIVATE — ACTIVITY CASCADE
     # ======================================================================
 
-        def _cancel_planned_activities(self, campaign):
-            """
-            Cancel all PLANNED and ON_HOLD activities linked to this campaign.
+    def _cancel_planned_activities(self, campaign):
+        """
+        Cancel all PLANNED and ON_HOLD activities linked to this campaign.
 
-            Returns:
-                int: number of activities cancelled
-            """
-            from app_modules.activities.models import Activity
-            from app_modules.activities.constants import ActivityStatus
+        Returns:
+            int: number of activities cancelled
+        """
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
 
-            pending = Activity.objects.filter(
-                campaign=campaign,
-                status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
-            )
-            count = pending.update(
-                status=ActivityStatus.CANCELLED,
-                outcome_notes="Campaign cancelled",
-                updated_at=timezone.now(),
-            )
-            return count
+        pending = Activity.objects.filter(
+            campaign=campaign,
+            status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+        )
+        count = pending.update(
+            status=ActivityStatus.CANCELLED,
+            outcome_notes="Campaign cancelled",
+            updated_at=timezone.now(),
+        )
+        return count
 
 
     # ======================================================================

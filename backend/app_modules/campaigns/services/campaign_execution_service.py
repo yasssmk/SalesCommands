@@ -915,7 +915,7 @@ class CampaignExecutionService:
         score += type_score * weights.get('activity_type_weight', 0.5)
 
         # Sequence position bonus
-        position = activity.sequence_position or 99
+        position = max(activity.sequence_position or 1, 1)
         score += int(CONFIG.priorities.sequence_step_priority_bonus / position)
 
         # Callback boost

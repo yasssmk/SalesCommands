@@ -857,6 +857,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         activity_id = request.data.get('activity_id')
         response = request.data.get('response')
         response_date = request.data.get('response_date')
+        callback_time = request.data.get('callback_time')
         notes = request.data.get('notes', '')
 
         if not activity_id:
@@ -906,6 +907,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'outcome': outcome,
             'outcome_notes': notes or None,
             'callback_date': response_date if response == 'CALLBACK_REQUESTED' else None,
+            'callback_time': callback_time if response == 'CALLBACK_REQUESTED' else None,
         })
 
         self._invalidate_campaign_caches(client_id)
