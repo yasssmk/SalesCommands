@@ -18,6 +18,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, CampaignModuleErrorMessages
 
 from app_modules.accounts.models import CompanyAccount
+from app_modules.contacts.models import Contact
 from app_modules.territories.models import Territory
 from end_users.models import User
 
@@ -266,8 +267,17 @@ class CampaignCreationService:
         account_ids = data.get('account_ids', [])
         return self._enroll_from_ids(campaign, account_ids)
 
+    # APRÈS
     def _enroll_from_territories(self, campaign):
-        """Pull accounts from all campaign territories and enroll them."""
+        """
+        Pull accounts from all campaign territories and enroll them.
+
+        Also pre-creates CampaignContact rows in PENDING so TargetsTab
+        shows contacts before Start is clicked. Activities are generated at start().
+        """
+        from django.db.models import Q
+        from ..models import CampaignContact, CampaignContactStatus
+
         territories = campaign.territories.all()
         if not territories:
             return 0
@@ -285,14 +295,38 @@ class CampaignCreationService:
 
         enrolled = 0
         for account in accounts:
-            if CampaignAccount.objects.filter(campaign=campaign, account=account).exists():
-                continue
-            CampaignAccount(
+            ca, created = CampaignAccount.objects.get_or_create(
                 campaign=campaign,
                 account=account,
-                status=CampaignAccountStatus.PENDING,
-            ).save(user=self.user, client_id=self.client_id)
-            enrolled += 1
+                client_id=self.client_id,
+                defaults={
+                    'status': CampaignAccountStatus.PENDING,
+                },
+            )
+            if created:
+                ca.save(user=self.user, client_id=self.client_id)
+                enrolled += 1
+
+            # Pre-create CampaignContacts in PENDING (reachable contacts only)
+            contacts = Contact.objects.filter(
+                account=account,
+                client_id=self.client_id,
+                opted_out=False,
+            ).filter(
+                Q(email__isnull=False) | Q(phone_number__isnull=False)
+            ).exclude(
+                Q(email='') & Q(phone_number='')
+            )
+
+            for contact in contacts:
+                CampaignContact.objects.get_or_create(
+                    campaign_account=ca,
+                    contact=contact,
+                    defaults={
+                        'client_id': self.client_id,
+                        'status': CampaignContactStatus.PENDING,
+                    },
+                )
 
         logger.info("campaign_accounts_enrolled_from_territories", extra={
             'campaign_id': str(campaign.id),

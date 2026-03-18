@@ -152,6 +152,8 @@ const endpoints = {
   accountsByCampaign: "/campaigns/accounts/by-campaign/",
   accountsBulkAdd: "/campaigns/accounts/bulk-add/",
   accountsBulkRemove: "/campaigns/accounts/bulk-remove/",
+  accountsEnrollTarget: "/campaigns/accounts/enroll-target/",
+
   // Targeted campaign singleton
   campaignTargeted: "/campaigns/targeted/",
 
@@ -1189,36 +1191,22 @@ export async function enrollTarget(campaignId, payload) {
     return { success: false, error: "Invalid campaign ID format", status: 400 };
   }
 
-  const { account_id, contact_ids = [], type } = payload;
+  const { account_id, contact_ids = [], department_id, type } = payload;
 
   if (!account_id) {
     return { success: false, error: "account_id is required", status: 400 };
   }
 
-  // Step 1 — ensure account is enrolled (idempotent bulk-add)
-  const enrollResult = await api.post(endpoints.accountsBulkAdd, {
+  const result = await api.post(endpoints.accountsEnrollTarget, {
     campaign_id: campaignId,
-    account_ids: [account_id],
+    account_id,
+    type: type || "ACCOUNT",
+    contact_ids,
+    department_id: department_id || undefined,
   });
 
-  if (!enrollResult.success) {
-    return {
-      success: false,
-      error: enrollResult.error,
-      status: enrollResult.status || 0,
-    };
-  }
-
-  const campaignAccount =
-    enrollResult.data?.data?.enrolled?.[0] || enrollResult.data?.enrolled?.[0];
-
-  // Step 2 — if specific contacts, toggle each one
-  if (type === "CONTACT" && contact_ids.length > 0 && campaignAccount?.id) {
-    for (const contactId of contact_ids) {
-      await api.post(endpoints.accountToggleContact(campaignAccount.id), {
-        contact_id: contactId,
-      });
-    }
+  if (!result.success) {
+    return { success: false, error: result.error, status: result.status || 0 };
   }
 
   revalidateMultiple([
@@ -1230,7 +1218,7 @@ export async function enrollTarget(campaignId, payload) {
     `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
   ]);
 
-  return { success: true, data: enrollResult.data };
+  return { success: true, data: result.data };
 }
 
 /**

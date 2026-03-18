@@ -112,6 +112,10 @@ def get_urlpatterns():
             'post': 'bulk_remove'
         }), name='accounts-bulk-remove'),
 
+        path('accounts/enroll-target/', CampaignAccountViewSet.as_view({
+            'post': 'enroll_target'
+        }), name='accounts-enroll-target'),
+
         # =================================================================
         # CAMPAIGN ACCOUNTS — CRUD
         # =================================================================

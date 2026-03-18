@@ -79,6 +79,17 @@ class CampaignLifecycleService:
             to_status=CampaignAccountStatus.IN_PROGRESS,
         )
 
+        # Transition pre-created CampaignContacts from PENDING → IN_PROGRESS
+        from ..models import CampaignContact, CampaignContactStatus
+        CampaignContact.objects.filter(
+            campaign_account__campaign=campaign,
+            status=CampaignContactStatus.PENDING,
+        ).update(
+            status=CampaignContactStatus.IN_PROGRESS,
+            updated_at=timezone.now(),
+        )
+
+
         # Generate activities — surface errors instead of swallowing them
         from .campaign_execution_service import CampaignExecutionService
         execution_service = CampaignExecutionService(user=self.user, client_id=self.client_id)

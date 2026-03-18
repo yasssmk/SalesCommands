@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
@@ -82,10 +82,9 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         'campaign': ['exact'],
         'account': ['exact'],
         'status': ['exact', 'in'],
-        'activities_generated': ['exact'],
     }
     search_fields = CONFIG.filters.campaign_account_search
-    ordering_fields = ['status', 'callback_date', 'no_answer_count', 'created_at']
+    ordering_fields = ['status','created_at']
     ordering = CONFIG.filters.default_campaign_account_ordering
 
     # Security
@@ -104,6 +103,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         'bulk_remove': {'crud': 'delete', 'scope': 'client'},
         'by_campaign': {'crud': 'read', 'scope': 'client'},
         'toggle_contact': {'crud': 'update', 'scope': 'client'},
+        'enroll_target':  {'crud': 'create', 'scope': 'client'},
     }
 
     # ==========================================================================
@@ -745,6 +745,195 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 'total_requested': len(account_ids),
             },
         })
+
+    # ==========================================================================
+    # TARGETED ENROLLMENT
+    # ==========================================================================
+
+    @action(detail=False, methods=['post'], url_path='enroll-target')
+    @transaction.atomic
+    def enroll_target(self, request):
+        """
+        Enroll an account into a TARGETED campaign with immediate activity generation.
+        POST /campaigns/accounts/enroll-target/
+
+        Body:
+            - campaign_id:    UUID  (required)
+            - account_id:     UUID  (required)
+            - type:           str   'ACCOUNT' | 'DEPARTMENT' | 'CONTACT'
+            - department_id:  UUID  (optional, for DEPARTMENT type)
+            - contact_ids:    list  (optional, for CONTACT type)
+        """
+        ctx = ctx_from_request(request)
+        campaign_id  = request.data.get('campaign_id')
+        account_id   = request.data.get('account_id')
+        enroll_type  = request.data.get('type', 'ACCOUNT')
+        department_id = request.data.get('department_id')
+        contact_ids  = request.data.get('contact_ids', [])
+
+        if not campaign_id:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='campaign_id')
+            )
+        if not account_id:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='account_id')
+            )
+        if enroll_type not in ('ACCOUNT', 'DEPARTMENT', 'CONTACT'):
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(field='type (ACCOUNT|DEPARTMENT|CONTACT)')
+            )
+
+        client_id = self.get_client_id()
+
+        # Validate campaign
+        try:
+            campaign = Campaign.objects.get(id=campaign_id, client_id=client_id)
+        except Campaign.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+        # Validate account
+        try:
+            account = CompanyAccount.objects.get(id=account_id, client_id=client_id)
+        except CompanyAccount.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+        # Determine status: ACTIVE campaign → IN_PROGRESS immediately
+        initial_status = (
+            CampaignAccountStatus.IN_PROGRESS
+            if campaign.status == CampaignStatus.ACTIVE
+            else CampaignAccountStatus.PENDING
+        )
+
+        # Get or create the CampaignAccount
+        campaign_account, created = CampaignAccount.objects.get_or_create(
+            campaign=campaign,
+            account=account,
+            client_id=client_id,
+            defaults={
+                'status': initial_status,
+            },
+        )
+        # If it already existed and is still PENDING on an ACTIVE campaign, promote it
+        if not created and campaign.status == CampaignStatus.ACTIVE and campaign_account.status == CampaignAccountStatus.PENDING:
+            campaign_account.status = CampaignAccountStatus.IN_PROGRESS
+            campaign_account.save(user=request.user, client_id=client_id)
+
+        if created:
+            campaign_account.save(user=request.user, client_id=client_id)
+
+        # Resolve contacts to enroll based on type
+        if enroll_type == 'CONTACT':
+            if not contact_ids:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='contact_ids')
+                )
+            contacts = list(
+                Contact.objects.filter(
+                    id__in=contact_ids,
+                    account=account,
+                    client_id=client_id,
+                    opted_out=False,
+                ).filter(
+                    Q(email__isnull=False) | Q(phone_number__isnull=False)
+                ).exclude(
+                    Q(email='') & Q(phone_number='')
+                )
+            )
+        elif enroll_type == 'DEPARTMENT':
+            if not department_id:
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='department_id')
+                )
+            contacts = list(
+                Contact.objects.filter(
+                    account=account,
+                    client_id=client_id,
+                    opted_out=False,
+                    standard_department_id=department_id,
+                ).filter(
+                    Q(email__isnull=False) | Q(phone_number__isnull=False)
+                ).exclude(
+                    Q(email='') & Q(phone_number='')
+                )
+            )
+            # Store department filter on the CampaignAccount
+            try:
+                from app_modules.core_modules.models import StandardDepartment
+                dept = StandardDepartment.objects.get(id=department_id)
+                campaign_account.target_departments.add(dept)
+            except Exception:
+                pass
+        else:  # ACCOUNT — all non opted-out contacts
+            contacts = list(
+                Contact.objects.filter(
+                    account=account,
+                    client_id=client_id,
+                    opted_out=False,
+                ).filter(
+                    Q(email__isnull=False) | Q(phone_number__isnull=False)
+                ).exclude(
+                    Q(email='') & Q(phone_number='')
+                )
+            )
+
+        # Generate activities for each contact
+        contacts_created = 0
+        activities_created = 0
+
+        if campaign.status == CampaignStatus.ACTIVE and contacts:
+            exec_service = CampaignExecutionService(
+                user=request.user, client_id=client_id,
+            )
+            for contact in contacts:
+                # Skip contacts already enrolled and processed
+                already_enrolled = campaign_account.target_contacts.filter(id=contact.id).exists()
+                if already_enrolled:
+                    continue
+
+                campaign_account.target_contacts.add(contact)
+                count = exec_service.generate_activities_for_contact(
+                    campaign, campaign_account, contact
+                )
+                contacts_created += 1
+                activities_created += count if isinstance(count, int) else 0
+
+        audit_log(
+            event='campaign_target_enrolled',
+            action='create',
+            actor_id=str(request.user.id),
+            client_id=str(client_id),
+            target_type='campaign_account',
+            target_id=str(campaign_account.id),
+            outcome='success',
+            extra={
+                'enroll_type': enroll_type,
+                'contacts_enrolled': contacts_created,
+                'activities_created': activities_created,
+            },
+        )
+
+        self._invalidate_caches(client_id)
+
+        logger.info("campaign_target_enrolled", extra={
+            **ctx,
+            'campaign_id': str(campaign.id),
+            'account_id': str(account.id),
+            'enroll_type': enroll_type,
+            'contacts_enrolled': contacts_created,
+            'activities_created': activities_created,
+        })
+
+        output = CampaignAccountDetailSerializer(campaign_account, context={'request': request})
+        return Response({
+            'success': True,
+            'data': {
+                'campaign_account': output.data,
+                'contacts_enrolled': contacts_created,
+                'activities_created': activities_created,
+            },
+        }, status=status.HTTP_201_CREATED)
+
 
     # ==========================================================================
     # LIST ACTIONS
