@@ -1,25 +1,34 @@
 // src/sections/accounts/workspace/AccountHeader.jsx
 
-'use client';
+"use client";
 
-import PropTypes from 'prop-types';
+import PropTypes from "prop-types";
+
+import { useState } from "react";
 
 // material-ui
-import { useTheme } from '@mui/material/styles';
-import Avatar from '@mui/material/Avatar';
-import Button from '@mui/material/Button';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
+import { useTheme } from "@mui/material/styles";
+import IconButton from "@mui/material/IconButton";
+import Avatar from "@mui/material/Avatar";
+import Button from "@mui/material/Button";
+import Stack from "@mui/material/Stack";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import Typography from "@mui/material/Typography";
 
 // project imports
-import EditableField from './EditableField';
-import EditableChip from './EditableChip';
+import EditableField from "./EditableField";
+import EditableChip from "./EditableChip";
+import AddToCampaignModal from "sections/campaigns/AddToCampaignModal";
 
 // assets
-import EnvironmentOutlined from '@ant-design/icons/EnvironmentOutlined';
-import GlobalOutlined from '@ant-design/icons/GlobalOutlined';
-import TeamOutlined from '@ant-design/icons/TeamOutlined';
-import UserOutlined from '@ant-design/icons/UserOutlined';
+import AimOutlined from "@ant-design/icons/AimOutlined";
+import EnvironmentOutlined from "@ant-design/icons/EnvironmentOutlined";
+import GlobalOutlined from "@ant-design/icons/GlobalOutlined";
+import MoreOutlined from "@ant-design/icons/MoreOutlined";
+import TeamOutlined from "@ant-design/icons/TeamOutlined";
+import UserOutlined from "@ant-design/icons/UserOutlined";
 
 // ==============================|| COMPANY LOGO HELPER ||============================== //
 
@@ -35,7 +44,7 @@ function getCompanyLogoUrl(website, size = 64) {
   try {
     // Handle URLs with or without protocol
     let urlString = website;
-    if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+    if (!urlString.startsWith("http://") && !urlString.startsWith("https://")) {
       urlString = `https://${urlString}`;
     }
     const url = new URL(urlString);
@@ -51,7 +60,7 @@ function getCompanyLogoUrl(website, size = 64) {
  * @returns {string} Initials (max 2 characters)
  */
 function getCompanyInitials(name) {
-  if (!name) return '?';
+  if (!name) return "?";
 
   const words = name.trim().split(/\s+/);
   if (words.length === 1) {
@@ -63,35 +72,35 @@ function getCompanyInitials(name) {
 // ==============================|| TYPE/CLASSIFICATION OPTIONS ||============================== //
 
 const TYPE_OPTIONS = [
-  { value: 'CLIENT', label: 'Client' },
-  { value: 'PROSPECT', label: 'Prospect' },
-  { value: 'PARTNER', label: 'Partner' },
-  { value: 'VENDOR', label: 'Vendor' },
-  { value: 'OTHER', label: 'Other' }
+  { value: "CLIENT", label: "Client" },
+  { value: "PROSPECT", label: "Prospect" },
+  { value: "PARTNER", label: "Partner" },
+  { value: "VENDOR", label: "Vendor" },
+  { value: "OTHER", label: "Other" },
 ];
 
 const CLASSIFICATION_OPTIONS = [
-  { value: 'SMB', label: 'SMB' },
-  { value: 'MIDMARKET', label: 'Mid-Market' },
-  { value: 'ENTERPRISE', label: 'Enterprise' },
-  { value: 'STARTUP', label: 'Startup' },
-  { value: 'NONPROFIT', label: 'Non-Profit' }
+  { value: "SMB", label: "SMB" },
+  { value: "MIDMARKET", label: "Mid-Market" },
+  { value: "ENTERPRISE", label: "Enterprise" },
+  { value: "STARTUP", label: "Startup" },
+  { value: "NONPROFIT", label: "Non-Profit" },
 ];
 
 const TYPE_COLORS = {
-  CLIENT: 'success',
-  PROSPECT: 'warning',
-  PARTNER: 'info',
-  VENDOR: 'secondary',
-  OTHER: 'default'
+  CLIENT: "success",
+  PROSPECT: "warning",
+  PARTNER: "info",
+  VENDOR: "secondary",
+  OTHER: "default",
 };
 
 const CLASSIFICATION_COLORS = {
-  ENTERPRISE: 'primary',
-  MIDMARKET: 'info',
-  SMB: 'success',
-  STARTUP: 'warning',
-  NONPROFIT: 'secondary'
+  ENTERPRISE: "primary",
+  MIDMARKET: "info",
+  SMB: "success",
+  STARTUP: "warning",
+  NONPROFIT: "secondary",
 };
 
 // ==============================|| ACCOUNT HEADER PROPS HOOK ||============================== //
@@ -116,12 +125,21 @@ export default function useAccountHeaderProps({
   account,
   stats,
   onSave,
-  industryOptions = []
+  industryOptions = [],
 }) {
   const theme = useTheme();
 
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const [addToCampaignOpen, setAddToCampaignOpen] = useState(false);
+
   if (!account) {
-    return { avatar: null, title: '', chips: [], infoItems: [], headerFooter: null };
+    return {
+      avatar: null,
+      title: "",
+      chips: [],
+      infoItems: [],
+      headerFooter: null,
+    };
   }
 
   // ==============================|| ROW 1: Avatar + Title + Actions ||============================== //
@@ -133,35 +151,69 @@ export default function useAccountHeaderProps({
       sx={{
         width: 56,
         height: 56,
-        bgcolor: 'primary.main',
-        fontSize: '1.25rem',
-        fontWeight: 600
+        bgcolor: "primary.main",
+        fontSize: "1.25rem",
+        fontWeight: 600,
       }}
     >
       {getCompanyInitials(account.company_name)}
     </Avatar>
   );
 
-  const title = account.company_name || '';
+  const title = account.company_name || "";
 
   const onTitleSave = onSave
-    ? (fieldKey, value) => onSave('company_name', value)
+    ? (fieldKey, value) => onSave("company_name", value)
     : undefined;
 
-  const headerActions = account.website ? (
-    <Button
-      size="small"
-      variant="outlined"
-      color="secondary"
-      startIcon={<GlobalOutlined />}
-      href={account.website.startsWith('http') ? account.website : `https://${account.website}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      sx={{ flexShrink: 0 }}
-    >
-      Website
-    </Button>
-  ) : null;
+  const headerActions = (
+    <>
+      {account.website && (
+        <Button
+          size="small"
+          variant="outlined"
+          color="secondary"
+          startIcon={<GlobalOutlined />}
+          href={
+            account.website.startsWith("http")
+              ? account.website
+              : `https://${account.website}`
+          }
+          target="_blank"
+          rel="noopener noreferrer"
+          sx={{ flexShrink: 0 }}
+        >
+          Website
+        </Button>
+      )}
+      <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}>
+        <MoreOutlined />
+      </IconButton>
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={() => setMenuAnchor(null)}
+      >
+        <MenuItem
+          onClick={() => {
+            setMenuAnchor(null);
+            setAddToCampaignOpen(true);
+          }}
+        >
+          <ListItemIcon>
+            <AimOutlined />
+          </ListItemIcon>
+          <Typography>Add to Campaign</Typography>
+        </MenuItem>
+      </Menu>
+      <AddToCampaignModal
+        open={addToCampaignOpen}
+        onClose={() => setAddToCampaignOpen(false)}
+        accountId={account.id}
+        accountName={account.company_name}
+      />
+    </>
+  );
 
   // ==============================|| ROW 2: Chips ||============================== //
 
@@ -173,7 +225,7 @@ export default function useAccountHeaderProps({
       options={TYPE_OPTIONS}
       onSave={onSave}
       placeholder="Add type..."
-      color={TYPE_COLORS[account.type] || 'default'}
+      color={TYPE_COLORS[account.type] || "default"}
       variant="filled"
     />,
     <EditableChip
@@ -183,7 +235,7 @@ export default function useAccountHeaderProps({
       options={CLASSIFICATION_OPTIONS}
       onSave={onSave}
       placeholder="Add classification..."
-      color={CLASSIFICATION_COLORS[account.classification] || 'default'}
+      color={CLASSIFICATION_COLORS[account.classification] || "default"}
       variant="outlined"
     />,
     <EditableChip
@@ -195,7 +247,7 @@ export default function useAccountHeaderProps({
       placeholder="Add industry..."
       color="default"
       variant="outlined"
-    />
+    />,
   ];
 
   // ==============================|| EXTRA ROWS (before divider) ||============================== //
@@ -203,27 +255,29 @@ export default function useAccountHeaderProps({
   const extraRows = [
     <Stack
       key="info-row"
-      direction={{ xs: 'column', sm: 'row' }}
+      direction={{ xs: "column", sm: "row" }}
       spacing={{ xs: 1, sm: 3 }}
       flexWrap="wrap"
       useFlexGap
     >
       <EditableField
-        value={[account.city, account.country].filter(Boolean).join(', ') || ''}
+        value={[account.city, account.country].filter(Boolean).join(", ") || ""}
         fieldKey="location"
         onSave={async (key, value) => {
-          const parts = value.split(',').map(s => s.trim());
-          const city = parts[0] || '';
-          const country = parts[1] || '';
+          const parts = value.split(",").map((s) => s.trim());
+          const city = parts[0] || "";
+          const country = parts[1] || "";
           if (onSave) {
-            await onSave('city', city);
-            if (country) await onSave('country', country);
+            await onSave("city", city);
+            if (country) await onSave("country", country);
           }
         }}
         placeholder="Add location..."
         variant="body2"
-        typographyProps={{ color: 'text.secondary' }}
-        startIcon={<EnvironmentOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+        typographyProps={{ color: "text.secondary" }}
+        startIcon={
+          <EnvironmentOutlined style={{ fontSize: theme.iconSizes.sm }} />
+        }
       />
       <EditableField
         value={account.website}
@@ -231,12 +285,14 @@ export default function useAccountHeaderProps({
         onSave={onSave}
         placeholder="Add website..."
         variant="body2"
-        typographyProps={{ color: 'text.secondary' }}
+        typographyProps={{ color: "text.secondary" }}
         startIcon={<GlobalOutlined style={{ fontSize: theme.iconSizes.sm }} />}
       />
       {account.account_owner && (
         <Stack direction="row" spacing={0.5} alignItems="center">
-          <UserOutlined style={{ fontSize: theme.iconSizes.sm, color: 'inherit' }} />
+          <UserOutlined
+            style={{ fontSize: theme.iconSizes.sm, color: "inherit" }}
+          />
           <Typography variant="body2" color="text.secondary">
             {account.account_owner.full_name}
           </Typography>
@@ -244,23 +300,39 @@ export default function useAccountHeaderProps({
       )}
       {account.team && (
         <Stack direction="row" spacing={0.5} alignItems="center">
-          <TeamOutlined style={{ fontSize: theme.iconSizes.sm, color: 'inherit' }} />
+          <TeamOutlined
+            style={{ fontSize: theme.iconSizes.sm, color: "inherit" }}
+          />
           <Typography variant="body2" color="text.secondary">
             {account.team.name}
           </Typography>
         </Stack>
       )}
-    </Stack>
+    </Stack>,
   ];
 
   // ==============================|| INFO ITEMS (after divider — stats) ||============================== //
 
-  const infoItems = stats ? [
-    <StatItem key="contacts" label="Contacts" value={stats.contacts_count} />,
-    <StatItem key="activities" label="Activities" value={stats.activities_count} />,
-    <StatItem key="opportunities" label="Opportunities" value={stats.opportunities_count} />,
-    <StatItem key="signals" label="Signals" value={stats.signals_count} />
-  ] : [];
+  const infoItems = stats
+    ? [
+        <StatItem
+          key="contacts"
+          label="Contacts"
+          value={stats.contacts_count}
+        />,
+        <StatItem
+          key="activities"
+          label="Activities"
+          value={stats.activities_count}
+        />,
+        <StatItem
+          key="opportunities"
+          label="Opportunities"
+          value={stats.opportunities_count}
+        />,
+        <StatItem key="signals" label="Signals" value={stats.signals_count} />,
+      ]
+    : [];
 
   return {
     avatar,
@@ -269,7 +341,7 @@ export default function useAccountHeaderProps({
     headerActions,
     chips,
     extraRows,
-    infoItems
+    infoItems,
   };
 }
 
@@ -287,4 +359,3 @@ function StatItem({ label, value }) {
     </Stack>
   );
 }
-

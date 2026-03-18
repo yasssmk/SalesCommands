@@ -1225,6 +1225,7 @@ export async function enrollTarget(campaignId, payload) {
     endpoints.campaignTargeted,
     endpoints.campaignPlaylist(campaignId),
     endpoints.campaignDashboard(campaignId),
+    endpoints.campaignDetail(campaignId),
     `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`,
     `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
   ]);

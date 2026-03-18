@@ -1,37 +1,39 @@
 // src/sections/accounts/contacts/AccountContactsTab.jsx
 
-'use client';
+"use client";
 
-import PropTypes from 'prop-types';
-import { useMemo, useState, useCallback } from 'react';
+import PropTypes from "prop-types";
+import { useMemo, useState, useCallback } from "react";
 
 // material-ui
-import Box from '@mui/material/Box';
-import Chip from '@mui/material/Chip';
-import Stack from '@mui/material/Stack';
-import Tooltip from '@mui/material/Tooltip';
-import Typography from '@mui/material/Typography';
+import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
+import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
 
 // project imports
-import IconButton from 'components/@extended/IconButton';
-import ReusableTable from 'components/table/Table';
-import ContactModal from 'sections/accounts/contacts/ContactModal';
-import AlertContactDelete from 'sections/accounts/contacts/AlertContactDelete';
-import ExpandingContactDetail from './ExpandingContactDetail';
+import IconButton from "components/@extended/IconButton";
+import ReusableTable from "components/table/Table";
+import ContactModal from "sections/accounts/contacts/ContactModal";
+import AlertContactDelete from "sections/accounts/contacts/AlertContactDelete";
+import ExpandingContactDetail from "./ExpandingContactDetail";
 
 // hooks
-import useLocalStorage from 'hooks/useLocalStorage';
-import { useAuth } from 'hooks/useAuth';
+import useLocalStorage from "hooks/useLocalStorage";
+import { useAuth } from "hooks/useAuth";
 
 // api
-import { useGetContacts } from 'api/businessData/contacts';
-import { tenantKey } from 'api/_swr';
+import { useGetContacts } from "api/businessData/contacts";
+import { tenantKey } from "api/_swr";
 
 // assets
-import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
-import EditOutlined from '@ant-design/icons/EditOutlined';
-import EyeOutlined from '@ant-design/icons/EyeOutlined';
-import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
+import EditOutlined from "@ant-design/icons/EditOutlined";
+import EyeOutlined from "@ant-design/icons/EyeOutlined";
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
+import AimOutlined from "@ant-design/icons/AimOutlined";
+import AddToCampaignModal from "sections/campaigns/AddToCampaignModal";
 
 // ==============================|| SORT FIELD MAPPING ||============================== //
 
@@ -39,37 +41,37 @@ import PlusOutlined from '@ant-design/icons/PlusOutlined';
  * Map frontend column IDs to backend field names for sorting
  */
 const COLUMN_TO_BACKEND_FIELD = {
-  full_name: 'last_name',
-  department_name: 'standard_department__name',
-  email: 'email',
-  phone_number: 'phone_number',
-  influence_level: 'influence_level',
-  updated_at: 'updated_at'
+  full_name: "last_name",
+  department_name: "standard_department__name",
+  email: "email",
+  phone_number: "phone_number",
+  influence_level: "influence_level",
+  updated_at: "updated_at",
 };
 
 // ==============================|| INFLUENCE LEVEL COLORS ||============================== //
 
 const INFLUENCE_COLORS = {
-  DECISION_MAKER: 'success',
-  INFLUENCER: 'info',
-  CHAMPION: 'primary',
-  USER: 'default',
-  GATEKEEPER: 'warning',
-  BLOCKER: 'error',
-  UNKNOWN: 'default'
+  DECISION_MAKER: "success",
+  INFLUENCER: "info",
+  CHAMPION: "primary",
+  USER: "default",
+  GATEKEEPER: "warning",
+  BLOCKER: "error",
+  UNKNOWN: "default",
 };
 
 // ==============================|| ACCOUNT CONTACTS TAB ||============================== //
 
 /**
  * AccountContactsTab Component
- * 
+ *
  * Displays contacts for a specific account with:
  * - ReusableTable with expanding rows
  * - Search bar
  * - Add Contact button
  * - View/Edit/Delete actions
- * 
+ *
  * @param {Object} props
  * @param {string} props.accountId - UUID of the account
  * @param {Object} props.account - Account data (for prefilling create form)
@@ -81,7 +83,10 @@ export default function AccountContactsTab({ accountId, account }) {
 
   // Pagination state with localStorage persistence
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useLocalStorage('accountContactsTablePageSize', 10);
+  const [pageSize, setPageSize] = useLocalStorage(
+    "accountContactsTablePageSize",
+    10,
+  );
 
   // Validate pageSize
   const validPageSize = useMemo(() => {
@@ -91,7 +96,7 @@ export default function AccountContactsTab({ accountId, account }) {
   }, [pageSize]);
 
   // Search state
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
 
   // Sorting state
   const [sorting, setSorting] = useState([]);
@@ -101,12 +106,14 @@ export default function AccountContactsTab({ accountId, account }) {
   const [selectedContact, setSelectedContact] = useState(null);
   const [deleteModal, setDeleteModal] = useState(false);
   const [contactToDelete, setContactToDelete] = useState(null);
+  const [campaignModal, setCampaignModal] = useState(false);
+  const [campaignContact, setCampaignContact] = useState(null);
 
   // ==============================|| COMPUTE ORDERING STRING ||============================== //
 
   const ordering = useMemo(() => {
     if (!sorting || !Array.isArray(sorting) || sorting.length === 0) {
-      return '';
+      return "";
     }
 
     return sorting
@@ -114,48 +121,54 @@ export default function AccountContactsTab({ accountId, account }) {
         const backendField = COLUMN_TO_BACKEND_FIELD[id] || id;
         return desc ? `-${backendField}` : backendField;
       })
-      .join(',');
+      .join(",");
   }, [sorting]);
 
   // ==============================|| API DATA FETCHING ||============================== //
 
-  const filters = useMemo(() => ({
-    account_id: accountId
-  }), [accountId]);
+  const filters = useMemo(
+    () => ({
+      account_id: accountId,
+    }),
+    [accountId],
+  );
 
   const {
     contacts = [],
     contactsCount = 0,
     contactsLoading = false,
-    contactsError = null
+    contactsError = null,
   } = useGetContacts({
     page,
     pageSize: validPageSize,
     search,
     ordering,
-    filters
+    filters,
   });
 
   // Build SWR key for cache revalidation
   const swrKey = useMemo(() => {
     const params = new URLSearchParams();
-    params.append('page', page);
-    params.append('page_size', validPageSize);
-    params.append('account_id', accountId);
-    if (search) params.append('search', search);
-    if (ordering) params.append('ordering', ordering);
+    params.append("page", page);
+    params.append("page_size", validPageSize);
+    params.append("account_id", accountId);
+    if (search) params.append("search", search);
+    if (ordering) params.append("ordering", ordering);
     return tenantKey(`/contacts/?${params.toString()}`, tenantId);
   }, [page, validPageSize, accountId, search, ordering, tenantId]);
 
   // ==============================|| HANDLERS ||============================== //
 
-  const handlePaginationChange = useCallback(({ page: newPage, pageSize: newPageSize }) => {
-    setPage(newPage);
-    const size = Number(newPageSize);
-    if (!isNaN(size) && size > 0 && size !== validPageSize) {
-      setPageSize(size);
-    }
-  }, [setPageSize, validPageSize]);
+  const handlePaginationChange = useCallback(
+    ({ page: newPage, pageSize: newPageSize }) => {
+      setPage(newPage);
+      const size = Number(newPageSize);
+      if (!isNaN(size) && size > 0 && size !== validPageSize) {
+        setPageSize(size);
+      }
+    },
+    [setPageSize, validPageSize],
+  );
 
   const handleSearchChange = useCallback((searchTerm) => {
     setSearch(searchTerm);
@@ -164,7 +177,7 @@ export default function AccountContactsTab({ accountId, account }) {
 
   const handleSortingChange = useCallback((updaterOrValue) => {
     setSorting((prevSorting) => {
-      return typeof updaterOrValue === 'function'
+      return typeof updaterOrValue === "function"
         ? updaterOrValue(prevSorting)
         : updaterOrValue;
     });
@@ -203,7 +216,7 @@ export default function AccountContactsTab({ accountId, account }) {
     if (!account) return null;
     return {
       id: account.id,
-      company_name: account.company_name
+      company_name: account.company_name,
     };
   }, [account]);
 
@@ -213,17 +226,19 @@ export default function AccountContactsTab({ accountId, account }) {
     () => [
       // Name Column (with job title subtitle)
       {
-        header: 'Name',
-        id: 'full_name',
-        accessorKey: 'full_name',
+        header: "Name",
+        id: "full_name",
+        accessorKey: "full_name",
         cell: ({ row }) => {
           const contact = row.original;
-          const fullName = contact.full_name || `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
-          
+          const fullName =
+            contact.full_name ||
+            `${contact.first_name || ""} ${contact.last_name || ""}`.trim();
+
           return (
             <Stack spacing={0}>
               <Typography variant="subtitle2">
-                {fullName || 'Unknown'}
+                {fullName || "Unknown"}
               </Typography>
               {contact.job_title && (
                 <Typography variant="caption" color="text.secondary">
@@ -232,97 +247,127 @@ export default function AccountContactsTab({ accountId, account }) {
               )}
             </Stack>
           );
-        }
+        },
       },
       // Department Column
       {
-        header: 'Department',
-        id: 'department_name',
-        accessorKey: 'department_name',
+        header: "Department",
+        id: "department_name",
+        accessorKey: "department_name",
         cell: ({ getValue }) => {
           const value = getValue();
           return value ? (
             <Typography variant="body2">{value}</Typography>
           ) : (
-            <Typography variant="body2" color="text.disabled">—</Typography>
+            <Typography variant="body2" color="text.disabled">
+              —
+            </Typography>
           );
-        }
+        },
       },
       // Email Column
       {
-        header: 'Email',
-        id: 'email',
-        accessorKey: 'email',
+        header: "Email",
+        id: "email",
+        accessorKey: "email",
         cell: ({ getValue }) => {
           const value = getValue();
           return value ? (
-            <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
+            <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
               {value}
             </Typography>
           ) : (
-            <Typography variant="body2" color="text.disabled">—</Typography>
+            <Typography variant="body2" color="text.disabled">
+              —
+            </Typography>
           );
-        }
+        },
       },
       // Phone Column
       {
-        header: 'Phone',
-        id: 'phone_number',
-        accessorKey: 'phone_number',
+        header: "Phone",
+        id: "phone_number",
+        accessorKey: "phone_number",
         cell: ({ getValue }) => {
           const value = getValue();
           return value ? (
             <Typography variant="body2">{value}</Typography>
           ) : (
-            <Typography variant="body2" color="text.disabled">—</Typography>
+            <Typography variant="body2" color="text.disabled">
+              —
+            </Typography>
           );
-        }
+        },
       },
       // Influence Level Column
       {
-        header: 'Influence',
-        id: 'influence_level',
-        accessorKey: 'influence_level',
+        header: "Influence",
+        id: "influence_level",
+        accessorKey: "influence_level",
         cell: ({ row }) => {
           const contact = row.original;
-          if (!contact.influence_level || contact.influence_level === 'UNKNOWN') {
-            return <Typography variant="body2" color="text.disabled">—</Typography>;
+          if (
+            !contact.influence_level ||
+            contact.influence_level === "UNKNOWN"
+          ) {
+            return (
+              <Typography variant="body2" color="text.disabled">
+                —
+              </Typography>
+            );
           }
           return (
             <Chip
               label={contact.influence_level_display || contact.influence_level}
               size="small"
-              color={INFLUENCE_COLORS[contact.influence_level] || 'default'}
+              color={INFLUENCE_COLORS[contact.influence_level] || "default"}
               variant="light"
             />
           );
-        }
+        },
       },
       // Actions Column
       {
-        header: 'Actions',
-        id: 'actions',
-        meta: { className: 'cell-center' },
+        header: "Actions",
+        id: "actions",
+        meta: { className: "cell-center" },
         disableSortBy: true,
         enableSorting: false,
         cell: ({ row }) => {
           const isExpanded = row.getIsExpanded();
-          
+
           return (
-            <Stack direction="row" alignItems="center" justifyContent="center" spacing={0}>
-              <Tooltip title={isExpanded ? 'Collapse' : 'View'}>
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="center"
+              spacing={0}
+            >
+              <Tooltip title={isExpanded ? "Collapse" : "View"}>
                 <IconButton
-                  color={isExpanded ? 'primary' : 'secondary'}
+                  color={isExpanded ? "primary" : "secondary"}
                   onClick={(e) => {
                     e.stopPropagation();
                     row.toggleExpanded();
                   }}
                 >
                   {isExpanded ? (
-                    <PlusOutlined style={{ transform: 'rotate(45deg)' }} />
+                    <PlusOutlined style={{ transform: "rotate(45deg)" }} />
                   ) : (
                     <EyeOutlined />
                   )}
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Add to Campaign">
+                <IconButton
+                  color="secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCampaignContact(row.original);
+                    setCampaignModal(true);
+                  }}
+                >
+                  <AimOutlined />
                 </IconButton>
               </Tooltip>
               <Tooltip title="Edit">
@@ -349,10 +394,10 @@ export default function AccountContactsTab({ accountId, account }) {
               </Tooltip>
             </Stack>
           );
-        }
-      }
+        },
+      },
     ],
-    [handleEditContact, handleDeleteContact]
+    [handleEditContact, handleDeleteContact],
   );
 
   // ==============================|| RENDER ||============================== //
@@ -398,6 +443,20 @@ export default function AccountContactsTab({ accountId, account }) {
         open={deleteModal}
         handleClose={handleCloseDeleteDialog}
       />
+
+      {/* Add to Campaign */}
+      {campaignModal && campaignContact && (
+        <AddToCampaignModal
+          open={campaignModal}
+          onClose={() => {
+            setCampaignModal(false);
+            setCampaignContact(null);
+          }}
+          accountId={accountId}
+          accountName={account?.company_name}
+          preselectedContactId={campaignContact.id}
+        />
+      )}
     </Box>
   );
 }
@@ -406,6 +465,6 @@ AccountContactsTab.propTypes = {
   accountId: PropTypes.string.isRequired,
   account: PropTypes.shape({
     id: PropTypes.string,
-    company_name: PropTypes.string
-  })
+    company_name: PropTypes.string,
+  }),
 };

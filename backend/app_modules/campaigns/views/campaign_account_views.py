@@ -509,22 +509,35 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             instance.target_contacts.remove(contact)
             action_taken = 'removed'
 
-            # Delete PLANNED activities for this contact
-            if instance.activities_generated:
-                service = CampaignExecutionService(
-                    user=request.user, client_id=client_id,
-                )
-                service.delete_activities_for_contact(campaign, instance, contact)
+            # Remove CampaignContact record + planned activities
+            from ..models import CampaignContact
+            CampaignContact.objects.filter(
+                campaign_account=instance,
+                contact=contact,
+            ).delete()
+
         else:
             # Add contact
             instance.target_contacts.add(contact)
             action_taken = 'added'
 
-            # Generate activities if campaign is active and already generated
-            if (
-                campaign.status == CampaignStatus.ACTIVE
-                and instance.activities_generated
-            ):
+            # Always create CampaignContact so it appears in TargetsTab
+            from ..models import CampaignContact, CampaignContactStatus
+            CampaignContact.objects.get_or_create(
+                campaign_account=instance,
+                contact=contact,
+                defaults={
+                    'client_id': client_id,
+                    'status': (
+                        CampaignContactStatus.IN_PROGRESS
+                        if campaign.status == CampaignStatus.ACTIVE
+                        else CampaignContactStatus.PENDING
+                    ),
+                },
+            )
+
+            # Generate activities if ACTIVE (TARGETED always active, OUTBOUND after start)
+            if campaign.status == CampaignStatus.ACTIVE:
                 service = CampaignExecutionService(
                     user=request.user, client_id=client_id,
                 )
