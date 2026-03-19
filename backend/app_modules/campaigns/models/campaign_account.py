@@ -207,7 +207,7 @@ class CampaignAccount(ModuleBaseModel, ClientScopeManager.ModelMixin):
         is in a final state (COMPLETED or STOPPED).
         Used to auto-complete the account after last contact resolves.
         """
-        from .campaign_contact import FINAL_CONTACT_STATES
+        from app_modules.campaigns.models.campaign_contact import FINAL_CONTACT_STATES
         return not self.campaign_contacts.exclude(
             status__in=FINAL_CONTACT_STATES
         ).exists()

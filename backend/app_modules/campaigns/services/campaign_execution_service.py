@@ -23,7 +23,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignModuleErrorMessages
 
 from app_modules.activities.models import Activity
-from app_modules.activities.constants import ActivityType, ActivityStatus
+from app_modules.activities.constants import ActivityType, ActivityStatus, ActivityOutcome
 from app_modules.contacts.models import Contact
 from app_modules.sequences.sequence_dispatcher import SequenceDispatcher
 
@@ -38,6 +38,22 @@ from ..models import (
 from ..config.settings import CONFIG
 
 logger = get_logger(__name__)
+
+# Outcomes that permanently stop a contact's sequence
+TERMINAL_OUTCOMES: frozenset = frozenset({
+    ActivityOutcome.NOT_INTERESTED,
+    ActivityOutcome.WRONG_CONTACT,
+    'UNSUBSCRIBE_OPTOUT',    # opt-out: not yet in ActivityOutcome enum
+    'WRONG_EMAIL',           # data quality: not yet in ActivityOutcome enum
+    'INVALID_PHONE_NUMBER',  # data quality: not yet in ActivityOutcome enum
+})
+
+# Outcomes that mark a contact as successfully reached
+SUCCESSFUL_OUTCOMES: frozenset = frozenset({
+    ActivityOutcome.SUCCESSFUL,
+    ActivityOutcome.MEETING_SCHEDULED,
+    'POSITIVE_RESPONSE',     # legacy alias: not yet in ActivityOutcome enum
+})
 
 
 class CampaignExecutionService:
@@ -628,14 +644,8 @@ class CampaignExecutionService:
         # ------------------------------------------------------------------
         # TERMINAL OUTCOMES — stop contact, cancel its chain
         # ------------------------------------------------------------------
-        terminal_outcomes = {
-            'NOT_INTERESTED',
-            'WRONG_CONTACT',
-            'UNSUBSCRIBE_OPTOUT',
-            'WRONG_EMAIL',
-            'INVALID_PHONE_NUMBER',
-        }
-        if outcome in terminal_outcomes:
+
+        if outcome in TERMINAL_OUTCOMES:
             campaign_contact.mark_stopped(
                 user=self.user,
                 notes=f"Terminal outcome: {outcome}",

@@ -85,6 +85,7 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
     def get_queryset(self):
         from django.db.models import Prefetch
         from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
 
         qs = CampaignContact.objects.filter(
             client_id=self.get_client_id(),
@@ -96,7 +97,7 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         ).prefetch_related(
             Prefetch(
                 'activities',
-                queryset=Activity.objects.filter(status='ON_HOLD').only('id', 'status', 'campaign_contact_id'),
+                queryset=Activity.objects.filter(status=ActivityStatus.ON_HOLD).only('id', 'status', 'campaign_contact_id'),
             )
         )
 

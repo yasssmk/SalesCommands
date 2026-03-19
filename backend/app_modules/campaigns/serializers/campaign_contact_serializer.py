@@ -99,10 +99,10 @@ class CampaignContactListSerializer(ClientScopeManager.SerializerMixin, serializ
             return None
     
     def get_has_on_hold(self, obj):
-        # Use prefetched activities cache (ON_HOLD only, set up in CampaignContactViewSet.get_queryset)
+        from app_modules.activities.constants import ActivityStatus
         if hasattr(obj, '_prefetched_objects_cache') and 'activities' in obj._prefetched_objects_cache:
             return len(obj._prefetched_objects_cache['activities']) > 0
-        return obj.activities.filter(status='ON_HOLD').exists()
+        return obj.activities.filter(status=ActivityStatus.ON_HOLD).exists()
 
 
 # ============================================================================

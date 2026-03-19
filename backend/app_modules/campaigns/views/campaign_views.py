@@ -908,14 +908,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             )
 
         # --- Map response → outcome ---
-        RESPONSE_TO_OUTCOME = {
-            'POSITIVE': 'SUCCESSFUL',
-            'MEETING_BOOKED': 'MEETING_SCHEDULED',
-            'CALLBACK_REQUESTED': 'CALLBACK_REQUESTED',
-            'NO_RESPONSE': 'NO_ANSWER',
-            'NEGATIVE': 'NOT_INTERESTED',
-        }
-        outcome = RESPONSE_TO_OUTCOME.get(response, 'OTHER')
+        outcome = CONFIG.validation.response_to_outcome.get(response, 'OTHER')
 
         # --- Process result via service (handles outcome + CampaignAccount + sequence cancellation) ---
         service = CampaignExecutionService(

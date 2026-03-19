@@ -3,7 +3,11 @@
 Django AppConfig for Campaign module.
 """
 
+import logging
+
 from django.apps import AppConfig
+
+logger = logging.getLogger('app_modules.campaigns')
 
 
 class CampaignsConfig(AppConfig):
@@ -19,6 +23,6 @@ class CampaignsConfig(AppConfig):
         try:
             from app_modules.campaigns.signals import signals  # noqa: F401
         except ImportError as e:
-            print(f"[CAMPAIGNS] Warning: Could not load signals: {e}")
+            logger.warning("campaigns_signals_import_failed", exc_info=e)
         except Exception as e:
-            print(f"[CAMPAIGNS] Error loading signals: {e}")
+            logger.error("campaigns_signals_load_error", exc_info=e)

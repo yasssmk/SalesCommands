@@ -139,7 +139,6 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
         return;
       }
       const data = result.data?.data ?? result.data;
-      console.log(data);
       if (data?.requires_confirmation && data?.open_contacts?.length > 0) {
         setOpenContacts(data.open_contacts);
         setCompletionModal(true);

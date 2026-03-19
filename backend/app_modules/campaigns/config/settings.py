@@ -107,6 +107,15 @@ class TimeConfig:
 class ValidationConfig:
     """Business rules and validation constants."""
 
+    # Maps log-response frontend keys to ActivityOutcome values
+    response_to_outcome: Dict[str, str] = field(default_factory=lambda: {
+        'POSITIVE': 'SUCCESSFUL',
+        'MEETING_BOOKED': 'MEETING_SCHEDULED',
+        'CALLBACK_REQUESTED': 'CALLBACK_REQUESTED',
+        'NO_RESPONSE': 'NO_ANSWER',
+        'NEGATIVE': 'NOT_INTERESTED',
+    })
+
     # Campaign lifecycle states
     campaign_statuses: List[tuple] = field(default_factory=lambda: [
         ('DRAFT', 'Draft'),
