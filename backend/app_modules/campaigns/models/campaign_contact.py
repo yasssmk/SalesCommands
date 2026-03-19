@@ -13,7 +13,6 @@ State machine:
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from django.utils import timezone
 
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
@@ -144,10 +143,6 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # ==========================================================================
 
     def _transition_to(self, new_status, user=None, notes=None):
-        """
-        Validate and apply a status transition.
-        Raises StandardizedValidationError on invalid transition.
-        """
         allowed = CAMPAIGN_CONTACT_TRANSITIONS.get(self.status, [])
         if new_status not in allowed:
             raise StandardizedValidationError(
@@ -155,12 +150,13 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
                     reason=f"Cannot transition contact from '{self.status}' to '{new_status}'"
                 )
             )
+        previous_status = self.status
         self.status = new_status
         if notes:
             self.notes = notes
         self.save(user=user)
         return {
-            'previous_status': self.status,
+            'previous_status': previous_status,
             'new_status': new_status,
         }
 
@@ -181,12 +177,10 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
     def resume_from_callback(self, user=None, notes=None):
         """CALLBACK_PENDING → IN_PROGRESS. Clears callback_date."""
-        result = self._transition_to(
+        self.callback_date = None
+        return self._transition_to(
             CampaignContactStatus.IN_PROGRESS, user=user, notes=notes
         )
-        self.callback_date = None
-        self.save(user=user)
-        return result
 
     def mark_completed(self, user=None, notes=None):
         """→ COMPLETED."""

@@ -18,7 +18,6 @@ from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 
-from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, CampaignModuleErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
@@ -38,9 +37,7 @@ from permissions.owner_scope import OwnerScopeMixin
 
 from ..models import (
     Campaign,
-    CampaignStatus,
     CampaignType,
-    CampaignAccount,
 )
 from ..serializers import (
     CampaignListSerializer,
@@ -116,6 +113,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         'playlist': {'crud': 'read', 'scope': 'client'},
         'generate_activities': {'crud': 'update', 'scope': 'client'},
         'log_response': {'crud': 'create', 'scope': 'client'},
+        'cancel_planned': {'crud': 'delete', 'scope': 'client'},
         'my_campaigns': {'crud': 'read', 'scope': 'mine'},
         'get_or_create_targeted': {'crud': 'read', 'scope': 'client'},
     }

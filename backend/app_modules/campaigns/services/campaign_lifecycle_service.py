@@ -20,16 +20,12 @@ from django.utils import timezone
 from core.logging import get_logger
 from core.logging.audit import audit_log
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CampaignModuleErrorMessages
+from core.error_messages import CampaignModuleErrorMessages, CoreErrorMessages
 
 from ..models import (
-    Campaign,
-    CampaignStatus,
     CampaignAccount,
     CampaignAccountStatus,
-    CAMPAIGN_ACCOUNT_TRANSITIONS,
 )
-from ..config.settings import CONFIG
 
 logger = get_logger(__name__)
 
@@ -60,7 +56,8 @@ class CampaignLifecycleService:
         campaign.save(update_fields=['actual_start_date', 'updated_at'])
 
         accounts_enrolled = 0
-        if campaign.campaign_type == 'OUTBOUND' and campaign.campaign_accounts.count() == 0:
+        from ..models import CampaignType
+        if campaign.campaign_type != CampaignType.TARGETED and campaign.campaign_accounts.count() == 0:
             from .campaign_creation_service import CampaignCreationService
             creation_service = CampaignCreationService(user=self.user, client_id=self.client_id)
             accounts_enrolled = creation_service._enroll_from_territories(campaign)
@@ -569,10 +566,9 @@ class CampaignLifecycleService:
         """
         if str(campaign.client_id) != self.client_id:
             raise StandardizedValidationError(
-                CampaignModuleErrorMessages.CAMPAIGN_IN_FINAL_STATE.format(
-                    state='access denied'
-                )
+                CoreErrorMessages.OBJECT_NOT_FOUND
             )
+
 
     # ======================================================================
     # PRIVATE — AUDIT

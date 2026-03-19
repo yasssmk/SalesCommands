@@ -28,7 +28,6 @@ from app_modules.contacts.models import Contact
 from app_modules.sequences.sequence_dispatcher import SequenceDispatcher
 
 from ..models import (
-    Campaign,
     CampaignStatus,
     CampaignAccount,
     CampaignAccountStatus,

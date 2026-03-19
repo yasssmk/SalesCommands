@@ -301,19 +301,14 @@ export default function StepReviewCreate({ data }) {
         >
           <ReviewRow label="Owner" value="You (current user)" />
           <ReviewRow
-            label="Executors"
+            label="Executor"
             value={
-              (data.selectedExecutors || []).length > 0
-                ? data.selectedExecutors
-                    .map(
-                      (u) =>
-                        `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
-                        u.email,
-                    )
-                    .join(", ")
+              data.selectedExecutor
+                ? `${data.selectedExecutor.first_name || ""} ${data.selectedExecutor.last_name || ""}`.trim() ||
+                  data.selectedExecutor.email
                 : "None"
             }
-            muted={!(data.selectedExecutors || []).length}
+            muted={!data.selectedExecutor}
           />
         </ReviewSection>
       </Stack>

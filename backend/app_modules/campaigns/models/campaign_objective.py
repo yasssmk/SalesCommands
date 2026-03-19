@@ -19,7 +19,7 @@ from django.utils.translation import gettext_lazy as _
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CampaignModuleErrorMessages, CoreErrorMessages
+from core.error_messages import CampaignModuleErrorMessages
 
 
 class ObjectiveType(models.TextChoices):
@@ -112,12 +112,12 @@ class CampaignObjective(ModuleBaseModel, ClientScopeManager.ModelMixin):
         """
         Calculate current value based on objective type.
 
-        Queries campaign activities and decision cycles to compute
-        real-time progress. Returns 0 for MVP; will be wired to
-        actual tracking in execution services.
+        Delegates to CampaignAnalyticsService to avoid duplicating query logic.
+        Uses deferred import to avoid circular dependency.
         """
-        # MVP: return 0, wired in Phase 3 (CampaignAnalyticsService)
-        return 0
+        from app_modules.campaigns.services.campaign_analytics_service import CampaignAnalyticsService
+        service = CampaignAnalyticsService(client_id=self.client_id)
+        return service._calculate_objective_value(self.campaign, self)
 
     def get_progress_percentage(self):
         """Calculate progress as percentage of target."""

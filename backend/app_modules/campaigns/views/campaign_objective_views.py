@@ -15,7 +15,6 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 
-from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, CampaignModuleErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
@@ -312,7 +311,7 @@ class CampaignObjectiveViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelV
 
             if remaining_primary == 0:
                 raise StandardizedValidationError(
-                    CampaignModuleErrorMessages.OBJECTIVE_NOT_FOUND
+                    CampaignModuleErrorMessages.CANNOT_DELETE_PRIMARY_OBJECTIVE
                 )
 
         objective_id = str(instance.id)

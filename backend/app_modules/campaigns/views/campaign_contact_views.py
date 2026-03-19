@@ -16,24 +16,22 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 
-from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages, CampaignModuleErrorMessages
+from core.error_messages import CoreErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
-from core.logging import get_logger, ctx_from_request
+from core.logging import get_logger
 from core.logging.audit import audit_log
 from core.cache_utils import invalidate_tag
 
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 
-from ..models import CampaignContact, CampaignContactStatus
+from ..models import CampaignContact
 from ..serializers import (
     CampaignContactListSerializer,
     CampaignContactDetailSerializer,
     CampaignContactSerializer,
 )
-from ..config.settings import CONFIG
 
 logger = get_logger(__name__)
 
@@ -302,9 +300,12 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             - notes: str (optional)
         """
         instance = self.get_object()
+        reason = request.data.get('reason')
+        notes = request.data.get('notes')
+        combined_notes = f"Stopped: {reason}" if reason else notes
         result = instance.mark_stopped(
             user=request.user,
-            notes=request.data.get('notes'),
+            notes=combined_notes,
         )
         self._audit_status_change(request, instance, result)
         self._invalidate_caches(self.get_client_id())
@@ -324,7 +325,6 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
 
         POST /campaigns/contacts/{id}/pause/
         """
-        from datetime import timedelta
         from django.utils import timezone
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import ActivityStatus
