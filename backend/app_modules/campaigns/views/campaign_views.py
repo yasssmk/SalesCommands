@@ -15,8 +15,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Q, OuterRef, Subquery, Exists
 from django.utils import timezone
+from datetime import timedelta
 
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, CampaignModuleErrorMessages
@@ -178,6 +179,13 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 _accounts_count=Count('campaign_accounts', distinct=True),
             )
         elif self.action == 'retrieve':
+            from app_modules.activities.models import Activity as _Activity
+            from app_modules.activities.constants import ActivityStatus as _AS
+
+            _threshold = timezone.now().date() - timedelta(
+                days=CONFIG.limits.inactivity_threshold_days
+            )
+
             queryset = queryset.select_related(
                 'owner', 'executor',
                 'created_by', 'updated_by',
@@ -187,6 +195,19 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'campaign_accounts',
             ).annotate(
                 _accounts_count=Count('campaign_accounts', distinct=True),
+                _expected_end_date=Subquery(
+                    _Activity.objects.filter(
+                        campaign=OuterRef('pk'),
+                        status=_AS.PLANNED,
+                    ).order_by('-scheduled_date').values('scheduled_date')[:1]
+                ),
+                _is_inactive=~Exists(
+                    _Activity.objects.filter(
+                        campaign=OuterRef('pk'),
+                        status=_AS.COMPLETED,
+                        completed_at__date__gte=_threshold,
+                    )
+                ),
             )
         else:
             queryset = queryset.select_related(

@@ -330,6 +330,7 @@ class CampaignModuleErrorMessages:
 
     # CampaignObjective
     OBJECTIVE_NOT_FOUND = _("Objective not found for this campaign")
+    CANNOT_DELETE_PRIMARY_OBJECTIVE = "Cannot delete the primary objective of an active campaign."
     OBJECTIVE_PRIMARY_EXISTS = _("Campaign already has a primary objective")
     OBJECTIVE_INVALID_TYPE = _("Invalid objective type: {objective_type}")
     OBJECTIVE_TARGET_VALUE_INVALID = _("Target value must be greater than 0")

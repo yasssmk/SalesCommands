@@ -286,10 +286,9 @@ class CampaignExecutionService:
         if executor:
             queryset = queryset.filter(owner=executor)
 
-        # Single query — fetch batch then derive total from len to avoid
-        # a separate COUNT(*) round-trip.
+        # COUNT before slice to get real total (not just batch size)
+        total_count = queryset.count()
         activities = list(queryset[:CONFIG.limits.queue_batch_size])
-        total_count = len(activities)
 
         if campaign.sequence_type:
             # Exclude ON_HOLD from date recalculation — their date is irrelevant

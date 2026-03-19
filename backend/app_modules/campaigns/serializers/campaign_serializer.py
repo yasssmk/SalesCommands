@@ -10,8 +10,6 @@ Serializers for Campaign model.
 """
 
 from rest_framework import serializers
-from django.db import transaction
-from django.utils.translation import gettext_lazy as _
 
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, CampaignModuleErrorMessages
@@ -23,7 +21,6 @@ from app_modules.territories.models import Territory
 from ..models import (
     Campaign,
     CampaignType,
-    CampaignStatus,
     CampaignObjective,
     ObjectiveType,
 )
@@ -251,24 +248,17 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
         return obj.campaign_accounts.count()
 
     def get_objectives(self, obj):
-        """Return objectives with computed progress."""
-        objectives = obj.objectives.all()
-        return [
-            {
-                'id': str(o.id),
-                'name': o.name,
-                'objective_type': o.objective_type,
-                'objective_type_display': o.get_objective_type_display(),
-                'target_value': float(o.target_value),
-                'current_value': o.get_current_value(),
-                'progress_percentage': o.get_progress_percentage(),
-                'is_primary': o.is_primary,
-            }
-            for o in objectives
-        ]
+        """Return objectives with computed progress (single value calculation per objective)."""
+        from app_modules.campaigns.services.campaign_analytics_service import CampaignAnalyticsService
+        service = CampaignAnalyticsService(client_id=obj.client_id)
+        return service.get_objectives_progress(obj)
     
     def get_expected_end_date(self, obj):
         """Date of the last scheduled PLANNED activity linked to this campaign."""
+        if hasattr(obj, '_expected_end_date'):
+            val = obj._expected_end_date
+            return val.isoformat() if val else None
+
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import ActivityStatus
         last = (
@@ -279,12 +269,17 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
             .first()
         )
         return last.isoformat() if last else None
-    
+
     def get_is_inactive(self, obj):
         """
         True if campaign is ACTIVE but has had no completed activity
         in the last inactivity_threshold_days days.
         """
+        if hasattr(obj, '_is_inactive'):
+            if obj.status != 'ACTIVE':
+                return False
+            return obj._is_inactive
+
         from django.utils import timezone
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import ActivityStatus

@@ -29,7 +29,6 @@ from ..models import (
     CampaignAccount,
     CampaignAccountStatus,
     CampaignObjective,
-    ObjectiveType,
 )
 from ..config.settings import CONFIG
 
@@ -150,7 +149,7 @@ class CampaignCreationService:
         far_future = today.replace(year=today.year + 10)
 
         campaign = Campaign(
-            name=name or f"My Targeted Campaign",
+            name=name or "My Targeted Campaign",
             campaign_type=CampaignType.TARGETED,
             sequence_type=sequence_type,
             planned_start_date=today,
@@ -345,9 +344,17 @@ class CampaignCreationService:
             client_id=self.client_id,
         )
 
+        # Pre-fetch existing enrollments in a single query to avoid N+1
+        existing_account_ids = set(
+            CampaignAccount.objects.filter(
+                campaign=campaign,
+                account_id__in=account_ids,
+            ).values_list('account_id', flat=True)
+        )
+
         enrolled = 0
         for account in accounts:
-            if CampaignAccount.objects.filter(campaign=campaign, account=account).exists():
+            if account.id in existing_account_ids:
                 continue
             CampaignAccount(
                 campaign=campaign,

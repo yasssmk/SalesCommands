@@ -14,7 +14,6 @@ Constraints enforced:
 """
 
 from rest_framework import serializers
-from django.utils.translation import gettext_lazy as _
 
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, CampaignModuleErrorMessages
@@ -24,9 +23,9 @@ from end_users.models import User
 
 from ..models import (
     Campaign,
-    CampaignMember,
+    CampaignMember
 )
-from ..config.settings import CONFIG
+
 
 
 # ============================================================================
