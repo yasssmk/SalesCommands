@@ -415,6 +415,13 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             client_id = self._get_client_id_from_context()
             attrs['client_id'] = client_id
 
+            # TARGETED is a singleton — only created via get_or_create_targeted()
+            campaign_type = attrs.get('campaign_type')
+            if campaign_type == CampaignType.TARGETED:
+                raise StandardizedValidationError(
+                    CampaignModuleErrorMessages.TARGETED_CAMPAIGN_MANUAL_CREATION_FORBIDDEN
+                )
+
             # Date validation
             start_date = attrs.get('planned_start_date')
             end_date = attrs.get('planned_end_date')
@@ -554,6 +561,7 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             executor=executor,
         )
         instance.save(user=user)
+        
 
         # Set territories M2M
         if territory_ids:

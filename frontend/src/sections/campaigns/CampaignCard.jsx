@@ -20,7 +20,7 @@ import { useTheme } from "@mui/material/styles";
 // project imports
 import CampaignStatusBadge from "sections/campaigns/CampaignStatusBadge";
 import {
-  SEQUENCE_TYPE_LABELS,
+  CAMPAIGN_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
   getCampaignProgress,
   getObjectiveProgress,
@@ -172,7 +172,7 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
               </Typography>
               <Chip
                 label={
-                  SEQUENCE_TYPE_LABELS[campaign.campaign_type] ||
+                  CAMPAIGN_TYPE_LABELS[campaign.campaign_type] ||
                   campaign.campaign_type
                 }
                 size="small"
@@ -317,7 +317,7 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
           {campaign.sequence_type && (
             <Typography variant="caption" color="text.secondary">
               Sequence:{" "}
-              {SEQUENCE_TYPE_LABELS[campaign.sequence_type] ||
+              {CAMPAIGN_TYPE_LABELS[campaign.sequence_type] ||
                 campaign.sequence_type}
             </Typography>
           )}

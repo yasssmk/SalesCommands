@@ -29,7 +29,7 @@ import StepObjectiveMembers from "./StepObjectiveMembers";
 import StepReviewCreate from "./StepReviewCreate";
 
 // api
-import { createCampaign, SEQUENCE_TYPES } from "api/campaigns/campaigns";
+import { createCampaign, CAMPAIGN_TYPES } from "api/campaigns/campaigns";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -124,11 +124,11 @@ export default function CampaignCreateModal({ open, onClose, onSuccess }) {
       case 0:
         return Boolean(wizardData.family);
       case 1:
-        if (wizardData.family === SEQUENCE_TYPES.OUTBOUND) {
+        // Only OUTBOUND is selectable — requires at least one territory
+        if (wizardData.family === CAMPAIGN_TYPES.OUTBOUND) {
           return wizardData.territory_ids.length > 0;
         }
-        // Targeted: at least 1 account selected
-        return wizardData.account_ids.length > 0;
+        return false;
       case 2:
         return Boolean(wizardData.name);
       case 3:

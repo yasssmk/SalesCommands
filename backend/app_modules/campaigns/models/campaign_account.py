@@ -19,32 +19,7 @@ from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignModuleErrorMessages
 
-
-class CampaignAccountStatus(models.TextChoices):
-    """Account-level enrollment status."""
-    PENDING     = 'PENDING',     _('Pending')
-    IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
-    COMPLETED   = 'COMPLETED',   _('Completed')
-    STOPPED     = 'STOPPED',     _('Stopped')
-
-
-CAMPAIGN_ACCOUNT_TRANSITIONS = {
-    CampaignAccountStatus.PENDING: [
-        CampaignAccountStatus.IN_PROGRESS,
-        CampaignAccountStatus.STOPPED,
-    ],
-    CampaignAccountStatus.IN_PROGRESS: [
-        CampaignAccountStatus.COMPLETED,
-        CampaignAccountStatus.STOPPED,
-    ],
-    CampaignAccountStatus.COMPLETED: [],
-    CampaignAccountStatus.STOPPED:   [],
-}
-
-FINAL_ACCOUNT_STATES = {
-    CampaignAccountStatus.COMPLETED,
-    CampaignAccountStatus.STOPPED,
-}
+from ..constants import CampaignAccountStatus, CAMPAIGN_ACCOUNT_TRANSITIONS, FINAL_ACCOUNT_STATES
 
 
 class CampaignAccount(ModuleBaseModel, ClientScopeManager.ModelMixin):

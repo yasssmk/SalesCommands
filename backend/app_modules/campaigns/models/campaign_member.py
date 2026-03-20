@@ -18,6 +18,8 @@ from django.utils.translation import gettext_lazy as _
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
 
+from ..constants import MemberRole
+
 
 class CampaignMember(ModuleBaseModel, ClientScopeManager.ModelMixin):
     """
@@ -30,12 +32,7 @@ class CampaignMember(ModuleBaseModel, ClientScopeManager.ModelMixin):
         - Multi-tenant isolation via ClientScopeManager.ModelMixin
     """
 
-    class MemberRole(models.TextChoices):
-        OWNER = 'OWNER', _('Campaign Owner')
-        EXECUTOR = 'EXECUTOR', _('Executor')
-        RECEIVER = 'RECEIVER', _('Receiver')
-        OBSERVER = 'OBSERVER', _('Observer')
-
+    MemberRole = MemberRole
     # ==========================================================================
     # RELATIONSHIPS
     # ==========================================================================

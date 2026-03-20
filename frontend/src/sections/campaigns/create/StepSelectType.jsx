@@ -19,30 +19,34 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // api
-import { SEQUENCE_TYPES } from "api/campaigns/campaigns";
+import { CAMPAIGN_TYPES } from "api/campaigns/campaigns";
 
 // icons
 import AimOutlined from "@ant-design/icons/AimOutlined";
 import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
+import SyncOutlined from "@ant-design/icons/SyncOutlined";
 
 // ==============================|| TYPE OPTIONS ||============================== //
 
 const TYPE_OPTIONS = [
   {
-    family: SEQUENCE_TYPES.OUTBOUND,
+    family: CAMPAIGN_TYPES.OUTBOUND,
     label: "Outbound",
     description:
       "Launch outbound sequences on a territory segment. Auto-generate activities for every account in the segment.",
     Icon: AimOutlined,
     colorKey: "primary",
+    disabled: false,
   },
   {
-    family: SEQUENCE_TYPES.TARGETED,
-    label: "Targeted",
+    family: "RENEWAL",
+    label: "Renewal",
     description:
-      "Target specific accounts, departments or contacts with a tailored reason. Ideal for follow-ups, renewals and cross-sell.",
-    Icon: ThunderboltOutlined,
-    colorKey: "warning",
+      "Re-engage existing clients nearing contract end. Automated renewal sequences on expiring accounts.",
+    Icon: SyncOutlined,
+    colorKey: "success",
+    disabled: true,
+    comingSoon: true,
   },
 ];
 
@@ -61,79 +65,120 @@ export default function StepSelectType({ selectedFamily, onSelect }) {
       </Typography>
 
       <Grid container spacing={3}>
-        {TYPE_OPTIONS.map(({ family, label, description, Icon, colorKey }) => {
-          const isSelected = selectedFamily === family;
-          const color = theme.palette[colorKey];
+        {TYPE_OPTIONS.map(
+          ({
+            family,
+            label,
+            description,
+            Icon,
+            colorKey,
+            disabled,
+            comingSoon,
+          }) => {
+            const isSelected = selectedFamily === family;
+            const color = theme.palette[colorKey];
 
-          return (
-            <Grid item xs={12} sm={6} key={family}>
-              <Card
-                elevation={0}
-                onClick={() => onSelect(family)}
-                sx={{
-                  p: 3,
-                  cursor: "pointer",
-                  border: "2px solid",
-                  borderColor: isSelected ? color.main : "divider",
-                  bgcolor: isSelected
-                    ? alpha(color.main, 0.06)
-                    : "background.paper",
-                  borderRadius: 2,
-                  transition: "all 0.2s ease-in-out",
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                  "&:hover": {
-                    borderColor: color.main,
-                    bgcolor: alpha(color.main, 0.04),
-                    transform: "translateY(-2px)",
-                    boxShadow: `0 4px 16px ${alpha(color.main, 0.15)}`,
-                  },
-                  "&:active": {
-                    transform: "translateY(0)",
-                  },
-                }}
-              >
-                <Stack spacing={2} alignItems="center" textAlign="center">
-                  {/* Icon */}
-                  <Box
-                    sx={{
-                      width: 64,
-                      height: 64,
-                      borderRadius: 2,
-                      bgcolor: isSelected
-                        ? alpha(color.main, 0.15)
-                        : alpha(color.main, 0.08),
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      transition: "all 0.2s ease-in-out",
-                    }}
-                  >
-                    <Icon style={{ fontSize: 32, color: color.main }} />
-                  </Box>
+            return (
+              <Grid item xs={12} sm={6} key={family}>
+                <Card
+                  elevation={0}
+                  onClick={() => !disabled && onSelect(family)}
+                  sx={{
+                    p: 3,
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    border: "2px solid",
+                    borderColor: isSelected ? color.main : "divider",
+                    bgcolor: isSelected
+                      ? alpha(color.main, 0.06)
+                      : disabled
+                        ? "action.disabledBackground"
+                        : "background.paper",
+                    borderRadius: 2,
+                    opacity: disabled ? 0.6 : 1,
+                    transition: "all 0.2s ease-in-out",
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    position: "relative",
+                    ...(!disabled && {
+                      "&:hover": {
+                        borderColor: color.main,
+                        bgcolor: alpha(color.main, 0.04),
+                        transform: "translateY(-2px)",
+                        boxShadow: `0 4px 16px ${alpha(color.main, 0.15)}`,
+                      },
+                      "&:active": {
+                        transform: "translateY(0)",
+                      },
+                    }),
+                  }}
+                >
+                  {/* Coming soon badge */}
+                  {comingSoon && (
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        top: 12,
+                        right: 12,
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 1,
+                        bgcolor: "action.selected",
+                        border: "1px solid",
+                        borderColor: "divider",
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        fontWeight={600}
+                      >
+                        Coming soon
+                      </Typography>
+                    </Box>
+                  )}
 
-                  {/* Label */}
-                  <Typography
-                    variant="h4"
-                    sx={{ color: isSelected ? color.dark : "text.primary" }}
-                  >
-                    {label}
-                  </Typography>
+                  <Stack spacing={2} alignItems="center" textAlign="center">
+                    {/* Icon */}
+                    <Box
+                      sx={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: 2,
+                        bgcolor: isSelected
+                          ? alpha(color.main, 0.15)
+                          : alpha(color.main, 0.08),
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all 0.2s ease-in-out",
+                      }}
+                    >
+                      <Icon style={{ fontSize: 32, color: color.main }} />
+                    </Box>
 
-                  {/* Description */}
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ lineHeight: 1.6 }}
-                  >
-                    {description}
-                  </Typography>
-                </Stack>
-              </Card>
-            </Grid>
-          );
-        })}
+                    {/* Label */}
+                    <Typography
+                      variant="h4"
+                      sx={{ color: isSelected ? color.dark : "text.primary" }}
+                    >
+                      {label}
+                    </Typography>
+
+                    {/* Description */}
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ lineHeight: 1.6 }}
+                    >
+                      {description}
+                    </Typography>
+                  </Stack>
+                </Card>
+              </Grid>
+            );
+          },
+        )}
       </Grid>
     </Box>
   );

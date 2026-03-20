@@ -43,7 +43,7 @@ import MessageOutlined from "@ant-design/icons/MessageOutlined";
 import CampaignStatusBadge from "sections/campaigns/CampaignStatusBadge";
 import CampaignCompletionModal from "./CampaignCompletionModal";
 import {
-  SEQUENCE_TYPE_LABELS,
+  CAMPAIGN_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
   getCampaignProgress,
   startCampaign,
@@ -401,7 +401,7 @@ export default function useCampaignHeaderProps({
     <Chip
       key="family"
       label={
-        SEQUENCE_TYPE_LABELS[campaign.campaign_type] || campaign.campaign_type
+        CAMPAIGN_TYPE_LABELS[campaign.campaign_type] || campaign.campaign_type
       }
       size="small"
       color={familyConfig.chipColor}

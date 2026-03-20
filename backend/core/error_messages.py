@@ -309,6 +309,10 @@ class CampaignModuleErrorMessages:
     CAMPAIGN_TERRITORY_REQUIRED = _("Outbound campaigns require a territory")
     CAMPAIGN_SEQUENCE_REQUIRED = _("Outbound campaigns require a sequence type")
     CAMPAIGN_NO_ACCOUNTS = _("Campaign must have at least one account")
+    TARGETED_CAMPAIGN_MANUAL_CREATION_FORBIDDEN = (
+        "Targeted campaigns cannot be created manually. "
+        "A single Targeted campaign is automatically provisioned per user."
+    )
 
     # CampaignAccount
     ACCOUNT_ALREADY_IN_CAMPAIGN = _("Account is already in this campaign")

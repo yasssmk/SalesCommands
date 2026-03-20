@@ -20,8 +20,8 @@ import Typography from "@mui/material/Typography";
 
 // api
 import {
-  SEQUENCE_TYPES,
-  SEQUENCE_TYPE_LABELS,
+  CAMPAIGN_TYPES,
+  CAMPAIGN_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
 } from "api/campaigns/campaigns";
 
@@ -112,7 +112,7 @@ ReviewSection.propTypes = {
 
 export default function StepReviewCreate({ data }) {
   const theme = useTheme();
-  const isOutbound = data.family === SEQUENCE_TYPES.OUTBOUND;
+  const isOutbound = data.family === CAMPAIGN_TYPES.OUTBOUND;
 
   // ==============================|| FORMAT HELPERS ||============================== //
 
@@ -126,7 +126,7 @@ export default function StepReviewCreate({ data }) {
     });
   };
 
-  const familyLabel = SEQUENCE_TYPE_LABELS[data.family] || data.family;
+  const familyLabel = CAMPAIGN_TYPE_LABELS[data.family] || data.family;
   const objectiveLabel = data.objective_type
     ? OBJECTIVE_TYPE_LABELS[data.objective_type]
     : null;

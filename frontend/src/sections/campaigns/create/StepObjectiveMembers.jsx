@@ -38,8 +38,7 @@ import dayjs from "dayjs";
 // project imports
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
 import {
-  SEQUENCE_TYPES,
-  SEQUENCE_TYPE_LABELS,
+  CAMPAIGN_TYPES,
   OBJECTIVE_TYPES,
   OBJECTIVE_TYPE_LABELS,
 } from "api/campaigns/campaigns";
@@ -74,7 +73,7 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
   const theme = useTheme();
   const { user } = useAuth();
 
-  const isOutbound = data.family === SEQUENCE_TYPES.OUTBOUND;
+  const isOutbound = data.family === CAMPAIGN_TYPES.OUTBOUND;
 
   // ==============================|| AUTO-GENERATE NAME ||============================== //
 

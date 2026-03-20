@@ -21,15 +21,7 @@ from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignModuleErrorMessages
 
-
-class ObjectiveType(models.TextChoices):
-    """Campaign objective type choices."""
-    MEETINGS = 'MEETINGS', _('Number of Meetings')
-    DECISION_CYCLES = 'DECISION_CYCLES', _('Decision Cycles Opened')
-    CONTACTS_REACHED = 'CONTACTS_REACHED', _('Contacts Reached')
-    PIPELINE_VALUE = 'PIPELINE_VALUE', _('Pipeline Value')
-    REVENUE_WON = 'REVENUE_WON', _('Revenue Won')
-    NEW_LOGOS = 'NEW_LOGOS', _('New Logos')
+from ..constants import ObjectiveType
 
 
 class CampaignObjective(ModuleBaseModel, ClientScopeManager.ModelMixin):

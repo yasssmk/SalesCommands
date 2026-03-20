@@ -11,37 +11,14 @@ Lifecycle: DRAFT → ACTIVE → PAUSED → COMPLETED / CANCELLED
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from django.utils import timezone
 
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CampaignModuleErrorMessages, CoreErrorMessages
+from core.error_messages import CampaignModuleErrorMessages
 
 
-class CampaignType(models.TextChoices):
-    """Campaign type choices."""
-    OUTBOUND = 'OUTBOUND', _('Outbound Campaign')
-    TARGETED = 'TARGETED', _('Targeted Campaign')
-
-
-class CampaignStatus(models.TextChoices):
-    """Campaign lifecycle status choices."""
-    DRAFT = 'DRAFT', _('Draft')
-    ACTIVE = 'ACTIVE', _('Active')
-    PAUSED = 'PAUSED', _('Paused')
-    COMPLETED = 'COMPLETED', _('Completed')
-    CANCELLED = 'CANCELLED', _('Cancelled')
-
-
-# Valid state transitions
-CAMPAIGN_STATUS_TRANSITIONS = {
-    CampaignStatus.DRAFT: [CampaignStatus.ACTIVE, CampaignStatus.CANCELLED],
-    CampaignStatus.ACTIVE: [CampaignStatus.PAUSED, CampaignStatus.COMPLETED, CampaignStatus.CANCELLED],
-    CampaignStatus.PAUSED: [CampaignStatus.ACTIVE, CampaignStatus.COMPLETED, CampaignStatus.CANCELLED],
-    CampaignStatus.COMPLETED: [],
-    CampaignStatus.CANCELLED: [],
-}
+from ..constants import CampaignType, CampaignStatus, CAMPAIGN_STATUS_TRANSITIONS
 
 
 class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):

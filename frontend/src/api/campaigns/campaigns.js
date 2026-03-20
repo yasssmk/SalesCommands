@@ -39,14 +39,12 @@ export const CAMPAIGN_STATUS_COLORS = {
   CANCELLED: "error",
 };
 
-export const SEQUENCE_TYPES = {
+export const CAMPAIGN_TYPES = {
   OUTBOUND: "OUTBOUND",
-  TARGETED: "TARGETED",
 };
 
-export const SEQUENCE_TYPE_LABELS = {
+export const CAMPAIGN_TYPE_LABELS = {
   OUTBOUND: "Outbound Sequence",
-  TARGETED: "Targeted Sequence",
 };
 
 export const MEMBER_ROLES = {

@@ -20,44 +20,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignModuleErrorMessages
 
 
-class CampaignContactStatus(models.TextChoices):
-    """Per-contact lifecycle status within a campaign."""
-    PENDING          = 'PENDING',          _('Pending')
-    IN_PROGRESS      = 'IN_PROGRESS',      _('In Progress')
-    ON_HOLD          = 'ON_HOLD',          _('On Hold')
-    CALLBACK_PENDING = 'CALLBACK_PENDING', _('Callback Pending')
-    COMPLETED        = 'COMPLETED',        _('Completed')
-    STOPPED          = 'STOPPED',          _('Stopped')
-
-
-CAMPAIGN_CONTACT_TRANSITIONS = {
-    CampaignContactStatus.PENDING: [
-        CampaignContactStatus.IN_PROGRESS,
-        CampaignContactStatus.STOPPED,
-    ],
-    CampaignContactStatus.IN_PROGRESS: [
-        CampaignContactStatus.ON_HOLD,
-        CampaignContactStatus.CALLBACK_PENDING,
-        CampaignContactStatus.COMPLETED,
-        CampaignContactStatus.STOPPED,
-    ],
-    CampaignContactStatus.ON_HOLD: [
-        CampaignContactStatus.IN_PROGRESS,
-        CampaignContactStatus.STOPPED,
-    ],
-    CampaignContactStatus.CALLBACK_PENDING: [
-        CampaignContactStatus.IN_PROGRESS,
-        CampaignContactStatus.COMPLETED,
-        CampaignContactStatus.STOPPED,
-    ],
-    CampaignContactStatus.COMPLETED: [],
-    CampaignContactStatus.STOPPED:   [],
-}
-
-FINAL_CONTACT_STATES = {
-    CampaignContactStatus.COMPLETED,
-    CampaignContactStatus.STOPPED,
-}
+from ..constants import CampaignContactStatus, CAMPAIGN_CONTACT_TRANSITIONS, FINAL_CONTACT_STATES
 
 
 class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
