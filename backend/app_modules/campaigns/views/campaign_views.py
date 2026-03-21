@@ -959,12 +959,13 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     @transaction.atomic
     def cancel_planned(self, request, pk=None):
         """
-        Cancel all PLANNED activities for a contact or an entire account in this campaign.
+        Cancel all PLANNED activities for a contact, a department, or an entire account.
         DELETE /campaigns/{id}/cancel-planned/
         Body:
-            - scope:      str  'contact' | 'account'  (required)
-            - contact_id: UUID (required when scope = 'contact')
-            - account_id: UUID (required)
+            - scope:         str   'contact' | 'department' | 'account'  (required)
+            - account_id:    UUID  (required)
+            - contact_id:    UUID  (required when scope = 'contact')
+            - department_id: int   (required when scope = 'department')
         """
         ctx = ctx_from_request(request)
         campaign = self.get_object()
@@ -973,10 +974,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         scope = request.data.get('scope')
         account_id = request.data.get('account_id')
         contact_id = request.data.get('contact_id')
+        department_id = request.data.get('department_id')
 
-        if scope not in ('contact', 'account'):
+        if scope not in ('contact', 'department', 'account'):
             raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(field='scope (contact|account)')
+                CoreErrorMessages.REQUIRED_FIELD.format(field='scope (contact|department|account)')
             )
         if not account_id:
             raise StandardizedValidationError(
@@ -986,7 +988,10 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(field='contact_id')
             )
-
+        if scope == 'department' and not department_id:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='department_id')
+            )
 
         qs = Activity.objects.filter(
             campaign=campaign,
@@ -997,6 +1002,9 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
 
         if scope == 'contact':
             qs = qs.filter(contacts__id=contact_id)
+        elif scope == 'department':
+            # Filter activities whose contacts belong to the given department
+            qs = qs.filter(contacts__standard_department_id=department_id)
 
         cancelled_count = qs.update(
             status=ActivityStatus.CANCELLED,
@@ -1018,6 +1026,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'scope': scope,
                 'account_id': str(account_id),
                 'contact_id': str(contact_id) if contact_id else None,
+                'department_id': str(department_id) if department_id else None,
                 'cancelled_count': cancelled_count,
             },
         )

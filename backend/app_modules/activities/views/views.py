@@ -13,9 +13,7 @@ from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.utils import timezone
-from datetime import timedelta
 
-from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, ActivityErrorMessages, CampaignModuleErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
@@ -43,8 +41,6 @@ from ..serializers import (
 from ..constants import ActivityType, ActivityStatus, ActivityOutcome
 from ..filters import ActivityFilter
 from ..services.activity_creation_service import ActivityCreationService
-from ..constants import NoNextStepReason
-
 logger = get_logger(__name__)
 
 

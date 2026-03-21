@@ -372,11 +372,14 @@ class CampaignExecutionService:
             'has_next': next_activity is not None,
         })
 
+        scope_confirmation_outcomes = {'SUCCESSFUL', 'POSITIVE_RESPONSE', 'MEETING_SCHEDULED', 'NOT_INTERESTED'}
+
         return {
             'activity': activity,
             'campaign_contact': campaign_contact,
             'campaign_account': campaign_account,
             'next_activity': next_activity,
+            'requires_scope_confirmation': outcome in scope_confirmation_outcomes,
         }
 
     # ======================================================================
@@ -663,10 +666,8 @@ class CampaignExecutionService:
                 user=self.user,
                 notes=f"Successful: {outcome}",
             )
-            # Cancel remaining PLANNED activities for this contact
-            self._cancel_chain_for_contact(campaign_contact)
             # Cancel remaining contacts on the same account
-            self._cancel_all_contacts_for_account(campaign_account, exclude=campaign_contact)
+            self._cancel_chain_for_contact(campaign_contact)
             self._check_account_completion(campaign_account)
             return None
 

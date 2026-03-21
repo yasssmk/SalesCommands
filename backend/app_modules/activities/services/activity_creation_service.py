@@ -14,8 +14,6 @@ This service ensures FK-safe order:
 """
 
 from django.db import transaction
-from django.utils import timezone
-from django.utils.translation import gettext_lazy as _
 
 from core.logging import get_logger
 from core.exceptions import StandardizedValidationError
@@ -57,6 +55,7 @@ class ActivityCreationService:
         inline_cycle: dict = None,
         inline_step: dict = None,
         inline_step_stage: str = None,
+        cycle_owner_override=None,
     ) -> dict:
         """
         Create activity with optional inline entities.
@@ -95,6 +94,13 @@ class ActivityCreationService:
                 raise StandardizedValidationError(
                     AccountErrorMessages.ACCOUNT_NOT_FOUND
                 )
+
+            # Owner resolution: override → account owner → current user
+            resolved_owner = (
+                cycle_owner_override
+                or getattr(account, 'account_owner', None)
+                or self.user
+            )
             
             # Track IDs to link
             contact_ids = list(activity_data.get('contact_ids', []))
@@ -190,6 +196,7 @@ class ActivityCreationService:
                 contact_ids=contact_ids,
                 cycle_id=cycle_id,
                 step_id=step_id,
+                owner=resolved_owner,
             )
             created_entities['activity'] = activity
             
@@ -360,6 +367,7 @@ class ActivityCreationService:
         contact_ids: list,
         cycle_id: str,
         step_id: str,
+        owner=None,
     ) -> Activity:
         """Create the activity with all relations."""
         try:
@@ -387,7 +395,7 @@ class ActivityCreationService:
             activity = Activity(
                 client_id=self.client_id,
                 account_id=activity_data.get('account_id'),
-                owner=self.user,
+                owner=owner or self.user,
                 title=title,
                 activity_type=activity_type,
                 status=activity_data.get('status', ActivityStatus.PLANNED),

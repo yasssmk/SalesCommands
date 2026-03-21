@@ -24,18 +24,6 @@ import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogContentText from "@mui/material/DialogContentText";
-import DialogTitle from "@mui/material/DialogTitle";
-import Radio from "@mui/material/Radio";
-import RadioGroup from "@mui/material/RadioGroup";
-import FormControlLabel from "@mui/material/FormControlLabel";
-import FormControl from "@mui/material/FormControl";
-import InputLabel from "@mui/material/InputLabel";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -45,13 +33,13 @@ import DownOutlined from "@ant-design/icons/DownOutlined";
 // project imports
 import PlaylistProgressBar from "./PlaylistProgressBar";
 import PlaylistActivityCard from "components/cards/PlaylistActivityCard";
+import CampaignOutcomeModal from "../CampaignOutcomeModal";
 
 import {
   useGetPlaylist,
+  useGetCampaignMembers,
   useGetCompletedActivities,
   completePlaylistActivity,
-  cancelPlannedActivities,
-  recordCallNoAnswer,
 } from "api/campaigns/campaigns";
 
 // utils
@@ -82,18 +70,18 @@ function PlaylistSkeleton() {
 export default function CampaignPlaylistTab({ campaignId, campaign }) {
   // ==============================|| STATE ||============================== //
 
-  const [expandedCardId, setExpandedCardId] = useState(null);
   const [completingId, setCompletingId] = useState(null);
   const [completedToday, setCompletedToday] = useState(0);
-  // Scope dialog — shown after a terminal outcome when account has multiple contacts
-  const [scopeDialog, setScopeDialog] = useState(null);
-  // { activityId, accountId, contactId, contacts: [] }
-  const [scopeChoice, setScopeChoice] = useState("contact");
-  const [executorId, setExecutorId] = useState(null);
-  const [showCompleted, setShowCompleted] = useState(false);
+  // { open: bool, activity: object|null }
+  const [outcomeModal, setOutcomeModal] = useState({
+    open: false,
+    activity: null,
+  });
+  const [executorId, setExecutorId] = useState("");
 
   // Track optimistically removed activity IDs
   const [removedIds, setRemovedIds] = useState(new Set());
+  const [showCompleted, setShowCompleted] = useState(false);
 
   // ==============================|| DATA ||============================== //
 
@@ -145,121 +133,26 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
 
   // ==============================|| HANDLERS ||============================== //
 
-  const handleExpand = useCallback((activityId) => {
-    setExpandedCardId((prev) => (prev === activityId ? null : activityId));
-  }, []);
-
   const handleExecutorChange = useCallback((event) => {
     setExecutorId(event.target.value);
     setRemovedIds(new Set());
   }, []);
 
-  // Outcome category map — mirrors ACTIVITY_OUTCOME_CONFIG in PlaylistActivityCard
-  const OUTCOME_CATEGORIES = {
-    SUCCESSFUL: "positive",
-    MEETING_SCHEDULED: "positive",
-    NO_ANSWER: "neutral",
-    CALLBACK_REQUESTED: "neutral",
-    FOLLOW_UP_NEEDED: "neutral",
-    OTHER: "neutral",
-    NOT_INTERESTED: "negative",
-    WRONG_CONTACT: "negative",
-  };
-
-  // Outcomes that require cancelling remaining planned activities
-  const TERMINAL_OUTCOMES = [
-    "SUCCESSFUL",
-    "MEETING_SCHEDULED",
-    "NOT_INTERESTED",
-    "WRONG_CONTACT",
-  ];
-
-  const handleComplete = useCallback(
+  // 1-click complete for EMAIL / LINKEDIN
+  const handleOneClickComplete = useCallback(
     async (activityId, payload) => {
       setCompletingId(activityId);
-
-      // CALL + NO_ANSWER below threshold — intercept BEFORE calling complete.
-      // Activity must stay PLANNED; dedicated endpoint handles the attempt counter.
-      if (payload._is_no_answer_retry) {
-        try {
-          const result = await recordCallNoAnswer(
-            activityId,
-            payload.outcome_notes,
-          );
-          if (result.success) {
-            mutatePlaylist();
-            displaySuccessSnackbar("Attempt recorded");
-          } else {
-            displayErrorSnackbar(result);
-          }
-        } catch (err) {
-          displayErrorSnackbar(err);
-        } finally {
-          setCompletingId(null);
-        }
-        return;
-      }
-
       try {
         const result = await completePlaylistActivity(
           activityId,
           campaignId,
           payload,
         );
-
         if (result.success) {
-          setExpandedCardId(null);
-
-          const category = OUTCOME_CATEGORIES[payload.outcome] || "neutral";
-          const isCallback = payload.outcome === "CALLBACK_REQUESTED";
-
-          if (isCallback) {
-            // Callback: do NOT optimistically remove — the completed activity
-            // disappears and the new followup appears only after the server
-            // response. Let SWR revalidate before updating UI.
-            await mutatePlaylist();
-          } else {
-            // All other outcomes: optimistic removal is safe
-            setRemovedIds((prev) => new Set([...prev, activityId]));
-            setCompletedToday((prev) => prev + 1);
-            mutatePlaylist();
-          }
-
-          if (category === "negative") {
-            displaySuccessSnackbar("Activity completed — sequence cancelled");
-          } else if (category === "positive") {
-            displaySuccessSnackbar("Activity completed successfully");
-          } else if (isCallback) {
-            displaySuccessSnackbar("Callback scheduled — sequence paused");
-          } else {
-            displaySuccessSnackbar("Activity completed");
-          }
-
-          // After terminal outcome — cancel remaining PLANNED activities
-          if (TERMINAL_OUTCOMES.includes(payload.outcome)) {
-            const activity = rawActivities.find((a) => a.id === activityId);
-            const accountId = activity?.account?.id;
-            const contacts = activity?.contacts || [];
-
-            if (accountId) {
-              if (contacts.length > 1) {
-                // Multiple contacts — ask scope
-                setScopeChoice("contact");
-                setScopeDialog({
-                  activityId,
-                  accountId,
-                  contactId: contacts[0]?.id,
-                  contacts,
-                });
-              } else {
-                // Single contact or no contact — cancel entire account
-                await cancelPlannedActivities(campaignId, {
-                  scope: "account",
-                  account_id: accountId,
-                });
-              }
-            }
-          }
+          setRemovedIds((prev) => new Set([...prev, activityId]));
+          setCompletedToday((prev) => prev + 1);
+          mutatePlaylist();
+          displaySuccessSnackbar("Activity completed");
         } else {
           displayErrorSnackbar(result);
         }
@@ -269,27 +162,23 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         setCompletingId(null);
       }
     },
-    [campaignId, mutatePlaylist, rawActivities],
+    [campaignId, mutatePlaylist],
   );
 
-  const handleScopeConfirm = useCallback(async () => {
-    if (!scopeDialog) return;
-    const { accountId, contactId } = scopeDialog;
+  // Opens outcome modal for CALL / MEETING / TASK
+  const handleLogOutcome = useCallback((activity) => {
+    setOutcomeModal({ open: true, activity });
+  }, []);
 
-    const payload =
-      scopeChoice === "contact"
-        ? { scope: "contact", account_id: accountId, contact_id: contactId }
-        : { scope: "account", account_id: accountId };
-
-    try {
-      const result = await cancelPlannedActivities(campaignId, payload);
-      if (!result.success) displayErrorSnackbar(result);
-    } catch (err) {
-      displayErrorSnackbar(err);
-    } finally {
-      setScopeDialog(null);
-    }
-  }, [campaignId, scopeDialog, scopeChoice]);
+  // Called by CampaignOutcomeModal on successful completion
+  const handleOutcomeComplete = useCallback(
+    (activityId) => {
+      setRemovedIds((prev) => new Set([...prev, activityId]));
+      setCompletedToday((prev) => prev + 1);
+      mutatePlaylist();
+    },
+    [mutatePlaylist],
+  );
 
   // ==============================|| DERIVED VALUES ||============================== //
 
@@ -396,72 +285,13 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
 
   return (
     <Stack spacing={2}>
-      {/* ==================== SCOPE DIALOG ==================== */}
-      {scopeDialog && (
-        <Dialog
-          open={Boolean(scopeDialog)}
-          onClose={() => setScopeDialog(null)}
-          maxWidth="xs"
-          fullWidth
-        >
-          <DialogTitle>Cancel remaining activities</DialogTitle>
-          <DialogContent>
-            <DialogContentText sx={{ mb: 2 }}>
-              This account has multiple contacts. Which activities should be
-              cancelled?
-            </DialogContentText>
-            <RadioGroup
-              value={scopeChoice}
-              onChange={(e) => setScopeChoice(e.target.value)}
-            >
-              <FormControlLabel
-                value="contact"
-                control={<Radio size="small" />}
-                label={
-                  <Typography variant="body2">
-                    This contact only —{" "}
-                    <Typography
-                      component="span"
-                      variant="body2"
-                      color="text.secondary"
-                    >
-                      {scopeDialog.contacts.find(
-                        (c) => c.id === scopeDialog.contactId,
-                      )?.first_name || "selected contact"}
-                    </Typography>
-                  </Typography>
-                }
-              />
-              <FormControlLabel
-                value="account"
-                control={<Radio size="small" />}
-                label={
-                  <Typography variant="body2">
-                    Entire account — cancel all remaining activities
-                  </Typography>
-                }
-              />
-            </RadioGroup>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button
-              onClick={() => setScopeDialog(null)}
-              color="inherit"
-              size="small"
-            >
-              Skip
-            </Button>
-            <Button
-              onClick={handleScopeConfirm}
-              variant="contained"
-              color="error"
-              size="small"
-            >
-              Confirm
-            </Button>
-          </DialogActions>
-        </Dialog>
-      )}
+      <CampaignOutcomeModal
+        open={outcomeModal.open}
+        onClose={() => setOutcomeModal({ open: false, activity: null })}
+        activity={outcomeModal.activity}
+        campaignId={campaignId}
+        onComplete={handleOutcomeComplete}
+      />
 
       {/* Progress bar */}
       <PlaylistProgressBar
@@ -504,11 +334,9 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
               <PlaylistActivityCard
                 key={activity.id}
                 activity={activity}
-                expanded={expandedCardId === activity.id}
-                onExpand={handleExpand}
-                onComplete={handleComplete}
+                onComplete={handleOneClickComplete}
+                onLogOutcome={handleLogOutcome}
                 completing={completingId === activity.id}
-                campaignEndDate={campaign?.planned_end_date}
               />
             ))}
           </Stack>
@@ -548,12 +376,10 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
                 <PlaylistActivityCard
                   key={activity.id}
                   activity={activity}
-                  expanded={false}
-                  onExpand={() => {}}
-                  onComplete={handleComplete}
+                  onComplete={handleOneClickComplete}
+                  onLogOutcome={handleLogOutcome}
                   completing={completingId === activity.id}
-                  isGreyedOut={true}
-                  campaignEndDate={campaign?.planned_end_date}
+                  isGreyedOut
                 />
               ))}
 
@@ -568,15 +394,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
                     borderColor: "warning.light",
                   }}
                 >
-                  <PlaylistActivityCard
-                    activity={activity}
-                    expanded={false}
-                    onExpand={() => {}}
-                    onComplete={() => {}}
-                    completing={false}
-                    isGreyedOut={true}
-                    campaignEndDate={campaign?.planned_end_date}
-                  />
+                  <PlaylistActivityCard activity={activity} isGreyedOut />
                 </Box>
               ))}
             </Stack>
@@ -632,10 +450,6 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
                   <PlaylistActivityCard
                     key={activity.id}
                     activity={activity}
-                    expanded={false}
-                    onExpand={() => {}}
-                    onComplete={() => {}}
-                    completing={false}
                     isGreyedOut
                   />
                 ))}
