@@ -291,6 +291,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         activity={outcomeModal.activity}
         campaignId={campaignId}
         onComplete={handleOutcomeComplete}
+        onUpdate={mutatePlaylist}
       />
 
       {/* Progress bar */}

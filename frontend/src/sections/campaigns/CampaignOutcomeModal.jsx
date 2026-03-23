@@ -44,6 +44,7 @@ import StopOutlined from "@ant-design/icons/StopOutlined";
 import {
   completePlaylistActivity,
   cancelPlannedActivities,
+  recordCallNoAnswer,
 } from "api/campaigns/campaigns";
 
 // utils
@@ -172,6 +173,7 @@ export default function CampaignOutcomeModal({
   activity,
   campaignId,
   onComplete,
+  onUpdate,
 }) {
   const [step, setStep] = useState(STEP_GROUP);
   const [group, setGroup] = useState(null);
@@ -237,15 +239,40 @@ export default function CampaignOutcomeModal({
       }
 
       try {
-        const result = await completePlaylistActivity(
-          activity.id,
-          campaignId,
-          payload,
-        );
+        // NO_ANSWER on a campaign CALL → dedicated retry endpoint
+        const isCallNoAnswerRetry =
+          resolvedGroup === "no_answer" &&
+          activity?.activity_type === "CALL" &&
+          !!activity?.campaign_contact_id;
+
+        let result;
+        let wasCompleted = true;
+
+        if (isCallNoAnswerRetry) {
+          const raw = await recordCallNoAnswer(activity.id, notes);
+          // recordCallNoAnswer returns res.data directly (not wrapped in {success})
+          const updatedStatus = raw?.data?.status || raw?.status;
+          wasCompleted = updatedStatus === "COMPLETED";
+          result = { success: true };
+        } else {
+          result = await completePlaylistActivity(
+            activity.id,
+            campaignId,
+            payload,
+          );
+        }
 
         if (!result.success) {
           displayErrorSnackbar(result);
           setSubmitting(false);
+          return;
+        }
+
+        // CALL retry not yet exhausted — close without removal or scope step
+        if (!wasCompleted) {
+          displaySuccessSnackbar("No answer recorded — activity rescheduled");
+          onUpdate?.();
+          handleClose();
           return;
         }
 
@@ -544,14 +571,10 @@ export default function CampaignOutcomeModal({
 }
 
 CampaignOutcomeModal.propTypes = {
-  /** Dialog open state */
   open: PropTypes.bool.isRequired,
-  /** Close handler */
   onClose: PropTypes.func.isRequired,
-  /** Activity object from playlist (must have id, title, account, contacts) */
   activity: PropTypes.object,
-  /** Campaign UUID — needed for API calls */
   campaignId: PropTypes.string.isRequired,
-  /** Called after successful completion: (activityId, outcome) => void */
   onComplete: PropTypes.func,
+  onUpdate: PropTypes.func,
 };
