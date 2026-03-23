@@ -1,27 +1,43 @@
-// frontend/src/sections/campaigns/workspace/CampaignOutcomeModal.jsx
+// frontend/src/sections/campaigns/CampaignOutcomeModal.jsx
 /**
- * Campaign Outcome Modal — 3-step wizard for logging activity outcomes.
+ * Campaign Outcome Modal — unified wizard for logging activity outcomes.
  *
- * Step 1 — Group: Callback / No Answer / Successful / Fail
- * Step 2 — Detail: date (Callback), sub-options (Fail), notes
- * Step 3 — Scope: contact / department / account (outcomes_requires_confirmation only)
+ * Mode A — "Log Response" (from campaign header, no activity pre-selected):
+ *   Step 1: Who answered? (contact from completed activities)
+ *   Step 2: Which activity?
+ *   Step 3: What was the outcome? (group selection)
+ *   Step 4: Details (date / sub-option / notes)
+ *   Step 5: Scope (cancel siblings — conditional on outcome)
+ *
+ * Mode B — "Log Outcome" (from PlaylistActivityCard, activity already known):
+ *   Step 1: What was the outcome?
+ *   Step 2: Details
+ *   Step 3: Scope (conditional)
+ *
+ * Mode is detected automatically: if `activity` prop is provided → Mode B.
  */
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 // material-ui
 import { useTheme, alpha } from "@mui/material/styles";
+import Accordion from "@mui/material/Accordion";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import AccordionSummary from "@mui/material/AccordionSummary";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import Paper from "@mui/material/Paper";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
 import Stack from "@mui/material/Stack";
@@ -35,17 +51,26 @@ import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 
 // icons
 import PhoneOutlined from "@ant-design/icons/PhoneOutlined";
+import MailOutlined from "@ant-design/icons/MailOutlined";
+import TeamOutlined from "@ant-design/icons/TeamOutlined";
+import LinkedinOutlined from "@ant-design/icons/LinkedinOutlined";
+import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
 import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
 import ClockCircleOutlined from "@ant-design/icons/ClockCircleOutlined";
-import StopOutlined from "@ant-design/icons/StopOutlined";
+import DownOutlined from "@ant-design/icons/DownOutlined";
+import WarningOutlined from "@ant-design/icons/WarningOutlined";
 
 // api
 import {
+  useGetCompletedActivities,
   completePlaylistActivity,
   cancelPlannedActivities,
   recordCallNoAnswer,
 } from "api/campaigns/campaigns";
+
+// components
+import ActivityModal from "sections/accounts/activities/ActivityModal";
 
 // utils
 import {
@@ -53,18 +78,27 @@ import {
   displayErrorSnackbar,
 } from "utils/displayError";
 
-// ==============================|| CONSTANTS ||============================== //
+// constants
+import { CANCEL_TRIGGER_OUTCOMES } from "./constants/campaignOutcomes";
 
-const STEP_GROUP = 0;
-const STEP_DETAIL = 1;
-const STEP_SCOPE = 2;
+// ==============================|| STEP KEYS ||============================== //
 
-// Mirrors backend outcomes_requires_confirmation
-const OUTCOMES_REQUIRES_SCOPE = new Set([
-  "SUCCESSFUL",
-  "MEETING_SCHEDULED",
-  "NOT_INTERESTED",
-]);
+const STEP = {
+  CONTACT: "contact", // Mode A only
+  ACTIVITY: "activity", // Mode A only
+  GROUP: "group",
+  DETAIL: "detail",
+  NEXT_STEP: "next_step", // conditional — SUCCESSFUL / MEETING_SCHEDULED only
+  SCOPE: "scope", // conditional
+};
+
+// Outcomes that trigger the "Create next step?" prompt
+const NEXT_STEP_OUTCOMES = new Set(["SUCCESSFUL", "MEETING_SCHEDULED"]);
+
+const MODE_A_BASE = [STEP.CONTACT, STEP.ACTIVITY, STEP.GROUP, STEP.DETAIL];
+const MODE_B_BASE = [STEP.GROUP, STEP.DETAIL];
+
+// ==============================|| OUTCOME GROUPS ||============================== //
 
 const GROUPS = [
   {
@@ -105,7 +139,23 @@ const FAIL_OPTIONS = [
   { value: "INVALID_PHONE_NUMBER", label: "Invalid Phone Number" },
 ];
 
-// Map group + fail sub-option to backend outcome
+const ACTIVITY_TYPE_ICONS = {
+  CALL: PhoneOutlined,
+  EMAIL: MailOutlined,
+  MEETING: TeamOutlined,
+  LINKEDIN: LinkedinOutlined,
+  OTHER: CalendarOutlined,
+};
+
+const STEP_TITLES = {
+  [STEP.CONTACT]: "Who answered?",
+  [STEP.ACTIVITY]: "Which activity?",
+  [STEP.GROUP]: "What was the outcome?",
+  [STEP.DETAIL]: "Add details",
+  [STEP.NEXT_STEP]: "Create a next step?",
+  [STEP.SCOPE]: "Cancel other activities?",
+};
+
 function resolveOutcome(group, failOption) {
   if (group === "callback") return "CALLBACK_REQUESTED";
   if (group === "no_answer") return "NO_ANSWER";
@@ -114,17 +164,14 @@ function resolveOutcome(group, failOption) {
   return null;
 }
 
-// ==============================|| GROUP CARD ||============================== //
+// ==============================|| SUB-COMPONENTS ||============================== //
 
 function GroupCard({ group, selected, onClick }) {
   const theme = useTheme();
-
-  // Resolve MUI theme path (e.g. "warning.main") to hex
   const resolveColor = (path) => {
     const [palette, shade] = path.split(".");
     return theme.palette[palette]?.[shade] || theme.palette.text.secondary;
   };
-
   const color = resolveColor(group.iconColor);
   const { Icon } = group;
 
@@ -139,10 +186,7 @@ function GroupCard({ group, selected, onClick }) {
         bgcolor: selected ? alpha(color, 0.07) : "background.paper",
         cursor: "pointer",
         transition: "border-color 0.15s, background-color 0.15s",
-        "&:hover": {
-          borderColor: color,
-          bgcolor: alpha(color, 0.04),
-        },
+        "&:hover": { borderColor: color, bgcolor: alpha(color, 0.04) },
       }}
     >
       <Stack direction="row" spacing={1.5} alignItems="center">
@@ -166,423 +210,880 @@ GroupCard.propTypes = {
   onClick: PropTypes.func.isRequired,
 };
 
-// ==============================|| CAMPAIGN OUTCOME MODAL ||============================== //
+// ── Mode A Step 1: contact selection ──
+function StepContact({ completedActivities, selectedContactId, onSelect }) {
+  const theme = useTheme();
+
+  const accountGroups = useMemo(() => {
+    const groups = {};
+    completedActivities.forEach((a) => {
+      if (!a.contacts?.length) return;
+      const accountId = a.account?.id || "__no_account__";
+      const accountName = a.account?.company_name || "No account";
+      if (!groups[accountId])
+        groups[accountId] = { name: accountName, contacts: [] };
+      a.contacts.forEach((c) => {
+        if (!groups[accountId].contacts.find((x) => x.id === c.id)) {
+          groups[accountId].contacts.push(c);
+        }
+      });
+    });
+    return Object.entries(groups);
+  }, [completedActivities]);
+
+  const [expandedAccount, setExpandedAccount] = useState(
+    () => accountGroups[0]?.[0] || null,
+  );
+
+  if (accountGroups.length === 0) {
+    return (
+      <Box sx={{ py: 4, textAlign: "center" }}>
+        <Typography variant="body2" color="text.secondary">
+          No contacts found. Complete at least one activity first.
+        </Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <RadioGroup
+      value={selectedContactId || ""}
+      onChange={(e) => onSelect(e.target.value)}
+    >
+      <Stack spacing={1}>
+        {accountGroups.map(([accountId, group]) => {
+          const hasSelected = group.contacts.some(
+            (c) => c.id === selectedContactId,
+          );
+          return (
+            <Accordion
+              key={accountId}
+              disableGutters
+              elevation={0}
+              expanded={expandedAccount === accountId}
+              onChange={(_, isExpanded) =>
+                setExpandedAccount(isExpanded ? accountId : null)
+              }
+              sx={{
+                border: "1px solid",
+                borderColor: hasSelected ? "primary.main" : "divider",
+                borderRadius: "8px !important",
+                "&:before": { display: "none" },
+                overflow: "hidden",
+              }}
+            >
+              <AccordionSummary
+                expandIcon={<DownOutlined style={{ fontSize: 11 }} />}
+                sx={{ minHeight: 44, px: 1.5 }}
+              >
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <Typography variant="body2" fontWeight={600}>
+                    {group.name}
+                  </Typography>
+                  <Chip
+                    label={group.contacts.length}
+                    size="small"
+                    color={hasSelected ? "primary" : "default"}
+                    variant={hasSelected ? "filled" : "outlined"}
+                    sx={{ height: 18, fontSize: "0.65rem" }}
+                  />
+                </Stack>
+              </AccordionSummary>
+              <AccordionDetails sx={{ pt: 0, pb: 1, px: 1.5 }}>
+                <Stack spacing={0.75}>
+                  {group.contacts.map((contact) => {
+                    const isSelected = selectedContactId === contact.id;
+                    return (
+                      <Paper
+                        key={contact.id}
+                        elevation={0}
+                        onClick={() => onSelect(contact.id)}
+                        sx={{
+                          p: 1.25,
+                          border: "1px solid",
+                          borderColor: isSelected ? "primary.main" : "divider",
+                          borderRadius: 1.5,
+                          cursor: "pointer",
+                          bgcolor: isSelected
+                            ? alpha(theme.palette.primary.main, 0.05)
+                            : "transparent",
+                          transition: "all 0.15s ease",
+                          "&:hover": { borderColor: "primary.light" },
+                        }}
+                      >
+                        <FormControlLabel
+                          value={contact.id}
+                          control={<Radio size="small" />}
+                          label={
+                            <Box>
+                              <Typography
+                                variant="body2"
+                                fontWeight={isSelected ? 600 : 400}
+                              >
+                                {contact.first_name} {contact.last_name}
+                              </Typography>
+                              {(contact.job_title || contact.email) && (
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                >
+                                  {contact.job_title || contact.email}
+                                </Typography>
+                              )}
+                            </Box>
+                          }
+                          sx={{ m: 0, width: "100%" }}
+                        />
+                      </Paper>
+                    );
+                  })}
+                </Stack>
+              </AccordionDetails>
+            </Accordion>
+          );
+        })}
+      </Stack>
+    </RadioGroup>
+  );
+}
+
+StepContact.propTypes = {
+  completedActivities: PropTypes.array.isRequired,
+  selectedContactId: PropTypes.string,
+  onSelect: PropTypes.func.isRequired,
+};
+
+// ── Mode A Step 2: activity selection ──
+function StepActivity({
+  completedActivities,
+  selectedContactId,
+  selectedActivityId,
+  onSelect,
+}) {
+  const theme = useTheme();
+
+  const filtered = useMemo(
+    () =>
+      completedActivities.filter((a) =>
+        a.contacts?.some((c) => c.id === selectedContactId),
+      ),
+    [completedActivities, selectedContactId],
+  );
+
+  if (filtered.length === 0) {
+    return (
+      <Box sx={{ py: 4, textAlign: "center" }}>
+        <Typography variant="body2" color="text.secondary">
+          No activities found for this contact.
+        </Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <RadioGroup
+      value={selectedActivityId || ""}
+      onChange={(e) => onSelect(e.target.value)}
+    >
+      <Stack spacing={1}>
+        {filtered.map((a) => {
+          const isSelected = selectedActivityId === a.id;
+          const TypeIcon =
+            ACTIVITY_TYPE_ICONS[a.activity_type] || CalendarOutlined;
+          return (
+            <Paper
+              key={a.id}
+              elevation={0}
+              onClick={() => onSelect(a.id)}
+              sx={{
+                p: 1.5,
+                border: "1px solid",
+                borderColor: isSelected ? "primary.main" : "divider",
+                borderRadius: 1.5,
+                cursor: "pointer",
+                bgcolor: isSelected
+                  ? alpha(theme.palette.primary.main, 0.05)
+                  : "background.paper",
+                transition: "all 0.15s ease",
+                "&:hover": { borderColor: "primary.light" },
+              }}
+            >
+              <FormControlLabel
+                value={a.id}
+                control={<Radio size="small" />}
+                label={
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    spacing={1}
+                    sx={{ width: "100%" }}
+                  >
+                    <TypeIcon
+                      style={{
+                        fontSize: 14,
+                        color: theme.palette.text.secondary,
+                      }}
+                    />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="body2" fontWeight={600}>
+                        {a.title}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {a.activity_type}
+                        {a.completed_at
+                          ? ` · ${a.completed_at.slice(0, 10)}`
+                          : ""}
+                      </Typography>
+                    </Box>
+                    {a.outcome && (
+                      <Chip
+                        label={a.outcome}
+                        size="small"
+                        variant="outlined"
+                        sx={{ height: 20, fontSize: "0.65rem" }}
+                      />
+                    )}
+                  </Stack>
+                }
+                sx={{ m: 0, width: "100%" }}
+              />
+            </Paper>
+          );
+        })}
+      </Stack>
+    </RadioGroup>
+  );
+}
+
+StepActivity.propTypes = {
+  completedActivities: PropTypes.array.isRequired,
+  selectedContactId: PropTypes.string,
+  selectedActivityId: PropTypes.string,
+  onSelect: PropTypes.func.isRequired,
+};
+
+// ==============================|| MAIN COMPONENT ||============================== //
 
 export default function CampaignOutcomeModal({
   open,
   onClose,
-  activity,
-  campaignId,
-  onComplete,
-  onUpdate,
+  activity, // Mode B: PLANNED activity from playlist card
+  campaignId, // required in Mode B (or derived from campaign)
+  campaign, // Mode A: campaign object
+  onComplete, // called after successful completion: (activityId, outcome) => void
+  onUpdate, // called after any mutation to revalidate lists
 }) {
-  const [step, setStep] = useState(STEP_GROUP);
+  // ── Mode detection ──
+  const isModeB = !!activity;
+  const resolvedCampaignId = campaignId || campaign?.id;
+
+  const [step, setStep] = useState(() => (isModeB ? STEP.GROUP : STEP.CONTACT));
+
+  // Reset step to correct mode each time modal opens
+  useEffect(() => {
+    if (open) {
+      setStep(isModeB ? STEP.GROUP : STEP.CONTACT);
+    }
+  }, [open, isModeB]);
+
+  // ── Step navigation ──
+  const initialStep = isModeB ? STEP.GROUP : STEP.CONTACT;
+
+  // ── Mode A state ──
+  const [selectedContactId, setSelectedContactId] = useState(null);
+  const [selectedActivityId, setSelectedActivityId] = useState(null);
+
+  // ── Shared outcome state ──
   const [group, setGroup] = useState(null);
   const [notes, setNotes] = useState("");
   const [callbackDate, setCallbackDate] = useState(null);
   const [failOption, setFailOption] = useState("NOT_INTERESTED");
   const [scopeChoice, setScopeChoice] = useState("contact");
+
+  // ── UI state ──
   const [submitting, setSubmitting] = useState(false);
+  const [confirmAccountScope, setConfirmAccountScope] = useState(false);
+  const [activityModalOpen, setActivityModalOpen] = useState(false);
 
-  // ── Derived from activity ──
-  const contacts = activity?.contacts || [];
-  const account = activity?.account || null;
-  const primaryContact = contacts[0] || null;
+  // ── Completed activities (Mode A only) ──
+  const { activities: completedActivities, completedActivitiesLoading } =
+    useGetCompletedActivities(!isModeB && open ? resolvedCampaignId : null);
 
-  // Derive department from serializer fields (standard_department object is not in playlist shape)
+  // ── Active activity: from prop (B) or from selection (A) ──
+  const activeActivity = isModeB
+    ? activity
+    : completedActivities.find((a) => a.id === selectedActivityId) || null;
+
+  // ── Derive context from active activity ──
+  const actContacts = activeActivity?.contacts || [];
+  const account = activeActivity?.account || null;
+
+  // In Mode A the user chose a specific contact; in Mode B use first contact.
+  const primaryContact = isModeB
+    ? actContacts[0] || null
+    : actContacts.find((c) => c.id === selectedContactId) ||
+      actContacts[0] ||
+      null;
+
   const departmentId = primaryContact?.standard_department_id || null;
   const departmentName = primaryContact?.standard_department_name || null;
   const department = departmentId
     ? { id: departmentId, name: departmentName }
     : null;
-
   const contactName = primaryContact
     ? `${primaryContact.first_name || ""} ${primaryContact.last_name || ""}`.trim()
     : null;
 
   const currentOutcome = resolveOutcome(group, failOption);
-  const requiresScope = OUTCOMES_REQUIRES_SCOPE.has(currentOutcome);
-  const totalSteps = requiresScope ? 3 : 2;
+  const requiresScope = CANCEL_TRIGGER_OUTCOMES.has(currentOutcome);
+
+  // ── Ordered step list (scope appended conditionally at runtime) ──
+  const baseSteps = isModeB ? MODE_B_BASE : MODE_A_BASE;
 
   // ── Reset on close ──
   const handleClose = useCallback(() => {
-    setStep(STEP_GROUP);
+    setStep(isModeB ? STEP.GROUP : STEP.CONTACT);
+    setSelectedContactId(null);
+    setSelectedActivityId(null);
     setGroup(null);
     setNotes("");
     setCallbackDate(null);
     setFailOption("NOT_INTERESTED");
     setScopeChoice("contact");
     setSubmitting(false);
+    setConfirmAccountScope(false);
+    setActivityModalOpen(false);
     onClose();
-  }, [onClose]);
+  }, [onClose, isModeB]);
 
-  // ── Step 1 → Step 2 ──
-  const handleGroupSelect = useCallback((selectedGroup) => {
-    setGroup(selectedGroup);
-    setStep(STEP_DETAIL);
+  // ── Contact select — reset activity (FRONT-02) ──
+  const handleContactSelect = useCallback((contactId) => {
+    setSelectedContactId(contactId);
+    setSelectedActivityId(null); // reset activity when contact changes — FRONT-02
   }, []);
 
-  // ── Step 2 → Step 3 or submit ──
-  const handleDetailNext = useCallback(() => {
+  // ── Group select → auto-advance to detail ──
+  const handleGroupSelect = useCallback((selectedGroup) => {
+    setGroup(selectedGroup);
+    setStep(STEP.DETAIL);
+  }, []);
+
+  // ── Back navigation ──
+  const handleBack = useCallback(() => {
+    const fullSteps = requiresScope ? [...baseSteps, STEP.SCOPE] : baseSteps;
+    const idx = fullSteps.indexOf(step);
+    if (idx > 0) setStep(fullSteps[idx - 1]);
+  }, [step, baseSteps, requiresScope]);
+
+  // ── Core submit ──
+  const handleSubmit = useCallback(async () => {
+    if (!activeActivity) return;
+    setSubmitting(true);
+
     const outcome = resolveOutcome(group, failOption);
-    if (OUTCOMES_REQUIRES_SCOPE.has(outcome)) {
-      setStep(STEP_SCOPE);
-    } else {
-      handleSubmit(group, failOption);
+    const payload = { outcome, outcome_notes: notes || undefined };
+    if (group === "callback" && callbackDate) {
+      payload.callback_date = callbackDate.toISOString().split("T")[0];
     }
-  }, [group, failOption]);
 
-  // ── Final submit ──
-  const handleSubmit = useCallback(
-    async (resolvedGroup = group, resolvedFailOption = failOption) => {
-      setSubmitting(true);
-      const outcome = resolveOutcome(resolvedGroup, resolvedFailOption);
+    try {
+      // NO_ANSWER on a CALL in Mode B only (Mode A activities are already COMPLETED)
+      const isCallNoAnswerRetry =
+        isModeB &&
+        group === "no_answer" &&
+        activeActivity.activity_type === "CALL" &&
+        !!activeActivity.campaign_contact_id;
 
-      const payload = {
-        outcome,
-        outcome_notes: notes || undefined,
-      };
-      if (resolvedGroup === "callback" && callbackDate) {
-        payload.callback_date = callbackDate.toISOString().split("T")[0];
+      let result;
+      let wasCompleted = true;
+
+      if (isCallNoAnswerRetry) {
+        const raw = await recordCallNoAnswer(activeActivity.id, notes);
+        const updatedStatus = raw?.data?.status || raw?.status;
+        wasCompleted = updatedStatus === "COMPLETED";
+        result = { success: true };
+      } else {
+        result = await completePlaylistActivity(
+          activeActivity.id,
+          resolvedCampaignId,
+          payload,
+        );
       }
 
-      try {
-        // NO_ANSWER on a campaign CALL → dedicated retry endpoint
-        const isCallNoAnswerRetry =
-          resolvedGroup === "no_answer" &&
-          activity?.activity_type === "CALL" &&
-          !!activity?.campaign_contact_id;
+      // FRONT-06: always verify result
+      if (!result.success) {
+        displayErrorSnackbar(result);
+        setSubmitting(false);
+        return;
+      }
 
-        let result;
-        let wasCompleted = true;
+      // CALL retry not yet exhausted — close without scope step
+      if (!wasCompleted) {
+        displaySuccessSnackbar("No answer recorded — activity rescheduled");
+        onUpdate?.(); // FRONT-01
+        handleClose();
+        return;
+      }
 
-        if (isCallNoAnswerRetry) {
-          const raw = await recordCallNoAnswer(activity.id, notes);
-          // recordCallNoAnswer returns res.data directly (not wrapped in {success})
-          const updatedStatus = raw?.data?.status || raw?.status;
-          wasCompleted = updatedStatus === "COMPLETED";
-          result = { success: true };
+      // Scope cancellation when outcome requires it
+      if (CANCEL_TRIGGER_OUTCOMES.has(outcome) && account?.id) {
+        const scopePayload = { account_id: account.id };
+
+        if (scopeChoice === "contact" && primaryContact?.id) {
+          scopePayload.scope = "contact";
+          scopePayload.contact_id = primaryContact.id;
+        } else if (scopeChoice === "department" && department?.id) {
+          scopePayload.scope = "department";
+          scopePayload.department_id = department.id;
         } else {
-          result = await completePlaylistActivity(
-            activity.id,
-            campaignId,
-            payload,
-          );
+          scopePayload.scope = "account";
         }
 
-        if (!result.success) {
-          displayErrorSnackbar(result);
+        const cancelResult = await cancelPlannedActivities(
+          resolvedCampaignId,
+          scopePayload,
+        );
+        // FRONT-06: verify cancel result
+        if (!cancelResult.success) {
+          displayErrorSnackbar(cancelResult);
           setSubmitting(false);
           return;
         }
-
-        // CALL retry not yet exhausted — close without removal or scope step
-        if (!wasCompleted) {
-          displaySuccessSnackbar("No answer recorded — activity rescheduled");
-          onUpdate?.();
-          handleClose();
-          return;
-        }
-
-        // Scope cancellation — only when user reached step 3
-        if (step === STEP_SCOPE && account?.id) {
-          const scopePayload = { account_id: account.id };
-
-          if (scopeChoice === "contact" && primaryContact?.id) {
-            scopePayload.scope = "contact";
-            scopePayload.contact_id = primaryContact.id;
-          } else if (scopeChoice === "department" && department?.id) {
-            scopePayload.scope = "department";
-            scopePayload.department_id = department.id;
-          } else {
-            scopePayload.scope = "account";
-          }
-
-          await cancelPlannedActivities(campaignId, scopePayload);
-        }
-
-        displaySuccessSnackbar("Activity completed");
-        onComplete?.(activity.id, outcome);
-        handleClose();
-      } catch (err) {
-        displayErrorSnackbar(err);
-        setSubmitting(false);
       }
-    },
-    [
-      group,
-      failOption,
-      notes,
-      callbackDate,
-      step,
-      scopeChoice,
-      activity,
-      campaignId,
-      account,
-      primaryContact,
-      department,
-      onComplete,
-      handleClose,
-    ],
-  );
 
-  const isDetailValid = group === "callback" ? !!callbackDate : true;
+      displaySuccessSnackbar("Activity completed");
+      onComplete?.(activeActivity.id, outcome);
+      onUpdate?.(); // FRONT-01
+      handleClose();
+    } catch (err) {
+      displayErrorSnackbar(err);
+      setSubmitting(false);
+    }
+  }, [
+    group,
+    failOption,
+    scopeChoice,
+    notes,
+    callbackDate,
+    activeActivity,
+    isModeB,
+    resolvedCampaignId,
+    account,
+    primaryContact,
+    department,
+    onComplete,
+    onUpdate,
+    handleClose,
+  ]);
 
-  // ── Step titles ──
-  const STEP_TITLES = [
-    "What was the outcome?",
-    "Add details",
-    "Other contacts on this account",
-  ];
+  // ── Detail step next ──
+  const handleDetailNext = useCallback(() => {
+    // SUCCESSFUL / MEETING_SCHEDULED → propose creating a next step first
+    if (NEXT_STEP_OUTCOMES.has(currentOutcome)) {
+      setStep(STEP.NEXT_STEP);
+    } else if (requiresScope) {
+      setStep(STEP.SCOPE);
+    } else {
+      handleSubmit();
+    }
+  }, [currentOutcome, requiresScope, handleSubmit]);
+
+  const handleNextStepContinue = useCallback(() => {
+    // Called after ActivityModal closes (created or skipped)
+    setActivityModalOpen(false);
+    if (requiresScope) {
+      setStep(STEP.SCOPE);
+    } else {
+      handleSubmit();
+    }
+  }, [requiresScope, handleSubmit]);
+
+  // ── Scope confirm — intercept account for confirmation (FRONT-03) ──
+  const handleScopeConfirm = useCallback(() => {
+    if (scopeChoice === "account") {
+      setConfirmAccountScope(true);
+    } else {
+      handleSubmit();
+    }
+  }, [scopeChoice, handleSubmit]);
+
+  // ── Step validity ──
+  const isStepValid = () => {
+    if (step === STEP.CONTACT) return !!selectedContactId;
+    if (step === STEP.ACTIVITY) return !!selectedActivityId;
+    if (step === STEP.GROUP) return !!group;
+    if (step === STEP.DETAIL)
+      return group === "callback" ? !!callbackDate : true;
+    return true;
+  };
+
+  const isFirstStep = step === initialStep;
+
+  // ==============================|| RENDER ||============================== //
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-      {/* ── Header ── */}
-      <DialogTitle sx={{ pb: 1 }}>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="flex-start"
-        >
-          <Box>
-            <Typography variant="subtitle1" fontWeight={600}>
-              {STEP_TITLES[step]}
-            </Typography>
-            {activity?.title && (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ display: "block", mt: 0.25 }}
-                noWrap
-              >
-                {activity.title}
+    <>
+      <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
+        {/* Header */}
+        <DialogTitle sx={{ pb: 1 }}>
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="flex-start"
+          >
+            <Box>
+              <Typography variant="subtitle1" fontWeight={600}>
+                {STEP_TITLES[step]}
               </Typography>
-            )}
-          </Box>
-          {step > STEP_GROUP && (
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ flexShrink: 0, ml: 1, mt: 0.25 }}
-            >
-              {step + 1} / {totalSteps}
-            </Typography>
-          )}
-        </Stack>
-      </DialogTitle>
-
-      <Divider />
-
-      {/* ── Content ── */}
-      <DialogContent sx={{ pt: 2, pb: 1 }}>
-        {/* STEP 0 — Group selection */}
-        {step === STEP_GROUP && (
-          <Stack spacing={1}>
-            {GROUPS.map((g) => (
-              <GroupCard
-                key={g.key}
-                group={g}
-                selected={group === g.key}
-                onClick={() => handleGroupSelect(g.key)}
-              />
-            ))}
+              {activeActivity?.title && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mt: 0.25 }}
+                  noWrap
+                >
+                  {activeActivity.title}
+                </Typography>
+              )}
+            </Box>
           </Stack>
-        )}
+        </DialogTitle>
 
-        {/* STEP 1 — Detail */}
-        {step === STEP_DETAIL && (
-          <Stack spacing={2}>
-            {/* Callback: date picker */}
-            {group === "callback" && (
-              <LocalizationProvider dateAdapter={AdapterDayjs}>
-                <DatePicker
-                  label="Callback date *"
-                  value={callbackDate}
-                  onChange={setCallbackDate}
-                  disablePast
-                  slotProps={{
-                    textField: { size: "small", fullWidth: true },
-                  }}
-                />
-              </LocalizationProvider>
-            )}
+        <Divider />
 
-            {/* No Answer: confirmation label */}
-            {group === "no_answer" && (
-              <Box
-                sx={{
-                  p: 1.5,
-                  borderRadius: 1,
-                  bgcolor: "action.hover",
-                }}
-              >
+        {/* Content */}
+        <DialogContent sx={{ pt: 2, pb: 1, minHeight: 220 }}>
+          {/* Mode A — Step: Contact */}
+          {step === STEP.CONTACT &&
+            (completedActivitiesLoading ? (
+              <Box sx={{ py: 4, textAlign: "center" }}>
                 <Typography variant="body2" color="text.secondary">
-                  This attempt will be logged as <strong>No Answer</strong>. The
-                  contact remains active in the sequence.
+                  Loading…
                 </Typography>
               </Box>
-            )}
-
-            {/* Fail: sub-option radio */}
-            {group === "fail" && (
-              <RadioGroup
-                value={failOption}
-                onChange={(e) => setFailOption(e.target.value)}
-              >
-                {FAIL_OPTIONS.map((opt) => (
-                  <FormControlLabel
-                    key={opt.value}
-                    value={opt.value}
-                    control={<Radio size="small" />}
-                    label={<Typography variant="body2">{opt.label}</Typography>}
-                  />
-                ))}
-              </RadioGroup>
-            )}
-
-            {/* Notes — available for all groups */}
-            <TextField
-              label="Notes (optional)"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              multiline
-              rows={3}
-              size="small"
-              fullWidth
-              placeholder="Add any relevant context..."
-            />
-          </Stack>
-        )}
-
-        {/* STEP 2 — Scope */}
-        {step === STEP_SCOPE && (
-          <Stack spacing={1.5}>
-            <Typography variant="body2" color="text.secondary">
-              Do you want to cancel remaining activities for other contacts on
-              this account?
-            </Typography>
-
-            <RadioGroup
-              value={scopeChoice}
-              onChange={(e) => setScopeChoice(e.target.value)}
-            >
-              {/* Contact only */}
-              <FormControlLabel
-                value="contact"
-                control={<Radio size="small" />}
-                label={
-                  <Typography variant="body2">
-                    This contact only
-                    {contactName && (
-                      <Typography
-                        component="span"
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ ml: 0.5 }}
-                      >
-                        — {contactName}
-                      </Typography>
-                    )}
-                  </Typography>
-                }
+            ) : (
+              <StepContact
+                completedActivities={completedActivities}
+                selectedContactId={selectedContactId}
+                onSelect={handleContactSelect}
               />
+            ))}
 
-              {/* Department — only shown when contact has a department */}
-              {department && (
+          {/* Mode A — Step: Activity */}
+          {step === STEP.ACTIVITY && (
+            <StepActivity
+              completedActivities={completedActivities}
+              selectedContactId={selectedContactId}
+              selectedActivityId={selectedActivityId}
+              onSelect={setSelectedActivityId}
+            />
+          )}
+
+          {/* Step: Group */}
+          {step === STEP.GROUP && (
+            <Stack spacing={1}>
+              {GROUPS.map((g) => (
+                <GroupCard
+                  key={g.key}
+                  group={g}
+                  selected={group === g.key}
+                  onClick={() => handleGroupSelect(g.key)}
+                />
+              ))}
+            </Stack>
+          )}
+
+          {/* Step: Detail */}
+          {step === STEP.DETAIL && (
+            <Stack spacing={2}>
+              {group === "callback" && (
+                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                  <DatePicker
+                    label="Callback date *"
+                    value={callbackDate}
+                    onChange={setCallbackDate}
+                    disablePast
+                    slotProps={{
+                      textField: { size: "small", fullWidth: true },
+                    }}
+                  />
+                </LocalizationProvider>
+              )}
+
+              {group === "no_answer" && (
+                <Box sx={{ p: 1.5, borderRadius: 1, bgcolor: "action.hover" }}>
+                  <Typography variant="body2" color="text.secondary">
+                    This attempt will be logged as <strong>No Answer</strong>.
+                    The contact remains active in the sequence.
+                  </Typography>
+                </Box>
+              )}
+
+              {group === "fail" && (
+                <RadioGroup
+                  value={failOption}
+                  onChange={(e) => setFailOption(e.target.value)}
+                >
+                  {FAIL_OPTIONS.map((opt) => (
+                    <FormControlLabel
+                      key={opt.value}
+                      value={opt.value}
+                      control={<Radio size="small" />}
+                      label={
+                        <Typography variant="body2">{opt.label}</Typography>
+                      }
+                    />
+                  ))}
+                </RadioGroup>
+              )}
+
+              <TextField
+                label="Notes (optional)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                multiline
+                rows={3}
+                size="small"
+                fullWidth
+                placeholder="Add any relevant context…"
+              />
+            </Stack>
+          )}
+
+          {/* Step: Next Step (SUCCESSFUL / MEETING_SCHEDULED only) */}
+          {step === STEP.NEXT_STEP && (
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Would you like to create a follow-up activity and link it to a
+                decision cycle?
+              </Typography>
+              <Stack spacing={1}>
+                <Button
+                  variant="contained"
+                  fullWidth
+                  onClick={() => setActivityModalOpen(true)}
+                >
+                  Create a decision cycle activity
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  fullWidth
+                  onClick={handleNextStepContinue}
+                >
+                  Skip
+                </Button>
+              </Stack>
+
+              {/* ActivityModal — mounted inline, does not close CampaignOutcomeModal */}
+              {activeActivity && (
+                <ActivityModal
+                  open={activityModalOpen}
+                  onClose={() => setActivityModalOpen(false)}
+                  accountId={activeActivity.account?.id}
+                  previousActivityId={activeActivity.id}
+                  defaultActivityType="MEETING"
+                  onSuccess={() => {
+                    // Activity created — continue to scope step
+                    handleNextStepContinue();
+                  }}
+                />
+              )}
+            </Stack>
+          )}
+
+          {/* Step: Scope */}
+          {step === STEP.SCOPE && (
+            <Stack spacing={1.5}>
+              <Typography variant="body2" color="text.secondary">
+                Do you want to cancel remaining activities for other contacts on
+                this account?
+              </Typography>
+              <RadioGroup
+                value={scopeChoice}
+                onChange={(e) => setScopeChoice(e.target.value)}
+              >
                 <FormControlLabel
-                  value="department"
+                  value="contact"
                   control={<Radio size="small" />}
                   label={
                     <Typography variant="body2">
-                      Entire department
-                      <Typography
-                        component="span"
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ ml: 0.5 }}
-                      >
-                        — {department.name}
-                      </Typography>
+                      This contact only
+                      {contactName && (
+                        <Typography
+                          component="span"
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ ml: 0.5 }}
+                        >
+                          — {contactName}
+                        </Typography>
+                      )}
                     </Typography>
                   }
                 />
-              )}
-
-              {/* Entire account */}
-              <FormControlLabel
-                value="account"
-                control={<Radio size="small" />}
-                label={
-                  <Typography variant="body2">
-                    Entire account
-                    {account?.company_name && (
-                      <Typography
-                        component="span"
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ ml: 0.5 }}
-                      >
-                        — {account.company_name}
+                {department && (
+                  <FormControlLabel
+                    value="department"
+                    control={<Radio size="small" />}
+                    label={
+                      <Typography variant="body2">
+                        Entire department
+                        <Typography
+                          component="span"
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ ml: 0.5 }}
+                        >
+                          — {department.name}
+                        </Typography>
                       </Typography>
-                    )}
-                  </Typography>
-                }
-              />
-            </RadioGroup>
+                    }
+                  />
+                )}
+                <FormControlLabel
+                  value="account"
+                  control={<Radio size="small" />}
+                  label={
+                    <Typography variant="body2">
+                      Entire account
+                      {account?.company_name && (
+                        <Typography
+                          component="span"
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ ml: 0.5 }}
+                        >
+                          — {account.company_name}
+                        </Typography>
+                      )}
+                    </Typography>
+                  }
+                />
+              </RadioGroup>
+            </Stack>
+          )}
+        </DialogContent>
+
+        <Divider />
+
+        {/* Actions */}
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          {isFirstStep ? (
+            <Button
+              onClick={handleClose}
+              color="inherit"
+              size="small"
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+          ) : (
+            <Button
+              onClick={handleBack}
+              color="inherit"
+              size="small"
+              disabled={submitting}
+            >
+              Back
+            </Button>
+          )}
+
+          {/* Contact / Activity steps: explicit Next */}
+          {(step === STEP.CONTACT || step === STEP.ACTIVITY) && (
+            <Button
+              variant="contained"
+              size="small"
+              disabled={!isStepValid()}
+              onClick={() => {
+                if (step === STEP.CONTACT) setStep(STEP.ACTIVITY);
+                if (step === STEP.ACTIVITY) setStep(STEP.GROUP);
+              }}
+            >
+              Next
+            </Button>
+          )}
+
+          {/* Next Step: no footer buttons — actions are inline in the content */}
+          {step === STEP.NEXT_STEP && null}
+
+          {/* Detail: next or complete */}
+          {step === STEP.DETAIL && (
+            <Button
+              variant="contained"
+              size="small"
+              disabled={!isStepValid() || submitting}
+              onClick={handleDetailNext}
+            >
+              {requiresScope ? "Next" : submitting ? "Saving…" : "Complete"}
+            </Button>
+          )}
+
+          {/* Scope: confirm */}
+          {step === STEP.SCOPE && (
+            <Button
+              variant="contained"
+              size="small"
+              disabled={submitting}
+              onClick={handleScopeConfirm}
+            >
+              {submitting ? "Saving…" : "Confirm & Complete"}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      {/* FRONT-03: confirmation before account-wide cancel */}
+      <Dialog
+        open={confirmAccountScope}
+        onClose={() => setConfirmAccountScope(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <WarningOutlined style={{ fontSize: 18 }} />
+            <span>Cancel all activities?</span>
           </Stack>
-        )}
-      </DialogContent>
-
-      <Divider />
-
-      {/* ── Actions ── */}
-      <DialogActions sx={{ px: 3, py: 2 }}>
-        {step === STEP_GROUP ? (
-          <Button onClick={handleClose} color="inherit" size="small">
-            Cancel
-          </Button>
-        ) : (
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will cancel all remaining planned activities for the entire
+            account{account?.company_name ? ` (${account.company_name})` : ""}.
+            This cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button
-            onClick={() => setStep((s) => s - 1)}
+            onClick={() => setConfirmAccountScope(false)}
             color="inherit"
             size="small"
-            disabled={submitting}
           >
-            Back
+            Cancel
           </Button>
-        )}
-
-        {step === STEP_DETAIL && (
           <Button
-            onClick={handleDetailNext}
+            onClick={() => {
+              setConfirmAccountScope(false);
+              handleSubmit();
+            }}
             variant="contained"
+            color="error"
             size="small"
-            disabled={!isDetailValid || submitting}
           >
-            {requiresScope ? "Next" : submitting ? "Saving..." : "Complete"}
+            Confirm
           </Button>
-        )}
-
-        {step === STEP_SCOPE && (
-          <Button
-            onClick={() => handleSubmit()}
-            variant="contained"
-            size="small"
-            disabled={submitting}
-          >
-            {submitting ? "Saving..." : "Confirm & Complete"}
-          </Button>
-        )}
-      </DialogActions>
-    </Dialog>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 
 CampaignOutcomeModal.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  activity: PropTypes.object,
-  campaignId: PropTypes.string.isRequired,
+  activity: PropTypes.object, // Mode B
+  campaignId: PropTypes.string, // Mode B (or derived from campaign)
+  campaign: PropTypes.object, // Mode A
   onComplete: PropTypes.func,
   onUpdate: PropTypes.func,
 };

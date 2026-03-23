@@ -10,6 +10,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { useRouter } from "next/navigation";
 
 // material-ui
 import { useTheme, alpha } from "@mui/material/styles";
@@ -96,6 +97,13 @@ export default function PlaylistActivityCard({
 }) {
   const theme = useTheme();
 
+  const router = useRouter();
+
+  const handleCardClick = () => {
+    if (isGreyedOut) return;
+    router.push(`/activities/${activity.id}`);
+  };
+
   const TypeIcon =
     ACTIVITY_TYPE_ICONS[activity.activity_type] || CalendarOutlined;
   const typeColor = ACTIVITY_TYPE_COLORS[activity.activity_type] || "default";
@@ -172,6 +180,7 @@ export default function PlaylistActivityCard({
     <>
       <Paper
         elevation={0}
+        onClick={handleCardClick}
         sx={{
           border: "1px solid",
           borderColor: getBorderColor(),
@@ -182,6 +191,13 @@ export default function PlaylistActivityCard({
           opacity: isGreyedOut ? 0.55 : isCancelled ? 0.6 : 1,
           // Greyed out cards are display-only — no pointer interaction
           pointerEvents: isGreyedOut ? "none" : "auto",
+          cursor: isGreyedOut ? "default" : "pointer",
+          "&:hover": isGreyedOut
+            ? {}
+            : {
+                borderColor: theme.palette.primary.light,
+                boxShadow: `0 0 0 1px ${theme.palette.primary.light}`,
+              },
         }}
       >
         <Box sx={{ p: 2 }}>

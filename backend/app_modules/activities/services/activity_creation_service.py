@@ -96,11 +96,7 @@ class ActivityCreationService:
                 )
 
             # Owner resolution: override → account owner → current user
-            resolved_owner = (
-                cycle_owner_override
-                or getattr(account, 'account_owner', None)
-                or self.user
-            )
+            resolved_owner = cycle_owner_override or self.user
             
             # Track IDs to link
             contact_ids = list(activity_data.get('contact_ids', []))

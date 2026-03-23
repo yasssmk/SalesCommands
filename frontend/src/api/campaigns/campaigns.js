@@ -1084,6 +1084,7 @@ export async function completePlaylistActivity(
       endpoints.campaignDashboard(campaignId),
       endpoints.campaignDetail(campaignId),
       `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
+      `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`,
     ]);
     return { success: true, data: result.data };
   }

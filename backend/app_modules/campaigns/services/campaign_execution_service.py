@@ -20,7 +20,7 @@ from datetime import timedelta
 from core.logging import get_logger
 from core.logging.audit import audit_log
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CampaignModuleErrorMessages
+from core.error_messages import CampaignModuleErrorMessages, CoreErrorMessages
 
 from app_modules.activities.models import Activity
 from app_modules.activities.constants import ActivityType, ActivityStatus, ActivityOutcome
@@ -616,11 +616,20 @@ class CampaignExecutionService:
         # CALLBACK REQUESTED
         # ------------------------------------------------------------------
         if callback_date:
+            # Validate callback date is in the future
+            if callback_date < timezone.now().date():
+                raise StandardizedValidationError(
+                    CoreErrorMessages.INVALID_FIELD.format(
+                        field="callback_date (must be a future date)"
+                    )
+                )
+
             contact = activity.contacts.first()
             contact_name = (
                 f"{contact.first_name or ''} {contact.last_name or ''}".strip()
                 if contact else "Contact"
             )
+
 
             campaign_contact.request_callback(
                 callback_date=callback_date,

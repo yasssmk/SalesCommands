@@ -35,7 +35,7 @@ import CampaignMembersTab from "sections/campaigns/workspace/CampaignMembersTab"
 
 // api
 import { useGetCampaignWorkspace } from "api/campaigns/campaigns";
-import LogResponseModal from "sections/campaigns/workspace/LogResponseModal";
+import CampaignOutcomeModal from "sections/campaigns/CampaignOutcomeModal";
 
 // icons
 import ArrowLeftOutlined from "@ant-design/icons/ArrowLeftOutlined";
@@ -121,11 +121,11 @@ export default function CampaignWorkspacePage() {
     <Box>
       {/* Log Response Modal */}
       {campaign && (
-        <LogResponseModal
+        <CampaignOutcomeModal
           open={logResponseOpen}
           onClose={() => setLogResponseOpen(false)}
           campaign={campaign}
-          onSuccess={mutateCampaign}
+          onUpdate={mutateCampaign}
         />
       )}
       {/* Back Navigation */}
