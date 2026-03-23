@@ -11,7 +11,7 @@ from django.utils.translation import gettext_lazy as _
 from ..core_modules.models import ModuleBaseModel
 from core.models import ContactDetailsMixin
 from core.client_scope import ClientScopeManager
-from core.error_messages import AccountErrorMessages, CoreErrorMessages
+from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from end_users.models import User
 from core.constants import INDUSTRIES, COUNTRIES
@@ -346,7 +346,7 @@ class CompanyAccount(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDeta
         Returns:
             dict: Qualification data organized by department
         """
-        from apps.signals.models.qualification_signal_model import QualificationSignal
+        # from apps.signals.models.qualification_signal_model import QualificationSignal
         
         # return SignalDataService.get_by_department(
         #     account=self,

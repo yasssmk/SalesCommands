@@ -13,26 +13,20 @@ Follows legacy campaign_analytics_service.py patterns,
 simplified for new CampaignAccount pivot architecture.
 """
 
-from django.db.models import Count, Q, Sum, F, Value, CharField
-from django.db.models.functions import Coalesce
+from django.db.models import Count, Sum
 from django.utils import timezone
-from decimal import Decimal
 
 from core.logging import get_logger
-from core.exceptions import StandardizedValidationError
-from core.error_messages import CampaignModuleErrorMessages
 
 from app_modules.activities.models import Activity
-from app_modules.activities.constants import ActivityType, ActivityStatus, ActivityOutcome
+from app_modules.activities.constants import ActivityType, ActivityStatus
 
 from ..models import (
-    Campaign,
     CampaignAccount,
     CampaignAccountStatus,
     CampaignObjective,
     ObjectiveType,
 )
-from ..config.settings import CONFIG
 
 logger = get_logger(__name__)
 
@@ -106,12 +100,8 @@ class CampaignAnalyticsService:
         owner = campaign.owner
         executor = campaign.executor
 
-        # Count distinct users: CampaignMember rows + owner + executor (deduplicated)
-        from ..models.campaign_member import CampaignMember
-        member_ids = set(
-            CampaignMember.objects.filter(campaign=campaign)
-            .values_list('user_id', flat=True)
-        )
+        # Count distinct users: owner + executor (CampaignMember table removed in 0013)
+        member_ids = set()
         if owner:
             member_ids.add(owner.id)
         if executor:

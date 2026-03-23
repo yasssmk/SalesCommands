@@ -62,7 +62,6 @@ const STEP_SCOPE = 2;
 // Mirrors backend outcomes_requires_confirmation
 const OUTCOMES_REQUIRES_SCOPE = new Set([
   "SUCCESSFUL",
-  "POSITIVE_RESPONSE",
   "MEETING_SCHEDULED",
   "NOT_INTERESTED",
 ]);
@@ -102,6 +101,8 @@ const FAIL_OPTIONS = [
   { value: "NOT_INTERESTED", label: "Not Interested" },
   { value: "WRONG_CONTACT", label: "Wrong Contact" },
   { value: "UNSUBSCRIBE_OPTOUT", label: "Opt Out / Unsubscribe" },
+  { value: "WRONG_EMAIL", label: "Wrong Email" },
+  { value: "INVALID_PHONE_NUMBER", label: "Invalid Phone Number" },
 ];
 
 // Map group + fail sub-option to backend outcome
@@ -187,7 +188,14 @@ export default function CampaignOutcomeModal({
   const contacts = activity?.contacts || [];
   const account = activity?.account || null;
   const primaryContact = contacts[0] || null;
-  const department = primaryContact?.standard_department || null;
+
+  // Derive department from serializer fields (standard_department object is not in playlist shape)
+  const departmentId = primaryContact?.standard_department_id || null;
+  const departmentName = primaryContact?.standard_department_name || null;
+  const department = departmentId
+    ? { id: departmentId, name: departmentName }
+    : null;
+
   const contactName = primaryContact
     ? `${primaryContact.first_name || ""} ${primaryContact.last_name || ""}`.trim()
     : null;

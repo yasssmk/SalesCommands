@@ -993,9 +993,25 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 CoreErrorMessages.REQUIRED_FIELD.format(field='department_id')
             )
 
+        from app_modules.accounts.models import CompanyAccount
+        from app_modules.contacts.models import Contact
+
+        # Validate account belongs to this client
+        try:
+            account = CompanyAccount.objects.get(id=account_id, client_id=client_id)
+        except CompanyAccount.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+        # Validate contact belongs to this account (scope = contact)
+        if scope == 'contact':
+            try:
+                Contact.objects.get(id=contact_id, account=account, client_id=client_id)
+            except Contact.DoesNotExist:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
         qs = Activity.objects.filter(
             campaign=campaign,
-            account_id=account_id,
+            account=account,
             client_id=client_id,
             status=ActivityStatus.PLANNED,
         )
@@ -1003,7 +1019,6 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         if scope == 'contact':
             qs = qs.filter(contacts__id=contact_id)
         elif scope == 'department':
-            # Filter activities whose contacts belong to the given department
             qs = qs.filter(contacts__standard_department_id=department_id)
 
         cancelled_count = qs.update(
@@ -1011,6 +1026,14 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             outcome_notes='Manually cancelled after terminal response',
             updated_at=timezone.now(),
         )
+
+        if cancelled_count == 0:
+            logger.warning("campaign_cancel_planned_no_activities", extra={
+                **ctx,
+                'campaign_id': str(campaign.id),
+                'scope': scope,
+                'account_id': str(account_id),
+            })
 
         self._invalidate_campaign_caches(client_id)
 

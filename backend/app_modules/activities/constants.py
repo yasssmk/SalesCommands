@@ -37,12 +37,6 @@ class ActivityStatus(models.TextChoices):
 
 
 class ActivityOutcome(models.TextChoices):
-    """
-    Outcome of a completed activity.
-    
-    Used to track results and feed Decision Cycle progression.
-    Only applicable when status = COMPLETED.
-    """
     SUCCESSFUL = 'SUCCESSFUL', _('Successful')
     NO_ANSWER = 'NO_ANSWER', _('No Answer')
     CALLBACK_REQUESTED = 'CALLBACK_REQUESTED', _('Callback Requested')
@@ -50,6 +44,9 @@ class ActivityOutcome(models.TextChoices):
     WRONG_CONTACT = 'WRONG_CONTACT', _('Wrong Contact')
     MEETING_SCHEDULED = 'MEETING_SCHEDULED', _('Meeting Scheduled')
     FOLLOW_UP_NEEDED = 'FOLLOW_UP_NEEDED', _('Follow-up Needed')
+    UNSUBSCRIBE_OPTOUT = 'UNSUBSCRIBE_OPTOUT', _('Unsubscribe / Opt-out')
+    WRONG_EMAIL = 'WRONG_EMAIL', _('Wrong Email')
+    INVALID_PHONE_NUMBER = 'INVALID_PHONE_NUMBER', _('Invalid Phone Number')
     OTHER = 'OTHER', _('Other')
 
 class NoNextStepReason(models.TextChoices):

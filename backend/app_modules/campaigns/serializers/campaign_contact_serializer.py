@@ -60,6 +60,7 @@ class CampaignContactListSerializer(ClientScopeManager.SerializerMixin, serializ
 
     status_display = serializers.SerializerMethodField(read_only=True)
     contact_name = serializers.SerializerMethodField(read_only=True)
+    department_name = serializers.SerializerMethodField(read_only=True)
     activities_count = serializers.SerializerMethodField(read_only=True)
     account_name = serializers.SerializerMethodField(read_only=True)
     has_on_hold = serializers.SerializerMethodField(read_only=True)
@@ -68,7 +69,7 @@ class CampaignContactListSerializer(ClientScopeManager.SerializerMixin, serializ
         model = CampaignContact
         fields = [
             'id',
-            'contact', 'contact_name',
+            'contact', 'contact_name', 'department_name',
             'account_name',
             'status', 'status_display',
             'callback_date',
@@ -85,6 +86,12 @@ class CampaignContactListSerializer(ClientScopeManager.SerializerMixin, serializ
     def get_contact_name(self, obj):
         if obj.contact:
             return f"{obj.contact.first_name or ''} {obj.contact.last_name or ''}".strip()
+        return None
+    
+    def get_department_name(self, obj):
+        """Return contact's standard department display name."""
+        if obj.contact and obj.contact.standard_department:
+            return obj.contact.standard_department.get_name_display()
         return None
 
     def get_activities_count(self, obj):

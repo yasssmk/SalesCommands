@@ -278,7 +278,7 @@ export default function TargetsTab({ campaignId, campaign }) {
         header: "Department",
         id: "department",
         cell: ({ row }) => {
-          const dept = row.original.contact?.department_name;
+          const dept = row.original.department_name;
           return (
             <Typography
               variant="body2"

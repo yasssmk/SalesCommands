@@ -20,6 +20,9 @@ import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
+// constants
+import { OUTCOME_CONFIG } from "sections/campaigns/constants/campaignOutcomes";
+
 // icons
 import PhoneOutlined from "@ant-design/icons/PhoneOutlined";
 import MailOutlined from "@ant-design/icons/MailOutlined";
@@ -52,57 +55,6 @@ const ACTIVITY_TYPE_COLORS = {
 // Activity types that complete in 1 click ("sent" semantics)
 const ONE_CLICK_TYPES = ["EMAIL", "LINKEDIN"];
 const MAX_CALL_ATTEMPTS = 3;
-
-// ==============================|| OUTCOME CONFIG ||============================== //
-
-/**
- * Activity Outcome Configuration — matches backend ActivityOutcome choices.
- */
-const ACTIVITY_OUTCOME_CONFIG = {
-  SUCCESSFUL: { color: "success", label: "Successful", category: "positive" },
-  MEETING_SCHEDULED: {
-    color: "success",
-    label: "Meeting Scheduled",
-    category: "positive",
-  },
-  NO_ANSWER: { color: "warning", label: "No Answer", category: "neutral" },
-  CALLBACK_REQUESTED: {
-    color: "info",
-    label: "Callback Requested",
-    category: "neutral",
-  },
-  FOLLOW_UP_NEEDED: {
-    color: "warning",
-    label: "Follow-up Needed",
-    category: "neutral",
-  },
-  OTHER: { color: "default", label: "Other", category: "neutral" },
-  NOT_INTERESTED: {
-    color: "error",
-    label: "Not Interested",
-    category: "negative",
-  },
-  WRONG_CONTACT: {
-    color: "error",
-    label: "Wrong Contact",
-    category: "negative",
-  },
-};
-
-// Ordered: positive first, then neutral, then negative
-const OUTCOME_KEYS_ORDERED = [
-  "SUCCESSFUL",
-  "MEETING_SCHEDULED",
-  "NO_ANSWER",
-  "CALLBACK_REQUESTED",
-  "FOLLOW_UP_NEEDED",
-  "OTHER",
-  "NOT_INTERESTED",
-  "WRONG_CONTACT",
-];
-
-// Outcomes that require a confirmation dialog (cancel entire sequence chain)
-const TERMINAL_OUTCOMES = ["NOT_INTERESTED", "WRONG_CONTACT"];
 
 // ==============================|| DATE HELPERS ||============================== //
 
@@ -172,7 +124,7 @@ export default function PlaylistActivityCard({
     activityDate > campaignEndDate;
 
   const outcomeConfig = activity.outcome
-    ? ACTIVITY_OUTCOME_CONFIG[activity.outcome]
+    ? OUTCOME_CONFIG[activity.outcome]
     : null;
   const outcomeCategory = outcomeConfig?.category || "neutral";
 

@@ -43,18 +43,15 @@ logger = get_logger(__name__)
 TERMINAL_OUTCOMES: frozenset = frozenset({
     ActivityOutcome.NOT_INTERESTED,
     ActivityOutcome.WRONG_CONTACT,
-    'UNSUBSCRIBE_OPTOUT',    # opt-out: not yet in ActivityOutcome enum
-    'WRONG_EMAIL',           # data quality: not yet in ActivityOutcome enum
-    'INVALID_PHONE_NUMBER',  # data quality: not yet in ActivityOutcome enum
+    ActivityOutcome.UNSUBSCRIBE_OPTOUT,
+    ActivityOutcome.WRONG_EMAIL,
+    ActivityOutcome.INVALID_PHONE_NUMBER,
 })
 
-# Outcomes that mark a contact as successfully reached
 SUCCESSFUL_OUTCOMES: frozenset = frozenset({
     ActivityOutcome.SUCCESSFUL,
     ActivityOutcome.MEETING_SCHEDULED,
-    'POSITIVE_RESPONSE',     # legacy alias: not yet in ActivityOutcome enum
 })
-
 
 class CampaignExecutionService:
     """
@@ -372,14 +369,11 @@ class CampaignExecutionService:
             'has_next': next_activity is not None,
         })
 
-        scope_confirmation_outcomes = {'SUCCESSFUL', 'POSITIVE_RESPONSE', 'MEETING_SCHEDULED', 'NOT_INTERESTED'}
-
         return {
             'activity': activity,
             'campaign_contact': campaign_contact,
             'campaign_account': campaign_account,
             'next_activity': next_activity,
-            'requires_scope_confirmation': outcome in scope_confirmation_outcomes,
         }
 
     # ======================================================================
@@ -660,8 +654,7 @@ class CampaignExecutionService:
         # ------------------------------------------------------------------
         # SUCCESSFUL OUTCOMES — complete contact + possibly account
         # ------------------------------------------------------------------
-        successful_outcomes = {'SUCCESSFUL', 'POSITIVE_RESPONSE', 'MEETING_SCHEDULED'}
-        if outcome in successful_outcomes:
+        if outcome in SUCCESSFUL_OUTCOMES:
             campaign_contact.mark_completed(
                 user=self.user,
                 notes=f"Successful: {outcome}",

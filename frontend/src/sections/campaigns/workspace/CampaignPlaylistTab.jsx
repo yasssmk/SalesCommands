@@ -142,6 +142,7 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
   const handleOneClickComplete = useCallback(
     async (activityId, payload) => {
       setCompletingId(activityId);
+      const snapshotRemovedIds = removedIds;
       try {
         const result = await completePlaylistActivity(
           activityId,
@@ -154,15 +155,19 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
           mutatePlaylist();
           displaySuccessSnackbar("Activity completed");
         } else {
+          // BUG-04: rollback on API error
+          setRemovedIds(snapshotRemovedIds);
           displayErrorSnackbar(result);
         }
       } catch (err) {
+        // BUG-04: rollback on network error
+        setRemovedIds(snapshotRemovedIds);
         displayErrorSnackbar(err);
       } finally {
         setCompletingId(null);
       }
     },
-    [campaignId, mutatePlaylist],
+    [campaignId, mutatePlaylist, removedIds],
   );
 
   // Opens outcome modal for CALL / MEETING / TASK

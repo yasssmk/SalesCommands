@@ -6,7 +6,6 @@ Follows the same patterns as CompanyAccountSerializer and DecisionCycleSerialize
 """
 
 from rest_framework import serializers
-from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages, ActivityErrorMessages, AccountErrorMessages
 from core.exceptions import StandardizedValidationError
@@ -15,7 +14,7 @@ from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from end_users.models import User
 from .models import Activity
-from .constants import ActivityType, ActivityStatus, ActivityOutcome, NoNextStepReason
+from .constants import ActivityStatus, NoNextStepReason
 from .services import ActivitySequenceService, SequenceScope
 
 # ============================================================================
@@ -227,6 +226,8 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
                 'job_title': c.job_title or '',
                 'email': c.email or '',
                 'department': c.standard_department.get_name_display() if c.standard_department else '',
+                'standard_department_id': c.standard_department_id,
+                'standard_department_name': c.standard_department.get_name_display() if c.standard_department else None,
             }
             for c in obj.contacts.all()
         ]
