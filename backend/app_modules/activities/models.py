@@ -279,6 +279,19 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         )
     )
 
+    source_activity = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='derived_activities',
+        verbose_name=_('Source Activity'),
+        help_text=_(
+            'Campaign activity that triggered the creation of this decision cycle activity. '
+            'Set during campaign-to-cycle conversion flow.'
+        )
+    )
+
     
     # ==========================================================================
     # LINKED LIST (PREVIOUS/NEXT ACTIVITY)

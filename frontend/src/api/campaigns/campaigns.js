@@ -279,12 +279,12 @@ export async function logCampaignResponse(campaignId, payload) {
     payload,
   );
 
-  if (result.success) {
+  if (result.success || result.status === 200) {
     revalidateMultiple([
       endpoints.campaignPlaylist(campaignId),
       endpoints.campaignDashboard(campaignId),
-      `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`,
       `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
+      `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`,
     ]);
     return { success: true, data: result.data };
   }
@@ -560,10 +560,11 @@ export function useGetPlaylist(campaignId, options = {}) {
   }, [campaignId, tenantId, executorId, limit]);
 
   const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
-    revalidateOnFocus: false,
+    revalidateOnFocus: true,
     revalidateOnReconnect: false,
     shouldRetryOnError: true,
     dedupingInterval: 5000,
+    refreshInterval: 60000,
   });
 
   return useMemo(

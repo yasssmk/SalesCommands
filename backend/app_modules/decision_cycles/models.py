@@ -75,6 +75,19 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Whether this is the currently displayed cycle for the account')
     )
 
+    source_campaign = models.ForeignKey(
+        'module_campaigns.Campaign',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='generated_cycles',
+        verbose_name=_('Source Campaign'),
+        help_text=_(
+            'Campaign that triggered the creation of this decision cycle. '
+            'Set during campaign-to-cycle conversion flow.'
+        )
+    )
+
     # ==========================================================================
     # FINANCIAL
     # ==========================================================================

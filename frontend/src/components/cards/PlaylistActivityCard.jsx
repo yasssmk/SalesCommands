@@ -110,17 +110,17 @@ export default function PlaylistActivityCard({
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
   const isOnHold = activity.status === "ON_HOLD";
-  const activityDate = activity.scheduled_date || activity.due_date;
-
-  // Compare date strings (YYYY-MM-DD) to avoid UTC timezone drift.
-  const todayStr = new Date().toLocaleDateString("en-CA");
+  // scheduled_date is either a string (non-campaign) or {date, confirmed} (campaign sequence)
+  const scheduledDateRaw = activity.scheduled_date;
+  const isScheduledObject =
+    scheduledDateRaw && typeof scheduledDateRaw === "object";
+  const activityDateStr = isScheduledObject
+    ? scheduledDateRaw.date
+    : scheduledDateRaw || activity.due_date;
+  const dateConfirmed = isScheduledObject ? scheduledDateRaw.confirmed : true;
 
   const isOverdue =
-    !isGreyedOut &&
-    activityDate &&
-    activityDate < todayStr &&
-    !isCompleted &&
-    !isCancelled;
+    !isGreyedOut && !isCompleted && !isCancelled && !!activity.is_overdue;
 
   const campaignEndDate = activity.campaign_end_date || null;
   const isBeyondEndDate =
@@ -128,8 +128,8 @@ export default function PlaylistActivityCard({
     !isCancelled &&
     !isOverdue &&
     campaignEndDate &&
-    activityDate &&
-    activityDate > campaignEndDate;
+    activityDateStr &&
+    activityDateStr > campaignEndDate;
 
   const outcomeConfig = activity.outcome
     ? OUTCOME_CONFIG[activity.outcome]
@@ -273,7 +273,7 @@ export default function PlaylistActivityCard({
                   variant="filled"
                   sx={{ height: 22, fontSize: "0.7rem" }}
                 />
-              ) : activityDate ? (
+              ) : activityDateStr ? (
                 <Stack direction="row" alignItems="center" spacing={0.5}>
                   <ClockCircleOutlined
                     style={{
@@ -292,11 +292,15 @@ export default function PlaylistActivityCard({
                         ? "error.main"
                         : isBeyondEndDate
                           ? "warning.main"
-                          : "text.secondary",
+                          : !dateConfirmed
+                            ? "text.disabled"
+                            : "text.secondary",
                       fontWeight: isOverdue || isBeyondEndDate ? 600 : 400,
+                      fontStyle: !dateConfirmed ? "italic" : "normal",
                     }}
                   >
-                    {formatRelativeDate(activityDate)}
+                    {!dateConfirmed ? "~" : ""}
+                    {formatRelativeDate(activityDateStr)}
                   </Typography>
                   {activity.scheduled_time && (
                     <Typography variant="caption" color="text.disabled">

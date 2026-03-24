@@ -1127,6 +1127,7 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
     steps_count = serializers.IntegerField(read_only=True)
     validated_steps_count = serializers.IntegerField(read_only=True)
     estimated_timeline_days = serializers.IntegerField(read_only=True)
+    source_campaign_detail = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = DecisionCycle
@@ -1138,7 +1139,7 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'steps', 'steps_count', 'validated_steps_count',
-            'estimated_timeline_days',
+            'estimated_timeline_days', 'source_campaign_detail',
             'created_by', 'updated_by',
             'created_at', 'updated_at'
         ]
@@ -1157,6 +1158,18 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             return f"{obj.owner.first_name or ''} {obj.owner.last_name or ''}".strip()
         return None
     
+    def get_source_campaign_detail(self, obj):
+        """Return minimal info about the campaign that generated this cycle."""
+        if not obj.source_campaign_id:
+            return None
+        campaign = obj.source_campaign
+        if not campaign:
+            return None
+        return {
+            'id': str(campaign.id),
+            'name': campaign.name,
+            'status': campaign.status,
+        }
 
 
 class DecisionCycleCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):

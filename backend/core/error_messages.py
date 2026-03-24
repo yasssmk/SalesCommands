@@ -161,6 +161,7 @@ class ActivityErrorMessages:
     CANNOT_REOPEN = _("Only completed or cancelled activities can be reopened")
     CANNOT_REOPEN_CLOSED_CYCLE = _("Cannot reopen activity while the decision cycle is closed. Reopen the cycle first. ")
     INVALID_TARGET_STATUS = _("Target status must be PLANNED")
+    PREVIOUS_ACTIVITY_NOT_COMPLETED = "Complete the previous activities in the playlist before logging this one."
     
     # Relation validation
     STEP_REQUIRES_CYCLE = _("Please select a pipeline step when linking to a decision cycle")
@@ -342,6 +343,7 @@ class CampaignModuleErrorMessages:
 
     # Execution & Activities
     ACTIVITY_GENERATION_FAILED = _("Failed to generate activities: {reason}")
+    
     PLAYLIST_EMPTY = _("No activities available in campaign playlist")
     EXECUTION_FAILED = _("Campaign execution failed: {reason}")
     TARGETED_CAMPAIGN_LIFECYCLE_FORBIDDEN = (

@@ -271,22 +271,17 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
         return last.isoformat() if last else None
 
     def get_is_inactive(self, obj):
-        """
-        True if campaign is ACTIVE but has had no completed activity
-        in the last inactivity_threshold_days days.
-        """
-        if hasattr(obj, '_is_inactive'):
-            if obj.status != 'ACTIVE':
-                return False
-            return obj._is_inactive
-
         from django.utils import timezone
-        from app_modules.activities.models import Activity
-        from app_modules.activities.constants import ActivityStatus
-
         if obj.status != 'ACTIVE':
             return False
-
+        # Not inactive if the campaign started less than inactivity_threshold_days ago
+        start = obj.actual_start_date or obj.planned_start_date
+        if start and (timezone.now().date() - start).days < CONFIG.limits.inactivity_threshold_days:
+            return False
+        if hasattr(obj, '_is_inactive'):
+            return obj._is_inactive
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
         threshold = timezone.now().date() - timezone.timedelta(
             days=CONFIG.limits.inactivity_threshold_days
         )
@@ -295,7 +290,6 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
             status=ActivityStatus.COMPLETED,
             completed_at__date__gte=threshold,
         ).exists()
-
         return not has_recent
 
 # ============================================================================

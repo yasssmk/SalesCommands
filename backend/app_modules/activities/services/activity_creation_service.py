@@ -187,13 +187,28 @@ class ActivityCreationService:
             # ==================================================================
             # STEP 4: Create Activity
             # ==================================================================
+            source_activity_id = activity_data.get('source_activity_id')
+
             activity = self._create_activity(
                 activity_data=activity_data,
                 contact_ids=contact_ids,
                 cycle_id=cycle_id,
                 step_id=step_id,
                 owner=resolved_owner,
+                source_activity_id=source_activity_id,
             )
+
+            # If a new cycle was created from a campaign conversion, record origin
+            if inline_cycle and created_entities.get('cycle') and source_activity_id:
+                source_act = Activity.objects.filter(
+                    id=source_activity_id,
+                    client_id=self.client_id
+                ).select_related('campaign').first()
+                if source_act and source_act.campaign_id:
+                    created_entities['cycle'].source_campaign_id = source_act.campaign_id
+                    created_entities['cycle'].save(update_fields=['source_campaign_id'])
+
+
             created_entities['activity'] = activity
             
             logger.info("activity_with_entities_created", extra={
@@ -364,6 +379,7 @@ class ActivityCreationService:
         cycle_id: str,
         step_id: str,
         owner=None,
+        source_activity_id: str = None,
     ) -> Activity:
         """Create the activity with all relations."""
         try:
@@ -404,6 +420,7 @@ class ActivityCreationService:
                 outcome_notes=(activity_data.get('outcome_notes') or '').strip() or None,
                 decision_cycle_id=cycle_id,
                 decision_step_id=step_id,
+                source_activity_id=source_activity_id,
                 created_by=self.user,
                 updated_by=self.user,
             )

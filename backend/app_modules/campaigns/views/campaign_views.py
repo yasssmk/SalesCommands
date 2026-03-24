@@ -782,18 +782,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                     CoreErrorMessages.OBJECT_NOT_FOUND
                 )
 
-        limit = request.query_params.get('limit')
-        if limit:
-            try:
-                limit = int(limit)
-            except (TypeError, ValueError):
-                limit = None
-
         service = CampaignExecutionService(
             user=request.user,
             client_id=self.get_client_id(),
         )
-        result = service.get_playlist(campaign, executor=executor, limit=limit)
+        result = service.get_playlist(campaign, executor=executor)
 
         # Serialize activities
         from app_modules.activities.serializers import ActivityListSerializer
@@ -1034,6 +1027,43 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'scope': scope,
                 'account_id': str(account_id),
             })
+
+        # --- Sync CampaignContact status after bulk cancellation ---
+        # Find contacts affected by this scope that are not yet in a final state
+        from ..models import CampaignContact, CampaignContactStatus, FINAL_CONTACT_STATES
+        from app_modules.accounts.models import CompanyAccount as _CA
+
+        cc_qs = CampaignContact.objects.filter(
+            campaign_account__campaign=campaign,
+            campaign_account__account=account,
+        ).exclude(status__in=FINAL_CONTACT_STATES).select_related('campaign_account')
+
+        if scope == 'contact':
+            cc_qs = cc_qs.filter(contact_id=contact_id)
+        elif scope == 'department':
+            cc_qs = cc_qs.filter(contact__standard_department_id=department_id)
+
+        execution_service = CampaignExecutionService(
+            user=request.user,
+            client_id=str(client_id),
+        )
+
+        affected_campaign_accounts = set()
+        for cc in cc_qs:
+            # Only stop contacts that have no PLANNED activities left
+            has_planned = Activity.objects.filter(
+                campaign_contact=cc,
+                status=ActivityStatus.PLANNED,
+            ).exists()
+            if not has_planned:
+                cc.mark_stopped(
+                    user=request.user,
+                    notes="All planned activities cancelled",
+                )
+                affected_campaign_accounts.add(cc.campaign_account)
+
+        for ca in affected_campaign_accounts:
+            execution_service._check_account_completion(ca)
 
         self._invalidate_campaign_caches(client_id)
 

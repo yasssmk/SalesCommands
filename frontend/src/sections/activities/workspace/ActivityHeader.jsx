@@ -51,6 +51,7 @@ import ActivityCompleteModal from "sections/accounts/activities/ActivityComplete
 import AlertActivityDelete from "sections/accounts/activities/AlertActivityDelete";
 import AlertActivityCancel from "sections/accounts/activities/AlertActivityCancel";
 import AlertActivityReopen from "sections/accounts/activities/AlertActivityReopen";
+import CampaignOutcomeModal from "sections/campaigns/CampaignOutcomeModal";
 
 // Icons
 import {
@@ -129,6 +130,8 @@ export default function useActivityHeaderProps({
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [campaignOutcomeModalOpen, setCampaignOutcomeModalOpen] =
+    useState(false);
 
   // ==============================|| EARLY RETURN (no data) ||============================== //
 
@@ -149,6 +152,16 @@ export default function useActivityHeaderProps({
   const canCancel = isPlanned;
   const canReopen = isCompleted || isCancelled;
 
+  const isCampaignActivity =
+    Boolean(activity.campaign_detail) && !activity.decision_cycle;
+  const previousActivities =
+    activity?.sequence_context?.previous_activities || [];
+  const previousActivity = previousActivities[0] || null;
+  const isPreviousBlocking =
+    isCampaignActivity &&
+    previousActivity &&
+    previousActivity.status !== "COMPLETED";
+
   // ==============================|| HANDLERS — Actions menu ||============================== //
 
   const handleMenuOpen = (event) => setAnchorEl(event.currentTarget);
@@ -156,10 +169,15 @@ export default function useActivityHeaderProps({
 
   const handleCompleteClick = () => {
     handleMenuClose();
-    setCompleteModalOpen(true);
+    if (isCampaignActivity) {
+      setCampaignOutcomeModalOpen(true);
+    } else {
+      setCompleteModalOpen(true);
+    }
   };
   const handleCompleteSuccess = () => {
     setCompleteModalOpen(false);
+    setCampaignOutcomeModalOpen(false);
     onUpdate?.();
   };
 
@@ -335,16 +353,33 @@ export default function useActivityHeaderProps({
       </IconButton>
       <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
         {canComplete && !isLocked && (
-          <MenuItem onClick={handleCompleteClick}>
-            <ListItemIcon>
-              <CheckCircleOutlined
-                style={{ color: theme.palette.success.main }}
-              />
-            </ListItemIcon>
-            <Typography>Complete</Typography>
-          </MenuItem>
+          <Tooltip
+            title={
+              isPreviousBlocking
+                ? "Complete the previous activities in the playlist first."
+                : ""
+            }
+            placement="left"
+            arrow
+          >
+            <span>
+              <MenuItem
+                onClick={isPreviousBlocking ? undefined : handleCompleteClick}
+                disabled={isPreviousBlocking}
+              >
+                <ListItemIcon>
+                  <CheckCircleOutlined
+                    style={{ color: theme.palette.success.main }}
+                  />
+                </ListItemIcon>
+                <Typography>
+                  {isCampaignActivity ? "Log Response" : "Complete"}
+                </Typography>
+              </MenuItem>
+            </span>
+          </Tooltip>
         )}
-        {canCancel && !isLocked && (
+        {canCancel && !isLocked && !isCampaignActivity && (
           <MenuItem onClick={handleCancelClick}>
             <ListItemIcon>
               <StopOutlined style={{ color: theme.palette.warning.main }} />
@@ -360,13 +395,15 @@ export default function useActivityHeaderProps({
             <Typography>Reopen</Typography>
           </MenuItem>
         )}
-        <Divider />
-        <MenuItem onClick={handleDeleteClick}>
-          <ListItemIcon>
-            <DeleteOutlined style={{ color: theme.palette.error.main }} />
-          </ListItemIcon>
-          <Typography color="error.main">Delete</Typography>
-        </MenuItem>
+        {!isCampaignActivity && <Divider />}
+        {!isCampaignActivity && (
+          <MenuItem onClick={handleDeleteClick}>
+            <ListItemIcon>
+              <DeleteOutlined style={{ color: theme.palette.error.main }} />
+            </ListItemIcon>
+            <Typography color="error.main">Delete</Typography>
+          </MenuItem>
+        )}
       </Menu>
     </>
   );
@@ -434,6 +471,20 @@ export default function useActivityHeaderProps({
       size="small"
       variant="filled"
     />,
+
+    // Campaign context chip (when activity belongs to a campaign)
+    activity.campaign_detail && !activity.decision_cycle && (
+      <Chip
+        key="campaign"
+        label={`Campaign: ${activity.campaign_detail.name}`}
+        size="small"
+        variant="outlined"
+        color="secondary"
+        icon={<AimOutlined />}
+        onClick={() => router.push(`/campaigns/${activity.campaign_detail.id}`)}
+        sx={{ cursor: "pointer" }}
+      />
+    ),
 
     // Outcome chip (only when completed)
     activity.outcome && (
@@ -569,6 +620,14 @@ export default function useActivityHeaderProps({
         onClose={() => setCompleteModalOpen(false)}
         activity={activity}
         onSuccess={handleCompleteSuccess}
+      />
+      <CampaignOutcomeModal
+        open={campaignOutcomeModalOpen}
+        onClose={() => setCampaignOutcomeModalOpen(false)}
+        activity={activity}
+        campaignId={activity?.campaign_detail?.id}
+        onComplete={handleCompleteSuccess}
+        onUpdate={onUpdate}
       />
       <AlertActivityCancel
         open={cancelDialogOpen}

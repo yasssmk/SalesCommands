@@ -1,38 +1,36 @@
 // frontend/src/sections/activities/workspace/ActivityOutcomeTab.jsx
 /**
  * Activity Outcome Tab Component
- * 
+ *
  * Post-activity workflow tab with 3 fixed sections:
  * 1. Key Takeaways - Notes capture + signals CTA stub
  * 2. Next Steps - Create follow-up Activity/Step or mark "No next step"
  * 3. Result - Outcome selection + Complete action
- * 
+ *
  * Designed for fast, non-form-like post-call workflow.
  */
 
+"use client";
 
-
-
-'use client';
-
-import { useState } from 'react';
-import PropTypes from 'prop-types';
-import { useTheme } from '@mui/material/styles';
+import { useState } from "react";
+import PropTypes from "prop-types";
+import { useTheme } from "@mui/material/styles";
 
 // MUI
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Chip from '@mui/material/Chip';
-import Grid from '@mui/material/Grid';
-import IconButton from '@mui/material/IconButton';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
-import Stack from '@mui/material/Stack';
-import TextField from '@mui/material/TextField';
-import Typography from '@mui/material/Typography';
-import Alert from '@mui/material/Alert';
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Chip from "@mui/material/Chip";
+import Grid from "@mui/material/Grid";
+import IconButton from "@mui/material/IconButton";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
+import Alert from "@mui/material/Alert";
+import Tooltip from "@mui/material/Tooltip";
 
 // Project imports
 import {
@@ -42,41 +40,54 @@ import {
   ACTIVITY_OUTCOME_COLORS,
   ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
-  ACTIVITY_STATUS_COLORS
-} from 'api/accounts/activities';
-import { displaySuccessSnackbar, displayErrorSnackbar } from 'utils/displayError';
+  ACTIVITY_STATUS_COLORS,
+} from "api/accounts/activities";
+import {
+  displaySuccessSnackbar,
+  displayErrorSnackbar,
+} from "utils/displayError";
 
 // Navigation
-import { useRouter } from 'next/navigation'
+import { useRouter } from "next/navigation";
 
 // Modals
-import ActivityModal from 'sections/accounts/activities/ActivityModal';
+import ActivityModal from "sections/accounts/activities/ActivityModal";
+import CampaignOutcomeModal from "sections/campaigns/CampaignOutcomeModal";
 
 // Icons
-import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
-import CheckOutlined from '@ant-design/icons/CheckOutlined';
-import CloseOutlined from '@ant-design/icons/CloseOutlined';
-import PlusOutlined from '@ant-design/icons/PlusOutlined';
-import BulbOutlined from '@ant-design/icons/BulbOutlined';
-import RocketOutlined from '@ant-design/icons/RocketOutlined';
-import StopOutlined from '@ant-design/icons/StopOutlined';
-import LinkOutlined from '@ant-design/icons/LinkOutlined';
-import WarningOutlined from '@ant-design/icons/WarningOutlined';
-import TrophyOutlined from '@ant-design/icons/TrophyOutlined';
-import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
-import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined';
+import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
+import CheckOutlined from "@ant-design/icons/CheckOutlined";
+import CloseOutlined from "@ant-design/icons/CloseOutlined";
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
+import BulbOutlined from "@ant-design/icons/BulbOutlined";
+import RocketOutlined from "@ant-design/icons/RocketOutlined";
+import StopOutlined from "@ant-design/icons/StopOutlined";
+import LinkOutlined from "@ant-design/icons/LinkOutlined";
+import WarningOutlined from "@ant-design/icons/WarningOutlined";
+import TrophyOutlined from "@ant-design/icons/TrophyOutlined";
+import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
+import PauseCircleOutlined from "@ant-design/icons/PauseCircleOutlined";
 
 // ==============================|| SECTION CARD WRAPPER ||============================== //
 
 function SectionCard({ title, icon: Icon, children, action }) {
   const theme = useTheme();
-  
+
   return (
-    <Card variant="outlined" sx={{ height: '100%' }}>
+    <Card variant="outlined" sx={{ height: "100%" }}>
       <CardContent>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          sx={{ mb: 2 }}
+        >
           <Stack direction="row" spacing={1} alignItems="center">
-            {Icon && <Icon style={{ fontSize: theme.iconSizes.md, color: '#8c8c8c' }} />}
+            {Icon && (
+              <Icon
+                style={{ fontSize: theme.iconSizes.md, color: "#8c8c8c" }}
+              />
+            )}
             <Typography variant="subtitle1" fontWeight={600}>
               {title}
             </Typography>
@@ -93,23 +104,23 @@ SectionCard.propTypes = {
   title: PropTypes.string.isRequired,
   icon: PropTypes.elementType,
   children: PropTypes.node,
-  action: PropTypes.node
+  action: PropTypes.node,
 };
 
 // ==============================|| KEY TAKEAWAYS SECTION ||============================== //
 
-function KeyTakeawaysSection({ activity, onSave, isLocked = false }){
+function KeyTakeawaysSection({ activity, onSave, isLocked = false }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(activity?.outcome_notes || '');
+  const [value, setValue] = useState(activity?.outcome_notes || "");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
-    if (value === (activity?.outcome_notes || '')) {
+    if (value === (activity?.outcome_notes || "")) {
       setEditing(false);
       return;
     }
     setSaving(true);
-    const success = await onSave('outcome_notes', value);
+    const success = await onSave("outcome_notes", value);
     setSaving(false);
     if (success) {
       setEditing(false);
@@ -117,7 +128,7 @@ function KeyTakeawaysSection({ activity, onSave, isLocked = false }){
   };
 
   const handleCancel = () => {
-    setValue(activity?.outcome_notes || '');
+    setValue(activity?.outcome_notes || "");
     setEditing(false);
   };
 
@@ -176,16 +187,16 @@ function KeyTakeawaysSection({ activity, onSave, isLocked = false }){
           sx={{
             p: 2,
             borderRadius: 1,
-            bgcolor: 'action.hover',
-            cursor: isLocked ? 'default' : 'pointer',
+            bgcolor: "action.hover",
+            cursor: isLocked ? "default" : "pointer",
             minHeight: 80,
-            '&:hover': {
-              bgcolor: isLocked ? 'action.hover' : 'action.selected'
-            }
+            "&:hover": {
+              bgcolor: isLocked ? "action.hover" : "action.selected",
+            },
           }}
         >
           {activity?.outcome_notes ? (
-            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
               {activity.outcome_notes}
             </Typography>
           ) : (
@@ -201,14 +212,19 @@ function KeyTakeawaysSection({ activity, onSave, isLocked = false }){
 
 KeyTakeawaysSection.propTypes = {
   activity: PropTypes.object,
-  onSave: PropTypes.func.isRequired
+  onSave: PropTypes.func.isRequired,
 };
 
 // ==============================|| ACTIVITY MINI CARD (Reusable) ||============================== //
 
-function ActivityMiniCard({ activity: activityItem, onNavigate, onUnlink, showUnlink = false }) {
+function ActivityMiniCard({
+  activity: activityItem,
+  onNavigate,
+  onUnlink,
+  showUnlink = false,
+}) {
   const theme = useTheme();
-  
+
   // Format date helper
   const formatDate = (dateStr) => {
     if (!dateStr) return null;
@@ -219,16 +235,16 @@ function ActivityMiniCard({ activity: activityItem, onNavigate, onUnlink, showUn
   const stepName = activityItem.decision_step_name;
 
   return (
-    <Card 
-      variant="outlined" 
-      sx={{ 
-        p: 1.5, 
-        cursor: 'pointer',
-        transition: 'all 0.15s ease-in-out',
-        '&:hover': { 
-          bgcolor: 'action.hover',
-          borderColor: theme.palette.primary.light
-        }
+    <Card
+      variant="outlined"
+      sx={{
+        p: 1.5,
+        cursor: "pointer",
+        transition: "all 0.15s ease-in-out",
+        "&:hover": {
+          bgcolor: "action.hover",
+          borderColor: theme.palette.primary.light,
+        },
       }}
       onClick={() => onNavigate(activityItem.id)}
     >
@@ -236,7 +252,10 @@ function ActivityMiniCard({ activity: activityItem, onNavigate, onUnlink, showUn
         {/* Row 1: Type + Title */}
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Chip
-            label={ACTIVITY_TYPE_LABELS[activityItem.activity_type] || activityItem.activity_type}
+            label={
+              ACTIVITY_TYPE_LABELS[activityItem.activity_type] ||
+              activityItem.activity_type
+            }
             size="small"
             variant="outlined"
             sx={{ minWidth: 80 }}
@@ -245,31 +264,37 @@ function ActivityMiniCard({ activity: activityItem, onNavigate, onUnlink, showUn
             {activityItem.title}
           </Typography>
           {showUnlink && (
-            <IconButton 
-              size="small" 
+            <IconButton
+              size="small"
               onClick={(e) => {
                 e.stopPropagation();
                 onUnlink?.();
               }}
-              sx={{ ml: 'auto' }}
+              sx={{ ml: "auto" }}
             >
-              <CloseOutlined style={{ fontSize: theme.iconSizes.sm, }} />
+              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
             </IconButton>
           )}
         </Stack>
-        
+
         {/* Row 2: Meta info (step, date, status) */}
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          flexWrap="wrap"
+          useFlexGap
+        >
           {stepName && (
             <Chip
               label={stepName}
               size="small"
               variant="filled"
-              sx={{ 
-                height: 20, 
-                fontSize: '0.7rem',
+              sx={{
+                height: 20,
+                fontSize: "0.7rem",
                 bgcolor: theme.palette.grey[100],
-                color: theme.palette.text.secondary
+                color: theme.palette.text.secondary,
               }}
             />
           )}
@@ -279,10 +304,19 @@ function ActivityMiniCard({ activity: activityItem, onNavigate, onUnlink, showUn
             </Typography>
           )}
           <Chip
-            label={activityItem.is_overdue ? 'Overdue' : (ACTIVITY_STATUS_LABELS[activityItem.status] || activityItem.status)}
+            label={
+              activityItem.is_overdue
+                ? "Overdue"
+                : ACTIVITY_STATUS_LABELS[activityItem.status] ||
+                  activityItem.status
+            }
             size="small"
-            color={activityItem.is_overdue ? 'error' : (ACTIVITY_STATUS_COLORS[activityItem.status] || 'default')}
-            sx={{ height: 20, fontSize: '0.7rem' }}
+            color={
+              activityItem.is_overdue
+                ? "error"
+                : ACTIVITY_STATUS_COLORS[activityItem.status] || "default"
+            }
+            sx={{ height: 20, fontSize: "0.7rem" }}
           />
         </Stack>
       </Stack>
@@ -294,27 +328,39 @@ ActivityMiniCard.propTypes = {
   activity: PropTypes.object.isRequired,
   onNavigate: PropTypes.func.isRequired,
   onUnlink: PropTypes.func,
-  showUnlink: PropTypes.bool
+  showUnlink: PropTypes.bool,
 };
 
 // ==============================|| NEXT STEPS SECTION ||============================== //
 
-function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = false }) {
+function NextStepsSection({
+  activity,
+  onCreateActivity,
+  onUpdate,
+  isLocked = false,
+}) {
   const router = useRouter();
   const theme = useTheme();
-  
+
   // Check if activity belongs to a sequence (Decision Cycle or future Campaign)
   // Future-ready: add || Boolean(activity?.campaign) when campaign FK is added
-  const isInSequence = Boolean(activity?.decision_cycle);
-  
+  const isInSequence =
+    Boolean(activity?.decision_cycle) || Boolean(activity?.campaign_detail);
+  const isCampaignActivity =
+    Boolean(activity?.campaign_detail) && !activity?.decision_cycle;
+  const showConversionCta =
+    isCampaignActivity &&
+    (activity?.outcome === "SUCCESSFUL" ||
+      activity?.outcome === "MEETING_SCHEDULED");
+
   // Get next activities from sequence_context (calculated by backend)
   const sequenceContext = activity?.sequence_context;
   const nextActivities = sequenceContext?.next_activities || [];
   const hasNextActivity = nextActivities.length > 0;
-  
+
   // Sequence position info
   const isLastInSequence = sequenceContext?.position === sequenceContext?.total;
-  
+
   // Check effective next step status from API
   const effectiveHasNextStep = activity?.effective_has_next_step;
 
@@ -334,18 +380,25 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
             p: 3,
             borderRadius: 1,
             bgcolor: theme.palette.grey[50],
-            border: '1px dashed',
+            border: "1px dashed",
             borderColor: theme.palette.grey[200],
             opacity: 0.7,
-            textAlign: 'center'
+            textAlign: "center",
           }}
         >
-          <LinkOutlined style={{ fontSize: theme.iconSizes.lg, color: theme.palette.grey[400], marginBottom: 8 }} />
+          <LinkOutlined
+            style={{
+              fontSize: theme.iconSizes.lg,
+              color: theme.palette.grey[400],
+              marginBottom: 8,
+            }}
+          />
           <Typography variant="body2" color="text.disabled" sx={{ mb: 0.5 }}>
             Next step planning requires a sequence.
           </Typography>
           <Typography variant="caption" color="text.disabled">
-            Link this activity to a Decision Cycle from the Overview tab to enable next steps.
+            Link this activity to a Decision Cycle from the Overview tab to
+            enable next steps.
           </Typography>
         </Box>
       </SectionCard>
@@ -359,7 +412,11 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
         {/* Next Activities List (ordered by sequence) */}
         {hasNextActivity && (
           <Box>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+            <Typography
+              variant="subtitle2"
+              color="text.secondary"
+              sx={{ mb: 1 }}
+            >
               Upcoming in sequence ({nextActivities.length})
             </Typography>
             <Stack spacing={1}>
@@ -374,11 +431,15 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
           </Box>
         )}
 
-        {/* Create follow-up buttons (hidden when locked) */}
-        {!isLocked && (
+        {/* Create follow-up — only for decision cycle activities */}
+        {!isLocked && !isCampaignActivity && (
           <Box>
             {hasNextActivity && (
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+              <Typography
+                variant="subtitle2"
+                color="text.secondary"
+                sx={{ mb: 1 }}
+              >
                 Create additional follow-up
               </Typography>
             )}
@@ -387,7 +448,7 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
                 variant="outlined"
                 size="small"
                 startIcon={<PlusOutlined />}
-                onClick={() => onCreateActivity('MEETING')}
+                onClick={() => onCreateActivity("MEETING")}
               >
                 Meeting
               </Button>
@@ -395,7 +456,7 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
                 variant="outlined"
                 size="small"
                 startIcon={<PlusOutlined />}
-                onClick={() => onCreateActivity('CALL')}
+                onClick={() => onCreateActivity("CALL")}
               >
                 Call
               </Button>
@@ -403,7 +464,7 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
                 variant="outlined"
                 size="small"
                 startIcon={<PlusOutlined />}
-                onClick={() => onCreateActivity('EMAIL')}
+                onClick={() => onCreateActivity("EMAIL")}
               >
                 Email
               </Button>
@@ -411,9 +472,50 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
                 variant="outlined"
                 size="small"
                 startIcon={<PlusOutlined />}
-                onClick={() => onCreateActivity('TASK')}
+                onClick={() => onCreateActivity("TASK")}
               >
                 Task
+              </Button>
+            </Stack>
+          </Box>
+        )}
+
+        {/* Campaign conversion CTA */}
+        {showConversionCta && !isLocked && (
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 1,
+              bgcolor: "success.lighter",
+              border: "1px solid",
+              borderColor: "success.light",
+            }}
+          >
+            <Stack spacing={1}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <TrophyOutlined style={{ color: theme.palette.success.main }} />
+                <Typography
+                  variant="body2"
+                  fontWeight={600}
+                  color="success.dark"
+                >
+                  Successful outcome — ready to convert
+                </Typography>
+              </Stack>
+              <Typography variant="caption" color="text.secondary">
+                This prospect responded positively. Start a Decision Cycle to
+                move them into your pipeline.
+              </Typography>
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                startIcon={<RocketOutlined />}
+                onClick={() =>
+                  onCreateActivity("MEETING", { convertFromCampaign: true })
+                }
+              >
+                Start Decision Cycle
               </Button>
             </Stack>
           </Box>
@@ -426,15 +528,18 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
               p: 2,
               borderRadius: 1,
               bgcolor: theme.palette.grey[50],
-              border: '1px dashed',
-              borderColor: theme.palette.grey[300]
+              border: "1px dashed",
+              borderColor: theme.palette.grey[300],
             }}
           >
-            <Typography variant="body2" color="text.secondary" textAlign="center">
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              textAlign="center"
+            >
               {isLastInSequence
-                ? 'This is the last activity in the sequence. Create a follow-up to continue the cycle.'
-                : 'No activities scheduled after this one. Create a follow-up to continue.'
-              }
+                ? "This is the last activity in the sequence. Create a follow-up to continue the cycle."
+                : "No activities scheduled after this one. Create a follow-up to continue."}
             </Typography>
           </Box>
         )}
@@ -446,144 +551,98 @@ function NextStepsSection({ activity, onCreateActivity, onUpdate,  isLocked = fa
 NextStepsSection.propTypes = {
   activity: PropTypes.object,
   onCreateActivity: PropTypes.func.isRequired,
-  onUpdate: PropTypes.func
+  onUpdate: PropTypes.func,
 };
 
 // ==============================|| RESULT SECTION ||============================== //
 
 function ResultSection({ activity, onUpdate }) {
-  const theme = useTheme();
-  const [selectedOutcome, setSelectedOutcome] = useState(activity?.outcome || '');
-  const [outcomeNotes, setOutcomeNotes] = useState(activity?.outcome_notes || '');
-  const [completing, setCompleting] = useState(false);
+  const [outcomeModalOpen, setOutcomeModalOpen] = useState(false);
 
-  const isCompleted = activity?.status === 'COMPLETED';
-  const isCancelled = activity?.status === 'CANCELLED';
+  const isCompleted = activity?.status === "COMPLETED";
+  const isCancelled = activity?.status === "CANCELLED";
+  const isCampaignActivity = Boolean(activity?.campaign_detail);
 
-  // Completion requires only an outcome selection
-  const canComplete = !!selectedOutcome;
-
-  const handleComplete = async () => {
-    if (!selectedOutcome) {
-      displayErrorSnackbar({
-        message: 'Please select an outcome',
-        status: 400
-      });
-      return;
-    }
-    
-    setCompleting(true);
-    try {
-      const payload = {
-        outcome: selectedOutcome,
-        outcome_notes: outcomeNotes.trim() || null
-      };
-      
-      const result = await completeActivity(activity.id, payload);
-      
-      if (result.success) {
-        displaySuccessSnackbar('Activity completed successfully');
-        onUpdate?.();
-      } else {
-        displayErrorSnackbar({
-          message: result.error || 'Failed to complete activity',
-          status: result.status
-        });
-      }
-    } catch (err) {
-      displayErrorSnackbar({
-        message: err?.message || 'An unexpected error occurred',
-        status: 500
-      });
-    } finally {
-      setCompleting(false);
-    }
-  };
+  // Guard: previous activity in campaign sequence must be completed first
+  const previousActivities =
+    activity?.sequence_context?.previous_activities || [];
+  const previousActivity = previousActivities[0] || null;
+  const isPreviousBlocking =
+    isCampaignActivity &&
+    previousActivity &&
+    previousActivity.status !== "COMPLETED";
 
   return (
     <SectionCard title="Result" icon={CheckCircleOutlined}>
       {isCompleted ? (
         <Stack spacing={2}>
-          <Alert severity="success">
-            Activity completed
-          </Alert>
+          <Alert severity="success">Activity completed</Alert>
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="body2" color="text.secondary">
               Outcome:
             </Typography>
             <Chip
-              label={ACTIVITY_OUTCOME_LABELS[activity.outcome] || activity.outcome}
-              color={ACTIVITY_OUTCOME_COLORS[activity.outcome] || 'default'}
+              label={
+                ACTIVITY_OUTCOME_LABELS[activity.outcome] || activity.outcome
+              }
+              color={ACTIVITY_OUTCOME_COLORS[activity.outcome] || "default"}
               size="small"
             />
           </Stack>
           {activity.outcome_notes && (
             <Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mb: 0.5 }}
+              >
                 Notes:
               </Typography>
-              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
                 {activity.outcome_notes}
               </Typography>
             </Box>
           )}
         </Stack>
       ) : isCancelled ? (
-        <Alert severity="warning">
-          This activity has been cancelled
-        </Alert>
+        <Alert severity="warning">This activity has been cancelled</Alert>
       ) : (
         <Stack spacing={2}>
-          {/* Outcome Select */}
-          <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Select outcome
-            </Typography>
-            <Select
-              value={selectedOutcome}
-              onChange={(e) => setSelectedOutcome(e.target.value)}
-              fullWidth
-              size="small"
-              displayEmpty
-            >
-              <MenuItem value="" disabled>
-                <em>Choose an outcome...</em>
-              </MenuItem>
-              {Object.entries(ACTIVITY_OUTCOME_LABELS).map(([value, label]) => (
-                <MenuItem key={value} value={value}>
-                  {label}
-                </MenuItem>
-              ))}
-            </Select>
-          </Box>
-
-          {/* Outcome Notes */}
-          <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Outcome notes
-            </Typography>
-            <TextField
-              fullWidth
-              multiline
-              rows={2}
-              size="small"
-              placeholder="Add notes about the outcome..."
-              value={outcomeNotes}
-              onChange={(e) => setOutcomeNotes(e.target.value)}
-            />
-          </Box>        
-
-          {/* Complete Button */}
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={<CheckCircleOutlined />}
-            onClick={handleComplete}
-            disabled={!canComplete || completing}
-            fullWidth
+          <Tooltip
+            title={
+              isPreviousBlocking
+                ? "Complete the previous activities in the playlist first."
+                : ""
+            }
+            arrow
           >
-            {completing ? 'Completing...' : 'Complete Activity'}
-          </Button>
+            <span style={{ width: "100%" }}>
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={<CheckCircleOutlined />}
+                onClick={() => setOutcomeModalOpen(true)}
+                disabled={isPreviousBlocking}
+                fullWidth
+              >
+                Log Response
+              </Button>
+            </span>
+          </Tooltip>
+
+          {outcomeModalOpen && (
+            <CampaignOutcomeModal
+              open={outcomeModalOpen}
+              onClose={() => setOutcomeModalOpen(false)}
+              activity={activity}
+              campaignId={activity?.campaign_detail?.id}
+              onComplete={() => {
+                setOutcomeModalOpen(false);
+                onUpdate?.();
+              }}
+              onUpdate={onUpdate}
+            />
+          )}
         </Stack>
       )}
     </SectionCard>
@@ -592,34 +651,39 @@ function ResultSection({ activity, onUpdate }) {
 
 ResultSection.propTypes = {
   activity: PropTypes.object,
-  onUpdate: PropTypes.func
+  onUpdate: PropTypes.func,
 };
 
 // ==============================|| ACTIVITY OUTCOME TAB ||============================== //
 
-export default function ActivityOutcomeTab({ activity, onSave, onUpdate, isLocked = false }) {
+export default function ActivityOutcomeTab({
+  activity,
+  onSave,
+  onUpdate,
+  isLocked = false,
+}) {
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [activityModalType, setActivityModalType] = useState(null);
+  const [convertFromCampaign, setConvertFromCampaign] = useState(false);
 
-  // Handle create follow-up activity
-  const handleCreateActivity = (activityType) => {
+  const handleCreateActivity = (activityType, options = {}) => {
     setActivityModalType(activityType);
+    setConvertFromCampaign(Boolean(options.convertFromCampaign));
     setActivityModalOpen(true);
   };
 
-  // Close activity modal
   const handleActivityModalClose = () => {
     setActivityModalOpen(false);
     setActivityModalType(null);
+    setConvertFromCampaign(false);
   };
 
   // Success handler for activity creation
   const handleActivitySuccess = async () => {
     handleActivityModalClose();
     onUpdate?.();
-    displaySuccessSnackbar('Follow-up activity created');
+    displaySuccessSnackbar("Follow-up activity created");
   };
-
 
   return (
     <Box>
@@ -633,16 +697,17 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate, isLocke
               onUpdate={onUpdate}
               isLocked={isLocked}
             />
-            <KeyTakeawaysSection activity={activity} onSave={onSave} isLocked={isLocked} />
+            <KeyTakeawaysSection
+              activity={activity}
+              onSave={onSave}
+              isLocked={isLocked}
+            />
           </Stack>
         </Grid>
 
         {/* Right Column - Result */}
         <Grid item xs={12} md={4}>
-          <ResultSection
-            activity={activity}
-            onUpdate={onUpdate}
-          />
+          <ResultSection activity={activity} onUpdate={onUpdate} />
         </Grid>
       </Grid>
 
@@ -656,6 +721,7 @@ export default function ActivityOutcomeTab({ activity, onSave, onUpdate, isLocke
         decisionCycleId={activity?.decision_cycle || null}
         defaultActivityType={activityModalType}
         previousActivityId={activity?.id}
+        sourceActivityId={convertFromCampaign ? activity?.id : null}
         onSuccess={handleActivitySuccess}
       />
     </Box>
@@ -666,5 +732,5 @@ ActivityOutcomeTab.propTypes = {
   activity: PropTypes.object.isRequired,
   onSave: PropTypes.func.isRequired,
   onUpdate: PropTypes.func,
-  isLocked: PropTypes.bool
+  isLocked: PropTypes.bool,
 };

@@ -205,7 +205,8 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
           onHold.push(a);
           return;
         }
-        const d = a.scheduled_date || a.due_date;
+        const sd = a.scheduled_date;
+        const d = sd && typeof sd === "object" ? sd.date : sd || null;
         if (!d || d <= todayStr) {
           today.push(a);
         } else {

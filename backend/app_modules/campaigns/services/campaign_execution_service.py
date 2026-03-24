@@ -259,22 +259,17 @@ class CampaignExecutionService:
     # PUBLIC — PLAYLIST (PRIORITIZED QUEUE)
     # ======================================================================
 
-    def get_playlist(self, campaign, executor=None, limit=None):
+    def get_playlist(self, campaign, executor=None):
         """
         Get prioritized activity playlist for a campaign.
 
-        Gating rules (sequence campaigns):
-            - Step 1 (previous_activity IS NULL): always visible.
-            - Steps 2..N: visible when previous activity is COMPLETED
-              AND min_delay_days has elapsed.
+        No limit applied — reps must see all their activities.
 
-        Priority scoring:
-            - Activity type weight
-            - Sequence position (earlier = higher score)
-            - Callback boost
-            - Overdue penalty
+        Ordering:
+            1. TODAY — eligible activities (prev COMPLETED or step 1), sorted by quality score.
+            2. UPCOMING — not yet eligible or future date, sorted by scheduled_date asc.
+            3. ON_HOLD — always at the end.
         """
-        limit = limit or CONFIG.limits.playlist_limit
         today = timezone.now().date()
 
         queryset = Activity.objects.filter(
@@ -299,28 +294,37 @@ class CampaignExecutionService:
         if executor:
             queryset = queryset.filter(owner=executor)
 
-        # COUNT before slice to get real total (not just batch size)
         total_count = queryset.count()
-        activities = list(queryset[:CONFIG.limits.queue_batch_size])
+        activities = list(queryset)
 
-        if campaign.sequence_type:
-            # Exclude ON_HOLD from date recalculation — their date is irrelevant
-            planned_only = [a for a in activities if a.status == ActivityStatus.PLANNED]
-            on_hold = [a for a in activities if a.status == ActivityStatus.ON_HOLD]
-            planned_only = self._recalculate_scheduled_dates(planned_only, today)
-            activities = planned_only + on_hold
+        today_activities = []
+        upcoming_activities = []
+        on_hold_activities = []
 
-        scored = [(a, self._calculate_priority(a)) for a in activities]
-        scored.sort(key=lambda x: x[1], reverse=True)
+        for a in activities:
+            if a.status == ActivityStatus.ON_HOLD:
+                on_hold_activities.append(a)
+                continue
+            prev = getattr(a, 'previous_activity', None)
+            prev_not_done = prev is not None and prev.status != ActivityStatus.COMPLETED
+            scheduled = a.scheduled_date
+            if prev_not_done or (scheduled and scheduled > today):
+                upcoming_activities.append(a)
+            else:
+                today_activities.append(a)
+
+        today_activities.sort(key=lambda a: self._calculate_priority(a), reverse=True)
+        upcoming_activities.sort(key=lambda a: a.scheduled_date or today)
+        ordered = today_activities + upcoming_activities + on_hold_activities
 
         return {
-            'activities': [item[0] for item in scored[:limit]],
+            'activities': ordered,
             'total_count': total_count,
         }
 
-    def get_playlist_for_executor(self, campaign, executor, limit=None):
+    def get_playlist_for_executor(self, campaign, executor):
         """Convenience wrapper — executor-scoped playlist."""
-        return self.get_playlist(campaign, executor=executor, limit=limit)
+        return self.get_playlist(campaign, executor=executor)
 
     # ======================================================================
     # PUBLIC — ACTIVITY RESULT PROCESSING
@@ -358,6 +362,13 @@ class CampaignExecutionService:
         next_activity = None
 
         activity.complete(outcome=outcome, notes=outcome_notes, user=self.user)
+
+        # Only persist next step's date when there is no callback pending.
+        # Callback outcomes pause the sequence — the next step date will be
+        # recalculated when the callback is resolved.
+        has_callback = bool(result_data.get('callback_date'))
+        if not has_callback:
+            self._persist_next_activity_schedule(activity)
 
         if campaign_contact:
             next_activity = self._handle_outcome(campaign_contact, activity, result_data)
@@ -616,7 +627,9 @@ class CampaignExecutionService:
         # CALLBACK REQUESTED
         # ------------------------------------------------------------------
         if callback_date:
-            # Validate callback date is in the future
+            from datetime import date
+            if isinstance(callback_date, str):
+                callback_date = date.fromisoformat(callback_date)
             if callback_date < timezone.now().date():
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(
@@ -636,7 +649,7 @@ class CampaignExecutionService:
                 user=self.user,
                 notes=f"Callback from activity: {activity.title}",
             )
-            return self._create_followup(
+            followup = self._create_followup(
                 activity,
                 campaign_contact=campaign_contact,
                 title=f"Callback — {contact_name}",
@@ -645,6 +658,30 @@ class CampaignExecutionService:
                 scheduled_time=callback_time,
                 is_callback_followup=True,
             )
+
+            # Intercalate callback into the sequence chain:
+            # Before: step_N → step_N+1
+            # After:  step_N → callback → step_N+1
+            # This ensures _persist_next_activity_schedule uses callback.completed_at
+            # as base date for step_N+1 when the callback is resolved.
+            original_next = Activity.objects.filter(
+                previous_activity=activity,
+                status=ActivityStatus.PLANNED,
+            ).exclude(pk=followup.pk).first()
+
+            if original_next:
+                Activity.objects.filter(pk=activity.pk).update(next_activity=None)
+                original_next.previous_activity = followup
+                original_next.save(update_fields=['previous_activity', 'updated_at'])
+                Activity.objects.filter(pk=followup.pk).update(
+                    next_activity=original_next,
+                    updated_at=timezone.now(),
+                )
+                # Cascade estimated dates for the entire remaining chain
+                # using callback_date as the new base.
+                self._cascade_schedule_from(original_next, base_date=callback_date)
+
+            return followup
 
 
         # ------------------------------------------------------------------
@@ -822,122 +859,55 @@ class CampaignExecutionService:
         return followup
 
     # ======================================================================
-    # PRIVATE — SCHEDULED DATE RECALCULATION
-    # ======================================================================
-
-    def _recalculate_scheduled_dates(self, activities, today):
-        """
-        Recompute scheduled_date dynamically (in-memory, not saved to DB).
-
-        Gating (sequence campaigns):
-            - Step 1 (no previous_activity): always eligible.
-            - Steps 2..N: eligible only when the immediate previous activity
-            is COMPLETED. If not yet eligible, scheduled_date is pushed to
-            tomorrow so the activity surfaces in UPCOMING, not TODAY.
-
-        Base date per eligible activity:
-            - CALLBACK_PENDING contact → base = campaign_contact.callback_date
-            - Otherwise → base = today
-        """
-        by_id = {a.id: a for a in activities}
-
-        for activity in activities:
-            prev = activity.previous_activity
-
-            # --- Sequence gate: immediate predecessor must be COMPLETED ---
-            if prev is not None:
-                # Prefer the in-memory instance (already fetched) over the
-                # select_related stub to get the freshest status.
-                prev_resolved = by_id.get(prev.id, prev)
-                if prev_resolved.status != ActivityStatus.COMPLETED:
-                    # Not yet eligible — ensure date is future so the frontend
-                    # places this activity in UPCOMING, not TODAY.
-                    if not activity.scheduled_date or activity.scheduled_date <= today:
-                        activity.scheduled_date = today + timedelta(days=1)
-                    continue
-
-            # --- Eligible: compute base date ---
-            cc = activity.campaign_contact
-            if (
-                cc is not None
-                and getattr(cc, 'status', None) == CampaignContactStatus.CALLBACK_PENDING
-                and cc.callback_date is not None
-            ):
-                base_date = cc.callback_date
-            else:
-                base_date = today
-
-            cumulative_delay = self._cumulative_delay_from_root(activity, by_id)
-
-            if cumulative_delay == 0:
-                activity.scheduled_date = base_date
-            else:
-                activity.scheduled_date = self._next_business_day(
-                    base_date + timedelta(days=cumulative_delay)
-                )
-
-        return activities
-
-    def _cumulative_delay_from_root(self, activity, by_id, _visited=None):
-        """Walk previous_activity chain, summing min_delay_days."""
-        if _visited is None:
-            _visited = set()
-        if activity.id in _visited:
-            return 0
-        _visited.add(activity.id)
-
-        prev = activity.previous_activity
-        if prev is None:
-            return 0
-
-        prev_in_memory = by_id.get(prev.id)
-        if prev_in_memory:
-            return (activity.min_delay_days or 0) + self._cumulative_delay_from_root(
-                prev_in_memory, by_id, _visited
-            )
-
-        return activity.min_delay_days or 0
-
-    # ======================================================================
     # PRIVATE — PRIORITY SCORING
     # ======================================================================
 
     def _calculate_priority(self, activity):
-        score = 0
+        """
+        Two-tier scoring:
+
+        UPCOMING (previous not COMPLETED, or scheduled_date > today):
+            → large negative base score offset by date proximity.
+            → sorted by date ascending — closest first.
+            → ON_HOLD pushed to end of upcoming.
+
+        TODAY (scheduled_date <= today and previous COMPLETED or step 1):
+            → scored by activity quality: callback boost, type weight,
+              overdue days, no-answer penalty.
+            → higher score = higher priority.
+        """
         today = timezone.now().date()
         scheduled = getattr(activity, 'scheduled_date', None)
         weights = CONFIG.priorities.weights
+        prev = getattr(activity, 'previous_activity', None)
 
-        # Scheduled date tier
-        if scheduled:
-            if scheduled > today:
-                days_ahead = (scheduled - today).days
-                score += -10000 + (-10 * days_ahead)
-            elif scheduled < today:
-                days_overdue = (today - scheduled).days
-                score += (
-                    days_overdue
-                    * CONFIG.priorities.overdue_penalty_per_day
-                    * weights.get('overdue_weight', 1.5)
-                )
+
+        # --- TODAY bucket ---
+        score = 0
+
+        # Callback followup — highest priority
+        if activity.is_callback_followup:
+            score += CONFIG.priorities.callback_priority_boost * weights.get('callback_weight', 2.0)
+
+        # Overdue bonus (step 2+ only — step 1 has no predecessor)
+        if scheduled and scheduled < today and prev is not None:
+            days_overdue = (today - scheduled).days
+            score += (
+                days_overdue
+                * CONFIG.priorities.overdue_penalty_per_day
+                * weights.get('overdue_weight', 1.5)
+            )
 
         # Activity type weight
         type_score = CONFIG.priorities.activity_type_priorities.get(activity.activity_type, 1)
         score += type_score * weights.get('activity_type_weight', 0.5)
 
-        # Sequence position bonus
+        # Sequence position bonus (earlier steps first within same day)
         position = max(activity.sequence_position or 1, 1)
         score += int(CONFIG.priorities.sequence_step_priority_bonus / position)
 
-        # Callback boost
-        if activity.is_callback_followup:
-            score += CONFIG.priorities.callback_priority_boost * weights.get('callback_weight', 2.0)
-
-        # No-answer penalty — demotes CALL after failed attempts (per-activity counter)
-        if (
-            activity.activity_type == ActivityType.CALL
-            and activity.no_answer_count > 0
-        ):
+        # No-answer penalty
+        if activity.activity_type == ActivityType.CALL and activity.no_answer_count > 0:
             score -= activity.no_answer_count * 50
 
         return score
@@ -949,9 +919,98 @@ class CampaignExecutionService:
     def _get_executor(self, campaign, campaign_account):
         """Return campaign executor if set, otherwise fall back to current user."""
         return campaign.executor or self.user
+    
+    def _persist_next_activity_schedule(self, completed_activity):
+        """
+        After an activity is completed, persist the confirmed scheduled_date
+        of its immediate next activity in the sequence.
+
+        Rules:
+            - Skip if no next_activity linked (end of chain).
+            - Skip if next activity is a callback followup (date chosen by user).
+            - Skip if next activity is already COMPLETED or CANCELLED.
+            - scheduled_date = _next_business_day(completed_at.date() + min_delay_days)
+        """
+        next_act = getattr(completed_activity, 'next_activity', None)
+
+        if next_act is None:
+            # Try loading from DB in case next_activity was not select_related
+            next_act = Activity.objects.filter(
+                previous_activity=completed_activity,
+                status=ActivityStatus.PLANNED,
+            ).first()
+
+        if next_act is None:
+            return
+
+        if next_act.is_callback_followup:
+            return
+
+        if next_act.status in (ActivityStatus.COMPLETED, ActivityStatus.CANCELLED):
+            return
+
+        if not completed_activity.completed_at:
+            return
+
+        delay = next_act.min_delay_days or 0
+        base = completed_activity.completed_at.date()
+        new_date = self._next_business_day(base + timedelta(days=delay))
+
+        Activity.objects.filter(pk=next_act.pk).update(
+            scheduled_date=new_date,
+            updated_at=timezone.now(),
+        )
+
+        logger.info("campaign_next_activity_scheduled", extra={
+            'completed_activity_id': str(completed_activity.id),
+            'next_activity_id': str(next_act.id),
+            'scheduled_date': str(new_date),
+        })
 
     def _next_business_day(self, date):
         """Advance date past weekends (Mon–Fri only)."""
         while date.weekday() >= 5:
             date += timedelta(days=1)
         return date
+    
+    def _cascade_schedule_from(self, start_activity, base_date):
+        """
+        Cascade estimated scheduled_date for a chain of PLANNED activities
+        starting from start_activity, using base_date as the anchor.
+
+        Used after a callback is created to keep the entire remaining chain
+        visually coherent in Upcoming (estimated, not confirmed).
+
+        Does NOT touch callback followup activities (date chosen by user).
+        Does NOT persist confirmed dates — those are written by
+        _persist_next_activity_schedule on actual completion.
+        """
+        current = start_activity
+        current_base = base_date
+
+        while current is not None:
+            if current.status in (ActivityStatus.COMPLETED, ActivityStatus.CANCELLED):
+                break
+            if current.is_callback_followup:
+                break
+
+            delay = current.min_delay_days or 0
+            new_date = self._next_business_day(current_base + timedelta(days=delay))
+
+            Activity.objects.filter(pk=current.pk).update(
+                scheduled_date=new_date,
+                updated_at=timezone.now(),
+            )
+
+            logger.info("campaign_chain_date_cascaded", extra={
+                'activity_id': str(current.id),
+                'scheduled_date': str(new_date),
+                'base_date': str(current_base),
+            })
+
+            current_base = new_date
+            # Load next from DB to avoid stale in-memory next_activity
+            current = Activity.objects.filter(
+                previous_activity=current,
+                status=ActivityStatus.PLANNED,
+            ).exclude(is_callback_followup=True).first()

@@ -593,6 +593,22 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 ActivityErrorMessages.CANNOT_COMPLETE_CANCELLED
             )
         
+        # Campaign activities: previous activity in sequence must be completed first
+        if activity.campaign_id and activity.status != ActivityStatus.COMPLETED:
+            from app_modules.activities.services.activity_sequence_service import (
+                ActivitySequenceService, SequenceScope
+            )
+            context = ActivitySequenceService.get_sequence_context(
+                activity=activity,
+                scope=SequenceScope.CAMPAIGN
+            )
+            if context:
+                previous = context.get('previous_activities', [])
+                if previous and previous[0].get('status') != 'COMPLETED':
+                    raise StandardizedValidationError(
+                        ActivityErrorMessages.PREVIOUS_ACTIVITY_NOT_COMPLETED
+                    )
+        
         outcome = request.data.get('outcome')
         outcome_notes = request.data.get('outcome_notes') or request.data.get('notes')
         

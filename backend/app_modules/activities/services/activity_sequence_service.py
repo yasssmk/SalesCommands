@@ -231,8 +231,8 @@ class ActivitySequenceService:
         elif scope == SequenceScope.DECISION_STEP:
             filter_kwargs['decision_step_id'] = scope_id
         elif scope == SequenceScope.CAMPAIGN:
-            # Future: filter_kwargs['campaign_id'] = scope_id
-            return []
+            filter_kwargs['campaign_id'] = scope_id
+           
         
         queryset = Activity.objects.filter(**filter_kwargs).exclude(**exclude_kwargs)
         
@@ -240,7 +240,10 @@ class ActivitySequenceService:
             return []
         
         # Annotate and order
-        ranked_queryset = cls._annotate_with_rank(queryset)
+        if scope == SequenceScope.CAMPAIGN:
+            ranked_queryset = cls._annotate_with_rank_campaign(queryset)
+        else:
+            ranked_queryset = cls._annotate_with_rank(queryset)
         
         # Convert to list of dicts
         result = []
@@ -266,8 +269,7 @@ class ActivitySequenceService:
         elif scope == SequenceScope.DECISION_STEP:
             return activity.decision_step_id
         elif scope == SequenceScope.CAMPAIGN:
-            # Future: return activity.campaign_id
-            return None
+            return activity.campaign_id
         return None
     
     @classmethod
@@ -300,7 +302,9 @@ class ActivitySequenceService:
             base_filter['decision_step_id'] = activity.decision_step_id
             
         elif scope == SequenceScope.CAMPAIGN:
-            return Activity.objects.none()
+            if not activity.campaign_contact_id:
+                return Activity.objects.none()
+            base_filter['campaign_contact_id'] = activity.campaign_contact_id
         
         return Activity.objects.filter(**base_filter).exclude(**exclude_filter)
     
@@ -413,6 +417,32 @@ class ActivitySequenceService:
         ).order_by('_rank')
     
     @classmethod
+    def _annotate_with_rank_campaign(cls, queryset: QuerySet) -> QuerySet:
+        """
+        Annotate campaign-scoped activities with sequence rank.
+
+        ORDER BY: sequence_position ASC (campaign step order), created_at as tiebreaker.
+        Simpler than decision cycle ranking — campaign sequences are explicitly ordered.
+        """
+        ranked = queryset.annotate(
+            _rank=Window(
+                expression=RowNumber(),
+                order_by=[
+                    F('sequence_position').asc(),
+                    F('created_at').asc(),
+                ]
+            )
+        )
+        return ranked.select_related(
+            'owner'
+        ).only(
+            'id', 'title', 'activity_type', 'status', 'outcome',
+            'scheduled_date', 'scheduled_time', 'due_date',
+            'completed_at', 'created_at', 'sequence_position',
+            'owner__id', 'owner__first_name', 'owner__last_name'
+        ).order_by('_rank')
+    
+    @classmethod
     def _get_ranked_activities(cls, activity, scope: SequenceScope) -> List[Dict]:
         """
         Get all activities in scope with their ranks as a list of dicts.
@@ -424,7 +454,10 @@ class ActivitySequenceService:
         if not queryset.exists():
             return []
         
-        ranked_queryset = cls._annotate_with_rank(queryset)
+        if scope == SequenceScope.CAMPAIGN:
+            ranked_queryset = cls._annotate_with_rank_campaign(queryset)
+        else:
+            ranked_queryset = cls._annotate_with_rank(queryset)
         
         result = []
         for act in ranked_queryset:
