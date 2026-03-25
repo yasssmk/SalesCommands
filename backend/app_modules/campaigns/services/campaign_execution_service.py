@@ -266,11 +266,19 @@ class CampaignExecutionService:
         No limit applied — reps must see all their activities.
 
         Ordering:
-            1. TODAY — eligible activities (prev COMPLETED or step 1), sorted by quality score.
+            1. TODAY — eligible activities sorted by quality score.
             2. UPCOMING — not yet eligible or future date, sorted by scheduled_date asc.
             3. ON_HOLD — always at the end.
+
+        Eligibility for TODAY (PLANNED only):
+            - Callbacks (is_callback_followup=True): always today if scheduled_date <= today.
+            - Regular steps: today if sequence_position == min PLANNED position
+            for their campaign_contact AND scheduled_date <= today.
         """
         today = timezone.now().date()
+
+        # Lazy rescheduling: shift overdue chains to today before building playlist.
+        self._reschedule_overdue_chains(campaign, today)
 
         queryset = Activity.objects.filter(
             campaign=campaign,
@@ -280,7 +288,6 @@ class CampaignExecutionService:
             'owner',
             'campaign_contact',
             'campaign_contact__campaign_account',
-            'previous_activity',
             'decision_step',
         ).prefetch_related(
             Prefetch(
@@ -297,6 +304,24 @@ class CampaignExecutionService:
         total_count = queryset.count()
         activities = list(queryset)
 
+        # Pre-compute min PLANNED sequence_position per campaign_contact (1 query).
+        # Excludes callbacks — they don't block regular steps from appearing.
+        from django.db.models import Min
+        min_pos_qs = (
+            Activity.objects.filter(
+                campaign=campaign,
+                status=ActivityStatus.PLANNED,
+                is_callback_followup=False,
+                campaign_contact__isnull=False,
+            )
+            .values('campaign_contact_id')
+            .annotate(min_pos=Min('sequence_position'))
+        )
+        min_pos_map = {
+            row['campaign_contact_id']: row['min_pos']
+            for row in min_pos_qs
+        }
+
         today_activities = []
         upcoming_activities = []
         on_hold_activities = []
@@ -305,13 +330,29 @@ class CampaignExecutionService:
             if a.status == ActivityStatus.ON_HOLD:
                 on_hold_activities.append(a)
                 continue
-            prev = getattr(a, 'previous_activity', None)
-            prev_not_done = prev is not None and prev.status != ActivityStatus.COMPLETED
+
             scheduled = a.scheduled_date
-            if prev_not_done or (scheduled and scheduled > today):
-                upcoming_activities.append(a)
-            else:
+
+            # Callbacks: eligible for today if scheduled_date <= today.
+            if a.is_callback_followup:
+                if scheduled and scheduled <= today:
+                    today_activities.append(a)
+                else:
+                    upcoming_activities.append(a)
+                continue
+
+            # Regular steps: eligible for today if this is the first PLANNED
+            # step for its contact AND scheduled_date <= today.
+            cc_id = a.campaign_contact_id
+            is_first_planned = (
+                cc_id is not None
+                and min_pos_map.get(cc_id) == a.sequence_position
+            )
+
+            if is_first_planned and (not scheduled or scheduled <= today):
                 today_activities.append(a)
+            else:
+                upcoming_activities.append(a)
 
         today_activities.sort(key=lambda a: self._calculate_priority(a), reverse=True)
         upcoming_activities.sort(key=lambda a: a.scheduled_date or today)
@@ -659,27 +700,23 @@ class CampaignExecutionService:
                 is_callback_followup=True,
             )
 
-            # Intercalate callback into the sequence chain:
-            # Before: step_N → step_N+1
-            # After:  step_N → callback → step_N+1
-            # This ensures _persist_next_activity_schedule uses callback.completed_at
-            # as base date for step_N+1 when the callback is resolved.
-            original_next = Activity.objects.filter(
-                previous_activity=activity,
+            # No linked list manipulation needed.
+            # The callback is identified via source_activity=activity + is_callback_followup=True.
+            # _persist_next_activity_schedule() will find it via source_activity FK when
+            # the completed activity is processed, and will use callback_date as base
+            # for cascading the remaining sequence steps.
+            #
+            # Cascade estimated dates for the remaining chain using callback_date as anchor,
+            # so Upcoming shows coherent future dates.
+            next_regular = Activity.objects.filter(
+                campaign_contact_id=campaign_contact.id,
+                sequence_position__gt=activity.sequence_position,
                 status=ActivityStatus.PLANNED,
-            ).exclude(pk=followup.pk).first()
+                is_callback_followup=False,
+            ).order_by('sequence_position').first()
 
-            if original_next:
-                Activity.objects.filter(pk=activity.pk).update(next_activity=None)
-                original_next.previous_activity = followup
-                original_next.save(update_fields=['previous_activity', 'updated_at'])
-                Activity.objects.filter(pk=followup.pk).update(
-                    next_activity=original_next,
-                    updated_at=timezone.now(),
-                )
-                # Cascade estimated dates for the entire remaining chain
-                # using callback_date as the new base.
-                self._cascade_schedule_from(original_next, base_date=callback_date)
+            if next_regular:
+                self._cascade_schedule_from(next_regular, base_date=callback_date)
 
             return followup
 
@@ -812,12 +849,15 @@ class CampaignExecutionService:
         )
 
     def _create_followup(self, source_activity, campaign_contact,
-                         activity_type=None, scheduled_date=None,
-                         scheduled_time=None, is_callback_followup=False,
-                         title=None):
+                     activity_type=None, scheduled_date=None,
+                     scheduled_time=None, is_callback_followup=False,
+                     title=None):
         """
         Create a follow-up activity from a completed one.
         Copies campaign context and links to the same CampaignContact.
+
+        Sets source_activity FK for full traceability (replaces linked list).
+        Callbacks are identified via is_callback_followup=True + source_activity.
         """
         position = (source_activity.sequence_position or 0) + 1
         activity_type = activity_type or source_activity.activity_type
@@ -842,6 +882,7 @@ class CampaignExecutionService:
                 if source_activity.campaign else None
             ),
             is_callback_followup=is_callback_followup,
+            source_activity=source_activity,
         )
         followup.save(user=self.user, client_id=self.client_id)
 
@@ -922,38 +963,51 @@ class CampaignExecutionService:
     
     def _persist_next_activity_schedule(self, completed_activity):
         """
-        After an activity is completed, persist the confirmed scheduled_date
-        of its immediate next activity in the sequence.
+        After an activity is completed, anchor the next step's scheduled_date
+        to completed_at + min_delay_days, then cascade the full remaining chain.
+
+        Uses sequence_position — no linked list traversal.
 
         Rules:
-            - Skip if no next_activity linked (end of chain).
-            - Skip if next activity is a callback followup (date chosen by user).
-            - Skip if next activity is already COMPLETED or CANCELLED.
-            - scheduled_date = _next_business_day(completed_at.date() + min_delay_days)
+            - Check for a pending callback (source_activity=completed, is_callback_followup=True)
+            first: if one exists, it takes priority as next step.
+            - Otherwise: next regular step = lowest sequence_position > completed in same contact.
+            - Skip callback followups for cascade (user-chosen dates).
+            - Skip if completed_at is not set.
+            - Cascades the entire remaining chain via _cascade_schedule_from().
         """
-        next_act = getattr(completed_activity, 'next_activity', None)
-
-        if next_act is None:
-            # Try loading from DB in case next_activity was not select_related
-            next_act = Activity.objects.filter(
-                previous_activity=completed_activity,
-                status=ActivityStatus.PLANNED,
-            ).first()
-
-        if next_act is None:
-            return
-
-        if next_act.is_callback_followup:
-            return
-
-        if next_act.status in (ActivityStatus.COMPLETED, ActivityStatus.CANCELLED):
-            return
-
         if not completed_activity.completed_at:
             return
 
-        delay = next_act.min_delay_days or 0
+        if not completed_activity.campaign_contact_id:
+            return
+
         base = completed_activity.completed_at.date()
+
+        # Priority 1: pending callback created from this activity.
+        next_act = Activity.objects.filter(
+            source_activity=completed_activity,
+            is_callback_followup=True,
+            status=ActivityStatus.PLANNED,
+        ).first()
+
+        # Priority 2: next regular step in the sequence.
+        if next_act is None:
+            next_act = Activity.objects.filter(
+                campaign_contact_id=completed_activity.campaign_contact_id,
+                sequence_position__gt=completed_activity.sequence_position,
+                status=ActivityStatus.PLANNED,
+                is_callback_followup=False,
+            ).order_by('sequence_position').first()
+
+        if next_act is None:
+            return
+
+        # Callback followup date is user-chosen — never overwrite it.
+        if next_act.is_callback_followup:
+            return
+
+        delay = next_act.min_delay_days or 0
         new_date = self._next_business_day(base + timedelta(days=delay))
 
         Activity.objects.filter(pk=next_act.pk).update(
@@ -967,50 +1021,139 @@ class CampaignExecutionService:
             'scheduled_date': str(new_date),
         })
 
+        # Cascade the full remaining chain from next_act's confirmed date.
+        subsequent = Activity.objects.filter(
+            campaign_contact_id=completed_activity.campaign_contact_id,
+            sequence_position__gt=next_act.sequence_position,
+            status=ActivityStatus.PLANNED,
+            is_callback_followup=False,
+        ).order_by('sequence_position').first()
+
+        if subsequent:
+            self._cascade_schedule_from(subsequent, base_date=new_date)
+
     def _next_business_day(self, date):
         """Advance date past weekends (Mon–Fri only)."""
         while date.weekday() >= 5:
             date += timedelta(days=1)
         return date
     
-    def _cascade_schedule_from(self, start_activity, base_date):
+    def _reschedule_overdue_chains(self, campaign, today):
         """
-        Cascade estimated scheduled_date for a chain of PLANNED activities
-        starting from start_activity, using base_date as the anchor.
+        Lazy rescheduling: for each CampaignContact with overdue PLANNED activities,
+        anchor the first pending step to today and cascade the rest of the chain.
 
-        Used after a callback is created to keep the entire remaining chain
-        visually coherent in Upcoming (estimated, not confirmed).
+        Called at the start of get_playlist() — no cron required.
 
-        Does NOT touch callback followup activities (date chosen by user).
-        Does NOT persist confirmed dates — those are written by
-        _persist_next_activity_schedule on actual completion.
+        Rules:
+            - Only processes the first PLANNED step per CampaignContact (lowest sequence_position).
+            - Skips callback followups (user-chosen dates, never auto-shifted).
+            - If first PLANNED step's scheduled_date >= today: chain is fine, skip.
+            - Otherwise: set first step to today, cascade remaining chain via
+            _cascade_schedule_from().
         """
-        current = start_activity
-        current_base = base_date
+        # Fetch all PLANNED, non-callback activities for this campaign.
+        # Exclude ON_HOLD — they are intentionally paused.
+        planned = (
+            Activity.objects.filter(
+                campaign=campaign,
+                status=ActivityStatus.PLANNED,
+                is_callback_followup=False,
+            )
+            .exclude(campaign_contact__isnull=True)
+            .order_by('campaign_contact_id', 'sequence_position')
+            .only('id', 'campaign_contact_id', 'sequence_position', 'scheduled_date', 'min_delay_days')
+        )
 
-        while current is not None:
-            if current.status in (ActivityStatus.COMPLETED, ActivityStatus.CANCELLED):
-                break
-            if current.is_callback_followup:
-                break
+        # Group by campaign_contact_id — keep only the first (lowest position) per contact.
+        first_per_contact: dict = {}
+        for activity in planned:
+            cc_id = activity.campaign_contact_id
+            if cc_id not in first_per_contact:
+                first_per_contact[cc_id] = activity
 
-            delay = current.min_delay_days or 0
-            new_date = self._next_business_day(current_base + timedelta(days=delay))
+        if not first_per_contact:
+            return
 
-            Activity.objects.filter(pk=current.pk).update(
-                scheduled_date=new_date,
+        for cc_id, first_activity in first_per_contact.items():
+            scheduled = first_activity.scheduled_date
+            if scheduled is None or scheduled >= today:
+                # Chain is current — nothing to do.
+                continue
+
+            # Anchor first step to today.
+            Activity.objects.filter(pk=first_activity.pk).update(
+                scheduled_date=today,
                 updated_at=timezone.now(),
             )
 
-            logger.info("campaign_chain_date_cascaded", extra={
-                'activity_id': str(current.id),
-                'scheduled_date': str(new_date),
-                'base_date': str(current_base),
+            logger.info("campaign_overdue_chain_rescheduled", extra={
+                'campaign_id': str(campaign.id),
+                'campaign_contact_id': str(cc_id),
+                'first_activity_id': str(first_activity.id),
+                'old_scheduled_date': str(scheduled),
+                'new_scheduled_date': str(today),
             })
 
-            current_base = new_date
-            # Load next from DB to avoid stale in-memory next_activity
-            current = Activity.objects.filter(
-                previous_activity=current,
+            # Cascade the rest of the chain from today via sequence_position.
+            next_activity = Activity.objects.filter(
+                campaign_contact_id=cc_id,
+                sequence_position__gt=first_activity.sequence_position,
                 status=ActivityStatus.PLANNED,
-            ).exclude(is_callback_followup=True).first()
+                is_callback_followup=False,
+            ).order_by('sequence_position').first()
+
+            if next_activity:
+                self._cascade_schedule_from(next_activity, base_date=today)
+    
+    def _cascade_schedule_from(self, start_activity, base_date):
+        """
+        Cascade estimated scheduled_date for all PLANNED activities in a contact's
+        chain starting at start_activity, using base_date as anchor.
+
+        Uses sequence_position ordering — no linked list traversal.
+
+        Rules:
+            - Skips callback followups (user-chosen dates).
+            - Does not touch COMPLETED or CANCELLED activities.
+            - Bulk-loads the full remaining chain in 1 query, then bulk updates.
+        """
+        if not start_activity.campaign_contact_id:
+            return
+
+        activities = list(
+            Activity.objects.filter(
+                campaign_contact_id=start_activity.campaign_contact_id,
+                sequence_position__gte=start_activity.sequence_position,
+                status=ActivityStatus.PLANNED,
+                is_callback_followup=False,
+            ).order_by('sequence_position')
+            .only('id', 'sequence_position', 'min_delay_days', 'scheduled_date')
+        )
+
+        if not activities:
+            return
+
+        current_base = base_date
+        ids_dates = []
+
+        for activity in activities:
+            delay = activity.min_delay_days or 0
+            new_date = self._next_business_day(current_base + timedelta(days=delay))
+            ids_dates.append((activity.id, new_date))
+            current_base = new_date
+
+        # Bulk update — one query per chain
+        now = timezone.now()
+        for activity_id, new_date in ids_dates:
+            Activity.objects.filter(pk=activity_id).update(
+                scheduled_date=new_date,
+                updated_at=now,
+            )
+
+        logger.info("campaign_chain_dates_cascaded", extra={
+            'campaign_contact_id': str(start_activity.campaign_contact_id),
+            'start_position': start_activity.sequence_position,
+            'activities_updated': len(ids_dates),
+            'base_date': str(base_date),
+        })

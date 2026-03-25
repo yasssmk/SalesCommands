@@ -735,19 +735,26 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         max_attempts = CONFIG.limits.max_retry_attempts
 
         if activity.no_answer_count >= max_attempts:
-            # Threshold reached — complete the activity.
+            # Threshold reached — delegate to CampaignExecutionService so
+            # _persist_next_activity_schedule() and chain cascade are triggered.
             outcome_notes = request.data.get('outcome_notes')
-            activity.complete(
-                outcome=ActivityOutcome.NO_ANSWER,
-                notes=outcome_notes,
+            from app_modules.campaigns.services.campaign_execution_service import CampaignExecutionService
+            exec_service = CampaignExecutionService(
                 user=request.user,
+                client_id=self.get_client_id(),
             )
+            exec_service.process_result(activity, {
+                'outcome': ActivityOutcome.NO_ANSWER,
+                'outcome_notes': outcome_notes,
+            })
             logger.info("activity_call_no_answer_exhausted", extra={
                 **ctx,
                 'activity_id': str(activity.id),
                 'no_answer_count': activity.no_answer_count,
             })
         else:
+            # Below threshold — no_answer_count penalty in _calculate_priority()
+            # automatically demotes this activity to the bottom of today's list.
             logger.info("activity_call_no_answer_retry", extra={
                 **ctx,
                 'activity_id': str(activity.id),
