@@ -786,6 +786,8 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         enroll_type  = request.data.get('type', 'ACCOUNT')
         department_id = request.data.get('department_id')
         contact_ids  = request.data.get('contact_ids', [])
+        notes        = request.data.get('notes', '') or ''
+        origin_activity_id = request.data.get('origin_activity_id')
 
         if not campaign_id:
             raise StandardizedValidationError(
@@ -813,6 +815,18 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             account = CompanyAccount.objects.get(id=account_id, client_id=client_id)
         except CompanyAccount.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        
+        # Validate origin_activity (optional — traceability FK)
+        origin_activity = None
+        if origin_activity_id:
+            from app_modules.activities.models import Activity
+            try:
+                origin_activity = Activity.objects.get(
+                    id=origin_activity_id,
+                    client_id=client_id,
+                )
+            except Activity.DoesNotExist:
+                raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
         # Determine status: ACTIVE campaign → IN_PROGRESS immediately
         initial_status = (
@@ -828,11 +842,17 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             client_id=client_id,
             defaults={
                 'status': initial_status,
+                'notes': notes or None,
             },
         )
         # If it already existed and is still PENDING on an ACTIVE campaign, promote it
         if not created and campaign.status == CampaignStatus.ACTIVE and campaign_account.status == CampaignAccountStatus.PENDING:
             campaign_account.status = CampaignAccountStatus.IN_PROGRESS
+            campaign_account.save(user=request.user, client_id=client_id)
+
+        # Update notes if provided (even on existing enrollment)
+        if not created and notes:
+            campaign_account.notes = notes
             campaign_account.save(user=request.user, client_id=client_id)
 
         if created:
@@ -898,21 +918,22 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         activities_created = 0
 
         if campaign.status == CampaignStatus.ACTIVE and contacts:
-            exec_service = CampaignExecutionService(
-                user=request.user, client_id=client_id,
-            )
-            for contact in contacts:
-                # Skip contacts already enrolled and processed
-                already_enrolled = campaign_account.target_contacts.filter(id=contact.id).exists()
-                if already_enrolled:
-                    continue
-
-                campaign_account.target_contacts.add(contact)
-                count = exec_service.generate_activities_for_contact(
-                    campaign, campaign_account, contact
+                exec_service = CampaignExecutionService(
+                    user=request.user, client_id=client_id,
                 )
-                contacts_created += 1
-                activities_created += count if isinstance(count, int) else 0
+                for contact in contacts:
+                    # Skip contacts already enrolled and processed
+                    already_enrolled = campaign_account.target_contacts.filter(id=contact.id).exists()
+                    if already_enrolled:
+                        continue
+
+                    campaign_account.target_contacts.add(contact)
+                    count = exec_service.generate_activities_for_contact(
+                        campaign, campaign_account, contact,
+                        origin_activity=origin_activity,
+                    )
+                    contacts_created += 1
+                    activities_created += count if isinstance(count, int) else 0
 
         audit_log(
             event='campaign_target_enrolled',
@@ -926,6 +947,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 'enroll_type': enroll_type,
                 'contacts_enrolled': contacts_created,
                 'activities_created': activities_created,
+                'origin_activity_id': str(origin_activity_id) if origin_activity_id else None,
             },
         )
 

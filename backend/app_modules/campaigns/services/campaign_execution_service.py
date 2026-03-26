@@ -145,7 +145,7 @@ class CampaignExecutionService:
             'errors': errors,
         }
 
-    def generate_activities_for_contact(self, campaign, campaign_account, contact):
+    def generate_activities_for_contact(self, campaign, campaign_account, contact, origin_activity=None):
         """
         Generate activities for a single contact added to an active campaign account.
 
@@ -178,6 +178,7 @@ class CampaignExecutionService:
                 activity_type=ActivityType.CALL,
                 position=1,
                 owner=executor,
+                source_activity=origin_activity,
             )
             campaign_contact.mark_activities_generated(user=self.user)
             return 1
@@ -201,7 +202,6 @@ class CampaignExecutionService:
             return 0
 
         created = 0
-        previous_activity = None
         cumulative_delay = 0
         # TARGETED: sequence starts from today (enrollment date).
         # OUTBOUND: sequence starts from campaign planned start date.
@@ -213,7 +213,7 @@ class CampaignExecutionService:
         for step_number, step_config in sequence_dict.items():
             cumulative_delay += step_config.get('min_delay', 0)
             step_date = self._next_business_day(base_date + timedelta(days=cumulative_delay))
-            activity = self._create_activity(
+            self._create_activity(
                 campaign=campaign,
                 campaign_account=campaign_account,
                 campaign_contact=campaign_contact,
@@ -224,15 +224,10 @@ class CampaignExecutionService:
                 owner=executor,
                 step_config=step_config,
                 sequence_variant=variant_name,
-                previous_activity=previous_activity,
                 scheduled_date=step_date,
+                source_activity=origin_activity,
             )
-            if previous_activity is not None:
-                previous_activity.next_activity = activity
-                previous_activity.save(user=self.user, client_id=self.client_id)
-            previous_activity = activity
             created += 1
-
         campaign_contact.mark_activities_generated(user=self.user)
         return created
 
@@ -436,134 +431,41 @@ class CampaignExecutionService:
         """
         Generate activities for all contacts in a CampaignAccount.
 
-        Creates one CampaignContact per contact (get_or_create),
-        skips contacts that already have activities_generated=True.
+        Delegates per-contact generation to generate_activities_for_contact().
+        Special case: no sequence + no contacts → single account-level activity.
         """
         contacts = self._extract_contacts(campaign_account)
-        executor = self._get_executor(campaign, campaign_account)
 
-        if not campaign.sequence_type:
-            if not contacts:
-                cc, _ = CampaignContact.objects.get_or_create(
-                    campaign_account=campaign_account,
-                    contact=None,
-                    defaults={
-                        'client_id': self.client_id,
-                        'status': CampaignContactStatus.IN_PROGRESS,
-                    },
-                )
-                if not cc.activities_generated:
-                    self._create_activity(
-                        campaign=campaign,
-                        campaign_account=campaign_account,
-                        campaign_contact=cc,
-                        account=campaign_account.account,
-                        contact=None,
-                        activity_type=activity_type,
-                        position=1,
-                        owner=executor,
-                    )
-                    cc.mark_activities_generated(user=self.user)
-                return 1
-
-            created = 0
-            for i, contact in enumerate(contacts, start=1):
-                cc, _ = CampaignContact.objects.get_or_create(
-                    campaign_account=campaign_account,
-                    contact=contact,
-                    defaults={
-                        'client_id': self.client_id,
-                        'status': CampaignContactStatus.IN_PROGRESS,
-                    },
-                )
-                if cc.activities_generated:
-                    continue
-                self._create_activity(
-                    campaign=campaign,
-                    campaign_account=campaign_account,
-                    campaign_contact=cc,
-                    account=campaign_account.account,
-                    contact=contact,
-                    activity_type=activity_type,
-                    position=i,
-                    owner=executor,
-                )
-                cc.mark_activities_generated(user=self.user)
-                created += 1
-            return created
-
-        # Sequence campaign
-        if not contacts:
-            return 0
-
-        created = 0
-        for contact in contacts:
+        # Special case: no sequence, no contacts → one account-level activity
+        if not campaign.sequence_type and not contacts:
             cc, _ = CampaignContact.objects.get_or_create(
                 campaign_account=campaign_account,
-                contact=contact,
+                contact=None,
                 defaults={
                     'client_id': self.client_id,
                     'status': CampaignContactStatus.IN_PROGRESS,
                 },
             )
-            if cc.activities_generated:
-                continue
-
-            has_phone = bool(getattr(contact, 'phone_number', None))
-            has_email = bool(getattr(contact, 'email', None))
-            has_linkedin = bool(getattr(contact, 'linkedin_url', None))
-
-            try:
-                sequence_dict, variant_name = SequenceDispatcher.get_sequence_with_variant(
-                    sequence_type=campaign.sequence_type,
-                    has_phone=has_phone,
-                    has_email=has_email,
-                    has_linkedin=has_linkedin,
-                )
-            except ValueError:
-                logger.warning("sequence_type_invalid_skipping_contact", extra={
-                    'campaign_id': str(campaign.id),
-                    'contact_id': str(contact.id),
-                })
-                continue
-
-            previous_activity = None
-            cumulative_delay = 0
-            
-            # TARGETED: sequence starts from enrollment date (today).
-            # OUTBOUND: sequence starts from campaign planned start date.
-            if campaign.is_targeted:
-                base_date = self._next_business_day(timezone.now().date())
-            else:
-                base_date = self._next_business_day(campaign.planned_start_date)
-
-            for step_number, step_config in sequence_dict.items():
-                cumulative_delay += step_config.get('min_delay', 0)
-                step_date = self._next_business_day(
-                    base_date + timedelta(days=cumulative_delay)
-                )
-                activity = self._create_activity(
+            if not cc.activities_generated:
+                self._create_activity(
                     campaign=campaign,
                     campaign_account=campaign_account,
                     campaign_contact=cc,
                     account=campaign_account.account,
-                    contact=contact,
-                    activity_type=step_config['type'],
-                    position=step_number,
-                    owner=executor,
-                    step_config=step_config,
-                    sequence_variant=variant_name,
-                    previous_activity=previous_activity,
-                    scheduled_date=step_date,
+                    contact=None,
+                    activity_type=activity_type,
+                    position=1,
+                    owner=self._get_executor(campaign, campaign_account),
                 )
-                if previous_activity is not None:
-                    previous_activity.next_activity = activity
-                    previous_activity.save(user=self.user, client_id=self.client_id)
-                previous_activity = activity
-                created += 1
+                cc.mark_activities_generated(user=self.user)
+            return 1
 
-            cc.mark_activities_generated(user=self.user)
+        if not contacts:
+            return 0
 
+        created = 0
+        for contact in contacts:
+            created += self.generate_activities_for_contact(campaign, campaign_account, contact)
         return created
 
     def _extract_contacts(self, campaign_account):
@@ -605,7 +507,7 @@ class CampaignExecutionService:
     def _create_activity(self, campaign, campaign_account, campaign_contact,
                          account, contact, activity_type, position, owner=None,
                          step_config=None, sequence_variant=None,
-                         previous_activity=None, scheduled_date=None):
+                         scheduled_date=None, source_activity=None):
         """
         Create a single Activity linked to a campaign_contact.
         """
@@ -622,6 +524,15 @@ class CampaignExecutionService:
         else:
             title = f"{campaign.name} — {contact_name}".strip(' —')
 
+        # Populate call_to_action:
+        # 1. Explicit step config value (sequence-defined objective)
+        # 2. Fallback to campaign_account.notes for targeted campaigns (enrollment reason)
+        call_to_action = None
+        if step_config:
+            call_to_action = step_config.get('call_to_action') or None
+        if not call_to_action and campaign.is_targeted and campaign_account:
+            call_to_action = campaign_account.notes or None
+
         activity = Activity(
             title=title,
             activity_type=activity_type,
@@ -634,10 +545,11 @@ class CampaignExecutionService:
             sequence_position=position,
             scheduled_date=scheduled_date or campaign.planned_start_date,
             due_date=campaign.planned_end_date,
-            previous_activity=previous_activity,
             min_delay_days=step_config.get('min_delay') if step_config else None,
             sequence_variant=sequence_variant,
             description=step_config.get('description', '') if step_config else '',
+            call_to_action=call_to_action,
+            source_activity=source_activity,
         )
         activity.save(user=self.user, client_id=self.client_id)
 
@@ -827,27 +739,6 @@ class CampaignExecutionService:
                     notes="All contacts stopped — no successful outcome",
                 )
 
-    def _cancel_chain(self, activity):
-        """
-        Cancel remaining PLANNED activities after *activity* via linked list.
-        Kept for backward compat — prefer _cancel_chain_for_contact() when possible.
-        """
-        ids_to_cancel = []
-        current = getattr(activity, 'next_activity', None)
-        while current is not None:
-            if current.status == ActivityStatus.PLANNED:
-                ids_to_cancel.append(current.id)
-            current = getattr(current, 'next_activity', None)
-
-        if not ids_to_cancel:
-            return
-
-        Activity.objects.filter(id__in=ids_to_cancel).update(
-            status=ActivityStatus.CANCELLED,
-            outcome_notes="Chain cancelled: terminal outcome on predecessor",
-            updated_at=timezone.now(),
-        )
-
     def _create_followup(self, source_activity, campaign_contact,
                      activity_type=None, scheduled_date=None,
                      scheduled_time=None, is_callback_followup=False,
@@ -920,7 +811,6 @@ class CampaignExecutionService:
         today = timezone.now().date()
         scheduled = getattr(activity, 'scheduled_date', None)
         weights = CONFIG.priorities.weights
-        prev = getattr(activity, 'previous_activity', None)
 
 
         # --- TODAY bucket ---
@@ -931,7 +821,7 @@ class CampaignExecutionService:
             score += CONFIG.priorities.callback_priority_boost * weights.get('callback_weight', 2.0)
 
         # Overdue bonus (step 2+ only — step 1 has no predecessor)
-        if scheduled and scheduled < today and prev is not None:
+        if scheduled and scheduled < today and (activity.sequence_position or 1) > 1:
             days_overdue = (today - scheduled).days
             score += (
                 days_overdue

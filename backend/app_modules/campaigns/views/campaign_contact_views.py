@@ -32,6 +32,7 @@ from ..serializers import (
     CampaignContactDetailSerializer,
     CampaignContactSerializer,
 )
+from ..utils.scheduling import cumulative_delay_for_position, next_business_day
 
 logger = get_logger(__name__)
 
@@ -392,7 +393,7 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 campaign_contact=instance,
                 status=ActivityStatus.ON_HOLD,
                 client_id=client_id,
-            ).select_related('previous_activity').order_by('sequence_position')
+            ).order_by('sequence_position')
         )
 
         if not on_hold:
@@ -401,17 +402,12 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 'data': {'activities_resumed': 0},
             })
 
-        by_id = {a.id: a for a in on_hold}
-
         for activity in on_hold:
-            cumulative_delay = self._cumulative_delay_from_root(activity, by_id)
-            if cumulative_delay > 0:
-                scheduled = self._next_business_day(
-                    today + timedelta(days=cumulative_delay)
-                )
-            else:
-                scheduled = self._next_business_day(today)
-
+            cumulative_delay = cumulative_delay_for_position(
+                instance.id,
+                activity.sequence_position,
+            )
+            scheduled = next_business_day(today + timedelta(days=cumulative_delay))
             activity.status = ActivityStatus.PLANNED
             activity.scheduled_date = scheduled
             activity.save(update_fields=['status', 'scheduled_date', 'updated_at'])
@@ -446,26 +442,6 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
     # ==========================================================================
     # PRIVATE HELPERS
     # ==========================================================================
-
-    def _next_business_day(self, date):
-        """Advance date past weekends."""
-        from datetime import timedelta
-        while date.weekday() >= 5:
-            date += timedelta(days=1)
-        return date
-
-    def _cumulative_delay_from_root(self, activity, by_id, _visited=None):
-        """Walk previous_activity chain summing min_delay_days."""
-        if _visited is None:
-            _visited = set()
-        if activity.id in _visited:
-            return 0
-        _visited.add(activity.id)
-        prev = activity.previous_activity
-        if prev is None:
-            return 0
-        prev_delay = self._cumulative_delay_from_root(prev, by_id, _visited)
-        return prev_delay + (activity.min_delay_days or 0)
 
     def _audit_status_change(self, request, instance, result):
         audit_log(

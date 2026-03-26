@@ -469,32 +469,13 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         }
     
     def get_previous_activity_info(self, obj):
-        """
-        DEPRECATED: Use sequence_context.previous_activities instead.
-        
-        Kept for backward compatibility during frontend migration.
-        Now returns first activity from sequence_context if available,
-        falls back to manual previous_activity field.
-        """
-        # If activity belongs to a cycle, use calculated sequence
         if obj.decision_cycle_id:
             context = ActivitySequenceService.get_sequence_context(
                 activity=obj,
                 scope=SequenceScope.DECISION_CYCLE
             )
             if context and context.get('previous_activities'):
-                # Return first previous activity for backward compatibility
                 return context['previous_activities'][0]
-            return None
-        
-        # Fallback to manual field for standalone activities
-        if obj.previous_activity:
-            return {
-                'id': str(obj.previous_activity.id),
-                'title': obj.previous_activity.title,
-                'activity_type': obj.previous_activity.activity_type,
-                'status': obj.previous_activity.status
-            }
         return None
     
     def get_source_activity_detail(self, obj):
@@ -516,32 +497,13 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         }
     
     def get_next_activity_info(self, obj):
-        """
-        DEPRECATED: Use sequence_context.next_activities instead.
-        
-        Kept for backward compatibility during frontend migration.
-        Now returns first activity from sequence_context if available,
-        falls back to manual next_activity field.
-        """
-        # If activity belongs to a cycle, use calculated sequence
         if obj.decision_cycle_id:
             context = ActivitySequenceService.get_sequence_context(
                 activity=obj,
                 scope=SequenceScope.DECISION_CYCLE
             )
             if context and context.get('next_activities'):
-                # Return first next activity for backward compatibility
                 return context['next_activities'][0]
-            return None
-        
-        # Fallback to manual field for standalone activities
-        if obj.next_activity:
-            return {
-                'id': str(obj.next_activity.id),
-                'title': obj.next_activity.title,
-                'activity_type': obj.next_activity.activity_type,
-                'status': obj.next_activity.status
-            }
         return None
     
     def get_sequence_context(self, obj):
@@ -709,23 +671,25 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     decision_cycle_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     decision_step_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     previous_activity_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
-    
+    source_activity_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+
     class Meta:
         model = Activity
         fields = [
             # Required
             'title', 'activity_type', 'account_id',
-            
+
             # Optional
             'description', 'call_to_action',
             'status', 'outcome', 'outcome_notes',
             'scheduled_date', 'scheduled_time', 'due_date',
-            
+
             # Relations
             'contact_ids', 'invited_user_ids',
             'decision_cycle_id', 'decision_step_id',
             'previous_activity_id',
-            
+            'source_activity_id',
+
             # Future fields
             'transcript', 'preparation_notes'
         ]
@@ -875,7 +839,23 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     raise StandardizedValidationError(
                         CoreErrorMessages.OBJECT_NOT_FOUND
                     )
-            
+
+            # =================================================================
+            # Validate source_activity (optional — traceability FK)
+            # =================================================================
+            source_activity_id = attrs.pop('source_activity_id', None)
+            if source_activity_id:
+                try:
+                    source_activity = Activity.objects.get(
+                        id=source_activity_id,
+                        client_id=client_id,
+                    )
+                    attrs['source_activity'] = source_activity
+                except Activity.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.OBJECT_NOT_FOUND
+                    )
+
             return attrs
             
         except StandardizedValidationError:
@@ -906,11 +886,6 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         # Set M2M invited_users
         if invited_users:
             instance.invited_users.set(invited_users)
-        
-        # Update previous activity's next_activity if needed
-        if instance.previous_activity:
-            instance.previous_activity.next_activity = instance
-            instance.previous_activity.save(user=user)
         
         return instance
 

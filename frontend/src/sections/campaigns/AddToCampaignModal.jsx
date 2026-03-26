@@ -41,6 +41,7 @@ import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Checkbox from "@mui/material/Checkbox";
+import TextField from "@mui/material/TextField";
 
 // project imports
 import MainCard from "components/MainCard";
@@ -48,6 +49,7 @@ import MainCard from "components/MainCard";
 // api
 import { useGetTargetedCampaign, enrollTarget } from "api/campaigns/campaigns";
 import { useGetContacts } from "api/businessData/contacts";
+import { useGetActivitiesByAccount } from "api/accounts/activities";
 
 // utils
 import {
@@ -64,6 +66,11 @@ const MODES = {
   ACCOUNT: "ACCOUNT",
   DEPARTMENT: "DEPARTMENT",
   CONTACT: "CONTACT",
+};
+
+const STEPS = {
+  TARGET: "TARGET",
+  ORIGIN: "ORIGIN",
 };
 
 // ==============================|| ADD TO CAMPAIGN MODAL ||============================== //
@@ -89,19 +96,34 @@ export default function AddToCampaignModal({
   // ==============================|| STATE ||============================== //
 
   const initialMode = preselectedContactId ? MODES.CONTACT : MODES.ACCOUNT;
+  const [wizardStep, setWizardStep] = useState(STEPS.TARGET);
   const [mode, setMode] = useState(initialMode);
   const [selectedDepartment, setSelectedDepartment] = useState(null);
   const [selectedContactIds, setSelectedContactIds] = useState(
     preselectedContactId ? [preselectedContactId] : [],
   );
   const [submitting, setSubmitting] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [originActivityId, setOriginActivityId] = useState(null);
 
-  // Reset state when modal opens
+  // Fetch completed activities for origin selection
+  const {
+    activities: accountActivities,
+    activitiesLoading: activitiesLoading,
+  } = useGetActivitiesByAccount(open ? accountId : null, {
+    pageSize: 50,
+    ordering: "-completed_at",
+    filters: { status: "COMPLETED" },
+  });
+
   useEffect(() => {
     if (open) {
+      setWizardStep(STEPS.TARGET);
       setMode(preselectedContactId ? MODES.CONTACT : MODES.ACCOUNT);
       setSelectedDepartment(null);
       setSelectedContactIds(preselectedContactId ? [preselectedContactId] : []);
+      setNotes("");
+      setOriginActivityId(null);
     }
   }, [open, preselectedContactId]);
 
@@ -148,7 +170,6 @@ export default function AddToCampaignModal({
       if (mode === MODES.ACCOUNT) {
         payload = { type: "ACCOUNT", account_id: accountId, contact_ids: [] };
       } else if (mode === MODES.DEPARTMENT && selectedDepartment) {
-        // Enroll all contacts of the selected department
         const deptContacts =
           departments.find((d) => d.name === selectedDepartment)?.contacts ||
           [];
@@ -172,6 +193,9 @@ export default function AddToCampaignModal({
         return;
       }
 
+      if (notes.trim()) payload.notes = notes.trim();
+      if (originActivityId) payload.origin_activity_id = originActivityId;
+
       const result = await enrollTarget(targetedCampaign.id, payload);
 
       if (result.success) {
@@ -193,6 +217,8 @@ export default function AddToCampaignModal({
     selectedDepartment,
     selectedContactIds,
     departments,
+    notes,
+    originActivityId,
     onClose,
   ]);
 
@@ -208,6 +234,7 @@ export default function AddToCampaignModal({
   // ==============================|| LOADING ||============================== //
 
   const isLoading = targetedLoading || contactsLoading;
+  const isStep1 = wizardStep === STEPS.TARGET;
 
   // ==============================|| RENDER ||============================== //
 
@@ -248,131 +275,247 @@ export default function AddToCampaignModal({
             </Stack>
           ) : (
             <>
-              {/* Mode selection */}
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  What do you want to target?
-                </Typography>
-                <RadioGroup value={mode} onChange={handleModeChange}>
-                  <FormControlLabel
-                    value={MODES.ACCOUNT}
-                    control={<Radio size="small" />}
-                    label={
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Typography variant="body2">Entire account</Typography>
-                        <Chip
-                          label={`${contacts.length} contacts`}
-                          size="small"
-                          variant="outlined"
-                        />
-                      </Stack>
-                    }
-                  />
-                  <FormControlLabel
-                    value={MODES.DEPARTMENT}
-                    control={<Radio size="small" />}
-                    label={
-                      <Typography variant="body2">
-                        A specific department
-                      </Typography>
-                    }
-                    disabled={departments.length === 0}
-                  />
-                  <FormControlLabel
-                    value={MODES.CONTACT}
-                    control={<Radio size="small" />}
-                    label={
-                      <Typography variant="body2">Specific contacts</Typography>
-                    }
-                    disabled={contacts.length === 0}
-                  />
-                </RadioGroup>
-              </Box>
-
-              {/* Department picker */}
-              {mode === MODES.DEPARTMENT && (
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ mb: 1, display: "block" }}
-                  >
-                    Select a department
-                  </Typography>
-                  <List dense disablePadding>
-                    {departments.map((dept) => (
-                      <ListItem key={dept.name} disablePadding>
-                        <ListItemButton
-                          selected={selectedDepartment === dept.name}
-                          onClick={() => setSelectedDepartment(dept.name)}
-                          sx={{ borderRadius: 1, mb: 0.5 }}
-                        >
-                          <ListItemText
-                            primary={dept.name}
-                            secondary={`${dept.count} contact${dept.count > 1 ? "s" : ""}`}
-                          />
-                          {selectedDepartment === dept.name && (
+              {/* ── STEP 1: Target selection ── */}
+              {isStep1 && (
+                <>
+                  {/* Mode selection */}
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                      What do you want to target?
+                    </Typography>
+                    <RadioGroup value={mode} onChange={handleModeChange}>
+                      <FormControlLabel
+                        value={MODES.ACCOUNT}
+                        control={<Radio size="small" />}
+                        label={
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            alignItems="center"
+                          >
+                            <Typography variant="body2">
+                              Entire account
+                            </Typography>
                             <Chip
-                              label="Selected"
+                              label={`${contacts.length} contacts`}
                               size="small"
-                              color="primary"
                               variant="outlined"
                             />
-                          )}
-                        </ListItemButton>
-                      </ListItem>
-                    ))}
-                  </List>
-                </Box>
+                          </Stack>
+                        }
+                      />
+                      <FormControlLabel
+                        value={MODES.DEPARTMENT}
+                        control={<Radio size="small" />}
+                        label={
+                          <Typography variant="body2">
+                            A specific department
+                          </Typography>
+                        }
+                        disabled={departments.length === 0}
+                      />
+                      <FormControlLabel
+                        value={MODES.CONTACT}
+                        control={<Radio size="small" />}
+                        label={
+                          <Typography variant="body2">
+                            Specific contacts
+                          </Typography>
+                        }
+                        disabled={contacts.length === 0}
+                      />
+                    </RadioGroup>
+                  </Box>
+
+                  {/* Department picker */}
+                  {mode === MODES.DEPARTMENT && (
+                    <Box>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ mb: 1, display: "block" }}
+                      >
+                        Select a department
+                      </Typography>
+                      <List dense disablePadding>
+                        {departments.map((dept) => (
+                          <ListItem key={dept.name} disablePadding>
+                            <ListItemButton
+                              selected={selectedDepartment === dept.name}
+                              onClick={() => setSelectedDepartment(dept.name)}
+                              sx={{ borderRadius: 1, mb: 0.5 }}
+                            >
+                              <ListItemText
+                                primary={dept.name}
+                                secondary={`${dept.count} contact${dept.count > 1 ? "s" : ""}`}
+                              />
+                              {selectedDepartment === dept.name && (
+                                <Chip
+                                  label="Selected"
+                                  size="small"
+                                  color="primary"
+                                  variant="outlined"
+                                />
+                              )}
+                            </ListItemButton>
+                          </ListItem>
+                        ))}
+                      </List>
+                    </Box>
+                  )}
+
+                  {/* Contact picker */}
+                  {mode === MODES.CONTACT && (
+                    <Box>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ mb: 1, display: "block" }}
+                      >
+                        Select contacts ({selectedContactIds.length} selected)
+                      </Typography>
+                      <List
+                        dense
+                        disablePadding
+                        sx={{ maxHeight: 240, overflowY: "auto" }}
+                      >
+                        {contacts.map((contact) => {
+                          const fullName =
+                            `${contact.first_name || ""} ${contact.last_name || ""}`.trim() ||
+                            contact.email;
+                          const isSelected = selectedContactIds.includes(
+                            contact.id,
+                          );
+                          return (
+                            <ListItem key={contact.id} disablePadding>
+                              <ListItemButton
+                                onClick={() => handleContactToggle(contact.id)}
+                                sx={{ borderRadius: 1, mb: 0.25 }}
+                              >
+                                <Checkbox
+                                  size="small"
+                                  checked={isSelected}
+                                  disableRipple
+                                  sx={{ p: 0, mr: 1 }}
+                                />
+                                <ListItemText
+                                  primary={fullName}
+                                  secondary={
+                                    [contact.job_title, contact.department_name]
+                                      .filter(Boolean)
+                                      .join(" · ") || contact.email
+                                  }
+                                />
+                              </ListItemButton>
+                            </ListItem>
+                          );
+                        })}
+                      </List>
+                    </Box>
+                  )}
+                </>
               )}
 
-              {/* Contact picker */}
-              {mode === MODES.CONTACT && (
+              {/* ── STEP 2: Origin activity ── */}
+              {!isStep1 && (
                 <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                    Linked to an activity?{" "}
+                    <Typography
+                      component="span"
+                      variant="caption"
+                      color="text.secondary"
+                    >
+                      (optional)
+                    </Typography>
+                  </Typography>
                   <Typography
                     variant="caption"
                     color="text.secondary"
-                    sx={{ mb: 1, display: "block" }}
+                    sx={{ mb: 1.5, display: "block" }}
                   >
-                    Select contacts ({selectedContactIds.length} selected)
+                    Select the call, meeting, or email that led to this
+                    enrollment. The generated activities will reference it for
+                    full traceability.
                   </Typography>
-                  <List
-                    dense
-                    disablePadding
-                    sx={{ maxHeight: 240, overflowY: "auto" }}
-                  >
-                    {contacts.map((contact) => {
-                      const fullName =
-                        `${contact.first_name || ""} ${contact.last_name || ""}`.trim() ||
-                        contact.email;
-                      const isSelected = selectedContactIds.includes(
-                        contact.id,
-                      );
-                      return (
-                        <ListItem key={contact.id} disablePadding>
-                          <ListItemButton
-                            onClick={() => handleContactToggle(contact.id)}
-                            sx={{ borderRadius: 1, mb: 0.25 }}
-                          >
-                            <Checkbox
-                              size="small"
-                              checked={isSelected}
-                              disableRipple
-                              sx={{ p: 0, mr: 1 }}
-                            />
-                            <ListItemText
-                              primary={fullName}
-                              secondary={
-                                [contact.job_title, contact.department_name]
-                                  .filter(Boolean)
-                                  .join(" · ") || contact.email
+
+                  {activitiesLoading ? (
+                    <Stack spacing={0.5}>
+                      {[1, 2].map((i) => (
+                        <Skeleton
+                          key={i}
+                          height={36}
+                          sx={{ borderRadius: 1 }}
+                        />
+                      ))}
+                    </Stack>
+                  ) : accountActivities.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      No completed activities found for this account.
+                    </Typography>
+                  ) : (
+                    <List
+                      dense
+                      disablePadding
+                      sx={{ maxHeight: 220, overflowY: "auto" }}
+                    >
+                      {accountActivities.map((act) => {
+                        const isSelected = originActivityId === act.id;
+                        return (
+                          <ListItem key={act.id} disablePadding>
+                            <ListItemButton
+                              selected={isSelected}
+                              onClick={() =>
+                                setOriginActivityId(isSelected ? null : act.id)
                               }
-                            />
-                          </ListItemButton>
-                        </ListItem>
-                      );
-                    })}
-                  </List>
+                              sx={{ borderRadius: 1, mb: 0.25 }}
+                            >
+                              <Checkbox
+                                size="small"
+                                checked={isSelected}
+                                disableRipple
+                                sx={{ p: 0, mr: 1 }}
+                              />
+                              <ListItemText
+                                primary={act.title}
+                                secondary={[
+                                  act.activity_type,
+                                  act.completed_at
+                                    ? act.completed_at.slice(0, 10)
+                                    : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              />
+                            </ListItemButton>
+                          </ListItem>
+                        );
+                      })}
+                    </List>
+                  )}
+
+                  {/* Notes */}
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                      Notes{" "}
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        color="text.secondary"
+                      >
+                        (optional)
+                      </Typography>
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      multiline
+                      rows={2}
+                      placeholder="e.g. Key account for Q3 push, opening from last call..."
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                    />
+                  </Box>
                 </Box>
               )}
             </>
@@ -390,28 +533,50 @@ export default function AddToCampaignModal({
               Adds to your <strong>Targeted Campaign</strong>
             </Typography>
             <Stack direction="row" spacing={1}>
-              <Button
-                variant="outlined"
-                color="secondary"
-                onClick={onClose}
-                disabled={submitting}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="contained"
-                onClick={handleSubmit}
-                disabled={!isValid || submitting || isLoading}
-                startIcon={
-                  submitting ? (
-                    <CircularProgress size={14} color="inherit" />
-                  ) : (
-                    <AimOutlined />
-                  )
-                }
-              >
-                {submitting ? "Adding..." : "Add to Campaign"}
-              </Button>
+              {isStep1 ? (
+                <>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={onClose}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={() => setWizardStep(STEPS.ORIGIN)}
+                    disabled={!isValid || isLoading}
+                  >
+                    Next
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={() => setWizardStep(STEPS.TARGET)}
+                    disabled={submitting}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={handleSubmit}
+                    disabled={submitting || isLoading}
+                    startIcon={
+                      submitting ? (
+                        <CircularProgress size={14} color="inherit" />
+                      ) : (
+                        <AimOutlined />
+                      )
+                    }
+                  >
+                    {submitting ? "Adding..." : "Add to Campaign"}
+                  </Button>
+                </>
+              )}
             </Stack>
           </Stack>
         </Stack>

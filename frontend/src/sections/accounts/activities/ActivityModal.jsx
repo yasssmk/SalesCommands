@@ -1,132 +1,123 @@
 // frontend/src/sections/accounts/activities/ActivityModal.jsx
 /**
  * Activity Modal Component
- * 
+ *
  * Modal for creating and editing activities.
  * Supports inline creation of Contact and Decision Cycle.
- * 
+ *
  * Note: Decision Steps (Pipeline Steps) are FIXED and auto-created when a cycle
  * is created. Users SELECT from existing steps, they cannot create new ones.
  * When a cycle is selected, a step selection is REQUIRED.
- * 
+ *
  * UX Goal: Allow activity creation in <30 seconds even when prerequisite
  * entities don't exist yet.
  */
 
-'use client';
+"use client";
 
-import PropTypes from 'prop-types';
-import { useState, useEffect, useMemo } from 'react';
+import PropTypes from "prop-types";
+import { useState, useEffect, useMemo } from "react";
 
 // material-ui
-import Autocomplete from '@mui/material/Autocomplete';
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
-import Divider from '@mui/material/Divider';
-import Grid from '@mui/material/Grid';
-import InputLabel from '@mui/material/InputLabel';
-import MenuItem from '@mui/material/MenuItem';
-import Modal from '@mui/material/Modal';
-import Select from '@mui/material/Select';
-import Stack from '@mui/material/Stack';
-import TextField from '@mui/material/TextField';
-import Typography from '@mui/material/Typography';
-import FormHelperText from '@mui/material/FormHelperText';
+import Autocomplete from "@mui/material/Autocomplete";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import Divider from "@mui/material/Divider";
+import Grid from "@mui/material/Grid";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Modal from "@mui/material/Modal";
+import Select from "@mui/material/Select";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
+import FormHelperText from "@mui/material/FormHelperText";
 
 // date pickers
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { TimePicker } from '@mui/x-date-pickers/TimePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import dayjs from 'dayjs';
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import dayjs from "dayjs";
 
 // third-party
-import { useFormik } from 'formik';
-import * as Yup from 'yup';
+import { useFormik } from "formik";
+import * as Yup from "yup";
 
 // project imports
-import MainCard from 'components/MainCard';
-import { InlineContactForm, InlineCycleForm, PIPELINE_STEPS } from './components';
-import { 
-  createActivity, 
+import MainCard from "components/MainCard";
+import {
+  InlineContactForm,
+  InlineCycleForm,
+  PIPELINE_STEPS,
+} from "./components";
+import {
+  createActivity,
   createActivityWithEntities,
   updateActivity,
   useGetActivityChoices,
   ACTIVITY_TYPES,
   ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUSES,
-  ACTIVITY_STATUS_LABELS
-} from 'api/accounts/activities';
-
+  ACTIVITY_STATUS_LABELS,
+} from "api/accounts/activities";
 
 // Icons for inline creation
-import PlusOutlined from '@ant-design/icons/PlusOutlined';
-import CloseOutlined from '@ant-design/icons/CloseOutlined';
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
-import { useGetContacts } from 'api/businessData/contacts';
-import { 
+import { useGetContacts } from "api/businessData/contacts";
+import {
   useGetDecisionCyclesByAccount,
-  useGetDecisionStepsByCycle
-} from 'api/accounts/decisionCycles';
-import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
-
+  useGetDecisionStepsByCycle,
+} from "api/accounts/decisionCycles";
+import {
+  displayErrorSnackbar,
+  displaySuccessSnackbar,
+} from "utils/displayError";
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
-const validationSchema = Yup.object({
-  title: Yup.string()
-    .required('Title is required')
-    .max(255, 'Title must be at most 255 characters'),
-  activity_type: Yup.string()
-    .required('Activity type is required'),
-  status: Yup.string()
-    .required('Status is required'),
-  description: Yup.string()
-    .max(2000, 'Description must be at most 2000 characters')
-    .nullable(),
-  call_to_action: Yup.string()
-    .max(500, 'Call to action must be at most 500 characters')
-    .nullable(),
-  scheduled_date: Yup.date()
-    .nullable()
-    .typeError('Please select a valid date')
-    .when('due_date', {
-      is: (dueDate) => !dueDate,
-      then: (schema) => schema.required('Scheduled date or due date is required'),
-      otherwise: (schema) => schema.nullable()
-    }),
-  due_date: Yup.date()
-    .nullable()
-    .typeError('Please select a valid date'),
-  contact_ids: Yup.array()
-    .of(Yup.string()),
-  has_inline_contact: Yup.boolean(),
-  decision_cycle_id: Yup.string()
-    .nullable(),
-  decision_step_id: Yup.string()
-    .nullable()
-    .when('decision_cycle_id', {
-      is: (cycleId) => Boolean(cycleId),
-      then: (schema) => schema.required('Please select a pipeline step for this cycle'),
-      otherwise: (schema) => schema.nullable()
-    })
-}, [['scheduled_date', 'due_date']]);
+const validationSchema = Yup.object(
+  {
+    title: Yup.string()
+      .required("Title is required")
+      .max(255, "Title must be at most 255 characters"),
+    activity_type: Yup.string().required("Activity type is required"),
+    status: Yup.string().required("Status is required"),
+    description: Yup.string()
+      .max(2000, "Description must be at most 2000 characters")
+      .nullable(),
+    call_to_action: Yup.string()
+      .max(500, "Call to action must be at most 500 characters")
+      .nullable(),
+    scheduled_date: Yup.date()
+      .nullable()
+      .typeError("Please select a valid date")
+      .when("due_date", {
+        is: (dueDate) => !dueDate,
+        then: (schema) =>
+          schema.required("Scheduled date or due date is required"),
+        otherwise: (schema) => schema.nullable(),
+      }),
+    due_date: Yup.date().nullable().typeError("Please select a valid date"),
+    contact_ids: Yup.array().of(Yup.string()),
+    has_inline_contact: Yup.boolean(),
+    decision_cycle_id: Yup.string().nullable(),
+    decision_step_id: Yup.string()
+      .nullable()
+      .when("decision_cycle_id", {
+        is: (cycleId) => Boolean(cycleId),
+        then: (schema) =>
+          schema.required("Please select a pipeline step for this cycle"),
+        otherwise: (schema) => schema.nullable(),
+      }),
+  },
+  [["scheduled_date", "due_date"]],
+);
 
 // ==============================|| ACTIVITY MODAL ||============================== //
 
-/**
- * ActivityModal Component
- * 
- * @param {boolean} open - Modal open state
- * @param {Function} onClose - Close modal callback
- * @param {Object} activity - Existing activity for edit mode (null for create)
- * @param {string} accountId - Parent account UUID (required for create)
- * @param {string} decisionStepId - Optional decision step UUID to link
- * @param {string} decisionCycleId - Optional decision cycle UUID to link
- * @param {string} defaultActivityType - Pre-selected activity type
- * @param {Function} onSuccess - Success callback with created/updated activity
- */
 export default function ActivityModal({
   open,
   onClose,
@@ -136,68 +127,81 @@ export default function ActivityModal({
   decisionCycleId = null,
   defaultActivityType = null,
   previousActivityId = null,
-  onSuccess
+  sourceActivityId = null,
+  onSuccess,
 }) {
   const [submitting, setSubmitting] = useState(false);
-  
+
   // Inline creation modes
   const [showInlineContact, setShowInlineContact] = useState(false);
   const [showInlineCycle, setShowInlineCycle] = useState(false);
-  
+
   // Inline creation data
   const [inlineContact, setInlineContact] = useState(null);
   const [inlineCycle, setInlineCycle] = useState(null);
-  const [inlineStepStage, setInlineStepStage] = useState('QUALIFICATION');
-  
+  const [inlineStepStage, setInlineStepStage] = useState("QUALIFICATION");
+
   const isEditMode = Boolean(activity?.id);
-  
+
   // Fetch choices (skip when modal is closed)
   const { choicesLoading } = useGetActivityChoices(open);
-  
+
   // Fetch contacts for the account (skip when modal is closed)
   const { contacts, contactsLoading } = useGetContacts(
-    open ? { filters: { account_id: accountId }, pageSize: 100 } : null
+    open ? { filters: { account_id: accountId }, pageSize: 100 } : null,
   );
 
   // Contact options for autocomplete
   const contactOptions = useMemo(() => {
     if (!contacts || contacts.length === 0) return [];
-    return contacts.map(contact => ({
+    return contacts.map((contact) => ({
       id: contact.id,
-      label: `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email,
+      label:
+        `${contact.first_name || ""} ${contact.last_name || ""}`.trim() ||
+        contact.email,
       email: contact.email,
-      job_title: contact.job_title
+      job_title: contact.job_title,
     }));
   }, [contacts]);
 
   // Fetch decision cycles for the account (skip when modal is closed)
-  const { cycles, cyclesLoading } = useGetDecisionCyclesByAccount(open ? accountId : null);
+  const { cycles, cyclesLoading } = useGetDecisionCyclesByAccount(
+    open ? accountId : null,
+  );
 
   // Cycle options for dropdown
   const cycleOptions = useMemo(() => {
     if (!cycles || cycles.length === 0) return [];
-    return cycles.map(cycle => ({
+    return cycles.map((cycle) => ({
       id: cycle.id,
       name: cycle.name,
-      is_active: cycle.is_active
+      is_active: cycle.is_active,
     }));
   }, [cycles]);
 
   // Build initial values
-  const initialValues = useMemo(() => ({
-    title: activity?.title || '',
-    activity_type: activity?.activity_type || defaultActivityType || 'MEETING',
-    status: activity?.status || 'PLANNED',
-    description: activity?.description || '',
-    call_to_action: activity?.call_to_action || '',
-    scheduled_date: activity?.scheduled_date ? dayjs(activity.scheduled_date) : null,
-    scheduled_time: activity?.scheduled_time ? dayjs(`2000-01-01T${activity.scheduled_time}`) : null,
-    due_date: activity?.due_date ? dayjs(activity.due_date) : null,
-    contact_ids: activity?.contacts?.map(c => c.id) || [],
-    has_inline_contact: false,
-    decision_cycle_id: activity?.decision_cycle || decisionCycleId || '',
-    decision_step_id: activity?.decision_step || decisionStepId || ''
-  }), [activity, defaultActivityType, decisionCycleId, decisionStepId]);
+  const initialValues = useMemo(
+    () => ({
+      title: activity?.title || "",
+      activity_type:
+        activity?.activity_type || defaultActivityType || "MEETING",
+      status: activity?.status || "PLANNED",
+      description: activity?.description || "",
+      call_to_action: activity?.call_to_action || "",
+      scheduled_date: activity?.scheduled_date
+        ? dayjs(activity.scheduled_date)
+        : null,
+      scheduled_time: activity?.scheduled_time
+        ? dayjs(`2000-01-01T${activity.scheduled_time}`)
+        : null,
+      due_date: activity?.due_date ? dayjs(activity.due_date) : null,
+      contact_ids: activity?.contacts?.map((c) => c.id) || [],
+      has_inline_contact: false,
+      decision_cycle_id: activity?.decision_cycle || decisionCycleId || "",
+      decision_step_id: activity?.decision_step || decisionStepId || "",
+    }),
+    [activity, defaultActivityType, decisionCycleId, decisionStepId],
+  );
 
   // Formik setup
   const formik = useFormik({
@@ -206,12 +210,15 @@ export default function ActivityModal({
     enableReinitialize: true,
     onSubmit: async (values) => {
       setSubmitting(true);
-      
+
       try {
         // Guard: at least one contact (selected or inline)
         if (values.contact_ids.length === 0 && !values.has_inline_contact) {
-          formik.setFieldError('contact_ids', 'At least one contact is required');
-          formik.setFieldTouched('contact_ids', true, false);
+          formik.setFieldError(
+            "contact_ids",
+            "At least one contact is required",
+          );
+          formik.setFieldTouched("contact_ids", true, false);
           setSubmitting(false);
           return;
         }
@@ -223,14 +230,20 @@ export default function ActivityModal({
           status: values.status,
           description: values.description?.trim() || null,
           call_to_action: values.call_to_action?.trim() || null,
-          scheduled_date: values.scheduled_date ? dayjs(values.scheduled_date).format('YYYY-MM-DD') : null,
-          scheduled_time: values.scheduled_time ? dayjs(values.scheduled_time).format('HH:mm:ss') : null,
-          due_date: values.due_date ? dayjs(values.due_date).format('YYYY-MM-DD') : null,
-          contact_ids: values.contact_ids || []
+          scheduled_date: values.scheduled_date
+            ? dayjs(values.scheduled_date).format("YYYY-MM-DD")
+            : null,
+          scheduled_time: values.scheduled_time
+            ? dayjs(values.scheduled_time).format("HH:mm:ss")
+            : null,
+          due_date: values.due_date
+            ? dayjs(values.due_date).format("YYYY-MM-DD")
+            : null,
+          contact_ids: values.contact_ids || [],
         };
-        
+
         let result;
-        
+
         if (isEditMode) {
           // Edit mode - use standard update
           activityPayload.decision_cycle_id = values.decision_cycle_id || null;
@@ -239,132 +252,155 @@ export default function ActivityModal({
         } else {
           // Create mode - check if we need inline entity creation
           const hasInlineEntities = inlineContact || inlineCycle;
-          
+
           if (hasInlineEntities) {
             // Use multi-entity creation endpoint
             activityPayload.account_id = accountId;
-            // If not creating inline cycle, use selected cycle
+
             if (!inlineCycle) {
-              activityPayload.decision_cycle_id = values.decision_cycle_id || null;
+              activityPayload.decision_cycle_id =
+                values.decision_cycle_id || null;
             }
-            // Step always comes from form selection (pipeline steps are fixed)
+
             activityPayload.decision_step_id = values.decision_step_id || null;
-            // Link to previous activity if provided (for follow-up activities)
+
             if (previousActivityId) {
               activityPayload.previous_activity_id = previousActivityId;
             }
+            if (sourceActivityId) {
+              activityPayload.source_activity_id = sourceActivityId;
+            }
+
             result = await createActivityWithEntities({
-            activity: activityPayload,
-            inline_contact: inlineContact || null,
-            inline_cycle: inlineCycle || null,
-            inline_step_stage: inlineCycle ? inlineStepStage : null
-          });
+              activity: activityPayload,
+              inline_contact: inlineContact || null,
+              inline_cycle: inlineCycle || null,
+              inline_step_stage: inlineCycle ? inlineStepStage : null,
+            });
           } else {
             // Standard creation
             activityPayload.account_id = accountId;
-            activityPayload.decision_cycle_id = values.decision_cycle_id || null;
+            activityPayload.decision_cycle_id =
+              values.decision_cycle_id || null;
             activityPayload.decision_step_id = values.decision_step_id || null;
-            // Link to previous activity if provided (for follow-up activities)
+
             if (previousActivityId) {
               activityPayload.previous_activity_id = previousActivityId;
             }
+            if (sourceActivityId) {
+              activityPayload.source_activity_id = sourceActivityId;
+            }
+
             result = await createActivity(activityPayload);
           }
-        }
-        
+        } // <- accolade manquante
+
         if (result.success) {
           const createdEntities = result.data?.created_entities;
-          let message = isEditMode ? 'Activity updated successfully' : 'Activity created successfully';
-          
-          // Add info about created entities
+          let message = isEditMode
+            ? "Activity updated successfully"
+            : "Activity created successfully";
+
           if (createdEntities) {
             const parts = [];
-            if (createdEntities.contact) parts.push('contact');
-            if (createdEntities.cycle) parts.push('cycle');
-            if (createdEntities.step) parts.push('step');
+            if (createdEntities.contact) parts.push("contact");
+            if (createdEntities.cycle) parts.push("cycle");
+            if (createdEntities.step) parts.push("step");
             if (parts.length > 0) {
-              message += ` (with new ${parts.join(', ')})`;
+              message += ` (with new ${parts.join(", ")})`;
             }
           }
-          
+
           displaySuccessSnackbar(message);
           onSuccess?.(result.data?.activity || result.data);
           handleClose();
         } else {
           displayErrorSnackbar(result);
         }
-        } catch (err) {
-          displayErrorSnackbar(err);
-        } finally {
-          setSubmitting(false);
+      } catch (err) {
+        displayErrorSnackbar(err);
+      } finally {
+        setSubmitting(false);
       }
-    }
+    },
   });
 
-  const { values, errors, touched, handleChange, handleBlur, handleSubmit, resetForm, setFieldValue } = formik;
-  
+  const {
+    values,
+    errors,
+    touched,
+    handleChange,
+    handleBlur,
+    handleSubmit,
+    resetForm,
+    setFieldValue,
+  } = formik;
+
   // Fetch decision steps based on selected cycle (skip when modal is closed)
-  const { steps, stepsLoading } = useGetDecisionStepsByCycle(open ? values.decision_cycle_id : null);
+  const { steps, stepsLoading } = useGetDecisionStepsByCycle(
+    open ? values.decision_cycle_id : null,
+  );
 
   // Step options for dropdown
   const stepOptions = useMemo(() => {
     if (!steps || steps.length === 0) return [];
-    return steps.map(step => ({
+    return steps.map((step) => ({
       id: step.id,
       name: step.name,
-      status: step.status
+      status: step.status,
     }));
   }, [steps]);
 
-  // Reset step when cycle changes
   useEffect(() => {
-    // Only reset if changing cycle (not on initial load)
-    if (values.decision_cycle_id !== (activity?.decision_cycle || decisionCycleId || '')) {
-      setFieldValue('decision_step_id', '');
+    if (
+      values.decision_cycle_id !==
+      (activity?.decision_cycle || decisionCycleId || "")
+    ) {
+      setFieldValue("decision_step_id", "");
     }
-  }, [values.decision_cycle_id, activity?.decision_cycle, decisionCycleId, setFieldValue]);
+  }, [
+    values.decision_cycle_id,
+    activity?.decision_cycle,
+    decisionCycleId,
+    setFieldValue,
+  ]);
 
-  // Reset form and inline state when modal opens/closes
   useEffect(() => {
     if (open) {
       resetForm({ values: initialValues });
-      // Reset inline creation state
       setShowInlineContact(false);
       setShowInlineCycle(false);
       setInlineContact(null);
       setInlineCycle(null);
-      setInlineStepStage('QUALIFICATION');
+      setInlineStepStage("QUALIFICATION");
     }
   }, [open, initialValues, resetForm]);
-  
+
   const handleClose = () => {
     resetForm();
     onClose();
   };
 
-  // Selected contacts for display
   const selectedContacts = useMemo(() => {
-    return contactOptions.filter(c => values.contact_ids.includes(c.id));
+    return contactOptions.filter((c) => values.contact_ids.includes(c.id));
   }, [contactOptions, values.contact_ids]);
-
-  // ==============================|| RENDER ||============================== //
 
   if (choicesLoading) {
     return (
       <Modal open={open} onClose={handleClose}>
         <MainCard
           sx={{
-            width: 'calc(100% - 48px)',
+            width: "calc(100% - 48px)",
             maxWidth: 600,
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)'
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
           }}
           modal
           content={false}
         >
-          <Box sx={{ p: 4, display: 'flex', justifyContent: 'center' }}>
+          <Box sx={{ p: 4, display: "flex", justifyContent: "center" }}>
             <CircularProgress />
           </Box>
         </MainCard>
@@ -378,53 +414,54 @@ export default function ActivityModal({
       onClose={handleClose}
       aria-labelledby="modal-activity-title"
       sx={{
-        '& .MuiPaper-root:focus': { outline: 'none' }
+        "& .MuiPaper-root:focus": { outline: "none" },
       }}
     >
       <MainCard
         sx={{
-          width: 'calc(100% - 48px)',
+          width: "calc(100% - 48px)",
           minWidth: 340,
           maxWidth: 800,
-          maxHeight: 'calc(100vh - 48px)',
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)'
+          maxHeight: "calc(100vh - 48px)",
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
         }}
         modal
         content={false}
       >
         <Box
           sx={{
-            maxHeight: 'calc(100vh - 48px)',
-            overflowY: 'auto'
+            maxHeight: "calc(100vh - 48px)",
+            overflowY: "auto",
           }}
         >
           <Box component="form" onSubmit={handleSubmit}>
-            {/* Header */}
             <Box sx={{ p: 2.5, pb: 2 }}>
               <Typography variant="h5" id="modal-activity-title">
-                {isEditMode ? 'Edit Activity' : 'Create Activity'}
+                {isEditMode ? "Edit Activity" : "Create Activity"}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {isEditMode 
-                  ? 'Update activity details'
-                  : 'Add a new activity to track your sales actions'
-                }
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mt: 0.5 }}
+              >
+                {isEditMode
+                  ? "Update activity details"
+                  : "Add a new activity to track your sales actions"}
               </Typography>
             </Box>
-            
+
             <Divider />
-            
-            {/* Form Content */}
+
             <Box sx={{ p: 2.5 }}>
               <Grid container spacing={2.5}>
-                
-                {/* Title */}
                 <Grid item xs={12}>
                   <Stack spacing={1}>
-                    <InputLabel htmlFor="title" required>Title</InputLabel>
+                    <InputLabel htmlFor="title" required>
+                      Title
+                    </InputLabel>
                     <TextField
                       id="title"
                       name="title"
@@ -438,11 +475,12 @@ export default function ActivityModal({
                     />
                   </Stack>
                 </Grid>
-                
-                {/* Activity Type */}
+
                 <Grid item xs={12} sm={6}>
                   <Stack spacing={1}>
-                    <InputLabel htmlFor="activity_type" required>Type</InputLabel>
+                    <InputLabel htmlFor="activity_type" required>
+                      Type
+                    </InputLabel>
                     <Select
                       id="activity_type"
                       name="activity_type"
@@ -450,7 +488,9 @@ export default function ActivityModal({
                       value={values.activity_type}
                       onChange={handleChange}
                       onBlur={handleBlur}
-                      error={Boolean(touched.activity_type && errors.activity_type)}
+                      error={Boolean(
+                        touched.activity_type && errors.activity_type,
+                      )}
                     >
                       {Object.entries(ACTIVITY_TYPES).map(([key, value]) => (
                         <MenuItem key={key} value={value}>
@@ -459,15 +499,18 @@ export default function ActivityModal({
                       ))}
                     </Select>
                     {touched.activity_type && errors.activity_type && (
-                      <FormHelperText error>{errors.activity_type}</FormHelperText>
+                      <FormHelperText error>
+                        {errors.activity_type}
+                      </FormHelperText>
                     )}
                   </Stack>
                 </Grid>
-                
-                {/* Status */}
+
                 <Grid item xs={12} sm={6}>
                   <Stack spacing={1}>
-                    <InputLabel htmlFor="status" required>Status</InputLabel>
+                    <InputLabel htmlFor="status" required>
+                      Status
+                    </InputLabel>
                     <Select
                       id="status"
                       name="status"
@@ -488,69 +531,75 @@ export default function ActivityModal({
                     )}
                   </Stack>
                 </Grid>
-                
-                {/* Scheduled Date */}
+
                 <Grid item xs={12} sm={6}>
                   <Stack spacing={1}>
-                     <InputLabel required={!values.due_date}>Scheduled Date</InputLabel>
+                    <InputLabel required={!values.due_date}>
+                      Scheduled Date
+                    </InputLabel>
                     <LocalizationProvider dateAdapter={AdapterDayjs}>
                       <DatePicker
                         value={values.scheduled_date}
-                        onChange={(newValue) => setFieldValue('scheduled_date', newValue)}
+                        onChange={(newValue) =>
+                          setFieldValue("scheduled_date", newValue)
+                        }
                         slotProps={{
                           textField: {
                             fullWidth: true,
-                            error: Boolean(touched.scheduled_date && errors.scheduled_date),
-                            helperText: touched.scheduled_date && errors.scheduled_date
-                          }
+                            error: Boolean(
+                              touched.scheduled_date && errors.scheduled_date,
+                            ),
+                            helperText:
+                              touched.scheduled_date && errors.scheduled_date,
+                          },
                         }}
                       />
                     </LocalizationProvider>
                   </Stack>
                 </Grid>
-                
-                {/* Scheduled Time */}
+
                 <Grid item xs={12} sm={6}>
                   <Stack spacing={1}>
                     <InputLabel>Scheduled Time</InputLabel>
                     <LocalizationProvider dateAdapter={AdapterDayjs}>
                       <TimePicker
                         value={values.scheduled_time}
-                        onChange={(newValue) => setFieldValue('scheduled_time', newValue)}
+                        onChange={(newValue) =>
+                          setFieldValue("scheduled_time", newValue)
+                        }
                         slotProps={{
                           textField: {
-                            fullWidth: true
-                          }
+                            fullWidth: true,
+                          },
                         }}
                       />
                     </LocalizationProvider>
                   </Stack>
                 </Grid>
-                
-                {/* Due Date */}
+
                 <Grid item xs={12} sm={6}>
                   <Stack spacing={1}>
                     <InputLabel>Due Date</InputLabel>
                     <LocalizationProvider dateAdapter={AdapterDayjs}>
                       <DatePicker
                         value={values.due_date}
-                        onChange={(newValue) => setFieldValue('due_date', newValue)}
+                        onChange={(newValue) =>
+                          setFieldValue("due_date", newValue)
+                        }
                         slotProps={{
                           textField: {
                             fullWidth: true,
                             error: Boolean(touched.due_date && errors.due_date),
-                            helperText: touched.due_date && errors.due_date
-                          }
+                            helperText: touched.due_date && errors.due_date,
+                          },
                         }}
                       />
                     </LocalizationProvider>
                   </Stack>
                 </Grid>
-                
-               {/* Spacer for grid alignment */}
+
                 <Grid item xs={12} sm={6} />
-                
-                {/* ==================== CONTACTS ==================== */}
+
                 <Grid item xs={12}>
                   <Divider sx={{ my: 1 }}>
                     <Typography variant="caption" color="text.secondary">
@@ -558,12 +607,11 @@ export default function ActivityModal({
                     </Typography>
                   </Divider>
                 </Grid>
-                
-                {/* Contacts */}
+
                 <Grid item xs={12}>
                   <Stack spacing={1}>
                     <InputLabel required>Contacts</InputLabel>
-                    
+
                     <Autocomplete
                       multiple
                       id="contact_ids"
@@ -571,34 +619,60 @@ export default function ActivityModal({
                       loading={contactsLoading}
                       value={selectedContacts}
                       onChange={(event, newValue) => {
-                        setFieldValue('contact_ids', newValue.map(c => c.id));
+                        setFieldValue(
+                          "contact_ids",
+                          newValue.map((c) => c.id),
+                        );
                       }}
-                      onBlur={() => formik.setFieldTouched('contact_ids', true)}
-                      getOptionLabel={(option) => option.label || ''}
-                      isOptionEqualToValue={(option, value) => option.id === value.id}
+                      onBlur={() => formik.setFieldTouched("contact_ids", true)}
+                      getOptionLabel={(option) => option.label || ""}
+                      isOptionEqualToValue={(option, value) =>
+                        option.id === value.id
+                      }
                       renderInput={(params) => (
                         <TextField
                           {...params}
-                          placeholder={contactOptions.length === 0 ? 'No contacts yet' : 'Select contacts...'}
-                          error={Boolean(touched.contact_ids && errors.contact_ids && !inlineContact)}
-                          helperText={touched.contact_ids && errors.contact_ids && !inlineContact ? errors.contact_ids : ''}
+                          placeholder={
+                            contactOptions.length === 0
+                              ? "No contacts yet"
+                              : "Select contacts..."
+                          }
+                          error={Boolean(
+                            touched.contact_ids &&
+                            errors.contact_ids &&
+                            !inlineContact,
+                          )}
+                          helperText={
+                            touched.contact_ids &&
+                            errors.contact_ids &&
+                            !inlineContact
+                              ? errors.contact_ids
+                              : ""
+                          }
                           InputProps={{
                             ...params.InputProps,
                             endAdornment: (
                               <>
-                                {contactsLoading ? <CircularProgress color="inherit" size={20} /> : null}
+                                {contactsLoading ? (
+                                  <CircularProgress color="inherit" size={20} />
+                                ) : null}
                                 {params.InputProps.endAdornment}
                               </>
-                            )
+                            ),
                           }}
                         />
                       )}
                       renderOption={(props, option) => (
                         <li {...props} key={option.id}>
                           <Stack>
-                            <Typography variant="body2">{option.label}</Typography>
+                            <Typography variant="body2">
+                              {option.label}
+                            </Typography>
                             {option.job_title && (
-                              <Typography variant="caption" color="text.secondary">
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
                                 {option.job_title}
                               </Typography>
                             )}
@@ -606,46 +680,59 @@ export default function ActivityModal({
                         </li>
                       )}
                     />
-                    
-                    {/* Show pending inline contact */}
+
                     {inlineContact && (
-                      <Box sx={{ p: 1.5, bgcolor: 'success.lighter', borderRadius: 1 }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Box
+                        sx={{
+                          p: 1.5,
+                          bgcolor: "success.lighter",
+                          borderRadius: 1,
+                        }}
+                      >
+                        <Stack
+                          direction="row"
+                          justifyContent="space-between"
+                          alignItems="center"
+                        >
                           <Typography variant="body2" color="success.dark">
-                            ✓ New contact: {inlineContact.first_name} {inlineContact.last_name}
+                            ✓ New contact: {inlineContact.first_name}{" "}
+                            {inlineContact.last_name}
                           </Typography>
-                         <Button size="small" color="error" onClick={() => {
-                            setInlineContact(null);
-                            setFieldValue('has_inline_contact', false);
-                          }}>
+                          <Button
+                            size="small"
+                            color="error"
+                            onClick={() => {
+                              setInlineContact(null);
+                              setFieldValue("has_inline_contact", false);
+                            }}
+                          >
                             Remove
                           </Button>
                         </Stack>
                       </Box>
                     )}
-                    
-                    {/* Add New Contact button - aligned with field */}
+
                     {!showInlineContact && !inlineContact && !isEditMode && (
                       <Button
                         size="small"
                         startIcon={<PlusOutlined />}
                         onClick={() => setShowInlineContact(true)}
-                        sx={{ alignSelf: 'flex-start' }}
+                        sx={{ alignSelf: "flex-start" }}
                       >
                         Add new contact
                       </Button>
                     )}
-                    
-                    {/* Inline Contact Form */}
+
                     {showInlineContact && (
                       <InlineContactForm
                         onSave={(contactData) => {
                           setInlineContact(contactData);
                           setShowInlineContact(false);
-                          // Sync Formik: mark inline contact exists + clear error
-                          setFieldValue('has_inline_contact', true);
-                          formik.setFieldError('contact_ids', undefined);
-                          displaySuccessSnackbar(`Contact "${contactData.first_name} ${contactData.last_name}" will be created with this activity`);
+                          setFieldValue("has_inline_contact", true);
+                          formik.setFieldError("contact_ids", undefined);
+                          displaySuccessSnackbar(
+                            `Contact "${contactData.first_name} ${contactData.last_name}" will be created with this activity`,
+                          );
                         }}
                         onCancel={() => setShowInlineContact(false)}
                       />
@@ -653,7 +740,6 @@ export default function ActivityModal({
                   </Stack>
                 </Grid>
 
-                {/* ==================== ACTIVITY DETAILS ==================== */}
                 <Grid item xs={12}>
                   <Divider sx={{ my: 1 }}>
                     <Typography variant="caption" color="text.secondary">
@@ -661,11 +747,12 @@ export default function ActivityModal({
                     </Typography>
                   </Divider>
                 </Grid>
-                
-                {/* Call to Action */}
+
                 <Grid item xs={12}>
                   <Stack spacing={1}>
-                    <InputLabel htmlFor="call_to_action">Call to Action</InputLabel>
+                    <InputLabel htmlFor="call_to_action">
+                      Call to Action
+                    </InputLabel>
                     <TextField
                       id="call_to_action"
                       name="call_to_action"
@@ -674,13 +761,16 @@ export default function ActivityModal({
                       value={values.call_to_action}
                       onChange={handleChange}
                       onBlur={handleBlur}
-                      error={Boolean(touched.call_to_action && errors.call_to_action)}
-                      helperText={touched.call_to_action && errors.call_to_action}
+                      error={Boolean(
+                        touched.call_to_action && errors.call_to_action,
+                      )}
+                      helperText={
+                        touched.call_to_action && errors.call_to_action
+                      }
                     />
                   </Stack>
                 </Grid>
-                
-                {/* Description */}
+
                 <Grid item xs={12}>
                   <Stack spacing={1}>
                     <InputLabel htmlFor="description">Description</InputLabel>
@@ -700,7 +790,6 @@ export default function ActivityModal({
                   </Stack>
                 </Grid>
 
-                {/* Decision Cycle & Step Section - Always show to allow inline creation */}
                 <Grid item xs={12}>
                   <Divider sx={{ my: 1 }}>
                     <Typography variant="caption" color="text.secondary">
@@ -709,27 +798,42 @@ export default function ActivityModal({
                   </Divider>
                 </Grid>
 
-                {/* Decision Cycle */}
                 <Grid item xs={12} sm={6}>
                   <Stack spacing={1}>
                     <InputLabel>Decision Cycle</InputLabel>
-                    
-                    {/* Show pending inline cycle */}
+
                     {inlineCycle ? (
-                      <Box sx={{ p: 1.5, bgcolor: 'success.lighter', borderRadius: 1 }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Box
+                        sx={{
+                          p: 1.5,
+                          bgcolor: "success.lighter",
+                          borderRadius: 1,
+                        }}
+                      >
+                        <Stack
+                          direction="row"
+                          justifyContent="space-between"
+                          alignItems="center"
+                        >
                           <Stack>
                             <Typography variant="body2" color="success.dark">
                               ✓ {inlineCycle.name}
                             </Typography>
                             <Typography variant="caption" color="success.main">
-                              Starting at: {PIPELINE_STEPS.find(s => s.value === inlineStepStage)?.label || 'Qualification'}
+                              Starting at:{" "}
+                              {PIPELINE_STEPS.find(
+                                (s) => s.value === inlineStepStage,
+                              )?.label || "Qualification"}
                             </Typography>
                           </Stack>
-                          <Button size="small" color="error" onClick={() => {
-                            setInlineCycle(null);
-                            setInlineStepStage('QUALIFICATION');
-                          }}>
+                          <Button
+                            size="small"
+                            color="error"
+                            onClick={() => {
+                              setInlineCycle(null);
+                              setInlineStepStage("QUALIFICATION");
+                            }}
+                          >
                             Remove
                           </Button>
                         </Stack>
@@ -746,41 +850,45 @@ export default function ActivityModal({
                         disabled={cyclesLoading}
                       >
                         <MenuItem value="">
-                          <em>{cycleOptions.length === 0 ? 'No cycles yet' : 'None'}</em>
+                          <em>
+                            {cycleOptions.length === 0
+                              ? "No cycles yet"
+                              : "None"}
+                          </em>
                         </MenuItem>
                         {cycleOptions.map((cycle) => (
                           <MenuItem key={cycle.id} value={cycle.id}>
                             {cycle.name}
-                            {!cycle.is_active && ' (Inactive)'}
+                            {!cycle.is_active && " (Inactive)"}
                           </MenuItem>
                         ))}
                       </Select>
                     )}
-                    
-                    {/* Create New button - aligned with field */}
+
                     {!showInlineCycle && !inlineCycle && !isEditMode && (
                       <Button
                         size="small"
                         startIcon={<PlusOutlined />}
                         onClick={() => setShowInlineCycle(true)}
-                        sx={{ alignSelf: 'flex-start' }}
+                        sx={{ alignSelf: "flex-start" }}
                       >
                         Create new cycle
                       </Button>
                     )}
-                    
-                    {/* Inline Cycle Form - spans full width */}
+
                     {showInlineCycle && (
-                      <Box sx={{ gridColumn: 'span 2' }}>
+                      <Box sx={{ gridColumn: "span 2" }}>
                         <InlineCycleForm
                           onSave={(cycleData) => {
                             const { step_stage, ...cycleInfo } = cycleData;
                             setInlineCycle(cycleInfo);
                             setInlineStepStage(step_stage);
                             setShowInlineCycle(false);
-                            setFieldValue('decision_cycle_id', '');
-                            setFieldValue('decision_step_id', '');
-                            displaySuccessSnackbar(`Cycle "${cycleInfo.name}" will be created with this activity`);
+                            setFieldValue("decision_cycle_id", "");
+                            setFieldValue("decision_step_id", "");
+                            displaySuccessSnackbar(
+                              `Cycle "${cycleInfo.name}" will be created with this activity`,
+                            );
                           }}
                           onCancel={() => setShowInlineCycle(false)}
                         />
@@ -789,11 +897,12 @@ export default function ActivityModal({
                   </Stack>
                 </Grid>
 
-                {/* Decision Step - only show when NOT creating inline cycle */}
                 {!inlineCycle && !showInlineCycle && (
                   <Grid item xs={12} sm={6}>
                     <Stack spacing={1}>
-                      <InputLabel>Decision Step {values.decision_cycle_id && '*'}</InputLabel>
+                      <InputLabel>
+                        Decision Step {values.decision_cycle_id && "*"}
+                      </InputLabel>
                       <Select
                         id="decision_step_id"
                         name="decision_step_id"
@@ -803,14 +912,15 @@ export default function ActivityModal({
                         onBlur={handleBlur}
                         displayEmpty
                         disabled={stepsLoading || !values.decision_cycle_id}
-                        error={Boolean(touched.decision_step_id && errors.decision_step_id)}
+                        error={Boolean(
+                          touched.decision_step_id && errors.decision_step_id,
+                        )}
                       >
                         <MenuItem value="">
                           <em>
-                            {!values.decision_cycle_id 
-                              ? 'Select a cycle first' 
-                              : 'Select a pipeline step'
-                            }
+                            {!values.decision_cycle_id
+                              ? "Select a cycle first"
+                              : "Select a pipeline step"}
                           </em>
                         </MenuItem>
                         {stepOptions.map((step) => (
@@ -820,33 +930,40 @@ export default function ActivityModal({
                         ))}
                       </Select>
                       {touched.decision_step_id && errors.decision_step_id && (
-                        <FormHelperText error>{errors.decision_step_id}</FormHelperText>
+                        <FormHelperText error>
+                          {errors.decision_step_id}
+                        </FormHelperText>
                       )}
                     </Stack>
                   </Grid>
                 )}
-                
               </Grid>
             </Box>
-            
+
             <Divider />
-            
-            {/* Actions */}
+
             <Box sx={{ p: 2.5 }}>
               <Stack direction="row" spacing={2} justifyContent="flex-end">
                 <Button color="error" onClick={handleClose}>
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
-                  variant="contained" 
+                <Button
+                  type="submit"
+                  variant="contained"
                   disabled={submitting}
-                  startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : null}
-                >
-                  {submitting 
-                    ? (isEditMode ? 'Updating...' : 'Creating...') 
-                    : (isEditMode ? 'Update' : 'Create')
+                  startIcon={
+                    submitting ? (
+                      <CircularProgress size={16} color="inherit" />
+                    ) : null
                   }
+                >
+                  {submitting
+                    ? isEditMode
+                      ? "Updating..."
+                      : "Creating..."
+                    : isEditMode
+                      ? "Update"
+                      : "Create"}
                 </Button>
               </Stack>
             </Box>
@@ -867,5 +984,7 @@ ActivityModal.propTypes = {
   decisionStepId: PropTypes.string,
   decisionCycleId: PropTypes.string,
   defaultActivityType: PropTypes.string,
-  onSuccess: PropTypes.func
+  previousActivityId: PropTypes.string,
+  sourceActivityId: PropTypes.string,
+  onSuccess: PropTypes.func,
 };

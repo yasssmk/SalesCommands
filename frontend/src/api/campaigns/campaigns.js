@@ -1222,7 +1222,14 @@ export async function enrollTarget(campaignId, payload) {
     return { success: false, error: "Invalid campaign ID format", status: 400 };
   }
 
-  const { account_id, contact_ids = [], department_id, type } = payload;
+  const {
+    account_id,
+    contact_ids = [],
+    department_id,
+    type,
+    origin_activity_id,
+    notes,
+  } = payload;
 
   if (!account_id) {
     return { success: false, error: "account_id is required", status: 400 };
@@ -1234,6 +1241,8 @@ export async function enrollTarget(campaignId, payload) {
     type: type || "ACCOUNT",
     contact_ids,
     department_id: department_id || undefined,
+    origin_activity_id: origin_activity_id || undefined,
+    notes: notes || undefined,
   });
 
   if (!result.success) {

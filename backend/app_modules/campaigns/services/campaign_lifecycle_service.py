@@ -26,6 +26,7 @@ from ..models import (
     CampaignAccount,
     CampaignAccountStatus,
 )
+from ..utils.scheduling import cumulative_delay_for_position, next_business_day
 
 logger = get_logger(__name__)
 
@@ -330,15 +331,6 @@ class CampaignLifecycleService:
         }
     
     def _resume_on_hold_activities(self, campaign):
-        """
-        Resume ON_HOLD activities → PLANNED with recalculated scheduled_dates.
-
-        Date recalculation uses base_date = today, then applies cumulative
-        min_delay_days from the sequence chain (same logic as playlist).
-
-        Returns:
-            int: number of activities resumed
-        """
         from datetime import timedelta
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import ActivityStatus
@@ -350,52 +342,23 @@ class CampaignLifecycleService:
                 campaign=campaign,
                 status=ActivityStatus.ON_HOLD,
                 client_id=self.client_id,
-            ).select_related('campaign_contact', 'previous_activity')
+            ).select_related('campaign_contact')
         )
 
         if not on_hold_activities:
             return 0
 
-        by_id = {a.id: a for a in on_hold_activities}
-
         for activity in on_hold_activities:
-            base_date = today
-            cumulative_delay = self._cumulative_delay_from_root(activity, by_id)
-
-            if cumulative_delay > 0:
-                scheduled = self._next_business_day(base_date + timedelta(days=cumulative_delay))
-            else:
-                scheduled = self._next_business_day(base_date)
-
+            cumulative_delay = cumulative_delay_for_position(
+                activity.campaign_contact_id,
+                activity.sequence_position,
+            )
+            scheduled = next_business_day(today + timedelta(days=cumulative_delay))
             activity.status = ActivityStatus.PLANNED
             activity.scheduled_date = scheduled
             activity.save(update_fields=['status', 'scheduled_date', 'updated_at'])
 
         return len(on_hold_activities)
-
-    def _cumulative_delay_from_root(self, activity, by_id, _visited=None):
-        """Walk previous_activity chain, summing min_delay_days."""
-        if _visited is None:
-            _visited = set()
-        if activity.id in _visited:
-            return 0
-        _visited.add(activity.id)
-
-        prev = activity.previous_activity
-        if prev is None:
-            return 0
-
-        prev_delay = self._cumulative_delay_from_root(prev, by_id, _visited)
-        own_delay = activity.min_delay_days or 0
-        return prev_delay + own_delay
-
-    def _next_business_day(self, date):
-        """Advance date past weekends (Mon-Fri only)."""
-        from datetime import timedelta
-        while date.weekday() >= 5:
-            date += timedelta(days=1)
-        return date
-
 
 
     # ======================================================================

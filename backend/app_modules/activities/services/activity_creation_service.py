@@ -198,15 +198,26 @@ class ActivityCreationService:
                 source_activity_id=source_activity_id,
             )
 
-            # If a new cycle was created from a campaign conversion, record origin
-            if inline_cycle and created_entities.get('cycle') and source_activity_id:
+            # Backfill source_campaign on the cycle when activity originates from a campaign.
+            # Covers both: inline cycle creation AND linking to an existing cycle.
+            if source_activity_id and cycle_id:
                 source_act = Activity.objects.filter(
                     id=source_activity_id,
-                    client_id=self.client_id
+                    client_id=self.client_id,
                 ).select_related('campaign').first()
+
                 if source_act and source_act.campaign_id:
-                    created_entities['cycle'].source_campaign_id = source_act.campaign_id
-                    created_entities['cycle'].save(update_fields=['source_campaign_id'])
+                    # Resolve cycle instance — prefer already-created inline cycle
+                    cycle_instance = created_entities.get('cycle')
+                    if not cycle_instance:
+                        cycle_instance = DecisionCycle.objects.filter(
+                            id=cycle_id,
+                            client_id=self.client_id,
+                        ).first()
+
+                    if cycle_instance and not cycle_instance.source_campaign_id:
+                        cycle_instance.source_campaign_id = source_act.campaign_id
+                        cycle_instance.save(update_fields=['source_campaign_id'])
 
 
             created_entities['activity'] = activity

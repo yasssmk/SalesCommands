@@ -881,7 +881,7 @@ export default function CampaignOutcomeModal({
                   open={activityModalOpen}
                   onClose={() => setActivityModalOpen(false)}
                   accountId={activeActivity.account?.id}
-                  previousActivityId={activeActivity.id}
+                  sourceActivityId={activeActivity.id}
                   defaultActivityType="MEETING"
                   onSuccess={() => {
                     // Activity created — continue to scope step
