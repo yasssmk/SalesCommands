@@ -294,46 +294,6 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
     
     # ==========================================================================
-    # LINKED LIST (PREVIOUS/NEXT ACTIVITY)
-    # ==========================================================================
-    # DEPRECATED: These fields are kept for backward compatibility with
-    # standalone activities (not linked to a Decision Cycle).
-    # 
-    # For activities linked to a Decision Cycle, use the calculated sequence
-    # from ActivitySequenceService.get_sequence_context() instead.
-    # The sequence is calculated dynamically based on:
-    #   1. decision_step.order (pipeline position)
-    #   2. COALESCE(scheduled_date, due_date)
-    #   3. scheduled_time
-    #   4. created_at (fallback)
-    #
-    # These fields will be removed in a future migration once all activities
-    # are migrated to use Decision Cycles.
-    # ==========================================================================
-    
-    previous_activity = models.OneToOneField(
-        'self',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='next_activity_rel',
-        verbose_name=_('Previous Activity (DEPRECATED)'),
-        help_text=_('DEPRECATED: Use sequence_context for activities in a cycle. '
-                    'Manual linking only for standalone activities.')
-    )
-    
-    next_activity = models.OneToOneField(
-        'self',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='previous_activity_rel',
-        verbose_name=_('Next Activity (DEPRECATED)'),
-        help_text=_('DEPRECATED: Use sequence_context for activities in a cycle. '
-                    'Manual linking only for standalone activities.')
-    )
-    
-    # ==========================================================================
     # FUTURE FIELDS (STUBS FOR IA/CAMPAIGN)
     # ==========================================================================
     
@@ -371,8 +331,6 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
             models.Index(fields=['scheduled_date'], name='act_scheduled_idx'),
             models.Index(fields=['due_date'], name='act_due_date_idx'),
             models.Index(fields=['decision_step'], name='act_step_idx'),
-            models.Index(fields=['previous_activity'], name='act_prev_idx'),
-            models.Index(fields=['next_activity'], name='act_next_idx'),
             models.Index(fields=['campaign', 'status', 'scheduled_date'], name='act_camp_status_sched_idx'),
             models.Index(
                 fields=['decision_cycle', 'decision_step', 'scheduled_date', 'scheduled_time', 'created_at'],
@@ -403,27 +361,6 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         """Check if activity has a scheduled date/time."""
         return self.scheduled_date is not None
     
-    @property
-    def has_previous(self):
-        """
-        Check if activity has a previous activity in sequence.
-        
-        DEPRECATED: For activities in a Decision Cycle, use
-        ActivitySequenceService.get_sequence_context() instead.
-        This property only checks the manual previous_activity field.
-        """
-        return self.previous_activity is not None
-    
-    @property
-    def has_next(self):
-        """
-        Check if activity has a next activity in sequence.
-        
-        DEPRECATED: For activities in a Decision Cycle, use
-        ActivitySequenceService.get_sequence_context() instead.
-        This property only checks the manual next_activity field.
-        """
-        return self.next_activity is not None
     
     # ==========================================================================
     # METHODS

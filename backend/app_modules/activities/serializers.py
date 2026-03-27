@@ -255,81 +255,17 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         return None
     
     def get_scheduled_date(self, obj):
-        """
-        Return scheduled_date with confirmed flag.
-
-        For campaign sequence activities:
-            - Step 1 or non-campaign: return DB value (confirmed=True).
-            - Steps 2..N with previous COMPLETED: DB value already updated
-              by _persist_next_activity_schedule (confirmed=True).
-            - Steps 2..N with previous not yet COMPLETED: estimated date
-              computed from prev.scheduled_date + min_delay_days (confirmed=False).
-
-        Returns:
-            dict: {date: str|None, confirmed: bool}
-            or str|None for non-campaign activities (backward compat).
-        """
-        from datetime import timedelta
-        from django.utils import timezone
-
-        # Non-campaign — return raw value for backward compat
-        if not obj.campaign_id:
-            return str(obj.scheduled_date) if obj.scheduled_date else None
-
-        # Step 1 or no previous — DB value is authoritative
-        prev = obj.previous_activity
-        if prev is None:
-            return {
-                'date': str(obj.scheduled_date) if obj.scheduled_date else None,
-                'confirmed': True,
-            }
-
-        # Previous completed — DB already updated by _persist_next_activity_schedule
-        if prev.status == ActivityStatus.COMPLETED:
-            return {
-                'date': str(obj.scheduled_date) if obj.scheduled_date else None,
-                'confirmed': True,
-            }
-
-        # Previous not yet completed — estimate from prev.scheduled_date chain
-        if prev.scheduled_date:
-            delay = obj.min_delay_days or 0
-            estimated = prev.scheduled_date + timedelta(days=delay)
-            while estimated.weekday() >= 5:
-                estimated += timedelta(days=1)
-            return {
-                'date': str(estimated),
-                'confirmed': False,
-            }
-
-        return {
-            'date': None,
-            'confirmed': False,
-        }
+        """Return scheduled_date. Campaign activities always have confirmed DB dates."""
+        return str(obj.scheduled_date) if obj.scheduled_date else None
 
     def get_is_overdue(self, obj):
-        """
-        Overdue = campaign activity, step 2+, previous COMPLETED,
-        and DB scheduled_date < today.
-
-        Step 1 and non-campaign activities are never overdue.
-        Relies on scheduled_date being up-to-date in DB
-        (written by _persist_next_activity_schedule on completion).
-        """
+        """Overdue = PLANNED/IN_PROGRESS with scheduled_date in the past."""
         from django.utils import timezone
 
         if obj.status in (ActivityStatus.COMPLETED, ActivityStatus.CANCELLED):
             return False
-
-        if not obj.campaign_id or obj.previous_activity is None:
-            return False
-
-        if obj.previous_activity.status != ActivityStatus.COMPLETED:
-            return False
-
         if not obj.scheduled_date:
             return False
-
         return obj.scheduled_date < timezone.now().date()
 
 
@@ -371,8 +307,6 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Computed fields
     is_overdue = serializers.BooleanField(read_only=True)
     is_scheduled = serializers.BooleanField(read_only=True)
-    has_previous = serializers.BooleanField(read_only=True)
-    has_next = serializers.BooleanField(read_only=True)
 
     completed_by_name = serializers.SerializerMethodField(read_only=True)
     campaign_detail = serializers.SerializerMethodField(read_only=True)
@@ -417,8 +351,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             # Origin tracing (campaign activity that triggered this decision cycle activity)
             'source_activity_detail',
             
-            # Previous/Next activity (DEPRECATED - kept for backward compatibility)
-            'previous_activity', 'next_activity',
+            # Sequence context (replaces previous/next linked list)
             'previous_activity_info', 'next_activity_info',
             
             # Sequence context (NEW - dynamic playlist calculation)
@@ -431,7 +364,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'no_answer_count',
             
             # Computed
-            'is_overdue', 'is_scheduled', 'has_previous', 'has_next',
+            'is_overdue', 'is_scheduled',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
 
@@ -441,7 +374,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'decision_cycle_detail', 'decision_step_detail',
             'previous_activity_info', 'next_activity_info', 'campaign_detail',
             'no_next_step_reason_display', 'has_next_in_sequence', 'effective_has_next_step',
-            'is_overdue', 'is_scheduled', 'has_previous', 'has_next',
+            'is_overdue', 'is_scheduled',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
     
@@ -601,13 +534,9 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 
                 if pending_next:
                     return True
+    
         
-        # Priority 2: Check legacy next_activity FK for standalone
-        if obj.next_activity_id:
-            if obj.next_activity and obj.next_activity.status == 'PLANNED':
-                return True
-        
-        # Priority 3: Explicit value (only applies when no pending activities exist)
+        # Priority 2: Explicit value (only applies when no pending activities exist)
         if obj.next_step_agreed is not None:
             return obj.next_step_agreed
         return None
@@ -670,7 +599,6 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     )
     decision_cycle_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     decision_step_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
-    previous_activity_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     source_activity_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
 
     class Meta:
@@ -687,7 +615,6 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # Relations
             'contact_ids', 'invited_user_ids',
             'decision_cycle_id', 'decision_step_id',
-            'previous_activity_id',
             'source_activity_id',
 
             # Future fields
@@ -824,23 +751,6 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 )
             
             # =================================================================
-            # Validate previous_activity (optional)
-            # =================================================================
-            previous_activity_id = attrs.pop('previous_activity_id', None)
-            if previous_activity_id:
-                try:
-                    previous_activity = Activity.objects.get(
-                        id=previous_activity_id,
-                        client_id=client_id,
-                        account=account
-                    )
-                    attrs['previous_activity'] = previous_activity
-                except Activity.DoesNotExist:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.OBJECT_NOT_FOUND
-                    )
-
-            # =================================================================
             # Validate source_activity (optional — traceability FK)
             # =================================================================
             source_activity_id = attrs.pop('source_activity_id', None)
@@ -918,7 +828,6 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     )
     decision_cycle_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     decision_step_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
-    next_activity_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     
     class Meta:
         model = Activity
@@ -935,7 +844,6 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # Relations
             'owner_id', 'contact_ids', 'invited_user_ids',
             'decision_cycle_id', 'decision_step_id',
-            'next_activity_id',
             
             # Future fields
             'transcript', 'preparation_notes'
@@ -1121,31 +1029,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 raise StandardizedValidationError(
                     ActivityErrorMessages.STEP_REQUIRED_FOR_CYCLE
                 )
-            
-            # =================================================================
-            # NEXT ACTIVITY VALIDATION
-            # =================================================================
-            if 'next_activity_id' in attrs:
-                next_activity_id = attrs.pop('next_activity_id')
-                if next_activity_id:
-                    try:
-                        next_activity = Activity.objects.get(
-                            id=next_activity_id,
-                            client_id=client_id,
-                            account=account
-                        )
-                        # Prevent circular reference
-                        if next_activity.id == instance.id:
-                            raise StandardizedValidationError(
-                                ActivityErrorMessages.CIRCULAR_REFERENCE
-                            )
-                        attrs['next_activity'] = next_activity
-                    except Activity.DoesNotExist:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.OBJECT_NOT_FOUND
-                        )
-                else:
-                    attrs['next_activity'] = None
+        
             
             return attrs
             
