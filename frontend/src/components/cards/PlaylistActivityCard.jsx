@@ -100,7 +100,6 @@ export default function PlaylistActivityCard({
   const router = useRouter();
 
   const handleCardClick = () => {
-    if (isGreyedOut) return;
     router.push(`/activities/${activity.id}`);
   };
 
@@ -189,15 +188,11 @@ export default function PlaylistActivityCard({
           overflow: "hidden",
           transition: "all 0.2s ease",
           opacity: isGreyedOut ? 0.55 : isCancelled ? 0.6 : 1,
-          // Greyed out cards are display-only — no pointer interaction
-          pointerEvents: isGreyedOut ? "none" : "auto",
-          cursor: isGreyedOut ? "default" : "pointer",
-          "&:hover": isGreyedOut
-            ? {}
-            : {
-                borderColor: theme.palette.primary.light,
-                boxShadow: `0 0 0 1px ${theme.palette.primary.light}`,
-              },
+          cursor: "pointer",
+          "&:hover": {
+            borderColor: theme.palette.primary.light,
+            boxShadow: `0 0 0 1px ${theme.palette.primary.light}`,
+          },
         }}
       >
         <Box sx={{ p: 2 }}>
@@ -321,7 +316,7 @@ export default function PlaylistActivityCard({
                 />
               )}
 
-              {/* Completed badge or action button */}
+              {/* Completed badge or action button — hidden for greyed-out (upcoming/completed) cards */}
               {isCompleted && outcomeConfig ? (
                 <Chip
                   label={outcomeConfig.label}
@@ -330,9 +325,8 @@ export default function PlaylistActivityCard({
                   variant="filled"
                   sx={{ height: 22, fontSize: "0.7rem" }}
                 />
-              ) : !isCompleted && !isCancelled ? (
+              ) : !isCompleted && !isCancelled && !isGreyedOut ? (
                 ONE_CLICK_TYPES.includes(activity.activity_type) ? (
-                  // 1-click for EMAIL / LINKEDIN
                   <Button
                     size="small"
                     variant="contained"
@@ -356,7 +350,6 @@ export default function PlaylistActivityCard({
                         : "Email Sent"}
                   </Button>
                 ) : (
-                  // Opens CampaignOutcomeModal
                   <Button
                     size="small"
                     variant="outlined"

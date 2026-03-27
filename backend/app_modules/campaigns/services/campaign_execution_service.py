@@ -187,6 +187,11 @@ class CampaignExecutionService:
         has_email = bool(getattr(contact, 'email', None))
         has_linkedin = bool(getattr(contact, 'linkedin_url', None))
 
+        # Apply channel override — EMAIL_ONLY forces WITHOUT_PHONE variant
+        # regardless of actual contact channel availability.
+        if getattr(campaign, 'channel_override', 'AUTO') == 'EMAIL_ONLY':
+            has_phone = False
+
         try:
             sequence_dict, variant_name = SequenceDispatcher.get_sequence_with_variant(
                 sequence_type=campaign.sequence_type,
@@ -203,12 +208,15 @@ class CampaignExecutionService:
 
         created = 0
         cumulative_delay = 0
-        # TARGETED: sequence starts from today (enrollment date).
-        # OUTBOUND: sequence starts from campaign planned start date.
+
         if campaign.is_targeted:
             base_date = self._next_business_day(timezone.now().date())
         else:
-            base_date = self._next_business_day(campaign.planned_start_date)
+            # Use actual_start_date (set when campaign is launched) so step 1
+            # lands on the day the rep actually started the campaign.
+            base_date = self._next_business_day(
+                campaign.actual_start_date or timezone.now().date()
+            )
 
         for step_number, step_config in sequence_dict.items():
             cumulative_delay += step_config.get('min_delay', 0)
@@ -434,7 +442,7 @@ class CampaignExecutionService:
         Delegates per-contact generation to generate_activities_for_contact().
         Special case: no sequence + no contacts → single account-level activity.
         """
-        contacts = self._extract_contacts(campaign_account)
+        contacts = self._extract_contacts(campaign_account, campaign=campaign)
 
         # Special case: no sequence, no contacts → one account-level activity
         if not campaign.sequence_type and not contacts:
@@ -468,7 +476,7 @@ class CampaignExecutionService:
             created += self.generate_activities_for_contact(campaign, campaign_account, contact)
         return created
 
-    def _extract_contacts(self, campaign_account):
+    def _extract_contacts(self, campaign_account, campaign=None):
         """
         Extract contacts for a CampaignAccount.
 
@@ -496,11 +504,15 @@ class CampaignExecutionService:
             dept_ids = campaign_account.target_departments.values_list('id', flat=True)
             queryset = queryset.filter(standard_department_id__in=dept_ids)
 
-        queryset = queryset.filter(
-            Q(email__isnull=False) | Q(phone_number__isnull=False)
-        ).exclude(
-            Q(email='') & Q(phone_number='')
-        )
+        # EMAIL_ONLY: restrict to contacts with a valid email address only.
+        if campaign and getattr(campaign, 'channel_override', 'AUTO') == 'EMAIL_ONLY':
+            queryset = queryset.filter(email__isnull=False).exclude(email='')
+        else:
+            queryset = queryset.filter(
+                Q(email__isnull=False) | Q(phone_number__isnull=False)
+            ).exclude(
+                Q(email='') & Q(phone_number='')
+            )
 
         return list(queryset)
 

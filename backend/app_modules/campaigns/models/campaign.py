@@ -67,6 +67,16 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Automated sequence pattern. NULL for campaigns without sequences.')
     )
 
+    channel_override = models.CharField(
+        max_length=20,
+        default='AUTO',
+        verbose_name=_('Channel Override'),
+        help_text=_(
+            'AUTO = backend selects variant per contact channels. '
+            'EMAIL_ONLY = force WITHOUT_PHONE variant for all contacts.'
+        )
+    )
+
     # ==========================================================================
     # TERRITORY RELATIONSHIP (source of accounts for OUTBOUND)
     # ==========================================================================

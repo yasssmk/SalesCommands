@@ -345,6 +345,12 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         allow_null=True,
     )
 
+    channel_override = serializers.ChoiceField(
+        choices=['AUTO', 'EMAIL_ONLY'],
+        required=False,
+        default='AUTO',
+    )
+
     class Meta:
         model = Campaign
         fields = [
@@ -354,6 +360,7 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'start_date', 'end_date',
             'objective',
             'executor_id',
+            'channel_override',
         ]
         extra_kwargs = {
             'name': {
@@ -612,6 +619,12 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         allow_null=True,
     )
 
+    channel_override = serializers.ChoiceField(
+        choices=['AUTO', 'EMAIL_ONLY'],
+        required=False,
+        default='AUTO',
+    )
+
     # Map frontend keys start_date/end_date → model fields planned_start_date/planned_end_date
     start_date = serializers.DateField(
         source='planned_start_date',
@@ -630,6 +643,7 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'territory_ids',
             'start_date', 'end_date',
             'executor_id',
+            'channel_override',
         ]
         extra_kwargs = {
             'name': {'required': False},

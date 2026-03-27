@@ -34,6 +34,7 @@ import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
 } from "utils/displayError";
+import { handleFormikError } from "utils/formErrorHandler";
 
 // icons
 import ArrowLeftOutlined from "@ant-design/icons/ArrowLeftOutlined";
@@ -68,6 +69,8 @@ const INITIAL_STATE = {
   objective_target: "",
   executor_id: null,
   selectedExecutor: null,
+  // Channel strategy — AUTO lets backend pick variant per contact channels
+  channel_override: "AUTO",
 };
 
 // ==============================|| CAMPAIGN CREATE MODAL ||============================== //
@@ -80,6 +83,8 @@ export default function CampaignCreateModal({ open, onClose, onSuccess }) {
   const [activeStep, setActiveStep] = useState(0);
   const [wizardData, setWizardData] = useState(INITIAL_STATE);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [fieldTouched, setFieldTouched] = useState({});
 
   // ==============================|| WIZARD DATA HANDLERS ||============================== //
 
@@ -97,14 +102,34 @@ export default function CampaignCreateModal({ open, onClose, onSuccess }) {
     setActiveStep(0);
     setWizardData(INITIAL_STATE);
     setIsSubmitting(false);
+    setFieldErrors({});
+    setFieldTouched({});
   }, []);
 
   // ==============================|| NAVIGATION ||============================== //
 
-  const handleNext = () => {
-    setActiveStep((prev) => Math.min(prev + 1, STEPS.length - 1));
+  // Required fields per step — marks them touched so errors display immediately
+  const STEP_REQUIRED_FIELDS = {
+    2: ["name", "start_date", "end_date"],
   };
 
+  const handleNext = () => {
+    const requiredFields = STEP_REQUIRED_FIELDS[activeStep];
+    if (requiredFields) {
+      const newErrors = {};
+      const newTouched = {};
+      requiredFields.forEach((field) => {
+        newTouched[field] = true;
+        if (!wizardData[field]) {
+          newErrors[field] = "This field is required.";
+        }
+      });
+      setFieldTouched((prev) => ({ ...prev, ...newTouched }));
+      setFieldErrors((prev) => ({ ...prev, ...newErrors }));
+      if (Object.keys(newErrors).length > 0) return; // Block navigation
+    }
+    setActiveStep((prev) => Math.min(prev + 1, STEPS.length - 1));
+  };
   const handleBack = () => {
     setActiveStep((prev) => Math.max(prev - 1, 0));
   };
@@ -161,6 +186,8 @@ export default function CampaignCreateModal({ open, onClose, onSuccess }) {
         }),
         // Executor assignment — single optional user
         executor_id: wizardData.executor_id || null,
+        // Channel strategy override — AUTO defers to backend per-contact logic
+        channel_override: wizardData.channel_override || "AUTO",
       };
 
       const result = await createCampaign(payload);
@@ -170,15 +197,52 @@ export default function CampaignCreateModal({ open, onClose, onSuccess }) {
         handleClose();
         if (onSuccess) onSuccess();
       } else {
-        displayErrorSnackbar(result);
+        // Formik-compatible adapter — bridges handleFormikError with wizard state
+        const formikAdapter = {
+          setFieldError: (field, message) =>
+            setFieldErrors((prev) => ({ ...prev, [field]: message })),
+          setFieldTouched: (field) =>
+            setFieldTouched((prev) => ({ ...prev, [field]: true })),
+          setSubmitting: (val) => setIsSubmitting(val),
+        };
+        handleFormikError(result, formikAdapter);
+        // Navigate to step containing the first field error
+        _navigateToFieldError(result);
       }
     } catch (err) {
-      displayErrorSnackbar({
-        message: err?.message || "An unexpected error occurred",
-        status: 500,
-      });
+      displayErrorSnackbar(err);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Map backend field names → wizard step index
+  const FIELD_STEP_MAP = {
+    name: 2,
+    description: 2,
+    start_date: 2,
+    end_date: 2,
+    planned_start_date: 2,
+    planned_end_date: 2,
+    objective_type: 2,
+    objective_target: 2,
+    channel_override: 2,
+    territory_ids: 1,
+    campaign_type: 0,
+  };
+
+  const _navigateToFieldError = (result) => {
+    const data = result?.response?.data || result?.data || result;
+    if (!data || typeof data !== "object") return;
+    const errorFields = Object.keys(data).filter(
+      (k) => !["detail", "error", "message", "success", "status"].includes(k),
+    );
+    for (const field of errorFields) {
+      const step = FIELD_STEP_MAP[field];
+      if (step !== undefined) {
+        setActiveStep(step);
+        return;
+      }
     }
   };
 
@@ -207,7 +271,14 @@ export default function CampaignCreateModal({ open, onClose, onSuccess }) {
           />
         );
       case 2:
-        return <StepObjectiveMembers data={wizardData} onUpdate={updateData} />;
+        return (
+          <StepObjectiveMembers
+            data={wizardData}
+            onUpdate={updateData}
+            errors={fieldErrors}
+            touched={fieldTouched}
+          />
+        );
       case 3:
         return <StepReviewCreate data={wizardData} />;
       default:

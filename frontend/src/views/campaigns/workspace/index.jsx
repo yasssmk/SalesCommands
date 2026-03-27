@@ -34,7 +34,14 @@ import TargetsTab from "sections/campaigns/workspace/TargetsTab";
 import CampaignMembersTab from "sections/campaigns/workspace/CampaignMembersTab";
 
 // api
-import { useGetCampaignWorkspace } from "api/campaigns/campaigns";
+import {
+  useGetCampaignWorkspace,
+  updateCampaign,
+} from "api/campaigns/campaigns";
+import {
+  displaySuccessSnackbar,
+  displayErrorSnackbar,
+} from "utils/displayError";
 import CampaignOutcomeModal from "sections/campaigns/CampaignOutcomeModal";
 
 // icons
@@ -76,11 +83,22 @@ export default function CampaignWorkspacePage() {
 
   const [logResponseOpen, setLogResponseOpen] = useState(false);
 
+  const handleCampaignSave = async (field, value) => {
+    const result = await updateCampaign(campaignId, { [field]: value });
+    if (result.success) {
+      displaySuccessSnackbar("Campaign updated");
+      mutateCampaign();
+    } else {
+      displayErrorSnackbar(result);
+    }
+  };
+
   const headerProps = useCampaignHeaderProps({
     campaign,
     stats,
     onMutate: mutateCampaign,
     onLogResponse: () => setLogResponseOpen(true),
+    onSave: handleCampaignSave,
   });
 
   const breadcrumbItems = campaign

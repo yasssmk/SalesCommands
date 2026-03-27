@@ -20,10 +20,13 @@ import { useEffect } from "react";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import FormControl from "@mui/material/FormControl";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import FormHelperText from "@mui/material/FormHelperText";
 import Grid from "@mui/material/Grid";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
+import Radio from "@mui/material/Radio";
+import RadioGroup from "@mui/material/RadioGroup";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
@@ -69,7 +72,12 @@ SectionTitle.propTypes = { children: PropTypes.node };
 
 // ==============================|| STEP OBJECTIVE MEMBERS ||============================== //
 
-export default function StepObjectiveMembers({ data, onUpdate }) {
+export default function StepObjectiveMembers({
+  data,
+  onUpdate,
+  errors = {},
+  touched = {},
+}) {
   const theme = useTheme();
   const { user } = useAuth();
 
@@ -138,6 +146,8 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
               placeholder="Enter campaign name"
               value={data.name || ""}
               onChange={handleFieldChange("name")}
+              error={Boolean(touched.name && errors.name)}
+              helperText={touched.name && errors.name}
             />
           </Stack>
         </Grid>
@@ -171,6 +181,8 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
                   textField: {
                     fullWidth: true,
                     placeholder: "Select start date",
+                    error: Boolean(touched.start_date && errors.start_date),
+                    helperText: touched.start_date && errors.start_date,
                   },
                 }}
               />
@@ -190,12 +202,63 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
                   textField: {
                     fullWidth: true,
                     placeholder: "Select end date",
+                    error: Boolean(touched.end_date && errors.end_date),
+                    helperText: touched.end_date && errors.end_date,
                   },
                 }}
               />
             </LocalizationProvider>
           </Stack>
         </Grid>
+
+        {/* ==================== CHANNEL STRATEGY (Outbound only) ==================== */}
+        {isOutbound && (
+          <>
+            <SectionTitle>Channel Strategy</SectionTitle>
+            <Grid item xs={12}>
+              <FormControl>
+                <RadioGroup
+                  row
+                  value={data.channel_override || "AUTO"}
+                  onChange={(e) =>
+                    onUpdate({ channel_override: e.target.value })
+                  }
+                >
+                  <FormControlLabel
+                    value="AUTO"
+                    control={<Radio size="small" />}
+                    label={
+                      <Stack spacing={0}>
+                        <Typography variant="body2" fontWeight={500}>
+                          Auto
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Channel selected per contact data
+                        </Typography>
+                      </Stack>
+                    }
+                    sx={{ mr: 4, alignItems: "flex-start" }}
+                  />
+                  <FormControlLabel
+                    value="EMAIL_ONLY"
+                    control={<Radio size="small" />}
+                    label={
+                      <Stack spacing={0}>
+                        <Typography variant="body2" fontWeight={500}>
+                          Email only
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Force email sequence for all contacts
+                        </Typography>
+                      </Stack>
+                    }
+                    sx={{ alignItems: "flex-start" }}
+                  />
+                </RadioGroup>
+              </FormControl>
+            </Grid>
+          </>
+        )}
 
         {/* ==================== OBJECTIVE ==================== */}
         <SectionTitle>Objective</SectionTitle>
@@ -288,8 +351,8 @@ export default function StepObjectiveMembers({ data, onUpdate }) {
 // ==============================|| PROP TYPES ||============================== //
 
 StepObjectiveMembers.propTypes = {
-  /** Full wizard data object */
   data: PropTypes.object.isRequired,
-  /** Callback to update wizard data: (updates) => void */
   onUpdate: PropTypes.func.isRequired,
+  errors: PropTypes.object,
+  touched: PropTypes.object,
 };

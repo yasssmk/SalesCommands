@@ -349,6 +349,7 @@ export default function useCampaignHeaderProps({
   stats,
   onMutate,
   onLogResponse,
+  onSave,
 }) {
   const theme = useTheme();
 
@@ -385,6 +386,13 @@ export default function useCampaignHeaderProps({
   );
 
   const title = campaign.name || "";
+
+  // Inline title editing — disabled for terminal states
+  const isTitleEditable = !["COMPLETED", "CANCELLED"].includes(campaign.status);
+  const onTitleSave =
+    isTitleEditable && onSave
+      ? (_fieldKey, newValue) => onSave("name", newValue)
+      : undefined;
 
   const headerActions = (
     <CampaignActionButtons
@@ -486,6 +494,7 @@ export default function useCampaignHeaderProps({
   return {
     avatar,
     title,
+    onTitleSave,
     headerActions,
     chips,
     infoItems,

@@ -25,6 +25,11 @@ import {
   OBJECTIVE_TYPE_LABELS,
 } from "api/campaigns/campaigns";
 
+const CHANNEL_OVERRIDE_LABELS = {
+  AUTO: "Auto (per contact data)",
+  EMAIL_ONLY: "Email only",
+};
+
 // icons
 import AimOutlined from "@ant-design/icons/AimOutlined";
 import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
@@ -255,6 +260,15 @@ export default function StepReviewCreate({ data }) {
             value={data.description || "No description"}
             muted={!data.description}
           />
+          {isOutbound && (
+            <ReviewRow
+              label="Channel Strategy"
+              value={
+                CHANNEL_OVERRIDE_LABELS[data.channel_override] ||
+                CHANNEL_OVERRIDE_LABELS.AUTO
+              }
+            />
+          )}
           <ReviewRow
             label="Start Date"
             value={formatDate(data.start_date)}
