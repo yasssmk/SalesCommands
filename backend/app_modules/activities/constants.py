@@ -64,3 +64,4 @@ class NoNextStepReason(models.TextChoices):
     ON_HOLD = 'ON_HOLD', _('On Hold')
     NOT_QUALIFIED = 'NOT_QUALIFIED', _('Not Qualified')
     OTHER = 'OTHER', _('Other')
+

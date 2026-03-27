@@ -2072,8 +2072,15 @@ function SourceActivityBanner({ sourceActivity }) {
         style={{ fontSize: theme.iconSizes.sm, color: theme.palette.info.main }}
       />
       <Typography variant="caption" color="info.dark">
-        Created from campaign activity: <strong>{sourceActivity.title}</strong>
-        {sourceActivity.campaign_name && ` · ${sourceActivity.campaign_name}`}
+        {sourceActivity.source_context?.type === "CAMPAIGN"
+          ? "Created from campaign activity"
+          : sourceActivity.source_context?.type === "DECISION_CYCLE"
+            ? "Created from decision cycle"
+            : "Created from activity"}
+        {": "}
+        <strong>{sourceActivity.title}</strong>
+        {sourceActivity.source_context?.name &&
+          ` · ${sourceActivity.source_context.name}`}
       </Typography>
     </Box>
   );
@@ -2106,7 +2113,7 @@ function CampaignContextSubsection({ activity }) {
       COMPLETED: "default",
       DRAFT: "default",
       CANCELLED: "error",
-    }[campaignDetail.status] || "default";
+    }[campaignDetail.campaign_status] || "default";
 
   return (
     <Stack
@@ -2159,9 +2166,13 @@ function CampaignContextSubsection({ activity }) {
           gutterBottom
           display="block"
         >
-          Status
+          Campaign Status
         </Typography>
-        <Chip label={campaignDetail.status} size="small" color={statusColor} />
+        <Chip
+          label={campaignDetail.campaign_status}
+          size="small"
+          color={statusColor}
+        />
       </Box>
 
       {contactName && (

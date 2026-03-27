@@ -29,8 +29,9 @@ from core.cache_utils import invalidate_tag
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 
 from app_modules.accounts.models import CompanyAccount
-
 from app_modules.contacts.models import Contact
+from app_modules.activities.models import Activity
+from app_modules.activities.constants import ActivityStatus
 
 from ..models import (
     Campaign,
@@ -787,7 +788,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         department_id = request.data.get('department_id')
         contact_ids  = request.data.get('contact_ids', [])
         notes        = request.data.get('notes', '') or ''
-        origin_activity_id = request.data.get('origin_activity_id')
+        origin_decision_cycle_id = request.data.get('origin_decision_cycle_id')
 
         if not campaign_id:
             raise StandardizedValidationError(
@@ -816,16 +817,15 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         except CompanyAccount.DoesNotExist:
             raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
         
-        # Validate origin_activity (optional — traceability FK)
-        origin_activity = None
-        if origin_activity_id:
-            from app_modules.activities.models import Activity
+        source_decision_cycle = None
+        if origin_decision_cycle_id:
+            from app_modules.decision_cycles.models import DecisionCycle
             try:
-                origin_activity = Activity.objects.get(
-                    id=origin_activity_id,
+                source_decision_cycle = DecisionCycle.objects.get(
+                    id=origin_decision_cycle_id,
                     client_id=client_id,
                 )
-            except Activity.DoesNotExist:
+            except DecisionCycle.DoesNotExist:
                 raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
 
         # Determine status: ACTIVE campaign → IN_PROGRESS immediately
@@ -923,15 +923,22 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 )
                 for contact in contacts:
                     # Skip contacts already enrolled and processed
-                    already_enrolled = campaign_account.target_contacts.filter(id=contact.id).exists()
-                    if already_enrolled:
+                    # Targeted campaign allows multiple enrollments.
+                    # Only block if contact still has open (PLANNED) activities.
+                    has_open_activities = Activity.objects.filter(
+                        campaign=campaign,
+                        campaign_contact__contact=contact,
+                        status=ActivityStatus.PLANNED,
+                    ).exists()
+                     
+                    if has_open_activities:
                         continue
 
                     campaign_account.target_contacts.add(contact)
                     count = exec_service.generate_activities_for_contact(
-                        campaign, campaign_account, contact,
-                        origin_activity=origin_activity,
-                    )
+                    campaign, campaign_account, contact,
+                    source_decision_cycle=source_decision_cycle,
+                )
                     contacts_created += 1
                     activities_created += count if isinstance(count, int) else 0
 
@@ -947,7 +954,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 'enroll_type': enroll_type,
                 'contacts_enrolled': contacts_created,
                 'activities_created': activities_created,
-                'origin_activity_id': str(origin_activity_id) if origin_activity_id else None,
+                'origin_decision_cycle_id': str(origin_decision_cycle_id) if origin_decision_cycle_id else None,
             },
         )
 

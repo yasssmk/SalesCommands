@@ -145,7 +145,7 @@ class CampaignExecutionService:
             'errors': errors,
         }
 
-    def generate_activities_for_contact(self, campaign, campaign_account, contact, origin_activity=None):
+    def generate_activities_for_contact(self, campaign, campaign_account, contact, origin_activity=None, source_decision_cycle=None):
         """
         Generate activities for a single contact added to an active campaign account.
 
@@ -179,6 +179,7 @@ class CampaignExecutionService:
                 position=1,
                 owner=executor,
                 source_activity=origin_activity,
+                source_decision_cycle=source_decision_cycle,
             )
             campaign_contact.mark_activities_generated(user=self.user)
             return 1
@@ -234,6 +235,7 @@ class CampaignExecutionService:
                 sequence_variant=variant_name,
                 scheduled_date=step_date,
                 source_activity=origin_activity,
+                source_decision_cycle=source_decision_cycle,
             )
             created += 1
         campaign_contact.mark_activities_generated(user=self.user)
@@ -519,7 +521,8 @@ class CampaignExecutionService:
     def _create_activity(self, campaign, campaign_account, campaign_contact,
                          account, contact, activity_type, position, owner=None,
                          step_config=None, sequence_variant=None,
-                         scheduled_date=None, source_activity=None):
+                         scheduled_date=None, source_activity=None,
+                         source_decision_cycle=None):
         """
         Create a single Activity linked to a campaign_contact.
         """
@@ -562,6 +565,7 @@ class CampaignExecutionService:
             description=step_config.get('description', '') if step_config else '',
             call_to_action=call_to_action,
             source_activity=source_activity,
+            source_decision_cycle=source_decision_cycle,
         )
         activity.save(user=self.user, client_id=self.client_id)
 
@@ -655,6 +659,28 @@ class CampaignExecutionService:
                 notes=f"Terminal outcome: {outcome}",
             )
             self._cancel_chain_for_contact(campaign_contact)
+
+            # Propagate opt-out to the Contact record so future campaign
+            # enrollment (_extract_contacts) correctly excludes this contact.
+            if outcome == ActivityOutcome.UNSUBSCRIBE_OPTOUT:
+                contact = activity.contacts.first()
+                if contact:
+                    contact.mark_opted_out(user=self.user)
+                    audit_log(
+                        event='contact_opted_out',
+                        action='update',
+                        actor_id=str(self.user.id),
+                        client_id=self.client_id,
+                        target_type='contact',
+                        target_id=str(contact.id),
+                        outcome='success',
+                        extra={
+                            'source': 'campaign_outcome',
+                            'activity_id': str(activity.id),
+                            'campaign_id': str(activity.campaign_id),
+                        }
+                    )
+
             self._check_account_completion(campaign_account)
             return None
 

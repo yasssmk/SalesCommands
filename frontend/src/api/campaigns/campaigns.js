@@ -1227,7 +1227,7 @@ export async function enrollTarget(campaignId, payload) {
     contact_ids = [],
     department_id,
     type,
-    origin_activity_id,
+    origin_decision_cycle_id,
     notes,
   } = payload;
 
@@ -1241,7 +1241,7 @@ export async function enrollTarget(campaignId, payload) {
     type: type || "ACCOUNT",
     contact_ids,
     department_id: department_id || undefined,
-    origin_activity_id: origin_activity_id || undefined,
+    origin_decision_cycle_id: origin_decision_cycle_id || undefined,
     notes: notes || undefined,
   });
 

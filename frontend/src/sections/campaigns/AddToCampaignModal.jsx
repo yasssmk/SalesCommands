@@ -49,7 +49,7 @@ import MainCard from "components/MainCard";
 // api
 import { useGetTargetedCampaign, enrollTarget } from "api/campaigns/campaigns";
 import { useGetContacts } from "api/businessData/contacts";
-import { useGetActivitiesByAccount } from "api/accounts/activities";
+import { useGetDecisionCyclesByAccount } from "api/accounts/decisionCycles";
 
 // utils
 import {
@@ -104,17 +104,13 @@ export default function AddToCampaignModal({
   );
   const [submitting, setSubmitting] = useState(false);
   const [notes, setNotes] = useState("");
-  const [originActivityId, setOriginActivityId] = useState(null);
+  const [originDecisionCycleId, setOriginDecisionCycleId] = useState(null);
 
-  // Fetch completed activities for origin selection
-  const {
-    activities: accountActivities,
-    activitiesLoading: activitiesLoading,
-  } = useGetActivitiesByAccount(open ? accountId : null, {
-    pageSize: 50,
-    ordering: "-completed_at",
-    filters: { status: "COMPLETED" },
-  });
+  const { cycles: accountCycles, cyclesLoading } =
+    useGetDecisionCyclesByAccount(open ? accountId : null);
+
+  // Only show open cycles (no terminal outcome)
+  const openCycles = accountCycles.filter((c) => !c.outcome);
 
   useEffect(() => {
     if (open) {
@@ -123,7 +119,7 @@ export default function AddToCampaignModal({
       setSelectedDepartment(null);
       setSelectedContactIds(preselectedContactId ? [preselectedContactId] : []);
       setNotes("");
-      setOriginActivityId(null);
+      setOriginDecisionCycleId(null);
     }
   }, [open, preselectedContactId]);
 
@@ -194,7 +190,8 @@ export default function AddToCampaignModal({
       }
 
       if (notes.trim()) payload.notes = notes.trim();
-      if (originActivityId) payload.origin_activity_id = originActivityId;
+      if (originDecisionCycleId)
+        payload.origin_decision_cycle_id = originDecisionCycleId;
 
       const result = await enrollTarget(targetedCampaign.id, payload);
 
@@ -218,7 +215,7 @@ export default function AddToCampaignModal({
     selectedContactIds,
     departments,
     notes,
-    originActivityId,
+    originDecisionCycleId,
     onClose,
   ]);
 
@@ -416,11 +413,11 @@ export default function AddToCampaignModal({
                 </>
               )}
 
-              {/* ── STEP 2: Origin activity ── */}
+              {/* ── STEP 2: Origin Decision Cycle ── */}
               {!isStep1 && (
                 <Box>
                   <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                    Linked to an activity?{" "}
+                    Linked to a Decision Cycle?{" "}
                     <Typography
                       component="span"
                       variant="caption"
@@ -434,12 +431,12 @@ export default function AddToCampaignModal({
                     color="text.secondary"
                     sx={{ mb: 1.5, display: "block" }}
                   >
-                    Select the call, meeting, or email that led to this
-                    enrollment. The generated activities will reference it for
-                    full traceability.
+                    Select the active decision cycle that motivates this
+                    enrollment. Generated activities will reference it for full
+                    traceability.
                   </Typography>
 
-                  {activitiesLoading ? (
+                  {cyclesLoading ? (
                     <Stack spacing={0.5}>
                       {[1, 2].map((i) => (
                         <Skeleton
@@ -449,9 +446,9 @@ export default function AddToCampaignModal({
                         />
                       ))}
                     </Stack>
-                  ) : accountActivities.length === 0 ? (
+                  ) : openCycles.length === 0 ? (
                     <Typography variant="body2" color="text.secondary">
-                      No completed activities found for this account.
+                      No open decision cycles found for this account.
                     </Typography>
                   ) : (
                     <List
@@ -459,14 +456,16 @@ export default function AddToCampaignModal({
                       disablePadding
                       sx={{ maxHeight: 220, overflowY: "auto" }}
                     >
-                      {accountActivities.map((act) => {
-                        const isSelected = originActivityId === act.id;
+                      {openCycles.map((cycle) => {
+                        const isSelected = originDecisionCycleId === cycle.id;
                         return (
-                          <ListItem key={act.id} disablePadding>
+                          <ListItem key={cycle.id} disablePadding>
                             <ListItemButton
                               selected={isSelected}
                               onClick={() =>
-                                setOriginActivityId(isSelected ? null : act.id)
+                                setOriginDecisionCycleId(
+                                  isSelected ? null : cycle.id,
+                                )
                               }
                               sx={{ borderRadius: 1, mb: 0.25 }}
                             >
@@ -477,15 +476,12 @@ export default function AddToCampaignModal({
                                 sx={{ p: 0, mr: 1 }}
                               />
                               <ListItemText
-                                primary={act.title}
-                                secondary={[
-                                  act.activity_type,
-                                  act.completed_at
-                                    ? act.completed_at.slice(0, 10)
-                                    : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ")}
+                                primary={cycle.name}
+                                secondary={
+                                  cycle.cycle_status ||
+                                  cycle.derived_status ||
+                                  ""
+                                }
                               />
                             </ListItemButton>
                           </ListItem>

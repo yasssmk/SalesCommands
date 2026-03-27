@@ -292,6 +292,20 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         )
     )
 
+    source_decision_cycle = models.ForeignKey(
+        'decision_cycles.DecisionCycle',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sourced_activities',
+        verbose_name=_('Source Decision Cycle'),
+        help_text=_(
+            'Decision cycle that triggered the creation of this activity. '
+            'Set when enrolling contacts into a Targeted campaign from a DC context, '
+            'without a prior activity to reference.'
+        )
+    )
+
     
     # ==========================================================================
     # FUTURE FIELDS (STUBS FOR IA/CAMPAIGN)

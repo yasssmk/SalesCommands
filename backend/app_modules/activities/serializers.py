@@ -397,7 +397,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         return {
             'id': str(campaign.id),
             'name': campaign.name,
-            'status': campaign.status,
+            'campaign_status': campaign.status,
             'sequence_position': obj.sequence_position,
         }
     
@@ -412,22 +412,66 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         return None
     
     def get_source_activity_detail(self, obj):
-        """Return minimal info about the campaign activity that triggered this activity."""
-        if not obj.source_activity_id:
-            return None
-        src = obj.source_activity
-        if not src:
-            return None
-        campaign_name = None
-        if src.campaign_id and src.campaign:
-            campaign_name = src.campaign.name
-        return {
-            'id': str(src.id),
-            'title': src.title,
-            'activity_type': src.activity_type,
-            'status': src.status,
-            'campaign_name': campaign_name,
-        }
+        """
+        Return source attribution for this activity.
+
+        Two cases:
+        1. source_activity is set — derives context from the source activity
+           (Campaign or DecisionCycle it belonged to).
+        2. source_decision_cycle is set — direct DC reference, no prior activity
+           (e.g. Targeted campaign enrollment triggered from a DC context).
+        """
+        # Case 1: source is a prior activity
+        if obj.source_activity_id:
+            src = obj.source_activity
+            if not src:
+                return None
+
+            if src.campaign_id and src.campaign:
+                source_context = {
+                    'type': 'CAMPAIGN',
+                    'id': str(src.campaign.id),
+                    'name': src.campaign.name,
+                }
+            elif src.decision_cycle_id and src.decision_cycle:
+                source_context = {
+                    'type': 'DECISION_CYCLE',
+                    'id': str(src.decision_cycle.id),
+                    'name': src.decision_cycle.name,
+                }
+            else:
+                source_context = {
+                    'type': 'MANUAL',
+                    'id': None,
+                    'name': None,
+                }
+
+            return {
+                'id': str(src.id),
+                'title': src.title,
+                'activity_type': src.activity_type,
+                'status': src.status,
+                'source_context': source_context,
+            }
+
+        # Case 2: source is a Decision Cycle directly (no prior activity)
+        if obj.source_decision_cycle_id:
+            dc = obj.source_decision_cycle
+            if not dc:
+                return None
+            return {
+                'id': None,
+                'title': None,
+                'activity_type': None,
+                'status': None,
+                'source_context': {
+                    'type': 'DECISION_CYCLE',
+                    'id': str(dc.id),
+                    'name': dc.name,
+                },
+            }
+
+        return None
     
     def get_next_activity_info(self, obj):
         if obj.decision_cycle_id:
