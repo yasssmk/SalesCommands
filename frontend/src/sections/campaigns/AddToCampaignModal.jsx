@@ -197,9 +197,26 @@ export default function AddToCampaignModal({
       const result = await enrollTarget(targetedCampaign.id, payload);
 
       if (result.success) {
-        displaySuccessSnackbar(
-          `${accountName || "Account"} added to your Targeted Campaign`,
-        );
+        const data = result.data?.data ?? result.data;
+        const unreachable = data?.unreachable_count ?? 0;
+        const enrolled = data?.contacts_enrolled ?? 0;
+
+        if (unreachable > 0 && enrolled === 0) {
+          // All selected contacts were unreachable — account added but no work will be generated
+          displayErrorSnackbar({
+            message: `${accountName || "Account"} added, but no contacts could be enrolled: they must have a valid email or phone and must not be opted out.`,
+            status: 200,
+          });
+        } else if (unreachable > 0) {
+          // Partial — some contacts skipped
+          displaySuccessSnackbar(
+            `${accountName || "Account"} added to your Targeted Campaign — ${unreachable} contact${unreachable > 1 ? "s" : ""} skipped (no valid email/phone or opted out).`,
+          );
+        } else {
+          displaySuccessSnackbar(
+            `${accountName || "Account"} added to your Targeted Campaign`,
+          );
+        }
         onClose();
       } else {
         displayErrorSnackbar(result);

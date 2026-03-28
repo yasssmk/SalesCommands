@@ -201,12 +201,12 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
  * @param {string|null} campaignId
  * @returns {{ activities, completedActivitiesLoading, mutateCompleted }}
  */
-export function useGetCompletedActivities(campaignId) {
+export function useGetCompletedActivities(campaignId, page = 1) {
   const { tenantId } = useAuth();
 
   const url =
     campaignId && isValidUUID(campaignId)
-      ? `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`
+      ? `/module-activities/?campaign=${campaignId}&status=COMPLETED&ordering=-completed_at&page_size=25&page=${page}`
       : null;
 
   const { data, isLoading, mutate } = useSWR(
@@ -221,6 +221,7 @@ export function useGetCompletedActivities(campaignId) {
   return useMemo(
     () => ({
       activities: data?.data?.results || data?.results || [],
+      completedActivitiesTotalCount: data?.data?.count || data?.count || 0,
       completedActivitiesLoading: isLoading,
       mutateCompleted: mutate,
     }),

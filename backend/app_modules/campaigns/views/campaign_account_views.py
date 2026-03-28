@@ -967,6 +967,24 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     source_decision_cycle=source_decision_cycle,
                 )
                 activities_created += count if isinstance(count, int) else 0
+        
+        # If no contacts were enrolled and the CampaignAccount was just created,
+        # delete it — an account with no reachable contacts must not block
+        # campaign completion or pollute the accounts list.
+        if contacts_created == 0 and created:
+            campaign_account.delete()
+            return Response({
+                'success': True,
+                'data': {
+                    'campaign_account': None,
+                    'contacts_enrolled': 0,
+                    'activities_created': 0,
+                    'contacts_skipped': len(contact_ids) if contact_ids else 0,
+                    'unreachable_count': len(contact_ids) if contact_ids else 0,
+                    'skip_reason': 'no_reachable_contacts',
+                    'warning': CampaignModuleErrorMessages.CONTACT_NOT_REACHABLE,
+                },
+            }, status=status.HTTP_201_CREATED)
 
         audit_log(
             event='campaign_target_enrolled',
@@ -996,7 +1014,14 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         })
 
         output = CampaignAccountDetailSerializer(campaign_account, context={'request': request})
-        contacts_skipped = len(contacts) == 0 and not strict and enroll_type == 'CONTACT'
+
+        # Contacts filtered out due to no email/phone or opted-out (not the same as
+        # contacts skipped because they already had open activities)
+        unreachable_count = (
+            len(contact_ids) - len(contacts)
+            if enroll_type == 'CONTACT' and contact_ids
+            else 0
+        )
 
         return Response({
             'success': True,
@@ -1005,9 +1030,16 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 'contacts_enrolled': contacts_created,
                 'activities_created': activities_created,
                 'contacts_skipped': len(contact_ids) - contacts_created if contact_ids else 0,
+                'unreachable_count': unreachable_count,
                 'skip_reason': (
                     'no_reachable_contacts'
                     if contacts_created == 0 and contact_ids and not strict
+                    else None
+                ),
+                # Warning surfaced to frontend when contacts were silently filtered
+                'warning': (
+                    CampaignModuleErrorMessages.CONTACT_NOT_REACHABLE
+                    if unreachable_count > 0 and not strict
                     else None
                 ),
             },

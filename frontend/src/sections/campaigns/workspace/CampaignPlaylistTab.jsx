@@ -14,7 +14,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 // material-ui
 import Accordion from "@mui/material/Accordion";
@@ -40,6 +40,7 @@ import {
   useGetCampaignMembers,
   useGetCompletedActivities,
   completePlaylistActivity,
+  completeCampaign,
 } from "api/campaigns/campaigns";
 
 // utils
@@ -67,10 +68,17 @@ function PlaylistSkeleton() {
 
 // ==============================|| CAMPAIGN PLAYLIST TAB ||============================== //
 
-export default function CampaignPlaylistTab({ campaignId, campaign }) {
+export default function CampaignPlaylistTab({
+  campaignId,
+  campaign,
+  completionEligible,
+  onCampaignUpdate,
+}) {
   // ==============================|| STATE ||============================== //
 
   const [completingId, setCompletingId] = useState(null);
+  const [dismissedCompletion, setDismissedCompletion] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const [completedToday, setCompletedToday] = useState(0);
   // { open: bool, activity: object|null }
   const [outcomeModal, setOutcomeModal] = useState({
@@ -82,6 +90,15 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
   // Track optimistically removed activity IDs
   const [removedIds, setRemovedIds] = useState(new Set());
   const [showCompleted, setShowCompleted] = useState(false);
+  const [completedPage, setCompletedPage] = useState(1);
+  const [accumulatedCompleted, setAccumulatedCompleted] = useState([]);
+
+  // Auto-expand completed accordion when campaign is already COMPLETED
+  useEffect(() => {
+    if (campaign?.status === "COMPLETED") {
+      setShowCompleted(true);
+    }
+  }, [campaign?.status]);
 
   // ==============================|| DATA ||============================== //
 
@@ -106,13 +123,17 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
 
   const isBlocked = campaign && BLOCKED_STATUSES[campaign?.status];
 
+  // COMPLETED still fetches — will return 0 planned activities but shows completed accordion
+  const shouldFetchPlaylist =
+    campaign && !["DRAFT", "PAUSED", "CANCELLED"].includes(campaign?.status);
+
   const {
     activities: rawActivities,
     totalCount,
     playlistLoading,
     playlistError,
     mutatePlaylist,
-  } = useGetPlaylist(isBlocked ? null : campaignId, {
+  } = useGetPlaylist(shouldFetchPlaylist ? campaignId : null, {
     executorId: executorId || undefined,
   });
 
@@ -185,11 +206,56 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
     [mutatePlaylist],
   );
 
+  // Complete campaign from playlist banner
+  const handleCompleteCampaign = useCallback(async () => {
+    setCompleting(true);
+    try {
+      const result = await completeCampaign(campaignId);
+      if (result.success) {
+        displaySuccessSnackbar("Campaign completed");
+        if (onCampaignUpdate) onCampaignUpdate();
+      } else {
+        displayErrorSnackbar(result);
+      }
+    } finally {
+      setCompleting(false);
+    }
+  }, [campaignId, onCampaignUpdate]);
+
   // ==============================|| DERIVED VALUES ||============================== //
 
-  // ── Completed activities (lazy-loaded on expand) ──
-  const { activities: completedActivities, completedActivitiesLoading } =
-    useGetCompletedActivities(showCompleted ? campaignId : null);
+  const {
+    activities: completedActivities,
+    completedActivitiesTotalCount,
+    completedActivitiesLoading,
+  } = useGetCompletedActivities(
+    showCompleted ? campaignId : null,
+    completedPage,
+  );
+
+  // Accumulate pages — append new results when page increments
+  useEffect(() => {
+    if (!completedActivitiesLoading && completedActivities.length > 0) {
+      setAccumulatedCompleted((prev) => {
+        const existingIds = new Set(prev.map((a) => a.id));
+        const newItems = completedActivities.filter(
+          (a) => !existingIds.has(a.id),
+        );
+        return [...prev, ...newItems];
+      });
+    }
+  }, [completedActivities, completedActivitiesLoading]);
+
+  // Reset accumulated list when accordion is closed/reopened
+  useEffect(() => {
+    if (!showCompleted) {
+      setAccumulatedCompleted([]);
+      setCompletedPage(1);
+    }
+  }, [showCompleted]);
+
+  const hasMoreCompleted =
+    accumulatedCompleted.length < completedActivitiesTotalCount;
 
   // ── Split PLANNED into Today vs Upcoming ──
   const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, timezone-safe
@@ -225,7 +291,13 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
 
   // ==============================|| EMPTY STATE — Campaign not active ||============================== //
 
-  if (!playlistLoading && campaign && BLOCKED_STATUSES[campaign.status]) {
+  // COMPLETED is excluded — it falls through to the main render to show the completed accordion
+  if (
+    !playlistLoading &&
+    campaign &&
+    BLOCKED_STATUSES[campaign.status] &&
+    campaign.status !== "COMPLETED"
+  ) {
     const { title, body } = BLOCKED_STATUSES[campaign.status];
     return (
       <Box sx={{ py: 6, textAlign: "center" }}>
@@ -267,7 +339,13 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
 
   // ==============================|| EMPTY STATE — No activities ||============================== //
 
-  if (!activities.length && totalCount === 0) {
+  // For COMPLETED campaigns: skip the empty state so the completed accordion renders below
+  if (
+    !activities.length &&
+    totalCount === 0 &&
+    campaign?.status !== "COMPLETED" &&
+    campaign?.status !== "ACTIVE"
+  ) {
     return (
       <Stack spacing={2}>
         <PlaylistProgressBar
@@ -299,6 +377,46 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
         onComplete={handleOutcomeComplete}
         onUpdate={mutatePlaylist}
       />
+
+      {/* Read-only banner for COMPLETED campaigns */}
+      {/* Read-only banner for COMPLETED campaigns */}
+      {campaign?.status === "COMPLETED" && (
+        <Alert severity="info" variant="outlined">
+          This campaign has ended. The playlist is now read-only.
+        </Alert>
+      )}
+
+      {/* Completion proposal — all accounts done, no planned activities remain */}
+      {completionEligible && !dismissedCompletion && (
+        <Alert
+          severity="success"
+          variant="outlined"
+          onClose={() => setDismissedCompletion(true)}
+          action={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Button
+                size="small"
+                variant="contained"
+                color="success"
+                disabled={completing}
+                onClick={handleCompleteCampaign}
+              >
+                {completing ? "Completing..." : "Complete Campaign"}
+              </Button>
+              <Button
+                size="small"
+                color="inherit"
+                onClick={() => setDismissedCompletion(true)}
+              >
+                Dismiss
+              </Button>
+            </Stack>
+          }
+        >
+          All accounts have been processed — no activities remaining. Ready to
+          mark this campaign as completed?
+        </Alert>
+      )}
 
       {/* Progress bar */}
       <PlaylistProgressBar
@@ -430,9 +548,18 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
             "& .MuiAccordionSummary-content": { alignItems: "center", gap: 1 },
           }}
         >
-          <Typography variant="subtitle2" fontWeight={600}>
-            Completed
-          </Typography>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="subtitle2" fontWeight={600}>
+              Completed
+            </Typography>
+            {completedActivitiesTotalCount > 0 && (
+              <Chip
+                label={completedActivitiesTotalCount}
+                size="small"
+                variant="outlined"
+              />
+            )}
+          </Stack>
         </AccordionSummary>
         <AccordionDetails sx={{ pt: 0, pb: 1.5 }}>
           {completedActivitiesLoading ? (
@@ -451,15 +578,26 @@ export default function CampaignPlaylistTab({ campaignId, campaign }) {
             </Typography>
           ) : (
             <Stack spacing={1.5}>
-              {completedActivities
-                .filter((a) => a.status === "COMPLETED")
-                .map((activity) => (
-                  <PlaylistActivityCard
-                    key={activity.id}
-                    activity={activity}
-                    isGreyedOut
-                  />
-                ))}
+              {accumulatedCompleted.map((activity) => (
+                <PlaylistActivityCard
+                  key={activity.id}
+                  activity={activity}
+                  isGreyedOut
+                />
+              ))}
+
+              {hasMoreCompleted && (
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  size="small"
+                  disabled={completedActivitiesLoading}
+                  onClick={() => setCompletedPage((prev) => prev + 1)}
+                  sx={{ alignSelf: "center", mt: 0.5 }}
+                >
+                  {completedActivitiesLoading ? "Loading..." : "Load more"}
+                </Button>
+              )}
             </Stack>
           )}
         </AccordionDetails>
@@ -473,4 +611,8 @@ CampaignPlaylistTab.propTypes = {
   campaignId: PropTypes.string.isRequired,
   /** Campaign object (for status check) */
   campaign: PropTypes.object,
+  /** True when all accounts are terminal and no planned activities remain */
+  completionEligible: PropTypes.bool,
+  /** Callback to revalidate campaign after completion */
+  onCampaignUpdate: PropTypes.func,
 };

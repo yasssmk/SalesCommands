@@ -272,16 +272,19 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
     @action(detail=True, methods=['post'], url_path='mark-completed')
     @transaction.atomic
     def mark_completed(self, request, pk=None):
-        """
-        → COMPLETED.
-        POST /campaign-contacts/{id}/mark-completed/
-        """
         instance = self.get_object()
         result = instance.mark_completed(
             user=request.user,
             notes=request.data.get('notes'),
         )
         self._audit_status_change(request, instance, result)
+
+        # Cascade: check if parent account should auto-complete/stop
+        from ..services.campaign_execution_service import CampaignExecutionService
+        CampaignExecutionService(
+            user=request.user, client_id=self.get_client_id()
+        )._check_account_completion(instance.campaign_account)
+
         self._invalidate_caches(self.get_client_id())
 
         output = CampaignContactDetailSerializer(instance, context={'request': request})
@@ -293,14 +296,6 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
     @action(detail=True, methods=['post'], url_path='mark-stopped')
     @transaction.atomic
     def mark_stopped(self, request, pk=None):
-        """
-        Any non-final → STOPPED.
-        POST /campaign-contacts/{id}/mark-stopped/
-
-        Body:
-            - reason: str (optional)
-            - notes: str (optional)
-        """
         instance = self.get_object()
         reason = request.data.get('reason')
         notes = request.data.get('notes')
@@ -310,6 +305,13 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             notes=combined_notes,
         )
         self._audit_status_change(request, instance, result)
+
+        # Cascade: check if parent account should auto-complete/stop
+        from ..services.campaign_execution_service import CampaignExecutionService
+        CampaignExecutionService(
+            user=request.user, client_id=self.get_client_id()
+        )._check_account_completion(instance.campaign_account)
+
         self._invalidate_caches(self.get_client_id())
 
         output = CampaignContactDetailSerializer(instance, context={'request': request})

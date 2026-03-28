@@ -22,9 +22,12 @@ from app_modules.activities.models import Activity
 from app_modules.activities.constants import ActivityType, ActivityStatus
 
 from ..models import (
+    Campaign,
     CampaignAccount,
     CampaignAccountStatus,
     CampaignObjective,
+    CampaignStatus,
+    CampaignType,
     ObjectiveType,
 )
 
@@ -107,6 +110,29 @@ class CampaignAnalyticsService:
         if executor:
             member_ids.add(executor.id)
 
+        # completion_eligible: no planned activities remain AND all accounts are in a
+        # terminal state (COMPLETED or STOPPED). Excludes TARGETED campaigns (never completed).
+        has_planned_activities = Activity.objects.filter(
+            campaign=campaign,
+            status=ActivityStatus.PLANNED,
+        ).exists()
+
+        accounts_all_terminal = (
+            total_accounts > 0
+            and not CampaignAccount.objects.filter(
+                campaign=campaign,
+            ).exclude(
+                status__in=[CampaignAccountStatus.COMPLETED, CampaignAccountStatus.STOPPED],
+            ).exists()
+        )
+
+        completion_eligible = (
+            not has_planned_activities
+            and accounts_all_terminal
+            and campaign.status in (CampaignStatus.ACTIVE, CampaignStatus.PAUSED)
+            and campaign.campaign_type != CampaignType.TARGETED
+        )
+
         return {
             'campaign_id': str(campaign.id),
             'name': campaign.name,
@@ -123,6 +149,7 @@ class CampaignAnalyticsService:
             'days_remaining': days_remaining,
             'total_days': total_days,
             'time_progress': round((days_elapsed / total_days) * 100, 1),
+            'completion_eligible': completion_eligible,
             'owner': {
                 'id': str(owner.id),
                 'full_name': f"{owner.first_name or ''} {owner.last_name or ''}".strip() or owner.email,
