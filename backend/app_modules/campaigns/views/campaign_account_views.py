@@ -789,6 +789,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         contact_ids  = request.data.get('contact_ids', [])
         notes        = request.data.get('notes', '') or ''
         origin_decision_cycle_id = request.data.get('origin_decision_cycle_id')
+        strict       = request.data.get('strict', False)
 
         if not campaign_id:
             raise StandardizedValidationError(
@@ -876,6 +877,12 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     Q(email='') & Q(phone_number='')
                 )
             )
+            if not contacts:
+                if strict:
+                    raise StandardizedValidationError(
+                        CampaignModuleErrorMessages.CONTACT_NOT_REACHABLE
+                    )
+            
         elif enroll_type == 'DEPARTMENT':
             if not department_id:
                 raise StandardizedValidationError(
@@ -913,34 +920,53 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 )
             )
 
-        # Generate activities for each contact
+        # Enroll contacts (always) — generate activities only when ACTIVE
         contacts_created = 0
         activities_created = 0
 
-        if campaign.status == CampaignStatus.ACTIVE and contacts:
-                exec_service = CampaignExecutionService(
-                    user=request.user, client_id=client_id,
-                )
-                for contact in contacts:
-                    # Skip contacts already enrolled and processed
-                    # Targeted campaign allows multiple enrollments.
-                    # Only block if contact still has open (PLANNED) activities.
-                    has_open_activities = Activity.objects.filter(
-                        campaign=campaign,
-                        campaign_contact__contact=contact,
-                        status=ActivityStatus.PLANNED,
-                    ).exists()
-                     
-                    if has_open_activities:
-                        continue
+        from ..models import CampaignContact, CampaignContactStatus
 
-                    campaign_account.target_contacts.add(contact)
-                    count = exec_service.generate_activities_for_contact(
+        exec_service = (
+            CampaignExecutionService(user=request.user, client_id=client_id)
+            if campaign.status == CampaignStatus.ACTIVE
+            else None
+        )
+
+        for contact in contacts:
+            # Skip contacts that already have open planned activities
+            has_open_activities = Activity.objects.filter(
+                campaign=campaign,
+                campaign_contact__contact=contact,
+                status=ActivityStatus.PLANNED,
+            ).exists()
+            if has_open_activities:
+                continue
+
+            # Always link contact to the campaign account
+            campaign_account.target_contacts.add(contact)
+
+            CampaignContact.objects.get_or_create(
+                campaign_account=campaign_account,
+                contact=contact,
+                defaults={
+                    'client_id': client_id,
+                    'status': (
+                        CampaignContactStatus.IN_PROGRESS
+                        if campaign.status == CampaignStatus.ACTIVE
+                        else CampaignContactStatus.PENDING
+                    ),
+                },
+            )
+
+            contacts_created += 1
+
+            # Generate activities only if campaign is already running
+            if exec_service is not None:
+                count = exec_service.generate_activities_for_contact(
                     campaign, campaign_account, contact,
                     source_decision_cycle=source_decision_cycle,
                 )
-                    contacts_created += 1
-                    activities_created += count if isinstance(count, int) else 0
+                activities_created += count if isinstance(count, int) else 0
 
         audit_log(
             event='campaign_target_enrolled',
@@ -970,12 +996,20 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         })
 
         output = CampaignAccountDetailSerializer(campaign_account, context={'request': request})
+        contacts_skipped = len(contacts) == 0 and not strict and enroll_type == 'CONTACT'
+
         return Response({
             'success': True,
             'data': {
                 'campaign_account': output.data,
                 'contacts_enrolled': contacts_created,
                 'activities_created': activities_created,
+                'contacts_skipped': len(contact_ids) - contacts_created if contact_ids else 0,
+                'skip_reason': (
+                    'no_reachable_contacts'
+                    if contacts_created == 0 and contact_ids and not strict
+                    else None
+                ),
             },
         }, status=status.HTTP_201_CREATED)
 

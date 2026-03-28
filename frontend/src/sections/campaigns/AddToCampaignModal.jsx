@@ -179,6 +179,7 @@ export default function AddToCampaignModal({
           type: "CONTACT",
           account_id: accountId,
           contact_ids: selectedContactIds,
+          strict: selectedContactIds.length === 1,
         };
       } else {
         displayErrorSnackbar({

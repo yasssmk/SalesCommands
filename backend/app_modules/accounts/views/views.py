@@ -130,6 +130,10 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
             'crud': 'read',
             'scope': 'client'
         },
+        'active_engagements': {
+            'crud': 'read',
+            'scope': 'client'
+        },
         'qualification': {
             'crud': 'read',
             'scope': 'client'
@@ -858,6 +862,70 @@ class CompanyAccountViewSet(OwnerScopeMixin,ScopedQuerysetMixin, BaseAPIView, vi
             
         except Exception as e:
             return self.handle_exception(e)
+        
+    @action(detail=True, methods=['get'], url_path='active-engagements')
+    def active_engagements(self, request, pk=None):
+        """
+        Get all active campaigns and decision cycles for an account.
+        Used to detect concurrent engagements and surface alerts.
+
+        GET /company-accounts/{id}/active-engagements/
+
+        Returns:
+            active_campaigns: campaigns with status ACTIVE or PAUSED
+            active_decision_cycles: cycles with outcome=null and is_active=True
+            summary: counts
+        """
+        account = self.get_object()
+        client_id = account.client_id
+
+        # Query 1: active campaigns via CampaignAccount pivot
+        from app_modules.campaigns.models import CampaignAccount, CampaignStatus
+        campaign_accounts = CampaignAccount.objects.filter(
+            account=account,
+            client_id=client_id,
+            campaign__status__in=[CampaignStatus.ACTIVE, CampaignStatus.PAUSED],
+        ).select_related('campaign').order_by('-created_at')
+
+        active_campaigns = [
+            {
+                'id': str(ca.campaign.id),
+                'name': ca.campaign.name,
+                'campaign_status': ca.campaign.status,
+                'campaign_account_id': str(ca.id),
+                'enrollment_status': ca.status,
+            }
+            for ca in campaign_accounts
+        ]
+
+        # Query 2: active decision cycles
+        from app_modules.decision_cycles.models import DecisionCycle
+        cycles = DecisionCycle.objects.filter(
+            account=account,
+            client_id=client_id,
+            outcome__isnull=True,
+            is_active=True,
+        ).order_by('-updated_at')
+
+        active_decision_cycles = [
+            {
+                'id': str(dc.id),
+                'name': dc.name,
+            }
+            for dc in cycles
+        ]
+
+        return Response({
+            'success': True,
+            'data': {
+                'active_campaigns': active_campaigns,
+                'active_decision_cycles': active_decision_cycles,
+                'summary': {
+                    'total_campaigns': len(active_campaigns),
+                    'total_decision_cycles': len(active_decision_cycles),
+                },
+            },
+        })
 
 
 class CompanyAccountChoicesView(BaseAPIView):

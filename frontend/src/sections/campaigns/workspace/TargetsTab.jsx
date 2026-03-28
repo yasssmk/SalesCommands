@@ -25,6 +25,7 @@ import PlayCircleOutlined from "@ant-design/icons/PlayCircleOutlined";
 
 // Project
 import ReusableTable from "components/table/Table";
+import AddTargetToCampaignModal from "./AddTargetToCampaignModal";
 import {
   useGetCampaignContacts,
   removeTargets,
@@ -69,6 +70,17 @@ export default function TargetsTab({ campaignId, campaign }) {
   const [actionInProgress, setActionInProgress] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(null);
   // confirmRemove: null | { ids: string[], label: string }
+
+  const [addTargetOpen, setAddTargetOpen] = useState(false);
+
+  // Active contact IDs — used to exclude already-enrolled contacts from search
+  const enrolledContactIds = useMemo(() => {
+    const TERMINAL = ["COMPLETED", "STOPPED"];
+    return campaignContacts
+      .filter((cc) => !TERMINAL.includes(cc.status))
+      .map((cc) => cc.contact?.id || cc.contact_id)
+      .filter(Boolean);
+  }, [campaignContacts]);
 
   const handleSortingChange = useCallback((updaterOrValue) => {
     setSorting((prev) =>
@@ -495,11 +507,20 @@ export default function TargetsTab({ campaignId, campaign }) {
         emptyDescription={
           isFinal
             ? "This campaign has ended."
-            : "Add contacts from an account or territory workspace."
+            : "Add contacts to this campaign."
         }
-        modalToggler={null}
+        modalToggler={() => setAddTargetOpen(true)}
+        addButtonLabel="Add Target"
         enableImport={false}
-        showAddButton={false}
+        showAddButton={!isFinal}
+      />
+
+      <AddTargetToCampaignModal
+        campaignId={campaignId}
+        enrolledContactIds={enrolledContactIds}
+        open={addTargetOpen}
+        onClose={() => setAddTargetOpen(false)}
+        onSuccess={mutateCampaignContacts}
       />
 
       {/* ── Confirm Remove Dialog ── */}
