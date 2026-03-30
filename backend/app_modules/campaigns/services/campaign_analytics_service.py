@@ -91,6 +91,12 @@ class CampaignAnalyticsService:
             campaign=campaign,
             status=CampaignAccountStatus.COMPLETED,
         ).count()
+        # Fetch stopped alongside completed — reuse both to derive non_terminal
+        # without an extra .exclude().exists() query.
+        stopped_accounts = CampaignAccount.objects.filter(
+            campaign=campaign,
+            status=CampaignAccountStatus.STOPPED,
+        ).count()
         completion_rate = 0.0
         if total_accounts > 0:
             completion_rate = round((completed_accounts / total_accounts) * 100, 1)
@@ -110,20 +116,20 @@ class CampaignAnalyticsService:
         if executor:
             member_ids.add(executor.id)
 
-        # completion_eligible: no planned activities remain AND all accounts are in a
-        # terminal state (COMPLETED or STOPPED). Excludes TARGETED campaigns (never completed).
-        has_planned_activities = Activity.objects.filter(
-            campaign=campaign,
-            status=ActivityStatus.PLANNED,
-        ).exists()
-
+        # accounts_all_terminal derived from already-fetched counts — no extra query.
         accounts_all_terminal = (
             total_accounts > 0
-            and not CampaignAccount.objects.filter(
+            and (completed_accounts + stopped_accounts) == total_accounts
+        )
+
+        # has_planned_activities: single .exists() — fast index scan.
+        has_planned_activities = (
+            Activity.objects.filter(
                 campaign=campaign,
-            ).exclude(
-                status__in=[CampaignAccountStatus.COMPLETED, CampaignAccountStatus.STOPPED],
+                status=ActivityStatus.PLANNED,
             ).exists()
+            if accounts_all_terminal  # skip if accounts aren't all done anyway
+            else True
         )
 
         completion_eligible = (
@@ -144,6 +150,7 @@ class CampaignAnalyticsService:
             'total_activities': total_activities,
             'total_members': len(member_ids),
             'completed_accounts': completed_accounts,
+            'stopped_accounts': stopped_accounts,
             'completion_rate': completion_rate,
             'days_elapsed': days_elapsed,
             'days_remaining': days_remaining,

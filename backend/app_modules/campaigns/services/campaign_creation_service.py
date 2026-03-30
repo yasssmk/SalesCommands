@@ -136,30 +136,41 @@ class CampaignCreationService:
         Returns:
             tuple: (Campaign, created: bool)
         """
-        existing = Campaign.objects.filter(
-            client_id=self.client_id,
-            campaign_type=CampaignType.TARGETED,
-            owner=self.user,
-        ).first()
-
-        if existing:
-            return existing, False
+        from django.db import IntegrityError
 
         today = timezone.now().date()
         far_future = today.replace(year=today.year + 10)
 
-        campaign = Campaign(
-            name=name or "My Targeted Campaign",
-            campaign_type=CampaignType.TARGETED,
-            sequence_type=sequence_type,
-            planned_start_date=today,
-            planned_end_date=far_future,
-            actual_start_date=today,
-            status=CampaignStatus.ACTIVE,
-            owner=self.user,
-        )
-        campaign.save(user=self.user, client_id=self.client_id)
+        try:
+            campaign, created = Campaign.objects.get_or_create(
+                client_id=self.client_id,
+                campaign_type=CampaignType.TARGETED,
+                owner=self.user,
+                defaults={
+                    'name': name or "My Targeted Campaign",
+                    'sequence_type': sequence_type,
+                    'planned_start_date': today,
+                    'planned_end_date': far_future,
+                    'actual_start_date': today,
+                    'status': CampaignStatus.ACTIVE,
+                },
+            )
+        except IntegrityError:
+            # Concurrent request created the campaign between our check and insert.
+            # The UniqueConstraint unique_targeted_campaign_per_user guarantees
+            # exactly one exists — fetch it.
+            campaign = Campaign.objects.get(
+                client_id=self.client_id,
+                campaign_type=CampaignType.TARGETED,
+                owner=self.user,
+            )
+            return campaign, False
 
+        if not created:
+            return campaign, False
+
+        campaign.save(user=self.user, client_id=self.client_id)
+        
         audit_log(
             event='targeted_campaign_created',
             action='create',

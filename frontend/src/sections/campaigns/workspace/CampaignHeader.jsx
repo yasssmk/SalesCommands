@@ -140,22 +140,27 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
       }
       const data = result.data?.data ?? result.data;
       if (data?.requires_confirmation && data?.open_contacts?.length > 0) {
+        // Phase 1 — backend did NOT complete yet, show confirmation modal
         setOpenContacts(data.open_contacts);
         setCompletionModal(true);
-        // Campaign already COMPLETED on backend — modal offers transfer only
       } else {
+        // No open contacts — backend completed immediately
         displaySuccessSnackbar("Campaign completed");
         if (onMutate) onMutate();
       }
     } catch {
-      displayErrorSnackbar("An error occurred");
+      displayErrorSnackbar(result);
     } finally {
       setLoading(false);
     }
   };
 
   const handleCompleteWithoutFollowup = async () => {
-    // Campaign is already COMPLETED — just close modal and revalidate
+    // Phase 2 — user confirmed, force complete regardless of open contacts
+    const result = await completeCampaign(campaign.id, { force: true });
+    if (!result.success) {
+      throw result; // CampaignCompletionModal catches and calls displayErrorSnackbar
+    }
     if (onMutate) await onMutate();
   };
 

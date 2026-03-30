@@ -591,37 +591,42 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         Complete campaign: ACTIVE/PAUSED → COMPLETED.
         POST /campaigns/{id}/complete/
 
-        If open contacts exist (PLANNED activities remaining), returns
-        requires_confirmation=True so the frontend can offer a transfer
-        to the TARGETED campaign before committing.
+        Two-phase completion:
+            - First call (no force): returns open contacts without completing.
+              Frontend shows confirmation modal.
+            - Second call (force=true): completes unconditionally.
 
         Body (optional):
-            - force: bool — skip confirmation and complete immediately
+            - force: bool — confirm completion despite open contacts
         """
         ctx = ctx_from_request(request)
         campaign = self.get_object()
         self._assert_not_targeted(campaign)
 
+        force = bool(request.data.get('force', False))
+
         logger.info("campaign_complete_requested", extra={
-            **ctx, 'campaign_id': str(campaign.id),
+            **ctx, 'campaign_id': str(campaign.id), 'force': force,
         })
 
         service = CampaignLifecycleService(
             user=request.user,
             client_id=self.get_client_id(),
         )
-        result = service.complete(campaign)
+        result = service.complete(campaign, force=force)
 
         self._invalidate_campaign_caches(self.get_client_id())
 
         open_contacts = result.get('open_contacts', [])
+        completed = result.get('completed', False)
         output = CampaignDetailSerializer(result['campaign'], context={'request': request})
 
         return Response({
             'success': True,
             'data': {
                 'campaign': output.data,
-                'requires_confirmation': len(open_contacts) > 0,
+                'completed': completed,
+                'requires_confirmation': not completed and len(open_contacts) > 0,
                 'open_contacts': open_contacts,
             },
         })
@@ -635,6 +640,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         """
         ctx = ctx_from_request(request)
         campaign = self.get_object()
+        self._assert_not_targeted(campaign)
 
         logger.info("campaign_cancel_requested", extra={
             **ctx, 'campaign_id': str(campaign.id),

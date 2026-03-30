@@ -196,7 +196,7 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
 
 /**
  * GET COMPLETED ACTIVITIES FOR A CAMPAIGN
- * Fetches all COMPLETED activities scoped to a campaign (for LogResponseModal).
+ * Fetches all COMPLETED activities scoped to a campaign.
  *
  * @param {string|null} campaignId
  * @returns {{ activities, completedActivitiesLoading, mutateCompleted }}
@@ -916,8 +916,10 @@ export async function resumeCampaign(campaignId) {
  * @param {string} campaignId
  * @returns {{ success, data: { campaign, requires_confirmation, open_contacts } }}
  */
-export async function completeCampaign(campaignId) {
-  const result = await api.post(endpoints.campaignComplete(campaignId));
+export async function completeCampaign(campaignId, { force = false } = {}) {
+  const result = await api.post(endpoints.campaignComplete(campaignId), {
+    ...(force && { force: true }),
+  });
 
   if (result.success) {
     // Unwrap double-enveloppe: apiRequest → {success, data: response.data}

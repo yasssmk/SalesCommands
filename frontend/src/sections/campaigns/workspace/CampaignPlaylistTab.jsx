@@ -123,9 +123,12 @@ export default function CampaignPlaylistTab({
 
   const isBlocked = campaign && BLOCKED_STATUSES[campaign?.status];
 
-  // COMPLETED still fetches — will return 0 planned activities but shows completed accordion
+  // COMPLETED skips playlist fetch — only the completed accordion is shown,
+  // which uses useGetCompletedActivities (separate endpoint). No need to hit
+  // the playlist endpoint for 0 PLANNED activities.
   const shouldFetchPlaylist =
-    campaign && !["DRAFT", "PAUSED", "CANCELLED"].includes(campaign?.status);
+    campaign &&
+    !["DRAFT", "PAUSED", "CANCELLED", "COMPLETED"].includes(campaign?.status);
 
   const {
     activities: rawActivities,

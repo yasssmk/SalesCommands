@@ -141,7 +141,6 @@ class ValidationConfig:
     campaign_account_statuses: List[tuple] = field(default_factory=lambda: [
         ('PENDING', 'Pending'),
         ('IN_PROGRESS', 'In Progress'),
-        ('CALLBACK_PENDING', 'Callback Pending'),
         ('COMPLETED', 'Completed'),
         ('STOPPED', 'Stopped'),
     ])
@@ -153,7 +152,6 @@ class ValidationConfig:
     campaign_account_transitions: Dict[str, List[str]] = field(default_factory=lambda: {
         'PENDING': ['IN_PROGRESS', 'STOPPED'],
         'IN_PROGRESS': ['CALLBACK_PENDING', 'COMPLETED', 'STOPPED'],
-        'CALLBACK_PENDING': ['IN_PROGRESS', 'COMPLETED', 'STOPPED'],
         'COMPLETED': [],
         'STOPPED': [],
     })

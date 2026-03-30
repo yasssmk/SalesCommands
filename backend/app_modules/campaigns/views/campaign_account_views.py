@@ -62,8 +62,6 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         DELETE /campaign-accounts/{id}/                     - Remove enrollment
 
         POST   /campaign-accounts/{id}/start-progress/      - PENDING → IN_PROGRESS
-        POST   /campaign-accounts/{id}/request-callback/    - → CALLBACK_PENDING
-        POST   /campaign-accounts/{id}/resume-callback/     - CALLBACK → IN_PROGRESS
         POST   /campaign-accounts/{id}/mark-completed/      - → COMPLETED
         POST   /campaign-accounts/{id}/mark-stopped/        - → STOPPED
 
@@ -96,8 +94,6 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
     # Action policies
     action_policies = {
         'start_progress': {'crud': 'update', 'scope': 'client'},
-        'request_callback': {'crud': 'update', 'scope': 'client'},
-        'resume_callback': {'crud': 'update', 'scope': 'client'},
         'mark_completed': {'crud': 'update', 'scope': 'client'},
         'mark_stopped': {'crud': 'update', 'scope': 'client'},
         'bulk_add': {'crud': 'create', 'scope': 'client'},
@@ -356,64 +352,6 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             },
         })
 
-    @action(detail=True, methods=['post'], url_path='request-callback')
-    @transaction.atomic
-    def request_callback(self, request, pk=None):
-        """
-        IN_PROGRESS → CALLBACK_PENDING.
-        POST /campaign-accounts/{id}/request-callback/
-
-        Body:
-            - callback_date: date (YYYY-MM-DD)
-            - notes: str (optional)
-        """
-        instance = self.get_object()
-        callback_date = request.data.get('callback_date')
-        notes = request.data.get('notes')
-
-        result = instance.request_callback(
-            callback_date=callback_date,
-            user=request.user,
-            notes=notes,
-        )
-
-        self._audit_status_change(request, instance, result)
-        self._invalidate_caches(self.get_client_id())
-
-        output = CampaignAccountDetailSerializer(instance, context={'request': request})
-        return Response({
-            'success': True,
-            'data': {
-                'campaign_account': output.data,
-                'transition': result,
-            },
-        })
-
-    @action(detail=True, methods=['post'], url_path='resume-callback')
-    @transaction.atomic
-    def resume_callback(self, request, pk=None):
-        """
-        CALLBACK_PENDING → IN_PROGRESS.
-        POST /campaign-accounts/{id}/resume-callback/
-        """
-        instance = self.get_object()
-        result = instance.resume_from_callback(
-            user=request.user,
-            notes=request.data.get('notes'),
-        )
-
-        self._audit_status_change(request, instance, result)
-        self._invalidate_caches(self.get_client_id())
-
-        output = CampaignAccountDetailSerializer(instance, context={'request': request})
-        return Response({
-            'success': True,
-            'data': {
-                'campaign_account': output.data,
-                'transition': result,
-            },
-        })
-
     @action(detail=True, methods=['post'], url_path='mark-completed')
     @transaction.atomic
     def mark_completed(self, request, pk=None):
@@ -516,12 +454,19 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             instance.target_contacts.remove(contact)
             action_taken = 'removed'
 
-            # Remove CampaignContact record + planned activities
+            # Cancel PLANNED activities and delete CampaignContact.
+            # Order matters: Activity.campaign_contact FK is SET_NULL —
+            # deleting CampaignContact first would orphan PLANNED activities.
+            exec_service = CampaignExecutionService(
+                user=request.user, client_id=client_id,
+            )
+            exec_service.delete_activities_for_contact(campaign, instance, contact)
+
+            # If this was the last contact, transition the account to its
+            # terminal state (COMPLETED or STOPPED).
             from ..models import CampaignContact
-            CampaignContact.objects.filter(
-                campaign_account=instance,
-                contact=contact,
-            ).delete()
+            if not CampaignContact.objects.filter(campaign_account=instance).exists():
+                exec_service._check_account_completion(instance)
 
         else:
             # Add contact
@@ -655,6 +600,14 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             else CampaignAccountStatus.PENDING
         )
 
+        from ..models import CampaignContact, CampaignContactStatus
+
+        exec_service = (
+            CampaignExecutionService(user=request.user, client_id=client_id)
+            if campaign.status == CampaignStatus.ACTIVE
+            else None
+        )
+
         created_accounts = []
         skipped = 0
         for account in accounts:
@@ -669,6 +622,32 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             )
             ca.save(user=request.user, client_id=client_id)
             created_accounts.append(ca)
+
+            # For ACTIVE campaigns: create CampaignContacts + generate activities
+            # so the account appears in the playlist immediately (matches enroll_target behavior).
+            if exec_service is not None:
+                contacts = list(
+                    Contact.objects.filter(
+                        account=account,
+                        client_id=client_id,
+                        opted_out=False,
+                    ).filter(
+                        Q(email__isnull=False) | Q(phone_number__isnull=False)
+                    ).exclude(
+                        Q(email='') & Q(phone_number='')
+                    )
+                )
+                for contact in contacts:
+                    ca.target_contacts.add(contact)
+                    CampaignContact.objects.get_or_create(
+                        campaign_account=ca,
+                        contact=contact,
+                        defaults={
+                            'client_id': client_id,
+                            'status': CampaignContactStatus.IN_PROGRESS,
+                        },
+                    )
+                    exec_service.generate_activities_for_contact(campaign, ca, contact)
 
         enrolled = len(created_accounts)
 

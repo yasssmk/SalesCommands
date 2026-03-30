@@ -345,6 +345,17 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             updated_at=timezone.now(),
         )
 
+        # Transition CampaignContact to ON_HOLD so its status is consistent
+        # with its activities. Without this, CampaignContact stays IN_PROGRESS
+        # while all its activities are ON_HOLD (P1-5 audit fix).
+        from ..constants import CampaignContactStatus
+        if instance.status == CampaignContactStatus.IN_PROGRESS:
+            instance._transition_to(
+                CampaignContactStatus.ON_HOLD,
+                user=request.user,
+                notes="Contact sequence paused manually",
+            )
+
         audit_log(
             event='campaign_contact_paused',
             action='update',
@@ -404,10 +415,16 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 'data': {'activities_resumed': 0},
             })
 
+        from ..utils.scheduling import prefetch_delays
+
+        # Single query for all delays — avoids N+1 reads in the loop.
+        delays = prefetch_delays(instance.id)
+
         for activity in on_hold:
             cumulative_delay = cumulative_delay_for_position(
                 instance.id,
                 activity.sequence_position,
+                prefetched=delays,
             )
             scheduled = next_business_day(today + timedelta(days=cumulative_delay))
             activity.status = ActivityStatus.PLANNED

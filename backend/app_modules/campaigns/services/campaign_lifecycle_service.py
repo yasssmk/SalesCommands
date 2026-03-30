@@ -79,32 +79,19 @@ class CampaignLifecycleService:
 
         # Transition pre-created CampaignContacts from PENDING → IN_PROGRESS
         from ..models import CampaignContact, CampaignContactStatus
-        CampaignContact.objects.filter(
-            campaign_account__campaign=campaign,
-            status=CampaignContactStatus.PENDING,
-        ).update(
-            status=CampaignContactStatus.IN_PROGRESS,
-            updated_at=timezone.now(),
+        self._bulk_transition_contacts(
+            campaign=campaign,
+            from_status=CampaignContactStatus.PENDING,
+            to_status=CampaignContactStatus.IN_PROGRESS,
         )
 
 
-        # Generate activities — surface errors instead of swallowing them
+        # Generate activities — let exceptions propagate so @transaction.atomic
+        # rolls back the entire start() (campaign stays DRAFT, accounts PENDING).
         from .campaign_execution_service import CampaignExecutionService
         execution_service = CampaignExecutionService(user=self.user, client_id=self.client_id)
 
-        try:
-            gen_result = execution_service.generate_activities(campaign)
-        except Exception as e:
-            logger.error("campaign_start_activity_generation_failed", extra={
-                'campaign_id': str(campaign.id),
-                'error': str(e),
-            })
-            gen_result = {
-                'activities_created': 0,
-                'accounts_processed': 0,
-                'accounts_skipped': 0,
-                'errors': [str(e)],
-            }
+        gen_result = execution_service.generate_activities(campaign)
 
         activities_created = gen_result.get('activities_created', 0)
         generation_errors = gen_result.get('errors', [])
@@ -170,13 +157,11 @@ class CampaignLifecycleService:
 
         # Pause IN_PROGRESS contacts — they will resume when campaign resumes
         from ..models.campaign_contact import CampaignContact, CampaignContactStatus
-        contacts_paused = CampaignContact.objects.filter(
-            campaign_account__campaign=campaign,
-            status=CampaignContactStatus.IN_PROGRESS,
-        ).update(
-            status=CampaignContactStatus.ON_HOLD,
+        contacts_paused = self._bulk_transition_contacts(
+            campaign=campaign,
+            from_status=CampaignContactStatus.IN_PROGRESS,
+            to_status=CampaignContactStatus.ON_HOLD,
             notes="Campaign paused",
-            updated_at=timezone.now(),
         )
 
         self._audit('campaign_paused', campaign, extra={
@@ -220,13 +205,11 @@ class CampaignLifecycleService:
 
         # Restore ON_HOLD contacts → IN_PROGRESS (CALLBACK_PENDING untouched)
         from ..models.campaign_contact import CampaignContact, CampaignContactStatus
-        contacts_resumed = CampaignContact.objects.filter(
-            campaign_account__campaign=campaign,
-            status=CampaignContactStatus.ON_HOLD,
-        ).update(
-            status=CampaignContactStatus.IN_PROGRESS,
+        contacts_resumed = self._bulk_transition_contacts(
+            campaign=campaign,
+            from_status=CampaignContactStatus.ON_HOLD,
+            to_status=CampaignContactStatus.IN_PROGRESS,
             notes="Campaign resumed",
-            updated_at=timezone.now(),
         )
 
         self._audit('campaign_resumed', campaign, extra={
@@ -251,41 +234,58 @@ class CampaignLifecycleService:
 
 
     @transaction.atomic
-    def complete(self, campaign):
+    def complete(self, campaign, force=False):
         """
         Complete a campaign: ACTIVE/PAUSED → COMPLETED.
 
+        Two-phase completion:
+            - Phase 1 (force=False): collect open contacts and return them
+              WITHOUT completing the campaign. The caller (ViewSet) surfaces
+              them to the frontend for confirmation.
+            - Phase 2 (force=True): complete the campaign unconditionally.
+
         Does NOT auto-cancel remaining PLANNED activities.
-        Returns open contacts so the caller can offer a follow-up transfer
-        to the TARGETED campaign.
 
         Returns:
-            dict: {campaign, open_contacts}
-                open_contacts: list of dicts {
-                    campaign_contact_id, contact_id, contact_name,
-                    account_id, account_name, callback_date
-                }
+            dict: {
+                campaign,
+                completed: bool,         # False on phase 1, True on phase 2
+                open_contacts: list,     # populated on phase 1
+            }
         """
         self._validate_ownership(campaign)
+
+        # Phase 1 — collect open contacts before any state change.
+        open_contacts = self._collect_open_contacts(campaign)
+
+        if open_contacts and not force:
+            # Return without completing — frontend must confirm.
+            return {
+                'campaign': campaign,
+                'completed': False,
+                'open_contacts': open_contacts,
+            }
+
+        # Phase 2 — no open contacts, or caller confirmed with force=True.
         campaign.complete(user=self.user)
 
-        # Record actual end date
         campaign.actual_end_date = timezone.now().date()
         campaign.save(update_fields=['actual_end_date', 'updated_at'])
 
-        open_contacts = self._collect_open_contacts(campaign)
-
         self._audit('campaign_completed', campaign, extra={
             'open_contacts_count': len(open_contacts),
+            'forced': force,
         })
 
         logger.info("campaign_completed", extra={
             'campaign_id': str(campaign.id),
             'open_contacts_count': len(open_contacts),
+            'forced': force,
         })
 
         return {
             'campaign': campaign,
+            'completed': True,
             'open_contacts': open_contacts,
         }
 
@@ -348,10 +348,21 @@ class CampaignLifecycleService:
         if not on_hold_activities:
             return 0
 
+        from ..utils.scheduling import prefetch_delays
+
+        # Group by campaign_contact_id — one prefetch query per contact
+        # instead of one query per activity.
+        delays_cache: dict = {}
+
         for activity in on_hold_activities:
+            cc_id = activity.campaign_contact_id
+            if cc_id not in delays_cache:
+                delays_cache[cc_id] = prefetch_delays(cc_id)
+
             cumulative_delay = cumulative_delay_for_position(
-                activity.campaign_contact_id,
+                cc_id,
                 activity.sequence_position,
+                prefetched=delays_cache[cc_id],
             )
             scheduled = next_business_day(today + timedelta(days=cumulative_delay))
             activity.status = ActivityStatus.PLANNED
@@ -364,6 +375,61 @@ class CampaignLifecycleService:
     # ======================================================================
     # PRIVATE — ACCOUNT CASCADE
     # ======================================================================
+
+    def _bulk_transition_contacts(self, campaign, from_status, to_status, notes=None):
+        """
+        Validate and bulk-transition CampaignContacts from one status to another.
+
+        Validates each transition in memory using CAMPAIGN_CONTACT_TRANSITIONS,
+        then commits in a single bulk_update() call for performance.
+
+        Skips contacts whose transition is not allowed (logs a warning) rather
+        than raising — a single invalid contact should not block the whole campaign.
+
+        Returns:
+            int: number of contacts successfully transitioned
+        """
+        from ..models.campaign_contact import CampaignContact
+        from ..constants import CAMPAIGN_CONTACT_TRANSITIONS
+
+        contacts = list(
+            CampaignContact.objects.filter(
+                campaign_account__campaign=campaign,
+                status=from_status,
+            )
+        )
+
+        if not contacts:
+            return 0
+
+        now = timezone.now()
+        to_update = []
+
+        for cc in contacts:
+            allowed = CAMPAIGN_CONTACT_TRANSITIONS.get(cc.status, [])
+            if to_status not in allowed:
+                logger.warning("campaign_contact_transition_skipped", extra={
+                    'campaign_contact_id': str(cc.id),
+                    'from_status': cc.status,
+                    'to_status': to_status,
+                })
+                continue
+            cc.status = to_status
+            if notes:
+                cc.notes = notes
+            cc.updated_at = now
+            to_update.append(cc)
+
+        if not to_update:
+            return 0
+
+        update_fields = ['status', 'updated_at']
+        if notes:
+            update_fields.append('notes')
+
+        CampaignContact.objects.bulk_update(to_update, update_fields)
+
+        return len(to_update)
 
     def _cascade_accounts(self, campaign, from_status, to_status):
         """

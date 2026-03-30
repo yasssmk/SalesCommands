@@ -492,7 +492,7 @@ class CampaignExecutionService:
         if campaign_account.target_contacts.exists():
             return list(
                 campaign_account.target_contacts
-                .filter(opted_out=False)
+                .filter(opted_out=False, client_id=self.client_id)
                 .select_related('standard_department')
             )
 
@@ -1063,25 +1063,22 @@ class CampaignExecutionService:
             return
 
         current_base = base_date
-        ids_dates = []
+        now = timezone.now()
 
         for activity in activities:
             delay = activity.min_delay_days or 0
-            new_date = self._next_business_day(current_base + timedelta(days=delay))
-            ids_dates.append((activity.id, new_date))
-            current_base = new_date
-
-        # Bulk update — one query per chain
-        now = timezone.now()
-        for activity_id, new_date in ids_dates:
-            Activity.objects.filter(pk=activity_id).update(
-                scheduled_date=new_date,
-                updated_at=now,
+            activity.scheduled_date = self._next_business_day(
+                current_base + timedelta(days=delay)
             )
+            activity.updated_at = now
+            current_base = activity.scheduled_date
+
+        # Single bulk_update — one query for the entire chain
+        Activity.objects.bulk_update(activities, ['scheduled_date', 'updated_at'])
 
         logger.info("campaign_chain_dates_cascaded", extra={
             'campaign_contact_id': str(start_activity.campaign_contact_id),
             'start_position': start_activity.sequence_position,
-            'activities_updated': len(ids_dates),
+            'activities_updated': len(activities),
             'base_date': str(base_date),
         })
