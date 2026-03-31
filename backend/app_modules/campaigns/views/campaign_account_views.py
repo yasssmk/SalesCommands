@@ -911,6 +911,8 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             else None
         )
 
+        from ..constants import FINAL_CONTACT_STATES, CampaignType
+
         for contact in contacts:
             # Skip contacts that already have open planned activities
             has_open_activities = Activity.objects.filter(
@@ -924,7 +926,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             # Always link contact to the campaign account
             campaign_account.target_contacts.add(contact)
 
-            CampaignContact.objects.get_or_create(
+            campaign_contact, cc_created = CampaignContact.objects.get_or_create(
                 campaign_account=campaign_account,
                 contact=contact,
                 defaults={
@@ -936,6 +938,17 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     ),
                 },
             )
+
+            # TARGETED only: reactivate contacts that have already completed
+            # or been stopped in a previous sequence cycle.
+            # This is the core re-enrollment mechanic for TARGETED campaigns —
+            # without reactivate(), activities_generated=True blocks new generation.
+            if (
+                not cc_created
+                and campaign.campaign_type == CampaignType.TARGETED
+                and campaign_contact.status in FINAL_CONTACT_STATES
+            ):
+                campaign_contact.reactivate(user=request.user)
 
             contacts_created += 1
 

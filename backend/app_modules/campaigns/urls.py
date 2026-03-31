@@ -200,6 +200,10 @@ def get_urlpatterns():
             'post': 'resume'
         }), name='contacts-resume'),
 
+        path('contacts/<uuid:pk>/reactivate/', CampaignContactViewSet.as_view({
+            'post': 'reactivate'
+        }), name='contacts-reactivate'),
+
         # =================================================================
         # CAMPAIGN OBJECTIVES — LIST ACTIONS
         # =================================================================

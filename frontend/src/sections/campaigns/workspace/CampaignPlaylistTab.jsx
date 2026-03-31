@@ -177,21 +177,20 @@ export default function CampaignPlaylistTab({
           setRemovedIds((prev) => new Set([...prev, activityId]));
           setCompletedToday((prev) => prev + 1);
           mutatePlaylist();
+          if (onCampaignUpdate) onCampaignUpdate();
           displaySuccessSnackbar("Activity completed");
         } else {
-          // BUG-04: rollback on API error
           setRemovedIds(snapshotRemovedIds);
           displayErrorSnackbar(result);
         }
       } catch (err) {
-        // BUG-04: rollback on network error
         setRemovedIds(snapshotRemovedIds);
         displayErrorSnackbar(err);
       } finally {
         setCompletingId(null);
       }
     },
-    [campaignId, mutatePlaylist, removedIds],
+    [campaignId, mutatePlaylist, onCampaignUpdate, removedIds],
   );
 
   // Opens outcome modal for CALL / MEETING / TASK
@@ -205,8 +204,9 @@ export default function CampaignPlaylistTab({
       setRemovedIds((prev) => new Set([...prev, activityId]));
       setCompletedToday((prev) => prev + 1);
       mutatePlaylist();
+      if (onCampaignUpdate) onCampaignUpdate();
     },
-    [mutatePlaylist],
+    [mutatePlaylist, onCampaignUpdate],
   );
 
   // Complete campaign from playlist banner

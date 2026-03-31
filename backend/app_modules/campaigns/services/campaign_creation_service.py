@@ -277,7 +277,6 @@ class CampaignCreationService:
         account_ids = data.get('account_ids', [])
         return self._enroll_from_ids(campaign, account_ids)
 
-    # APRÈS
     def _enroll_from_territories(self, campaign):
         """
         Pull accounts from all campaign territories and enroll them.
@@ -317,16 +316,25 @@ class CampaignCreationService:
                 ca.save(user=self.user, client_id=self.client_id)
                 enrolled += 1
 
-            # Pre-create CampaignContacts in PENDING (reachable contacts only)
-            contacts = Contact.objects.filter(
+            # Pre-create CampaignContacts in PENDING (reachable contacts only).
+            # Apply channel_override so EMAIL_ONLY campaigns never pre-create
+            # contacts without an email — they would get no activities generated.
+            contact_qs = Contact.objects.filter(
                 account=account,
                 client_id=self.client_id,
                 opted_out=False,
-            ).filter(
-                Q(email__isnull=False) | Q(phone_number__isnull=False)
-            ).exclude(
-                Q(email='') & Q(phone_number='')
             )
+            if getattr(campaign, 'channel_override', 'AUTO') == 'EMAIL_ONLY':
+                contact_qs = contact_qs.filter(
+                    email__isnull=False,
+                ).exclude(email='')
+            else:
+                contact_qs = contact_qs.filter(
+                    Q(email__isnull=False) | Q(phone_number__isnull=False)
+                ).exclude(
+                    Q(email='') & Q(phone_number='')
+                )
+            contacts = contact_qs
 
             for contact in contacts:
                 CampaignContact.objects.get_or_create(

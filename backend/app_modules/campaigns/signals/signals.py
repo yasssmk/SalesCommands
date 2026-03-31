@@ -99,7 +99,7 @@ def _check_account_completion_safe(campaign_account_id):
         )
         from app_modules.campaigns.models.campaign_contact import CampaignContactStatus
 
-        ca = CampaignAccount.objects.select_related().get(id=campaign_account_id)
+        ca = CampaignAccount.objects.select_related('campaign').get(id=campaign_account_id)
 
         if ca.status in (CampaignAccountStatus.COMPLETED, CampaignAccountStatus.STOPPED):
             return
@@ -121,11 +121,73 @@ def _check_account_completion_safe(campaign_account_id):
             'final_status': ca.status,
         })
 
+        # Trigger campaign-level auto-completion check after account is finalized.
+        from django.db import transaction
+        campaign_id = ca.campaign_id
+        transaction.on_commit(
+            lambda: _check_campaign_completion_safe(campaign_id)
+        )
+
     except Exception as exc:
         logger.error(
             "campaign_account_auto_completion_failed",
             extra={
                 'campaign_account_id': str(campaign_account_id),
+                'error': str(exc),
+            },
+        )
+
+
+def _check_campaign_completion_safe(campaign_id):
+    """
+    Auto-complete a Campaign when all its CampaignAccounts reach a final state.
+
+    Only applies to non-TARGETED ACTIVE campaigns — TARGETED campaigns are
+    perpetual by design and never auto-complete.
+    """
+    try:
+        from app_modules.campaigns.models.campaign import Campaign
+        from app_modules.campaigns.models.campaign_account import (
+            CampaignAccount,
+            CampaignAccountStatus,
+        )
+        from app_modules.campaigns.constants import CampaignStatus, CampaignType, FINAL_ACCOUNT_STATES
+
+        campaign = Campaign.objects.get(id=campaign_id)
+
+        # TARGETED campaigns are perpetual — never auto-complete.
+        if campaign.campaign_type == CampaignType.TARGETED:
+            return
+
+        # Only auto-complete ACTIVE campaigns.
+        if campaign.status != CampaignStatus.ACTIVE:
+            return
+
+        # Check all accounts are in a final state.
+        has_non_final = CampaignAccount.objects.filter(
+            campaign=campaign,
+        ).exclude(
+            status__in=FINAL_ACCOUNT_STATES,
+        ).exists()
+
+        if has_non_final:
+            return
+
+        # All accounts final — auto-complete the campaign.
+        from django.utils import timezone
+        campaign.complete(user=None)
+        campaign.actual_end_date = timezone.now().date()
+        campaign.save(update_fields=['actual_end_date', 'updated_at'])
+
+        logger.info("campaign_auto_completed", extra={
+            'campaign_id': str(campaign_id),
+        })
+
+    except Exception as exc:
+        logger.error(
+            "campaign_auto_completion_failed",
+            extra={
+                'campaign_id': str(campaign_id),
                 'error': str(exc),
             },
         )

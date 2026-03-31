@@ -156,6 +156,48 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
         return self._transition_to(
             CampaignContactStatus.STOPPED, user=user, notes=notes
         )
+    
+    def reactivate(self, user=None):
+        """
+        Reset a completed or stopped contact for re-enrollment.
+
+        Used by TARGETED campaigns to re-engage contacts who have finished
+        a previous sequence. Bypasses the normal state machine — reactivation
+        is an administrative reset, not a lifecycle transition.
+
+        Resets:
+            - status → IN_PROGRESS
+            - activities_generated → False  (triggers new sequence generation)
+            - callback_date → None
+            - notes → None
+
+        Raises:
+            StandardizedValidationError: if contact is not in a final state.
+
+        Returns:
+            dict: {previous_status, new_status}
+        """
+        if self.status not in FINAL_CONTACT_STATES:
+            raise StandardizedValidationError(
+                CampaignModuleErrorMessages.EXECUTION_FAILED.format(
+                    reason=f"Cannot reactivate contact with status '{self.status}' — only COMPLETED or STOPPED contacts can be reactivated"
+                )
+            )
+        previous_status = self.status
+        self.status = CampaignContactStatus.IN_PROGRESS
+        self.activities_generated = False
+        self.callback_date = None
+        self.notes = None
+        self.save(user=user)
+        return {
+            'previous_status': previous_status,
+            'new_status': CampaignContactStatus.IN_PROGRESS,
+        }
+
+    def mark_activities_generated(self, user=None):
+        """Set activities_generated = True."""
+        self.activities_generated = True
+        self.save(user=user)
 
     def mark_activities_generated(self, user=None):
         """Set activities_generated = True."""

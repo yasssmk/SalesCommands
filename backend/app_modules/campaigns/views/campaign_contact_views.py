@@ -306,11 +306,15 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         )
         self._audit_status_change(request, instance, result)
 
-        # Cascade: check if parent account should auto-complete/stop
+        # Delete open activities + cascade account — mirrors _handle_outcome()
+        # terminal path. Centralised in _cancel_chain_for_contact so all
+        # stop paths (manual or outcome-driven) behave identically.
         from ..services.campaign_execution_service import CampaignExecutionService
-        CampaignExecutionService(
-            user=request.user, client_id=self.get_client_id()
-        )._check_account_completion(instance.campaign_account)
+        exec_service = CampaignExecutionService(
+            user=request.user, client_id=self.get_client_id(),
+        )
+        exec_service._cancel_chain_for_contact(instance)
+        exec_service._check_account_completion(instance.campaign_account)
 
         self._invalidate_caches(self.get_client_id())
 
@@ -349,7 +353,7 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         # with its activities. Without this, CampaignContact stays IN_PROGRESS
         # while all its activities are ON_HOLD (P1-5 audit fix).
         from ..constants import CampaignContactStatus
-        if instance.status == CampaignContactStatus.IN_PROGRESS:
+        if instance.status == CampaignContactStatus.IN_PROGRESS and activities_paused > 0:
             instance._transition_to(
                 CampaignContactStatus.ON_HOLD,
                 user=request.user,
@@ -431,6 +435,16 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             activity.scheduled_date = scheduled
             activity.save(update_fields=['status', 'scheduled_date', 'updated_at'])
 
+        # Restore CampaignContact to IN_PROGRESS — mirrors pause() in reverse.
+        # Without this the contact stays ON_HOLD while its activities are PLANNED.
+        from ..constants import CampaignContactStatus
+        if instance.status == CampaignContactStatus.ON_HOLD:
+            instance._transition_to(
+                CampaignContactStatus.IN_PROGRESS,
+                user=request.user,
+                notes="Contact sequence resumed manually",
+            )
+
         audit_log(
             event='campaign_contact_resumed',
             action='update',
@@ -455,6 +469,86 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             'data': {
                 'campaign_contact': output.data,
                 'activities_resumed': len(on_hold),
+            },
+        })
+    
+    @action(detail=True, methods=['post'], url_path='reactivate')
+    @transaction.atomic
+    def reactivate(self, request, pk=None):
+        """
+        Reactivate a COMPLETED or STOPPED contact for a new sequence cycle.
+        Only valid for TARGETED campaigns.
+
+        POST /campaigns/contacts/{id}/reactivate/
+
+        Resets activities_generated=False so a new sequence can be generated.
+        The caller (frontend) should follow up with enroll-target to generate
+        new activities — or this endpoint can trigger generation directly.
+        """
+        from django.utils import timezone
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
+        from ..constants import FINAL_CONTACT_STATES, CampaignType
+
+        instance = self.get_object()
+        client_id = self.get_client_id()
+
+        # Guard: only TARGETED campaigns support re-enrollment
+        campaign = instance.campaign_account.campaign
+        if campaign.campaign_type != CampaignType.TARGETED:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(
+                    field='reactivate (only allowed on TARGETED campaigns)'
+                )
+            )
+
+        # Guard: contact must be in a final state
+        if instance.status not in FINAL_CONTACT_STATES:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(
+                    field=f'reactivate (contact status is {instance.status}, expected COMPLETED or STOPPED)'
+                )
+            )
+
+        # Reactivate the contact (resets status + activities_generated)
+        instance.reactivate(user=request.user)
+
+        # Generate new sequence immediately
+        from ..services.campaign_execution_service import CampaignExecutionService
+        exec_service = CampaignExecutionService(
+            user=request.user,
+            client_id=client_id,
+        )
+        activities_created = exec_service.generate_activities_for_contact(
+            campaign,
+            instance.campaign_account,
+            instance.contact,
+        )
+
+        audit_log(
+            event='campaign_contact_reactivated',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(client_id),
+            target_type='campaign_contact',
+            target_id=str(instance.id),
+            outcome='success',
+            extra={'activities_created': activities_created},
+        )
+
+        logger.info("campaign_contact_reactivated", extra={
+            'campaign_contact_id': str(instance.id),
+            'activities_created': activities_created,
+        })
+
+        self._invalidate_caches(client_id)
+        output = CampaignContactDetailSerializer(instance, context={'request': request})
+
+        return Response({
+            'success': True,
+            'data': {
+                'campaign_contact': output.data,
+                'activities_created': activities_created,
             },
         })
 

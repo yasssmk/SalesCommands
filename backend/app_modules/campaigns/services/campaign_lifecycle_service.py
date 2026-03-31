@@ -103,6 +103,27 @@ class CampaignLifecycleService:
                 'errors_count': len(generation_errors),
                 'errors': generation_errors[:5],
             })
+        
+        # Stop accounts that have no contacts after activity generation.
+        # These are ghost accounts from territory enrollment where all contacts
+        # were filtered out (e.g. EMAIL_ONLY with no email contacts).
+        # They would never auto-complete via signal since no CampaignContact exists.
+        ghost_accounts = CampaignAccount.objects.filter(
+            campaign=campaign,
+            status=CampaignAccountStatus.IN_PROGRESS,
+        ).exclude(
+            campaign_contacts__isnull=False,
+        )
+        ghost_count = ghost_accounts.update(
+            status=CampaignAccountStatus.STOPPED,
+            notes="No reachable contacts — stopped at campaign start",
+            updated_at=timezone.now(),
+        )
+        if ghost_count:
+            logger.info("campaign_ghost_accounts_stopped", extra={
+                'campaign_id': str(campaign.id),
+                'ghost_accounts_stopped': ghost_count,
+            })
 
         self._audit('campaign_started', campaign, extra={
             'accounts_activated': accounts_activated,
@@ -272,22 +293,47 @@ class CampaignLifecycleService:
         campaign.actual_end_date = timezone.now().date()
         campaign.save(update_fields=['actual_end_date', 'updated_at'])
 
+        # Delete remaining PLANNED/ON_HOLD activities — preserve COMPLETED history only.
+        activities_deleted = self._cancel_planned_activities(campaign)
+
+        # Stop all non-final CampaignContacts.
+        contacts_stopped = self._stop_remaining_contacts(
+            campaign,
+            reason="Campaign completed",
+        )
+
+        # Stop all non-final CampaignAccounts.
+        accounts_stopped = self._stop_remaining_accounts(
+            campaign,
+            reason="Campaign completed",
+        )
+
         self._audit('campaign_completed', campaign, extra={
             'open_contacts_count': len(open_contacts),
             'forced': force,
+            'activities_deleted': activities_deleted,
+            'contacts_stopped': contacts_stopped,
+            'accounts_stopped': accounts_stopped,
         })
 
         logger.info("campaign_completed", extra={
             'campaign_id': str(campaign.id),
             'open_contacts_count': len(open_contacts),
             'forced': force,
+            'activities_deleted': activities_deleted,
+            'contacts_stopped': contacts_stopped,
+            'accounts_stopped': accounts_stopped,
         })
 
         return {
             'campaign': campaign,
             'completed': True,
             'open_contacts': open_contacts,
+            'activities_deleted': activities_deleted,
+            'contacts_stopped': contacts_stopped,
+            'accounts_stopped': accounts_stopped,
         }
+    
 
     @transaction.atomic
     def cancel(self, campaign):
@@ -466,6 +512,32 @@ class CampaignLifecycleService:
             updated_at=timezone.now(),
         )
         return count
+    
+    def _stop_remaining_contacts(self, campaign, reason="Campaign ended"):
+        """
+        Stop all non-final CampaignContacts for a campaign.
+
+        Uses bulk update (bypasses per-row state machine) — same pattern as
+        _stop_remaining_accounts(). All non-final statuses have a valid
+        transition to STOPPED per CAMPAIGN_CONTACT_TRANSITIONS.
+
+        Returns:
+            int: number of contacts stopped
+        """
+        from ..models.campaign_contact import CampaignContact, CampaignContactStatus
+        from ..constants import FINAL_CONTACT_STATES
+
+        non_final = CampaignContact.objects.filter(
+            campaign_account__campaign=campaign,
+        ).exclude(
+            status__in=FINAL_CONTACT_STATES,
+        )
+        count = non_final.update(
+            status=CampaignContactStatus.STOPPED,
+            notes=reason,
+            updated_at=timezone.now(),
+        )
+        return count
 
     def _resume_due_callbacks(self, campaign):
         """
@@ -562,23 +634,23 @@ class CampaignLifecycleService:
 
     def _cancel_planned_activities(self, campaign):
         """
-        Cancel all PLANNED and ON_HOLD activities linked to this campaign.
+        Delete all PLANNED and ON_HOLD activities linked to this campaign.
+
+        Completed activities are preserved for history.
+        PLANNED/ON_HOLD activities have no value once the campaign ends —
+        deleting them avoids polluting the activity timeline with ghost records.
 
         Returns:
-            int: number of activities cancelled
+            int: number of activities deleted
         """
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import ActivityStatus
 
-        pending = Activity.objects.filter(
+        count, _ = Activity.objects.filter(
             campaign=campaign,
             status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
-        )
-        count = pending.update(
-            status=ActivityStatus.CANCELLED,
-            outcome_notes="Campaign cancelled",
-            updated_at=timezone.now(),
-        )
+            client_id=self.client_id,
+        ).delete()
         return count
 
 

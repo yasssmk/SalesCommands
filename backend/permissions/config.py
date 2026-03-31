@@ -37,7 +37,7 @@ DEFAULT_CONFIG = {
         'activities': True,
         'leads': False,
         'opportunities': False,
-        'campaign': False,
+        'campaign': True,
         'pipelines': False,
         'templates': False,
         'users': True,

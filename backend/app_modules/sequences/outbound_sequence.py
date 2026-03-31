@@ -52,9 +52,9 @@ class OutboundSequence(Sequence):
 
         return {
             1: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 1 - Initial Call'},
-            2: {'type': ActivityType.EMAIL,   'min_delay': 1, 'description': '[TEST] Step 2 - Follow-up Email'},
-            3: {'type': ActivityType.CALL,    'min_delay': 1, 'description': '[TEST] Step 3 - Second Call'},
-            4: {'type': ActivityType.EMAIL, 'min_delay': 1, 'description': '[TEST] Step 4 - Last Email'},
+            2: {'type': ActivityType.EMAIL,   'min_delay': 0, 'description': '[TEST] Step 2 - Follow-up Email'},
+            3: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 3 - Second Call'},
+            4: {'type': ActivityType.EMAIL, 'min_delay': 0, 'description': '[TEST] Step 4 - Last Email'},
 }
 
     # =========================================================================
@@ -78,8 +78,8 @@ class OutboundSequence(Sequence):
 
         return {
             1: {'type': ActivityType.EMAIL, 'min_delay': 0,  'description': 'Initial Email Outreach'},
-            2: {'type': ActivityType.EMAIL, 'min_delay': 1,  'description': 'Follow-up Email'},
-            3: {'type': ActivityType.EMAIL, 'min_delay': 1,  'description': 'Value Proposition Email'},
+            2: {'type': ActivityType.EMAIL, 'min_delay': 0,  'description': 'Follow-up Email'},
+            3: {'type': ActivityType.EMAIL, 'min_delay': 0,  'description': 'Value Proposition Email'},
         }
 
     # =========================================================================
@@ -125,7 +125,7 @@ class OutboundSequence(Sequence):
         # Test
         return {
             1: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 1 - Initial Call'},
-            2: {'type': ActivityType.CALL,   'min_delay': 1, 'description': '[TEST] Step 2 - Follow-up Email'},
-            3: {'type': ActivityType.CALL,    'min_delay': 1, 'description': '[TEST] Step 3 - Second Call'},
-            4: {'type': ActivityType.CALL, 'min_delay': 1, 'description': '[TEST] Step 4 - Last Email'},
+            2: {'type': ActivityType.CALL,   'min_delay': 0, 'description': '[TEST] Step 2 - Follow-up Email'},
+            3: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 3 - Second Call'},
+            4: {'type': ActivityType.CALL, 'min_delay': 0, 'description': '[TEST] Step 4 - Last Email'},
         }

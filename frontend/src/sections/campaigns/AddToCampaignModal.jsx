@@ -47,7 +47,11 @@ import TextField from "@mui/material/TextField";
 import MainCard from "components/MainCard";
 
 // api
-import { useGetTargetedCampaign, enrollTarget } from "api/campaigns/campaigns";
+import {
+  useGetTargetedCampaign,
+  enrollTarget,
+  useGetCampaignContacts,
+} from "api/campaigns/campaigns";
 import { useGetContacts } from "api/businessData/contacts";
 import { useGetDecisionCyclesByAccount } from "api/accounts/decisionCycles";
 
@@ -78,6 +82,7 @@ const STEPS = {
 export default function AddToCampaignModal({
   open,
   onClose,
+  onSuccess = null,
   accountId,
   accountName,
   preselectedContactId = null,
@@ -92,6 +97,33 @@ export default function AddToCampaignModal({
     pageSize: 200,
     filters: { account_id: accountId },
   });
+
+  // Load existing campaign contacts to detect enrollment state
+  const { campaignContacts } = useGetCampaignContacts(
+    open ? targetedCampaign?.id : null,
+  );
+
+  // Contacts currently active in the campaign (block re-selection with warning)
+  const activeContactIds = useMemo(() => {
+    const ACTIVE = ["IN_PROGRESS", "PENDING", "ON_HOLD", "CALLBACK_PENDING"];
+    return new Set(
+      campaignContacts
+        .filter((cc) => ACTIVE.includes(cc.status))
+        .map((cc) => cc.contact?.id || cc.contact)
+        .filter(Boolean),
+    );
+  }, [campaignContacts]);
+
+  // Contacts in final state — will be reactivated by the backend
+  const reactivatableContactIds = useMemo(() => {
+    const FINAL = ["COMPLETED", "STOPPED"];
+    return new Set(
+      campaignContacts
+        .filter((cc) => FINAL.includes(cc.status))
+        .map((cc) => cc.contact?.id || cc.contact)
+        .filter(Boolean),
+    );
+  }, [campaignContacts]);
 
   // ==============================|| STATE ||============================== //
 
@@ -217,6 +249,7 @@ export default function AddToCampaignModal({
             `${accountName || "Account"} added to your Targeted Campaign`,
           );
         }
+        onSuccess?.();
         onClose();
       } else {
         displayErrorSnackbar(result);
@@ -235,6 +268,7 @@ export default function AddToCampaignModal({
     notes,
     originDecisionCycleId,
     onClose,
+    onSuccess,
   ]);
 
   // ==============================|| VALIDATION ||============================== //
@@ -401,15 +435,28 @@ export default function AddToCampaignModal({
                           const isSelected = selectedContactIds.includes(
                             contact.id,
                           );
+                          const isActive = activeContactIds.has(contact.id);
+                          const isReactivatable = reactivatableContactIds.has(
+                            contact.id,
+                          );
+
                           return (
                             <ListItem key={contact.id} disablePadding>
                               <ListItemButton
-                                onClick={() => handleContactToggle(contact.id)}
-                                sx={{ borderRadius: 1, mb: 0.25 }}
+                                onClick={() =>
+                                  !isActive && handleContactToggle(contact.id)
+                                }
+                                disabled={isActive}
+                                sx={{
+                                  borderRadius: 1,
+                                  mb: 0.25,
+                                  opacity: isActive ? 0.6 : 1,
+                                }}
                               >
                                 <Checkbox
                                   size="small"
                                   checked={isSelected}
+                                  disabled={isActive}
                                   disableRipple
                                   sx={{ p: 0, mr: 1 }}
                                 />
@@ -421,6 +468,24 @@ export default function AddToCampaignModal({
                                       .join(" · ") || contact.email
                                   }
                                 />
+                                {isActive && (
+                                  <Chip
+                                    label="Already enrolled"
+                                    size="small"
+                                    color="warning"
+                                    variant="outlined"
+                                    sx={{ ml: 1 }}
+                                  />
+                                )}
+                                {isReactivatable && !isActive && (
+                                  <Chip
+                                    label="Will reactivate"
+                                    size="small"
+                                    color="info"
+                                    variant="outlined"
+                                    sx={{ ml: 1 }}
+                                  />
+                                )}
                               </ListItemButton>
                             </ListItem>
                           );
@@ -602,6 +667,7 @@ export default function AddToCampaignModal({
 AddToCampaignModal.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
+  onSuccess: PropTypes.func,
   accountId: PropTypes.string.isRequired,
   accountName: PropTypes.string,
   preselectedContactId: PropTypes.string,

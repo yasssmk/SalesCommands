@@ -170,10 +170,10 @@ if DEBUG:
         'user': '1000/hour',
         'login': '10/hour',      # Tentatives de login (par IP+email) 
         'password': '10/hour',   # Changements de mot de passe
-        'sensitive': '30/hour',  # Opérations sensibles
+        'sensitive': '300/hour',  # Opérations sensibles
         'burst': '100/minute',    # Anti-burst
         'registration': '5/hour', # Inscriptions
-        'standard': '50/minute',  # GET endpoints (list/search/filter) - permissif en DEV
+        'standard': '500/minute',  # GET endpoints (list/search/filter) - permissif en DEV
         'bulk': '5/minute',       # POST bulk operations - permissif en DEV pour tests
     }
 else:
@@ -183,10 +183,10 @@ else:
         'user': '100/hour',    
         'login': '5/hour',       # Plus strict en prod : 5 tentatives/heure
         'password': '3/hour',    
-        'sensitive': '10/hour',  
+        'sensitive': '100/hour',  
         'burst': '10/minute',
         'registration': '3/hour',
-        'standard': '30/minute',  #  GET endpoints - évite blocage utilisateurs normaux
+        'standard': '300/minute',  #  GET endpoints - évite blocage utilisateurs normaux
         'bulk': '3/minute',       # POST bulk operations - strict pour limiter abuse'
     }
 
@@ -696,7 +696,7 @@ PERMISSIONS_CONFIG = {
         'activities': True,    # Activity tracking
         'leads': False,         # Lead management
         'opportunities': False, # Opportunity/deals
-        'campaign': False,      # Campaign management
+        'campaign': True,      # Campaign management
         'pipelines': False,     # Buying process/pipelines
         'templates': False,     # Email/doc templates
         'users': True,         # User management

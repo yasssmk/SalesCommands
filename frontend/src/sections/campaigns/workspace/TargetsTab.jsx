@@ -19,19 +19,23 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import PauseCircleOutlined from "@ant-design/icons/PauseCircleOutlined";
 import PlayCircleOutlined from "@ant-design/icons/PlayCircleOutlined";
+import StopOutlined from "@ant-design/icons/StopOutlined";
+import ReloadOutlined from "@ant-design/icons/ReloadOutlined";
 
 // Project
 import ReusableTable from "components/table/Table";
 import AddTargetToCampaignModal from "./AddTargetToCampaignModal";
 import {
   useGetCampaignContacts,
-  removeTargets,
   pauseTarget,
+  removeTargets,
   resumeTarget,
+  stopTarget,
+  reactivateTarget,
 } from "api/campaigns/campaigns";
+
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -73,15 +77,26 @@ export default function TargetsTab({ campaignId, campaign }) {
 
   const [addTargetOpen, setAddTargetOpen] = useState(false);
 
-  // Active contact IDs — used to exclude already-enrolled contacts from search
-  const enrolledContactIds = useMemo(() => {
-    const TERMINAL = ["COMPLETED", "STOPPED"];
-    return campaignContacts
-      .filter((cc) => !TERMINAL.includes(cc.status))
-      .map((cc) => cc.contact?.id || cc.contact_id)
-      .filter(Boolean);
-  }, [campaignContacts]);
+  const isTargeted = campaign?.campaign_type === "TARGETED";
 
+  // For TARGETED: exclude only contacts with open activities (IN_PROGRESS/PENDING).
+  // COMPLETED/STOPPED contacts are re-enrollable via Reactivate.
+  // For non-TARGETED: exclude all currently enrolled contacts.
+  const enrolledContactIds = useMemo(() => {
+    if (isTargeted) {
+      return campaignContacts
+        .filter((cc) =>
+          ["IN_PROGRESS", "PENDING", "ON_HOLD", "CALLBACK_PENDING"].includes(
+            cc.status,
+          ),
+        )
+        .map((cc) => cc.contact?.id || cc.contact)
+        .filter(Boolean);
+    }
+    return campaignContacts
+      .map((cc) => cc.contact?.id || cc.contact)
+      .filter(Boolean);
+  }, [campaignContacts, isTargeted]);
   const handleSortingChange = useCallback((updaterOrValue) => {
     setSorting((prev) =>
       typeof updaterOrValue === "function"
@@ -176,6 +191,46 @@ export default function TargetsTab({ campaignId, campaign }) {
       label: cc.contact_name || "this contact",
     });
   }, []);
+
+  const handleStopRow = useCallback(
+    async (cc) => {
+      setActionInProgress({ type: "stop", id: cc.id });
+      try {
+        const result = await stopTarget(cc.id, campaignId);
+        if (result.success) {
+          displaySuccessSnackbar("Contact sequence stopped");
+          mutateCampaignContacts();
+        } else {
+          displayErrorSnackbar(result);
+        }
+      } catch (err) {
+        displayErrorSnackbar(err);
+      } finally {
+        setActionInProgress(null);
+      }
+    },
+    [campaignId, mutateCampaignContacts],
+  );
+
+  const handleReactivateRow = useCallback(
+    async (cc) => {
+      setActionInProgress({ type: "reactivate", id: cc.id });
+      try {
+        const result = await reactivateTarget(cc.id, campaignId);
+        if (result.success) {
+          displaySuccessSnackbar("Contact reactivated — new sequence started");
+          mutateCampaignContacts();
+        } else {
+          displayErrorSnackbar(result);
+        }
+      } catch (err) {
+        displayErrorSnackbar(err);
+      } finally {
+        setActionInProgress(null);
+      }
+    },
+    [campaignId, mutateCampaignContacts],
+  );
 
   // ==============================|| BULK ACTIONS ||============================== //
 
@@ -347,19 +402,44 @@ export default function TargetsTab({ campaignId, campaign }) {
         meta: { className: "cell-center" },
         cell: ({ row }) => {
           const cc = row.original;
-          const isPausing =
-            actionInProgress?.type === "pause" &&
-            actionInProgress?.id === cc.id;
-          const isResuming =
-            actionInProgress?.type === "resume" &&
-            actionInProgress?.id === cc.id;
+          const isActing = !!actionInProgress && actionInProgress.id === cc.id;
           const isPaused = cc.has_on_hold;
+          const isFinalContact = ["COMPLETED", "STOPPED"].includes(cc.status);
 
-          if (isFinal) return null;
+          // Non-TARGETED completed campaign → no actions
+          if (isFinal && !isTargeted) return null;
 
-          return (
-            <Stack direction="row" spacing={0.5} justifyContent="center">
-              {isPaused ? (
+          // TARGETED: COMPLETED or STOPPED → Reactivate only
+          if (isTargeted && isFinalContact) {
+            return (
+              <Stack direction="row" spacing={0.5} justifyContent="center">
+                <Tooltip title="Reactivate — start a new sequence">
+                  <span>
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReactivateRow(cc);
+                      }}
+                      disabled={!!actionInProgress}
+                    >
+                      {isActing && actionInProgress?.type === "reactivate" ? (
+                        <CircularProgress size={14} />
+                      ) : (
+                        <ReloadOutlined />
+                      )}
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </Stack>
+            );
+          }
+
+          // ON_HOLD (paused) → Resume + Stop
+          if (isPaused) {
+            return (
+              <Stack direction="row" spacing={0.5} justifyContent="center">
                 <Tooltip title="Resume sequence">
                   <span>
                     <IconButton
@@ -371,7 +451,7 @@ export default function TargetsTab({ campaignId, campaign }) {
                       }}
                       disabled={!!actionInProgress}
                     >
-                      {isResuming ? (
+                      {isActing && actionInProgress?.type === "resume" ? (
                         <CircularProgress size={14} />
                       ) : (
                         <PlayCircleOutlined />
@@ -379,40 +459,67 @@ export default function TargetsTab({ campaignId, campaign }) {
                     </IconButton>
                   </span>
                 </Tooltip>
-              ) : (
-                <Tooltip title="Pause sequence">
+                <Tooltip title="Stop contact">
                   <span>
                     <IconButton
                       size="small"
-                      color="warning"
+                      color="error"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handlePauseRow(cc);
+                        handleStopRow(cc);
                       }}
                       disabled={!!actionInProgress}
                     >
-                      {isPausing ? (
+                      {isActing && actionInProgress?.type === "stop" ? (
                         <CircularProgress size={14} />
                       ) : (
-                        <PauseCircleOutlined />
+                        <StopOutlined />
                       )}
                     </IconButton>
                   </span>
                 </Tooltip>
-              )}
+              </Stack>
+            );
+          }
 
-              <Tooltip title="Remove from campaign">
+          // IN_PROGRESS / PENDING → Pause + Stop
+          return (
+            <Stack direction="row" spacing={0.5} justifyContent="center">
+              <Tooltip title="Pause sequence">
+                <span>
+                  <IconButton
+                    size="small"
+                    color="warning"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePauseRow(cc);
+                    }}
+                    disabled={!!actionInProgress}
+                  >
+                    {isActing && actionInProgress?.type === "pause" ? (
+                      <CircularProgress size={14} />
+                    ) : (
+                      <PauseCircleOutlined />
+                    )}
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="Stop contact">
                 <span>
                   <IconButton
                     size="small"
                     color="error"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleRowRemove(cc);
+                      handleStopRow(cc);
                     }}
                     disabled={!!actionInProgress}
                   >
-                    <DeleteOutlined />
+                    {isActing && actionInProgress?.type === "stop" ? (
+                      <CircularProgress size={14} />
+                    ) : (
+                      <StopOutlined />
+                    )}
                   </IconButton>
                 </span>
               </Tooltip>
@@ -523,7 +630,7 @@ export default function TargetsTab({ campaignId, campaign }) {
         onSuccess={mutateCampaignContacts}
       />
 
-      {/* ── Confirm Remove Dialog ── */}
+      {/* ── Confirm Remove Dialog ──
       <Dialog
         open={Boolean(confirmRemove)}
         onClose={() => setConfirmRemove(null)}
@@ -554,8 +661,8 @@ export default function TargetsTab({ campaignId, campaign }) {
           >
             Remove
           </Button>
-        </DialogActions>
-      </Dialog>
+        </DialogActions> */}
+      {/* </Dialog> */}
     </Box>
   );
 }

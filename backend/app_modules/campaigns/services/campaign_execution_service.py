@@ -696,6 +696,23 @@ class CampaignExecutionService:
             self._cancel_chain_for_contact(campaign_contact)
             self._check_account_completion(campaign_account)
             return None
+        
+        # ------------------------------------------------------------------
+        # NO_ANSWER — sequence continues to next step.
+        # If no PLANNED activities remain, the sequence is exhausted → stop contact.
+        # ------------------------------------------------------------------
+        if outcome == ActivityOutcome.NO_ANSWER:
+            has_remaining = Activity.objects.filter(
+                campaign_contact=campaign_contact,
+                status=ActivityStatus.PLANNED,
+            ).exists()
+            if not has_remaining:
+                campaign_contact.mark_stopped(
+                    user=self.user,
+                    notes="No answer — sequence exhausted",
+                )
+                self._check_account_completion(campaign_account)
+            return None
 
         # ------------------------------------------------------------------
         # DEFAULT — manual followup on non-sequence campaigns
@@ -713,21 +730,24 @@ class CampaignExecutionService:
 
     def _cancel_chain_for_contact(self, campaign_contact):
         """
-        Cancel all PLANNED activities for a given CampaignContact.
-        Used for terminal outcomes — scoped to contact only.
+        Delete all PLANNED and ON_HOLD activities for a given CampaignContact.
+
+        Called on any terminal contact transition (STOPPED or COMPLETED).
+        Deleting instead of cancelling keeps the activity timeline clean —
+        only completed activities have historical value.
+
+        Returns:
+            int: number of activities deleted
         """
-        cancelled = Activity.objects.filter(
+        deleted, _ = Activity.objects.filter(
             campaign_contact=campaign_contact,
-            status=ActivityStatus.PLANNED,
-        ).update(
-            status=ActivityStatus.CANCELLED,
-            outcome_notes="Chain cancelled: terminal outcome on contact",
-            updated_at=timezone.now(),
-        )
-        logger.info("campaign_contact_chain_cancelled", extra={
+            status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+        ).delete()
+        logger.info("campaign_contact_chain_deleted", extra={
             'campaign_contact_id': str(campaign_contact.id),
-            'cancelled_count': cancelled,
+            'deleted_count': deleted,
         })
+        return deleted
 
     def _cancel_all_contacts_for_account(self, campaign_account, exclude=None):
         """
