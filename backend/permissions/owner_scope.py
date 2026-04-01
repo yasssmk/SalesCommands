@@ -156,9 +156,21 @@ class OwnerScopeMixin:
         # Normalize field name (remove _id suffix if present for filter)
         filter_field = owner_field.rstrip('_id') + '_id' if not owner_field.endswith('_id') else owner_field
         
+        # Secondary owner fields per module (e.g. executor for campaigns).
+        # When owner_scope=mine, the user is considered owner if they match
+        # either the primary owner field OR the secondary field.
+        SECONDARY_OWNER_FIELDS = {
+            'campaigns': 'executor_id',
+        }
+
         if owner_scope == 'mine':
-            # Filter by current user only
+            secondary_field = SECONDARY_OWNER_FIELDS.get(module)
+            if secondary_field:
+                return queryset.filter(
+                    Q(**{filter_field: user_id}) | Q(**{secondary_field: user_id})
+                )
             return queryset.filter(**{filter_field: user_id})
+        
         
         elif owner_scope == 'team':
             # Filter by all users in user's teams + sub-teams

@@ -844,6 +844,18 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 raise StandardizedValidationError(
                     CoreErrorMessages.REQUIRED_FIELD.format(field='contact_ids')
                 )
+
+            # Check opt-out separately before reachability — dedicated error message.
+            if strict and Contact.objects.filter(
+                id__in=contact_ids,
+                account=account,
+                client_id=client_id,
+                opted_out=True,
+            ).exists():
+                raise StandardizedValidationError(
+                    CampaignModuleErrorMessages.CONTACT_OPTED_OUT
+                )
+
             contacts = list(
                 Contact.objects.filter(
                     id__in=contact_ids,

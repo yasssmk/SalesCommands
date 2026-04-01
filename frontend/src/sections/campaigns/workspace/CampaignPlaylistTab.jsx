@@ -127,8 +127,7 @@ export default function CampaignPlaylistTab({
   // which uses useGetCompletedActivities (separate endpoint). No need to hit
   // the playlist endpoint for 0 PLANNED activities.
   const shouldFetchPlaylist =
-    campaign &&
-    !["DRAFT", "PAUSED", "CANCELLED", "COMPLETED"].includes(campaign?.status);
+    campaign && !["DRAFT", "CANCELLED", "COMPLETED"].includes(campaign?.status);
 
   const {
     activities: rawActivities,
@@ -294,12 +293,15 @@ export default function CampaignPlaylistTab({
 
   // ==============================|| EMPTY STATE — Campaign not active ||============================== //
 
-  // COMPLETED is excluded — it falls through to the main render to show the completed accordion
+  // COMPLETED and PAUSED fall through to the main render.
+  // COMPLETED shows the completed accordion.
+  // PAUSED shows ON_HOLD activities in Upcoming with a warning banner.
   if (
     !playlistLoading &&
     campaign &&
     BLOCKED_STATUSES[campaign.status] &&
-    campaign.status !== "COMPLETED"
+    campaign.status !== "COMPLETED" &&
+    campaign.status !== "PAUSED"
   ) {
     const { title, body } = BLOCKED_STATUSES[campaign.status];
     return (
@@ -382,10 +384,17 @@ export default function CampaignPlaylistTab({
       />
 
       {/* Read-only banner for COMPLETED campaigns */}
-      {/* Read-only banner for COMPLETED campaigns */}
       {campaign?.status === "COMPLETED" && (
         <Alert severity="info" variant="outlined">
           This campaign has ended. The playlist is now read-only.
+        </Alert>
+      )}
+
+      {/* Paused banner — activities on hold, resume to continue */}
+      {campaign?.status === "PAUSED" && (
+        <Alert severity="warning" variant="outlined">
+          This campaign is paused. Resume it to continue activity execution.
+          On-hold activities are visible in the Upcoming section below.
         </Alert>
       )}
 

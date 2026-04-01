@@ -506,31 +506,37 @@ export default function ActivityModal({
                   </Stack>
                 </Grid>
 
-                <Grid item xs={12} sm={6}>
-                  <Stack spacing={1}>
-                    <InputLabel htmlFor="status" required>
-                      Status
-                    </InputLabel>
-                    <Select
-                      id="status"
-                      name="status"
-                      fullWidth
-                      value={values.status}
-                      onChange={handleChange}
-                      onBlur={handleBlur}
-                      error={Boolean(touched.status && errors.status)}
-                    >
-                      {Object.entries(ACTIVITY_STATUSES).map(([key, value]) => (
-                        <MenuItem key={key} value={value}>
-                          {ACTIVITY_STATUS_LABELS[key]}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    {touched.status && errors.status && (
-                      <FormHelperText error>{errors.status}</FormHelperText>
-                    )}
-                  </Stack>
-                </Grid>
+                {/* Status field — only shown in edit mode.
+                    New activities are always created with PLANNED status (enforced by backend). */}
+                {isEditMode && (
+                  <Grid item xs={12} sm={6}>
+                    <Stack spacing={1}>
+                      <InputLabel htmlFor="status" required>
+                        Status
+                      </InputLabel>
+                      <Select
+                        id="status"
+                        name="status"
+                        fullWidth
+                        value={values.status}
+                        onChange={handleChange}
+                        onBlur={handleBlur}
+                        error={Boolean(touched.status && errors.status)}
+                      >
+                        {Object.entries(ACTIVITY_STATUSES).map(
+                          ([key, value]) => (
+                            <MenuItem key={key} value={value}>
+                              {ACTIVITY_STATUS_LABELS[key]}
+                            </MenuItem>
+                          ),
+                        )}
+                      </Select>
+                      {touched.status && errors.status && (
+                        <FormHelperText error>{errors.status}</FormHelperText>
+                      )}
+                    </Stack>
+                  </Grid>
+                )}
 
                 <Grid item xs={12} sm={6}>
                   <Stack spacing={1}>

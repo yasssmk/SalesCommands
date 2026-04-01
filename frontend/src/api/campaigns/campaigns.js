@@ -45,6 +45,7 @@ export const CAMPAIGN_TYPES = {
 
 export const CAMPAIGN_TYPE_LABELS = {
   OUTBOUND: "Outbound Sequence",
+  TARGETED: "Targeted Campaign",
 };
 
 export const MEMBER_ROLES = {

@@ -1118,10 +1118,8 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         ctx = ctx_from_request(request)
         logger.info("my_campaigns_requested", extra=ctx)
 
-        queryset = self.get_queryset().filter(
-            Q(owner=request.user) | Q(executor=request.user)
-        )
-        queryset = self.filter_queryset(queryset)
+        
+        queryset = self.filter_queryset(self.get_queryset())
 
         page = self.paginate_queryset(queryset)
         if page is not None:

@@ -332,10 +332,8 @@ class CampaignModuleErrorMessages:
     OWNER_REQUIRED = _("Campaign must have at least one owner")
     CANNOT_REMOVE_PRIMARY_OWNER = _("Cannot remove the primary owner of a campaign")
     MAX_MEMBERS_EXCEEDED = _("Maximum members per campaign exceeded: {max}")
-    CONTACT_NOT_REACHABLE = (
-    "Selected contact(s) cannot be enrolled: "
-    "they must have a valid email or phone number and must not be opted out."
-)
+    CONTACT_OPTED_OUT = _("This contact has opted out and cannot be enrolled in a campaign.")
+    CONTACT_NOT_REACHABLE = _("This contact has no reachable channel (email or phone).")
     
 
 

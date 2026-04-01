@@ -407,8 +407,15 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 activity=obj,
                 scope=SequenceScope.DECISION_CYCLE
             )
-            if context and context.get('previous_activities'):
-                return context['previous_activities'][0]
+        elif obj.campaign_id:
+            context = ActivitySequenceService.get_sequence_context(
+                activity=obj,
+                scope=SequenceScope.CAMPAIGN
+            )
+        else:
+            return None
+        if context and context.get('previous_activities'):
+            return context['previous_activities'][0]
         return None
     
     def get_source_activity_detail(self, obj):
@@ -479,8 +486,15 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
                 activity=obj,
                 scope=SequenceScope.DECISION_CYCLE
             )
-            if context and context.get('next_activities'):
-                return context['next_activities'][0]
+        elif obj.campaign_id:
+            context = ActivitySequenceService.get_sequence_context(
+                activity=obj,
+                scope=SequenceScope.CAMPAIGN
+            )
+        else:
+            return None
+        if context and context.get('next_activities'):
+            return context['next_activities'][0]
         return None
     
     def get_sequence_context(self, obj):
@@ -685,6 +699,17 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 CoreErrorMessages.REQUIRED_FIELD.format(field='Title')
             )
         return value.strip()
+    
+    def validate_status(self, value):
+        """New activities must always be created with PLANNED status."""
+        from .constants import ActivityStatus
+        if value and value != ActivityStatus.PLANNED:
+            raise StandardizedValidationError(
+                CoreErrorMessages.INVALID_FIELD.format(
+                    field='status (new activities must be created with status PLANNED)'
+                )
+            )
+        return value
     
     def validate(self, attrs):
         """Global validation for activity creation."""
