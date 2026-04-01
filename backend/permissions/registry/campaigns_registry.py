@@ -14,7 +14,7 @@ CAMPAIGNS_REGISTRY: Dict[str, ModulePermissions] = {
     # CAMPAIGN MODULE
     # Ownership: user-based (owner field)
     # ========================================================================
-    'campaign': {
+    'campaigns': {
         'create': {
             'admin': 'client',      # Admin can create any campaign
             'manager': 'mine',      # Manager creates own campaigns
@@ -22,8 +22,8 @@ CAMPAIGNS_REGISTRY: Dict[str, ModulePermissions] = {
         },
         'read': {
             'admin': 'client',      # Admin sees all campaigns
-            'manager': 'team',      # Manager sees team campaigns
-            'individual': 'mine',   # Individual sees own campaigns
+            'manager': 'client',      # Manager sees team campaigns
+            'individual': 'client',   # Individual sees own campaigns
         },
         'update': {
             'admin': 'client',      # Admin can update any campaign
@@ -34,6 +34,29 @@ CAMPAIGNS_REGISTRY: Dict[str, ModulePermissions] = {
             'admin': 'client',      # Admin can delete any campaign
             'manager': 'team',      # Manager deletes own campaigns
             'individual': 'mine',   # Individual deletes own campaigns
+        },
+    },
+
+    'campaign_contacts': {
+        'create': {
+            'admin': 'client',
+            'manager': 'mine',
+            'individual': 'mine',
+        },
+        'read': {
+            'admin': 'client',
+            'manager': 'client',
+            'individual': 'client',
+        },
+        'update': {
+            'admin': 'client',
+            'manager': 'mine',
+            'individual': 'mine',
+        },
+        'delete': {
+            'admin': 'client',
+            'manager': 'mine',
+            'individual': 'mine',
         },
     },
     

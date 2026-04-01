@@ -367,6 +367,17 @@ class ScopedQuerysetMixin:
         if action in action_policies:
             policy = action_policies[action]
             scope = policy.get('scope', 'none')
+            # Admins always get client scope regardless of action_policies.
+            # action_policies defines scope for non-admin users only.
+            if scope != 'client':
+                has_admin = ctx.is_superuser
+                for role in ctx.roles:
+                    if isinstance(role, dict) and role.get('is_admin'):
+                        has_admin = True
+                        break
+                if has_admin:
+                    scope = 'client'
+                    
             logger.debug("using_action_policy_scope", extra={
                 'correlation_id': get_correlation_id(),
                 'action': action,
@@ -532,10 +543,18 @@ class ScopedQuerysetMixin:
             
             q_filter = Q()
             model_fields = {f.name for f in queryset.model._meta.get_fields()}
+
+            def is_valid_mine_field(field_name):
+                if not field_name:
+                    return False
+                # Traversal fields (with __) are always valid for Q filters
+                if '__' in field_name:
+                    return True
+                return field_name in model_fields
             
             # Check owner_user from OWNERSHIP_MAP
             owner_field = resolve_field(module, 'owner_user')
-            if owner_field and owner_field in model_fields:
+            if owner_field and is_valid_mine_field(owner_field):
                 q_filter |= Q(**{owner_field: ctx.user_id})
                 logger.debug("added_owner_user_filter_mine", extra={
                     'correlation_id': get_correlation_id(),
@@ -546,7 +565,7 @@ class ScopedQuerysetMixin:
             
             # Check created_by from OWNERSHIP_MAP
             created_field = resolve_field(module, 'created_by')
-            if created_field and created_field in model_fields:
+            if created_field and is_valid_mine_field(created_field):
                 q_filter |= Q(**{created_field: ctx.user_id})
                 logger.debug("added_created_by_filter_mine", extra={
                     'correlation_id': get_correlation_id(),
@@ -557,7 +576,7 @@ class ScopedQuerysetMixin:
             
             # Check assigned_to_user from OWNERSHIP_MAP
             assigned_field = resolve_field(module, 'assigned_to_user')
-            if assigned_field and assigned_field in model_fields:
+            if assigned_field and is_valid_mine_field(assigned_field):
                 q_filter |= Q(**{assigned_field: ctx.user_id})
                 logger.debug("added_assigned_to_filter_mine", extra={
                     'correlation_id': get_correlation_id(),

@@ -163,6 +163,15 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
         'assigned_to_user': 'executor',
         'account_fk': '-',
     },
+
+    'campaign_contacts': {
+        'client_account_fk': 'client_id',
+        'owner_user': 'campaign_account__campaign__owner_id',
+        'owner_team': 'campaign_account__campaign__owner__team_id',
+        'created_by': '-',
+        'assigned_to_user': 'campaign_account__campaign__executor_id',
+        'account_fk': '-',
+    },
     
     'pipelines': {
         'client_account_fk': 'opportunity.client_id',  # Via opportunity

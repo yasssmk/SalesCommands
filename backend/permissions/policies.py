@@ -173,6 +173,17 @@ def resolve_action_policy(
     # Check if there's a custom policy for this action
     if action_policies and action in action_policies:
         policy = action_policies[action]
+
+        if not isinstance(policy, dict):
+            logger.error(
+                "action_policy_invalid_format",
+                extra={
+                    'action': action,
+                    'policy_type': type(policy).__name__,
+                    'policy_value': str(policy),
+                }
+            )
+            return (ACTION_TO_CRUD.get(action, 'read'), None, None)
         
         # Extract CRUD action (required)
         crud_action = policy.get('crud')

@@ -93,14 +93,14 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
 
     # Action policies
     action_policies = {
-        'start_progress': {'crud': 'update', 'scope': 'client'},
-        'mark_completed': {'crud': 'update', 'scope': 'client'},
-        'mark_stopped': {'crud': 'update', 'scope': 'client'},
-        'bulk_add': {'crud': 'create', 'scope': 'client'},
-        'bulk_remove': {'crud': 'delete', 'scope': 'client'},
+        'start_progress': {'crud': 'update', 'scope': 'mine'},
+        'mark_completed': {'crud': 'update', 'scope': 'mine'},
+        'mark_stopped': {'crud': 'update', 'scope': 'mine'},
+        'bulk_add': {'crud': 'create', 'scope': 'mine'},
+        'bulk_remove': {'crud': 'delete', 'scope': 'mine'},
         'by_campaign': {'crud': 'read', 'scope': 'client'},
-        'toggle_contact': {'crud': 'update', 'scope': 'client'},
-        'enroll_target':  {'crud': 'create', 'scope': 'client'},
+        'toggle_contact': {'crud': 'update', 'scope': 'mine'},
+        'enroll_target':  {'crud': 'create', 'scope': 'mine'},
     }
 
     # ==========================================================================
@@ -565,12 +565,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             )
 
         client_id = self.get_client_id()
-
-        # Validate campaign
-        try:
-            campaign = Campaign.objects.get(id=campaign_id, client_id=client_id)
-        except Campaign.DoesNotExist:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        campaign = self._get_campaign_scoped(campaign_id)
 
         # Check max accounts limit
         current_count = CampaignAccount.objects.filter(campaign=campaign).count()
@@ -705,8 +700,10 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             raise StandardizedValidationError(
                 CoreErrorMessages.BULK_NO_DATA.format(entity='account_ids')
             )
+        
 
         client_id = self.get_client_id()
+        self._get_campaign_scoped(campaign_id)
 
         removed = CampaignAccount.objects.filter(
             campaign_id=campaign_id,
@@ -784,12 +781,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             )
 
         client_id = self.get_client_id()
-
-        # Validate campaign
-        try:
-            campaign = Campaign.objects.get(id=campaign_id, client_id=client_id)
-        except Campaign.DoesNotExist:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+        campaign = self._get_campaign_scoped(campaign_id)
 
         # Validate account
         try:
@@ -1104,6 +1096,38 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
     # ==========================================================================
     # PRIVATE HELPERS
     # ==========================================================================
+
+    def _get_campaign_scoped(self, campaign_id):
+        from django.db.models import Q
+        from core.exceptions import StandardizedPermissionDenied
+        from core.error_messages import CoreErrorMessages
+        from permissions.compat import get_auth_ctx
+
+        client_id = self.get_client_id()
+        user = self.request.user
+
+        try:
+            campaign = Campaign.objects.get(id=campaign_id, client_id=client_id)
+        except Campaign.DoesNotExist:
+            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+
+        # Admins have full client scope — skip owner/executor check.
+        ctx = get_auth_ctx(self.request)
+        is_admin = ctx.is_superuser or any(
+            isinstance(r, dict) and r.get('is_admin') for r in ctx.roles
+        )
+        if is_admin:
+            return campaign
+
+        if not Campaign.objects.filter(
+            id=campaign_id,
+            client_id=client_id,
+        ).filter(
+            Q(owner=user) | Q(executor=user)
+        ).exists():
+            raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
+
+        return campaign
 
     def _audit_status_change(self, request, instance, transition_result):
         """Emit audit log for status transitions."""

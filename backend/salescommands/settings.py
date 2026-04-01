@@ -697,6 +697,7 @@ PERMISSIONS_CONFIG = {
         'leads': False,         # Lead management
         'opportunities': False, # Opportunity/deals
         'campaign': True,      # Campaign management
+        'campaign_contacts': True,
         'pipelines': False,     # Buying process/pipelines
         'templates': False,     # Email/doc templates
         'users': True,         # User management

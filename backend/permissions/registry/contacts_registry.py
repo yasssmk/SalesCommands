@@ -27,8 +27,8 @@ CONTACTS_REGISTRY: Dict[str, ModulePermissions] = {
         },
         'update': {
             'admin': 'client',      # Admin can update any contact
-            'manager': 'team',      # Manager can update team contacts
-            'individual': 'mine',   # Individual updates own account contacts
+            'manager': 'client',      # Manager can update team contacts
+            'individual': 'client',   # Individual updates own account contacts
         },
         'delete': {
             'admin': 'client',      # Admin can delete any contact

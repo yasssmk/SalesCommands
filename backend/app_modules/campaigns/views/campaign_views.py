@@ -104,17 +104,17 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
 
     # Action policies
     action_policies = {
-        'start': {'crud': 'update', 'scope': 'client'},
-        'pause': {'crud': 'update', 'scope': 'client'},
-        'resume': {'crud': 'update', 'scope': 'client'},
-        'complete': {'crud': 'update', 'scope': 'client'},
-        'cancel': {'crud': 'update', 'scope': 'client'},
+        'start': {'crud': 'update', 'scope': 'mine'},
+        'pause': {'crud': 'update', 'scope': 'mine'},
+        'resume': {'crud': 'update', 'scope': 'mine'},
+        'complete': {'crud': 'update', 'scope': 'mine'},
+        'cancel': {'crud': 'update', 'scope': 'mine'},
         'dashboard': {'crud': 'read', 'scope': 'client'},
         'summary': {'crud': 'read', 'scope': 'client'},
         'playlist': {'crud': 'read', 'scope': 'client'},
         'generate_activities': {'crud': 'update', 'scope': 'client'},
-        'log_response': {'crud': 'create', 'scope': 'client'},
-        'cancel_planned': {'crud': 'delete', 'scope': 'client'},
+        'log_response': {'crud': 'create', 'scope': 'mine'},
+        'cancel_planned': {'crud': 'delete', 'scope': 'mine'},
         'my_campaigns': {'crud': 'read', 'scope': 'mine'},
         'get_or_create_targeted': {'crud': 'read', 'scope': 'client'},
     }

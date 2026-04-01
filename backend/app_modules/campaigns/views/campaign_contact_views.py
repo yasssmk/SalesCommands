@@ -61,21 +61,22 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsAuthenticated, ScopedPermission]
 
-    module = 'campaigns'
+    module = 'campaign_contacts'
     action_policies = {
-        'list':             'read',
-        'retrieve':         'read',
-        'create':           'write',
-        'update':           'write',
-        'partial_update':   'write',
-        'destroy':          'delete',
-        'start_progress':   'write',
-        'request_callback': 'write',
-        'resume_callback':  'write',
-        'mark_completed':   'write',
-        'mark_stopped':     'write',
-        'pause':            'write',
-        'resume':           'write',
+        'list':             {'crud': 'read',   'scope': 'client'},
+        'retrieve':         {'crud': 'read',   'scope': 'client'},
+        'create':           {'crud': 'create', 'scope': 'mine'},
+        'update':           {'crud': 'update', 'scope': 'mine'},
+        'partial_update':   {'crud': 'update', 'scope': 'mine'},
+        'destroy':          {'crud': 'delete', 'scope': 'mine'},
+        'start_progress':   {'crud': 'update', 'scope': 'mine'},
+        'request_callback': {'crud': 'update', 'scope': 'mine'},
+        'resume_callback':  {'crud': 'update', 'scope': 'mine'},
+        'mark_completed':   {'crud': 'update', 'scope': 'mine'},
+        'mark_stopped':     {'crud': 'update', 'scope': 'mine'},
+        'pause':            {'crud': 'update', 'scope': 'mine'},
+        'resume':           {'crud': 'update', 'scope': 'mine'},
+        'reactivate':       {'crud': 'update', 'scope': 'mine'},
     }
 
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
@@ -88,13 +89,16 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import ActivityStatus
 
-        qs = CampaignContact.objects.filter(
-            client_id=self.get_client_id(),
-        ).select_related(
+        # Call super() so ScopedQuerysetMixin applies the correct scope filter
+        # based on action_policies (mine = owner/executor of parent campaign).
+        qs = super().get_queryset()
+
+        qs = qs.select_related(
             'contact',
             'contact__standard_department',
             'campaign_account',
             'campaign_account__account',
+            'campaign_account__campaign',
         ).prefetch_related(
             Prefetch(
                 'activities',
@@ -567,6 +571,21 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             outcome='success',
             extra=result,
         )
+    
+    def _assert_campaign_member(self, instance):
+        """
+        Raise 403 if the requesting user is not the owner or executor
+        of the campaign this contact belongs to.
+        Only campaign owner and executor can mutate contact state.
+        """
+        from core.exceptions import StandardizedPermissionDenied
+        from core.error_messages import CoreErrorMessages
+
+        campaign = instance.campaign_account.campaign
+        user = self.request.user
+        if user != campaign.owner and user != campaign.executor:
+            raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
+
 
     def _invalidate_caches(self, client_id):
         invalidate_tag(str(client_id), 'campaigns')
