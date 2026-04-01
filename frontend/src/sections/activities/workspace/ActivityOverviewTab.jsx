@@ -1973,7 +1973,12 @@ function LinkedActivitiesSubsection({ activity }) {
 
   // Determine what to display (always max 1 item now)
   const previousActivity = previousActivities[0] || legacyPrevious || null;
-  const nextActivity = nextActivities[0] || legacyNext || null;
+
+  // For campaign activities: sequence_context.next_activities only covers
+  // same-contact sequence steps. next_activity_info also includes derived DC
+  // activities (source_type: DERIVED_DC) created after a successful outcome.
+  const nextActivity =
+    nextActivities[0] || activity?.next_activity_info || legacyNext || null;
 
   // No cycle = show message
   if (!hasSequence) {

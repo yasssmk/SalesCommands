@@ -267,20 +267,50 @@ export default function CampaignPlaylistTab({
       const today = [];
       const upcoming = [];
       const onHold = [];
+
+      // Build a map of min PLANNED sequence_position per campaign_contact_id.
+      // An activity is only eligible for "today" if it has the lowest PLANNED
+      // position for its contact — its predecessor must be completed first.
+      const minPosMap = {};
       activities.forEach((a) => {
-        // ON_HOLD activities go to end of Upcoming with warning style
+        if (
+          a.status === "PLANNED" &&
+          a.campaign_contact_id &&
+          a.sequence_position != null &&
+          !a.is_callback_followup
+        ) {
+          const current = minPosMap[a.campaign_contact_id];
+          if (current == null || a.sequence_position < current) {
+            minPosMap[a.campaign_contact_id] = a.sequence_position;
+          }
+        }
+      });
+
+      activities.forEach((a) => {
         if (a.status === "ON_HOLD") {
           onHold.push(a);
           return;
         }
+
         const sd = a.scheduled_date;
         const d = sd && typeof sd === "object" ? sd.date : sd || null;
-        if (!d || d <= todayStr) {
+        const isDateEligible = !d || d <= todayStr;
+
+        // Campaign sequence guard: if this activity has a predecessor that
+        // is not yet completed, it must stay in Upcoming regardless of date.
+        const isFirstPlanned =
+          !a.campaign_contact_id ||
+          a.is_callback_followup ||
+          a.sequence_position == null ||
+          minPosMap[a.campaign_contact_id] === a.sequence_position;
+
+        if (isDateEligible && isFirstPlanned) {
           today.push(a);
         } else {
           upcoming.push(a);
         }
       });
+
       return {
         todayActivities: today,
         upcomingActivities: upcoming,

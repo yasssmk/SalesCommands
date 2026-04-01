@@ -163,6 +163,9 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             # Computed
             'is_overdue', 'is_scheduled', 'contacts_count', 'contacts',
 
+            # Campaign sequence position — used by frontend to enforce step order
+            'sequence_position',
+
             # Campaign retry tracking (CALL type)
             'no_answer_count',
 
@@ -493,8 +496,45 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             )
         else:
             return None
+
         if context and context.get('next_activities'):
             return context['next_activities'][0]
+
+        # E3: If no next activity in sequence, check for a derived DC activity
+        # created from this campaign activity (source_activity FK forward lookup).
+        # This surfaces the DC follow-up created after a successful campaign outcome.
+        if obj.campaign_id and not obj.decision_cycle_id:
+            derived = (
+                Activity.objects
+                .filter(source_activity=obj)
+                .exclude(status=ActivityStatus.CANCELLED)
+                .select_related('decision_cycle')
+                .order_by('created_at')
+                .first()
+            )
+            if derived:
+                return {
+                    'id': str(derived.id),
+                    'title': derived.title,
+                    'activity_type': derived.activity_type,
+                    'status': derived.status,
+                    'is_overdue': False,
+                    'outcome': derived.outcome,
+                    'scheduled_date': (
+                        derived.scheduled_date.isoformat()
+                        if derived.scheduled_date else None
+                    ),
+                    'due_date': (
+                        derived.due_date.isoformat()
+                        if derived.due_date else None
+                    ),
+                    'decision_step_name': (
+                        derived.decision_step.name
+                        if derived.decision_step else None
+                    ),
+                    'source_type': 'DERIVED_DC',
+                }
+
         return None
     
     def get_sequence_context(self, obj):
@@ -578,7 +618,8 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         """
         
         # Priority 1: Check sequence context for PENDING activities in cycle
-        if obj.decision_cycle_id:
+        # Handles both decision cycle and campaign scopes via _get_cached_sequence_context.
+        if obj.decision_cycle_id or obj.campaign_id:
             context = self._get_cached_sequence_context(obj)
             
             if context and context.get('next_activities'):
