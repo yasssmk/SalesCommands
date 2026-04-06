@@ -72,6 +72,7 @@ urlpatterns = [
     path('decision_cycles/', include('app_modules.decision_cycles.urls')),
     path('module-activities/', include('app_modules.activities.urls')),
     path('campaigns/', include('app_modules.campaigns.urls')),
+    path('module-signals/', include('app_modules.signals.urls')),
 
     # Path to validate 
     path(app_key+'accounts/', include('apps.accounts.urls')),

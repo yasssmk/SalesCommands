@@ -218,6 +218,7 @@ INSTALLED_APPS = [
     'app_modules.activities',  # Activity module for sales execution
     'app_modules.core_modules',
     'app_modules.campaigns',
+    'app_modules.signals',
     'apps.signals',
     'apps.campaign',
     'apps.opportunities',

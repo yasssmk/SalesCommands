@@ -17,3 +17,13 @@ class SignalsConfig(AppConfig):
     label = 'module_signals'
     verbose_name = _('Signals')
     default_auto_field = 'django.db.models.BigAutoField'
+
+    def ready(self):
+        """Register cache invalidation signals when app is ready."""
+        try:
+            from app_modules.signals.signals import cache_invalidation  # noqa: F401
+        except ImportError as e:
+            import logging
+            logging.getLogger('app_modules.signals').warning(
+                "signals_cache_invalidation_import_failed", exc_info=e
+            )
