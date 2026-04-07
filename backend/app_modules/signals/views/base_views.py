@@ -90,7 +90,7 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
     module                 = 'signals'
 
     filter_backends  = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_class  = SignalFilter
+    filterset_class  = SignalFilter   # default — overridden dynamically below
     search_fields    = ['field_name', 'value']
     ordering_fields  = ['created_at', 'updated_at', 'status', 'confirmation_count', 'last_confirmed_at']
     ordering         = ['-created_at']
@@ -147,6 +147,26 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
             )
 
         return qs
+    
+    def filter_queryset(self, queryset):
+        """
+        Bind SignalFilter to the concrete queryset model before django-filters
+        performs its model assertion check.
+
+        DjangoFilterBackend.get_filterset_class() reads view.filterset_class
+        via getattr() — it never calls view.get_filterset_class(). Setting
+        self.filterset_class on the instance here ensures the backend sees
+        the correctly-bound FilterSet before the assertion runs.
+        """
+        model = queryset.model
+        if SignalFilter.Meta.model is not model:
+            bound_meta = type('Meta', (SignalFilter.Meta,), {'model': model})
+            self.filterset_class = type(
+                f'{model.__name__}Filter', (SignalFilter,), {'Meta': bound_meta}
+            )
+        else:
+            self.filterset_class = SignalFilter
+        return super().filter_queryset(queryset)
 
     # =========================================================================
     # CRUD OVERRIDES
