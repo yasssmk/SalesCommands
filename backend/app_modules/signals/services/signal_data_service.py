@@ -1,9 +1,10 @@
 # app_modules/signals/services/signal_data_service.py
 """
-SignalDataService — read-only signal queries.
+SignalDataService — read-only signal queries and LLM formatting.
 
-Provides optimised querysets and LLM-ready formatting.
-No state mutation here — all writes go through SignalManager.
+Provides optimised querysets for all 4 signal types and compact
+LLM-ready formatting. No state mutation — all writes go through
+SignalManager.
 
 Public API:
   get_by_account(account_id, signal_type, status, **filters)
@@ -12,33 +13,53 @@ Public API:
   format_for_llm(queryset)
 """
 
+from core.exceptions import StandardizedValidationError
+from core.error_messages import SignalErrorMessages
+
 from ..constants import SignalStatus
-from ..models import QualificationSignal, TechStackSignal
+from ..models import PeopleSignal, PainSignal, ObjectiveSignal, TechStackSignal
 
 
-# Mapping from string key → model class, used by get_by_account.
+# Mapping from string key → model class.
 _SIGNAL_TYPE_MAP = {
-    'qualification': QualificationSignal,
-    'tech_stack':    TechStackSignal,
+    'people':     PeopleSignal,
+    'pain':       PainSignal,
+    'objective':  ObjectiveSignal,
+    'tech_stack': TechStackSignal,
 }
 
-# select_related paths shared across all public query methods.
+# select_related paths shared across all signal types.
 _BASE_RELATED = [
     'source_contact',
     'source_department',
     'validated_by',
-    'merged_into',
     'decision_cycle',
     'campaign',
 ]
 
+# Extra select_related per model type.
+_EXTRA_RELATED = {
+    'people':    ['target_contact', 'target_department'],
+    'pain':      ['impacted_department'],
+    'objective': ['target_contact', 'target_department'],
+    'tech_stack': [],
+}
+
+# Allowlist of filters accepted by get_by_account.
+_ALLOWED_FILTERS = {
+    'signal_category',
+    'source_department',
+    'source',
+    'is_inferred',
+}
+
 
 class SignalDataService:
     """
-    Stateless read service for signal data retrieval and formatting.
+    Stateless read service for signal data retrieval and LLM formatting.
 
     All methods are classmethods — no instance needed.
-    No writes, no business logic — pure query + formatting.
+    No writes, no business logic — pure query and formatting.
     """
 
     # =========================================================================
@@ -58,69 +79,58 @@ class SignalDataService:
 
         Args:
             account_id:  UUID of the account.
-            signal_type: 'qualification' | 'tech_stack' | None (both).
+            signal_type: 'people' | 'pain' | 'objective' | 'tech_stack' | None.
+                         None returns all 4 types.
             status:      SignalStatus value to filter by (e.g. 'VALIDATED').
-                         Accepts None (no status filter).
-            **filters:   Additional ORM filters applied to all querysets.
-                         Supported keys: signal_category, source_department,
-                         source, is_superseded.
+                         None applies no status filter.
+            **filters:   Additional ORM filters (allowlisted).
+                         Supported: signal_category, source_department,
+                                    source, is_inferred.
 
         Returns:
-            If signal_type is given → single QuerySet for that model.
-            If signal_type is None  → list of two QuerySets
-                                      [qualification_qs, tech_stack_qs].
+            If signal_type given → single QuerySet for that model.
+            If signal_type None  → dict with keys 'people', 'pain',
+                                   'objective', 'tech_stack'.
 
-        Notes:
-            Callers that need a single iterable from both types should
-            iterate over each queryset in the returned list. Django does not
-            support cross-table union with heterogeneous models in a single
-            QuerySet without raw SQL — returning separate querysets is the
-            correct approach for this architecture.
+        Raises:
+            StandardizedValidationError if signal_type is invalid.
         """
-        # Allowlist of filters to prevent arbitrary field injection
-        _allowed_filters = {
-            'signal_category',
-            'source_department',
-            'source',
-            'is_superseded',
-        }
-        safe_filters = {k: v for k, v in filters.items() if k in _allowed_filters}
+        safe_filters = {k: v for k, v in filters.items() if k in _ALLOWED_FILTERS}
 
-        def _build_qs(model_class):
-            qs = model_class.objects.filter(
-                account_id=account_id
-            ).select_related(*_BASE_RELATED)
-
+        def _build_qs(type_key, model_class):
+            related = _BASE_RELATED + _EXTRA_RELATED.get(type_key, [])
+            qs = (
+                model_class.objects
+                .filter(account_id=account_id)
+                .select_related(*related)
+            )
             if status:
                 qs = qs.filter(status=status)
-
             if safe_filters:
                 qs = qs.filter(**safe_filters)
-
             return qs
 
         if signal_type:
             model_class = _SIGNAL_TYPE_MAP.get(signal_type)
             if not model_class:
-                from core.exceptions import StandardizedValidationError
-                from core.error_messages import CoreErrorMessages
                 raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field='signal_type')
+                    SignalErrorMessages.INVALID_SIGNAL_TYPE.format(
+                        signal_type=signal_type
+                    )
                 )
-            return _build_qs(model_class)
+            return _build_qs(signal_type, model_class)
 
-        # Both types — return list of querysets
-        return [
-            _build_qs(QualificationSignal),
-            _build_qs(TechStackSignal),
-        ]
+        return {
+            key: _build_qs(key, model_class)
+            for key, model_class in _SIGNAL_TYPE_MAP.items()
+        }
 
     # =========================================================================
     # GET BY CONTACT
     # =========================================================================
 
     @classmethod
-    def get_by_contact(cls, contact_id):
+    def get_by_contact(cls, contact_id) -> dict:
         """
         Return all signals where source_contact matches, across all types.
 
@@ -128,17 +138,13 @@ class SignalDataService:
             contact_id: UUID of the contact.
 
         Returns:
-            dict with keys 'qualification' and 'tech_stack',
-            each holding the corresponding QuerySet.
+            dict with keys 'people', 'pain', 'objective', 'tech_stack'.
         """
-        kwargs = {'source_contact_id': contact_id}
         return {
-            'qualification': QualificationSignal.objects.filter(
-                **kwargs
-            ).select_related(*_BASE_RELATED),
-            'tech_stack': TechStackSignal.objects.filter(
-                **kwargs
-            ).select_related(*_BASE_RELATED),
+            key: model_class.objects
+                .filter(source_contact_id=contact_id)
+                .select_related(*(_BASE_RELATED + _EXTRA_RELATED.get(key, [])))
+            for key, model_class in _SIGNAL_TYPE_MAP.items()
         }
 
     # =========================================================================
@@ -146,7 +152,7 @@ class SignalDataService:
     # =========================================================================
 
     @classmethod
-    def get_by_cycle(cls, cycle_id):
+    def get_by_cycle(cls, cycle_id) -> dict:
         """
         Return all signals associated with a decision cycle, across all types.
 
@@ -154,17 +160,13 @@ class SignalDataService:
             cycle_id: UUID of the decision cycle.
 
         Returns:
-            dict with keys 'qualification' and 'tech_stack',
-            each holding the corresponding QuerySet.
+            dict with keys 'people', 'pain', 'objective', 'tech_stack'.
         """
-        kwargs = {'decision_cycle_id': cycle_id}
         return {
-            'qualification': QualificationSignal.objects.filter(
-                **kwargs
-            ).select_related(*_BASE_RELATED),
-            'tech_stack': TechStackSignal.objects.filter(
-                **kwargs
-            ).select_related(*_BASE_RELATED),
+            key: model_class.objects
+                .filter(decision_cycle_id=cycle_id)
+                .select_related(*(_BASE_RELATED + _EXTRA_RELATED.get(key, [])))
+            for key, model_class in _SIGNAL_TYPE_MAP.items()
         }
 
     # =========================================================================
@@ -176,24 +178,24 @@ class SignalDataService:
         """
         Format a signal queryset into a compact list for LLM prompt injection.
 
-        Strips all technical identifiers (id, FK ids) and retains only
-        the fields meaningful to the model:
+        Strips all technical identifiers and retains only fields meaningful
+        to the LLM. Stateless — does not call CorroborationService.
 
         Output format per signal:
         {
-            "field":     "pain_point",
-            "value":     "...",
-            "category":  "ECONOMIC",
-            "contact":   "CTO",          # full name or None
-            "department": "IT",          # department display name or None
-            "confirmed": 2,              # confirmation_count
-            "date":      "2025-03-15"    # last_confirmed_at date
+            "type":       "PeopleSignal",
+            "category":   "ECONOMIC",
+            "summary":    "...",        # first meaningful text field found
+            "contact":    "Jane Doe",   # source_contact full name or None
+            "department": "IT",         # source_department display or None
+            "confirmed":  1,            # always 1 in MVP for non-People types
+            "date":       "2025-03-15"  # validated_at date or None
         }
 
         Args:
-            queryset: Any QuerySet of QualificationSignal or TechStackSignal.
-                      select_related('source_contact', 'source_department')
-                      should already be applied for performance.
+            queryset: Any QuerySet of a concrete signal model.
+                      select_related('source_contact', 'source_department',
+                      'validated_by') should already be applied.
 
         Returns:
             List of dicts, one per signal. Empty list if queryset is empty.
@@ -201,7 +203,7 @@ class SignalDataService:
         result = []
 
         for signal in queryset:
-            # Contact full name — None if no contact linked
+            # Contact full name
             contact_name = None
             if signal.source_contact_id and signal.source_contact:
                 contact = signal.source_contact
@@ -210,29 +212,36 @@ class SignalDataService:
                     f"{getattr(contact, 'last_name', '') or ''}"
                 ).strip() or None
 
-            # Department display name — None if no department linked
+            # Department display name
             department_name = None
             if signal.source_department_id and signal.source_department:
                 dept = signal.source_department
-                # StandardDepartment exposes get_name_display()
                 department_name = (
                     dept.get_name_display()
                     if hasattr(dept, 'get_name_display')
                     else str(dept)
                 )
 
-            # Date as ISO date string (date only, not datetime)
+            # Validated date as ISO date string
             date_str = None
-            if signal.last_confirmed_at:
-                date_str = signal.last_confirmed_at.strftime('%Y-%m-%d')
+            if signal.validated_at:
+                date_str = signal.validated_at.strftime('%Y-%m-%d')
+
+            # First meaningful text field depending on model type
+            summary = (
+                getattr(signal, 'summary', None)
+                or getattr(signal, 'tech_name', None)
+                or getattr(signal, 'notes', None)
+                or ''
+            )
 
             result.append({
-                'field':      signal.field_name,
-                'value':      signal.value,
+                'type':       signal.__class__.__name__,
                 'category':   signal.signal_category,
+                'summary':    summary,
                 'contact':    contact_name,
                 'department': department_name,
-                'confirmed':  signal.confirmation_count,
+                'confirmed':  1,
                 'date':       date_str,
             })
 

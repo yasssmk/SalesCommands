@@ -20,15 +20,7 @@ from django.utils.translation import gettext_lazy as _
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
 
-from ..constants import (
-    SignalStatus,
-    SignalSource,
-    SignalCategory,
-    QualificationField,
-    TechStackField,
-)
-
-
+from ..constants import SignalStatus, SignalSource, SignalCategory
 
 
 # =============================================================================
@@ -37,25 +29,24 @@ from ..constants import (
 
 class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
     """
-    Abstract base for all signal types.
+        Abstract base for all signal types.
 
-    Provides:
-      - Multi-tenant isolation via ClientScopeManager.ModelMixin
-      - Full audit trail via ModuleBaseModel (id, client_id, created_by,
-        updated_by, created_at, updated_at)
-      - Context FKs (account required; activity, contact, department optional)
-      - Signal content fields (field_name, value, source_quote, confidence…)
-      - Source tracking (source, requested_by, language_original)
-      - Lifecycle management (status, validated_by, validated_at,
-        confirmation_count, merged_into, is_superseded, superseded_by)
-      - Modification tracking (last_modified_by, last_modified_at,
-        original_value)
+        Provides:
+        - Multi-tenant isolation via ClientScopeManager.ModelMixin
+        - Full audit trail via ModuleBaseModel (id, client_id, created_by,
+            updated_by, created_at, updated_at)
+        - Context FKs (account required; activity, contact, department optional)
+        - Signal content fields (source_quote, confidence, canonical_key…)
+        - Source tracking (source, requested_by, language_original)
+        - Lifecycle management (status, validated_by, validated_at)
+        - Modification tracking (last_modified_by, last_modified_at,
+            original_value)
 
-    Business rules enforced in save():
-      - source=MANUAL  → status=VALIDATED, confidence=None
-      - source_contact → auto-populate source_department from contact
-                         if source_department is not already set
-    """
+        Business rules enforced in save():
+        - source=MANUAL  → status=VALIDATED, confidence=None
+        - source_contact set + source_department not set
+            → auto-populate source_department from contact.standard_department
+        """
 
     # =========================================================================
     # CONTEXT — required
@@ -130,18 +121,18 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # SIGNAL CONTENT
     # =========================================================================
 
-    field_name = models.CharField(
-        max_length=50,
-        verbose_name=_('Field Name'),
+    canonical_key = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name=_('Canonical Key'),
         help_text=_(
-            'Controlled vocabulary identifier for the signal. '
-            'Constrained to choices defined on each concrete model.'
+            'Stable identifier used to group multiple observations of the '
+            'same fact for corroboration. Auto-computed by concrete model '
+            'save() for PeopleSignal and TechStackSignal. Set manually or '
+            'by LLM for PainSignal and ObjectiveSignal.'
         )
-    )
-
-    value = models.JSONField(
-        verbose_name=_('Value'),
-        help_text=_('Structured signal data — format depends on field_name')
     )
 
     source_quote = models.TextField(
@@ -253,42 +244,6 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('When the signal was validated (was approved_at in legacy)')
     )
 
-    confirmation_count = models.PositiveIntegerField(
-        default=1,
-        verbose_name=_('Confirmation Count'),
-        help_text=_('Number of times this signal has been independently confirmed')
-    )
-
-    last_confirmed_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name=_('Last Confirmed At')
-    )
-
-    merged_into = models.ForeignKey(
-        'self',
-        on_delete=models.SET_NULL,
-        related_name='merged_from',
-        null=True,
-        blank=True,
-        verbose_name=_('Merged Into'),
-        help_text=_('Surviving signal when this one was merged (status=MERGED)')
-    )
-
-    is_superseded = models.BooleanField(
-        default=False,
-        verbose_name=_('Is Superseded'),
-        help_text=_('True when a newer signal for the same field has replaced this one')
-    )
-
-    superseded_by = models.ForeignKey(
-        'self',
-        on_delete=models.SET_NULL,
-        related_name='supersedes',
-        null=True,
-        blank=True,
-        verbose_name=_('Superseded By'),
-        help_text=_('Signal that replaced this one')
-    )
 
     # =========================================================================
     # MODIFICATION TRACKING
@@ -367,6 +322,6 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
     def __str__(self):
         return (
             f"{self.__class__.__name__} | "
-            f"{self.field_name} | "
+            f"{self.account_id} | "
             f"{self.get_status_display()}"
         )

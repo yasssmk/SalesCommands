@@ -2,13 +2,12 @@
 """
 URL configuration for the Signals module.
 
-Follows the same patterns as app_modules/activities/urls.py.
-Lazy imports to avoid circular imports.
+Lazy imports to avoid circular imports at startup.
 
-Mount points (defined in root urls.py):
-  /app/signals/qualification/   → QualificationSignalViewSet
-  /app/signals/tech-stack/      → TechStackSignalViewSet
-  /app/signals/choices/         → SignalChoicesView
+Mount point (defined in root urls.py):
+  /module-signals/ → app_modules/signals/urls.py
+
+All paths below are relative to that mount point.
 """
 
 from django.urls import path
@@ -17,80 +16,146 @@ app_name = 'module_signals'
 
 
 def get_urlpatterns():
-    """Lazy imports to avoid circular import."""
+    """Lazy imports to avoid circular import at Django startup."""
     from .views import (
-        QualificationSignalViewSet,
+        PeopleSignalViewSet,
+        PainSignalViewSet,
+        ObjectiveSignalViewSet,
         TechStackSignalViewSet,
         SignalChoicesView,
     )
 
     return [
+
         # =====================================================================
         # CHOICES — before CRUD to avoid conflict with {pk}
         # =====================================================================
-        path('choices/', SignalChoicesView.as_view(), name='choices'),
+
+        path(
+            'choices/',
+            SignalChoicesView.as_view(),
+            name='choices',
+        ),
 
         # =====================================================================
-        # QUALIFICATION SIGNALS
+        # PEOPLE SIGNALS
         # =====================================================================
-        path('qualification/', QualificationSignalViewSet.as_view({
-            'get':  'list',
-            'post': 'create',
-        }), name='qualification-list'),
 
-        path('qualification/<uuid:pk>/', QualificationSignalViewSet.as_view({
-            'get':    'retrieve',
-            'patch':  'partial_update',
-            'put':    'update',
-            'delete': 'destroy',
-        }), name='qualification-detail'),
+        path(
+            'people/',
+            PeopleSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
+            name='people-list',
+        ),
+        path(
+            'people/<uuid:pk>/',
+            PeopleSignalViewSet.as_view({
+                'get':    'retrieve',
+                'patch':  'partial_update',
+                'put':    'update',
+                'delete': 'destroy',
+            }),
+            name='people-detail',
+        ),
+        path(
+            'people/<uuid:pk>/validate/',
+            PeopleSignalViewSet.as_view({'post': 'validate_signal'}),
+            name='people-validate',
+        ),
+        path(
+            'people/<uuid:pk>/reject/',
+            PeopleSignalViewSet.as_view({'post': 'reject_signal'}),
+            name='people-reject',
+        ),
 
-        path('qualification/<uuid:pk>/validate/', QualificationSignalViewSet.as_view({
-            'post': 'validate_signal',
-        }), name='qualification-validate'),
+        # =====================================================================
+        # PAIN SIGNALS
+        # =====================================================================
 
-        path('qualification/<uuid:pk>/reject/', QualificationSignalViewSet.as_view({
-            'post': 'reject_signal',
-        }), name='qualification-reject'),
+        path(
+            'pain/',
+            PainSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
+            name='pain-list',
+        ),
+        path(
+            'pain/<uuid:pk>/',
+            PainSignalViewSet.as_view({
+                'get':    'retrieve',
+                'patch':  'partial_update',
+                'put':    'update',
+                'delete': 'destroy',
+            }),
+            name='pain-detail',
+        ),
+        path(
+            'pain/<uuid:pk>/validate/',
+            PainSignalViewSet.as_view({'post': 'validate_signal'}),
+            name='pain-validate',
+        ),
+        path(
+            'pain/<uuid:pk>/reject/',
+            PainSignalViewSet.as_view({'post': 'reject_signal'}),
+            name='pain-reject',
+        ),
 
-        path('qualification/<uuid:pk>/merge/', QualificationSignalViewSet.as_view({
-            'post': 'merge_signal',
-        }), name='qualification-merge'),
+        # =====================================================================
+        # OBJECTIVE SIGNALS
+        # =====================================================================
 
-        path('qualification/<uuid:pk>/supersede/', QualificationSignalViewSet.as_view({
-            'post': 'supersede_signal',
-        }), name='qualification-supersede'),
+        path(
+            'objective/',
+            ObjectiveSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
+            name='objective-list',
+        ),
+        path(
+            'objective/<uuid:pk>/',
+            ObjectiveSignalViewSet.as_view({
+                'get':    'retrieve',
+                'patch':  'partial_update',
+                'put':    'update',
+                'delete': 'destroy',
+            }),
+            name='objective-detail',
+        ),
+        path(
+            'objective/<uuid:pk>/validate/',
+            ObjectiveSignalViewSet.as_view({'post': 'validate_signal'}),
+            name='objective-validate',
+        ),
+        path(
+            'objective/<uuid:pk>/reject/',
+            ObjectiveSignalViewSet.as_view({'post': 'reject_signal'}),
+            name='objective-reject',
+        ),
 
         # =====================================================================
         # TECH STACK SIGNALS
         # =====================================================================
-        path('tech-stack/', TechStackSignalViewSet.as_view({
-            'get':  'list',
-            'post': 'create',
-        }), name='tech-stack-list'),
 
-        path('tech-stack/<uuid:pk>/', TechStackSignalViewSet.as_view({
-            'get':    'retrieve',
-            'patch':  'partial_update',
-            'put':    'update',
-            'delete': 'destroy',
-        }), name='tech-stack-detail'),
-
-        path('tech-stack/<uuid:pk>/validate/', TechStackSignalViewSet.as_view({
-            'post': 'validate_signal',
-        }), name='tech-stack-validate'),
-
-        path('tech-stack/<uuid:pk>/reject/', TechStackSignalViewSet.as_view({
-            'post': 'reject_signal',
-        }), name='tech-stack-reject'),
-
-        path('tech-stack/<uuid:pk>/merge/', TechStackSignalViewSet.as_view({
-            'post': 'merge_signal',
-        }), name='tech-stack-merge'),
-
-        path('tech-stack/<uuid:pk>/supersede/', TechStackSignalViewSet.as_view({
-            'post': 'supersede_signal',
-        }), name='tech-stack-supersede'),
+        path(
+            'tech-stack/',
+            TechStackSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
+            name='tech-stack-list',
+        ),
+        path(
+            'tech-stack/<uuid:pk>/',
+            TechStackSignalViewSet.as_view({
+                'get':    'retrieve',
+                'patch':  'partial_update',
+                'put':    'update',
+                'delete': 'destroy',
+            }),
+            name='tech-stack-detail',
+        ),
+        path(
+            'tech-stack/<uuid:pk>/validate/',
+            TechStackSignalViewSet.as_view({'post': 'validate_signal'}),
+            name='tech-stack-validate',
+        ),
+        path(
+            'tech-stack/<uuid:pk>/reject/',
+            TechStackSignalViewSet.as_view({'post': 'reject_signal'}),
+            name='tech-stack-reject',
+        ),
     ]
 
 

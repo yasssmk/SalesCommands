@@ -361,6 +361,13 @@ class CampaignModuleErrorMessages:
     # Bulk operations
     BULK_OPERATION_FAILED = _("Bulk operation failed: {operation}")
 
+class SignalErrorMessages:
+    NOT_PENDING_VALIDATED    = _("Only PENDING signals can be validated.")
+    NOT_PENDING_REJECTED     = _("Only PENDING signals can be rejected.")
+    NOT_EDITABLE             = _("Cannot edit a signal with status '{status}'.")
+    INVALID_SIGNAL_TYPE      = _("Invalid signal type: '{signal_type}'.")
+    SOURCE_CONTACT_REQUIRED  = _("A source contact is required for this signal type.")
+    SOURCE_ACTIVITY_REQUIRED = _("A source activity is required for this signal type.")
 
 
 class OpportunityErrorMessages:

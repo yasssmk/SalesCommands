@@ -1,9 +1,10 @@
 # app_modules/signals/signals/cache_invalidation.py
+
 """
 Cache invalidation Django signals for the Signals module.
-
 Automatically invalidates the 'signals' cache tag when a
-QualificationSignal or TechStackSignal is created, updated, or deleted.
+PeopleSignal, PainSignal, ObjectiveSignal, or TechStackSignal
+is created, updated, or deleted.
 
 This is a safety net: the ViewSet already calls invalidate_tag() directly
 on every write path. These receivers catch writes made outside the ViewSet
@@ -63,12 +64,21 @@ def _invalidate_after_commit(client_id: str) -> None:
 
 
 # =============================================================================
-# QUALIFICATION SIGNAL
+# PEOPLE SIGNAL
 # =============================================================================
 
-@receiver(post_save, sender='module_signals.QualificationSignal')
-def invalidate_on_qualification_save(sender, instance, **kwargs):
-    """Invalidate signal caches when a QualificationSignal is saved."""
+@receiver(post_save, sender='module_signals.PeopleSignal')
+def invalidate_on_people_save(sender, instance, **kwargs):
+    """Invalidate signal caches when a PeopleSignal is saved."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_after_commit(str(client_id))
+
+@receiver(post_delete, sender='module_signals.PeopleSignal')
+def invalidate_on_people_delete(sender, instance, **kwargs):
+    """Invalidate signal caches when a PeopleSignal is deleted."""
     if are_signals_disabled():
         return
     client_id = getattr(instance, 'client_id', None)
@@ -76,15 +86,50 @@ def invalidate_on_qualification_save(sender, instance, **kwargs):
         _invalidate_after_commit(str(client_id))
 
 
-@receiver(post_delete, sender='module_signals.QualificationSignal')
-def invalidate_on_qualification_delete(sender, instance, **kwargs):
-    """Invalidate signal caches when a QualificationSignal is deleted."""
+# =============================================================================
+# PAIN SIGNAL
+# =============================================================================
+
+@receiver(post_save, sender='module_signals.PainSignal')
+def invalidate_on_pain_save(sender, instance, **kwargs):
+    """Invalidate signal caches when a PainSignal is saved."""
     if are_signals_disabled():
         return
     client_id = getattr(instance, 'client_id', None)
     if client_id:
         _invalidate_after_commit(str(client_id))
 
+@receiver(post_delete, sender='module_signals.PainSignal')
+def invalidate_on_pain_delete(sender, instance, **kwargs):
+    """Invalidate signal caches when a PainSignal is deleted."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_after_commit(str(client_id))
+
+
+# =============================================================================
+# OBJECTIVE SIGNAL
+# =============================================================================
+
+@receiver(post_save, sender='module_signals.ObjectiveSignal')
+def invalidate_on_objective_save(sender, instance, **kwargs):
+    """Invalidate signal caches when an ObjectiveSignal is saved."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_after_commit(str(client_id))
+
+@receiver(post_delete, sender='module_signals.ObjectiveSignal')
+def invalidate_on_objective_delete(sender, instance, **kwargs):
+    """Invalidate signal caches when an ObjectiveSignal is deleted."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_after_commit(str(client_id))
 
 # =============================================================================
 # TECH STACK SIGNAL

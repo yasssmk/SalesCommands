@@ -2,15 +2,14 @@
 """
 Base serializers for the Signals module.
 
-Defines the shared serializer hierarchy used by both QualificationSignal
-and TechStackSignal. Concrete serializers (qualification_serializer,
-tech_stack_serializer) inherit from these bases and set Meta.model.
+Defines the shared serializer hierarchy used by all 4 concrete signal types:
+  PeopleSignal, PainSignal, ObjectiveSignal, TechStackSignal.
 
 Serializer map:
   BaseSignalListSerializer   — lightweight, list views
   BaseSignalDetailSerializer — full detail, retrieve views
-  BaseSignalCreateSerializer — write path, enforces field_name/signal_type compat
-  BaseSignalUpdateSerializer — restricted PATCH, routes value changes through edit()
+  BaseSignalCreateSerializer — write path, routes signal_type to SignalManager
+  BaseSignalUpdateSerializer — restricted PATCH, routes edits through edit()
   SignalLLMSerializer        — read-only compact format for LLM prompt injection
 """
 
@@ -21,29 +20,7 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 
-from ..constants import (
-    SignalStatus,
-    SignalSource,
-    SignalCategory,
-    QualificationField,
-    TechStackField,
-)
-
-# Allowed field_name choices per signal type — used in create validation.
-_FIELD_CHOICES_MAP = {
-    'qualification': {choice[0] for choice in QualificationField.choices},
-    'tech_stack':    {choice[0] for choice in TechStackField.choices},
-}
-
-# Fields allowed in PATCH — any key not in this set is silently ignored.
-_UPDATE_ALLOWED_FIELDS = {
-    'value',
-    'signal_category',
-    'source_department',
-    'source_contact',
-    'source_quote',
-    'metadata',
-}
+from ..constants import SignalStatus, SignalSource, SignalCategory
 
 
 # =============================================================================
@@ -75,14 +52,6 @@ class _MinimalDepartmentSerializer(serializers.Serializer):
         return obj.get_name_display() if hasattr(obj, 'get_name_display') else str(obj)
 
 
-class _MinimalSignalSerializer(serializers.Serializer):
-    """Minimal signal representation — used for merged_into / superseded_by."""
-    id         = serializers.UUIDField()
-    field_name = serializers.CharField()
-    status     = serializers.CharField()
-    value      = serializers.JSONField()
-
-
 # =============================================================================
 # LIST SERIALIZER  (lightweight — list views)
 # =============================================================================
@@ -99,39 +68,33 @@ class BaseSignalListSerializer(
       - SerializerMethodField used for relations to avoid N+1 when
         select_related is applied by the view's get_queryset().
 
-    Concrete serializers must set Meta.model.
+    Concrete serializers must set Meta.model and extend Meta.fields.
     """
 
     # Computed display labels
     status_display          = serializers.SerializerMethodField()
     source_display          = serializers.SerializerMethodField()
     signal_category_display = serializers.SerializerMethodField()
-    field_name_display      = serializers.SerializerMethodField()
 
     # Compact FK objects
     source_contact    = serializers.SerializerMethodField()
     source_department = serializers.SerializerMethodField()
 
     class Meta:
-        # Concrete serializer must override model.
         abstract = True
         fields = [
             # Identity
-            'id', 'field_name', 'field_name_display',
-
+            'id',
+            # Corroboration anchor
+            'canonical_key',
             # Content
-            'value', 'signal_category', 'signal_category_display',
-
+            'signal_category', 'signal_category_display',
             # Lifecycle
             'status', 'status_display',
             'source', 'source_display',
             'confidence', 'is_inferred',
-            'confirmation_count', 'last_confirmed_at',
-            'is_superseded',
-
             # Relations (compact)
             'source_contact', 'source_department',
-
             # Timestamps
             'created_at', 'updated_at',
         ]
@@ -148,9 +111,6 @@ class BaseSignalListSerializer(
     def get_signal_category_display(self, obj):
         return obj.get_signal_category_display() if obj.signal_category else None
 
-    def get_field_name_display(self, obj):
-        return obj.get_field_name_display()
-
     # --- compact FK objects ---
 
     def get_source_contact(self, obj):
@@ -158,7 +118,7 @@ class BaseSignalListSerializer(
         if not c:
             return None
         return {
-            'id':        str(c.id),
+            'id':         str(c.id),
             'first_name': c.first_name,
             'last_name':  c.last_name,
             'job_title':  getattr(c, 'job_title', None),
@@ -183,46 +143,46 @@ class BaseSignalDetailSerializer(BaseSignalListSerializer):
     Full detail serializer for single-signal retrieve endpoints.
 
     Extends list serializer with:
-      - All audit FK fields
+      - All audit FK fields (account, source_activity, decision_cycle, campaign)
       - source_quote, metadata, original_value
-      - merged_into / superseded_by compact objects
-      - validated_by, last_modified_by compact objects
+      - validated_by, last_modified_by, requested_by compact objects
+      - corroboration_count — computed via CorroborationService
 
-    Concrete serializers must set Meta.model.
+    Concrete serializers must set Meta.model and extend Meta.fields.
     """
 
-    # Full audit FKs — compact objects
-    account        = serializers.SerializerMethodField()
-    source_activity = serializers.SerializerMethodField()
-    decision_cycle = serializers.SerializerMethodField()
-    campaign       = serializers.SerializerMethodField()
+    # Corroboration — detail only for performance
+    corroboration_count = serializers.SerializerMethodField()
 
+    # Full audit FKs — compact objects
+    account          = serializers.SerializerMethodField()
+    source_activity  = serializers.SerializerMethodField()
+    decision_cycle   = serializers.SerializerMethodField()
+    campaign         = serializers.SerializerMethodField()
     validated_by     = serializers.SerializerMethodField()
     last_modified_by = serializers.SerializerMethodField()
     requested_by     = serializers.SerializerMethodField()
 
-    merged_into   = serializers.SerializerMethodField()
-    superseded_by = serializers.SerializerMethodField()
-
     class Meta(BaseSignalListSerializer.Meta):
         abstract = True
         fields = BaseSignalListSerializer.Meta.fields + [
+            # Corroboration
+            'corroboration_count',
             # Content extras
             'source_quote', 'metadata', 'original_value',
-
             # Context FKs
             'account', 'source_activity', 'decision_cycle', 'campaign',
-
             # Lifecycle detail
             'validated_at', 'validated_by',
             'last_modified_at', 'last_modified_by',
             'language_original',
             'requested_by',
-
-            # Supersede chain
-            'merged_into', 'superseded_by',
         ]
         read_only_fields = fields
+
+    def get_corroboration_count(self, obj):
+        from ..services import CorroborationService
+        return CorroborationService.compute_for_signal(obj)
 
     def get_account(self, obj):
         a = obj.account
@@ -267,26 +227,6 @@ class BaseSignalDetailSerializer(BaseSignalListSerializer):
     def get_requested_by(self, obj):
         return self._compact_user(obj.requested_by)
 
-    def get_merged_into(self, obj):
-        t = obj.merged_into
-        if not t:
-            return None
-        return {
-            'id':         str(t.id),
-            'field_name': t.field_name,
-            'status':     t.status,
-        }
-
-    def get_superseded_by(self, obj):
-        s = obj.superseded_by
-        if not s:
-            return None
-        return {
-            'id':         str(s.id),
-            'field_name': s.field_name,
-            'status':     s.status,
-        }
-
 
 # =============================================================================
 # CREATE SERIALIZER
@@ -300,22 +240,22 @@ class BaseSignalCreateSerializer(
     Write serializer for signal creation.
 
     Validation rules:
-      - field_name must be compatible with signal_type.
       - source_contact must belong to the same account as the signal.
-      - source=MANUAL → source_quote and confidence are optional.
-      - signal_type is write-only; consumed by SignalManager.create().
+      - confidence must be between 0.0 and 1.0 when provided.
+      - client_id is injected from JWT context.
 
-    Concrete serializers set Meta.model and the fixed signal_type default
-    via a HiddenField so the view can delegate directly to SignalManager.
+    signal_type is write-only — consumed by SignalManager.create() and
+    never stored on the model. Concrete serializers override it with
+    HiddenField(default='<type>').
 
     The serializer does NOT call save() — the view's perform_create() must
     call SignalManager.create(serializer.validated_data, user, client_id).
     """
 
     # Write-only — consumed by SignalManager, not stored on the model.
-    # Concrete serializers override this with HiddenField(default='...').
+    # Concrete serializers override with HiddenField(default='...').
     signal_type = serializers.ChoiceField(
-        choices=['qualification', 'tech_stack'],
+        choices=['people', 'pain', 'objective', 'tech_stack'],
         write_only=True,
     )
 
@@ -324,7 +264,6 @@ class BaseSignalCreateSerializer(
         fields = [
             # signal_type routing
             'signal_type',
-
             # Context
             'account',
             'source_activity',
@@ -332,48 +271,33 @@ class BaseSignalCreateSerializer(
             'source_department',
             'decision_cycle',
             'campaign',
-
             # Content
-            'field_name',
-            'value',
             'source_quote',
             'confidence',
             'is_inferred',
             'signal_category',
             'metadata',
-
             # Source
             'source',
             'language_original',
         ]
         extra_kwargs = {
-            'account':        {'required': True},
-            'field_name':     {'required': True},
-            'value':          {'required': True},
-            'source':         {'required': False},
-            'source_quote':   {'required': False, 'allow_null': True},
-            'confidence':     {'required': False, 'allow_null': True},
-            'is_inferred':    {'required': False},
-            'signal_category': {'required': False, 'allow_null': True},
-            'metadata':       {'required': False, 'allow_null': True},
+            'account':           {'required': True},
+            'source':            {'required': False},
+            'source_activity':   {'required': False, 'allow_null': True},
+            'source_contact':    {'required': False, 'allow_null': True},
+            'source_department': {'required': False, 'allow_null': True},
+            'source_quote':      {'required': False, 'allow_null': True},
+            'confidence':        {'required': False, 'allow_null': True},
+            'is_inferred':       {'required': False},
+            'signal_category':   {'required': False, 'allow_null': True},
+            'metadata':          {'required': False, 'allow_null': True},
             'language_original': {'required': False, 'allow_null': True},
         }
 
     # -------------------------------------------------------------------------
     # FIELD-LEVEL VALIDATION
     # -------------------------------------------------------------------------
-
-    def validate_field_name(self, value):
-        """
-        Validate field_name against the signal_type choices.
-
-        Called after individual field validation — signal_type is guaranteed
-        to be in initial_data at this point (DRF processes fields in order,
-        but validate_<field> is called per-field before validate()).
-        We defer the cross-field check to validate() where both values
-        are available.
-        """
-        return value
 
     def validate_confidence(self, value):
         """Confidence must be between 0.0 and 1.0 when provided."""
@@ -390,23 +314,13 @@ class BaseSignalCreateSerializer(
     def validate(self, attrs):
         """
         Cross-field validation:
-          1. field_name must be valid for signal_type.
-          2. source_contact must belong to the same account.
-          3. Inject client_id from JWT context.
+          1. source_contact must belong to the same account.
+          2. Inject client_id from JWT context.
         """
-        client_id   = self._get_client_id_from_context()
-        signal_type = attrs.get('signal_type')
-        field_name  = attrs.get('field_name')
-        account     = attrs.get('account')
+        client_id = self._get_client_id_from_context()
+        account   = attrs.get('account')
 
-        # --- 1. field_name ↔ signal_type compatibility ---
-        allowed_fields = _FIELD_CHOICES_MAP.get(signal_type, set())
-        if field_name and field_name not in allowed_fields:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field='field_name')
-            )
-
-        # --- 2. source_contact must belong to the same account ---
+        # --- source_contact must belong to the same account ---
         source_contact = attrs.get('source_contact')
         if source_contact and account:
             if str(source_contact.account_id) != str(account.id):
@@ -414,9 +328,8 @@ class BaseSignalCreateSerializer(
                     CoreErrorMessages.INVALID_FIELD.format(field='source_contact')
                 )
 
-        # --- 3. Inject client_id ---
+        # --- Inject client_id ---
         attrs['client_id'] = client_id
-
         return attrs
 
 
@@ -431,27 +344,22 @@ class BaseSignalUpdateSerializer(
     """
     Restricted write serializer for signal PATCH.
 
-    Allowed fields: value, signal_category, source_department,
-                    source_contact, source_quote, metadata.
+    Allowed base fields: signal_category, source_department,
+                         source_contact, source_quote, metadata.
 
     Forbidden via PATCH: status, validated_by, validated_at, source,
-                         field_name, account. These go through dedicated
-                         action endpoints (validate/, reject/, merge/, supersede/).
+                         account. These go through dedicated action
+                         endpoints (validate/, reject/).
 
-    Value change routing:
-      When 'value' is present in validated_data, update() calls
-      SignalManager.edit() so the original_value snapshot and
-      LLM_MODIFIED flip are enforced consistently.
-      Remaining allowed fields are applied in the same transaction
-      with a second save() call.
-
-    Concrete serializers set Meta.model.
+    Concrete serializers extend Meta.fields with their own typed fields.
+    Value-like changes (summary, notes, etc.) are routed through
+    SignalManager.edit() inside update() so the original_value snapshot
+    and LLM_MODIFIED flip are enforced consistently.
     """
 
     class Meta:
         abstract = True
         fields = [
-            'value',
             'signal_category',
             'source_department',
             'source_contact',
@@ -459,12 +367,11 @@ class BaseSignalUpdateSerializer(
             'metadata',
         ]
         extra_kwargs = {
-            'value':            {'required': False},
-            'signal_category':  {'required': False, 'allow_null': True},
+            'signal_category':   {'required': False, 'allow_null': True},
             'source_department': {'required': False, 'allow_null': True},
-            'source_contact':   {'required': False, 'allow_null': True},
-            'source_quote':     {'required': False, 'allow_null': True},
-            'metadata':         {'required': False, 'allow_null': True},
+            'source_contact':    {'required': False, 'allow_null': True},
+            'source_quote':      {'required': False, 'allow_null': True},
+            'metadata':          {'required': False, 'allow_null': True},
         }
 
     def validate_source_contact(self, value):
@@ -480,29 +387,19 @@ class BaseSignalUpdateSerializer(
 
     def update(self, instance, validated_data):
         """
-        Apply partial update.
+        Apply partial update via SignalManager.edit().
 
-        If 'value' is present, delegate to SignalManager.edit() first
-        (guards + snapshot + source flip + save). Then apply any remaining
-        allowed fields and save once more.
+        All field changes are routed through SignalManager.edit() so that
+        guards (REJECTED cannot be edited), the original_value snapshot,
+        and the LLM_MODIFIED flip are enforced consistently.
         """
         from ..services import SignalManager
 
         user = self.context['request'].user if self.context.get('request') else None
 
-        # --- value change → SignalManager.edit() ---
-        if 'value' in validated_data:
-            new_value = validated_data.pop('value')
-            # edit() enforces guards (REJECTED/MERGED) and saves internally.
-            SignalManager.edit(instance, new_value, user)
-
-        # --- remaining allowed fields ---
-        for attr, val in validated_data.items():
-            setattr(instance, attr, val)
-
+        # Route all updates through SignalManager.edit() for guard enforcement.
         if validated_data:
-            # Only save again if there were non-value fields to apply.
-            instance.save(user=user)
+            SignalManager.edit(instance, validated_data, user)
 
         return instance
 
@@ -520,19 +417,27 @@ class SignalLLMSerializer(serializers.Serializer):
     output is consistent whether it comes from a queryset or a single instance.
 
     Output fields:
-      field, value, category, contact, department, confirmed, date
+      type, category, summary, contact, department, confirmed, date
     """
 
-    field      = serializers.SerializerMethodField()
-    value      = serializers.JSONField(source='value')
+    type       = serializers.SerializerMethodField()
     category   = serializers.CharField(source='signal_category', allow_null=True)
+    summary    = serializers.SerializerMethodField()
     contact    = serializers.SerializerMethodField()
     department = serializers.SerializerMethodField()
-    confirmed  = serializers.IntegerField(source='confirmation_count')
+    confirmed  = serializers.SerializerMethodField()
     date       = serializers.SerializerMethodField()
 
-    def get_field(self, obj):
-        return obj.field_name
+    def get_type(self, obj):
+        return obj.__class__.__name__
+
+    def get_summary(self, obj):
+        return (
+            getattr(obj, 'summary', None)
+            or getattr(obj, 'tech_name', None)
+            or getattr(obj, 'notes', None)
+            or ''
+        )
 
     def get_contact(self, obj):
         c = getattr(obj, 'source_contact', None)
@@ -549,8 +454,12 @@ class SignalLLMSerializer(serializers.Serializer):
             return None
         return d.get_name_display() if hasattr(d, 'get_name_display') else str(d)
 
+    def get_confirmed(self, obj):
+        # Always 1 in MVP — CorroborationService not called here for performance.
+        return 1
+
     def get_date(self, obj):
-        lca = getattr(obj, 'last_confirmed_at', None)
-        if lca:
-            return lca.strftime('%Y-%m-%d')
+        validated_at = getattr(obj, 'validated_at', None)
+        if validated_at:
+            return validated_at.strftime('%Y-%m-%d')
         return None

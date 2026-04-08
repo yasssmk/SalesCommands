@@ -6,16 +6,16 @@ Provides:
   - CRUD with client scoping (ScopedQuerysetMixin)
   - get_serializer_class() routing (list / detail / create / update)
   - perform_create() routed through SignalManager.create()
-  - Custom @action endpoints: validate, reject, merge, supersede
+  - Custom @action endpoints: validate, reject
   - Cache invalidation on every write
   - Structured logging + SOC 2 audit trail
 
-Concrete ViewSets (QualificationSignalViewSet, TechStackSignalViewSet)
-inherit this class and set the four required class attributes:
+Concrete ViewSets inherit this class and set the four required attributes:
   queryset, model_label, list_serializer_class, detail_serializer_class,
   create_serializer_class, update_serializer_class.
 
-SignalChoicesView — standalone APIView returning frontend-ready choice lists.
+SignalChoicesView — standalone APIView returning frontend-ready choice lists
+for all 4 signal types.
 """
 
 from django.db import transaction
@@ -28,7 +28,6 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from core.apps_shared_methods import BaseAPIView
 from core.cache_utils import invalidate_tag
-from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from core.jwt_helpers import CustomJWTAuthentication
 from core.logging import get_logger, ctx_from_request
@@ -41,8 +40,13 @@ from ..constants import (
     SignalStatus,
     SignalSource,
     SignalCategory,
-    QualificationField,
-    TechStackField,
+    PeopleRole,
+    InfluenceLevel,
+    PainCategory,
+    PainLevel,
+    GoalLevel,
+    TechCategory,
+    Satisfaction,
 )
 from ..filters import SignalFilter
 from ..services import SignalManager
@@ -61,20 +65,22 @@ def _invalidate_signal_caches(client_id):
 # BASE VIEWSET
 # =============================================================================
 
-class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
+class BaseSignalViewSet(
+    OwnerScopeMixin,
+    ScopedQuerysetMixin,
+    BaseAPIView,
+    viewsets.ModelViewSet,
+):
     """
-    Abstract base ViewSet for QualificationSignal and TechStackSignal.
+    Base ViewSet for all concrete signal types.
 
     Concrete subclasses MUST define:
       queryset                  — model-specific base queryset
-      model_label               — string for logging ('qualification_signal' | 'tech_stack_signal')
+      model_label               — string for logging (e.g. 'people_signal')
       list_serializer_class     — lightweight list serializer
       detail_serializer_class   — full detail serializer
       create_serializer_class   — write serializer for POST
       update_serializer_class   — restricted write serializer for PATCH
-
-    The class does NOT set Meta.abstract — Django's viewset inheritance
-    handles polymorphism at class level, not model level.
     """
 
     # --- to be overridden by concrete ViewSets ---
@@ -89,17 +95,15 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
     permission_classes     = [IsAuthenticated, ScopedPermission]
     module                 = 'signals'
 
-    filter_backends  = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_class  = SignalFilter   # default — overridden dynamically below
-    search_fields    = ['field_name', 'value']
-    ordering_fields  = ['created_at', 'updated_at', 'status', 'confirmation_count', 'last_confirmed_at']
-    ordering         = ['-created_at']
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = SignalFilter
+    search_fields   = []
+    ordering_fields = ['created_at', 'updated_at', 'status']
+    ordering        = ['-created_at']
 
     action_policies = {
-        'validate':  {'crud': 'update', 'scope': 'client'},
-        'reject':    {'crud': 'update', 'scope': 'client'},
-        'merge':     {'crud': 'update', 'scope': 'client'},
-        'supersede': {'crud': 'create', 'scope': 'client'},
+        'validate': {'crud': 'update', 'scope': 'client'},
+        'reject':   {'crud': 'update', 'scope': 'client'},
     }
 
     # =========================================================================
@@ -122,8 +126,6 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
     def get_queryset(self):
         """Client-scoped queryset with select_related tuned per action."""
         qs = super().get_queryset()
-
-        # Apply owner_scope filter (?owner_scope=mine|team|all)
         qs = self.apply_owner_scope_filter(qs)
 
         if self.action == 'list':
@@ -142,21 +144,18 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
                 'validated_by',
                 'last_modified_by',
                 'requested_by',
-                'merged_into',
-                'superseded_by',
             )
 
         return qs
-    
+
     def filter_queryset(self, queryset):
         """
         Bind SignalFilter to the concrete queryset model before django-filters
         performs its model assertion check.
 
-        DjangoFilterBackend.get_filterset_class() reads view.filterset_class
-        via getattr() — it never calls view.get_filterset_class(). Setting
-        self.filterset_class on the instance here ensures the backend sees
-        the correctly-bound FilterSet before the assertion runs.
+        DjangoFilterBackend reads view.filterset_class via getattr() — setting
+        self.filterset_class on the instance here ensures the backend sees the
+        correctly-bound FilterSet before the assertion runs.
         """
         model = queryset.model
         if SignalFilter.Meta.model is not model:
@@ -195,10 +194,12 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
             target_type=self.model_label,
             target_id=str(instance.id),
             outcome='success',
-            extra={'field_name': instance.field_name, 'source': instance.source},
+            extra={'source': instance.source},
         )
 
-        transaction.on_commit(lambda: _invalidate_signal_caches(self.get_client_id()))
+        transaction.on_commit(
+            lambda: _invalidate_signal_caches(self.get_client_id())
+        )
 
         output = self.detail_serializer_class(instance, context={'request': request})
         return Response(
@@ -210,8 +211,6 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
         """
         Delegate creation to SignalManager so source → status routing
         and model.save() business rules are always enforced.
-
-        Sets serializer.instance so downstream code can read the result.
         """
         data      = serializer.validated_data.copy()
         client_id = self.get_client_id()
@@ -226,13 +225,13 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
 
     @transaction.atomic
     def update(self, request, *args, **kwargs):
-        """PUT /signals/{id}/ — treated as PATCH (partial always True)."""
+        """PUT /<signal-type>/{id}/ — treated as PATCH."""
         kwargs['partial'] = True
         return self.partial_update(request, *args, **kwargs)
 
     @transaction.atomic
     def partial_update(self, request, *args, **kwargs):
-        """PATCH /signals/{id}/"""
+        """PATCH /<signal-type>/{id}/"""
         ctx      = ctx_from_request(request)
         instance = self.get_object()
 
@@ -255,16 +254,18 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
             outcome='success',
         )
 
-        _invalidate_signal_caches(self.get_client_id())
+        transaction.on_commit(
+            lambda: _invalidate_signal_caches(self.get_client_id())
+        )
 
         output = self.detail_serializer_class(instance, context={'request': request})
         return Response({'success': True, 'data': output.data})
 
     @transaction.atomic
     def destroy(self, request, *args, **kwargs):
-        """DELETE /signals/{id}/"""
-        ctx      = ctx_from_request(request)
-        instance = self.get_object()
+        """DELETE /<signal-type>/{id}/"""
+        ctx       = ctx_from_request(request)
+        instance  = self.get_object()
         signal_id = str(instance.id)
 
         logger.info(f"{self.model_label}_delete_requested", extra={
@@ -299,7 +300,7 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
     def validate_signal(self, request, pk=None):
         """
         Validate (approve) a PENDING signal.
-        POST /signals/{id}/validate/
+        POST /<signal-type>/{id}/validate/
         """
         ctx      = ctx_from_request(request)
         instance = self.get_object()
@@ -321,7 +322,9 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
             outcome='success',
         )
 
-        _invalidate_signal_caches(self.get_client_id())
+        transaction.on_commit(
+            lambda: _invalidate_signal_caches(self.get_client_id())
+        )
 
         output = self.detail_serializer_class(updated, context={'request': request})
         return Response({'success': True, 'data': output.data})
@@ -331,7 +334,7 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
     def reject_signal(self, request, pk=None):
         """
         Reject a PENDING signal.
-        POST /signals/{id}/reject/
+        POST /<signal-type>/{id}/reject/
         Body (optional): { "reason": "string" }
         """
         ctx      = ctx_from_request(request)
@@ -342,7 +345,11 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
             **ctx, 'signal_id': str(instance.id),
         })
 
-        updated = SignalManager.reject(signal=instance, user=request.user, reason=reason)
+        updated = SignalManager.reject(
+            signal=instance,
+            user=request.user,
+            reason=reason,
+        )
 
         audit_log(
             event=f'{self.model_label}_rejected',
@@ -356,129 +363,12 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
             extra={'reason': reason},
         )
 
-        _invalidate_signal_caches(self.get_client_id())
+        transaction.on_commit(
+            lambda: _invalidate_signal_caches(self.get_client_id())
+        )
 
         output = self.detail_serializer_class(updated, context={'request': request})
         return Response({'success': True, 'data': output.data})
-
-    @action(detail=True, methods=['post'], url_path='merge')
-    @transaction.atomic
-    def merge_signal(self, request, pk=None):
-        """
-        Merge this signal (source) into a target signal.
-        POST /signals/{id}/merge/
-        Body: { "target_signal_id": "<uuid>" }
-
-        Guards (enforced by SignalManager):
-          - Same concrete type
-          - Same field_name
-          - Target must be VALIDATED
-          - Source must not already be MERGED
-        """
-        ctx      = ctx_from_request(request)
-        instance = self.get_object()
-
-        target_signal_id = request.data.get('target_signal_id')
-        if not target_signal_id:
-            raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(field='target_signal_id')
-            )
-
-        # Resolve target within same model & client scope
-        try:
-            target = self.get_queryset().get(pk=target_signal_id)
-        except self.get_queryset().model.DoesNotExist:
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-
-        logger.info(f"{self.model_label}_merge_requested", extra={
-            **ctx,
-            'source_signal_id': str(instance.id),
-            'target_signal_id': str(target.id),
-        })
-
-        updated_target = SignalManager.merge(
-            source_signal=instance,
-            target_signal=target,
-            user=request.user,
-        )
-
-        audit_log(
-            event=f'{self.model_label}_merged',
-            action='update',
-            actor_id=str(request.user.id),
-            client_id=str(self.get_client_id()),
-            target_type=self.model_label,
-            target_id=str(updated_target.id),
-            outcome='success',
-            extra={
-                'source_signal_id': str(instance.id),
-                'confirmations_added': instance.confirmation_count,
-            },
-        )
-
-        _invalidate_signal_caches(self.get_client_id())
-
-        output = self.detail_serializer_class(updated_target, context={'request': request})
-        return Response({'success': True, 'data': output.data})
-
-    @action(detail=True, methods=['post'], url_path='supersede')
-    @transaction.atomic
-    def supersede_signal(self, request, pk=None):
-        """
-        Supersede this signal with a replacement carrying new_data.
-        POST /signals/{id}/supersede/
-        Body: { "new_data": { <same shape as create payload> } }
-
-        new_data is validated through the create serializer before being
-        passed to SignalManager.supersede() — same guards as a normal create.
-        """
-        ctx      = ctx_from_request(request)
-        instance = self.get_object()
-
-        new_data_raw = request.data.get('new_data')
-        if not new_data_raw:
-            raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(field='new_data')
-            )
-
-        # Validate new_data through the create serializer
-        create_serializer = self.create_serializer_class(
-            data=new_data_raw,
-            context=self.get_serializer_context(),
-        )
-        create_serializer.is_valid(raise_exception=True)
-
-        logger.info(f"{self.model_label}_supersede_requested", extra={
-            **ctx, 'signal_id': str(instance.id),
-        })
-
-        new_signal = SignalManager.supersede(
-            old_signal=instance,
-            new_data=create_serializer.validated_data.copy(),
-            user=request.user,
-        )
-
-        audit_log(
-            event=f'{self.model_label}_superseded',
-            action='create',
-            actor_id=str(request.user.id),
-            client_id=str(self.get_client_id()),
-            target_type=self.model_label,
-            target_id=str(new_signal.id),
-            outcome='success',
-            extra={
-                'old_signal_id': str(instance.id),
-                'field_name': new_signal.field_name,
-            },
-        )
-
-        _invalidate_signal_caches(self.get_client_id())
-
-        output = self.detail_serializer_class(new_signal, context={'request': request})
-        return Response(
-            {'success': True, 'data': output.data},
-            status=status.HTTP_201_CREATED,
-        )
 
 
 # =============================================================================
@@ -487,7 +377,7 @@ class BaseSignalViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, views
 
 class SignalChoicesView(APIView):
     """
-    Return frontend-ready choice lists for the Signals module.
+    Return frontend-ready choice lists for all signal types.
 
     GET /signals/choices/
 
@@ -495,11 +385,16 @@ class SignalChoicesView(APIView):
     {
       "success": true,
       "data": {
-        "status":              [{"value": "PENDING", "label": "Pending"}, ...],
-        "source":              [...],
-        "signal_category":     [...],
-        "qualification_fields":[{"value": "pain_point", "label": "Pain Point"}, ...],
-        "tech_stack_fields":   [...]
+        "status":           [...],
+        "source":           [...],
+        "signal_category":  [...],
+        "people_roles":     [...],
+        "influence_levels": [...],
+        "pain_categories":  [...],
+        "pain_levels":      [...],
+        "goal_levels":      [...],
+        "tech_categories":  [...],
+        "satisfaction":     [...],
       }
     }
     """
@@ -514,10 +409,15 @@ class SignalChoicesView(APIView):
         return Response({
             'success': True,
             'data': {
-                'status':               _choices(SignalStatus),
-                'source':               _choices(SignalSource),
-                'signal_category':      _choices(SignalCategory),
-                'qualification_fields': _choices(QualificationField),
-                'tech_stack_fields':    _choices(TechStackField),
+                'status':           _choices(SignalStatus),
+                'source':           _choices(SignalSource),
+                'signal_category':  _choices(SignalCategory),
+                'people_roles':     _choices(PeopleRole),
+                'influence_levels': _choices(InfluenceLevel),
+                'pain_categories':  _choices(PainCategory),
+                'pain_levels':      _choices(PainLevel),
+                'goal_levels':      _choices(GoalLevel),
+                'tech_categories':  _choices(TechCategory),
+                'satisfaction':     _choices(Satisfaction),
             },
         })

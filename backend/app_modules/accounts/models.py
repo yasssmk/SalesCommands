@@ -15,7 +15,7 @@ from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from end_users.models import User
 from core.constants import INDUSTRIES, COUNTRIES
-from apps.signals.services import SignalDataService # A MODIFIER UNE FOIS CREER AVEC SIGNALS DANS APP_MODULE
+# from apps.signals.services import SignalDataService # A MODIFIER UNE FOIS CREER AVEC SIGNALS DANS APP_MODULE
 
 
 class AccountType(models.TextChoices):
@@ -268,114 +268,6 @@ class CompanyAccount(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDeta
         self.partners.remove(partner)
         return True
     
-    # ==========================================================================
-    # SIGNALS METHODS
-    # ==========================================================================
-
-    def update_profile_fields_from_signals(self):
-        """
-        Update the company_size and annual_revenue fields from profile signals.
-        Called during save to ensure the fields are always up-to-date.
-        """
-        # Only proceed if we have an ID (not a new account)
-        if not self.pk:
-            return
-            
-        # Get profile data from signals
-        profile_data = SignalDataService.get_account_profile_data(self)
-        
-        # Update company_size if it exists in signals
-        if 'company_size' in profile_data:
-            signal_value = profile_data['company_size']['value']
-            # If value is a number, convert it to string
-            if isinstance(signal_value, (int, float)):
-                self.company_size = str(signal_value)
-            else:
-                self.company_size = signal_value
-                
-        # Update annual_revenue if it exists in signals
-        if 'annual_revenue' in profile_data:
-            signal_value = profile_data['annual_revenue']['value']
-            # If value is a number, convert it to string
-            if isinstance(signal_value, (int, float)):
-                self.annual_revenue = str(signal_value)
-            else:
-                self.annual_revenue = signal_value
-    
-    def get_profile_data(self):
-        """
-        Get profile data for this account from signals.
-            
-        Returns:
-            dict: Profile data from signals
-        """
-        # return SignalDataService.get_account_profile_data(
-        #     account=self,
-        # )
-    
-        return None
-    
-    def get_qualification_data(self, field_names=None, department=None, 
-                           source_contact=None, min_confirmations=None):
-        """
-        Get qualification data for this account from signals.
-        
-        Args:
-            field_names: Optional list of specific fields to retrieve
-            department: Optional department to filter by
-            source_contact: Optional contact who provided the information
-            min_confirmations: Minimum number of confirmations required
-            
-        Returns:
-            dict: Qualification data from signals
-        """
-        # return SignalDataService.get_account_qualification_data(
-        #     account=self,
-        #     field_names=field_names,
-        #     department=department,
-        #     source_contact=source_contact,
-        #     min_confirmations=min_confirmations,
-        # )
-    
-        return None
-    
-    def get_qualification_by_department(self):
-        """
-        Get qualification data organized by department.
-        
-        Returns:
-            dict: Qualification data organized by department
-        """
-        # from apps.signals.models.qualification_signal_model import QualificationSignal
-        
-        # return SignalDataService.get_by_department(
-        #     account=self,
-        #     signal_type=QualificationSignal
-        # )
-
-        return None
-    
-    def get_tech_stacks_data(self, department=None, source_contact=None,
-                         min_confirmations=None):
-        """
-        Get tech stack data for this account.
-        
-        Args:
-            department: Optional department to filter by
-            source_contact: Optional contact who provided the information
-            min_confirmations: Minimum number of confirmations required
-            
-        Returns:
-            dict: Tech stack data from signals
-        """
-        # return SignalDataService.get_tech_stack_data(
-        #     account=self,
-        #     department=department,
-        #     source_contact=source_contact,
-        #     min_confirmations=min_confirmations,
-        # )
-    
-        return None
     
     # ==========================================================================
     # STATIC METHODS

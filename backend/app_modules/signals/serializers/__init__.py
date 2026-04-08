@@ -1,17 +1,28 @@
-# app_modules/signals/serializers/__init__.py
-"""
-Public API for the signals serializers package.
-"""
-
-from .base_serializer import SignalLLMSerializer
-
-from .qualification_serializer import (
-    QualificationSignalListSerializer,
-    QualificationSignalDetailSerializer,
-    QualificationSignalCreateSerializer,
-    QualificationSignalUpdateSerializer,
+from .base_serializer import (
+    BaseSignalListSerializer,
+    BaseSignalDetailSerializer,
+    BaseSignalCreateSerializer,
+    BaseSignalUpdateSerializer,
+    SignalLLMSerializer,
 )
-
+from .people_serializer import (
+    PeopleSignalListSerializer,
+    PeopleSignalDetailSerializer,
+    PeopleSignalCreateSerializer,
+    PeopleSignalUpdateSerializer,
+)
+from .pain_serializer import (
+    PainSignalListSerializer,
+    PainSignalDetailSerializer,
+    PainSignalCreateSerializer,
+    PainSignalUpdateSerializer,
+)
+from .objective_serializer import (
+    ObjectiveSignalListSerializer,
+    ObjectiveSignalDetailSerializer,
+    ObjectiveSignalCreateSerializer,
+    ObjectiveSignalUpdateSerializer,
+)
 from .tech_stack_serializer import (
     TechStackSignalListSerializer,
     TechStackSignalDetailSerializer,
@@ -20,15 +31,27 @@ from .tech_stack_serializer import (
 )
 
 __all__ = [
-    # Base / shared
+    # Base
+    'BaseSignalListSerializer',
+    'BaseSignalDetailSerializer',
+    'BaseSignalCreateSerializer',
+    'BaseSignalUpdateSerializer',
     'SignalLLMSerializer',
-
-    # Qualification
-    'QualificationSignalListSerializer',
-    'QualificationSignalDetailSerializer',
-    'QualificationSignalCreateSerializer',
-    'QualificationSignalUpdateSerializer',
-
+    # People
+    'PeopleSignalListSerializer',
+    'PeopleSignalDetailSerializer',
+    'PeopleSignalCreateSerializer',
+    'PeopleSignalUpdateSerializer',
+    # Pain
+    'PainSignalListSerializer',
+    'PainSignalDetailSerializer',
+    'PainSignalCreateSerializer',
+    'PainSignalUpdateSerializer',
+    # Objective
+    'ObjectiveSignalListSerializer',
+    'ObjectiveSignalDetailSerializer',
+    'ObjectiveSignalCreateSerializer',
+    'ObjectiveSignalUpdateSerializer',
     # TechStack
     'TechStackSignalListSerializer',
     'TechStackSignalDetailSerializer',

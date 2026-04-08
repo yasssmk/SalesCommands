@@ -1,9 +1,10 @@
 # app_modules/signals/views/tech_stack_signal_views.py
 """
-TechStackSignalViewSet — CRUD + lifecycle actions for TechStackSignal.
+TechStackSignalViewSet — CRUD + validate/reject for TechStackSignal.
 
 Inherits all shared logic from BaseSignalViewSet.
-Extends search_fields with tech_name so reps can search by tool name.
+No extra select_related beyond the base chain — TechStackSignal has no
+target_contact or target_department FK.
 """
 
 from ..models import TechStackSignal
@@ -18,27 +19,24 @@ from .base_views import BaseSignalViewSet
 
 class TechStackSignalViewSet(BaseSignalViewSet):
     """
-    API endpoints for TechStackSignal.
+    ViewSet for TechStackSignal.
 
-    Endpoints (mounted at /signals/tech-stack/ via urls.py):
-      GET    /                    → list
-      POST   /                    → create
-      GET    /{id}/               → retrieve
-      PATCH  /{id}/               → partial_update
-      DELETE /{id}/               → destroy
-      POST   /{id}/validate/      → validate_signal
-      POST   /{id}/reject/        → reject_signal
-      POST   /{id}/merge/         → merge_signal
-      POST   /{id}/supersede/     → supersede_signal
+    Endpoints (mounted under /tech-stack/):
+      GET    /tech-stack/                  → list
+      POST   /tech-stack/                  → create
+      GET    /tech-stack/{id}/             → retrieve
+      PATCH  /tech-stack/{id}/             → partial_update
+      PUT    /tech-stack/{id}/             → update (treated as PATCH)
+      DELETE /tech-stack/{id}/             → destroy
+      POST   /tech-stack/{id}/validate/    → validate_signal
+      POST   /tech-stack/{id}/reject/      → reject_signal
     """
 
-    queryset    = TechStackSignal.objects.all()
-    model_label = 'tech_stack_signal'
-
+    queryset                = TechStackSignal.objects.all()
+    model_label             = 'tech_stack_signal'
     list_serializer_class   = TechStackSignalListSerializer
     detail_serializer_class = TechStackSignalDetailSerializer
     create_serializer_class = TechStackSignalCreateSerializer
     update_serializer_class = TechStackSignalUpdateSerializer
 
-    # Extend base search fields with tech_name
-    search_fields = BaseSignalViewSet.search_fields + ['tech_name']
+    search_fields = ['tech_name', 'usage', 'limitations']

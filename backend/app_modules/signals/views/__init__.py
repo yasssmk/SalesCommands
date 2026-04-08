@@ -1,14 +1,14 @@
-# app_modules/signals/views/__init__.py
-"""
-Public API for the signals views package.
-"""
-
-from .base_views import SignalChoicesView
-from .qualification_signal_views import QualificationSignalViewSet
+from .base_views import BaseSignalViewSet, SignalChoicesView
+from .people_signal_views import PeopleSignalViewSet
+from .pain_signal_views import PainSignalViewSet
+from .objective_signal_views import ObjectiveSignalViewSet
 from .tech_stack_signal_views import TechStackSignalViewSet
 
 __all__ = [
+    'BaseSignalViewSet',
     'SignalChoicesView',
-    'QualificationSignalViewSet',
+    'PeopleSignalViewSet',
+    'PainSignalViewSet',
+    'ObjectiveSignalViewSet',
     'TechStackSignalViewSet',
 ]

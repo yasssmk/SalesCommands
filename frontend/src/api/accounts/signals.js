@@ -2,12 +2,14 @@
 /**
  * API hooks and mutations for the Signals module.
  *
- * Two signal types share the same URL structure:
- *   /module-signals/qualification/   → QualificationSignal
- *   /module-signals/tech-stack/      → TechStackSignal
+ * Four signal types, each with its own endpoint group:
+ *   'people'     → /module-signals/people/
+ *   'pain'       → /module-signals/pain/
+ *   'objective'  → /module-signals/objective/
+ *   'tech-stack' → /module-signals/tech-stack/
  *
- * Mutations accept a `signalType` param ('qualification' | 'tech-stack')
- * to resolve the correct endpoint prefix.
+ * Mutations accept a `signalType` param:
+ *   'people' | 'pain' | 'objective' | 'tech-stack'
  *
  * Follows the same patterns as api/accounts/activities.js.
  */
@@ -19,29 +21,39 @@ import { api } from "utils/axiosClient";
 import { tenantKey, revalidateMultiple } from "api/_swr";
 import { isValidUUID } from "utils/validators";
 
+// ==============================|| SIGNAL TYPES ||============================== //
+
+const SIGNAL_TYPES = ["people", "pain", "objective", "tech-stack"];
+
 // ==============================|| ENDPOINTS ||============================== //
 
 const endpoints = {
-  // Choices (shared across signal types)
+  // Choices (shared across all signal types)
   choices: "/module-signals/choices/",
 
-  // Qualification
-  qualification: "/module-signals/qualification/",
-  qualificationDetail: (id) => `/module-signals/qualification/${id}/`,
-  qualificationValidate: (id) =>
-    `/module-signals/qualification/${id}/validate/`,
-  qualificationReject: (id) => `/module-signals/qualification/${id}/reject/`,
-  qualificationMerge: (id) => `/module-signals/qualification/${id}/merge/`,
-  qualificationSupersede: (id) =>
-    `/module-signals/qualification/${id}/supersede/`,
+  // People
+  people: "/module-signals/people/",
+  peopleDetail: (id) => `/module-signals/people/${id}/`,
+  peopleValidate: (id) => `/module-signals/people/${id}/validate/`,
+  peopleReject: (id) => `/module-signals/people/${id}/reject/`,
+
+  // Pain
+  pain: "/module-signals/pain/",
+  painDetail: (id) => `/module-signals/pain/${id}/`,
+  painValidate: (id) => `/module-signals/pain/${id}/validate/`,
+  painReject: (id) => `/module-signals/pain/${id}/reject/`,
+
+  // Objective
+  objective: "/module-signals/objective/",
+  objectiveDetail: (id) => `/module-signals/objective/${id}/`,
+  objectiveValidate: (id) => `/module-signals/objective/${id}/validate/`,
+  objectiveReject: (id) => `/module-signals/objective/${id}/reject/`,
 
   // Tech Stack
   techStack: "/module-signals/tech-stack/",
   techStackDetail: (id) => `/module-signals/tech-stack/${id}/`,
   techStackValidate: (id) => `/module-signals/tech-stack/${id}/validate/`,
   techStackReject: (id) => `/module-signals/tech-stack/${id}/reject/`,
-  techStackMerge: (id) => `/module-signals/tech-stack/${id}/merge/`,
-  techStackSupersede: (id) => `/module-signals/tech-stack/${id}/supersede/`,
 };
 
 // ==============================|| ENDPOINT HELPERS ||============================== //
@@ -49,61 +61,101 @@ const endpoints = {
 /**
  * Resolve base list endpoint for a given signal type.
  *
- * @param {'qualification'|'tech-stack'} signalType
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
  * @returns {string} Base URL
  */
 function getBaseEndpoint(signalType) {
-  return signalType === "tech-stack"
-    ? endpoints.techStack
-    : endpoints.qualification;
+  switch (signalType) {
+    case "people":
+      return endpoints.people;
+    case "pain":
+      return endpoints.pain;
+    case "objective":
+      return endpoints.objective;
+    case "tech-stack":
+      return endpoints.techStack;
+    default:
+      return null;
+  }
 }
 
 /**
  * Resolve detail endpoint for a given signal type + id.
  *
- * @param {'qualification'|'tech-stack'} signalType
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Detail URL
  */
 function getDetailEndpoint(signalType, id) {
-  return signalType === "tech-stack"
-    ? endpoints.techStackDetail(id)
-    : endpoints.qualificationDetail(id);
+  switch (signalType) {
+    case "people":
+      return endpoints.peopleDetail(id);
+    case "pain":
+      return endpoints.painDetail(id);
+    case "objective":
+      return endpoints.objectiveDetail(id);
+    case "tech-stack":
+      return endpoints.techStackDetail(id);
+    default:
+      return null;
+  }
 }
 
 /**
- * Resolve action endpoint (validate / reject / merge / supersede).
+ * Resolve validate endpoint for a given signal type + id.
  *
- * @param {'qualification'|'tech-stack'} signalType
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
  * @param {string} id - Signal UUID
- * @param {'validate'|'reject'|'merge'|'supersede'} action
- * @returns {string} Action URL
+ * @returns {string} Validate URL
  */
-function getActionEndpoint(signalType, id, action) {
-  const map = {
-    qualification: {
-      validate: endpoints.qualificationValidate(id),
-      reject: endpoints.qualificationReject(id),
-      merge: endpoints.qualificationMerge(id),
-      supersede: endpoints.qualificationSupersede(id),
-    },
-    "tech-stack": {
-      validate: endpoints.techStackValidate(id),
-      reject: endpoints.techStackReject(id),
-      merge: endpoints.techStackMerge(id),
-      supersede: endpoints.techStackSupersede(id),
-    },
-  };
-
-  return map[signalType]?.[action] ?? null;
+function getValidateEndpoint(signalType, id) {
+  switch (signalType) {
+    case "people":
+      return endpoints.peopleValidate(id);
+    case "pain":
+      return endpoints.painValidate(id);
+    case "objective":
+      return endpoints.objectiveValidate(id);
+    case "tech-stack":
+      return endpoints.techStackValidate(id);
+    default:
+      return null;
+  }
 }
 
 /**
- * Revalidate all list caches for both signal types.
- * Called after any write that could affect either list.
+ * Resolve reject endpoint for a given signal type + id.
+ *
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {string} id - Signal UUID
+ * @returns {string} Reject URL
+ */
+function getRejectEndpoint(signalType, id) {
+  switch (signalType) {
+    case "people":
+      return endpoints.peopleReject(id);
+    case "pain":
+      return endpoints.painReject(id);
+    case "objective":
+      return endpoints.objectiveReject(id);
+    case "tech-stack":
+      return endpoints.techStackReject(id);
+    default:
+      return null;
+  }
+}
+
+/**
+ * Revalidate all 4 signal list caches.
+ * Called after any write that could affect any signal list.
  */
 function revalidateSignalLists() {
-  revalidateMultiple([endpoints.qualification, endpoints.techStack]);
+  revalidateMultiple([
+    endpoints.people,
+    endpoints.pain,
+    endpoints.objective,
+    endpoints.techStack,
+  ]);
 }
 
 // ==============================|| URL BUILDER ||============================== //
@@ -112,11 +164,12 @@ function revalidateSignalLists() {
  * Build a list URL with query params for server-side filtering / pagination.
  *
  * Supported filters:
- *   account_id, source_activity_id, status, field_name,
- *   signal_category, source
+ *   account_id, source_activity_id, status, signal_category, source
  *
- * @param {string} baseUrl   - Base endpoint URL
- * @param {Object} params    - { page, pageSize, search, ordering, filters }
+ * Note: signal_type routing is handled by the URL itself, not a query param.
+ *
+ * @param {string} baseUrl - Base endpoint URL
+ * @param {Object} params  - { page, pageSize, search, ordering, filters }
  * @returns {string} URL with query string
  */
 function buildUrlWithParams(baseUrl, params = {}) {
@@ -139,16 +192,13 @@ function buildUrlWithParams(baseUrl, params = {}) {
 
   // --- signal-specific filters ---
   if (filters.account_id) {
-    query.append("account_id", filters.account_id);
+    query.append("account", filters.account_id);
   }
   if (filters.source_activity_id) {
     query.append("source_activity", filters.source_activity_id);
   }
   if (filters.status) {
     query.append("status", filters.status);
-  }
-  if (filters.field_name) {
-    query.append("field_name", filters.field_name);
   }
   if (filters.signal_category) {
     query.append("signal_category", filters.signal_category);
@@ -169,7 +219,7 @@ function buildUrlWithParams(baseUrl, params = {}) {
  * Used internally by the public convenience hooks below.
  * Not exported — callers use useGetSignalsByAccount / useGetSignalsByActivity.
  *
- * @param {'qualification'|'tech-stack'} signalType
+ * @param {'people'|'pain'|'objective'|'tech-stack'|null} signalType
  * @param {Object} options - { page, pageSize, search, ordering, filters }
  * @returns {Object} { signals, signalsCount, signalsLoading, signalsError,
  *                     signalsValidating, signalsEmpty, mutateSignals }
@@ -184,17 +234,19 @@ function useGetSignals(signalType, options = {}) {
     filters = {},
   } = options;
 
-  const baseUrl = getBaseEndpoint(signalType);
+  const baseUrl = signalType ? getBaseEndpoint(signalType) : null;
 
   const urlWithParams = useMemo(
     () =>
-      buildUrlWithParams(baseUrl, {
-        page,
-        pageSize,
-        search,
-        ordering,
-        filters,
-      }),
+      baseUrl
+        ? buildUrlWithParams(baseUrl, {
+            page,
+            pageSize,
+            search,
+            ordering,
+            filters,
+          })
+        : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [baseUrl, page, pageSize, search, ordering, JSON.stringify(filters)],
   );
@@ -229,9 +281,9 @@ function useGetSignals(signalType, options = {}) {
  *
  * Fetches signals of a given type for a specific account.
  *
- * @param {string} accountId   - Account UUID
- * @param {'qualification'|'tech-stack'} signalType
- * @param {Object} options     - { page, pageSize, search, ordering, filters }
+ * @param {string} accountId - Account UUID
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {Object} options   - { page, pageSize, search, ordering, filters }
  * @returns {Object} { signals, signalsCount, signalsLoading, signalsError,
  *                     signalsValidating, signalsEmpty, mutateSignals }
  */
@@ -258,9 +310,9 @@ export function useGetSignalsByAccount(accountId, signalType, options = {}) {
  *
  * Fetches signals of a given type linked to a specific source activity.
  *
- * @param {string} activityId  - Activity UUID
- * @param {'qualification'|'tech-stack'} signalType
- * @param {Object} options     - { page, pageSize, search, ordering, filters }
+ * @param {string} activityId - Activity UUID
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {Object} options    - { page, pageSize, search, ordering, filters }
  * @returns {Object} { signals, signalsCount, signalsLoading, signalsError,
  *                     signalsValidating, signalsEmpty, mutateSignals }
  */
@@ -285,16 +337,20 @@ export function useGetSignalsByActivity(activityId, signalType, options = {}) {
 /**
  * GET SIGNAL CHOICES
  *
- * Returns frontend-ready choice lists for status, source, signal_category,
- * qualification_fields, and tech_stack_fields.
+ * Fetches all enum choices for signal forms.
  *
- * Response shape:
+ * Response shape (from backend):
  * {
- *   status:               [{ value, label }, ...],
- *   source:               [...],
- *   signal_category:      [...],
- *   qualification_fields: [...],
- *   tech_stack_fields:    [...],
+ *   status:           [...],
+ *   source:           [...],
+ *   signal_category:  [...],
+ *   people_roles:     [...],
+ *   influence_levels: [...],
+ *   pain_categories:  [...],
+ *   pain_levels:      [...],
+ *   goal_levels:      [...],
+ *   tech_categories:  [...],
+ *   satisfaction:     [...],
  * }
  *
  * @returns {Object} { choices, choicesLoading, choicesError, mutateChoices }
@@ -307,7 +363,6 @@ export function useGetSignalChoices() {
   const { data, isLoading, error, mutate } = useSWR(swrKey, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    // Choices are stable — long cache, no retry noise
     dedupingInterval: 300_000,
     shouldRetryOnError: false,
   });
@@ -330,8 +385,8 @@ export function useGetSignalChoices() {
  *
  * POST /module-signals/{signalType}/
  *
- * @param {'qualification'|'tech-stack'} signalType
- * @param {Object} payload - Signal creation payload (see BaseSignalCreateSerializer)
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {Object} payload - Signal creation payload
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
 export async function createSignal(signalType, payload) {
@@ -357,12 +412,9 @@ export async function createSignal(signalType, payload) {
  *
  * PATCH /module-signals/{signalType}/{id}/
  *
- * Allowed fields: value, signal_category, source_department,
- *                 source_contact, source_quote, metadata.
- *
- * @param {'qualification'|'tech-stack'} signalType
- * @param {string} signalId  - Signal UUID
- * @param {Object} payload   - Partial update payload
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {string} signalId - Signal UUID
+ * @param {Object} payload  - Partial update payload
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
 export async function updateSignal(signalType, signalId, payload) {
@@ -392,7 +444,7 @@ export async function updateSignal(signalType, signalId, payload) {
  *
  * DELETE /module-signals/{signalType}/{id}/
  *
- * @param {'qualification'|'tech-stack'} signalType
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
  * @param {string} signalId - Signal UUID
  * @returns {Promise<{success: boolean, status?: number, error?: string}>}
  */
@@ -423,7 +475,7 @@ export async function deleteSignal(signalType, signalId) {
  * POST /module-signals/{signalType}/{id}/validate/
  * Transitions signal from PENDING → VALIDATED.
  *
- * @param {'qualification'|'tech-stack'} signalType
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
  * @param {string} signalId - Signal UUID
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
@@ -432,7 +484,7 @@ export async function validateSignal(signalType, signalId) {
     return { success: false, error: "Invalid signal ID format", status: 400 };
   }
 
-  const url = getActionEndpoint(signalType, signalId, "validate");
+  const url = getValidateEndpoint(signalType, signalId);
   const result = await api.post(url, {});
 
   if (result.success) {
@@ -455,7 +507,7 @@ export async function validateSignal(signalType, signalId) {
  * POST /module-signals/{signalType}/{id}/reject/
  * Body (optional): { reason: string }
  *
- * @param {'qualification'|'tech-stack'} signalType
+ * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
  * @param {string} signalId    - Signal UUID
  * @param {string|null} reason - Optional rejection reason
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
@@ -465,87 +517,9 @@ export async function rejectSignal(signalType, signalId, reason = null) {
     return { success: false, error: "Invalid signal ID format", status: 400 };
   }
 
-  const url = getActionEndpoint(signalType, signalId, "reject");
+  const url = getRejectEndpoint(signalType, signalId);
   const payload = reason ? { reason } : {};
   const result = await api.post(url, payload);
-
-  if (result.success) {
-    revalidateSignalLists();
-    const data = result.data?.data ?? result.data;
-    return { success: true, data };
-  }
-
-  return {
-    success: false,
-    error: result.error,
-    status: result.status ?? 0,
-    response: result.response ?? null,
-  };
-}
-
-/**
- * MERGE SIGNAL
- *
- * POST /module-signals/{signalType}/{id}/merge/
- * Body: { target_signal_id: string }
- *
- * Source signal is merged into target signal.
- * Both must be the same type and field_name.
- *
- * @param {'qualification'|'tech-stack'} signalType
- * @param {string} signalId       - Source signal UUID
- * @param {string} targetSignalId - Target signal UUID
- * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
- */
-export async function mergeSignal(signalType, signalId, targetSignalId) {
-  if (!signalId || !isValidUUID(signalId)) {
-    return { success: false, error: "Invalid signal ID format", status: 400 };
-  }
-  if (!targetSignalId || !isValidUUID(targetSignalId)) {
-    return {
-      success: false,
-      error: "Invalid target signal ID format",
-      status: 400,
-    };
-  }
-
-  const url = getActionEndpoint(signalType, signalId, "merge");
-  const result = await api.post(url, { target_signal_id: targetSignalId });
-
-  if (result.success) {
-    revalidateSignalLists();
-    const data = result.data?.data ?? result.data;
-    return { success: true, data };
-  }
-
-  return {
-    success: false,
-    error: result.error,
-    status: result.status ?? 0,
-    response: result.response ?? null,
-  };
-}
-
-/**
- * SUPERSEDE SIGNAL
- *
- * POST /module-signals/{signalType}/{id}/supersede/
- * Body: { new_data: { <same shape as create payload> } }
- *
- * Marks the existing signal as superseded and creates a replacement.
- *
- * @param {'qualification'|'tech-stack'} signalType
- * @param {string} signalId  - Signal UUID to supersede
- * @param {Object} newData   - Create payload for the replacement signal
- * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
- */
-export async function supersedeSignal(signalType, signalId, newData) {
-  if (!signalId || !isValidUUID(signalId)) {
-    return { success: false, error: "Invalid signal ID format", status: 400 };
-  }
-
-  const url = getActionEndpoint(signalType, signalId, "supersede");
-  const result = await api.post(url, { new_data: newData });
 
   if (result.success) {
     revalidateSignalLists();
