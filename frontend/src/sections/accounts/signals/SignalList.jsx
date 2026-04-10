@@ -1,15 +1,17 @@
 // frontend/src/sections/accounts/signals/SignalList.jsx
 /**
- * SignalList — layout wrapper for a list of SignalCard components.
+ * SignalList
  *
- * Responsibilities:
- *   - Loading skeleton (3 placeholder cards)
- *   - Error state
- *   - Empty state with contextual message
- *   - Vertical stack of SignalCard, one per signal
- *
- * All signal-specific rendering and action dispatch is in SignalCard.
- * This component is intentionally thin.
+ * @param {Array}    signals            - Array of signal objects for this type
+ * @param {string}   signalType         - 'people' | 'pain' | 'objective' | 'tech-stack'
+ * @param {boolean}  loading            - Show skeleton when true
+ * @param {*}        error              - Truthy value shows error state
+ * @param {Function} onValidate         - (signal, signalType) => void
+ * @param {Function} onReject           - (signal, signalType) => void
+ * @param {Function} onEdit             - (signal, signalType) => void
+ * @param {Function} onDelete           - (signal, signalType) => void
+ * @param {string}   emptyMessage       - Primary empty state text
+ * @param {string}   [emptyDescription] - Secondary empty state text
  */
 
 "use client";
@@ -138,12 +140,12 @@ function ErrorState() {
  */
 export default function SignalList({
   signals,
+  signalType,
   loading,
   error,
   onValidate,
   onReject,
   onEdit,
-  onSupersede,
   onDelete,
   emptyMessage,
   emptyDescription,
@@ -185,11 +187,10 @@ export default function SignalList({
         <SignalCard
           key={signal.id}
           signal={signal}
-          signalType={signal.signalType}
+          signalType={signalType}
           onValidate={onValidate}
           onReject={onReject}
           onEdit={onEdit}
-          onSupersede={onSupersede}
           onDelete={onDelete}
         />
       ))}
@@ -212,19 +213,18 @@ export default function SignalList({
 // ==============================|| PROP TYPES ||============================== //
 
 SignalList.propTypes = {
-  /** Array of signal objects, each tagged with .signalType by AccountSignalsTab */
   signals: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.string.isRequired,
-      signalType: PropTypes.oneOf(["qualification", "tech-stack"]).isRequired,
     }),
   ),
+  signalType: PropTypes.oneOf(["people", "pain", "objective", "tech-stack"])
+    .isRequired,
   loading: PropTypes.bool,
   error: PropTypes.any,
   onValidate: PropTypes.func.isRequired,
   onReject: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,
-  onSupersede: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
   emptyMessage: PropTypes.string,
   emptyDescription: PropTypes.string,

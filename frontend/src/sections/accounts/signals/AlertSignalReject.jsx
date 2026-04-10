@@ -92,9 +92,25 @@ export default function AlertSignalReject({
 
   // ==============================|| DERIVED ||============================== //
 
-  const fieldLabel =
-    signal?.field_name_display || signal?.field_name || "this signal";
-  const techSuffix = signal?.tech_name ? ` · ${signal.tech_name}` : "";
+  /**
+   * Build a human-readable label for the signal being rejected.
+   * Each type exposes a different primary display field.
+   */
+  const fieldLabel = (() => {
+    if (!signal) return "this signal";
+    if (signal.summary)
+      return (
+        signal.summary.slice(0, 60) + (signal.summary.length > 60 ? "…" : "")
+      );
+    if (signal.role_display) return signal.role_display;
+    if (signal.tech_name) return signal.tech_name;
+    return "this signal";
+  })();
+
+  const techSuffix =
+    signal?.tech_name && !signal?.summary && !signal?.role_display
+      ? ` · ${signal.tech_name}`
+      : "";
 
   // ==============================|| RENDER ||============================== //
 
@@ -186,9 +202,9 @@ AlertSignalReject.propTypes = {
   onSuccess: PropTypes.func.isRequired,
   signal: PropTypes.shape({
     id: PropTypes.string.isRequired,
-    field_name: PropTypes.string,
-    field_name_display: PropTypes.string,
+    summary: PropTypes.string,
+    role_display: PropTypes.string,
     tech_name: PropTypes.string,
   }),
-  signalType: PropTypes.oneOf(["qualification", "tech-stack"]),
+  signalType: PropTypes.oneOf(["people", "pain", "objective", "tech-stack"]),
 };

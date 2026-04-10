@@ -2,21 +2,17 @@
 /**
  * ActivitySignalsTab — Signals section in the Activity Workspace.
  *
- * Three panels stacked vertically:
+ * Two panels stacked vertically:
  *
  *   1. ACTIVITY SIGNALS
- *      Lists all signals already linked to this activity (both qual + tech-stack).
- *      Rep can validate / reject / edit / supersede / delete from here.
+ *      Section toggle (People · Pain · Objective · Tech Stack) + SignalList
+ *      for the active section. Rep can validate / reject / delete from here.
+ *      "Add Signal" opens WizardSignalAdd with source_activity + source_contact
+ *      pre-filled from the activity context.
  *
- *   2. ADD SIGNAL
- *      Button to manually create a signal linked to this activity.
- *      - source_activity pre-filled (extraPayload)
- *      - source_contact pre-filled if the activity has exactly one contact
- *      - accountId derived from activity.account
- *
- *   3. LLM PLACEHOLDER (Sprint 2)
+ *   2. LLM PLACEHOLDER (Sprint 2)
  *      Visually present but disabled section. Communicates to the rep that
- *      transcript-based extraction is coming. No hidden / invisible markup.
+ *      transcript-based extraction is coming.
  */
 
 "use client";
@@ -31,6 +27,8 @@ import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
 
 // ant-design icons
@@ -40,9 +38,8 @@ import RobotOutlined from "@ant-design/icons/RobotOutlined";
 
 // project imports
 import SignalList from "sections/accounts/signals/SignalList";
-import FormSignalAdd from "sections/accounts/signals/FormSignalAdd";
-import FormSignalEdit from "sections/accounts/signals/FormSignalEdit";
 import AlertSignalReject from "sections/accounts/signals/AlertSignalReject";
+import WizardSignalAdd from "sections/accounts/signals/wizard/WizardSignalAdd";
 
 import {
   useGetSignalsByActivity,
@@ -54,6 +51,16 @@ import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
 } from "utils/displayError";
+
+// ==============================|| CONSTANTS ||============================== //
+
+/** Section toggle — 4 signal types */
+const TYPE_OPTIONS = [
+  { value: "people", label: "People" },
+  { value: "pain", label: "Pain" },
+  { value: "objective", label: "Objective" },
+  { value: "tech-stack", label: "Tech Stack" },
+];
 
 // ==============================|| LLM PLACEHOLDER ||============================== //
 
@@ -160,75 +167,135 @@ export default function ActivitySignalsTab({ activity }) {
   }, [activity]);
 
   /**
-   * Detect single contact — pre-fill source_contact in the add form.
-   * activity.contacts shape is assumed to be an array of { id, ... }.
-   * If the field is absent or has more than one contact, we leave it empty.
+   * Detect single contact — pre-fill source_contact in the wizard.
+   * If absent or multiple contacts, leave empty (user selects in form).
    */
-  const defaultContactId = useMemo(() => {
+  const defaultContact = useMemo(() => {
     const contacts = activity?.contacts ?? [];
-    if (contacts.length === 1) return contacts[0]?.id ?? null;
+    if (contacts.length === 1) return contacts[0] ?? null;
     return null;
   }, [activity]);
 
   /**
-   * Extra payload injected into FormSignalAdd at submit time.
-   * source_activity links the new signal to this activity.
+   * Extra payload injected into every signal at wizard dispatch time.
+   * source_activity links each new signal to this activity.
    */
   const extraPayload = useMemo(
     () => (activityId ? { source_activity: activityId } : {}),
     [activityId],
   );
 
+  // ==============================|| SECTION STATE ||============================== //
+
+  const [activeSection, setActiveSection] = useState("pain");
+
+  const handleSectionChange = useCallback((_e, newValue) => {
+    if (newValue !== null) setActiveSection(newValue);
+  }, []);
+
   // ==============================|| DATA FETCHING ||============================== //
 
   const {
-    signals: qualSignals,
-    signalsLoading: qualLoading,
-    signalsError: qualError,
-    mutateSignals: mutateQual,
-  } = useGetSignalsByActivity(activityId, "qualification");
+    signals: peopleSignals,
+    signalsLoading: peopleLoading,
+    signalsError: peopleError,
+    mutateSignals: mutatePeople,
+  } = useGetSignalsByActivity(activityId, "people");
 
   const {
-    signals: tsSignals,
-    signalsLoading: tsLoading,
-    signalsError: tsError,
-    mutateSignals: mutateTs,
+    signals: painSignals,
+    signalsLoading: painLoading,
+    signalsError: painError,
+    mutateSignals: mutatePain,
+  } = useGetSignalsByActivity(activityId, "pain");
+
+  const {
+    signals: objectiveSignals,
+    signalsLoading: objectiveLoading,
+    signalsError: objectiveError,
+    mutateSignals: mutateObjective,
+  } = useGetSignalsByActivity(activityId, "objective");
+
+  const {
+    signals: techSignals,
+    signalsLoading: techLoading,
+    signalsError: techError,
+    mutateSignals: mutateTech,
   } = useGetSignalsByActivity(activityId, "tech-stack");
 
   const { choices, choicesLoading } = useGetSignalChoices();
 
-  // ==============================|| DERIVED LIST ||============================== //
-
-  const signals = useMemo(() => {
-    const taggedQual = qualSignals.map((s) => ({
-      ...s,
-      signalType: "qualification",
-    }));
-    const taggedTs = tsSignals.map((s) => ({ ...s, signalType: "tech-stack" }));
-    return [...taggedQual, ...taggedTs].sort(
-      (a, b) => new Date(b.created_at) - new Date(a.created_at),
-    );
-  }, [qualSignals, tsSignals]);
-
-  const isLoading = qualLoading || tsLoading;
-  const hasError = qualError || tsError;
-
-  // ==============================|| REVALIDATE ||============================== //
+  // ==============================|| DERIVED ||============================== //
 
   const mutateAll = useCallback(() => {
-    mutateQual();
-    mutateTs();
-  }, [mutateQual, mutateTs]);
+    mutatePeople();
+    mutatePain();
+    mutateObjective();
+    mutateTech();
+  }, [mutatePeople, mutatePain, mutateObjective, mutateTech]);
+
+  /** Total signal count across all types — shown in panel header */
+  const totalCount = useMemo(
+    () =>
+      peopleSignals.length +
+      painSignals.length +
+      objectiveSignals.length +
+      techSignals.length,
+    [peopleSignals, painSignals, objectiveSignals, techSignals],
+  );
+
+  /** Per-type counts — shown as badges in the section toggle */
+  const counts = useMemo(
+    () => ({
+      people: peopleSignals.length,
+      pain: painSignals.length,
+      objective: objectiveSignals.length,
+      "tech-stack": techSignals.length,
+    }),
+    [peopleSignals, painSignals, objectiveSignals, techSignals],
+  );
+
+  /** Active section data — signals, loading, error */
+  const activeData = useMemo(() => {
+    switch (activeSection) {
+      case "people":
+        return {
+          signals: peopleSignals,
+          loading: peopleLoading,
+          error: peopleError,
+        };
+      case "pain":
+        return { signals: painSignals, loading: painLoading, error: painError };
+      case "objective":
+        return {
+          signals: objectiveSignals,
+          loading: objectiveLoading,
+          error: objectiveError,
+        };
+      case "tech-stack":
+        return { signals: techSignals, loading: techLoading, error: techError };
+      default:
+        return { signals: [], loading: false, error: null };
+    }
+  }, [
+    activeSection,
+    peopleSignals,
+    peopleLoading,
+    peopleError,
+    painSignals,
+    painLoading,
+    painError,
+    objectiveSignals,
+    objectiveLoading,
+    objectiveError,
+    techSignals,
+    techLoading,
+    techError,
+  ]);
 
   // ==============================|| MODAL STATE ||============================== //
 
-  const [addOpen, setAddOpen] = useState(false);
-
-  const [editModal, setEditModal] = useState({
-    open: false,
-    signal: null,
-    signalType: null,
-  });
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const [rejectModal, setRejectModal] = useState({
     open: false,
@@ -238,40 +305,12 @@ export default function ActivitySignalsTab({ activity }) {
 
   // ==============================|| HANDLERS ||============================== //
 
-  const handleAddClose = useCallback(() => setAddOpen(false), []);
+  const handleWizardOpen = useCallback(() => setWizardOpen(true), []);
+  const handleWizardClose = useCallback(() => setWizardOpen(false), []);
 
-  const handleAddSuccess = useCallback(() => {
-    setAddOpen(false);
+  const handleWizardSuccess = useCallback(() => {
     mutateAll();
-    displaySuccessSnackbar("Signal added to this activity");
-  }, [mutateAll]);
-
-  const handleEdit = useCallback((signal, signalType) => {
-    setEditModal({ open: true, signal, signalType });
-  }, []);
-
-  const handleEditClose = useCallback(() => {
-    setEditModal({ open: false, signal: null, signalType: null });
-  }, []);
-
-  const handleEditSuccess = useCallback(() => {
-    setEditModal({ open: false, signal: null, signalType: null });
-    mutateAll();
-    displaySuccessSnackbar("Signal updated");
-  }, [mutateAll]);
-
-  const handleRejectOpen = useCallback((signal, signalType) => {
-    setRejectModal({ open: true, signal, signalType });
-  }, []);
-
-  const handleRejectClose = useCallback(() => {
-    setRejectModal({ open: false, signal: null, signalType: null });
-  }, []);
-
-  const handleRejectSuccess = useCallback(() => {
-    setRejectModal({ open: false, signal: null, signalType: null });
-    mutateAll();
-    displaySuccessSnackbar("Signal rejected");
+    // Wizard closes itself on full success
   }, [mutateAll]);
 
   const handleValidate = useCallback(
@@ -287,6 +326,28 @@ export default function ActivitySignalsTab({ activity }) {
     [mutateAll],
   );
 
+  const handleRejectOpen = useCallback((signal, signalType) => {
+    setRejectModal({ open: true, signal, signalType });
+  }, []);
+
+  const handleRejectClose = useCallback(() => {
+    setRejectModal({ open: false, signal: null, signalType: null });
+  }, []);
+
+  const handleRejectSuccess = useCallback(() => {
+    setRejectModal({ open: false, signal: null, signalType: null });
+    mutateAll();
+    displaySuccessSnackbar("Signal rejected");
+  }, [mutateAll]);
+
+  /**
+   * TODO: Edit form deferred from MVP.
+   * Wire up per-type edit forms here in Sprint 7.
+   */
+  const handleEdit = useCallback((_signal, _signalType) => {
+    // no-op for MVP
+  }, []);
+
   const handleDelete = useCallback(
     async (signal, signalType) => {
       const result = await deleteSignal(signalType, signal.id);
@@ -300,68 +361,75 @@ export default function ActivitySignalsTab({ activity }) {
     [mutateAll],
   );
 
-  /** Supersede from activity context — opens FormSignalAdd in supersede mode */
-  const [supersedeTarget, setSupersedeTarget] = useState(null);
-
-  const handleSupersede = useCallback((signal, signalType) => {
-    setSupersedeTarget({ signal, signalType });
-    setAddOpen(true);
-  }, []);
-
-  const handleAddOrSupersedeClose = useCallback(() => {
-    setAddOpen(false);
-    setSupersedeTarget(null);
-  }, []);
-
-  const handleAddOrSupersedeSuccess = useCallback(() => {
-    setAddOpen(false);
-    setSupersedeTarget(null);
-    mutateAll();
-    displaySuccessSnackbar(
-      supersedeTarget ? "Signal superseded" : "Signal added to this activity",
-    );
-  }, [mutateAll, supersedeTarget]);
-
   // ==============================|| RENDER ||============================== //
 
   return (
     <Box>
       {/* ==================== PANEL 1: ACTIVITY SIGNALS ==================== */}
+
+      {/* Panel header */}
       <Stack
         direction="row"
         justifyContent="space-between"
         alignItems="center"
         sx={{ mb: 1.5 }}
       >
-        <SectionHeader
-          title="Signals from this activity"
-          count={signals.length}
-        />
+        <SectionHeader title="Signals from this activity" count={totalCount} />
         <Button
           variant="outlined"
           size="small"
           startIcon={<PlusOutlined />}
-          onClick={() => {
-            setSupersedeTarget(null);
-            setAddOpen(true);
-          }}
+          onClick={handleWizardOpen}
           disabled={!accountId}
         >
           Add Signal
         </Button>
       </Stack>
 
+      {/* Section toggle */}
+      <ToggleButtonGroup
+        value={activeSection}
+        exclusive
+        onChange={handleSectionChange}
+        size="small"
+        aria-label="Signal section"
+        sx={{ mb: 2 }}
+      >
+        {TYPE_OPTIONS.map((opt) => (
+          <ToggleButton
+            key={opt.value}
+            value={opt.value}
+            sx={{ textTransform: "none", px: 1.5, fontSize: "0.78rem" }}
+          >
+            {opt.label}
+            {counts[opt.value] > 0 && (
+              <Chip
+                label={counts[opt.value]}
+                size="small"
+                sx={{
+                  ml: 0.75,
+                  height: 18,
+                  fontSize: "0.62rem",
+                  pointerEvents: "none",
+                }}
+              />
+            )}
+          </ToggleButton>
+        ))}
+      </ToggleButtonGroup>
+
+      {/* Active section list */}
       <SignalList
-        signals={signals}
-        loading={isLoading}
-        error={hasError}
+        signals={activeData.signals}
+        signalType={activeSection}
+        loading={activeData.loading}
+        error={activeData.error}
         onValidate={handleValidate}
         onReject={handleRejectOpen}
         onEdit={handleEdit}
-        onSupersede={handleSupersede}
         onDelete={handleDelete}
-        emptyMessage="No signals linked to this activity yet"
-        emptyDescription="Add a signal manually or extract them from the transcript below"
+        emptyMessage={`No ${activeSection} signals linked to this activity yet`}
+        emptyDescription="Open the wizard to capture signals from this conversation"
       />
 
       <Divider sx={{ my: 3 }} />
@@ -370,30 +438,22 @@ export default function ActivitySignalsTab({ activity }) {
       <SectionHeader title="Transcript analysis" />
       <LlmPlaceholder />
 
-      {/* ==================== MODALS ==================== */}
+      {/* ==================== DRAWERS / MODALS ==================== */}
 
-      <FormSignalAdd
-        open={addOpen}
-        onClose={handleAddOrSupersedeClose}
-        onSuccess={handleAddOrSupersedeSuccess}
+      {/* Signal capture wizard — pre-filled with activity context */}
+      <WizardSignalAdd
+        open={wizardOpen}
+        onClose={handleWizardClose}
+        onSuccess={handleWizardSuccess}
         accountId={accountId ?? ""}
         choices={choices}
         choicesLoading={choicesLoading}
-        supersedeTarget={supersedeTarget}
         extraPayload={extraPayload}
-        defaultContactId={defaultContactId}
+        defaultContact={defaultContact}
+        defaultSection={activeSection}
       />
 
-      <FormSignalEdit
-        open={editModal.open}
-        onClose={handleEditClose}
-        onSuccess={handleEditSuccess}
-        signal={editModal.signal}
-        signalType={editModal.signalType}
-        choices={choices}
-        choicesLoading={choicesLoading}
-      />
-
+      {/* Reject confirmation */}
       <AlertSignalReject
         open={rejectModal.open}
         onClose={handleRejectClose}
@@ -408,7 +468,6 @@ export default function ActivitySignalsTab({ activity }) {
 // ==============================|| PROP TYPES ||============================== //
 
 ActivitySignalsTab.propTypes = {
-  /** Full activity object from useGetActivity() */
   activity: PropTypes.shape({
     id: PropTypes.string,
     account: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),

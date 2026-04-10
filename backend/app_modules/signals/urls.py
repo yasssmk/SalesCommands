@@ -156,6 +156,7 @@ def get_urlpatterns():
             TechStackSignalViewSet.as_view({'post': 'reject_signal'}),
             name='tech-stack-reject',
         ),
+        
     ]
 
 
