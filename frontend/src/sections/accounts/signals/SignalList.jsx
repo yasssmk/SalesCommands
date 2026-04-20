@@ -30,7 +30,7 @@ import AlertOutlined from "@ant-design/icons/AlertOutlined";
 import InboxOutlined from "@ant-design/icons/InboxOutlined";
 
 // project imports
-import SignalCard from "./SignalCard";
+import SignalCard from "components/cards/SignalCard";
 
 // ==============================|| SKELETON CARD ||============================== //
 

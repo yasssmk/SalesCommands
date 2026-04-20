@@ -128,16 +128,17 @@ export default function InlineObjectiveForm({
   const formik = useFormik({
     initialValues: initialValuesProp ?? buildInitialValues(defaultContact),
     validationSchema,
+    enableReinitialize: true,
     onSubmit: (values, { resetForm }) => {
       const payload = {
         summary: values.summary.trim(),
         goal_level: values.goal_level,
-        // Extract UUID from full contact object
-        source_contact: values.source_contact.id,
+        // Keep full contact object — UUID is extracted at dispatch time
+        // (wizard dispatch or SignalEditDialog PATCH)
+        source_contact: values.source_contact,
       };
 
-      if (values.target_contact)
-        payload.target_contact = values.target_contact.id;
+      if (values.target_contact) payload.target_contact = values.target_contact;
       if (values.success_criteria)
         payload.success_criteria = values.success_criteria.trim();
       if (values.measurement_method)

@@ -28,7 +28,7 @@ import {
 import AccountContactsTab from "sections/accounts/contacts/AccountContactsTab";
 import DecisionCycleTab from "sections/accounts/workspace/DecisionCycleTab";
 import AccountActivitiesTab from "sections/accounts/activities/AccountActivitiesTab";
-import AccountSignalsTab from "sections/accounts/signals/AccountSignalsTab";
+import AccountSignalsTab from "sections/accounts/workspace/AccountSignalsTab";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,

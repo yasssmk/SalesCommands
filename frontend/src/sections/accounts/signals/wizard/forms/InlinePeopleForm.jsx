@@ -122,16 +122,16 @@ export default function InlinePeopleForm({
   const formik = useFormik({
     initialValues: initialValuesProp ?? buildInitialValues(defaultContact),
     validationSchema,
+    enableReinitialize: true,
     onSubmit: (values, { resetForm }) => {
       const payload = {
         role: values.role,
       };
 
-      // Extract UUID from full contact objects before sending
-      if (values.source_contact)
-        payload.source_contact = values.source_contact.id;
-      if (values.target_contact)
-        payload.target_contact = values.target_contact.id;
+      // Keep full contact objects — UUIDs are extracted at dispatch time
+      // (wizard dispatch or SignalEditDialog PATCH)
+      if (values.source_contact) payload.source_contact = values.source_contact;
+      if (values.target_contact) payload.target_contact = values.target_contact;
       if (values.influence_level)
         payload.influence_level = values.influence_level;
       if (values.target_department)

@@ -128,13 +128,15 @@ export default function InlinePainForm({
   const formik = useFormik({
     initialValues: initialValuesProp ?? buildInitialValues(defaultContact),
     validationSchema,
+    enableReinitialize: true,
     onSubmit: (values, { resetForm }) => {
       const payload = {
         summary: values.summary.trim(),
         category: values.category,
         pain_level: values.pain_level,
-        // Extract UUID from full contact object
-        source_contact: values.source_contact.id,
+        // Keep full contact object — UUID is extracted at dispatch time
+        // (wizard dispatch or SignalEditDialog PATCH)
+        source_contact: values.source_contact,
       };
 
       if (values.business_cost)

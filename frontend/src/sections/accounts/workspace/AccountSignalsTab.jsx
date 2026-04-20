@@ -1,4 +1,4 @@
-// frontend/src/sections/accounts/signals/AccountSignalsTab.jsx
+// frontend/src/sections/accounts/workspace/AccountSignalsTab.jsx
 /**
  * AccountSignalsTab — container for the Signals tab in Account Workspace.
  *
@@ -33,9 +33,10 @@ import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
 // project imports
-import SignalList from "./SignalList";
-import AlertSignalReject from "./AlertSignalReject";
-import WizardSignalAdd from "./wizard/WizardSignalAdd";
+import SignalList from "../signals/SignalList";
+import AlertSignalReject from "../signals/AlertSignalReject";
+import SignalEditDialog from "../signals/SignalEditDialog";
+import WizardSignalAdd from "../signals/wizard/WizardSignalAdd";
 
 import {
   useGetSignalsByAccount,
@@ -85,6 +86,12 @@ export default function AccountSignalsTab({ accountId, account }) {
   const [wizardOpen, setWizardOpen] = useState(false);
 
   const [rejectModal, setRejectModal] = useState({
+    open: false,
+    signal: null,
+    signalType: null,
+  });
+
+  const [editModal, setEditModal] = useState({
     open: false,
     signal: null,
     signalType: null,
@@ -231,7 +238,7 @@ export default function AccountSignalsTab({ accountId, account }) {
         mutateAll();
         displaySuccessSnackbar("Signal validated");
       } else {
-        displayErrorSnackbar(result.error || "Failed to validate signal");
+        displayErrorSnackbar(result);
       }
     },
     [mutateAll],
@@ -251,13 +258,18 @@ export default function AccountSignalsTab({ accountId, account }) {
     displaySuccessSnackbar("Signal rejected");
   }, [mutateAll]);
 
-  /**
-   * TODO: Edit form deferred from MVP.
-   * The PATCH endpoint exists on the backend — wire up FormXxxSignalEdit here in Sprint 7.
-   */
-  const handleEdit = useCallback((_signal, _signalType) => {
-    // no-op for MVP
+  const handleEdit = useCallback((signal, signalType) => {
+    setEditModal({ open: true, signal, signalType });
   }, []);
+
+  const handleEditClose = useCallback(() => {
+    setEditModal({ open: false, signal: null, signalType: null });
+  }, []);
+
+  const handleEditSuccess = useCallback(() => {
+    mutateAll();
+    // Dialog closes itself on success
+  }, [mutateAll]);
 
   const handleDelete = useCallback(
     async (signal, signalType) => {
@@ -266,7 +278,7 @@ export default function AccountSignalsTab({ accountId, account }) {
         mutateAll();
         displaySuccessSnackbar("Signal deleted");
       } else {
-        displayErrorSnackbar(result.error || "Failed to delete signal");
+        displayErrorSnackbar(result);
       }
     },
     [mutateAll],
@@ -392,6 +404,18 @@ export default function AccountSignalsTab({ accountId, account }) {
         onSuccess={handleRejectSuccess}
         signal={rejectModal.signal}
         signalType={rejectModal.signalType}
+      />
+
+      {/* Edit dialog */}
+      <SignalEditDialog
+        open={editModal.open}
+        onClose={handleEditClose}
+        onSuccess={handleEditSuccess}
+        signal={editModal.signal}
+        signalType={editModal.signalType}
+        accountId={accountId}
+        choices={choices}
+        choicesLoading={choicesLoading}
       />
     </Box>
   );

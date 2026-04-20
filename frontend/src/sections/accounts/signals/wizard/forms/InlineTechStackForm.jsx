@@ -128,10 +128,12 @@ export default function InlineTechStackForm({
   const formik = useFormik({
     initialValues: initialValuesProp ?? buildInitialValues(defaultContact),
     validationSchema,
+    enableReinitialize: true,
     onSubmit: (values, { resetForm }) => {
       const payload = {
-        // Extract UUID from full contact object
-        source_contact: values.source_contact.id,
+        // Keep full contact object — UUID is extracted at dispatch time
+        // (wizard dispatch or SignalEditDialog PATCH)
+        source_contact: values.source_contact,
       };
 
       if (values.tech_name) payload.tech_name = values.tech_name.trim();

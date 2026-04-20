@@ -81,7 +81,7 @@ export default function AlertSignalReject({
     if (result.success) {
       onSuccess();
     } else {
-      displayErrorSnackbar(result.error || "Failed to reject signal");
+      displayErrorSnackbar(result);
     }
   };
 
@@ -125,7 +125,7 @@ export default function AlertSignalReject({
       <DialogTitle id="signal-reject-dialog-title">
         <Stack direction="row" spacing={1.5} alignItems="center">
           <CloseCircleOutlined style={{ fontSize: 20, color: "#ff4d4f" }} />
-          <Typography variant="h5">Reject Signal</Typography>
+          Reject Signal
         </Stack>
       </DialogTitle>
 

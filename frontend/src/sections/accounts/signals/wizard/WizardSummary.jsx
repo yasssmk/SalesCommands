@@ -30,6 +30,7 @@ import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -37,6 +38,7 @@ import Typography from "@mui/material/Typography";
 import ArrowLeftOutlined from "@ant-design/icons/ArrowLeftOutlined";
 import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
 import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
+import EditOutlined from "@ant-design/icons/EditOutlined";
 import SendOutlined from "@ant-design/icons/SendOutlined";
 
 // ==============================|| CONSTANTS ||============================== //
@@ -98,6 +100,7 @@ function SummarySignalCard({
   signal,
   choices,
   onToggleStatus,
+  onEdit,
   failureError,
 }) {
   const isRejected = signal._status === "REJECTED";
@@ -146,6 +149,22 @@ function SummarySignalCard({
             {primaryLabel}
           </Typography>
 
+          {/* Edit button — only when not rejected and no failure */}
+          {!isRejected && !failureError && (
+            <IconButton
+              size="small"
+              onClick={() => onEdit(type, signal._key)}
+              aria-label="Edit signal"
+              sx={{
+                flexShrink: 0,
+                color: "text.disabled",
+                "&:hover": { color: "primary.main" },
+              }}
+            >
+              <EditOutlined style={{ fontSize: 13 }} />
+            </IconButton>
+          )}
+
           {/* Toggle button */}
           <Button
             size="small"
@@ -185,6 +204,7 @@ SummarySignalCard.propTypes = {
   }).isRequired,
   choices: PropTypes.object,
   onToggleStatus: PropTypes.func.isRequired,
+  onEdit: PropTypes.func.isRequired,
   failureError: PropTypes.string,
 };
 
@@ -204,6 +224,7 @@ SummarySignalCard.propTypes = {
 export default function WizardSummary({
   staged,
   onToggleStatus,
+  onEdit,
   onBack,
   onConfirm,
   submitting,
@@ -326,6 +347,7 @@ export default function WizardSummary({
                       signal={signal}
                       choices={choices}
                       onToggleStatus={onToggleStatus}
+                      onEdit={onEdit}
                       failureError={failureMap[signal._key]}
                     />
                   ))}
@@ -394,6 +416,7 @@ WizardSummary.propTypes = {
     "tech-stack": PropTypes.array,
   }).isRequired,
   onToggleStatus: PropTypes.func.isRequired,
+  onEdit: PropTypes.func.isRequired,
   onBack: PropTypes.func.isRequired,
   onConfirm: PropTypes.func.isRequired,
   submitting: PropTypes.bool,

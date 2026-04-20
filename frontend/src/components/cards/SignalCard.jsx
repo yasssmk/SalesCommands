@@ -1,4 +1,4 @@
-// frontend/src/sections/accounts/signals/SignalCard.jsx
+// frontend/src/components/cards/SignalCard.jsx
 /**
  * SignalCard — displays a single signal of any type with its metadata
  * and contextual actions.
@@ -718,8 +718,8 @@ export default function SignalCard({
             anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
             transformOrigin={{ vertical: "top", horizontal: "right" }}
           >
-            {/* Edit — PENDING and VALIDATED only */}
-            {(isPending || isValidated) && (
+            {/* Edit — all statuses except REJECTED */}
+            {status !== "REJECTED" && (
               <MenuItem onClick={handleEdit} dense>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <EditOutlined style={{ fontSize: 14 }} />

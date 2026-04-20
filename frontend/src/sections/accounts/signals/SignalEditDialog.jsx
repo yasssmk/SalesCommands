@@ -29,7 +29,6 @@ import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
 
 // ant-design icons
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
@@ -101,19 +100,43 @@ export default function SignalEditDialog({
    *
    * The inline form marks itself as submitting during this call via
    * Formik's isSubmitting — the submit button is disabled automatically.
+   *
+   * Contact normalization:
+   *   Inline forms store source_contact / target_contact as full contact
+   *   objects (for AsyncContactSelect compatibility). The backend expects
+   *   UUIDs — we extract .id here before sending the PATCH.
    */
   const handleSave = useCallback(
     async (payload) => {
       if (!signal?.id) return;
 
-      const result = await updateSignal(signalType, signal.id, payload);
+      // Normalize contact fields: full object → UUID string
+      const normalizedPayload = { ...payload };
+      if (
+        normalizedPayload.source_contact &&
+        typeof normalizedPayload.source_contact === "object"
+      ) {
+        normalizedPayload.source_contact = normalizedPayload.source_contact.id;
+      }
+      if (
+        normalizedPayload.target_contact &&
+        typeof normalizedPayload.target_contact === "object"
+      ) {
+        normalizedPayload.target_contact = normalizedPayload.target_contact.id;
+      }
+
+      const result = await updateSignal(
+        signalType,
+        signal.id,
+        normalizedPayload,
+      );
 
       if (result.success) {
         displaySuccessSnackbar("Signal updated successfully");
         onSuccess();
         onClose();
       } else {
-        displayErrorSnackbar(result.error ?? "Failed to update signal");
+        displayErrorSnackbar(result);
       }
     },
     [signal, signalType, onSuccess, onClose],
@@ -149,10 +172,7 @@ export default function SignalEditDialog({
     >
       {/* ---- Header ---- */}
       <DialogTitle id="signal-edit-dialog-title" sx={{ pr: 6 }}>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Typography variant="h5">Edit {title}</Typography>
-        </Stack>
-
+        Edit {title}
         {/* Close button */}
         <IconButton
           size="small"

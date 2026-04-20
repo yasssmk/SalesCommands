@@ -52,8 +52,8 @@ import SendOutlined from "@ant-design/icons/SendOutlined";
 // project imports
 import { createSignal } from "api/accounts/signals";
 import {
-  displayErrorSnackbar,
   displaySuccessSnackbar,
+  displayWarningSnackbar,
 } from "utils/displayError";
 
 import WizardNav from "./WizardNav";
@@ -124,6 +124,14 @@ export default function WizardSignalAdd({
    */
   const [results, setResults] = useState(null);
 
+  /**
+   * Active edit target — non-null when the user is editing a staged signal.
+   * { type, _key } — type = signal type, _key = staged signal's local key.
+   * When set, the active section renders the inline form in edit mode
+   * instead of the card for that signal.
+   */
+  const [editing, setEditing] = useState(null);
+
   /** Controls the "unsaved signals" confirmation dialog on close attempt */
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
 
@@ -145,6 +153,7 @@ export default function WizardSignalAdd({
       setShowSummary(false);
       setSubmitting(false);
       setResults(null);
+      setEditing(null);
     }
   }, [open, defaultSection]);
 
@@ -278,9 +287,96 @@ export default function WizardSignalAdd({
     (_key) => handleRemove("objective", _key),
     [handleRemove],
   );
+
   const handleRemoveTechStack = useCallback(
     (_key) => handleRemove("tech-stack", _key),
     [handleRemove],
+  );
+
+  // ==============================|| EDIT HANDLERS ||============================== //
+
+  /**
+   * Start editing a staged signal from within a section view.
+   * The section will render the inline form pre-filled with signal data.
+   *
+   * @param {'people'|'pain'|'objective'|'tech-stack'} type
+   * @param {string} key - _key of the signal to edit
+   */
+  const handleStartEdit = useCallback((type, key) => {
+    setEditing({ type, _key: key });
+  }, []);
+
+  /**
+   * Start editing a staged signal from the Summary screen.
+   * Closes Summary, switches to the signal's section, then enters edit mode.
+   *
+   * @param {'people'|'pain'|'objective'|'tech-stack'} type
+   * @param {string} key - _key of the signal to edit
+   */
+  const handleStartEditFromSummary = useCallback((type, key) => {
+    setShowSummary(false);
+    setResults(null);
+    setActiveSection(type);
+    setEditing({ type, _key: key });
+  }, []);
+
+  /**
+   * Apply an edit to a staged signal.
+   * Preserves the original _key and _status — only the payload fields are replaced.
+   * Clears edit mode after update.
+   *
+   * @param {'people'|'pain'|'objective'|'tech-stack'} type
+   * @param {string} key - _key of the signal being updated
+   * @param {Object} payload - New payload from the inline form
+   */
+  const handleUpdate = useCallback((type, key, payload) => {
+    setStaged((prev) => ({
+      ...prev,
+      [type]: prev[type].map((s) =>
+        s._key === key ? { _key: s._key, _status: s._status, ...payload } : s,
+      ),
+    }));
+    setEditing(null);
+  }, []);
+
+  /** Cancel edit mode without applying changes. */
+  const handleCancelEdit = useCallback(() => {
+    setEditing(null);
+  }, []);
+
+  // Type-specific wrappers for sections — (_key) => void, (_key, payload) => void
+  const handleStartEditPeople = useCallback(
+    (_key) => handleStartEdit("people", _key),
+    [handleStartEdit],
+  );
+  const handleStartEditPain = useCallback(
+    (_key) => handleStartEdit("pain", _key),
+    [handleStartEdit],
+  );
+  const handleStartEditObjective = useCallback(
+    (_key) => handleStartEdit("objective", _key),
+    [handleStartEdit],
+  );
+  const handleStartEditTechStack = useCallback(
+    (_key) => handleStartEdit("tech-stack", _key),
+    [handleStartEdit],
+  );
+
+  const handleUpdatePeople = useCallback(
+    (_key, payload) => handleUpdate("people", _key, payload),
+    [handleUpdate],
+  );
+  const handleUpdatePain = useCallback(
+    (_key, payload) => handleUpdate("pain", _key, payload),
+    [handleUpdate],
+  );
+  const handleUpdateObjective = useCallback(
+    (_key, payload) => handleUpdate("objective", _key, payload),
+    [handleUpdate],
+  );
+  const handleUpdateTechStack = useCallback(
+    (_key, payload) => handleUpdate("tech-stack", _key, payload),
+    [handleUpdate],
   );
 
   // ==============================|| NAVIGATION HANDLERS ||============================== //
@@ -304,6 +400,7 @@ export default function WizardSignalAdd({
       setSectionFormOpen(false);
       setActiveSection(pendingSection);
       setPendingSection(null);
+      setEditing(null);
     }
   }, [pendingSection]);
 
@@ -315,6 +412,7 @@ export default function WizardSignalAdd({
   const handleReviewAndSave = useCallback(() => {
     setShowSummary(true);
     setResults(null);
+    setEditing(null);
   }, []);
 
   const handleBack = useCallback(() => {
@@ -365,6 +463,21 @@ export default function WizardSignalAdd({
       toDispatch.map(async ({ type, signal }) => {
         // Strip wizard-managed metadata before sending
         const { _key, _status, ...payload } = signal;
+
+        // Normalize contact fields: inline forms store full objects,
+        // backend expects UUIDs.
+        if (
+          payload.source_contact &&
+          typeof payload.source_contact === "object"
+        ) {
+          payload.source_contact = payload.source_contact.id;
+        }
+        if (
+          payload.target_contact &&
+          typeof payload.target_contact === "object"
+        ) {
+          payload.target_contact = payload.target_contact.id;
+        }
 
         const result = await createSignal(type, {
           ...payload,
@@ -433,9 +546,13 @@ export default function WizardSignalAdd({
 
     setResults({ succeeded, failed });
 
-    displayErrorSnackbar(
-      `${failed.length} signal${failed.length === 1 ? "" : "s"} failed to save. Review errors below.`,
-    );
+    if (failed.length === 1) {
+      // Single failure — show the exact backend error
+      displayWarningSnackbar(failed[0].error);
+    } else {
+      // Multiple failures — generic summary, per-signal errors shown in WizardSummary
+      displayWarningSnackbar(`${failed.length} signals failed to save.`);
+    }
   }, [staged, accountId, extraPayload, onSuccess, onClose]);
 
   // ==============================|| RENDER — SECTION CONTENT ||============================== //
@@ -448,7 +565,12 @@ export default function WizardSignalAdd({
       defaultContact,
       onFormOpenChange: setSectionFormOpen,
       hasActivityContext: Boolean(extraPayload?.source_activity),
+      onCancelEdit: handleCancelEdit,
     };
+
+    // Only expose editingKey to the section that owns the signal being edited
+    const editingKeyFor = (type) =>
+      editing?.type === type ? editing._key : null;
 
     switch (activeSection) {
       case "people":
@@ -458,6 +580,9 @@ export default function WizardSignalAdd({
             onAdd={handleAddPeople}
             onToggleStatus={handleTogglePeople}
             onRemove={handleRemovePeople}
+            onEdit={handleStartEditPeople}
+            onUpdate={handleUpdatePeople}
+            editingKey={editingKeyFor("people")}
             {...sharedProps}
           />
         );
@@ -468,6 +593,9 @@ export default function WizardSignalAdd({
             onAdd={handleAddPain}
             onToggleStatus={handleTogglePain}
             onRemove={handleRemovePain}
+            onEdit={handleStartEditPain}
+            onUpdate={handleUpdatePain}
+            editingKey={editingKeyFor("pain")}
             {...sharedProps}
           />
         );
@@ -478,6 +606,9 @@ export default function WizardSignalAdd({
             onAdd={handleAddObjective}
             onToggleStatus={handleToggleObjective}
             onRemove={handleRemoveObjective}
+            onEdit={handleStartEditObjective}
+            onUpdate={handleUpdateObjective}
+            editingKey={editingKeyFor("objective")}
             {...sharedProps}
           />
         );
@@ -488,6 +619,9 @@ export default function WizardSignalAdd({
             onAdd={handleAddTechStack}
             onToggleStatus={handleToggleTechStack}
             onRemove={handleRemoveTechStack}
+            onEdit={handleStartEditTechStack}
+            onUpdate={handleUpdateTechStack}
+            editingKey={editingKeyFor("tech-stack")}
             {...sharedProps}
           />
         );
@@ -620,6 +754,7 @@ export default function WizardSignalAdd({
           <WizardSummary
             staged={staged}
             onToggleStatus={handleToggle}
+            onEdit={handleStartEditFromSummary}
             onBack={handleBack}
             onConfirm={handleConfirm}
             submitting={submitting}
@@ -636,9 +771,7 @@ export default function WizardSignalAdd({
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>
-          <Typography variant="h6">Leave unsaved form?</Typography>
-        </DialogTitle>
+        <DialogTitle>Leave unsaved form?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
             You have an unsaved signal form open. Switching sections will
@@ -672,7 +805,7 @@ export default function WizardSignalAdd({
         fullWidth
       >
         <DialogTitle>
-          <Typography variant="h6">Discard staged signals?</Typography>
+          <DialogTitle>Discard staged signals?</DialogTitle>
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">

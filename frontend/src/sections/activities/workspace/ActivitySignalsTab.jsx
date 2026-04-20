@@ -39,6 +39,7 @@ import RobotOutlined from "@ant-design/icons/RobotOutlined";
 // project imports
 import SignalList from "sections/accounts/signals/SignalList";
 import AlertSignalReject from "sections/accounts/signals/AlertSignalReject";
+import SignalEditDialog from "sections/accounts/signals/SignalEditDialog";
 import WizardSignalAdd from "sections/accounts/signals/wizard/WizardSignalAdd";
 
 import {
@@ -303,6 +304,12 @@ export default function ActivitySignalsTab({ activity }) {
     signalType: null,
   });
 
+  const [editModal, setEditModal] = useState({
+    open: false,
+    signal: null,
+    signalType: null,
+  });
+
   // ==============================|| HANDLERS ||============================== //
 
   const handleWizardOpen = useCallback(() => setWizardOpen(true), []);
@@ -320,7 +327,7 @@ export default function ActivitySignalsTab({ activity }) {
         mutateAll();
         displaySuccessSnackbar("Signal validated");
       } else {
-        displayErrorSnackbar(result.error || "Failed to validate signal");
+        displayErrorSnackbar(result);
       }
     },
     [mutateAll],
@@ -340,13 +347,18 @@ export default function ActivitySignalsTab({ activity }) {
     displaySuccessSnackbar("Signal rejected");
   }, [mutateAll]);
 
-  /**
-   * TODO: Edit form deferred from MVP.
-   * Wire up per-type edit forms here in Sprint 7.
-   */
-  const handleEdit = useCallback((_signal, _signalType) => {
-    // no-op for MVP
+  const handleEdit = useCallback((signal, signalType) => {
+    setEditModal({ open: true, signal, signalType });
   }, []);
+
+  const handleEditClose = useCallback(() => {
+    setEditModal({ open: false, signal: null, signalType: null });
+  }, []);
+
+  const handleEditSuccess = useCallback(() => {
+    mutateAll();
+    // Dialog closes itself on success
+  }, [mutateAll]);
 
   const handleDelete = useCallback(
     async (signal, signalType) => {
@@ -355,7 +367,7 @@ export default function ActivitySignalsTab({ activity }) {
         mutateAll();
         displaySuccessSnackbar("Signal deleted");
       } else {
-        displayErrorSnackbar(result.error || "Failed to delete signal");
+        displayErrorSnackbar(result);
       }
     },
     [mutateAll],
@@ -460,6 +472,18 @@ export default function ActivitySignalsTab({ activity }) {
         onSuccess={handleRejectSuccess}
         signal={rejectModal.signal}
         signalType={rejectModal.signalType}
+      />
+
+      {/* Edit dialog */}
+      <SignalEditDialog
+        open={editModal.open}
+        onClose={handleEditClose}
+        onSuccess={handleEditSuccess}
+        signal={editModal.signal}
+        signalType={editModal.signalType}
+        accountId={accountId ?? ""}
+        choices={choices}
+        choicesLoading={choicesLoading}
       />
     </Box>
   );

@@ -34,11 +34,13 @@ import Typography from "@mui/material/Typography";
 import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
 import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
+import EditOutlined from "@ant-design/icons/EditOutlined";
 import InboxOutlined from "@ant-design/icons/InboxOutlined";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
 // project imports
 import InlineTechStackForm from "../forms/InlineTechStackForm";
+import { buildEditInitialValues } from "../forms/buildEditInitialValues";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -62,7 +64,13 @@ function resolveLabel(options, value) {
  * Primary display: tech_name (bold) + category chip + satisfaction chip.
  * usage shown truncated if present.
  */
-function StagedTechStackCard({ signal, choices, onToggleStatus, onRemove }) {
+function StagedTechStackCard({
+  signal,
+  choices,
+  onToggleStatus,
+  onEdit,
+  onRemove,
+}) {
   const isRejected = signal._status === "REJECTED";
 
   const categoryLabel = useMemo(
@@ -169,6 +177,17 @@ function StagedTechStackCard({ signal, choices, onToggleStatus, onRemove }) {
           </Button>
           <IconButton
             size="small"
+            onClick={() => onEdit(signal._key)}
+            aria-label="Edit signal"
+            sx={{
+              color: "text.disabled",
+              "&:hover": { color: "primary.main" },
+            }}
+          >
+            <EditOutlined style={{ fontSize: 13 }} />
+          </IconButton>
+          <IconButton
+            size="small"
             onClick={() => onRemove(signal._key)}
             aria-label="Remove signal"
             sx={{ color: "text.disabled", "&:hover": { color: "error.main" } }}
@@ -185,13 +204,15 @@ StagedTechStackCard.propTypes = {
   signal: PropTypes.shape({
     _key: PropTypes.string.isRequired,
     _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
-    summary: PropTypes.string,
+    tech_name: PropTypes.string,
     category: PropTypes.string,
-    pain_level: PropTypes.string,
-    business_cost: PropTypes.string,
+    satisfaction: PropTypes.string,
+    usage: PropTypes.string,
+    renewal_date: PropTypes.string,
   }).isRequired,
   choices: PropTypes.object,
   onToggleStatus: PropTypes.func.isRequired,
+  onEdit: PropTypes.func.isRequired,
   onRemove: PropTypes.func.isRequired,
 };
 
@@ -228,7 +249,11 @@ export default function TechStackSection({
   stagedSignals,
   onAdd,
   onToggleStatus,
+  onEdit,
+  onUpdate,
   onRemove,
+  editingKey,
+  onCancelEdit,
   choices,
   choicesLoading,
   accountId,
@@ -238,10 +263,31 @@ export default function TechStackSection({
 }) {
   const [formOpen, setFormOpen] = useState(false);
 
-  // Notify parent wizard when the inline form opens or closes
+  const isEditMode = editingKey != null;
+  const isFormVisible = formOpen || isEditMode;
+
+  // Notify parent wizard when any form (create OR edit) is visible
   useEffect(() => {
-    onFormOpenChange?.(formOpen);
-  }, [formOpen, onFormOpenChange]);
+    onFormOpenChange?.(isFormVisible);
+  }, [isFormVisible, onFormOpenChange]);
+
+  // Find the staged signal being edited — stable reference for initialValues
+  const editingSignal = useMemo(
+    () =>
+      isEditMode
+        ? (stagedSignals.find((s) => s._key === editingKey) ?? null)
+        : null,
+    [isEditMode, editingKey, stagedSignals],
+  );
+
+  // Pre-fill the inline form when entering edit mode
+  const editInitialValues = useMemo(
+    () =>
+      editingSignal
+        ? buildEditInitialValues("tech-stack", editingSignal)
+        : null,
+    [editingSignal],
+  );
 
   const handleAdd = useCallback(
     (payload) => {
@@ -251,7 +297,20 @@ export default function TechStackSection({
     [onAdd],
   );
 
-  const handleCancel = useCallback(() => setFormOpen(false), []);
+  const handleUpdate = useCallback(
+    (payload) => {
+      if (editingKey) onUpdate(editingKey, payload);
+    },
+    [onUpdate, editingKey],
+  );
+
+  const handleCancel = useCallback(() => {
+    if (isEditMode) {
+      onCancelEdit?.();
+    } else {
+      setFormOpen(false);
+    }
+  }, [isEditMode, onCancelEdit]);
 
   const validatedCount = useMemo(
     () => stagedSignals.filter((s) => s._status === "VALIDATED").length,
@@ -287,8 +346,8 @@ export default function TechStackSection({
           )}
         </Stack>
 
-        {/* Add button — hidden when form is already open */}
-        {!formOpen && (
+        {/* Add button — hidden when any form (create or edit) is open */}
+        {!isFormVisible && (
           <Button
             size="small"
             variant="outlined"
@@ -302,26 +361,42 @@ export default function TechStackSection({
       </Stack>
 
       {/* ---- Staged signals list ---- */}
-      {stagedSignals.length === 0 && !formOpen && <EmptyState />}
+      {stagedSignals.length === 0 && !isFormVisible && <EmptyState />}
 
       {stagedSignals.length > 0 && (
         <Stack spacing={1}>
-          {stagedSignals.map((signal) => (
-            <StagedTechStackCard
-              key={signal._key}
-              signal={signal}
-              choices={choices}
-              onToggleStatus={onToggleStatus}
-              onRemove={onRemove}
-            />
-          ))}
+          {stagedSignals.map((signal) =>
+            // In edit mode, the edited signal is replaced inline by the form
+            isEditMode && signal._key === editingKey ? (
+              <InlineTechStackForm
+                key={signal._key}
+                choices={choices}
+                choicesLoading={choicesLoading}
+                accountId={accountId}
+                defaultContact={defaultContact}
+                onAdd={handleUpdate}
+                onCancel={handleCancel}
+                initialValues={editInitialValues}
+                submitLabel="Save changes"
+              />
+            ) : (
+              <StagedTechStackCard
+                key={signal._key}
+                signal={signal}
+                choices={choices}
+                onToggleStatus={onToggleStatus}
+                onEdit={onEdit}
+                onRemove={onRemove}
+              />
+            ),
+          )}
         </Stack>
       )}
 
-      {/* ---- Divider before form ---- */}
+      {/* ---- Divider before create form ---- */}
       {formOpen && stagedSignals.length > 0 && <Divider />}
 
-      {/* ---- Inline form ---- */}
+      {/* ---- Inline form for CREATE (edit form is rendered inside the list above) ---- */}
       {formOpen && (
         <InlineTechStackForm
           choices={choices}
@@ -352,7 +427,11 @@ TechStackSection.propTypes = {
   ).isRequired,
   onAdd: PropTypes.func.isRequired,
   onToggleStatus: PropTypes.func.isRequired,
+  onEdit: PropTypes.func.isRequired,
+  onUpdate: PropTypes.func.isRequired,
   onRemove: PropTypes.func.isRequired,
+  editingKey: PropTypes.string,
+  onCancelEdit: PropTypes.func,
   onFormOpenChange: PropTypes.func,
   hasActivityContext: PropTypes.bool,
   choices: PropTypes.object,
