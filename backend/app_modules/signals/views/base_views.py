@@ -46,11 +46,11 @@ from ..constants import (
     PainDimension,
     HumanImpact,
     ImpactLevel,
-    PainLevel,
     GoalLevel,
     TechCategory,
     Satisfaction,
 )
+
 from ..filters import SignalFilter
 from ..services import SignalManager
 
@@ -397,7 +397,6 @@ class SignalChoicesView(APIView):
         "pain_dimensions":  [...],
         "human_impacts":    [...],
         "impact_levels":    [...],
-        "pain_levels":      [...],   // DEPRECATED — use impact_levels
         "goal_levels":      [...],
         "tech_categories":  [...],
         "satisfaction":     [...],
@@ -405,10 +404,10 @@ class SignalChoicesView(APIView):
     }
 
     Notes:
-      - pain_levels is DEPRECATED and will be removed once all frontend
-        references migrate to impact_levels.
       - impact_levels drives PainImpact creation (BUSINESS / DEPARTMENT /
         PERSONAL) — see PainImpact model docstring.
+      - The legacy pain_levels key (and the underlying PainLevel enum)
+        was removed in Sprint 1.22 once it had no remaining consumers.
     """
 
     authentication_classes = [CustomJWTAuthentication]
@@ -430,7 +429,6 @@ class SignalChoicesView(APIView):
                 'pain_dimensions':  _choices(PainDimension),
                 'human_impacts':    _choices(HumanImpact),
                 'impact_levels':    _choices(ImpactLevel),
-                'pain_levels':      _choices(PainLevel),  # deprecated
                 'goal_levels':      _choices(GoalLevel),
                 'tech_categories':  _choices(TechCategory),
                 'satisfaction':     _choices(Satisfaction),

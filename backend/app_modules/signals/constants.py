@@ -14,8 +14,9 @@ Model-specific:
   InfluenceLevel — stakeholder influence level for PeopleSignal
   PainWhat       — domain axis for PainSignal (part of canonical_key)
   PainDimension  — friction axis for PainSignal (part of canonical_key)
-  HumanImpact    — orthogonal human impact axis for PainSignal (optional)
-  PainLevel      — organisational scope of the pain for PainSignal
+  HumanImpact    — orthogonal human impact axis for PainImpact (optional,
+                   only meaningful at PERSONAL level)
+  ImpactLevel    — scope level of a PainImpact (BUSINESS / DEPARTMENT / PERSONAL)
   GoalLevel      — organisational scope of the objective for ObjectiveSignal
   TechCategory   — technology category for TechStackSignal
   Satisfaction   — satisfaction level for TechStackSignal
@@ -25,7 +26,10 @@ Removed vs. previous version:
   - QualificationField       (replaced by dedicated structured models)
   - TechStackField           (replaced by rich fields on TechStackSignal)
   - PainCategory             (replaced by the canonical pair PainWhat × PainDimension)
+  - PainLevel                (replaced by ImpactLevel on PainImpact — Pain is
+                              now a pure diagnosis, scope lives on PainImpact)
 """
+
 
 
 from django.db import models
@@ -161,10 +165,10 @@ class InfluenceLevel(models.TextChoices):
 # 5 × 5 = 25 possible canonical slots — enough expressiveness to describe any
 # B2B pain without fragmenting the cluster space.
 #
-# A third, orthogonal enum — HumanImpact — captures whether a business pain
-# produces an identifiable human consequence on an individual contact.
-# HumanImpact is NOT part of the canonical_key. A pain at any `level`
-# (BUSINESS / DEPARTMENT / PERSONAL) can carry a HumanImpact.
+# Impact-level data (BUSINESS / DEPARTMENT / PERSONAL scope, metrics,
+# human consequences) lives on PainImpact — a separate model attached to
+# PainSignal. See the PainImpact docstring for details. ImpactLevel and
+# HumanImpact (below) describe the PainImpact side of the picture.
 # =============================================================================
 
 
@@ -208,15 +212,12 @@ class PainDimension(models.TextChoices):
 
 class HumanImpact(models.TextChoices):
     """
-    Orthogonal human impact axis — the personal consequence on an individual.
+    Personal consequence on an individual — the human side of a pain.
 
-    Optional on any PainSignal. Not part of the canonical_key.
-    When set, PainSignal.impacted_contact must also be set (validated at the
-    model and serializer level).
-
-    Independent from PainLevel: a BUSINESS-level pain can carry a HumanImpact
-    (e.g. company-wide cost overrun that is personally burning out a finance
-    lead). See PainSignal docstring for the full semantics.
+    Used on PainImpact at PERSONAL level (optional). Not part of any
+    canonical_key. When set, the parent PainImpact must have
+    level=PERSONAL and a non-null impacted_contact (enforced in
+    PainImpact.clean()).
 
     FRUSTRATION  — ongoing irritation, annoyance, dissatisfaction
     OVERLOAD     — workload pressure, too much to handle
@@ -224,6 +225,7 @@ class HumanImpact(models.TextChoices):
     DEMOTIVATION — disengagement, loss of drive, apathy
     CONFLICT     — interpersonal tension, disputes, friction with peers
     """
+
     FRUSTRATION  = 'FRUSTRATION',  _('Frustration')
     OVERLOAD     = 'OVERLOAD',     _('Overload')
     STRESS       = 'STRESS',       _('Stress / Anxiety')
@@ -250,32 +252,6 @@ class ImpactLevel(models.TextChoices):
     DEPARTMENT = 'DEPARTMENT', _('Department')
     PERSONAL   = 'PERSONAL',   _('Personal')
 
-
-# NOTE — PainLevel (below) was used by the previous PainSignal design that
-# mixed diagnosis and impact on a single model. It is now superseded by
-# ImpactLevel on PainImpact. PainLevel is retained temporarily to avoid
-# breaking SignalChoicesView and any external callers still referencing it.
-# It can be removed once all references are cleaned up — tracked as tech
-# debt for a later sprint.
-class PainLevel(models.TextChoices):
-    """
-    Organisational scope of the pain in a PainSignal.
-
-    Indicates who structurally experiences the pain — the whole company,
-    a specific department, or an individual contact.
-
-    Independent from HumanImpact: these two axes address different questions.
-      - PainLevel  answers "who structurally bears the pain?"
-      - HumanImpact answers "is there an identifiable human consequence?"
-
-    BUSINESS   — company-wide impact
-    DEPARTMENT — limited to one or more departments
-    PERSONAL   — experienced primarily by one individual
-                 (when set, PainSignal.impacted_contact is required)
-    """
-    BUSINESS   = 'BUSINESS',   _('Business')
-    DEPARTMENT = 'DEPARTMENT', _('Department')
-    PERSONAL   = 'PERSONAL',   _('Personal')
 
 
 # =============================================================================

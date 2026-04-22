@@ -6,9 +6,14 @@ Shared across all 4 signal types — the view's filter_queryset() dynamically
 binds SignalFilter.Meta.model to the concrete queryset model before
 django-filters runs its assertion check.
 
-Type-specific filters (role, pain_level, etc.) that do not exist on a given
-model are silently harmless — Django filter ignores unknown field lookups
-via the dynamic binding. This is the established pattern in this codebase.
+Type-specific filters (role, what, dimension, goal_level, etc.) that do not
+exist on a given model are silently harmless — django-filter ignores unknown
+field lookups via the dynamic model binding. This is the established pattern
+in this codebase.
+
+PainImpact is NOT handled here. It has its own PainImpactFilter defined in
+views/pain_impact_views.py, since impacts are a distinct resource with a
+separate CRUD surface (/pain-impacts/).
 """
 
 import django_filters
@@ -37,14 +42,16 @@ class SignalFilter(django_filters.FilterSet):
       canonical_key
 
     Type-specific filters (silently ignored when field absent on model):
-      role, influence_level         — PeopleSignal
-      what, dimension, human_impact — PainSignal (canonical + orthogonal axes)
-      pain_level                    — PainSignal
-      category                      — TechStackSignal (PainCategory removed
-                                       — this filter key now applies to
-                                       TechStackSignal only)
-      goal_level                    — ObjectiveSignal
-      satisfaction                  — TechStackSignal
+      role, influence_level — PeopleSignal
+      what, dimension       — PainSignal (canonical axes)
+      category              — TechStackSignal
+      goal_level            — ObjectiveSignal
+      satisfaction          — TechStackSignal
+
+    Note — Pain-side fields removed in Sprint 1.6:
+      pain_level, human_impact, impacted_contact no longer exist on
+      PainSignal. Impact-level data now lives on PainImpact and is
+      filterable through PainImpactFilter (see views/pain_impact_views.py).
 
     Note:
       When the refactored SignalClusterService (Sprint 2) groups Pain signals
@@ -86,20 +93,11 @@ class SignalFilter(django_filters.FilterSet):
     influence_level = CharInFilter(field_name='influence_level', lookup_expr='in')
 
     # -------------------------------------------------------------------------
-    # TYPE-SPECIFIC — PainSignal (canonical + orthogonal axes)
+    # TYPE-SPECIFIC — PainSignal (canonical axes only)
     # -------------------------------------------------------------------------
 
-    what         = CharInFilter(field_name='what',         lookup_expr='in')
-    dimension    = CharInFilter(field_name='dimension',    lookup_expr='in')
-    human_impact = CharInFilter(field_name='human_impact', lookup_expr='in')
-    pain_level   = CharInFilter(field_name='pain_level',   lookup_expr='in')
-    impacted_contact = UUIDFilter(field_name='impacted_contact_id')
-
-    # -------------------------------------------------------------------------
-    # TYPE-SPECIFIC — TechStackSignal
-    # -------------------------------------------------------------------------
-
-    category = CharInFilter(field_name='category', lookup_expr='in')
+    what      = CharInFilter(field_name='what',      lookup_expr='in')
+    dimension = CharInFilter(field_name='dimension', lookup_expr='in')
 
     # -------------------------------------------------------------------------
     # TYPE-SPECIFIC — ObjectiveSignal
@@ -111,6 +109,7 @@ class SignalFilter(django_filters.FilterSet):
     # TYPE-SPECIFIC — TechStackSignal
     # -------------------------------------------------------------------------
 
+    category     = CharInFilter(field_name='category',     lookup_expr='in')
     satisfaction = CharInFilter(field_name='satisfaction', lookup_expr='in')
 
     class Meta:
@@ -125,9 +124,9 @@ class SignalFilter(django_filters.FilterSet):
             'source_department', 'decision_cycle', 'campaign',
             # PeopleSignal
             'role', 'influence_level',
-            # PainSignal — canonical + orthogonal axes
-            'what', 'dimension', 'human_impact',
-            'pain_level', 'impacted_contact',
+            # PainSignal — canonical axes only (impact-level data filtering
+            # lives on PainImpactFilter, not here)
+            'what', 'dimension',
             # ObjectiveSignal
             'goal_level',
             # TechStackSignal

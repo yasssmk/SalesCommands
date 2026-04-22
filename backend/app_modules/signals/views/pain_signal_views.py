@@ -38,7 +38,7 @@ class PainSignalViewSet(BaseSignalViewSet):
     create_serializer_class = PainSignalCreateSerializer
     update_serializer_class = PainSignalUpdateSerializer
 
-    search_fields = ['summary', 'business_cost']
+    search_fields = ['summary']
 
     def get_queryset(self):
         """

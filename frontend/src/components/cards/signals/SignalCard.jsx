@@ -3,6 +3,13 @@
  * SignalCard — displays a single signal of any type with its metadata
  * and contextual actions.
  *
+ * Covered types: People, Objective, Tech Stack.
+ *
+ * Pain is NOT handled here. PainSignal has a dedicated card
+ * (components/cards/signals/PainCard) because it requires nested impact
+ * rendering and a different action surface (add/edit/delete impacts).
+ * SignalList routes signalType === 'pain' to PainCard automatically.
+ *
  * Actions available per status:
  *   PENDING   → Validate, Reject, Edit, Delete
  *   VALIDATED → Edit, Delete
@@ -198,79 +205,17 @@ QuoteBlock.propTypes = {
 // ==============================|| CARD BODY — PER TYPE ||============================== //
 
 /**
- * PeopleSignalBody
- * Primary:   role_display (bold), influence_level_display (muted)
- * Secondary: target_contact full name + job_title
- */
-function PeopleSignalBody({ signal }) {
-  const targetName = formatContact(signal.target_contact);
-  const targetTitle = signal.target_contact?.job_title ?? null;
-
-  return (
-    <Stack spacing={0.75} sx={{ mt: 1 }}>
-      {/* Role + influence */}
-      <Stack
-        direction="row"
-        spacing={1}
-        alignItems="baseline"
-        flexWrap="wrap"
-        useFlexGap
-      >
-        {signal.role_display && (
-          <Typography variant="body2" fontWeight={600}>
-            {signal.role_display}
-          </Typography>
-        )}
-        {signal.influence_level_display && (
-          <Typography variant="caption" color="text.secondary">
-            {signal.influence_level_display}
-          </Typography>
-        )}
-      </Stack>
-
-      {/* Target contact */}
-      {targetName && (
-        <Stack direction="row" spacing={0.5} alignItems="center">
-          <Typography variant="body2" color="text.secondary">
-            {targetName}
-          </Typography>
-          {targetTitle && (
-            <Typography variant="caption" color="text.disabled">
-              · {targetTitle}
-            </Typography>
-          )}
-        </Stack>
-      )}
-
-      {/* Footer */}
-      <Stack
-        direction="row"
-        spacing={2}
-        flexWrap="wrap"
-        useFlexGap
-        sx={{ mt: 0.5 }}
-      >
-        <MetaItem label="From" value={formatContact(signal.source_contact)} />
-        {signal.notes && (
-          <MetaItem label="Notes" value={truncate(signal.notes, 80)} />
-        )}
-      </Stack>
-    </Stack>
-  );
-}
-
-PeopleSignalBody.propTypes = { signal: PropTypes.object.isRequired };
-
-/**
- * PainSignalBody
- * Primary:   summary (bold, max 2 lines)
- * Secondary: category_display chip + pain_level_display chip
- * Footer:    business_cost, source_contact name
+ * PainSignalBody — fallback renderer.
+ *
+ * Pain signals are rendered by PainCard (components/cards/signals/PainCard),
+ * which is selected by SignalList when signalType === 'pain'. This fallback
+ * exists only to surface a visible warning if someone bypasses SignalList
+ * and calls SignalCard directly with signalType='pain' — a case that should
+ * never happen in normal flow.
  */
 function PainSignalBody({ signal }) {
   return (
     <Stack spacing={0.75} sx={{ mt: 1 }}>
-      {/* Summary */}
       {signal.summary && (
         <Typography
           variant="body2"
@@ -285,41 +230,9 @@ function PainSignalBody({ signal }) {
           {signal.summary}
         </Typography>
       )}
-
-      {/* Category + pain level chips */}
-      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-        {signal.category_display && (
-          <Chip
-            label={signal.category_display}
-            size="small"
-            variant="outlined"
-            sx={{ fontSize: "0.65rem", height: 20 }}
-          />
-        )}
-        {signal.pain_level_display && (
-          <Chip
-            label={signal.pain_level_display}
-            size="small"
-            color="error"
-            variant="outlined"
-            sx={{ fontSize: "0.65rem", height: 20 }}
-          />
-        )}
-      </Stack>
-
-      {/* Footer */}
-      <Stack
-        direction="row"
-        spacing={2}
-        flexWrap="wrap"
-        useFlexGap
-        sx={{ mt: 0.5 }}
-      >
-        <MetaItem label="From" value={formatContact(signal.source_contact)} />
-        {signal.business_cost && (
-          <MetaItem label="Business cost" value={signal.business_cost} />
-        )}
-      </Stack>
+      <Typography variant="caption" color="warning.main">
+        Pain signals should be rendered via PainCard — not SignalCard.
+      </Typography>
     </Stack>
   );
 }
@@ -471,10 +384,15 @@ function PeopleSignalDetail({ signal }) {
 }
 PeopleSignalDetail.propTypes = { signal: PropTypes.object.isRequired };
 
+/**
+ * PainSignalDetail — fallback renderer, see PainSignalBody for rationale.
+ * Shows only the fields that still exist on the minimal PainSignal model
+ * (summary, notes, source_quote) so the fallback is still useful if it
+ * ever renders by accident.
+ */
 function PainSignalDetail({ signal }) {
   return (
     <Stack spacing={1.5}>
-      <DetailField label="Impact summary" value={signal.impact_summary} />
       <DetailField label="Notes" value={signal.notes} />
       <QuoteBlock value={signal.source_quote} />
       {signal.signal_category_display && (
@@ -753,6 +671,10 @@ export default function SignalCard({
       </Stack>
 
       {/* ==================== CARD BODY — PER TYPE ==================== */}
+      {/* signalType === 'pain' is intentionally NOT handled here —
+          PainCard takes over via SignalList. If it lands here it means
+          the caller bypassed SignalList; PainSignalBody surfaces the
+          warning in that case. */}
       {signalType === "people" && <PeopleSignalBody signal={signal} />}
       {signalType === "pain" && <PainSignalBody signal={signal} />}
       {signalType === "objective" && <ObjectiveSignalBody signal={signal} />}
@@ -773,6 +695,7 @@ export default function SignalCard({
       {/* ==================== EXPANDED DETAILS ==================== */}
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Divider sx={{ mt: 1.5, mb: 1.5 }} />
+        {/* Pain detail is a fallback — PainCard handles it normally. */}
         {signalType === "people" && <PeopleSignalDetail signal={signal} />}
         {signalType === "pain" && <PainSignalDetail signal={signal} />}
         {signalType === "objective" && (
@@ -819,12 +742,6 @@ SignalCard.propTypes = {
     notes: PropTypes.string,
     // PainSignal
     summary: PropTypes.string,
-    category: PropTypes.string,
-    category_display: PropTypes.string,
-    pain_level: PropTypes.string,
-    pain_level_display: PropTypes.string,
-    business_cost: PropTypes.string,
-    impact_summary: PropTypes.string,
     // ObjectiveSignal
     goal_level: PropTypes.string,
     goal_level_display: PropTypes.string,

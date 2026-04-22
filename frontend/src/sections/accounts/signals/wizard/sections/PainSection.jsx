@@ -8,11 +8,12 @@
  *   - Calls onAdd(payload) to stage a new signal in the wizard
  *   - Calls onToggleStatus(_key) to flip a staged signal between VALIDATED / REJECTED
  *
- * Staged signal shape (managed by WizardSignalAdd):
+ * * Staged signal shape (managed by WizardSignalAdd):
  *   { _key: string, _status: 'VALIDATED'|'REJECTED', ...payload }
  *
- * choices is used locally to resolve category + pain_level display labels.
- * The payload itself only stores raw values — no display metadata.
+ * choices is used locally to resolve PainWhat × PainDimension display
+ * labels on the StagedPainCard's canonical chip. The payload itself only
+ * stores raw enum values — no display metadata.
  */
 
 "use client";
@@ -137,9 +138,10 @@ function StagedPainCard({ signal, choices, onToggleStatus, onEdit, onRemove }) {
             {signal.summary || "—"}
           </Typography>
 
-          {/* Canonical axes chip — the only tag on a staged Pain now
-              that pain_level / human_impact / business_cost moved to
-              PainImpact (captured separately in the Account workspace). */}
+          {/* Canonical axes chip — the only tag shown on a staged Pain.
+              All impact-level data (scope, metric, human consequences)
+              lives on PainImpact and is captured separately from the
+              Account workspace. */}
           {signal.what && signal.dimension && (
             <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
               <Chip

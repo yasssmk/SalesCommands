@@ -350,7 +350,6 @@ export function useGetSignalsByActivity(activityId, signalType, options = {}) {
  *   pain_dimensions:  [...],   // PainDimension  (2nd axis of pain canonical_key)
  *   human_impacts:    [...],   // HumanImpact    (orthogonal axis on PainImpact)
  *   impact_levels:    [...],   // ImpactLevel    (BUSINESS / DEPARTMENT / PERSONAL)
- *   pain_levels:      [...],   // DEPRECATED     — use impact_levels
  *   goal_levels:      [...],   // GoalLevel      (ObjectiveSignal)
  *   tech_categories:  [...],   // TechCategory
  *   satisfaction:     [...],   // Satisfaction
@@ -360,11 +359,10 @@ export function useGetSignalsByActivity(activityId, signalType, options = {}) {
  *   - pain_whats × pain_dimensions form the canonical_key "pain:<what>:<dimension>"
  *     on PainSignal. See InlinePainForm for rendering.
  *   - impact_levels drives PainImpact creation — see AddPainImpactDialog.
- *   - pain_levels is kept temporarily for backward compat but all new Pain
- *     UI should reference impact_levels on PainImpact instead.
  *
  * @returns {Object} { choices, choicesLoading, choicesError, mutateChoices }
  */
+
 export function useGetSignalChoices() {
   const { tenantId } = useAuth();
 

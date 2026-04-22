@@ -1,24 +1,22 @@
 // frontend/src/sections/accounts/signals/wizard/forms/buildEditInitialValues.js
 /**
- * buildEditInitialValues — maps a backend signal read object to Formik initialValues.
+ * @param {Object} signal - PainSignal read object
+ * @returns {Object}
  *
- * One function per signal type, dispatched by signalType string.
+ * PainSignal is a pure qualitative diagnosis — what × dimension, a summary,
+ * a source context, and free-text notes. Impact-level data (scope, metrics,
+ * human consequences) lives on PainImpact and is captured separately via
+ * AddPainImpactDialog in the Account Workspace, NOT in the wizard form.
  *
- * Contact fields (source_contact, target_contact):
- *   Backend returns { id, first_name, last_name, job_title }.
- *   AsyncContactSelect accepts this shape directly as its value prop.
- *   No transformation needed — passed as-is (or null if absent).
+ * This builder mirrors exactly the 7 fields of InlinePainForm:
+ *   what, dimension, summary            → canonical + narrative
+ *   source_contact, source_activity     → required provenance (objects)
+ *   source_quote, notes                 → optional narrative extras
  *
- * Department fields (source_department, impacted_department, target_department):
- *   Backend returns { id, name } objects.
- *   MUI Select stores a UUID string — we extract .id.
- *
- * All optional fields default to "" (empty string) for controlled inputs,
- * except contact fields which default to null (AsyncContactSelect expects null).
- *
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
- * @param {Object} signal - Signal read object from the backend
- * @returns {Object} Formik initialValues
+ * Contact and activity objects are passed whole — AsyncContactSelect and
+ * AsyncActivitySelect both expect the full option object as their value
+ * prop, not a UUID string. This avoids a re-fetch loop to re-hydrate the
+ * selection on edit.
  */
 export function buildEditInitialValues(signalType, signal) {
   if (!signal) return {};
