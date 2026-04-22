@@ -30,7 +30,8 @@ import AlertOutlined from "@ant-design/icons/AlertOutlined";
 import InboxOutlined from "@ant-design/icons/InboxOutlined";
 
 // project imports
-import SignalCard from "components/cards/SignalCard";
+import SignalCard from "components/cards/signals/SignalCard";
+import PainCard from "components/cards/signals/PainCard";
 
 // ==============================|| SKELETON CARD ||============================== //
 
@@ -149,6 +150,13 @@ export default function SignalList({
   onDelete,
   emptyMessage,
   emptyDescription,
+  // Pain-specific action props — only used when signalType === 'pain'.
+  // Ignored silently for the other 3 types; required when signalType === 'pain'
+  // (see PropTypes validator below).
+  choices,
+  onAddImpact,
+  onEditImpact,
+  onDeleteImpact,
 }) {
   // ==============================|| LOADING ||============================== //
 
@@ -181,19 +189,38 @@ export default function SignalList({
 
   // ==============================|| LIST ||============================== //
 
+  // Pain gets a dedicated card with nested impacts + impact CRUD controls.
+  // The generic SignalCard stays authoritative for the other 3 types.
+  const isPain = signalType === "pain";
+
   return (
     <Stack spacing={1.5}>
-      {signals.map((signal) => (
-        <SignalCard
-          key={signal.id}
-          signal={signal}
-          signalType={signalType}
-          onValidate={onValidate}
-          onReject={onReject}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
-      ))}
+      {signals.map((signal) =>
+        isPain ? (
+          <PainCard
+            key={signal.id}
+            pain={signal}
+            choices={choices}
+            onValidate={onValidate}
+            onReject={onReject}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onAddImpact={onAddImpact}
+            onEditImpact={onEditImpact}
+            onDeleteImpact={onDeleteImpact}
+          />
+        ) : (
+          <SignalCard
+            key={signal.id}
+            signal={signal}
+            signalType={signalType}
+            onValidate={onValidate}
+            onReject={onReject}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        ),
+      )}
 
       {/* Total count footer */}
       {signals.length > 0 && (
@@ -228,4 +255,14 @@ SignalList.propTypes = {
   onDelete: PropTypes.func.isRequired,
   emptyMessage: PropTypes.string,
   emptyDescription: PropTypes.string,
+
+  // Pain-only props — resolved from useGetSignalChoices() and the parent's
+  // impact CRUD handlers. Not enforced as strictly required so that
+  // non-Pain callers (People / Objective / TechStack lists) can omit them
+  // without PropTypes warnings. A Pain-typed SignalList without these
+  // props will crash at the PainCard level — the failure is obvious.
+  choices: PropTypes.object,
+  onAddImpact: PropTypes.func,
+  onEditImpact: PropTypes.func,
+  onDeleteImpact: PropTypes.func,
 };

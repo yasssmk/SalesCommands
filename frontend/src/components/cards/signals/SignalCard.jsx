@@ -1,4 +1,4 @@
-// frontend/src/components/cards/SignalCard.jsx
+// frontend/src/components/cards/signals/SignalCard.jsx
 /**
  * SignalCard — displays a single signal of any type with its metadata
  * and contextual actions.

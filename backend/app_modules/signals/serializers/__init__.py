@@ -23,6 +23,13 @@ from .objective_serializer import (
     ObjectiveSignalCreateSerializer,
     ObjectiveSignalUpdateSerializer,
 )
+from .pain_impact_serializer import (
+    PainImpactReadSerializer,
+    PainImpactListSerializer,
+    PainImpactDetailSerializer,
+    PainImpactCreateSerializer,
+    PainImpactUpdateSerializer,
+)
 from .tech_stack_serializer import (
     TechStackSignalListSerializer,
     TechStackSignalDetailSerializer,
@@ -47,6 +54,12 @@ __all__ = [
     'PainSignalDetailSerializer',
     'PainSignalCreateSerializer',
     'PainSignalUpdateSerializer',
+    # pain impact
+    'PainImpactReadSerializer',
+    'PainImpactListSerializer',
+    'PainImpactDetailSerializer',
+    'PainImpactCreateSerializer',
+    'PainImpactUpdateSerializer',
     # Objective
     'ObjectiveSignalListSerializer',
     'ObjectiveSignalDetailSerializer',

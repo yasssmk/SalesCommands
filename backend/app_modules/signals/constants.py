@@ -12,7 +12,9 @@ Lifecycle / cross-cutting:
 Model-specific:
   PeopleRole     — stakeholder role for PeopleSignal
   InfluenceLevel — stakeholder influence level for PeopleSignal
-  PainCategory   — nature of the pain for PainSignal
+  PainWhat       — domain axis for PainSignal (part of canonical_key)
+  PainDimension  — friction axis for PainSignal (part of canonical_key)
+  HumanImpact    — orthogonal human impact axis for PainSignal (optional)
   PainLevel      — organisational scope of the pain for PainSignal
   GoalLevel      — organisational scope of the objective for ObjectiveSignal
   TechCategory   — technology category for TechStackSignal
@@ -22,7 +24,9 @@ Removed vs. previous version:
   - SignalStatus.MERGED      (merge operation removed from the module)
   - QualificationField       (replaced by dedicated structured models)
   - TechStackField           (replaced by rich fields on TechStackSignal)
+  - PainCategory             (replaced by the canonical pair PainWhat × PainDimension)
 """
+
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -145,39 +149,129 @@ class InfluenceLevel(models.TextChoices):
 # =============================================================================
 # PAIN SIGNAL — enums
 # =============================================================================
+#
+# Pain signals are anchored on two orthogonal axes that together form the
+# canonical_key used to group observations:
+#
+#     canonical_key = "pain:<PainWhat>:<PainDimension>"
+#
+# PainWhat      — the domain of the pain (what area of the business it affects)
+# PainDimension — the friction experienced in that domain
+#
+# 5 × 5 = 25 possible canonical slots — enough expressiveness to describe any
+# B2B pain without fragmenting the cluster space.
+#
+# A third, orthogonal enum — HumanImpact — captures whether a business pain
+# produces an identifiable human consequence on an individual contact.
+# HumanImpact is NOT part of the canonical_key. A pain at any `level`
+# (BUSINESS / DEPARTMENT / PERSONAL) can carry a HumanImpact.
+# =============================================================================
 
-class PainCategory(models.TextChoices):
+
+class PainWhat(models.TextChoices):
     """
-    Nature of the pain described in a PainSignal.
+    Domain axis of the pain — what area of the business is affected.
 
-    Categorises the type of problem the account is experiencing,
-    independent of which department or level it affects.
+    First component of the canonical_key: "pain:<what>:<dimension>".
 
-    OPERATIONAL  — process inefficiency, execution bottlenecks
-    FINANCIAL    — cost overruns, revenue loss, budget pressure
-    STRATEGIC    — misalignment with goals, competitive gaps
-    TECHNICAL    — system limitations, integration failures, debt
-    COMPLIANCE   — regulatory, legal, security, or audit exposure
-    OTHER        — pain that does not fit the above categories
+    OPS    — operations, processes, execution bottlenecks
+    TECH   — technology, systems, technical debt, integrations
+    DATA   — data quality, reporting, visibility, analytics
+    PEOPLE — org design, roles, skills, hiring, retention
+    GROWTH — revenue, pipeline, acquisition, retention motion
     """
-    OPERATIONAL = 'OPERATIONAL', _('Operational')
-    FINANCIAL   = 'FINANCIAL',   _('Financial')
-    STRATEGIC   = 'STRATEGIC',   _('Strategic')
-    TECHNICAL   = 'TECHNICAL',   _('Technical')
-    COMPLIANCE  = 'COMPLIANCE',  _('Compliance')
-    OTHER       = 'OTHER',       _('Other')
+    OPS    = 'OPS',    _('Operations / Process')
+    TECH   = 'TECH',   _('Technology / System')
+    DATA   = 'DATA',   _('Data / Visibility')
+    PEOPLE = 'PEOPLE', _('People / Org')
+    GROWTH = 'GROWTH', _('Growth / Revenue')
 
 
+class PainDimension(models.TextChoices):
+    """
+    Friction axis of the pain — the nature of the difficulty experienced.
+
+    Second component of the canonical_key: "pain:<what>:<dimension>".
+
+    TIME    — slowness, latency, time spent, speed constraints
+    COST    — budget overruns, financial waste, cost pressure
+    QUALITY — errors, inaccuracy, poor output, rework
+    SCALE   — capacity limits, volume constraints, bottlenecks at scale
+    RISK    — compliance, security, regulatory exposure, legal risk
+    """
+    TIME    = 'TIME',    _('Time / Speed')
+    COST    = 'COST',    _('Cost / Budget')
+    QUALITY = 'QUALITY', _('Quality / Accuracy')
+    SCALE   = 'SCALE',   _('Scale / Capacity')
+    RISK    = 'RISK',    _('Risk / Compliance')
+
+
+class HumanImpact(models.TextChoices):
+    """
+    Orthogonal human impact axis — the personal consequence on an individual.
+
+    Optional on any PainSignal. Not part of the canonical_key.
+    When set, PainSignal.impacted_contact must also be set (validated at the
+    model and serializer level).
+
+    Independent from PainLevel: a BUSINESS-level pain can carry a HumanImpact
+    (e.g. company-wide cost overrun that is personally burning out a finance
+    lead). See PainSignal docstring for the full semantics.
+
+    FRUSTRATION  — ongoing irritation, annoyance, dissatisfaction
+    OVERLOAD     — workload pressure, too much to handle
+    STRESS       — anxiety, tension, mental strain
+    DEMOTIVATION — disengagement, loss of drive, apathy
+    CONFLICT     — interpersonal tension, disputes, friction with peers
+    """
+    FRUSTRATION  = 'FRUSTRATION',  _('Frustration')
+    OVERLOAD     = 'OVERLOAD',     _('Overload')
+    STRESS       = 'STRESS',       _('Stress / Anxiety')
+    DEMOTIVATION = 'DEMOTIVATION', _('Demotivation')
+    CONFLICT     = 'CONFLICT',     _('Conflict')
+
+class ImpactLevel(models.TextChoices):
+    """
+    Scope level of a PainImpact — the three mutually-exclusive angles
+    under which a pain can be documented as evidence.
+
+    Each level corresponds to a distinct sales question and drives
+    conditional field requirements on PainImpact (see model clean()):
+
+      BUSINESS   — "How much does it cost the company overall?"
+                   CFO-level evidence. metric + notes.
+      DEPARTMENT — "Which department pays the price?"
+                   VP-level evidence. impacted_department + metric + notes.
+      PERSONAL   — "Who personally bears this pain?"
+                   Champion-level evidence. impacted_contact + metric (opt)
+                   + human_impact (opt) + notes.
+    """
+    BUSINESS   = 'BUSINESS',   _('Business')
+    DEPARTMENT = 'DEPARTMENT', _('Department')
+    PERSONAL   = 'PERSONAL',   _('Personal')
+
+
+# NOTE — PainLevel (below) was used by the previous PainSignal design that
+# mixed diagnosis and impact on a single model. It is now superseded by
+# ImpactLevel on PainImpact. PainLevel is retained temporarily to avoid
+# breaking SignalChoicesView and any external callers still referencing it.
+# It can be removed once all references are cleaned up — tracked as tech
+# debt for a later sprint.
 class PainLevel(models.TextChoices):
     """
     Organisational scope of the pain in a PainSignal.
 
-    Indicates who is affected by the pain — the whole company, a
-    specific department, or an individual contact.
+    Indicates who structurally experiences the pain — the whole company,
+    a specific department, or an individual contact.
+
+    Independent from HumanImpact: these two axes address different questions.
+      - PainLevel  answers "who structurally bears the pain?"
+      - HumanImpact answers "is there an identifiable human consequence?"
 
     BUSINESS   — company-wide impact
     DEPARTMENT — limited to one or more departments
     PERSONAL   — experienced primarily by one individual
+                 (when set, PainSignal.impacted_contact is required)
     """
     BUSINESS   = 'BUSINESS',   _('Business')
     DEPARTMENT = 'DEPARTMENT', _('Department')

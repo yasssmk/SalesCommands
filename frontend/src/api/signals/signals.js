@@ -1,4 +1,4 @@
-// frontend/src/api/accounts/signals.js
+// frontend/src/api/signals/signals.js
 /**
  * API hooks and mutations for the Signals module.
  *
@@ -341,17 +341,27 @@ export function useGetSignalsByActivity(activityId, signalType, options = {}) {
  *
  * Response shape (from backend):
  * {
- *   status:           [...],
- *   source:           [...],
- *   signal_category:  [...],
- *   people_roles:     [...],
- *   influence_levels: [...],
- *   pain_categories:  [...],
- *   pain_levels:      [...],
- *   goal_levels:      [...],
- *   tech_categories:  [...],
- *   satisfaction:     [...],
+ *   status:           [...],   // SignalStatus   (lifecycle shared by all types)
+ *   source:           [...],   // SignalSource   (MANUAL / LLM_* / EXTERNAL_RESEARCH)
+ *   signal_category:  [...],   // SignalCategory (legacy, being deprecated)
+ *   people_roles:     [...],   // PeopleRole
+ *   influence_levels: [...],   // InfluenceLevel
+ *   pain_whats:       [...],   // PainWhat       (1st axis of pain canonical_key)
+ *   pain_dimensions:  [...],   // PainDimension  (2nd axis of pain canonical_key)
+ *   human_impacts:    [...],   // HumanImpact    (orthogonal axis on PainImpact)
+ *   impact_levels:    [...],   // ImpactLevel    (BUSINESS / DEPARTMENT / PERSONAL)
+ *   pain_levels:      [...],   // DEPRECATED     — use impact_levels
+ *   goal_levels:      [...],   // GoalLevel      (ObjectiveSignal)
+ *   tech_categories:  [...],   // TechCategory
+ *   satisfaction:     [...],   // Satisfaction
  * }
+ *
+ * Notes:
+ *   - pain_whats × pain_dimensions form the canonical_key "pain:<what>:<dimension>"
+ *     on PainSignal. See InlinePainForm for rendering.
+ *   - impact_levels drives PainImpact creation — see AddPainImpactDialog.
+ *   - pain_levels is kept temporarily for backward compat but all new Pain
+ *     UI should reference impact_levels on PainImpact instead.
  *
  * @returns {Object} { choices, choicesLoading, choicesError, mutateChoices }
  */

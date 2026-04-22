@@ -34,7 +34,7 @@ import Stack from "@mui/material/Stack";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
 
 // project imports
-import { updateSignal } from "api/accounts/signals";
+import { updateSignal } from "api/signals/signals";
 import {
   displayErrorSnackbar,
   displaySuccessSnackbar,

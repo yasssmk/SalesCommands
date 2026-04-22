@@ -165,8 +165,12 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   }
 
   // Filters
+  // NOTE — backend ActivityFilter exposes the filter as `account`
+  // (mapped internally to field `account_id`), NOT `account_id` directly.
+  // Sending `account_id` here would be silently ignored by django-filters,
+  // returning all activities across the tenant — a cross-account leak.
   if (filters.account_id) {
-    queryParams.append("account_id", filters.account_id);
+    queryParams.append("account", filters.account_id);
   }
 
   if (filters.owner_id) {
@@ -219,6 +223,10 @@ export function useGetActivities(options = {}) {
     filters = {},
   } = options;
 
+  // Memoize on filters content (JSON.stringify) rather than reference.
+  // Callers often pass an inline object like `filters={{ account_id }}` which
+  // creates a new reference on every render — without content-based memoization,
+  // SWR would refetch on every parent render, flooding the API.
   const urlWithParams = useMemo(() => {
     return buildUrlWithParams(endpoints.activities, {
       page,
@@ -227,7 +235,8 @@ export function useGetActivities(options = {}) {
       ordering,
       filters,
     });
-  }, [page, pageSize, search, ordering, filters]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, search, ordering, JSON.stringify(filters)]);
 
   const swrKey = tenantKey(urlWithParams, tenantId);
 
@@ -306,14 +315,26 @@ export function useGetActivitiesByAccount(accountId, options = {}) {
 
   const swrKey = useMemo(() => {
     if (!accountId || !isValidUUID(accountId)) return null;
+
+    // The custom /by-account/ endpoint reads `account_id` directly from
+    // request.query_params (NOT via the ActivityFilter), so it needs the
+    // legacy query param name. We build the URL via buildUrlWithParams
+    // (which sends `account` for the FilterSet path), then append
+    // `account_id` explicitly for this endpoint's hand-coded parser.
     const url = buildUrlWithParams(endpoints.byAccount, {
       page,
       pageSize,
       ordering,
-      filters: { ...filters, account_id: accountId },
+      filters,
     });
-    return tenantKey(url, tenantId);
-  }, [accountId, page, pageSize, ordering, filters, tenantId]);
+    const separator = url.includes("?") ? "&" : "?";
+    const urlWithAccountId = `${url}${separator}account_id=${accountId}`;
+
+    return tenantKey(urlWithAccountId, tenantId);
+    // Content-based memoization (filters is typically passed inline).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId, page, pageSize, ordering, JSON.stringify(filters), tenantId]);
+
   const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
@@ -601,6 +622,7 @@ export function useGetMyActivities(options = {}) {
     filters = {},
   } = options;
 
+  // Content-based memoization — see useGetActivities for rationale.
   const urlWithParams = useMemo(() => {
     return buildUrlWithParams(endpoints.myActivities, {
       page,
@@ -608,7 +630,8 @@ export function useGetMyActivities(options = {}) {
       ordering,
       filters,
     });
-  }, [page, pageSize, ordering, filters]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, ordering, JSON.stringify(filters)]);
 
   const swrKey = tenantKey(urlWithParams, tenantId);
 

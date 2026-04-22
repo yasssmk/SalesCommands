@@ -37,13 +37,15 @@ import SignalList from "../signals/SignalList";
 import AlertSignalReject from "../signals/AlertSignalReject";
 import SignalEditDialog from "../signals/SignalEditDialog";
 import WizardSignalAdd from "../signals/wizard/WizardSignalAdd";
+import AddPainImpactDialog from "../signals/pain/AddPainImpactDialog";
 
 import {
   useGetSignalsByAccount,
   useGetSignalChoices,
   validateSignal,
   deleteSignal,
-} from "api/accounts/signals";
+} from "api/signals/signals";
+import { deletePainImpact } from "api/signals/painImpacts";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -95,6 +97,18 @@ export default function AccountSignalsTab({ accountId, account }) {
     open: false,
     signal: null,
     signalType: null,
+  });
+
+  /**
+   * PainImpact dialog state — used for both create and edit modes.
+   *   mode='create': painSignalId set, initialImpact null
+   *   mode='edit':   initialImpact set, painSignalId derived from it
+   */
+  const [impactDialog, setImpactDialog] = useState({
+    open: false,
+    mode: null, // 'create' | 'edit'
+    painSignalId: null,
+    initialImpact: null,
   });
 
   // ==============================|| DATA FETCHING ||============================== //
@@ -284,6 +298,63 @@ export default function AccountSignalsTab({ accountId, account }) {
     [mutateAll],
   );
 
+  // ==============================|| IMPACT HANDLERS ||============================== //
+
+  /** Open dialog in CREATE mode — attach a new impact to a specific pain. */
+  const handleAddImpact = useCallback((painSignalId) => {
+    setImpactDialog({
+      open: true,
+      mode: "create",
+      painSignalId,
+      initialImpact: null,
+    });
+  }, []);
+
+  /** Open dialog in EDIT mode — pre-fill from an existing impact. */
+  const handleEditImpact = useCallback((impact) => {
+    setImpactDialog({
+      open: true,
+      mode: "edit",
+      painSignalId: null,
+      initialImpact: impact,
+    });
+  }, []);
+
+  const handleImpactDialogClose = useCallback(() => {
+    setImpactDialog({
+      open: false,
+      mode: null,
+      painSignalId: null,
+      initialImpact: null,
+    });
+  }, []);
+
+  const handleImpactDialogSuccess = useCallback(() => {
+    // Revalidate Pain lists — the nested `impacts` array changed.
+    // painImpacts.js already invalidates the Pain cache tag, but we mutate
+    // the local SWR cache explicitly so the refresh is immediate without
+    // waiting for the next focus.
+    mutatePain();
+    displaySuccessSnackbar("Impact saved");
+  }, [mutatePain]);
+
+  /**
+   * Delete an impact — called by PainCard after its inline confirm dialog
+   * already confirmed the action. No additional confirm here.
+   */
+  const handleDeleteImpact = useCallback(
+    async (impact) => {
+      const result = await deletePainImpact(impact.id);
+      if (result.success) {
+        mutatePain();
+        displaySuccessSnackbar("Impact deleted");
+      } else {
+        displayErrorSnackbar(result);
+      }
+    },
+    [mutatePain],
+  );
+
   // ==============================|| RENDER ||============================== //
 
   return (
@@ -372,6 +443,12 @@ export default function AccountSignalsTab({ accountId, account }) {
         onReject={handleRejectOpen}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        // Pain-specific — SignalList only forwards these to PainCard.
+        // Harmless for the 3 other types (the generic SignalCard ignores them).
+        choices={choices}
+        onAddImpact={handleAddImpact}
+        onEditImpact={handleEditImpact}
+        onDeleteImpact={handleDeleteImpact}
         emptyMessage={
           statusFilter
             ? `No ${activeType} signals match this status`
@@ -416,6 +493,16 @@ export default function AccountSignalsTab({ accountId, account }) {
         accountId={accountId}
         choices={choices}
         choicesLoading={choicesLoading}
+      />
+
+      {/* PainImpact dialog — dual create/edit */}
+      <AddPainImpactDialog
+        open={impactDialog.open}
+        onClose={handleImpactDialogClose}
+        onSuccess={handleImpactDialogSuccess}
+        painSignalId={impactDialog.painSignalId}
+        accountId={accountId}
+        initialImpact={impactDialog.initialImpact}
       />
     </Box>
   );

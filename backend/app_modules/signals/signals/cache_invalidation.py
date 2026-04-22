@@ -130,7 +130,6 @@ def invalidate_on_objective_delete(sender, instance, **kwargs):
     client_id = getattr(instance, 'client_id', None)
     if client_id:
         _invalidate_after_commit(str(client_id))
-
 # =============================================================================
 # TECH STACK SIGNAL
 # =============================================================================
@@ -148,6 +147,37 @@ def invalidate_on_tech_stack_save(sender, instance, **kwargs):
 @receiver(post_delete, sender='module_signals.TechStackSignal')
 def invalidate_on_tech_stack_delete(sender, instance, **kwargs):
     """Invalidate signal caches when a TechStackSignal is deleted."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_after_commit(str(client_id))
+
+
+# =============================================================================
+# PAIN IMPACT
+# =============================================================================
+#
+# PainImpact has no lifecycle of its own (no BaseSignal inheritance), but
+# it still shares the 'signals' cache tag with its parent pain for reads.
+# A create/update/delete on a PainImpact should invalidate the same cache
+# namespace so that list views of PainSignal (which nest 'impacts') reflect
+# the change on next read.
+# =============================================================================
+
+@receiver(post_save, sender='module_signals.PainImpact')
+def invalidate_on_pain_impact_save(sender, instance, **kwargs):
+    """Invalidate signal caches when a PainImpact is saved."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_after_commit(str(client_id))
+
+
+@receiver(post_delete, sender='module_signals.PainImpact')
+def invalidate_on_pain_impact_delete(sender, instance, **kwargs):
+    """Invalidate signal caches when a PainImpact is deleted."""
     if are_signals_disabled():
         return
     client_id = getattr(instance, 'client_id', None)

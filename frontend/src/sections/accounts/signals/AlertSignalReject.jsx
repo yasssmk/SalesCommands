@@ -30,7 +30,7 @@ import Typography from "@mui/material/Typography";
 import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
 
 // project imports
-import { rejectSignal } from "api/accounts/signals";
+import { rejectSignal } from "api/signals/signals";
 import { displayErrorSnackbar } from "utils/displayError";
 
 // ==============================|| ALERT SIGNAL REJECT ||============================== //

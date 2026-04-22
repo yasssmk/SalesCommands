@@ -67,15 +67,43 @@ function resolveLabel(options, value) {
 function StagedPainCard({ signal, choices, onToggleStatus, onEdit, onRemove }) {
   const isRejected = signal._status === "REJECTED";
 
-  const categoryLabel = useMemo(
-    () => resolveLabel(choices?.pain_categories, signal.category),
-    [choices, signal.category],
+  const whatLabel = useMemo(
+    () => resolveLabel(choices?.pain_whats, signal.what),
+    [choices, signal.what],
   );
 
-  const painLevelLabel = useMemo(
-    () => resolveLabel(choices?.pain_levels, signal.pain_level),
-    [choices, signal.pain_level],
+  const dimensionLabel = useMemo(
+    () => resolveLabel(choices?.pain_dimensions, signal.dimension),
+    [choices, signal.dimension],
   );
+
+  // Build a compact source line for provenance at-a-glance: "Nicky Larson · 2026-04-15"
+  // Values come from the staged payload; Activity is the full object captured in
+  // the form (AsyncActivitySelect stores the whole option). We read the scheduled
+  // or completion date, falling back silently if absent.
+  const sourceLine = useMemo(() => {
+    const contact = signal.source_contact;
+    const activity = signal.source_activity;
+
+    const contactName = contact
+      ? `${contact.first_name || ""} ${contact.last_name || ""}`.trim()
+      : "";
+
+    const rawDate = activity?.scheduled_date || activity?.completed_at;
+    let dateStr = "";
+    if (rawDate) {
+      try {
+        dateStr = new Date(rawDate).toISOString().slice(0, 10);
+      } catch {
+        dateStr = String(rawDate).slice(0, 10);
+      }
+    }
+
+    const parts = [];
+    if (contactName) parts.push(contactName);
+    if (dateStr) parts.push(dateStr);
+    return parts.join(" · ");
+  }, [signal.source_contact, signal.source_activity]);
 
   return (
     <Box
@@ -109,31 +137,25 @@ function StagedPainCard({ signal, choices, onToggleStatus, onEdit, onRemove }) {
             {signal.summary || "—"}
           </Typography>
 
-          {/* Category + pain level chips */}
-          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-            {signal.category && (
+          {/* Canonical axes chip — the only tag on a staged Pain now
+              that pain_level / human_impact / business_cost moved to
+              PainImpact (captured separately in the Account workspace). */}
+          {signal.what && signal.dimension && (
+            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
               <Chip
-                label={categoryLabel}
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.65rem", height: 20 }}
-              />
-            )}
-            {signal.pain_level && (
-              <Chip
-                label={painLevelLabel}
+                label={`${whatLabel} × ${dimensionLabel}`}
                 size="small"
                 color={isRejected ? "default" : "error"}
                 variant="outlined"
                 sx={{ fontSize: "0.65rem", height: 20 }}
               />
-            )}
-          </Stack>
+            </Stack>
+          )}
 
-          {/* Business cost if set */}
-          {signal.business_cost && (
+          {/* Source line — "Nicky Larson · 2026-04-15" */}
+          {sourceLine && (
             <Typography variant="caption" color="text.secondary">
-              Cost: {signal.business_cost}
+              {sourceLine}
             </Typography>
           )}
         </Stack>
@@ -186,9 +208,14 @@ StagedPainCard.propTypes = {
     _key: PropTypes.string.isRequired,
     _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
     summary: PropTypes.string,
-    category: PropTypes.string,
-    pain_level: PropTypes.string,
-    business_cost: PropTypes.string,
+    what: PropTypes.string,
+    dimension: PropTypes.string,
+    // Source provenance — full objects captured by AsyncContactSelect /
+    // AsyncActivitySelect in InlinePainForm (UUIDs extracted at dispatch).
+    source_contact: PropTypes.object,
+    source_activity: PropTypes.object,
+    source_quote: PropTypes.string,
+    notes: PropTypes.string,
   }).isRequired,
   choices: PropTypes.object,
   onToggleStatus: PropTypes.func.isRequired,
@@ -397,9 +424,12 @@ PainSection.propTypes = {
       _key: PropTypes.string.isRequired,
       _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
       summary: PropTypes.string,
-      category: PropTypes.string,
-      pain_level: PropTypes.string,
-      business_cost: PropTypes.string,
+      what: PropTypes.string,
+      dimension: PropTypes.string,
+      source_contact: PropTypes.object,
+      source_activity: PropTypes.object,
+      source_quote: PropTypes.string,
+      notes: PropTypes.string,
     }),
   ).isRequired,
   onAdd: PropTypes.func.isRequired,

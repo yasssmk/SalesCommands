@@ -42,7 +42,10 @@ from ..constants import (
     SignalCategory,
     PeopleRole,
     InfluenceLevel,
-    PainCategory,
+    PainWhat,
+    PainDimension,
+    HumanImpact,
+    ImpactLevel,
     PainLevel,
     GoalLevel,
     TechCategory,
@@ -390,13 +393,22 @@ class SignalChoicesView(APIView):
         "signal_category":  [...],
         "people_roles":     [...],
         "influence_levels": [...],
-        "pain_categories":  [...],
-        "pain_levels":      [...],
+        "pain_whats":       [...],
+        "pain_dimensions":  [...],
+        "human_impacts":    [...],
+        "impact_levels":    [...],
+        "pain_levels":      [...],   // DEPRECATED — use impact_levels
         "goal_levels":      [...],
         "tech_categories":  [...],
         "satisfaction":     [...],
       }
     }
+
+    Notes:
+      - pain_levels is DEPRECATED and will be removed once all frontend
+        references migrate to impact_levels.
+      - impact_levels drives PainImpact creation (BUSINESS / DEPARTMENT /
+        PERSONAL) — see PainImpact model docstring.
     """
 
     authentication_classes = [CustomJWTAuthentication]
@@ -414,8 +426,11 @@ class SignalChoicesView(APIView):
                 'signal_category':  _choices(SignalCategory),
                 'people_roles':     _choices(PeopleRole),
                 'influence_levels': _choices(InfluenceLevel),
-                'pain_categories':  _choices(PainCategory),
-                'pain_levels':      _choices(PainLevel),
+                'pain_whats':       _choices(PainWhat),
+                'pain_dimensions':  _choices(PainDimension),
+                'human_impacts':    _choices(HumanImpact),
+                'impact_levels':    _choices(ImpactLevel),
+                'pain_levels':      _choices(PainLevel),  # deprecated
                 'goal_levels':      _choices(GoalLevel),
                 'tech_categories':  _choices(TechCategory),
                 'satisfaction':     _choices(Satisfaction),

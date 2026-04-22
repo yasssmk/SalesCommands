@@ -362,12 +362,69 @@ class CampaignModuleErrorMessages:
     BULK_OPERATION_FAILED = _("Bulk operation failed: {operation}")
 
 class SignalErrorMessages:
+    # -----------------------------------------------------------------
+    # Lifecycle & generic
+    # -----------------------------------------------------------------
     NOT_PENDING_VALIDATED    = _("Only PENDING signals can be validated.")
     NOT_PENDING_REJECTED     = _("Only PENDING signals can be rejected.")
     NOT_EDITABLE             = _("Cannot edit a signal with status '{status}'.")
     INVALID_SIGNAL_TYPE      = _("Invalid signal type: '{signal_type}'.")
     SOURCE_CONTACT_REQUIRED  = _("A source contact is required for this signal type.")
     SOURCE_ACTIVITY_REQUIRED = _("A source activity is required for this signal type.")
+
+    # -----------------------------------------------------------------
+    # Legacy — kept for backward compatibility (ObjectiveSignal may
+    # still enforce the relaxed rule in a future sprint).
+    # -----------------------------------------------------------------
+    CONTEXT_REQUIRED = _(
+        "A pain signal must be linked to at least one of: "
+        "source activity, decision cycle, or campaign."
+    )
+
+    # Superseded by the Pain/Impact split (Sprint 1.6+). Impacted
+    # contact now lives on PainImpact with its own rules. Kept only
+    # for code paths that may still reference it.
+    IMPACTED_CONTACT_REQUIRED = _(
+        "Impacted contact is required when pain level is Personal "
+        "or when a human impact is set."
+    )
+
+    # -----------------------------------------------------------------
+    # PainImpact-specific — level-driven conditional requirements.
+    # Introduced in Sprint 1.11 (Pain/Impact split).
+    # -----------------------------------------------------------------
+    IMPACT_PAIN_REQUIRED = _(
+        "An impact must be linked to a pain signal."
+    )
+    IMPACT_LEVEL_REQUIRED = _(
+        "Impact level is required."
+    )
+    IMPACT_BUSINESS_NO_DEPT = _(
+        "Business impacts must not specify an impacted department."
+    )
+    IMPACT_BUSINESS_NO_CONTACT = _(
+        "Business impacts must not specify an impacted contact."
+    )
+    IMPACT_BUSINESS_NO_HUMAN = _(
+        "Human impact is only meaningful on personal impacts."
+    )
+    IMPACT_DEPT_REQUIRES_DEPT = _(
+        "Department impacts require an impacted department."
+    )
+    IMPACT_DEPT_NO_CONTACT = _(
+        "Department impacts must not specify an impacted contact. "
+        "Use a personal impact instead."
+    )
+    IMPACT_PERSONAL_REQUIRES_CONTACT = _(
+        "Personal impacts require an impacted contact."
+    )
+    IMPACT_PERSONAL_NO_DEPT = _(
+        "Personal impacts must not specify an impacted department. "
+        "Use a department impact instead."
+    )
+    IMPACT_CONTACT_WRONG_ACCOUNT = _(
+        "Impacted contact must belong to the same account as the parent pain."
+    )
 
 
 class OpportunityErrorMessages:

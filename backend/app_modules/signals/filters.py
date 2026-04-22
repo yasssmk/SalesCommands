@@ -34,13 +34,22 @@ class SignalFilter(django_filters.FilterSet):
       status, source, signal_category
       account, source_contact, source_activity, source_department,
       decision_cycle, campaign
+      canonical_key
 
     Type-specific filters (silently ignored when field absent on model):
-      role, influence_level   — PeopleSignal
-      category, pain_level    — PainSignal
-      category                — TechStackSignal (shared filter key)
-      goal_level              — ObjectiveSignal
-      satisfaction            — TechStackSignal
+      role, influence_level         — PeopleSignal
+      what, dimension, human_impact — PainSignal (canonical + orthogonal axes)
+      pain_level                    — PainSignal
+      category                      — TechStackSignal (PainCategory removed
+                                       — this filter key now applies to
+                                       TechStackSignal only)
+      goal_level                    — ObjectiveSignal
+      satisfaction                  — TechStackSignal
+
+    Note:
+      When the refactored SignalClusterService (Sprint 2) groups Pain signals
+      by canonical_key, callers can also filter directly by what/dimension
+      to narrow cluster lookups.
     """
 
     # -------------------------------------------------------------------------
@@ -50,6 +59,17 @@ class SignalFilter(django_filters.FilterSet):
     status          = CharInFilter(field_name='status',          lookup_expr='in')
     source          = CharInFilter(field_name='source',          lookup_expr='in')
     signal_category = CharInFilter(field_name='signal_category', lookup_expr='in')
+
+    # canonical_key uses the shared CharInFilter (comma-separated list).
+    # This is safe for the current canonical schemas which never contain
+    # commas:
+    #     "pain:OPS:TIME"
+    #     "people:<uuid>:CHAMPION"
+    # If a future signal type introduces commas inside canonical_key
+    # (free-text matching, localized labels, etc.), switch this filter to an
+    # exact CharFilter or implement a JSON/array-aware lookup — the comma
+    # delimiter would otherwise split a legitimate key into two halves.
+    canonical_key   = CharInFilter(field_name='canonical_key',   lookup_expr='in')
 
     account          = UUIDFilter(field_name='account_id')
     source_contact   = UUIDFilter(field_name='source_contact_id')
@@ -66,11 +86,20 @@ class SignalFilter(django_filters.FilterSet):
     influence_level = CharInFilter(field_name='influence_level', lookup_expr='in')
 
     # -------------------------------------------------------------------------
-    # TYPE-SPECIFIC — PainSignal + TechStackSignal (shared key)
+    # TYPE-SPECIFIC — PainSignal (canonical + orthogonal axes)
     # -------------------------------------------------------------------------
 
-    category  = CharInFilter(field_name='category',  lookup_expr='in')
-    pain_level = CharInFilter(field_name='pain_level', lookup_expr='in')
+    what         = CharInFilter(field_name='what',         lookup_expr='in')
+    dimension    = CharInFilter(field_name='dimension',    lookup_expr='in')
+    human_impact = CharInFilter(field_name='human_impact', lookup_expr='in')
+    pain_level   = CharInFilter(field_name='pain_level',   lookup_expr='in')
+    impacted_contact = UUIDFilter(field_name='impacted_contact_id')
+
+    # -------------------------------------------------------------------------
+    # TYPE-SPECIFIC — TechStackSignal
+    # -------------------------------------------------------------------------
+
+    category = CharInFilter(field_name='category', lookup_expr='in')
 
     # -------------------------------------------------------------------------
     # TYPE-SPECIFIC — ObjectiveSignal
@@ -90,11 +119,17 @@ class SignalFilter(django_filters.FilterSet):
         # django-filters assertion runs.
         model  = PeopleSignal
         fields = [
-            'status', 'source', 'signal_category',
+            # Base — all types
+            'status', 'source', 'signal_category', 'canonical_key',
             'account', 'source_contact', 'source_activity',
             'source_department', 'decision_cycle', 'campaign',
+            # PeopleSignal
             'role', 'influence_level',
-            'category', 'pain_level',
+            # PainSignal — canonical + orthogonal axes
+            'what', 'dimension', 'human_impact',
+            'pain_level', 'impacted_contact',
+            # ObjectiveSignal
             'goal_level',
-            'satisfaction',
+            # TechStackSignal
+            'category', 'satisfaction',
         ]

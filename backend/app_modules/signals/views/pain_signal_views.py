@@ -42,11 +42,28 @@ class PainSignalViewSet(BaseSignalViewSet):
 
     def get_queryset(self):
         """
-        Extend base queryset with PainSignal-specific select_related.
+        Extend base queryset with PainSignal-specific optimisations.
 
-        Adds impacted_department on top of the base select_related chain
-        for all actions.
+        Notes:
+          - impacted_department was removed from PainSignal in Sprint 1.6 —
+            it now lives on PainImpact. No select_related on it here.
+          - Nested 'impacts' are prefetched for all actions to avoid N+1
+            when the serializer renders the nested list. The prefetch
+            itself select_relates the FK fields on PainImpact to keep the
+            total query count bounded at O(1) regardless of impact count.
         """
+        from django.db.models import Prefetch
+        from ..models import PainImpact
+
         qs = super().get_queryset()
-        qs = qs.select_related('impacted_department')
+
+        impacts_prefetch = Prefetch(
+            'impacts',
+            queryset=PainImpact.objects.select_related(
+                'impacted_department',
+                'impacted_contact',
+            ).order_by('-created_at'),
+        )
+        qs = qs.prefetch_related(impacts_prefetch)
+
         return qs

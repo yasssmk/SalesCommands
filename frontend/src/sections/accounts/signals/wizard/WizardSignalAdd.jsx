@@ -50,7 +50,7 @@ import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import SendOutlined from "@ant-design/icons/SendOutlined";
 
 // project imports
-import { createSignal } from "api/accounts/signals";
+import { createSignal } from "api/signals/signals";
 import {
   displaySuccessSnackbar,
   displayWarningSnackbar,
@@ -464,8 +464,11 @@ export default function WizardSignalAdd({
         // Strip wizard-managed metadata before sending
         const { _key, _status, ...payload } = signal;
 
-        // Normalize contact fields: inline forms store full objects,
-        // backend expects UUIDs.
+        // Normalize relation FK fields: inline forms (and Async* selectors)
+        // store full objects so the UI can render them without re-fetching,
+        // but the backend expects UUID strings. We downcast any remaining
+        // object references here — once, at dispatch time — to keep each
+        // signal type's form logic free of this serialization concern.
         if (
           payload.source_contact &&
           typeof payload.source_contact === "object"
@@ -477,6 +480,15 @@ export default function WizardSignalAdd({
           typeof payload.target_contact === "object"
         ) {
           payload.target_contact = payload.target_contact.id;
+        }
+        // source_activity — Pain signals carry this from AsyncActivitySelect.
+        // Same pattern: the form stores the full activity object, we send
+        // just the UUID to the backend.
+        if (
+          payload.source_activity &&
+          typeof payload.source_activity === "object"
+        ) {
+          payload.source_activity = payload.source_activity.id;
         }
 
         const result = await createSignal(type, {

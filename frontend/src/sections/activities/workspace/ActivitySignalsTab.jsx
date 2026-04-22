@@ -41,13 +41,15 @@ import SignalList from "sections/accounts/signals/SignalList";
 import AlertSignalReject from "sections/accounts/signals/AlertSignalReject";
 import SignalEditDialog from "sections/accounts/signals/SignalEditDialog";
 import WizardSignalAdd from "sections/accounts/signals/wizard/WizardSignalAdd";
+import AddPainImpactDialog from "sections/accounts/signals/pain/AddPainImpactDialog";
 
 import {
   useGetSignalsByActivity,
   useGetSignalChoices,
   validateSignal,
   deleteSignal,
-} from "api/accounts/signals";
+} from "api/signals/signals";
+import { deletePainImpact } from "api/signals/painImpacts";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -310,6 +312,16 @@ export default function ActivitySignalsTab({ activity }) {
     signalType: null,
   });
 
+  /**
+   * PainImpact dialog state — see AccountSignalsTab for the same pattern.
+   */
+  const [impactDialog, setImpactDialog] = useState({
+    open: false,
+    mode: null, // 'create' | 'edit'
+    painSignalId: null,
+    initialImpact: null,
+  });
+
   // ==============================|| HANDLERS ||============================== //
 
   const handleWizardOpen = useCallback(() => setWizardOpen(true), []);
@@ -371,6 +383,53 @@ export default function ActivitySignalsTab({ activity }) {
       }
     },
     [mutateAll],
+  );
+
+  // ==============================|| IMPACT HANDLERS ||============================== //
+
+  const handleAddImpact = useCallback((painSignalId) => {
+    setImpactDialog({
+      open: true,
+      mode: "create",
+      painSignalId,
+      initialImpact: null,
+    });
+  }, []);
+
+  const handleEditImpact = useCallback((impact) => {
+    setImpactDialog({
+      open: true,
+      mode: "edit",
+      painSignalId: null,
+      initialImpact: impact,
+    });
+  }, []);
+
+  const handleImpactDialogClose = useCallback(() => {
+    setImpactDialog({
+      open: false,
+      mode: null,
+      painSignalId: null,
+      initialImpact: null,
+    });
+  }, []);
+
+  const handleImpactDialogSuccess = useCallback(() => {
+    mutatePain();
+    displaySuccessSnackbar("Impact saved");
+  }, [mutatePain]);
+
+  const handleDeleteImpact = useCallback(
+    async (impact) => {
+      const result = await deletePainImpact(impact.id);
+      if (result.success) {
+        mutatePain();
+        displaySuccessSnackbar("Impact deleted");
+      } else {
+        displayErrorSnackbar(result);
+      }
+    },
+    [mutatePain],
   );
 
   // ==============================|| RENDER ||============================== //
@@ -440,6 +499,10 @@ export default function ActivitySignalsTab({ activity }) {
         onReject={handleRejectOpen}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        choices={choices}
+        onAddImpact={handleAddImpact}
+        onEditImpact={handleEditImpact}
+        onDeleteImpact={handleDeleteImpact}
         emptyMessage={`No ${activeSection} signals linked to this activity yet`}
         emptyDescription="Open the wizard to capture signals from this conversation"
       />
@@ -484,6 +547,16 @@ export default function ActivitySignalsTab({ activity }) {
         accountId={accountId ?? ""}
         choices={choices}
         choicesLoading={choicesLoading}
+      />
+
+      {/* PainImpact dialog — dual create/edit */}
+      <AddPainImpactDialog
+        open={impactDialog.open}
+        onClose={handleImpactDialogClose}
+        onSuccess={handleImpactDialogSuccess}
+        painSignalId={impactDialog.painSignalId}
+        accountId={accountId ?? ""}
+        initialImpact={impactDialog.initialImpact}
       />
     </Box>
   );
