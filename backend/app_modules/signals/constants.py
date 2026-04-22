@@ -2,7 +2,8 @@
 """
 Constants for the Signals module.
 
-Defines all TextChoices enums used across signal models.
+Defines all TextChoices enums used across signal models and cluster
+aggregation logic.
 
 Lifecycle / cross-cutting:
   SignalStatus   — lifecycle states shared by all signal types
@@ -20,6 +21,17 @@ Model-specific:
   GoalLevel      — organisational scope of the objective for ObjectiveSignal
   TechCategory   — technology category for TechStackSignal
   Satisfaction   — satisfaction level for TechStackSignal
+
+Cluster aggregation (Sprint 2):
+  SignalClusterType — enumeration of signal types that support clustering
+  FreshnessStatus   — age-based freshness of a cluster
+  PriorityBucket    — coarse priority label derived from a numeric score
+
+Thresholds (cluster aggregation):
+  FRESHNESS_FRESH_DAYS   — upper bound (exclusive) of FRESH status
+  FRESHNESS_DORMANT_DAYS — upper bound (exclusive) of DORMANT status
+  PRIORITY_HIGH_THRESHOLD   — minimum score for HIGH bucket
+  PRIORITY_MEDIUM_THRESHOLD — minimum score for MEDIUM bucket
 
 Removed vs. previous version:
   - SignalStatus.MERGED      (merge operation removed from the module)
@@ -325,3 +337,109 @@ class Satisfaction(models.TextChoices):
     MEDIUM  = 'MEDIUM',  _('Medium')
     LOW     = 'LOW',     _('Low')
     UNKNOWN = 'UNKNOWN', _('Unknown')
+
+# =============================================================================
+# SIGNAL CLUSTER AGGREGATION — enums and thresholds (Sprint 2)
+# =============================================================================
+#
+# Clusters aggregate signals sharing the same canonical_key on a given account.
+# The enums below describe cluster-level attributes (freshness, priority)
+# that are computed on read — never stored on signal rows.
+#
+# Only PainSignal is clustered in Sprint 2. The SignalClusterType enum is
+# intentionally extensible so later sprints can add Objective / TechStack
+# clustering without introducing a second enum.
+# =============================================================================
+
+
+class SignalClusterType(models.TextChoices):
+    """
+    Signal types that support cluster aggregation.
+
+    In Sprint 2 only PAIN is actively aggregated. PEOPLE, OBJECTIVE, and
+    TECH_STACK are reserved for future sprints — kept in the enum so the
+    same SignalClusterArchival table can serve them without a schema change.
+
+    The string values intentionally match the keys used in
+    SignalDataService._SIGNAL_TYPE_MAP (people / pain / objective /
+    tech_stack) so the same identifier travels through all layers.
+    """
+    PAIN       = 'pain',       _('Pain')
+    PEOPLE     = 'people',     _('People')       # reserved — not aggregated in Sprint 2
+    OBJECTIVE  = 'objective',  _('Objective')    # reserved — not aggregated in Sprint 2
+    TECH_STACK = 'tech_stack', _('Tech Stack')   # reserved — not aggregated in Sprint 2
+
+
+class FreshnessStatus(models.TextChoices):
+    """
+    Age-based freshness of a signal cluster.
+
+    Computed on read from the most recent VALIDATED signal's creation date.
+    Never stored.
+
+    FRESH   — last VALIDATED observation is younger than
+              FRESHNESS_FRESH_DAYS (default 30).
+    DORMANT — last VALIDATED observation is between
+              FRESHNESS_FRESH_DAYS and FRESHNESS_DORMANT_DAYS (default 30–90).
+    STALE   — last VALIDATED observation is older than
+              FRESHNESS_DORMANT_DAYS (default 90).
+
+    Exception enforced by SignalClusterService:
+      If at least one member signal references a decision cycle that is
+      still active (outcome IS NULL or outcome = ON_HOLD), the cluster is
+      never STALE — it is clamped to DORMANT at worst. Rationale: as long
+      as a deal is alive (even paused), its associated pain is not stale.
+    """
+    FRESH   = 'FRESH',   _('Fresh')
+    DORMANT = 'DORMANT', _('Dormant')
+    STALE   = 'STALE',   _('Stale')
+
+
+class PriorityBucket(models.TextChoices):
+    """
+    Coarse priority label for a cluster, derived from a numeric score.
+
+    The underlying score (0–100) is exposed in the API for debugging but
+    the UI only displays the bucket. Thresholds are tunable via
+    PRIORITY_HIGH_THRESHOLD and PRIORITY_MEDIUM_THRESHOLD.
+
+    HIGH   — score >= PRIORITY_HIGH_THRESHOLD     (default 70)
+    MEDIUM — PRIORITY_MEDIUM_THRESHOLD <= score < PRIORITY_HIGH_THRESHOLD
+             (default 40–69)
+    LOW    — score < PRIORITY_MEDIUM_THRESHOLD    (default < 40)
+    """
+    HIGH   = 'HIGH',   _('High')
+    MEDIUM = 'MEDIUM', _('Medium')
+    LOW    = 'LOW',    _('Low')
+
+
+# -----------------------------------------------------------------------------
+# Freshness thresholds (days)
+# -----------------------------------------------------------------------------
+# A cluster is FRESH while its most recent VALIDATED signal is newer than
+# FRESHNESS_FRESH_DAYS. It becomes DORMANT once older, and STALE past
+# FRESHNESS_DORMANT_DAYS — subject to the active-DC exception described on
+# FreshnessStatus.
+#
+# These constants are the single source of truth — adjust here to retune
+# the freshness policy without touching service code.
+# -----------------------------------------------------------------------------
+
+FRESHNESS_FRESH_DAYS   = 30
+FRESHNESS_DORMANT_DAYS = 90
+
+
+# -----------------------------------------------------------------------------
+# Priority bucket thresholds
+# -----------------------------------------------------------------------------
+# Score buckets applied by SignalPriorityService.bucket_from_score().
+# The priority score itself is computed by compute_pain_priority_score()
+# using the PAIN_PRIORITY_WEIGHTS dict (see services/signal_priority_service.py).
+#
+# Kept here (not in the service module) so product can tune the bucket
+# cutoffs without opening the priority calculation — separation of concerns
+# between "how the score is built" and "how the score is labelled".
+# -----------------------------------------------------------------------------
+
+PRIORITY_HIGH_THRESHOLD   = 70
+PRIORITY_MEDIUM_THRESHOLD = 40

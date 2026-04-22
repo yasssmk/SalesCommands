@@ -426,6 +426,25 @@ class SignalErrorMessages:
         "Impacted contact must belong to the same account as the parent pain."
     )
 
+    CLUSTER_ACCOUNT_REQUIRED = _(
+        "An account is required to query signal clusters."
+    )
+    CLUSTER_CANONICAL_KEY_REQUIRED = _(
+        "A canonical key is required to target a signal cluster."
+    )
+    CLUSTER_SIGNAL_TYPE_INVALID = _(
+        "Invalid cluster signal type: '{signal_type}'."
+    )
+    CLUSTER_NOT_FOUND = _(
+        "No signal cluster found for the given account and canonical key."
+    )
+    CLUSTER_ALREADY_ARCHIVED = _(
+        "This signal cluster is already archived."
+    )
+    CLUSTER_NOT_ARCHIVED = _(
+        "This signal cluster is not archived."
+    )
+
 
 class OpportunityErrorMessages:
     """Opportunity and Pipeline specific error messages"""

@@ -24,6 +24,10 @@ def get_urlpatterns():
         ObjectiveSignalViewSet,
         TechStackSignalViewSet,
         SignalChoicesView,
+        SignalClusterListView,
+        SignalClusterDetailView,
+        SignalClusterArchiveView,
+        SignalClusterUnarchiveView,
     )
 
     return [
@@ -176,6 +180,41 @@ def get_urlpatterns():
                 'delete': 'destroy',
             }),
             name='pain-impact-detail',
+        ),
+
+        # =====================================================================
+        # SIGNAL CLUSTERS
+        #
+        # Order matters here: the literal paths 'clusters/archive/' and
+        # 'clusters/unarchive/' MUST appear before the <path:canonical_key>
+        # wildcard. Django resolves patterns top-to-bottom and a wildcard
+        # would otherwise swallow the literal routes.
+        #
+        # canonical_key uses <path:> (not <str:>) because the identifier
+        # contains colons, e.g. 'pain:OPS:TIME'. Django's default 'str'
+        # converter rejects colons; 'path' accepts them along with any
+        # printable non-slash character.
+        # =====================================================================
+
+        path(
+            'clusters/',
+            SignalClusterListView.as_view(),
+            name='cluster-list',
+        ),
+        path(
+            'clusters/archive/',
+            SignalClusterArchiveView.as_view(),
+            name='cluster-archive',
+        ),
+        path(
+            'clusters/unarchive/',
+            SignalClusterUnarchiveView.as_view(),
+            name='cluster-unarchive',
+        ),
+        path(
+            'clusters/<path:canonical_key>/',
+            SignalClusterDetailView.as_view(),
+            name='cluster-detail',
         ),
 
     ]
