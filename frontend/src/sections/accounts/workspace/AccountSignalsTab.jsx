@@ -23,21 +23,27 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
+import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Typography from "@mui/material/Typography";
 
 // ant-design icons
+import InboxOutlined from "@ant-design/icons/InboxOutlined";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
 // project imports
 import SignalList from "../signals/SignalList";
 import AlertSignalReject from "../signals/AlertSignalReject";
 import SignalEditDialog from "../signals/SignalEditDialog";
+import SignalClusterDetailDrawer from "../signals/SignalClusterDetailDrawer";
 import WizardSignalAdd from "../signals/wizard/WizardSignalAdd";
-import AddPainImpactDialog from "../signals/pain/AddPainImpactDialog";
+import SignalClusterCard from "components/cards/signals/SignalClusterCard";
 
 import {
   useGetSignalsByAccount,
@@ -45,7 +51,11 @@ import {
   validateSignal,
   deleteSignal,
 } from "api/signals/signals";
-import { deletePainImpact } from "api/signals/painImpacts";
+import {
+  useGetClustersByAccount,
+  archiveCluster,
+  unarchiveCluster,
+} from "api/signals/signalClusters";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -61,13 +71,106 @@ const TYPE_OPTIONS = [
   { value: "tech-stack", label: "Tech Stack" },
 ];
 
-/** Status filter dropdown options */
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
   { value: "PENDING", label: "Pending" },
   { value: "VALIDATED", label: "Validated" },
   { value: "REJECTED", label: "Rejected" },
 ];
+
+// ==============================|| PAIN CLUSTERS SECTION ||============================== //
+
+/**
+ * Dedicated renderer for the Pain cluster grid.
+ *
+ * Encapsulates the three states (loading / error / empty / list) so the
+ * main tab render stays readable. Kept in the same file because it is
+ * tightly coupled to the tab's state/handlers and has no other caller.
+ */
+function PainClustersSection({
+  clusters,
+  loading,
+  error,
+  includeArchived,
+  onClusterClick,
+  onClusterArchive,
+  onClusterUnarchive,
+}) {
+  if (loading) {
+    return (
+      <Stack spacing={1.5}>
+        <Skeleton variant="rounded" height={180} />
+        <Skeleton variant="rounded" height={180} />
+      </Stack>
+    );
+  }
+
+  if (error) {
+    return (
+      <Stack alignItems="center" py={6} spacing={1}>
+        <Typography variant="body2" color="error">
+          Failed to load pain clusters. Please refresh and try again.
+        </Typography>
+      </Stack>
+    );
+  }
+
+  if (!clusters || clusters.length === 0) {
+    return (
+      <Stack alignItems="center" py={6} spacing={1.5}>
+        <InboxOutlined style={{ fontSize: 36, color: "#bfbfbf" }} />
+        <Typography variant="body1" color="text.secondary" fontWeight={500}>
+          {includeArchived
+            ? "No pain clusters for this account"
+            : "No active pain clusters for this account"}
+        </Typography>
+        <Typography
+          variant="body2"
+          color="text.disabled"
+          textAlign="center"
+          maxWidth={380}
+        >
+          Pain signals recorded from calls group automatically into canonical
+          clusters. Capture a few pains via the wizard to see them surface here.
+        </Typography>
+      </Stack>
+    );
+  }
+
+  return (
+    <Stack spacing={1.5}>
+      {clusters.map((cluster) => (
+        <SignalClusterCard
+          key={cluster.canonical_key}
+          cluster={cluster}
+          onClick={onClusterClick}
+          onArchive={onClusterArchive}
+          onUnarchive={onClusterUnarchive}
+        />
+      ))}
+      <Stack direction="row" justifyContent="flex-end" sx={{ pt: 0.5 }}>
+        <Chip
+          label={`${clusters.length} cluster${
+            clusters.length === 1 ? "" : "s"
+          }`}
+          size="small"
+          variant="outlined"
+          sx={{ fontSize: "0.7rem" }}
+        />
+      </Stack>
+    </Stack>
+  );
+}
+
+PainClustersSection.propTypes = {
+  clusters: PropTypes.array,
+  loading: PropTypes.bool,
+  error: PropTypes.any,
+  includeArchived: PropTypes.bool,
+  onClusterClick: PropTypes.func.isRequired,
+  onClusterArchive: PropTypes.func.isRequired,
+  onClusterUnarchive: PropTypes.func.isRequired,
+};
 
 // ==============================|| ACCOUNT SIGNALS TAB ||============================== //
 
@@ -82,6 +185,7 @@ export default function AccountSignalsTab({ accountId, account }) {
 
   const [activeType, setActiveType] = useState("pain");
   const [statusFilter, setStatusFilter] = useState("");
+  const [includeArchived, setIncludeArchived] = useState(false);
 
   // ==============================|| MODAL STATE ||============================== //
 
@@ -100,15 +204,11 @@ export default function AccountSignalsTab({ accountId, account }) {
   });
 
   /**
-   * PainImpact dialog state — used for both create and edit modes.
-   *   mode='create': painSignalId set, initialImpact null
-   *   mode='edit':   initialImpact set, painSignalId derived from it
+   * Cluster drill-down drawer state — only used when activeType === 'pain'.
    */
-  const [impactDialog, setImpactDialog] = useState({
+  const [clusterDrawer, setClusterDrawer] = useState({
     open: false,
-    mode: null, // 'create' | 'edit'
-    painSignalId: null,
-    initialImpact: null,
+    clusterSummary: null,
   });
 
   // ==============================|| DATA FETCHING ||============================== //
@@ -130,12 +230,24 @@ export default function AccountSignalsTab({ accountId, account }) {
     mutateSignals: mutatePeople,
   } = useGetSignalsByAccount(accountId, "people", sharedOptions);
 
+  /**
+   * Pain uses the cluster endpoint instead of the individual signal list.
+   * The Wizard still creates individual PainSignals — they are routed
+   * into clusters automatically by canonical_key, which is why we still
+   * need `mutatePain`-style invalidation after a Wizard success. The
+   * cluster cache layer (api/signals/signalClusters.js) already revalidates
+   * the pain list prefix, so calling `mutateClusters` after Wizard success
+   * is sufficient.
+   */
   const {
-    signals: painSignals,
-    signalsLoading: painLoading,
-    signalsError: painError,
-    mutateSignals: mutatePain,
-  } = useGetSignalsByAccount(accountId, "pain", sharedOptions);
+    clusters: painClusters,
+    clustersLoading: painLoading,
+    clustersError: painError,
+    mutateClusters: mutatePainClusters,
+  } = useGetClustersByAccount(accountId, {
+    signalType: "pain",
+    includeArchived,
+  });
 
   const {
     signals: objectiveSignals,
@@ -155,26 +267,41 @@ export default function AccountSignalsTab({ accountId, account }) {
 
   // ==============================|| DERIVED ||============================== //
 
-  /** Revalidate all 4 lists — called after any write */
+  /**
+   * Revalidate all 4 sections — called after any write.
+   * Pain now lives on the cluster endpoint, so we invalidate the cluster
+   * cache instead of the individual pain list. The cluster cache layer
+   * revalidates the underlying pain list transitively.
+   */
   const mutateAll = useCallback(() => {
     mutatePeople();
-    mutatePain();
+    mutatePainClusters();
     mutateObjective();
     mutateTech();
-  }, [mutatePeople, mutatePain, mutateObjective, mutateTech]);
+  }, [mutatePeople, mutatePainClusters, mutateObjective, mutateTech]);
 
-  /** Counts per type — shown as badges in the section toggle */
+  /**
+   * Counts per type — shown as badges in the section toggle.
+   * Pain count = number of non-archived clusters (per product decision D3).
+   * Archived clusters are only counted when includeArchived is on, which
+   * matches what the user sees on the listing.
+   */
   const counts = useMemo(
     () => ({
       people: peopleSignals.length,
-      pain: painSignals.length,
+      pain: painClusters.length,
       objective: objectiveSignals.length,
       "tech-stack": techSignals.length,
     }),
-    [peopleSignals, painSignals, objectiveSignals, techSignals],
+    [peopleSignals, painClusters, objectiveSignals, techSignals],
   );
 
-  /** Active section data */
+  /**
+   * Active section data.
+   * Pain returns an empty `signals` array on purpose — the Pain section
+   * renders a cluster grid rather than a SignalList. The `loading` and
+   * `error` fields remain used by the Pain custom render.
+   */
   const activeData = useMemo(() => {
     switch (activeType) {
       case "people":
@@ -185,7 +312,7 @@ export default function AccountSignalsTab({ accountId, account }) {
         };
       case "pain":
         return {
-          signals: painSignals,
+          signals: [],
           loading: painLoading,
           error: painError,
         };
@@ -209,7 +336,6 @@ export default function AccountSignalsTab({ accountId, account }) {
     peopleSignals,
     peopleLoading,
     peopleError,
-    painSignals,
     painLoading,
     painError,
     objectiveSignals,
@@ -298,61 +424,67 @@ export default function AccountSignalsTab({ accountId, account }) {
     [mutateAll],
   );
 
-  // ==============================|| IMPACT HANDLERS ||============================== //
-
-  /** Open dialog in CREATE mode — attach a new impact to a specific pain. */
-  const handleAddImpact = useCallback((painSignalId) => {
-    setImpactDialog({
-      open: true,
-      mode: "create",
-      painSignalId,
-      initialImpact: null,
-    });
-  }, []);
-
-  /** Open dialog in EDIT mode — pre-fill from an existing impact. */
-  const handleEditImpact = useCallback((impact) => {
-    setImpactDialog({
-      open: true,
-      mode: "edit",
-      painSignalId: null,
-      initialImpact: impact,
-    });
-  }, []);
-
-  const handleImpactDialogClose = useCallback(() => {
-    setImpactDialog({
-      open: false,
-      mode: null,
-      painSignalId: null,
-      initialImpact: null,
-    });
-  }, []);
-
-  const handleImpactDialogSuccess = useCallback(() => {
-    // Revalidate Pain lists — the nested `impacts` array changed.
-    // painImpacts.js already invalidates the Pain cache tag, but we mutate
-    // the local SWR cache explicitly so the refresh is immediate without
-    // waiting for the next focus.
-    mutatePain();
-    displaySuccessSnackbar("Impact saved");
-  }, [mutatePain]);
+  // ==============================|| CLUSTER HANDLERS ||============================== //
 
   /**
-   * Delete an impact — called by PainCard after its inline confirm dialog
-   * already confirmed the action. No additional confirm here.
+   * Open the drill-down drawer for a cluster.
+   * The clusterSummary is the list item payload — the drawer fetches
+   * its own detail separately.
    */
-  const handleDeleteImpact = useCallback(
-    async (impact) => {
-      const result = await deletePainImpact(impact.id);
+  const handleClusterClick = useCallback((cluster) => {
+    setClusterDrawer({ open: true, clusterSummary: cluster });
+  }, []);
+
+  const handleClusterDrawerClose = useCallback(() => {
+    setClusterDrawer({ open: false, clusterSummary: null });
+  }, []);
+
+  /**
+   * Called by the drawer whenever a mutation changes cluster data
+   * (archive, unarchive, member validation, member edit, impact CRUD).
+   * We only need to revalidate the cluster list here — the drawer
+   * revalidates its own detail internally.
+   */
+  const handleClusterChange = useCallback(() => {
+    mutatePainClusters();
+  }, [mutatePainClusters]);
+
+  /**
+   * Archive a cluster from the card overflow menu (no drawer open).
+   * Identical logic to the drawer's archive, but initiated from the list.
+   */
+  const handleClusterArchive = useCallback(
+    async (cluster) => {
+      const result = await archiveCluster({
+        account: accountId,
+        canonicalKey: cluster.canonical_key,
+        signalType: cluster.signal_type,
+      });
       if (result.success) {
-        mutatePain();
-        displaySuccessSnackbar("Impact deleted");
+        mutatePainClusters();
+        displaySuccessSnackbar("Cluster archived");
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutatePain],
+    [accountId, mutatePainClusters],
+  );
+
+  const handleClusterUnarchive = useCallback(
+    async (cluster) => {
+      const result = await unarchiveCluster({
+        account: accountId,
+        canonicalKey: cluster.canonical_key,
+        signalType: cluster.signal_type,
+      });
+      if (result.success) {
+        mutatePainClusters();
+        displaySuccessSnackbar("Cluster unarchived");
+      } else {
+        displayErrorSnackbar(result);
+      }
+    },
+    [accountId, mutatePainClusters],
   );
 
   // ==============================|| RENDER ||============================== //
@@ -404,20 +536,54 @@ export default function AccountSignalsTab({ accountId, account }) {
             ))}
           </ToggleButtonGroup>
 
-          {/* Status filter */}
-          <Select
-            value={statusFilter}
-            onChange={handleStatusChange}
-            size="small"
-            displayEmpty
-            sx={{ minWidth: 140, fontSize: "0.82rem" }}
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <MenuItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </MenuItem>
-            ))}
-          </Select>
+          {/*
+            Status filter — hidden on Pain because clusters don't expose
+            a status filter (they aggregate VALIDATED + PENDING members
+            natively and surface the mix via has_pending_signals). On
+            the other three types, it remains useful.
+          */}
+          {activeType !== "pain" && (
+            <Select
+              value={statusFilter}
+              onChange={handleStatusChange}
+              size="small"
+              displayEmpty
+              sx={{ minWidth: 140, fontSize: "0.82rem" }}
+            >
+              {STATUS_OPTIONS.map((opt) => (
+                <MenuItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </MenuItem>
+              ))}
+            </Select>
+          )}
+
+          {/*
+            Show-archived toggle — only on Pain. Hidden for the other
+            three types since they don't have a cluster-level archival
+            concept yet.
+          */}
+          {activeType === "pain" && (
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={includeArchived}
+                  onChange={(e) => setIncludeArchived(e.target.checked)}
+                  inputProps={{ "aria-label": "Show archived clusters" }}
+                />
+              }
+              label={
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <InboxOutlined style={{ fontSize: 12 }} />
+                  <Typography variant="caption" color="text.secondary">
+                    Show archived
+                  </Typography>
+                </Stack>
+              }
+              sx={{ m: 0 }}
+            />
+          )}
         </Stack>
 
         {/* Right: add button — opens wizard on the active section */}
@@ -433,33 +599,39 @@ export default function AccountSignalsTab({ accountId, account }) {
 
       <Divider sx={{ mb: 2 }} />
 
-      {/* ==================== ACTIVE SECTION LIST ==================== */}
-      <SignalList
-        signals={activeData.signals}
-        signalType={activeType}
-        loading={activeData.loading}
-        error={activeData.error}
-        onValidate={handleValidate}
-        onReject={handleRejectOpen}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        // Pain-specific — SignalList only forwards these to PainCard.
-        // Harmless for the 3 other types (the generic SignalCard ignores them).
-        choices={choices}
-        onAddImpact={handleAddImpact}
-        onEditImpact={handleEditImpact}
-        onDeleteImpact={handleDeleteImpact}
-        emptyMessage={
-          statusFilter
-            ? `No ${activeType} signals match this status`
-            : `No ${activeType} signals yet for this account`
-        }
-        emptyDescription={
-          !statusFilter
-            ? "Open the wizard to capture signals from a conversation"
-            : undefined
-        }
-      />
+      {/* ==================== ACTIVE SECTION ==================== */}
+      {activeType === "pain" ? (
+        <PainClustersSection
+          clusters={painClusters}
+          loading={painLoading}
+          error={painError}
+          includeArchived={includeArchived}
+          onClusterClick={handleClusterClick}
+          onClusterArchive={handleClusterArchive}
+          onClusterUnarchive={handleClusterUnarchive}
+        />
+      ) : (
+        <SignalList
+          signals={activeData.signals}
+          signalType={activeType}
+          loading={activeData.loading}
+          error={activeData.error}
+          onValidate={handleValidate}
+          onReject={handleRejectOpen}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          emptyMessage={
+            statusFilter
+              ? `No ${activeType} signals match this status`
+              : `No ${activeType} signals yet for this account`
+          }
+          emptyDescription={
+            !statusFilter
+              ? "Open the wizard to capture signals from a conversation"
+              : undefined
+          }
+        />
+      )}
 
       {/* ==================== MODALS / DRAWERS ==================== */}
 
@@ -495,14 +667,15 @@ export default function AccountSignalsTab({ accountId, account }) {
         choicesLoading={choicesLoading}
       />
 
-      {/* PainImpact dialog — dual create/edit */}
-      <AddPainImpactDialog
-        open={impactDialog.open}
-        onClose={handleImpactDialogClose}
-        onSuccess={handleImpactDialogSuccess}
-        painSignalId={impactDialog.painSignalId}
+      {/* Cluster drill-down drawer — Pain only */}
+      <SignalClusterDetailDrawer
+        open={clusterDrawer.open}
+        onClose={handleClusterDrawerClose}
+        clusterSummary={clusterDrawer.clusterSummary}
         accountId={accountId}
-        initialImpact={impactDialog.initialImpact}
+        choices={choices}
+        choicesLoading={choicesLoading}
+        onClusterChange={handleClusterChange}
       />
     </Box>
   );

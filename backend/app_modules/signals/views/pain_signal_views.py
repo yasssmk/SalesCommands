@@ -38,6 +38,11 @@ class PainSignalViewSet(BaseSignalViewSet):
     create_serializer_class = PainSignalCreateSerializer
     update_serializer_class = PainSignalUpdateSerializer
 
+    # PainSignal participates in the cluster model: every write changes
+    # cluster membership, priority score, or freshness. Must bust the
+    # signal_clusters cache tag in addition to signals.
+    invalidate_cluster_tag = True
+
     search_fields = ['summary']
 
     def get_queryset(self):

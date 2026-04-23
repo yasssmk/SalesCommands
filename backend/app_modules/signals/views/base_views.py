@@ -33,6 +33,8 @@ from core.jwt_helpers import CustomJWTAuthentication
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
 
+from ..constants import SIGNALS_CACHE_TAG, SIGNAL_CLUSTERS_CACHE_TAG
+
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from permissions.owner_scope import OwnerScopeMixin
 
@@ -56,13 +58,24 @@ from ..services import SignalManager
 
 logger = get_logger(__name__)
 
-_SIGNAL_CACHE_TAG = 'signals'
 
+def _invalidate_signal_caches(client_id, *, invalidate_cluster_tag: bool = False):
+    """
+    Invalidate signal cache tags after any write operation.
 
-def _invalidate_signal_caches(client_id):
-    """Invalidate signal cache tag after any write operation."""
-    invalidate_tag(str(client_id), _SIGNAL_CACHE_TAG)
-
+    Args:
+        client_id: Client UUID used for tenant-scoped cache keys.
+        invalidate_cluster_tag:
+            When True, also invalidate SIGNAL_CLUSTERS_CACHE_TAG. Set
+            to True for ViewSets whose writes affect cluster membership
+            or aggregated cluster stats (PainSignalViewSet). Default
+            False for People / Objective / TechStack ViewSets whose
+            writes do not touch cluster data.
+    """
+    client_id_str = str(client_id)
+    invalidate_tag(client_id_str, SIGNALS_CACHE_TAG)
+    if invalidate_cluster_tag:
+        invalidate_tag(client_id_str, SIGNAL_CLUSTERS_CACHE_TAG)
 
 # =============================================================================
 # BASE VIEWSET
@@ -76,14 +89,7 @@ class BaseSignalViewSet(
 ):
     """
     Base ViewSet for all concrete signal types.
-
-    Concrete subclasses MUST define:
-      queryset                  — model-specific base queryset
-      model_label               — string for logging (e.g. 'people_signal')
-      list_serializer_class     — lightweight list serializer
-      detail_serializer_class   — full detail serializer
-      create_serializer_class   — write serializer for POST
-      update_serializer_class   — restricted write serializer for PATCH
+    ...
     """
 
     # --- to be overridden by concrete ViewSets ---
@@ -92,6 +98,20 @@ class BaseSignalViewSet(
     create_serializer_class = None
     update_serializer_class = None
     model_label             = 'signal'
+
+    # Cluster cache invalidation flag.
+    #
+    # When True, every write performed by this ViewSet also invalidates
+    # SIGNAL_CLUSTERS_CACHE_TAG in addition to SIGNALS_CACHE_TAG.
+    #
+    # Must be set to True on concrete ViewSets whose writes affect
+    # cluster data:
+    #   - PainSignalViewSet  (cluster membership, priority_score,
+    #                         freshness_status, confirmation_count)
+    #
+    # Kept False for signal types that do not participate in the
+    # cluster model (People / Objective / TechStack).
+    invalidate_cluster_tag = False
 
     # --- shared config ---
     authentication_classes = [CustomJWTAuthentication]
@@ -201,7 +221,10 @@ class BaseSignalViewSet(
         )
 
         transaction.on_commit(
-            lambda: _invalidate_signal_caches(self.get_client_id())
+            lambda: _invalidate_signal_caches(
+                self.get_client_id(),
+                invalidate_cluster_tag=self.invalidate_cluster_tag,
+            )
         )
 
         output = self.detail_serializer_class(instance, context={'request': request})
@@ -258,7 +281,10 @@ class BaseSignalViewSet(
         )
 
         transaction.on_commit(
-            lambda: _invalidate_signal_caches(self.get_client_id())
+            lambda: _invalidate_signal_caches(
+                self.get_client_id(),
+                invalidate_cluster_tag=self.invalidate_cluster_tag,
+            )
         )
 
         output = self.detail_serializer_class(instance, context={'request': request})
@@ -287,7 +313,10 @@ class BaseSignalViewSet(
             outcome='success',
         )
 
-        _invalidate_signal_caches(self.get_client_id())
+        _invalidate_signal_caches(
+            self.get_client_id(),
+            invalidate_cluster_tag=self.invalidate_cluster_tag,
+        )
 
         return Response(
             {'success': True, 'data': None},
@@ -326,7 +355,10 @@ class BaseSignalViewSet(
         )
 
         transaction.on_commit(
-            lambda: _invalidate_signal_caches(self.get_client_id())
+            lambda: _invalidate_signal_caches(
+                self.get_client_id(),
+                invalidate_cluster_tag=self.invalidate_cluster_tag,
+            )
         )
 
         output = self.detail_serializer_class(updated, context={'request': request})
@@ -367,7 +399,10 @@ class BaseSignalViewSet(
         )
 
         transaction.on_commit(
-            lambda: _invalidate_signal_caches(self.get_client_id())
+            lambda: _invalidate_signal_caches(
+                self.get_client_id(),
+                invalidate_cluster_tag=self.invalidate_cluster_tag,
+            )
         )
 
         output = self.detail_serializer_class(updated, context={'request': request})

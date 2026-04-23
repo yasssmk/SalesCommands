@@ -54,18 +54,34 @@ from ..serializers import (
     SignalClusterDetailSerializer,
     SignalClusterListSerializer,
 )
+from ..constants import (
+    SignalClusterType,
+    SIGNALS_CACHE_TAG,
+    SIGNAL_CLUSTERS_CACHE_TAG,
+)
 from ..services import SignalClusterService
 
 logger = get_logger(__name__)
 
-
-_SIGNAL_CACHE_TAG = 'signals'
 _VALID_CLUSTER_TYPES = {choice.value for choice in SignalClusterType}
 
 
 def _invalidate_signal_caches(client_id):
-    """Invalidate the shared 'signals' cache tag after any archival change."""
-    invalidate_tag(str(client_id), _SIGNAL_CACHE_TAG)
+    """
+    Invalidate both signal and cluster cache tags after any archival change.
+
+    Archive / unarchive affect cluster visibility in list responses
+    (via include_archived filtering). Invalidating SIGNAL_CLUSTERS_CACHE_TAG
+    is mandatory here.
+
+    SIGNALS_CACHE_TAG is also invalidated so that any signal-level
+    listing that projects "has_active_cluster_archive" (future-proofing
+    for pipeline generation hooks) stays consistent. Cost is a single
+    extra Redis INCR — negligible.
+    """
+    client_id_str = str(client_id)
+    invalidate_tag(client_id_str, SIGNALS_CACHE_TAG)
+    invalidate_tag(client_id_str, SIGNAL_CLUSTERS_CACHE_TAG)
 
 
 # =============================================================================

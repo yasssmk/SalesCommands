@@ -443,3 +443,57 @@ FRESHNESS_DORMANT_DAYS = 90
 
 PRIORITY_HIGH_THRESHOLD   = 70
 PRIORITY_MEDIUM_THRESHOLD = 40
+
+# =============================================================================
+# CACHE TAGS
+# =============================================================================
+#
+# Redis cache namespaces used by the Signals module.
+#
+# Rationale for two separate tags
+# -------------------------------
+# A single 'signals' tag would force full cache invalidation on every
+# write. That is wasteful because:
+#
+#   - Validating a People signal does not affect Pain cluster stats
+#     (clusters are computed from Pain signals + PainImpact only).
+#   - Archiving a cluster does not change any signal data, only its
+#     visibility in cluster listings.
+#
+# Splitting into two tags gives each surface a precise invalidation
+# contract. See cache_invalidation.py (safety-net signals) and the
+# ViewSet _invalidate_* helpers (immediate post-write invalidation).
+#
+# Invalidation matrix
+# -------------------
+#
+#   Write on                  signals   signal_clusters
+#   ---------------------    -------   ---------------
+#   PeopleSignal                 ✓            ✗
+#   PainSignal                   ✓            ✓  (cluster member)
+#   ObjectiveSignal              ✓            ✗
+#   TechStackSignal              ✓            ✗
+#   PainImpact                   ✓            ✓  (cluster stats pivot)
+#   SignalClusterArchival        ✗            ✓  (archival-only)
+# =============================================================================
+
+# Shared namespace for list / detail / filtered signal caches.
+# Any write on a concrete signal type (People / Pain / Objective /
+# TechStack) invalidates this tag. PainImpact writes also invalidate
+# it because impacts are rendered inline in PainSignal detail reads.
+SIGNALS_CACHE_TAG = 'signals'
+
+# Dedicated namespace for cluster list / detail responses.
+# Writes that do NOT change cluster content (e.g. validating a People
+# signal) must not bust this tag — that is the whole point of the split.
+#
+# Invalidated on:
+#   - PainSignal create/update/delete        (cluster membership changes)
+#   - PainImpact create/update/delete        (cluster aggregated stats
+#                                              change: human_impacts,
+#                                              metrics, max_impact_level,
+#                                              impacted_contacts_count)
+#   - SignalClusterArchival create/update    (archive / unarchive toggle
+#                                              — affects include_archived
+#                                              filtering in list views)
+SIGNAL_CLUSTERS_CACHE_TAG = 'signal_clusters'

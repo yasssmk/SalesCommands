@@ -46,14 +46,30 @@ from ..serializers import (
     PainImpactUpdateSerializer,
 )
 
+from ..constants import SIGNALS_CACHE_TAG, SIGNAL_CLUSTERS_CACHE_TAG
+
 logger = get_logger(__name__)
 
 _SIGNAL_CACHE_TAG = 'signals'
 
 
 def _invalidate_signal_caches(client_id):
-    """Invalidate the shared signal cache tag after any PainImpact write."""
-    invalidate_tag(str(client_id), _SIGNAL_CACHE_TAG)
+    """
+    Invalidate both signal and cluster cache tags after any PainImpact write.
+
+    PainImpact is a PIVOT entity for cluster aggregated stats:
+      - human_impacts distribution
+      - metrics list
+      - impacted_contacts_count
+      - max_impact_level
+
+    Every write therefore busts SIGNAL_CLUSTERS_CACHE_TAG in addition
+    to SIGNALS_CACHE_TAG. No flag: PainImpact has no ViewSet where
+    cluster invalidation would be optional.
+    """
+    client_id_str = str(client_id)
+    invalidate_tag(client_id_str, SIGNALS_CACHE_TAG)
+    invalidate_tag(client_id_str, SIGNAL_CLUSTERS_CACHE_TAG)
 
 
 # =============================================================================
